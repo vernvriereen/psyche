@@ -1,0 +1,36 @@
+use iroh::net::relay::RelayMode;
+
+pub fn fmt_relay_mode(relay_mode: &RelayMode) -> String {
+    match relay_mode {
+        RelayMode::Disabled => "None".to_string(),
+        RelayMode::Default => "Default Relay (production) servers".to_string(),
+        RelayMode::Staging => "Default Relay (staging) servers".to_string(),
+        RelayMode::Custom(map) => map
+            .urls()
+            .map(|url| url.to_string())
+            .collect::<Vec<_>>()
+            .join(", "),
+    }
+}
+
+pub fn convert_bytes(bytes: f64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = KB * 1024.0;
+    const GB: f64 = MB * 1024.0;
+    const TB: f64 = GB * 1024.0;
+    const PB: f64 = TB * 1024.0;
+
+    if bytes < KB {
+        format!("{} B", bytes)
+    } else if bytes < MB {
+        format!("{:.2} KB", bytes / KB)
+    } else if bytes < GB {
+        format!("{:.2} MB", bytes / MB)
+    } else if bytes < TB {
+        format!("{:.2} GB", bytes / GB)
+    } else if bytes < PB {
+        format!("{:.2} TB", bytes / TB)
+    } else {
+        format!("{:.2} PB", bytes / PB)
+    }
+}

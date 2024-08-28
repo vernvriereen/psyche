@@ -1,0 +1,27 @@
+### macOS ###
+.DS_Store
+.AppleDouble
+.LSOverride
+*.icloud
+._*
+
+### Rust ###
+debug/
+target/
+**/*.rs.bk
+*.pdb
+
+### Windows ###
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+
+
+### Tooling ###
+.direnv/
+.aider*
+flamegraph.svg
+perf.data
+perf.data.*
