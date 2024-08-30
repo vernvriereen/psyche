@@ -35,6 +35,35 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
+def start_container(container_name, project_id, container_image, zone):
+    try:
+        result = subprocess.run(
+            [
+                "gcloud",
+                "compute",
+                "instances",
+                "create-with-container",
+                container_name,
+                "--project",
+                project_id,
+                "--container-image",
+                container_image,
+                "--machine-type",
+                "n1-standard-1",
+                "--zone",
+                zone,
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        print(f"Container {container_name} started successfully.")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to start container {container_name}. Error: {e.stderr}")
+        return False
+
+
 # Register the signal handler
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
@@ -47,47 +76,27 @@ parser.add_argument("container_image", help="Docker image to use")
 parser.add_argument(
     "--runtime", type=int, default=60, help="Runtime in seconds (default: 60)"
 )
+
+parser.add_argument(
+    "--zone", default="us-central1-a", help="GCP zone (default: us-central1-a)"
+)
 args = parser.parse_args()
 
 run_id = str(uuid.uuid4())[:8]
 try:
     # Spin up N containers
-    start_threads = []
     for i in range(args.num_containers):
-        container_name = f"{run_id}-container-{i}"
+        container_name = f"p{run_id}-container-{i}"
         print(f"Starting container {container_name}...")
         containers.append(container_name)
-        p = subprocess.Popen(
-            [
-                "gcloud",
-                "compute",
-                "instances",
-                "create-with-container",
-                container_name,
-                "--project",
-                args.project_id,
-                "--container-image",
-                args.container_image,
-                "--machine-type",
-                "n1-standard-1",
-                "--zone",
-                "us-central1-a",
-            ],
-        )
-        start_threads.append(p)
-
-    for thread in start_threads:
-        result = thread.wait()
-        if result.returncode == 0:
-            print(f"Container {container_name} started successfully.")
-        else:
-            containers.remove(container_name)
-            print(f"Failed to start container {container_name}. Error: {result.stderr}")
-
+        if start_container(
+            container_name, args.project_id, args.container_image, args.zone
+        ):
+            print(f"Started container {container_name}...")
     # Wait for specified time with progress bar
     print(f"Waiting for {args.runtime} seconds...")
     for i in range(args.runtime):
-        print(f"{i}/{args.runtime}...")
+        print(f"slept {i}/{args.runtime}")
         time.sleep(1)
 
 finally:
