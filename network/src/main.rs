@@ -1,5 +1,6 @@
 use anyhow::{bail, Error, Result};
 use bytes::Bytes;
+use chrono::{Local, Timelike};
 use clap::{ArgAction, Parser};
 use download_manager::{Download, DownloadManager, DownloadUpdate};
 use ed25519_dalek::Signature;
@@ -26,11 +27,11 @@ use std::{
     str::FromStr,
     sync::mpsc::{self, Sender},
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tokio::select;
 use tokio::time::interval;
-use tracing::{error, info, Level};
+use tokio::{select, time::interval_at};
+use tracing::{error, info, warn, Level};
 use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter};
 use tui::UIState;
 use util::fmt_relay_mode;
@@ -154,7 +155,13 @@ async fn main() -> Result<()> {
     let (mut gossip_tx, mut gossip_rx) = node.gossip().subscribe(gossip_topic(), peer_ids).await?;
     info!("connected!");
 
-    let mut send_data_interval = interval(Duration::from_secs(10));
+    // fire at wall-clock 15-second intervals.
+    let mut send_data_interval = {
+        let now = Local::now();
+        let seconds_until_next: u64 = 15 - (now.second() as u64 % 15);
+        let start = Instant::now() + Duration::from_secs(seconds_until_next as u64);
+        interval_at(start.into(), Duration::from_secs(15))
+    };
 
     // if this is not 1s, the bandwidth chart will be wrong.
     let mut update_stats_interval = interval(Duration::from_secs(1));
@@ -180,13 +187,13 @@ async fn main() -> Result<()> {
         // these are factored out to separate fns so rustfmt works on their contents :)
         select! {
             Some(event) = gossip_rx.next() => {
-                on_gossip_event(&node, event, &mut tx_new_download).await?;
+                on_gossip_event(&node, &mut state, event, &mut tx_new_download).await?;
             }
             Some(update) = manager.poll_next() => {
                 on_download_update(&mut state, update);
             }
             _ = send_data_interval.tick() => {
-                on_tick(&node, &mut gossip_tx).await?;
+                on_tick(&node, &mut state, &mut gossip_tx).await?;
             }
             _ = update_stats_interval.tick() => {
                 on_update_stats(&node, &mut state, &mut tx_state).await?;
@@ -254,6 +261,7 @@ async fn on_update_stats(
 
 async fn on_gossip_event(
     node: &MemNode,
+    state: &mut State,
     event: Result<Event>,
     tx_new_download: &mut tokio::sync::mpsc::Sender<Download>,
 ) -> Result<()> {
@@ -261,7 +269,14 @@ async fn on_gossip_event(
         if let Ok((from, message)) = SignedMessage::verify_and_decode(&msg.content) {
             let name = from.fmt_short();
             match message {
-                Message::DistroResult { blob_ticket } => {
+                Message::DistroResult { blob_ticket, step } => {
+                    if step != state.current_step {
+                        warn!(
+                            "got a blob from {name} but its step {step} != {}, the current step.",
+                            state.current_step
+                        );
+                        return Ok(());
+                    }
                     info!(
                         "got blob ticket {} from {name}, downloading...",
                         blob_ticket.hash()
@@ -289,26 +304,48 @@ async fn on_gossip_event(
 
 async fn on_tick(
     node: &MemNode,
+    state: &mut State,
     sender: &mut (dyn Sink<Command, Error = Error> + Unpin),
 ) -> Result<()> {
     const DATA_SIZE_MB: usize = 10;
     let mut data = vec![0u8; DATA_SIZE_MB * 1024 * 1024];
     rand::thread_rng().fill(&mut data[..]);
     let blob_res = node.blobs().add_bytes(data).await?;
-    let ticket = node
+    let blob_ticket = node
         .blobs()
         .share(blob_res.hash, blob_res.format, Default::default())
         .await?;
 
-    let message = Message::DistroResult {
-        blob_ticket: ticket,
-    };
+    let unix_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time went forwads :)");
+    let step = (unix_time.as_secs() + 2) / 15;
+    info!("new step {step}");
+    if step != state.current_step + 1 {
+        warn!(
+            "new step {step} is not 1 greater than prev step {}",
+            state.current_step + 1
+        );
+    }
+
+    state.current_step = step;
+
+    state
+        .currently_sharing_blobs
+        .push((step, blob_ticket.clone()));
+
+    // keep shorter than 5 pl0x
+    state
+        .currently_sharing_blobs
+        .drain(0..(state.currently_sharing_blobs.len().saturating_sub(5)));
+
+    let message = Message::DistroResult { step, blob_ticket };
 
     let encoded_message = SignedMessage::sign_and_encode(node.endpoint().secret_key(), &message)?;
     if let Err(e) = sender.send(Command::Broadcast(encoded_message)).await {
         error!("Error sending message: {}", e);
     } else {
-        info!("sent blob with hash {}", blob_res.hash);
+        info!("broadcasted blob hash for step {step}: {}", blob_res.hash);
     }
 
     Ok(())
@@ -347,5 +384,5 @@ impl SignedMessage {
 #[derive(Debug, Serialize, Deserialize)]
 enum Message {
     Message { text: String },
-    DistroResult { blob_ticket: BlobTicket },
+    DistroResult { blob_ticket: BlobTicket, step: u64 },
 }

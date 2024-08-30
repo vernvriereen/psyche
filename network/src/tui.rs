@@ -10,8 +10,8 @@ use iroh::net::key::PublicKey;
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     buffer::Buffer,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Stylize},
+    layout::{Constraint, Direction, Layout, Margin, Rect},
+    style::{Color, Modifier, Style, Stylize},
     widgets::{
         Axis, Block, Borders, Chart, Dataset, GraphType, List, ListItem, Padding, Paragraph,
         Widget, Wrap,
@@ -52,6 +52,9 @@ pub struct UIState {
     pub download_bandwidth_history: VecDeque<f64>,
 
     pub downloads: HashMap<String, UIDownloadProgress>,
+
+    pub upload_hashes: Vec<(u64, String)>,
+    pub current_step: u64,
 }
 
 impl From<&State> for UIState {
@@ -74,6 +77,13 @@ impl From<&State> for UIState {
                     )
                 })
                 .collect(),
+            upload_hashes: s
+                .currently_sharing_blobs
+                .iter()
+                .rev()
+                .map(|(step, blob)| (*step, blob.hash().to_string()))
+                .collect(),
+            current_step: s.current_step,
         }
     }
 }
@@ -111,7 +121,9 @@ impl App {
         thread::spawn({
             let tx = tx.clone();
             move || loop {
-                let _ = tx.send(AppEvent::Frame);
+                if tx.send(AppEvent::Frame).is_err() {
+                    return;
+                }
                 std::thread::sleep(Duration::from_millis(150));
             }
         });
@@ -120,7 +132,9 @@ impl App {
             move || {
                 while let Ok(event) = event::read() {
                     trace!(target:"crossterm", "Stdin event received {:?}", event);
-                    let _ = tx.send(AppEvent::UiEvent(event));
+                    if tx.send(AppEvent::UiEvent(event)).is_err() {
+                        return;
+                    }
                 }
                 panic!("crossterm input thread exited")
             }
@@ -130,7 +144,9 @@ impl App {
             let tx = tx.clone();
             move || {
                 for state in state_rx {
-                    let _ = tx.send(AppEvent::StateUpdated(state));
+                    if tx.send(AppEvent::StateUpdated(state)).is_err() {
+                        return;
+                    }
                 }
             }
         });
@@ -192,7 +208,6 @@ impl App {
         Ok(())
     }
 }
-
 impl Widget for &mut App {
     fn render(self, size: Rect, buf: &mut Buffer) {
         let block = Block::default();
@@ -203,98 +218,155 @@ impl Widget for &mut App {
             .margin(1)
             .constraints(
                 [
-                    Constraint::Max(7),
-                    Constraint::Percentage(50),
+                    // clients and join ticket
+                    Constraint::Percentage(20),
+                    // uploads & download
+                    Constraint::Percentage(40),
+                    // logs
                     Constraint::Fill(1),
                 ]
                 .as_ref(),
             )
             .split(size);
 
-        let ticket = Paragraph::new(format!(
-            "{}\n{:?}",
-            self.psyche_state.join_ticket, self.psyche_state.join_ticket.0
-        ))
-        .wrap(Wrap { trim: true })
-        .block(
-            Block::new()
-                .title("Join Ticket")
-                .padding(Padding::symmetric(1, 0))
-                .borders(Borders::ALL),
-        );
-        ticket.render(chunks[0], buf);
-
-        let middle_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-            .split(chunks[1]);
-
-        let client_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-            .split(middle_chunks[0]);
-
+        // Clients and Join Ticket
         {
-            let clients = List::new(self.psyche_state.last_seen.iter().map(
-                |(peer_id, last_seen_instant)| {
-                    let last_seen_time = Instant::now().sub(*last_seen_instant).as_secs_f64();
-                    let li =
-                        ListItem::new(format!("{}: {:.2} seconds ago", peer_id, last_seen_time));
-                    if last_seen_time < 1.0 {
-                        li.bg(Color::LightYellow).fg(Color::Black)
-                    } else {
-                        li
-                    }
-                },
+            let client_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
+                .split(chunks[0]);
+
+            Paragraph::new(format!(
+                "{}\n{:?}",
+                self.psyche_state.join_ticket, self.psyche_state.join_ticket.0
             ))
-            .block(Block::default().title("Clients").borders(Borders::ALL));
-            clients.render(client_chunks[0], buf);
+            .wrap(Wrap { trim: true })
+            .block(
+                Block::default()
+                    .title("Join Ticket")
+                    .padding(Padding::symmetric(1, 0))
+                    .borders(Borders::ALL),
+            )
+            .render(client_chunks[0], buf);
+
+            List::new(
+                self.psyche_state
+                    .last_seen
+                    .iter()
+                    .map(|(peer_id, last_seen_instant)| {
+                        let last_seen_time = Instant::now().sub(*last_seen_instant).as_secs_f64();
+                        let li = ListItem::new(format!(
+                            "{}: {:.2} seconds ago",
+                            peer_id, last_seen_time
+                        ));
+                        if last_seen_time < 1.0 {
+                            li.bg(Color::LightYellow).fg(Color::Black)
+                        } else {
+                            li
+                        }
+                    }),
+            )
+            .block(Block::default().title("Clients").borders(Borders::ALL))
+            .render(client_chunks[1], buf);
         }
 
+        // Upload & Download
         {
-            let downloads =
+            let network_chunks =
+                Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(chunks[1]);
+
+            // Downloads and Download Bandwidth
+            {
+                let download_chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
+                    .split(network_chunks[1]);
+
                 List::new(self.psyche_state.downloads.iter().map(|(hash, download)| {
-                    let percent = download.downloaded as f64 / download.total as f64;
+                    let percent = 100.0 * (download.downloaded as f64 / download.total as f64);
                     ListItem::new(format!(
-                        "[{:02}%]{hash}: {}/{}",
+                        "[{:02}%]{}: {}/{}",
                         percent,
+                        hash,
                         convert_bytes(download.downloaded as f64),
                         convert_bytes(download.total as f64)
                     ))
                 }))
-                .block(Block::default().title("Downloads").borders(Borders::ALL));
-            downloads.render(client_chunks[1], buf);
+                .block(Block::default().title("Downloads").borders(Borders::ALL))
+                .style(Style::default().fg(Color::White))
+                .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+                .highlight_symbol(">>")
+                .render(download_chunks[0], buf);
+
+                let bw_history = self
+                    .psyche_state
+                    .download_bandwidth_history
+                    .iter()
+                    .enumerate()
+                    .map(|(x, y)| (x as f64, *y))
+                    .collect::<Vec<_>>();
+
+                Chart::new(vec![Dataset::default()
+                    .graph_type(GraphType::Line)
+                    .data(&bw_history)])
+                .block(
+                    Block::default()
+                        .title(format!(
+                            "Download Bandwidth {}/s",
+                            convert_bytes(self.psyche_state.total_data_per_sec)
+                        ))
+                        .borders(Borders::ALL),
+                )
+                .x_axis(Axis::default().title("Time").labels(vec!["0", "30", "60"]))
+                .y_axis(Axis::default().title("Bytes/s)").labels(vec![
+                    convert_bytes(0.0),
+                    convert_bytes(5.0 * 1024.0 * 1024.0),
+                ]))
+                .render(download_chunks[1], buf);
+            }
+
+            // Uploads and Upload Bandwidth
+            {
+                let upload_chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
+                    .split(network_chunks[0]);
+
+                let uploads =
+                    List::new(self.psyche_state.upload_hashes.iter().map(|(step, hash)| {
+                        let item = ListItem::new(format!("Step {}: {}", step, hash));
+                        if self.psyche_state.current_step == *step {
+                            item.bg(Color::Green)
+                        } else {
+                            item
+                        }
+                    }))
+                    .block(
+                        Block::default()
+                            .title(format!("Uploads (step {})", self.psyche_state.current_step))
+                            .borders(Borders::ALL),
+                    );
+
+                uploads.render(upload_chunks[0], buf);
+
+                // Placeholder for Upload Bandwidth
+                let upload_bandwidth = Paragraph::new("Upload Bandwidth Graph (Placeholder)")
+                    .block(
+                        Block::default()
+                            .title("Upload Bandwidth")
+                            .borders(Borders::ALL),
+                    );
+                upload_bandwidth.render(upload_chunks[1], buf);
+            }
         }
 
+        // Logs
         {
-            let bw_history = self
-                .psyche_state
-                .download_bandwidth_history
-                .iter()
-                .enumerate()
-                .map(|(x, y)| (x as f64, *y))
-                .collect::<Vec<_>>();
-
-            let bandwidth_graph = Chart::new(vec![Dataset::default()
-                .graph_type(GraphType::Line)
-                .data(&bw_history)])
-            .block(
-                Block::default()
-                    .title(format!(
-                        "Download Bandwidth {}/s",
-                        convert_bytes(self.psyche_state.total_data_per_sec)
-                    ))
-                    .borders(Borders::ALL),
-            )
-            .x_axis(Axis::default().title("Time").labels(vec!["0", "30", "60"]))
-            .y_axis(Axis::default().title("Bytes/s)").labels(vec![
-                convert_bytes(0.0),
-                convert_bytes(5.0 * 1024.0 * 1024.0),
-            ]));
-            bandwidth_graph.render(middle_chunks[1], buf);
-        }
-
-        {
+            let log_area = chunks[2].inner(Margin {
+                vertical: 1,
+                horizontal: 0,
+            });
             TuiLoggerWidget::default()
                 .block(Block::bordered().title("Logs"))
                 .output_separator('|')
@@ -303,7 +375,7 @@ impl Widget for &mut App {
                 .output_target(false)
                 .output_file(false)
                 .output_line(false)
-                .render(chunks[2], buf);
+                .render(log_area, buf);
         }
     }
 }
@@ -328,9 +400,11 @@ pub fn start_render_loop(state: Receiver<UIState>) -> Result<()> {
     terminal.clear()?;
     terminal.hide_cursor()?;
 
-    App::new().start(&mut terminal, state)?;
-
-    restore_terminal()?;
+    // we delay returning this err so we can always clean up the terminal state
+    let start_result = App::new().start(&mut terminal, state);
+    let restore_result = restore_terminal();
+    start_result?;
+    restore_result?;
 
     Ok(())
 }
