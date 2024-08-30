@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
+    fmt::Debug,
     time::{Duration, Instant},
 };
 
@@ -8,7 +9,7 @@ use iroh::{base::ticket::BlobTicket, net::key::PublicKey};
 use crate::{download_manager::DownloadUpdate, peer_list::PeerList};
 
 #[derive(Debug)]
-pub struct State {
+pub struct State<S: Debug + Default> {
     pub join_ticket: PeerList,
     pub last_seen: HashMap<PublicKey, Instant>,
     pub bandwidth_tracker: BandwidthTracker,
@@ -16,10 +17,10 @@ pub struct State {
     pub download_progesses: HashMap<String, DownloadUpdate>,
 
     pub currently_sharing_blobs: Vec<(u64, BlobTicket)>,
-    pub current_step: u64,
+    pub state: S,
 }
 
-impl State {
+impl<S: Debug + Default> State<S> {
     pub fn new(bandwidth_average_period: u64) -> Self {
         Self {
             join_ticket: Default::default(),
@@ -28,7 +29,7 @@ impl State {
             bandwidth_history: Default::default(),
             download_progesses: Default::default(),
             currently_sharing_blobs: Default::default(),
-            current_step: Default::default(),
+            state: Default::default(),
         }
     }
 }

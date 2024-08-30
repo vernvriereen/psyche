@@ -4,7 +4,7 @@ use chrono::{Local, Timelike};
 use clap::{ArgAction, Parser};
 use download_manager::{DownloadManager, DownloadUpdate};
 use ed25519_dalek::Signature;
-use futures_util::{Sink, SinkExt, StreamExt};
+use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use iroh::{
     base::ticket::BlobTicket,
     gossip::{
@@ -14,6 +14,7 @@ use iroh::{
     net::{
         key::{PublicKey, SecretKey},
         relay::{RelayMap, RelayMode, RelayUrl},
+        NodeAddr,
     },
     node::{MemNode, Node},
 };
@@ -23,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use state::State;
 use std::{
+    marker::PhantomData,
     ops::Sub,
     str::FromStr,
     sync::mpsc::{self, Sender},
@@ -34,127 +36,89 @@ use tokio::{select, time::interval_at};
 use tracing::{error, info, warn, Level};
 use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter};
 use tui::UIState;
-use util::fmt_relay_mode;
+use util::{fmt_relay_mode, gossip_topic};
 
 mod download_manager;
 mod peer_list;
 mod state;
-mod tui;
 mod util;
 
 const BANDWIDTH_GRAPH_SIZE: usize = 60;
 
-#[derive(Parser, Debug)]
-struct Args {
-    #[clap(long)]
-    secret_key: Option<String>,
-    #[clap(short, long)]
-    relay: Option<RelayUrl>,
-    #[clap(long)]
-    no_relay: bool,
-
-    #[clap(short, long, default_value = "0")]
-    bind_port: u16,
-
-    #[clap(
-        long,
-        action = ArgAction::Set,
-        default_value_t = true,
-        default_missing_value = "true",
-        num_args = 0..=1,
-        require_equals = false
-    )]
-    tui: bool,
-
-    peer_list: Option<String>,
-}
-
 const GOSSIP_TOPIC: &str = "psyche gossip";
 
-fn gossip_topic() -> TopicId {
-    let mut hasher = Sha256::new();
-    hasher.update(GOSSIP_TOPIC);
-    let result = hasher.finalize();
-    TopicId::from_bytes(result.into())
+type State = 
+
+pub struct PsycheNetworkConnection<Message, BroadcastMessage, State> {
+    node: MemNode,
+    state: State,
+    _message: PhantomData<Message>,
+    _broadcast_message: PhantomData<BroadcastMessage>,
+    gossip_tx: Box<dyn Sink<Command, Error = Error>>,
+    gossip_rx: Box<dyn Stream<Item = std::result::Result<Event, Error>>>,
+}
+
+impl<Message, BroadcastMessage> PsycheNetworkConnection<Message, BroadcastMessage> {
+    async fn init(
+        run_id: &str,
+        port: Option<u16>,
+        relay_mode: RelayMode,
+        bootstrap_peers: Vec<NodeAddr>,
+        secret_key: Option<SecretKey>,
+    ) -> Result<Self> {
+        let secret_key = match secret_key {
+            None => SecretKey::generate(),
+            Some(key) => key,
+        };
+        info!("our secret key: {secret_key}");
+
+        info!("using relay servers: {}", fmt_relay_mode(&relay_mode));
+
+        let node = Node::memory()
+            .secret_key(secret_key)
+            .relay_mode(relay_mode)
+            .bind_port(port.unwrap_or(0))
+            .spawn()
+            .await?;
+
+        info!("our node id: {}", node.node_id());
+
+        let peer_ids: Vec<_> = bootstrap_peers.iter().map(|p| p.node_id).collect();
+        if bootstrap_peers.is_empty() {
+            info!("waiting for peers to join us...");
+        } else {
+            info!("trying to connect to {} peers...", bootstrap_peers.len());
+            // add the peer addrs from the ticket to our endpoint's addressbook so that they can be dialed
+            for peer in bootstrap_peers.into_iter() {
+                node.net().add_node_addr(peer).await?;
+            }
+        };
+        let (gossip_tx, gossip_rx) = node
+            .gossip()
+            .subscribe(gossip_topic(run_id), peer_ids)
+            .await?;
+        info!("connected!");
+
+        Ok(Self {
+            node,
+            gossip_tx: Box::new(gossip_tx),
+            gossip_rx: Box::new(gossip_rx),
+            state: State::new(15),
+            _message: PhantomData::<Message>,
+            _broadcast_message: PhantomData::<BroadcastMessage>,
+        })
+    }
+
+    fn send(peer: PublicKey, message: Message) {}
+    fn broadcast(message: BroadcastMessage) {}
+}
+
+pub enum PsycheNetworkUpdate {
+    DownloadComplete(DistroResult),
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = Args::parse();
-
-    if args.tui {
-        let subscriber = tracing_subscriber::registry()
-            .with(
-                EnvFilter::builder()
-                    .with_default_directive(Level::INFO.into())
-                    .from_env_lossy(),
-            )
-            .with(tui_logger::tracing_subscriber_layer());
-
-        tracing::subscriber::set_global_default(subscriber)
-            .expect("Unable to set global default subscriber");
-    } else {
-        let subscriber = tracing_subscriber::registry()
-            .with(
-                EnvFilter::builder()
-                    .with_default_directive(Level::INFO.into())
-                    .from_env_lossy(),
-            )
-            .with(fmt::layer().with_writer(std::io::stdout));
-        tracing::subscriber::set_global_default(subscriber)
-            .expect("Unable to set global default subscriber");
-    };
-
-    let PeerList(peers) = args
-        .peer_list
-        .map(|p| PeerList::from_str(&p).unwrap())
-        .unwrap_or_default();
-    info!("joining chat room");
-
-    let secret_key = match args.secret_key {
-        None => SecretKey::generate(),
-        Some(key) => key.parse()?,
-    };
-    info!("our secret key: {secret_key}");
-
-    let relay_mode = match (args.no_relay, args.relay) {
-        (false, None) => RelayMode::Default,
-        (false, Some(url)) => RelayMode::Custom(RelayMap::from_url(url)),
-        (true, None) => RelayMode::Disabled,
-        (true, Some(_)) => bail!("You cannot set --no-relay and --relay at the same time"),
-    };
-    info!("using relay servers: {}", fmt_relay_mode(&relay_mode));
-
-    let node = Node::memory()
-        .secret_key(secret_key)
-        .relay_mode(relay_mode)
-        .bind_port(args.bind_port)
-        .spawn()
-        .await?;
-
-    info!("our node id: {}", node.node_id());
-
-    let ticket = {
-        let me = node.endpoint().node_addr().await?;
-        let peers = peers.iter().cloned().chain([me]).collect();
-        PeerList(peers)
-    };
-
-    info!("ticket to join us: {ticket}");
-
-    let peer_ids: Vec<_> = peers.iter().map(|p| p.node_id).collect();
-    if peers.is_empty() {
-        info!("waiting for peers to join us...");
-    } else {
-        info!("trying to connect to {} peers...", peers.len());
-        // add the peer addrs from the ticket to our endpoint's addressbook so that they can be dialed
-        for peer in peers.into_iter() {
-            node.net().add_node_addr(peer).await?;
-        }
-    };
-    let (mut gossip_tx, mut gossip_rx) = node.gossip().subscribe(gossip_topic(), peer_ids).await?;
-    info!("connected!");
-
     // fire at wall-clock 15-second intervals.
     let mut send_data_interval = {
         let now = Local::now();

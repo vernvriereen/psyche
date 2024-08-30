@@ -1,12 +1,8 @@
-[package]
-name = "psyche"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = ["psyche", "tui"]
+resolver = "2"
 
-[dependencies]
-iroh = { git = "https://github.com/n0-computer/iroh", rev = "34ec5e24b9cdae751a7fae8f9d14fb6fa77482f1" }
-indicatif = { version = "0.17", features = ["tokio"] }
-
+[workspace.dependencies]
 tokio = { version = "1", features = ["io-util", "rt"] }
 tokio-stream = "0.1"
 anyhow = "1.0.86"
@@ -15,14 +11,8 @@ serde = { version = "1.0.209", features = ["derive"] }
 tracing = "0.1.40"
 bytes = "1.7.1"
 ed25519-dalek = "2.1.1"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 rand = "0.8.5"
 postcard = "1.0.10"
 sha2 = "0.10.8"
 futures-util = "0.3.30"
-ratatui = "0.28.1"
 chrono = "0.4.38"
-tui-scrollview = "0.4.0"
-crossterm = { version = "0.28.1", features = ["event-stream"] }
-console-subscriber = "0.4.0"
-tui-logger = { version = "0.12.0", features = ["tracing-support"] }

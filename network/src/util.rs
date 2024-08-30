@@ -1,4 +1,15 @@
-use iroh::net::relay::RelayMode;
+use iroh::{gossip::proto::TopicId, net::relay::RelayMode};
+use sha2::{Digest, Sha256};
+
+use crate::GOSSIP_TOPIC;
+
+pub fn gossip_topic(run_id: &str) -> TopicId {
+    let mut hasher = Sha256::new();
+    hasher.update(GOSSIP_TOPIC);
+    hasher.update(run_id);
+    let result = hasher.finalize();
+    TopicId::from_bytes(result.into())
+}
 
 pub fn fmt_relay_mode(relay_mode: &RelayMode) -> String {
     match relay_mode {

@@ -1,0 +1,24 @@
+[package]
+name = "psyche-network"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+iroh = { git = "https://github.com/n0-computer/iroh", rev = "34ec5e24b9cdae751a7fae8f9d14fb6fa77482f1" }
+
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+bytes = { workspace = true }
+ed25519-dalek = { workspace = true }
+rand = { workspace = true }
+postcard = { workspace = true }
+sha2 = { workspace = true }
+futures-util = { workspace = true }
+chrono = { workspace = true }
+
+# for examples
+[dev-dependencies]
+clap = { workspace = true }
