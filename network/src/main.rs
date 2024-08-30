@@ -2,7 +2,7 @@ use anyhow::{bail, Error, Result};
 use bytes::Bytes;
 use chrono::{Local, Timelike};
 use clap::{ArgAction, Parser};
-use download_manager::{Download, DownloadManager, DownloadUpdate};
+use download_manager::{DownloadManager, DownloadUpdate};
 use ed25519_dalek::Signature;
 use futures_util::{Sink, SinkExt, StreamExt};
 use iroh::{
@@ -179,15 +179,14 @@ async fn main() -> Result<()> {
     });
 
     let mut state = State::new(15);
-    let (mut tx_new_download, rx_new_download) = tokio::sync::mpsc::channel(100);
 
-    let mut manager = DownloadManager::new(rx_new_download);
+    let mut manager = DownloadManager::default();
 
     loop {
         // these are factored out to separate fns so rustfmt works on their contents :)
         select! {
             Some(event) = gossip_rx.next() => {
-                on_gossip_event(&node, &mut state, event, &mut tx_new_download).await?;
+                on_gossip_event(&node, &mut state, event, &mut manager).await?;
             }
             Some(update) = manager.poll_next() => {
                 on_download_update(&mut state, update);
@@ -263,7 +262,7 @@ async fn on_gossip_event(
     node: &MemNode,
     state: &mut State,
     event: Result<Event>,
-    tx_new_download: &mut tokio::sync::mpsc::Sender<Download>,
+    download_manager: &mut DownloadManager,
 ) -> Result<()> {
     if let Ok(Event::Gossip(GossipEvent::Received(msg))) = event {
         if let Ok((from, message)) = SignedMessage::verify_and_decode(&msg.content) {
@@ -287,10 +286,7 @@ async fn on_gossip_event(
                         .download(blob_ticket.hash(), blob_ticket.node_addr().clone())
                         .await?;
 
-                    tx_new_download
-                        .send(Download::new(from, blob_ticket, progress))
-                        .await
-                        .unwrap();
+                    download_manager.add(from, blob_ticket, progress);
                 }
                 Message::Message { text } => {
                     info!("{name}: {text}");

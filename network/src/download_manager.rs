@@ -3,9 +3,6 @@ use iroh::base::ticket::BlobTicket;
 use iroh::blobs::get::db::DownloadProgress;
 use iroh::client::blobs::DownloadProgress as DownloadProgressStream;
 use iroh::net::key::PublicKey;
-use std::sync::Arc;
-use tokio::sync::mpsc::Receiver;
-use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
 use tracing::{error, info, warn};
 
@@ -41,30 +38,29 @@ pub struct DownloadUpdate {
     pub total_size: u64,
 }
 
+#[derive(Default)]
 pub struct DownloadManager {
-    rx_new_download: Receiver<Download>,
-    downloads: Arc<Mutex<Vec<Download>>>,
+    downloads: Vec<Download>,
 }
 
 impl DownloadManager {
-    pub fn new(rx_new_download: Receiver<Download>) -> Self {
-        Self {
-            rx_new_download,
-            downloads: Arc::new(Mutex::new(Vec::new())),
-        }
+    pub fn add(
+        &mut self,
+        from: PublicKey,
+        blob_ticket: BlobTicket,
+        progress: DownloadProgressStream,
+    ) {
+        self.downloads
+            .push(Download::new(from, blob_ticket, progress));
     }
 
     pub async fn poll_next(&mut self) -> Option<DownloadUpdate> {
-        if let Ok(download) = self.rx_new_download.try_recv() {
-            self.downloads.lock().await.push(download);
-        }
-
-        let mut downloads = self.downloads.lock().await;
-        if downloads.is_empty() {
+        if self.downloads.is_empty() {
             return None;
         }
 
-        let mut futures: Vec<_> = downloads
+        let mut futures: Vec<_> = self
+            .downloads
             .iter_mut()
             .map(|download| Box::pin(download.download.next()))
             .collect();
@@ -73,23 +69,22 @@ impl DownloadManager {
 
         match result {
             Some(Ok(progress)) => {
-                let download = &mut downloads[index];
-                self.handle_progress(download, progress)
+                let download = &mut self.downloads[index];
+                Self::handle_progress(download, progress)
             }
             Some(Err(e)) => {
                 error!("Download error: {}", e);
-                downloads.swap_remove(index);
+                self.downloads.swap_remove(index);
                 None
             }
             None => {
-                downloads.swap_remove(index);
+                self.downloads.swap_remove(index);
                 None
             }
         }
     }
 
     fn handle_progress(
-        &self,
         download: &mut Download,
         progress: DownloadProgress,
     ) -> Option<DownloadUpdate> {
