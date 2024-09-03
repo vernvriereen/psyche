@@ -1,0 +1,12 @@
+[package]
+name = "psyche-training"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tch = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "a4e9362e4acbbde54ab9503ab9e37a10835e7547" }
+torch-sys = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "a4e9362e4acbbde54ab9503ab9e37a10835e7547" }
+memmap2 = { version = "0.9.3", features = ["stable_deref_trait"] }
+byteorder = "1.4.3"
+rand = "0.8.5"
+anyhow = "^1.0.60"
