@@ -1,5 +1,5 @@
 [workspace]
-members = ["psyche", "tui", "training"]
+members = ["client", "coordinator", "core", "training", "tui"]
 resolver = "2"
 
 [workspace.dependencies]
