@@ -1,65 +1,75 @@
-use anyhow::{bail, Error, Result};
-use bytes::Bytes;
-use chrono::{Local, Timelike};
-use clap::{ArgAction, Parser};
+use anyhow::{Error, Result};
 use download_manager::{DownloadManager, DownloadUpdate};
-use ed25519_dalek::Signature;
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use iroh::{
     base::ticket::BlobTicket,
-    gossip::{
-        net::{Command, Event, GossipEvent},
-        proto::TopicId,
-    },
+    gossip::net::{Command, Event, GossipEvent},
     net::{
         key::{PublicKey, SecretKey},
-        relay::{RelayMap, RelayMode, RelayUrl},
+        relay::RelayMode,
         NodeAddr,
     },
     node::{MemNode, Node},
 };
-use peer_list::PeerList;
-use rand::Rng;
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use signed_message::SignedMessage;
 use state::State;
 use std::{
+    fmt::Debug,
     marker::PhantomData,
     ops::Sub,
-    str::FromStr,
-    sync::mpsc::{self, Sender},
-    thread,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
-use tokio::time::interval;
-use tokio::{select, time::interval_at};
-use tracing::{error, info, warn, Level};
-use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter};
-use tui::UIState;
-use util::{fmt_relay_mode, gossip_topic};
+use tokio::select;
+use tokio::time::{interval, Interval};
+use tracing::info;
+use util::{fmt_relay_mode, gossip_topic, Networkable};
 
 mod download_manager;
 mod peer_list;
+mod signed_message;
 mod state;
+mod tui;
 mod util;
 
-const BANDWIDTH_GRAPH_SIZE: usize = 60;
+pub use peer_list::PeerList;
+pub use tui::{NetworkTUI, NetworkTUIState};
 
-const GOSSIP_TOPIC: &str = "psyche gossip";
-
-type State = 
-
-pub struct PsycheNetworkConnection<Message, BroadcastMessage, State> {
+pub struct NetworkConnection<BroadcastMessage, Download>
+where
+    BroadcastMessage: Networkable,
+    Download: Networkable,
+{
     node: MemNode,
     state: State,
-    _message: PhantomData<Message>,
+    gossip_tx: Box<dyn Sink<Command, Error = Error> + Unpin>,
+    gossip_rx: Box<dyn Stream<Item = std::result::Result<Event, Error>> + Unpin>,
+    download_manager: DownloadManager,
     _broadcast_message: PhantomData<BroadcastMessage>,
-    gossip_tx: Box<dyn Sink<Command, Error = Error>>,
-    gossip_rx: Box<dyn Stream<Item = std::result::Result<Event, Error>>>,
+    _download: PhantomData<Download>,
+    update_stats_interval: Interval,
 }
 
-impl<Message, BroadcastMessage> PsycheNetworkConnection<Message, BroadcastMessage> {
-    async fn init(
+impl<B, D> Debug for NetworkConnection<B, D>
+where
+    B: Networkable,
+    D: Networkable,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NetworkConnection")
+            .field("node", &self.node)
+            .field("state", &self.state)
+            .field("download_manager", &self.download_manager)
+            .field("update_stats_interval", &self.update_stats_interval)
+            .finish()
+    }
+}
+
+impl<BroadcastMessage, Download> NetworkConnection<BroadcastMessage, Download>
+where
+    BroadcastMessage: Networkable,
+    Download: Networkable,
+{
+    pub async fn init(
         run_id: &str,
         port: Option<u16>,
         relay_mode: RelayMode,
@@ -74,6 +84,8 @@ impl<Message, BroadcastMessage> PsycheNetworkConnection<Message, BroadcastMessag
 
         info!("using relay servers: {}", fmt_relay_mode(&relay_mode));
 
+        // TODO write a peer discovery service, and parameterize this impl based on it.
+        // TODO add an allowlist of public keys, don't let any connections from people with keys not in that list.
         let node = Node::memory()
             .secret_key(secret_key)
             .relay_mode(relay_mode)
@@ -99,73 +111,106 @@ impl<Message, BroadcastMessage> PsycheNetworkConnection<Message, BroadcastMessag
             .await?;
         info!("connected!");
 
+        // if this is not 1s, the bandwidth chart will be wrong.
+        let update_stats_interval = interval(Duration::from_secs(1));
+
         Ok(Self {
             node,
             gossip_tx: Box::new(gossip_tx),
             gossip_rx: Box::new(gossip_rx),
+            update_stats_interval,
             state: State::new(15),
-            _message: PhantomData::<Message>,
-            _broadcast_message: PhantomData::<BroadcastMessage>,
+            download_manager: Default::default(),
+            _broadcast_message: Default::default(),
+            _download: Default::default(),
         })
     }
 
-    fn send(peer: PublicKey, message: Message) {}
-    fn broadcast(message: BroadcastMessage) {}
-}
+    pub async fn broadcast(&mut self, message: &BroadcastMessage) -> Result<()> {
+        let encoded_message =
+            SignedMessage::sign_and_encode(self.node.endpoint().secret_key(), message)?;
+        self.gossip_tx
+            .send(Command::Broadcast(encoded_message))
+            .await
+    }
+    /// should this really await the whole download..?
+    /// for now, you can get your result as a message from polling this connection.
+    pub async fn download(&mut self, ticket: BlobTicket) -> Result<()> {
+        let progress = self
+            .node
+            .blobs()
+            .download(ticket.hash(), ticket.node_addr().clone())
+            .await?;
 
-pub enum PsycheNetworkUpdate {
-    DownloadComplete(DistroResult),
-}
+        self.download_manager
+            .add(ticket.node_addr().node_id, ticket, progress);
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    // fire at wall-clock 15-second intervals.
-    let mut send_data_interval = {
-        let now = Local::now();
-        let seconds_until_next: u64 = 15 - (now.second() as u64 % 15);
-        let start = Instant::now() + Duration::from_secs(seconds_until_next as u64);
-        interval_at(start.into(), Duration::from_secs(15))
-    };
+        // TODO write a future impl that resolves when the download manager has downloaded this future..?
+        Ok(())
+    }
 
-    // if this is not 1s, the bandwidth chart will be wrong.
-    let mut update_stats_interval = interval(Duration::from_secs(1));
+    pub async fn add_downloadable(&mut self, data: Download) -> Result<BlobTicket> {
+        let bytes = postcard::to_allocvec(&data)?;
+        let blob_res = self.node.blobs().add_bytes(bytes).await?;
+        let blob_ticket = self
+            .node
+            .blobs()
+            .share(blob_res.hash, blob_res.format, Default::default())
+            .await?;
 
-    let (mut tx_state, rx_state) = mpsc::channel();
-    let tui = args.tui;
-    thread::spawn(move || {
-        if tui {
-            tui::start_render_loop(rx_state).unwrap();
-        } else {
-            for item in rx_state {
-                info!("{:?}", item);
-            }
-        }
-    });
+        self.state.currently_sharing_blobs.push(blob_ticket.clone());
 
-    let mut state = State::new(15);
+        Ok(blob_ticket)
+    }
 
-    let mut manager = DownloadManager::default();
+    pub async fn remove_downloadable(&self, ticket: BlobTicket) -> Result<()> {
+        self.node.blobs().delete_blob(ticket.hash()).await
+    }
 
-    loop {
+    pub async fn join_ticket(&self) -> Result<String> {
+        let me = self.node.endpoint().node_addr().await?;
+        Ok(PeerList(vec![me]).to_string())
+    }
+
+    pub async fn poll_next(&mut self) -> Result<Option<NetworkEvent<BroadcastMessage, Download>>> {
         // these are factored out to separate fns so rustfmt works on their contents :)
         select! {
-            Some(event) = gossip_rx.next() => {
-                on_gossip_event(&node, &mut state, event, &mut manager).await?;
+            Some(event) = self.gossip_rx.next() => {
+                if let Some(result) = parse_gossip_event(event) {
+                    return Ok(Some(NetworkEvent::MessageReceived(result)));
+                }
             }
-            Some(update) = manager.poll_next() => {
-                on_download_update(&mut state, update);
+            Some(update) = self.download_manager.poll_next() => {
+                on_download_update(&mut self.state, update);
             }
-            _ = send_data_interval.tick() => {
-                on_tick(&node, &mut state, &mut gossip_tx).await?;
+              _ = self.update_stats_interval.tick() => {
+                on_update_stats(&self.node, &mut self.state).await?;
             }
-            _ = update_stats_interval.tick() => {
-                on_update_stats(&node, &mut state, &mut tx_state).await?;
-            }
-            else => break,
+        }
+
+        Ok(None)
+    }
+}
+
+fn parse_gossip_event<BroadcastMessage: Networkable>(
+    event: Result<Event>,
+) -> Option<(PublicKey, BroadcastMessage)> {
+    if let Ok(Event::Gossip(GossipEvent::Received(msg))) = event {
+        if let Ok(result) = SignedMessage::<BroadcastMessage>::verify_and_decode(&msg.content) {
+            return Some(result);
         }
     }
 
-    Ok(())
+    None
+}
+
+pub enum NetworkEvent<BM, D>
+where
+    BM: Networkable,
+    D: Networkable,
+{
+    MessageReceived((PublicKey, BM)),
+    DownloadComplete(D),
 }
 
 fn on_download_update(state: &mut State, update: DownloadUpdate) {
@@ -181,11 +226,8 @@ fn on_download_update(state: &mut State, update: DownloadUpdate) {
         state.download_progesses.insert(update.hash.clone(), update);
     }
 }
-async fn on_update_stats(
-    node: &MemNode,
-    stats: &mut State,
-    tx_state: &mut Sender<UIState>,
-) -> Result<()> {
+
+async fn on_update_stats(node: &MemNode, stats: &mut State) -> Result<()> {
     let ticket = {
         let me = node.endpoint().node_addr().await?;
         PeerList(vec![me])
@@ -212,137 +254,10 @@ async fn on_update_stats(
         .bandwidth_history
         .push_back(stats.bandwidth_tracker.get_bandwidth());
 
+    const BANDWIDTH_GRAPH_SIZE: usize = 60;
     if stats.bandwidth_history.len() > BANDWIDTH_GRAPH_SIZE {
         stats.bandwidth_history.pop_front();
     }
 
-    let ui_state: UIState = (&*stats).into();
-    tx_state.send(ui_state)?;
-
     Ok(())
-}
-
-async fn on_gossip_event(
-    node: &MemNode,
-    state: &mut State,
-    event: Result<Event>,
-    download_manager: &mut DownloadManager,
-) -> Result<()> {
-    if let Ok(Event::Gossip(GossipEvent::Received(msg))) = event {
-        if let Ok((from, message)) = SignedMessage::verify_and_decode(&msg.content) {
-            let name = from.fmt_short();
-            match message {
-                Message::DistroResult { blob_ticket, step } => {
-                    if step != state.current_step {
-                        warn!(
-                            "got a blob from {name} but its step {step} != {}, the current step.",
-                            state.current_step
-                        );
-                        return Ok(());
-                    }
-                    info!(
-                        "got blob ticket {} from {name}, downloading...",
-                        blob_ticket.hash()
-                    );
-
-                    let progress = node
-                        .blobs()
-                        .download(blob_ticket.hash(), blob_ticket.node_addr().clone())
-                        .await?;
-
-                    download_manager.add(from, blob_ticket, progress);
-                }
-                Message::Message { text } => {
-                    info!("{name}: {text}");
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-async fn on_tick(
-    node: &MemNode,
-    state: &mut State,
-    sender: &mut (dyn Sink<Command, Error = Error> + Unpin),
-) -> Result<()> {
-    const DATA_SIZE_MB: usize = 10;
-    let mut data = vec![0u8; DATA_SIZE_MB * 1024 * 1024];
-    rand::thread_rng().fill(&mut data[..]);
-    let blob_res = node.blobs().add_bytes(data).await?;
-    let blob_ticket = node
-        .blobs()
-        .share(blob_res.hash, blob_res.format, Default::default())
-        .await?;
-
-    let unix_time = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time went forwads :)");
-    let step = (unix_time.as_secs() + 2) / 15;
-    info!("new step {step}");
-    if step != state.current_step + 1 {
-        warn!(
-            "new step {step} is not 1 greater than prev step {}",
-            state.current_step + 1
-        );
-    }
-
-    state.current_step = step;
-
-    state
-        .currently_sharing_blobs
-        .push((step, blob_ticket.clone()));
-
-    // keep shorter than 5 pl0x
-    state
-        .currently_sharing_blobs
-        .drain(0..(state.currently_sharing_blobs.len().saturating_sub(5)));
-
-    let message = Message::DistroResult { step, blob_ticket };
-
-    let encoded_message = SignedMessage::sign_and_encode(node.endpoint().secret_key(), &message)?;
-    if let Err(e) = sender.send(Command::Broadcast(encoded_message)).await {
-        error!("Error sending message: {}", e);
-    } else {
-        info!("broadcasted blob hash for step {step}: {}", blob_res.hash);
-    }
-
-    Ok(())
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct SignedMessage {
-    from: PublicKey,
-    data: Bytes,
-    signature: Signature,
-}
-
-impl SignedMessage {
-    pub fn verify_and_decode(bytes: &[u8]) -> Result<(PublicKey, Message)> {
-        let signed_message: Self = postcard::from_bytes(bytes)?;
-        let key: PublicKey = signed_message.from;
-        key.verify(&signed_message.data, &signed_message.signature)?;
-        let message: Message = postcard::from_bytes(&signed_message.data)?;
-        Ok((signed_message.from, message))
-    }
-
-    pub fn sign_and_encode(secret_key: &SecretKey, message: &Message) -> Result<Bytes> {
-        let data: Bytes = postcard::to_stdvec(&message)?.into();
-        let signature = secret_key.sign(&data);
-        let from: PublicKey = secret_key.public();
-        let signed_message = Self {
-            from,
-            data,
-            signature,
-        };
-        let encoded = postcard::to_stdvec(&signed_message)?;
-        Ok(encoded.into())
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-enum Message {
-    Message { text: String },
-    DistroResult { blob_ticket: BlobTicket, step: u64 },
 }

@@ -1,7 +1,12 @@
 use iroh::{gossip::proto::TopicId, net::relay::RelayMode};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::GOSSIP_TOPIC;
+pub trait Networkable: Serialize + for<'a> Deserialize<'a> {}
+
+impl<T: Serialize + for<'a> Deserialize<'a>> Networkable for T {}
+
+const GOSSIP_TOPIC: &str = "psyche gossip";
 
 pub fn gossip_topic(run_id: &str) -> TopicId {
     let mut hasher = Sha256::new();

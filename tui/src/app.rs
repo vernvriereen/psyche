@@ -147,7 +147,7 @@ impl<W: CustomWidget> App<W> {
                         // custom widget
                         Constraint::Percentage(80),
                         // logs
-                        Constraint::Fill(1),
+                        Constraint::Percentage(20),
                     ]
                     .as_ref(),
                 )

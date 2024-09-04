@@ -38,11 +38,12 @@ pub struct DownloadUpdate {
     pub total_size: u64,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct DownloadManager {
     downloads: Vec<Download>,
 }
 
+// TODO if it takes too long to get data from one peer, we should send a gossipsub message asking for anyone that has this info, and pick a random new person to download from.
 impl DownloadManager {
     pub fn add(
         &mut self,

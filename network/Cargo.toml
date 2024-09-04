@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-iroh = { git = "https://github.com/n0-computer/iroh", rev = "34ec5e24b9cdae751a7fae8f9d14fb6fa77482f1" }
+iroh = "0.24.0"
+psyche-tui = { path = "../tui" }
 
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
@@ -12,7 +13,6 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
 bytes = { workspace = true }
-ed25519-dalek = { workspace = true }
 rand = { workspace = true }
 postcard = { workspace = true }
 sha2 = { workspace = true }
