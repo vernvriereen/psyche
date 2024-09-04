@@ -5,6 +5,7 @@ use llama::{Config, Llama};
 use lr_scheduler::{CosineLR, LearningRateScheduler};
 use tch::nn::{self, OptimizerConfig};
 use tch::{Device, Tensor};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 mod batcher;
 mod dataset;
@@ -38,7 +39,7 @@ const CONFIG_100M: Config = Config {
 const CONFIG: &Config = &CONFIG_100M;
 const TOKEN_SIZE_IN_BYTES: usize = 2;
 const MICRO_BATCH_SIZE: usize = 8;
-const TOTAL_BATCH_SIZE: usize = 2048;
+const TOTAL_BATCH_SIZE: usize = 16;
 const GRAD_ACCUM_STEPS: usize = TOTAL_BATCH_SIZE / MICRO_BATCH_SIZE;
 const ADAMW: nn::AdamW = nn::AdamW {
     beta1: 0.9,
@@ -54,7 +55,7 @@ const MAX_GRAD_NORM: f64 = 1.0;
 
 fn main() -> Result<()> {
     let device = Device::Cuda(0);
-    let dataset = Dataset::new("./data")?;
+    let dataset = Dataset::new("training/data")?;
     let mut vs: nn::VarStore = nn::VarStore::new(device);
     let model = Llama::new(vs.root(), CONFIG);
     vs.bfloat16();
@@ -76,6 +77,7 @@ fn main() -> Result<()> {
     let grad_accum_divisor: Tensor = (GRAD_ACCUM_STEPS as f32).into();
     let grad_accum_divisor = grad_accum_divisor.to(device);
     for step in 0..TOTAL_STEPS {
+        let start_time = SystemTime::now();
         let lr = schedule.get_lr(step);
         opt.set_lr(lr);
         let mut avg_loss: f32 = 0.0;
@@ -93,7 +95,8 @@ fn main() -> Result<()> {
         opt.clip_grad_norm(MAX_GRAD_NORM);
         opt.step();
         opt.zero_grad();
-        println!("step: {}, lr: {:e}, loss: {:.4}", step, lr, avg_loss);
+        let duration = SystemTime::now().duration_since(start_time).unwrap().as_secs_f32();
+        println!("step: {}, duration: {:.1}, lr: {:.1e}, loss: {:.4}", step, duration, lr, avg_loss);
     }
     Ok(())
 }

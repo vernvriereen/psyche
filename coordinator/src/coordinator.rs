@@ -7,6 +7,6 @@ pub struct Coordinator<B: CoordinatorBackend>  {
 
 impl<B: CoordinatorBackend> Coordinator<B> {
     pub fn step() {
-
+        
     }
 }

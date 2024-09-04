@@ -124,16 +124,21 @@ impl CausalSelfAttention {
         let k = k.reshape(target_dim).transpose(1, 2);
         let q = q.reshape(target_dim).transpose(1, 2);
         let v = v.reshape(target_dim).transpose(1, 2);
-        let q = self.apply_rotary_emb(&q, freqs_cis);
-        let k = self.apply_rotary_emb(&k, freqs_cis);
-        let k_shape = k.size();
-        let att: Tensor = q.matmul(&k.transpose(-2, -1)) / (*k_shape.last().unwrap() as f64).sqrt();
+        let q = self.apply_rotary_emb(&q, freqs_cis).to_kind(kind);
+        let k = self.apply_rotary_emb(&k, freqs_cis).to_kind(kind);
         let mask = Tensor::ones([t, t], (kind, self.device))
             .tril(0)
             .reshape([1, 1, t, t]);
-        let att = att.masked_fill(&mask.eq(0.), f64::NEG_INFINITY);
-        let y = att.softmax(-1, kind).matmul(&v);
-        let y = y.transpose(1, 2).reshape([b, t, c]);
+        let att = Tensor::scaled_dot_product_attention(&q, &k, &v, Some(mask), 0.0, true, None);
+        let y = att.transpose(1, 2).reshape([b, t, c]);
+        // let k_shape = k.size();
+        // let att: Tensor = q.matmul(&k.transpose(-2, -1)) / (*k_shape.last().unwrap() as f64).sqrt();
+        // let mask = Tensor::ones([t, t], (kind, self.device))
+        //     .tril(0)
+        //     .reshape([1, 1, t, t]);
+        // let att = att.masked_fill(&mask.eq(0.), f64::NEG_INFINITY);
+        // let y = att.softmax(-1, kind).matmul(&v);
+        // let y = y.transpose(1, 2).reshape([b, t, c]);
         self.c_proj.forward(&y)
     }
 }
