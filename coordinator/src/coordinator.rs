@@ -1,5 +1,6 @@
-use crate::backend::Backend;
+use crate::traits::CoordinatorBackend;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RunState {
     WaitingForMembers,
     Warmup,
@@ -18,7 +19,7 @@ pub struct Round {
     pub random_seed: u64,
 }
 
-pub struct Coordinator<I> {
+pub struct Coordinator<T> {
     pub run_state: RunState,
     pub run_state_start_unix_timestamp: u64,
 
@@ -30,8 +31,8 @@ pub struct Coordinator<I> {
     pub rounds_head: u32,
 
     pub min_clients: u32,
-    pub clients: Vec<Client<I>>,
-    pub dropped_clients: Vec<Client<I>>,
+    pub clients: Vec<Client<T>>,
+    pub dropped_clients: Vec<Client<T>>,
 
     pub last_step_unix_timestamp: u64,
 
@@ -41,11 +42,11 @@ pub struct Coordinator<I> {
     pub epoch: u32,
 }
 
-impl<I> Coordinator<I>
+impl<T> Coordinator<T>
 where
-    I: Clone + ToString,
+    T: Clone + ToString,
 {
-    pub fn step(mut self, backend: &dyn Backend<I>, unix_timestamp: u64, random_seed: u64) -> Self {
+    pub fn step(mut self, backend: &dyn CoordinatorBackend<T>, unix_timestamp: u64, random_seed: u64) -> Self {
         match self.run_state {
             RunState::WaitingForMembers => self.waiting_for_members(backend, unix_timestamp),
             RunState::Warmup => self.warmup(unix_timestamp),
@@ -55,7 +56,7 @@ where
         self
     }
 
-    fn waiting_for_members(&mut self, backend: &dyn Backend<I>, unix_timestamp: u64) {
+    fn waiting_for_members(&mut self, backend: &dyn CoordinatorBackend<T>, unix_timestamp: u64) {
         let clients = backend.select_new_clients();
         if clients.len() as u32 >= self.min_clients {
             self.clients = clients
@@ -105,8 +106,6 @@ where
         self.run_state_start_unix_timestamp = unix_timestamp;
         self.run_state = new_state;
     }
-
-    
 }
 
 impl Round {

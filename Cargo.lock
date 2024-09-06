@@ -4197,6 +4197,7 @@ dependencies = [
 name = "psyche-coordinator"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "psyche-core",
 ]
 
