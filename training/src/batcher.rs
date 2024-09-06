@@ -21,6 +21,7 @@ impl<I> Batcher<I> {
         self
     }
 
+    #[allow(dead_code)]
     pub fn return_last_incomplete_batch(mut self, r: bool) -> Self {
         self.return_last_incomplete_batch = r;
         self
@@ -35,12 +36,14 @@ pub struct Iter2<I: Iterator<Item = (Tensor, Tensor)>> {
     inner: I,
 }
 
+#[allow(dead_code)]
 impl<I: Iterator<Item = Tensor>> Batcher<Iter1<I>> {
     pub fn new1(inner: I) -> Self {
         Self::new(Iter1 { inner })
     }
 }
 
+#[allow(dead_code)]
 impl<I: Iterator<Item = (Tensor, Tensor)>> Batcher<Iter2<I>> {
     pub fn new2(inner: I) -> Self {
         Self::new(Iter2 { inner })
@@ -55,6 +58,7 @@ pub struct IterResult2<I: Iterator<Item = Result<(Tensor, Tensor)>>> {
     inner: I,
 }
 
+#[allow(dead_code)]
 impl<I: Iterator<Item = Result<Tensor>>> Batcher<IterResult1<I>> {
     pub fn new_r1(inner: I) -> Self {
         Self::new(IterResult1 { inner })

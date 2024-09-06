@@ -5,7 +5,7 @@ use llama::{Config, Llama};
 use lr_scheduler::{CosineLR, LearningRateScheduler};
 use tch::nn::{self, OptimizerConfig};
 use tch::{Device, Tensor};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
 mod batcher;
 mod dataset;

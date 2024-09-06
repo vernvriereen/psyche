@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use memmap2;
 use tch::{Device, Tensor};
 
@@ -29,10 +29,6 @@ impl Dataset {
             .map(mmap_file)
             .collect::<Result<Vec<_>>>()?;
         Ok(Self { train_tokens })
-    }
-
-    pub fn train_tokens(&self) -> usize {
-        self.train_tokens.len()
     }
 }
 

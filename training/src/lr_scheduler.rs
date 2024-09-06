@@ -11,6 +11,7 @@ pub struct ConstantLR {
 }
 
 impl ConstantLR {
+    #[allow(dead_code)]
     pub fn new(base_lr: f64, warmup_steps: usize, warmup_init_lr: f64) -> Self {
         ConstantLR {
             base_lr,
@@ -40,6 +41,7 @@ pub struct LinearLR {
 }
 
 impl LinearLR {
+    #[allow(dead_code)]
     pub fn new(
         base_lr: f64,
         warmup_steps: usize,
