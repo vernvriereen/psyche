@@ -1,3 +1,5 @@
+#![allow(unexpected_cfgs)]
+
 pub mod lcg;
 pub mod merkle_tree;
 pub mod sha256;

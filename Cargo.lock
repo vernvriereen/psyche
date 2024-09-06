@@ -4197,8 +4197,10 @@ dependencies = [
 name = "psyche-coordinator"
 version = "0.1.0"
 dependencies = [
- "async-trait",
+ "anchor-lang",
  "psyche-core",
+ "psyche-serde",
+ "serde",
 ]
 
 [[package]]
@@ -4231,6 +4233,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "psyche-serde"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "psyche-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "chrono",
+ "clap",
+ "futures-util",
+ "iroh",
+ "postcard",
+ "psyche-client",
+ "psyche-coordinator",
+ "psyche-network",
+ "psyche-tui",
+ "rand 0.8.5",
+ "serde",
+ "sha2 0.10.8",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+]
+
+[[package]]
 name = "psyche-training"
 version = "0.1.0"
 dependencies = [
@@ -4252,6 +4286,15 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tui-logger",
+]
+
+[[package]]
+name = "psyche-watcher"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "psyche-coordinator",
+ "psyche-core",
 ]
 
 [[package]]

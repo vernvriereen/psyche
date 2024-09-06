@@ -1,9 +1,12 @@
 [package]
-name = "psyche-network"
+name = "psyche-server"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+psyche-client = { path = "../client" }
+psyche-coordinator = { path = "../coordinator" }
+psyche-network = { path = "../network" }
 psyche-tui = { path = "../tui" }
 iroh = {workspace = true}
 tokio = { workspace = true }
@@ -17,7 +20,4 @@ postcard = { workspace = true }
 sha2 = { workspace = true }
 futures-util = { workspace = true }
 chrono = { workspace = true }
-
-# for examples
-[dev-dependencies]
 clap = { workspace = true }

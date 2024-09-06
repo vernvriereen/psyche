@@ -1,17 +1,26 @@
-use crate::traits::CoordinatorBackend;
+use crate::traits::Backend;
+use psyche_serde::derive_serialize;
+
+#[cfg(target_os = "solana")]
+use anchor_lang::prelude::*;
+#[cfg(not(target_os = "solana"))]
+use serde::{Serialize, Deserialize};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[derive_serialize]
 pub enum RunState {
     WaitingForMembers,
     Warmup,
     RoundStart,
 }
 
+#[derive_serialize]
 pub struct Client<I> {
     pub id: I,
 }
 
 #[derive(Clone)]
+#[derive_serialize]
 pub struct Round {
     pub height: u32,
     pub clients_len: u32,
@@ -19,6 +28,7 @@ pub struct Round {
     pub random_seed: u64,
 }
 
+#[derive_serialize]
 pub struct Coordinator<T> {
     pub run_state: RunState,
     pub run_state_start_unix_timestamp: u64,
@@ -44,9 +54,9 @@ pub struct Coordinator<T> {
 
 impl<T> Coordinator<T>
 where
-    T: Clone + ToString,
+    T: Clone
 {
-    pub fn step(mut self, backend: &dyn CoordinatorBackend<T>, unix_timestamp: u64, random_seed: u64) -> Self {
+    pub fn step(mut self, backend: &dyn Backend<T>, unix_timestamp: u64, random_seed: u64) -> Self {
         match self.run_state {
             RunState::WaitingForMembers => self.waiting_for_members(backend, unix_timestamp),
             RunState::Warmup => self.warmup(unix_timestamp),
@@ -56,7 +66,7 @@ where
         self
     }
 
-    fn waiting_for_members(&mut self, backend: &dyn CoordinatorBackend<T>, unix_timestamp: u64) {
+    fn waiting_for_members(&mut self, backend: &dyn Backend<T>, unix_timestamp: u64) {
         let clients = backend.select_new_clients();
         if clients.len() as u32 >= self.min_clients {
             self.clients = clients

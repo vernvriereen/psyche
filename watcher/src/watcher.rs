@@ -1,11 +1,10 @@
-use crate::{
-    coordinator::Coordinator,
-    traits::{WatcherBackend, WatcherClient},
-};
 
-pub async fn watcher<T, B: WatcherBackend<T>, C: WatcherClient<T>>(
-    backend: &dyn WatcherBackend<T>,
-    client: &dyn WatcherClient<T>,
+use crate::traits::{Backend, Client};
+use psyche_coordinator::coordinator::Coordinator;
+
+pub async fn watcher<T, B: Backend<T>, C: Client<T>>(
+    backend: &dyn Backend<T>,
+    client: &dyn Client<T>,
 ) {
     let mut prev: Option<Coordinator<T>> = None;
     loop {

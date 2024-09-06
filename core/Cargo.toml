@@ -3,13 +3,11 @@ name = "psyche-core"
 version = "0.1.0"
 edition = "2021"
 
+[dependencies]
+fast-math = {workspace = true}
+
 [target.'cfg(not(target_os = "solana"))'.dependencies]
 sha2 = {workspace = true}
-fast-math = {workspace = true}
 
 [target.'cfg(target_os = "solana")'.dependencies]
 anchor-lang = {workspace = true}
-fast-math = {workspace = true}
-
-[features]
-solana = []

@@ -4,5 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-async-trait = {workspace = true}
 psyche-core = {path = "../core"}
+psyche-serde = {path = "../serde"}
+
+[target.'cfg(target_os = "solana")'.dependencies]
+anchor-lang = {workspace = true}
+
+[target.'cfg(not(target_os = "solana"))'.dependencies]
+serde = { workspace = true }
