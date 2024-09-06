@@ -25,3 +25,4 @@ ehthumbs_vista.db
 flamegraph.svg
 perf.data
 perf.data.*
+.vscode/

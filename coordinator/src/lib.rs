@@ -1,4 +1,3 @@
-mod backend;
-mod coordinator;
-
-pub use coordinator::Coordinator;
+pub mod backend;
+pub mod committee_selection;
+pub mod coordinator;

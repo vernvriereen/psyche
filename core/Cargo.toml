@@ -4,7 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
-sha2 = "0.10.6"
+sha2 = {workspace = true}
+fast-math = {workspace = true}
 
 [target.'cfg(target_os = "solana")'.dependencies]
-solana-program = "1.18"
+anchor-lang = {workspace = true}
+fast-math = {workspace = true}
+
+[features]
+solana = []
