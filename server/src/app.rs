@@ -1,6 +1,7 @@
 use crate::protocol::{ClientId, NC};
 use crate::{protocol::Message, tui::TUIState};
 
+use anyhow::Result;
 use psyche_client::payload::Payload;
 use psyche_coordinator::coordinator::Coordinator;
 use psyche_network::NetworkEvent;
@@ -47,7 +48,7 @@ impl App {
         }
     }
 
-    pub async fn run(&mut self) {
+    pub async fn run(&mut self) -> Result<()> {
         loop {
             select! {
                 Ok(Some(event)) = self.backend.network.poll_next() => {
@@ -57,20 +58,21 @@ impl App {
                     self.on_tick().await;
                 }
                 _ = self.update_tui_interval.tick() => {
-                    self.update_tui();
+                    self.update_tui()?;
                 }
                 else => break,
             }
         }
+        Ok(())
     }
 
-    fn update_tui(&mut self) {
+    fn update_tui(&mut self) -> Result<()> {
         let tui_state = TUIState {
-            current_step: self.coordinator.rounds[self.coordinator.rounds_head as usize].height
-                as u64,
+            coordinator: (&self.coordinator).into(),
             network: (&self.backend.network).into(),
         };
-        self.tx_tui_state.send(tui_state).unwrap();
+        self.tx_tui_state.send(tui_state)?;
+        Ok(())
     }
 
     fn on_network_event(&mut self, _event: NetworkEvent<Message, Payload>) {}

@@ -1,2 +1,3 @@
-mod traits;
-mod watcher;
+pub mod traits;
+pub mod tui;
+pub mod watcher;

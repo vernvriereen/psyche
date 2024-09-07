@@ -8,6 +8,7 @@ psyche-client = { path = "../client" }
 psyche-coordinator = { path = "../coordinator" }
 psyche-network = { path = "../network" }
 psyche-tui = { path = "../tui" }
+psyche-watcher = { path = "../watcher" }
 iroh = {workspace = true}
 tokio = { workspace = true }
 tokio-stream = { workspace = true }

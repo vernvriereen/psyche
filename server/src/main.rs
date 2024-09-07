@@ -99,7 +99,7 @@ async fn main() -> Result<()> {
         interval(Duration::from_millis(150)),
     )
     .run()
-    .await;
+    .await?;
 
     Ok(())
 }

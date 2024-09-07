@@ -1,20 +1,19 @@
 use psyche_network::{NetworkTUI, NetworkTUIState};
 use psyche_tui::{
-    ratatui::{
-        layout::{Constraint, Direction, Layout},
-        widgets::{Block, Borders, Paragraph, Widget},
-    },
-    CustomWidget
+    ratatui::layout::{Constraint, Direction, Layout},
+    CustomWidget,
 };
+use psyche_watcher::tui::{CoordinatorTUI, CoordinatorTUIState};
 
 #[derive(Default, Debug)]
 pub struct TUIState {
+    pub coordinator: CoordinatorTUIState,
     pub network: NetworkTUIState,
-    pub current_step: u64,
 }
 
 #[derive(Default)]
 pub struct TUI {
+    coordinator: CoordinatorTUI,
     network: NetworkTUI,
 }
 
@@ -31,7 +30,7 @@ impl CustomWidget for TUI {
             .direction(Direction::Vertical)
             .constraints(
                 [
-                    // current step
+                    // coordinator
                     Constraint::Max(3),
                     // network info
                     Constraint::Fill(1),
@@ -39,9 +38,7 @@ impl CustomWidget for TUI {
                 .as_ref(),
             )
             .split(area);
-        Paragraph::new(format!("Current step: {}", state.current_step))
-            .block(Block::new().borders(Borders::ALL))
-            .render(chunks[0], buf);
+        self.coordinator.render(chunks[0], buf, &state.coordinator);
         self.network.render(chunks[1], buf, &state.network);
     }
 }

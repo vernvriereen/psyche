@@ -7,3 +7,4 @@ edition = "2021"
 async-trait = {workspace = true}
 psyche-core = {path = "../core"}
 psyche-coordinator = {path = "../coordinator"}
+psyche-tui = {path = "../tui"}

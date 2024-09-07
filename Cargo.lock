@@ -4256,6 +4256,7 @@ dependencies = [
  "psyche-coordinator",
  "psyche-network",
  "psyche-tui",
+ "psyche-watcher",
  "rand 0.8.5",
  "serde",
  "sha2 0.10.8",
@@ -4295,6 +4296,7 @@ dependencies = [
  "async-trait",
  "psyche-coordinator",
  "psyche-core",
+ "psyche-tui",
 ]
 
 [[package]]
