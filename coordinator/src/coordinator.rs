@@ -4,11 +4,12 @@ use psyche_serde::derive_serialize;
 #[cfg(target_os = "solana")]
 use anchor_lang::prelude::*;
 #[cfg(not(target_os = "solana"))]
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 #[derive_serialize]
 pub enum RunState {
+    #[default]
     WaitingForMembers,
     Warmup,
     RoundStart,
@@ -19,7 +20,7 @@ pub struct Client<I> {
     pub id: I,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 #[derive_serialize]
 pub struct Round {
     pub height: u32,
@@ -52,18 +53,38 @@ pub struct Coordinator<T> {
     pub epoch: u32,
 }
 
+impl<T> Default for Coordinator<T> {
+    fn default() -> Self {
+        Self {
+            run_state: Default::default(),
+            run_state_start_unix_timestamp: Default::default(),
+            warmup_time: Default::default(),
+            max_rounds: Default::default(),
+            max_round_time: Default::default(),
+            rounds: Default::default(),
+            rounds_head: Default::default(),
+            min_clients: 1,
+            clients: Vec::new(),
+            dropped_clients: Vec::new(),
+            last_step_unix_timestamp: Default::default(),
+            data_indicies_per_round: Default::default(),
+            verification_percent: Default::default(),
+            epoch: Default::default(),
+        }
+    }
+}
+
 impl<T> Coordinator<T>
 where
-    T: Clone
+    T: Clone,
 {
-    pub fn step(mut self, backend: &dyn Backend<T>, unix_timestamp: u64, random_seed: u64) -> Self {
+    pub fn step(&mut self, backend: &dyn Backend<T>, unix_timestamp: u64, random_seed: u64) {
         match self.run_state {
             RunState::WaitingForMembers => self.waiting_for_members(backend, unix_timestamp),
             RunState::Warmup => self.warmup(unix_timestamp),
             RunState::RoundStart => self.round_start(unix_timestamp, random_seed),
         }
         self.last_step_unix_timestamp = unix_timestamp;
-        self
     }
 
     fn waiting_for_members(&mut self, backend: &dyn Backend<T>, unix_timestamp: u64) {

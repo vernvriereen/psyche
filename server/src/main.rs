@@ -1,31 +1,19 @@
+use crate::app::App;
 use crate::protocol::NC;
+use crate::tui::TUI;
 
 use anyhow::{bail, Result};
 use clap::{ArgAction, Parser};
 use iroh::net::relay::{RelayMap, RelayMode, RelayUrl};
-use psyche_network::{NetworkConnection, NetworkEvent, NetworkTUI, NetworkTUIState, PeerList};
-use psyche_tui::{
-    ratatui::{
-        layout::{Constraint, Direction, Layout},
-        widgets::{Block, Borders, Paragraph, Widget},
-    },
-    CustomWidget, LogOutput,
-};
-use rand::Rng;
-use serde::{Deserialize, Serialize};
-use std::{
-    str::FromStr,
-    sync::mpsc::{self, Sender},
-    thread,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
-};
-use tokio::{
-    select,
-    time::{interval, interval_at, Interval},
-};
-use tracing::{error, info, warn};
+use psyche_network::PeerList;
+use psyche_tui::LogOutput;
+use std::{str::FromStr, sync::mpsc, thread, time::Duration};
+use tokio::time::{interval, interval_at, Instant};
+use tracing::info;
 
+mod app;
 mod protocol;
+mod tui;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -82,7 +70,36 @@ async fn main() -> Result<()> {
     };
     info!("using relay servers: {:?}", &relay_mode);
 
-    let _network = NC::init(&args.run_id, args.bind_port, relay_mode, peers, secret_key).await?;
+    let network = NC::init(&args.run_id, args.bind_port, relay_mode, peers, secret_key).await?;
+
+    let tui = args.tui;
+
+    let tx_state = if tui {
+        psyche_tui::start_render_loop::<TUI>().unwrap()
+    } else {
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            for item in rx {
+                info!("{:?}", item);
+            }
+        });
+        tx
+    };
+
+    // tick every second
+    let tick_interval = {
+        let duration = Duration::from_secs(1);
+        interval_at(Instant::now() + duration, duration)
+    };
+
+    App::new(
+        network,
+        tx_state,
+        tick_interval,
+        interval(Duration::from_millis(150)),
+    )
+    .run()
+    .await;
 
     Ok(())
 }
