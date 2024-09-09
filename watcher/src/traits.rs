@@ -1,4 +1,4 @@
-use psyche_coordinator::coordinator::Coordinator;
+use psyche_coordinator::Coordinator;
 
 #[async_trait::async_trait]
 pub trait Backend<T> {

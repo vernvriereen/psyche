@@ -1,4 +1,4 @@
-use psyche_coordinator::coordinator::{Coordinator, RunState};
+use psyche_coordinator::{Coordinator, RunState};
 use psyche_tui::ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},

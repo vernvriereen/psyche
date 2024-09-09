@@ -1,5 +1,9 @@
 #![allow(unexpected_cfgs)]
 
-pub mod committee_selection;
-pub mod coordinator;
-pub mod traits;
+mod committee_selection;
+mod coordinator;
+mod traits;
+
+pub use committee_selection::{Committee, CommitteeAndWitnessWithProof, CommitteeSelection, COMMITTEE_SALT, WITNESS_SALT, tree_item};
+pub use coordinator::{Coordinator, RunState, Round};
+pub use traits::Backend;

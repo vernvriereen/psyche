@@ -1,6 +1,11 @@
 #![allow(unexpected_cfgs)]
 
-pub mod lcg;
-pub mod merkle_tree;
-pub mod sha256;
-pub mod deterministic_shuffle;
+mod deterministic_shuffle;
+mod lcg;
+mod merkle_tree;
+mod sha256;
+
+pub use deterministic_shuffle::deterministic_shuffle;
+pub use lcg::LCG;
+pub use merkle_tree::{MerkleTree, Proof};
+pub use sha256::{sha256, sha256v};

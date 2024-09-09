@@ -3,7 +3,7 @@ use crate::{protocol::Message, tui::TUIState};
 
 use anyhow::Result;
 use psyche_client::payload::Payload;
-use psyche_coordinator::coordinator::Coordinator;
+use psyche_coordinator::Coordinator;
 use psyche_network::NetworkEvent;
 use rand::RngCore;
 use std::sync::mpsc::Sender;
@@ -15,7 +15,7 @@ struct Backend {
     pending_clients: Vec<ClientId>,
 }
 
-impl psyche_coordinator::traits::Backend<ClientId> for Backend {
+impl psyche_coordinator::Backend<ClientId> for Backend {
     fn select_new_clients(&self) -> &[ClientId] {
         &self.pending_clients
     }

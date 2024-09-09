@@ -3,7 +3,7 @@ use psyche_tui::{
     ratatui::layout::{Constraint, Direction, Layout},
     CustomWidget,
 };
-use psyche_watcher::tui::{CoordinatorTUI, CoordinatorTUIState};
+use psyche_watcher::{CoordinatorTUI, CoordinatorTUIState};
 
 #[derive(Default, Debug)]
 pub struct TUIState {

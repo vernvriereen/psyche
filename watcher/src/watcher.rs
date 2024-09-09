@@ -1,6 +1,6 @@
 
 use crate::traits::{Backend, Client};
-use psyche_coordinator::coordinator::Coordinator;
+use psyche_coordinator::Coordinator;
 
 pub async fn watcher<T, B: Backend<T>, C: Client<T>>(
     backend: &dyn Backend<T>,
