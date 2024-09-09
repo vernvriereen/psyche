@@ -19,7 +19,6 @@ anchor-lang = "0.29.0"
 fast-math = "0.1"
 async-trait = "0.1.82"
 iroh = "0.24.0"
-hf-hub = "0.3.0"
 reqwest = { version = "0.12.2", default-features = false, features = ["json"] }
 
 # solana-program uses curve25519-dalek v3.2.1, which pins zeroize <1.4 for MSRV cares.

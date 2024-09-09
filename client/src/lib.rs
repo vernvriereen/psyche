@@ -1,2 +1,4 @@
-pub mod hub;
-pub mod payload;
+mod hub;
+mod payload;
+
+pub use payload::Payload;

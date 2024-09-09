@@ -5,6 +5,6 @@ edition = "2021"
 
 [dependencies]
 serde = { workspace = true }
-hf-hub = { workspace = true }
 reqwest = { workspace = true }
 anyhow = { workspace = true }
+hf-hub = "0.3.0"

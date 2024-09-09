@@ -1,5 +1,5 @@
 use iroh::net::NodeId;
-use psyche_client::payload::Payload;
+use psyche_client::Payload;
 use psyche_coordinator::Coordinator;
 use psyche_network::NetworkConnection;
 use serde::{Deserialize, Serialize};
