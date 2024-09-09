@@ -1,7 +1,7 @@
 use psyche_coordinator::coordinator::{Coordinator, RunState};
 use psyche_tui::ratatui::{
     buffer::Buffer,
-    layout::Rect,
+    layout::{Constraint, Direction, Layout, Rect},
     widgets::{Paragraph, Widget},
 };
 
@@ -12,19 +12,41 @@ impl psyche_tui::CustomWidget for CoordinatorTUI {
     type Data = CoordinatorTUIState;
 
     fn render(&mut self, area: Rect, buf: &mut Buffer, state: &Self::Data) {
-        Paragraph::new(format!("{:?}", state.run_state)).render(area, buf);
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(
+                [
+                    Constraint::Ratio(1, 4),
+                    Constraint::Ratio(1, 4),
+                    Constraint::Ratio(1, 4),
+                    Constraint::Ratio(1, 4),
+                ]
+                .as_ref(),
+            )
+            .split(area);
+
+        Paragraph::new(format!("Run state: {:?}", state.run_state)).render(chunks[0], buf);
+        Paragraph::new(format!("Clients: {:?}", state.clients)).render(chunks[1], buf);
+        Paragraph::new(format!("Height: {:?}", state.height)).render(chunks[2], buf);
+        Paragraph::new(format!("Tick: {:?}", state.tick)).render(chunks[3], buf);
     }
 }
 
 #[derive(Default, Debug)]
 pub struct CoordinatorTUIState {
     run_state: RunState,
+    height: u32,
+    clients: u32,
+    tick: u64,
 }
 
 impl<T> From<&Coordinator<T>> for CoordinatorTUIState {
     fn from(value: &Coordinator<T>) -> Self {
         Self {
             run_state: value.run_state,
+            height: value.rounds[value.rounds_head as usize].height,
+            clients: value.rounds[value.rounds_head as usize].clients_len,
+            tick: value.tick,
         }
     }
 }

@@ -45,7 +45,8 @@ pub struct Coordinator<T> {
     pub clients: Vec<Client<T>>,
     pub dropped_clients: Vec<Client<T>>,
 
-    pub last_step_unix_timestamp: u64,
+    pub tick: u64,
+    pub last_tick_unix_timestamp: u64,
 
     pub data_indicies_per_round: u32,
     pub verification_percent: u8,
@@ -66,7 +67,8 @@ impl<T> Default for Coordinator<T> {
             min_clients: 1,
             clients: Vec::new(),
             dropped_clients: Vec::new(),
-            last_step_unix_timestamp: Default::default(),
+            tick: Default::default(),
+            last_tick_unix_timestamp: Default::default(),
             data_indicies_per_round: Default::default(),
             verification_percent: Default::default(),
             epoch: Default::default(),
@@ -78,13 +80,14 @@ impl<T> Coordinator<T>
 where
     T: Clone,
 {
-    pub fn step(&mut self, backend: &dyn Backend<T>, unix_timestamp: u64, random_seed: u64) {
+    pub fn tick(&mut self, backend: &dyn Backend<T>, unix_timestamp: u64, random_seed: u64) {
         match self.run_state {
             RunState::WaitingForMembers => self.waiting_for_members(backend, unix_timestamp),
             RunState::Warmup => self.warmup(unix_timestamp),
             RunState::RoundStart => self.round_start(unix_timestamp, random_seed),
         }
-        self.last_step_unix_timestamp = unix_timestamp;
+        self.tick += 1;
+        self.last_tick_unix_timestamp = unix_timestamp;
     }
 
     fn waiting_for_members(&mut self, backend: &dyn Backend<T>, unix_timestamp: u64) {

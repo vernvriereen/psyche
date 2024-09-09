@@ -31,7 +31,7 @@ impl CustomWidget for TUI {
             .constraints(
                 [
                     // coordinator
-                    Constraint::Max(3),
+                    Constraint::Max(1),
                     // network info
                     Constraint::Fill(1),
                 ]

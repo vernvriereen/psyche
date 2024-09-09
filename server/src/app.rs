@@ -83,6 +83,6 @@ impl App {
             .unwrap()
             .as_secs();
         self.coordinator
-            .step(&self.backend, unix_timestamp, rand::thread_rng().next_u64());
+            .tick(&self.backend, unix_timestamp, rand::thread_rng().next_u64());
     }
 }
