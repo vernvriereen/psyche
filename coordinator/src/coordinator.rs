@@ -1,4 +1,4 @@
-use crate::traits::Backend;
+use crate::traits::{Backend, NodeIdentity};
 use psyche_serde::derive_serialize;
 
 #[cfg(target_os = "solana")]
@@ -16,7 +16,8 @@ pub enum RunState {
 }
 
 #[derive_serialize]
-pub struct Client<I> {
+#[derive(Clone)]
+pub struct Client<I: NodeIdentity> {
     pub id: I,
 }
 
@@ -30,7 +31,7 @@ pub struct Round {
 }
 
 #[derive_serialize]
-pub struct Coordinator<T> {
+pub struct Coordinator<T: NodeIdentity> {
     pub run_state: RunState,
     pub run_state_start_unix_timestamp: u64,
 
@@ -56,7 +57,7 @@ pub struct Coordinator<T> {
     pub last_step_unix_timestamp: u64,
 }
 
-impl<T> Default for Coordinator<T> {
+impl<T: NodeIdentity> Default for Coordinator<T> {
     fn default() -> Self {
         Self {
             run_state: Default::default(),
@@ -80,10 +81,7 @@ impl<T> Default for Coordinator<T> {
     }
 }
 
-impl<T> Coordinator<T>
-where
-    T: Clone,
-{
+impl<T: NodeIdentity> Coordinator<T> {
     pub fn tick(&mut self, backend: &dyn Backend<T>, unix_timestamp: u64, random_seed: u64) {
         match self.run_state {
             RunState::WaitingForMembers => self.waiting_for_members(backend, unix_timestamp),

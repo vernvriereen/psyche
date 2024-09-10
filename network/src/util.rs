@@ -1,10 +1,5 @@
 use iroh::{gossip::proto::TopicId, net::relay::RelayMode};
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-
-pub trait Networkable: Serialize + for<'a> Deserialize<'a> {}
-
-impl<T: Serialize + for<'a> Deserialize<'a>> Networkable for T {}
 
 const GOSSIP_TOPIC: &str = "psyche gossip";
 

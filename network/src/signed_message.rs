@@ -1,9 +1,9 @@
 use std::marker::PhantomData;
 
-use crate::util::Networkable;
 use anyhow::Result;
 use bytes::Bytes;
 use iroh::net::key::{PublicKey, SecretKey, Signature};
+use psyche_core::Networkable;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
