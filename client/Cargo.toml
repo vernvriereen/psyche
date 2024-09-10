@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+psyche-coordinator = { path = "../coordinator" }
 serde = { workspace = true }
-reqwest = { workspace = true }
 anyhow = { workspace = true }
-hf-hub = { git = "https://github.com/huggingface/hf-hub.git", rev = "a66bdcf2f2664a55ab3a1415184c7aebd8ac4ed5",  default-features = false, features = ["default-tls", "tokio"] }
+hf-hub = { git = "https://github.com/huggingface/hf-hub.git", rev = "a66bdcf2f2664a55ab3a1415184c7aebd8ac4ed5" }

@@ -2,15 +2,16 @@ use anyhow::Result;
 use batcher::Batcher;
 use dataset::{Dataset, DatasetRandomIter};
 use llama::{Config, Llama};
-use lr_scheduler::{CosineLR, LearningRateScheduler};
+use psyche_client::download_repo_sync;
+use psyche_coordinator::model::HubRepo;
+use psyche_core::{CosineLR, LearningRateScheduler};
+use std::time::SystemTime;
 use tch::nn::{self, OptimizerConfig};
 use tch::{Device, Tensor};
-use std::time::SystemTime;
 
 mod batcher;
 mod dataset;
 mod llama;
-mod lr_scheduler;
 
 #[allow(dead_code)]
 const CONFIG_1_2B: Config = Config {
@@ -52,8 +53,18 @@ const PEAK_LEARNING_RATE: f64 = 4e-4;
 const WARMUP_STEPS: usize = 500;
 const TOTAL_STEPS: usize = 25000;
 const MAX_GRAD_NORM: f64 = 1.0;
+const REPO_ID: &str = "emozilla/llama2-1.2b-init"; 
 
 fn main() -> Result<()> {
+    let repo_files = download_repo_sync(
+        HubRepo {
+            repo_id: REPO_ID.to_owned(),
+            revision: None,
+        },
+        None,
+        None,
+        true
+    )?;
     let device = Device::Cuda(0);
     let dataset = Dataset::new("training/data")?;
     let mut vs: nn::VarStore = nn::VarStore::new(device);
@@ -95,8 +106,14 @@ fn main() -> Result<()> {
         opt.clip_grad_norm(MAX_GRAD_NORM);
         opt.step();
         opt.zero_grad();
-        let duration = SystemTime::now().duration_since(start_time).unwrap().as_secs_f32();
-        println!("step: {}, duration: {:.1}, lr: {:.1e}, loss: {:.4}", step, duration, lr, avg_loss);
+        let duration = SystemTime::now()
+            .duration_since(start_time)
+            .unwrap()
+            .as_secs_f32();
+        println!(
+            "step: {}, duration: {:.1}, lr: {:.1e}, loss: {:.4}",
+            step, duration, lr, avg_loss
+        );
     }
     Ok(())
 }

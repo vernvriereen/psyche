@@ -52,6 +52,8 @@ pub struct Coordinator<T> {
     pub verification_percent: u8,
 
     pub epoch: u32,
+    pub step: u32,
+    pub last_step_unix_timestamp: u64,
 }
 
 impl<T> Default for Coordinator<T> {
@@ -71,6 +73,8 @@ impl<T> Default for Coordinator<T> {
             last_tick_unix_timestamp: Default::default(),
             data_indicies_per_round: Default::default(),
             verification_percent: Default::default(),
+            step: Default::default(),
+            last_step_unix_timestamp: Default::default(),
             epoch: Default::default(),
         }
     }

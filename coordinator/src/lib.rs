@@ -2,8 +2,12 @@
 
 mod committee_selection;
 mod coordinator;
+pub mod model;
 mod traits;
 
-pub use committee_selection::{Committee, CommitteeAndWitnessWithProof, CommitteeSelection, COMMITTEE_SALT, WITNESS_SALT, tree_item};
-pub use coordinator::{Coordinator, RunState, Round};
+pub use committee_selection::{
+    tree_item, Committee, CommitteeAndWitnessWithProof, CommitteeSelection, COMMITTEE_SALT,
+    WITNESS_SALT,
+};
+pub use coordinator::{Coordinator, Round, RunState};
 pub use traits::Backend;
