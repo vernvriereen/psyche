@@ -4417,6 +4417,8 @@ name = "psyche-coordinator"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "anyhow",
+ "async-trait",
  "psyche-core",
  "psyche-serde",
  "serde",
@@ -4427,8 +4429,31 @@ name = "psyche-core"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "anyhow",
  "fast-math",
+ "postcard",
+ "serde",
  "sha2 0.10.8",
+]
+
+[[package]]
+name = "psyche-data-provider"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "futures",
+ "memmap2 0.9.4",
+ "psyche-coordinator",
+ "psyche-core",
+ "psyche-tui",
+ "psyche-watcher",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "serde",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]
@@ -4442,6 +4467,7 @@ dependencies = [
  "futures-util",
  "iroh",
  "postcard",
+ "psyche-core",
  "psyche-tui",
  "rand 0.8.5",
  "serde",
@@ -4490,10 +4516,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "byteorder",
- "memmap2 0.9.4",
  "psyche-client",
  "psyche-coordinator",
  "psyche-core",
+ "psyche-data-provider",
  "rand 0.8.5",
  "tch",
  "torch-sys",

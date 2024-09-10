@@ -7,9 +7,9 @@ edition = "2021"
 psyche-core = { path = "../core" }
 psyche-coordinator = { path = "../coordinator" }
 psyche-client = { path = "../client" }
+psyche-data-provider = { path = "../data-provider" }
 tch = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "a4e9362e4acbbde54ab9503ab9e37a10835e7547" }
 torch-sys = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "a4e9362e4acbbde54ab9503ab9e37a10835e7547" }
-memmap2 = { version = "0.9.3", features = ["stable_deref_trait"] }
 byteorder = "1.4.3"
-rand = "0.8.5"
+rand = { workspace = true }
 anyhow = "^1.0.60"
