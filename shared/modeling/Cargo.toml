@@ -1,5 +1,5 @@
 [package]
-name = "psyche-training"
+name = "psyche-modeling"
 version = "0.1.0"
 edition = "2021"
 

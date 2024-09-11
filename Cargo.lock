@@ -4601,6 +4601,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "psyche-modeling"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "byteorder",
+ "clap",
+ "hf-hub",
+ "memmap2 0.9.4",
+ "psyche-core",
+ "psyche-data-provider",
+ "rand 0.8.5",
+ "safetensors",
+ "serde",
+ "serde_json",
+ "tch",
+ "tokenizers",
+ "torch-sys",
+]
+
+[[package]]
 name = "psyche-network"
 version = "0.1.0"
 dependencies = [
@@ -4652,26 +4672,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
-]
-
-[[package]]
-name = "psyche-training"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "byteorder",
- "clap",
- "hf-hub",
- "memmap2 0.9.4",
- "psyche-core",
- "psyche-data-provider",
- "rand 0.8.5",
- "safetensors",
- "serde",
- "serde_json",
- "tch",
- "tokenizers",
- "torch-sys",
 ]
 
 [[package]]

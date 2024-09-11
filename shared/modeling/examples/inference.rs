@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use psyche_training::LlamaForCausalLM;
+use psyche_modeling::LlamaForCausalLM;
 use tch::Kind;
 
 #[derive(Parser, Debug)]
@@ -11,7 +11,7 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let model =
+    let _model =
         LlamaForCausalLM::from_pretrained(&args.model.unwrap(), Some(Kind::BFloat16), None, None)?;
     Ok(())
 }

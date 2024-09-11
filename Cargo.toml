@@ -9,7 +9,7 @@ psyche-core = { path = "./shared/core" }
 psyche-data-provider = { path = "./shared/data-provider" }
 psyche-network = { path = "./shared/network" }
 psyche-serde = { path = "./shared/serde" }
-psyche-training = { path = "./shared/training" }
+psyche-modeling = { path = "./shared/modeling" }
 psyche-tui = { path = "./shared/tui" }
 psyche-watcher = { path = "./shared/watcher" }
 

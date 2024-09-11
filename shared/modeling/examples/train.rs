@@ -1,7 +1,7 @@
 use anyhow::Result;
 use psyche_core::{CosineLR, LearningRateScheduler};
 use psyche_data_provider::{LocalDataProvider, TokenSize};
-use psyche_training::{Batcher, LlamaForCausalLM};
+use psyche_modeling::{Batcher, LlamaForCausalLM};
 use rand::Rng;
 use std::time::SystemTime;
 use tch::nn::{self, OptimizerConfig};
