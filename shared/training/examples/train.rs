@@ -1,18 +1,12 @@
-use crate::llama_for_causal_lm::LlamaForCausalLM;
+use psyche_training::{batcher::Batcher, llama_for_causal_lm::LlamaForCausalLM};
 
 use anyhow::Result;
-use batcher::Batcher;
 use psyche_core::{CosineLR, LearningRateScheduler};
 use psyche_data_provider::{LocalDataProvider, TokenSize};
 use rand::Rng;
 use std::time::SystemTime;
 use tch::nn::{self, OptimizerConfig};
 use tch::{Device, Kind, Tensor};
-
-mod batcher;
-mod llama;
-mod llama_for_causal_lm;
-mod safetensor_loader;
 
 const TOKEN_SIZE_IN_BYTES: TokenSize = TokenSize::TwoBytes;
 const MICRO_BATCH_SIZE: usize = 1;

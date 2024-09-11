@@ -1,19 +1,18 @@
 [workspace]
-members = [
-    "client",
-    "coordinator",
-    "core",
-    "network",
-    "serde",
-    "server",
-    "training",
-    "tui",
-    "watcher",
-    "data-provider",
-]
+members = ["architectures/*/*", "shared/*"]
 resolver = "2"
 
 [workspace.dependencies]
+
+psyche-coordinator = { path = "./shared/coordinator" }
+psyche-core = { path = "./shared/core" }
+psyche-data-provider = { path = "./shared/data-provider" }
+psyche-network = { path = "./shared/network" }
+psyche-serde = { path = "./shared/serde" }
+psyche-training = { path = "./shared/training" }
+psyche-tui = { path = "./shared/tui" }
+psyche-watcher = { path = "./shared/watcher" }
+
 tokio = { version = "1", features = [
     "io-util",
     "rt",
@@ -39,6 +38,7 @@ fast-math = "0.1"
 async-trait = "0.1.82"
 iroh = "0.24.0"
 memmap2 = { version = "0.9.3", features = ["stable_deref_trait"] }
+
 
 # solana-program uses curve25519-dalek v3.2.1, which pins zeroize <1.4 for MSRV cares.
 # we don't care about that MSRV guarantee, so we override zeroize dep to be simply "=1"

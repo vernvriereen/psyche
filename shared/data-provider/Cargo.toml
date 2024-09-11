@@ -4,19 +4,19 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tokio = { workspace = true }
+tokio.workspace = true
 psyche-coordinator = { path = "../coordinator" }
 psyche-core = { path = "../core" }
 psyche-watcher = { path = "../watcher" }
-async-trait = { workspace = true }
-tracing = { workspace = true }
-anyhow = { workspace = true }
-memmap2 = { workspace = true }
+async-trait.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+memmap2.workspace = true
 rand_chacha = "0.3.1"
-rand = { workspace = true }
+rand.workspace = true
 tokio-util = { version = "0.7.12", features = ["codec"] }
 futures = "0.3.30"
-serde = { workspace = true }
+serde.workspace = true
 
 [dev-dependencies]
 psyche-tui = { path = "../tui" }

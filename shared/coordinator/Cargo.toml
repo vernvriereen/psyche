@@ -6,11 +6,11 @@ edition = "2021"
 [dependencies]
 psyche-core = { path = "../core" }
 psyche-serde = { path = "../serde" }
-async-trait = { workspace = true }
-anyhow = { workspace = true }
+async-trait.workspace = true
+anyhow.workspace = true
 
 [target.'cfg(target_os = "solana")'.dependencies]
-anchor-lang = { workspace = true }
+anchor-lang.workspace = true
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
-serde = { workspace = true }
+serde.workspace = true

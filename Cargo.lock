@@ -4403,11 +4403,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "psyche-client"
+name = "psyche-centralized-client"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "hf-hub",
+ "psyche-centralized-shared",
+]
+
+[[package]]
+name = "psyche-centralized-shared"
+version = "0.1.0"
+dependencies = [
  "serde",
 ]
 
@@ -4496,7 +4501,7 @@ dependencies = [
  "futures-util",
  "iroh",
  "postcard",
- "psyche-client",
+ "psyche-centralized-shared",
  "psyche-coordinator",
  "psyche-network",
  "psyche-tui",
@@ -4515,8 +4520,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "byteorder",
+ "hf-hub",
  "memmap2 0.9.4",
- "psyche-client",
  "psyche-core",
  "psyche-data-provider",
  "rand 0.8.5",

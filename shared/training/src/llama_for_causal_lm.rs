@@ -1,9 +1,9 @@
 use crate::{
+    hub::download_repo_sync,
     llama::{Config, Llama, Llama3RopeConfig, LlamaEosToks},
     safetensor_loader::load_safetensors_into_variables,
 };
 use anyhow::{bail, Error, Result};
-use psyche_client::download_repo_sync;
 use tch::{
     nn::{self, Module, VarStore},
     Device, Kind, Tensor,
