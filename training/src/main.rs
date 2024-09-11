@@ -4,7 +4,7 @@ use batcher::Batcher;
 use psyche_client::download_repo_sync;
 use psyche_coordinator::model::HubRepo;
 use psyche_core::{CosineLR, LearningRateScheduler};
-use psyche_data_provider::LocalDataProvider;
+use psyche_data_provider::{make_pretraining_samples, LocalDataProvider, TokenSize};
 use rand::Rng;
 use std::time::SystemTime;
 use tch::nn::{self, OptimizerConfig};
@@ -38,7 +38,7 @@ mod llama;
 //     seq_len: 2048,
 // };
 // const CONFIG: &Config = &CONFIG_100M;
-const TOKEN_SIZE_IN_BYTES: usize = 2;
+const TOKEN_SIZE_IN_BYTES: TokenSize = TokenSize::TwoBytes;
 const MICRO_BATCH_SIZE: usize = 8;
 const TOTAL_BATCH_SIZE: usize = 16;
 const GRAD_ACCUM_STEPS: usize = TOTAL_BATCH_SIZE / MICRO_BATCH_SIZE;
@@ -129,9 +129,11 @@ fn main() -> Result<()> {
     let model = Llama::new(vs.root(), &config.clone().into());
     vs.bfloat16();
     let iter = dataset.into_iter().map(|tokens| {
-        let inputs = Tensor::from_slice(&tokens[..tokens.len() - 1]).to(device);
-        let targets = Tensor::from_slice(&tokens[1..]).to(device);
-        Ok((inputs, targets))
+        let (inputs, targets) = make_pretraining_samples(&tokens);
+        Ok((
+            Tensor::from_slice(inputs).to(device),
+            Tensor::from_slice(targets).to(device),
+        ))
     });
     let mut batch_iter = Batcher::new_r2(iter).batch_size(MICRO_BATCH_SIZE);
     let schedule = CosineLR::new(

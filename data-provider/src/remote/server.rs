@@ -155,7 +155,7 @@ where
 
         for client in this_round_clients {
             if let Some(conn) = connected_clients.get(&client) {
-                let data = self.local_data_provider.get_raw_sample(0).await?; // TODO: how to compute data ID?
+                let data = self.local_data_provider.get_sample(0).await?; // TODO: how to compute data ID?
                 conn.send(TrainingData {
                     data_id: 0,
                     raw_data: data,

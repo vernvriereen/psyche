@@ -5,6 +5,7 @@ use rand_chacha::ChaCha8Rng;
 use std::fs;
 use tracing::info;
 
+use crate::token_size::TokenSize;
 use crate::traits::DataProvider;
 
 fn mmap_file(p: &std::path::PathBuf) -> Result<memmap2::Mmap> {
@@ -22,13 +23,13 @@ pub struct LocalDataProvider {
     data_files: Vec<memmap2::Mmap>,
     sequences: Vec<SequencePointer>,
     seq_len: usize,
-    token_size_in_bytes: usize,
+    token_size_in_bytes: TokenSize,
 }
 
 impl LocalDataProvider {
     pub fn new_from_directory(
         dir: impl AsRef<std::path::Path>,
-        token_size_in_bytes: usize,
+        token_size_in_bytes: TokenSize,
         num_tokens_per_sequence: usize, // num tokens per sequence
         random_seed: <ChaCha8Rng as SeedableRng>::Seed,
     ) -> Result<Self> {
@@ -58,7 +59,7 @@ impl LocalDataProvider {
         );
 
         let mut deterministic_rng = ChaCha8Rng::from_seed(random_seed);
-        let seq_len_in_bytes = num_tokens_per_sequence * token_size_in_bytes;
+        let seq_len_in_bytes = num_tokens_per_sequence * usize::from(token_size_in_bytes);
 
         let sequences: Vec<SequencePointer> = {
             let mut all_indexes: Vec<_> = data_files
@@ -91,7 +92,7 @@ impl LocalDataProvider {
         self.sequences.len()
     }
 
-    fn internal_get_raw_sample(&self, data_id: usize) -> Result<&[u8]> {
+    fn internal_get_sample(&self, data_id: usize) -> Result<Vec<i32>> {
         let SequencePointer {
             byte_offset,
             file_index,
@@ -103,34 +104,42 @@ impl LocalDataProvider {
         })?;
 
         let file = &self.data_files[*file_index];
-        let data_len = self.token_size_in_bytes * (self.seq_len + 1);
+        let data_len = usize::from(self.token_size_in_bytes) * (self.seq_len + 1);
         let data = &file[*byte_offset..*byte_offset + data_len];
 
-        Ok(data)
+        let tokens: Vec<i32> = data
+            .chunks(self.token_size_in_bytes.into())
+            .map(|t| {
+                use TokenSize::*;
+                match self.token_size_in_bytes {
+                    TwoBytes => u16::from_le_bytes(t.try_into().unwrap()) as i32,
+                    FourBytes => u32::from_le_bytes(t.try_into().unwrap()) as i32,
+                }
+            })
+            .collect();
+        Ok(tokens)
     }
 }
 
 impl DataProvider for LocalDataProvider {
-    /// NOTE: pretraining only for now since it reads an extra token.
-    /// Do we want to build two traits, one for pretrain and one for finetuning?
-    async fn get_raw_sample(&self, data_id: usize) -> Result<Vec<u8>> {
-        self.internal_get_raw_sample(data_id).map(|x| x.to_vec())
+    async fn get_sample(&self, data_id: usize) -> Result<Vec<i32>> {
+        self.internal_get_sample(data_id)
     }
 }
 
-pub struct LocalDataProviderIter<'a> {
-    provider: &'a LocalDataProvider,
+pub struct LocalDataProviderIter {
+    provider: LocalDataProvider,
     current_index: usize,
 }
 
-impl<'a> Iterator for LocalDataProviderIter<'a> {
-    type Item = &'a [u8];
+impl Iterator for LocalDataProviderIter {
+    type Item = Vec<i32>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_index < self.provider.len() {
             let result = self
                 .provider
-                .internal_get_raw_sample(self.current_index)
+                .internal_get_sample(self.current_index)
                 .unwrap();
             self.current_index += 1;
             Some(result)
@@ -140,9 +149,9 @@ impl<'a> Iterator for LocalDataProviderIter<'a> {
     }
 }
 
-impl<'a> IntoIterator for &'a LocalDataProvider {
-    type Item = &'a [u8];
-    type IntoIter = LocalDataProviderIter<'a>;
+impl IntoIterator for LocalDataProvider {
+    type Item = Vec<i32>;
+    type IntoIter = LocalDataProviderIter;
 
     fn into_iter(self) -> Self::IntoIter {
         LocalDataProviderIter {

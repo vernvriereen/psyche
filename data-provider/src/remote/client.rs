@@ -54,7 +54,7 @@ impl<T: NodeIdentity> DataProviderTcpClient<T> {
         }
     }
 
-    async fn receive_training_data(&self, data_id: usize) -> Result<Vec<u8>> {
+    async fn receive_training_data(&self, data_id: usize) -> Result<Vec<i32>> {
         let mut stream = self.stream.lock().await;
         if let Some(Ok(message)) = stream.next().await {
             match ServerToClientMessage::from_bytes(&message) {
@@ -77,8 +77,8 @@ impl<T: NodeIdentity> DataProviderTcpClient<T> {
 }
 
 impl<T: NodeIdentity + Send + Sync> DataProvider for DataProviderTcpClient<T> {
-    async fn get_raw_sample(&self, data_id: usize) -> Result<Vec<u8>> {
-        info!("[{:?}] get raw sample..", self.identity);
+    async fn get_sample(&self, data_id: usize) -> Result<Vec<i32>> {
+        info!("[{:?}] get sample..", self.identity);
         self.receive_training_data(data_id).await
     }
 }

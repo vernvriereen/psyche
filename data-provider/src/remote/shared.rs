@@ -9,7 +9,7 @@ pub enum ServerToClientMessage {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TrainingData {
     pub data_id: usize,
-    pub raw_data: Vec<u8>,
+    pub raw_data: Vec<i32>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
