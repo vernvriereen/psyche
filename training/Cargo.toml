@@ -16,4 +16,9 @@ serde_json = { workspace = true }
 memmap2 = { workspace = true }
 byteorder = "1.4.3"
 safetensors = "0.3.0"
-# tokenizers = "0.20.0"
+tokenizers = { version = "0.20.0", default-features = false, features = ["onig"] }
+
+
+# for examples
+[dev-dependencies]
+clap = { workspace = true }

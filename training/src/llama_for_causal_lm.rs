@@ -8,7 +8,7 @@ use tch::{
     nn::{self, Module, VarStore},
     Device, Kind, Tensor,
 };
-// use tokenizers::Tokenizer;
+use tokenizers::Tokenizer;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct LlamaConfig {
@@ -69,7 +69,7 @@ pub struct LlamaForCausalLM {
     pub model: Llama,
     pub config: Config,
     pub variables: VarStore,
-    // pub tokenizer: Option<Tokenizer>,
+    pub tokenizer: Option<Tokenizer>,
     lm_head: nn::Linear,
 }
 
@@ -88,6 +88,9 @@ impl LlamaForCausalLM {
                 .ok_or(Error::msg("missing config.json"))?
                 .as_path(),
         )?)?)?;
+        if llama_config.rope_scaling.is_some() {
+            bail!("Rope scaling not currently supported");
+        }
         let config: Config = llama_config.into_config(match attn_implementation.unwrap_or(AttentionImplementation::SDPA) {
             AttentionImplementation::Eager => false,
             AttentionImplementation::SDPA => true,
@@ -116,15 +119,15 @@ impl LlamaForCausalLM {
             load_safetensors_into_variables(&mut variables, &repo_files)?;
             (model, lm_head)
         };
-        // let tokenizer = match repo_files.iter().find(|x| x.ends_with("tokenizer.json")) {
-        //     Some(path) => Some(Tokenizer::from_file(path.as_path()).map_err(Error::msg)?),
-        //     None => None,
-        // };
+        let tokenizer = match repo_files.iter().find(|x| x.ends_with("tokenizer.json")) {
+            Some(path) => Some(Tokenizer::from_file(path.as_path()).map_err(Error::msg)?),
+            None => None,
+        };
         Ok(LlamaForCausalLM {
             model,
             config,
             variables,
-            // tokenizer,
+            tokenizer,
             lm_head,
         })
     }

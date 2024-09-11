@@ -10,7 +10,6 @@ pub enum Llama3RopeType {
     Default,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Deserialize, Default)]
 pub struct Llama3RopeConfig {
     pub factor: f32,
@@ -20,7 +19,6 @@ pub struct Llama3RopeConfig {
     pub rope_type: Llama3RopeType,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged)]
 pub enum LlamaEosToks {
@@ -28,7 +26,6 @@ pub enum LlamaEosToks {
     Multiple(Vec<u32>),
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Config {
     pub hidden_size: usize,
