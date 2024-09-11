@@ -27,16 +27,16 @@
 
           config.allowUnfree = true;
           config.cudaSupport = true;
-          config.cudaVersion = "12";
+          config.cudaVersion = "12.4";
         };
       in {
         devShells.default = let
           torch = pkgs.libtorch-bin.dev.overrideAttrs (old: {
             version = "2.4.0";
             src = pkgs.fetchzip {
-              name = "libtorch-cxx11-abi-shared-with-deps-2.4.0-cu121.zip";
-              url = "https://download.pytorch.org/libtorch/cu121/libtorch-cxx11-abi-shared-with-deps-2.4.0%2Bcu121.zip";
-              hash = "sha256-5HfCJ970GY3iqTKQD0GN0+FOVzCvBmZb0qXxcToTBHE=";
+              name = "libtorch-cxx11-abi-shared-with-deps-2.4.0-cu124.zip";
+              url = "https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.4.0%2Bcu124.zip";
+              hash = "sha256-aned9QWMX5fe2U9igs4e2UjczmtwDq+v8z/feYnP9aQ=";
             };
           });
         in
@@ -61,7 +61,9 @@
                 pkgs.linuxPackages_latest.perf
               ];
 
-            LIBTORCH = torch;
+            LIBTORCH = torch.out;
+            LIBTORCH_INCLUDE = torch.dev;
+            LIBTORCH_LIB = torch.out;
           };
       };
     };
