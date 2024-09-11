@@ -2,7 +2,7 @@ use crate::protocol::{ClientId, NC};
 use crate::{protocol::Message, tui::TUIState};
 
 use anyhow::Result;
-use psyche_client::Payload;
+use psyche_centralized_shared::Payload;
 use psyche_coordinator::Coordinator;
 use psyche_network::NetworkEvent;
 use rand::RngCore;

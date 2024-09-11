@@ -28,7 +28,7 @@ fn main() -> Result<()> {
     let model = LlamaForCausalLM::from_pretrained(REPO_ID, Some(Kind::BFloat16), None, None)?;
     let device = Device::Cuda(0);
     let dataset = LocalDataProvider::new_from_directory(
-        "training/data",
+        "data",
         TOKEN_SIZE_IN_BYTES,
         model.config.max_position_embeddings,
         rand::thread_rng().gen(),

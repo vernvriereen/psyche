@@ -5,15 +5,15 @@ edition = "2021"
 
 [dependencies]
 psyche-core = { path = "../core" }
-psyche-client = { path = "../client" }
 psyche-data-provider = { path = "../data-provider" }
+hf-hub = { git = "https://github.com/huggingface/hf-hub.git", rev = "a66bdcf2f2664a55ab3a1415184c7aebd8ac4ed5" }
 tch = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "a4e9362e4acbbde54ab9503ab9e37a10835e7547" }
 torch-sys = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "a4e9362e4acbbde54ab9503ab9e37a10835e7547" }
-rand = { workspace = true }
-anyhow = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-memmap2 = { workspace = true }
+rand.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+memmap2.workspace = true
 byteorder = "1.4.3"
 safetensors = "0.3.0"
 tokenizers = { version = "0.20.0", default-features = false, features = ["onig"] }

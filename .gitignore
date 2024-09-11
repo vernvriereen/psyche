@@ -26,3 +26,5 @@ flamegraph.svg
 perf.data
 perf.data.*
 .vscode/
+
+data/
