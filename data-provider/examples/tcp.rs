@@ -3,14 +3,12 @@ use std::array;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::future::try_join_all;
-use psyche_coordinator::{
-    coordinator::{Client, Coordinator, Round, RunState},
-    traits::{NodeIdentity, WatcherBackend},
-};
-use psyche_core::serde::Networkable;
+use psyche_coordinator::{Client, Coordinator, NodeIdentity, Round, RunState};
+use psyche_core::Networkable;
 use psyche_data_provider::{DataProvider, DataProviderTcpClient, DataProviderTcpServer};
 use psyche_tui::init_logging;
-use rand::RngCore;
+use psyche_watcher::Backend as WatcherBackend;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -67,7 +65,7 @@ impl NodeIdentity for DummyNodeIdentity {
         Self::from_bytes(bytes)
     }
 
-    fn to_signed_bytes(&self, private_key: &(), challenge: [u8; 32]) -> Vec<u8> {
+    fn to_signed_bytes(&self, _private_key: &(), challenge: [u8; 32]) -> Vec<u8> {
         let mut b = challenge.to_vec();
         b.extend(self.to_bytes());
         b
@@ -76,9 +74,9 @@ impl NodeIdentity for DummyNodeIdentity {
 
 struct DummyDataProvider;
 impl DataProvider for DummyDataProvider {
-    async fn get_raw_sample(&self, _data_id: usize) -> Result<Vec<u8>> {
-        let mut data: [u8; 1024] = [0; 1024];
-        rand::thread_rng().fill_bytes(&mut data);
+    async fn get_sample(&self, _data_id: usize) -> Result<Vec<i32>> {
+        let mut data: [i32; 1024] = [0; 1024];
+        rand::thread_rng().fill(&mut data);
         Ok(data.to_vec())
     }
 }
@@ -105,7 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("clients initialized successfully");
     loop {
         for (i, c) in clients.iter().enumerate() {
-            c.get_raw_sample(0).await?;
+            c.get_sample(0).await?;
             info!("client {} got data! ", i);
         }
     }
