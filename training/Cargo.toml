@@ -11,5 +11,8 @@ psyche-data-provider = { path = "../data-provider" }
 tch = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "a4e9362e4acbbde54ab9503ab9e37a10835e7547" }
 torch-sys = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "a4e9362e4acbbde54ab9503ab9e37a10835e7547" }
 byteorder = "1.4.3"
+safetensors = "0.3.0"
 rand = { workspace = true }
-anyhow = "^1.0.60"
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

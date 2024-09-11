@@ -4521,6 +4521,9 @@ dependencies = [
  "psyche-core",
  "psyche-data-provider",
  "rand 0.8.5",
+ "safetensors",
+ "serde",
+ "serde_json",
  "tch",
  "torch-sys",
 ]
