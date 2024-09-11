@@ -4408,7 +4408,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hf-hub",
- "psyche-coordinator",
  "serde",
 ]
 
@@ -4516,8 +4515,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "byteorder",
+ "memmap2 0.9.4",
  "psyche-client",
- "psyche-coordinator",
  "psyche-core",
  "psyche-data-provider",
  "rand 0.8.5",

@@ -1,10 +1,10 @@
 use anyhow::Result;
 use hf_hub::{api::sync::ApiError, Cache, Repo, RepoType};
-use psyche_coordinator::model::HubRepo;
 use std::path::PathBuf;
 
 pub async fn download_repo(
-    repo: HubRepo,
+    repo_id: String,
+    revision: Option<String>,
     cache: Option<PathBuf>,
     token: Option<String>,
     max_concurrent_downloads: Option<usize>,
@@ -20,9 +20,9 @@ pub async fn download_repo(
         .with_token(token.or(cache.token()))
         .with_progress(progress_bar)
         .build()?
-        .repo(match repo.revision {
-            Some(revision) => Repo::with_revision(repo.repo_id, RepoType::Model, revision),
-            None => Repo::model(repo.repo_id),
+        .repo(match revision {
+            Some(revision) => Repo::with_revision(repo_id, RepoType::Model, revision),
+            None => Repo::model(repo_id),
         });
     let siblings = api.info().await?.siblings;
     let mut ret: Vec<PathBuf> = Vec::new();
@@ -39,7 +39,8 @@ pub async fn download_repo(
 }
 
 pub fn download_repo_sync(
-    repo: HubRepo,
+    repo_id: String,
+    revision: Option<String>,
     cache: Option<PathBuf>,
     token: Option<String>,
     progress_bar: bool,
@@ -54,9 +55,9 @@ pub fn download_repo_sync(
         .with_token(token.or(cache.token()))
         .with_progress(progress_bar)
         .build()?
-        .repo(match repo.revision {
-            Some(revision) => Repo::with_revision(repo.repo_id, RepoType::Model, revision),
-            None => Repo::model(repo.repo_id),
+        .repo(match revision {
+            Some(revision) => Repo::with_revision(repo_id, RepoType::Model, revision),
+            None => Repo::model(repo_id),
         });
     let res: Result<Vec<PathBuf>, ApiError> = api
         .info()?
