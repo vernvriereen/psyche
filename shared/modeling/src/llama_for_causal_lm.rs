@@ -150,8 +150,8 @@ impl LlamaForCausalLM {
                 // Upcast to float if we need to compute the loss to avoid potential precision issues
                 logits = logits.to_kind(Kind::Float);
                 // Shift so that tokens < n predict n
-                let shift_logits = logits.slice(1, 0, -1, 1);
-                let shift_labels = labels.slice(1, 1, None, 1);
+                let shift_logits = logits.slice(1, 0, -1, 1).contiguous();
+                let shift_labels = labels.slice(1, 1, None, 1).contiguous();
                 let shift_logits = shift_logits.view([-1i64, self.config.vocab_size as i64]);
                 let shift_targets = shift_labels.view(-1).to_kind(Kind::Int64);
                 Some(shift_logits.cross_entropy_for_logits(&shift_targets))
