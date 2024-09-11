@@ -23,6 +23,9 @@ centralized/
   client/
 ```
 
+### Consilience changes
+
 - [ ] ensure that the verifier is still applying the distro results that everyone else is making
 - [ ] roll back the gradients N steps before verifying (and then roll forwards)
 - [ ] only upload a sample of distro results, unless verifying, then upload 100%
+- [ ] fix race condition on upload

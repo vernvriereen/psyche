@@ -1,0 +1,24 @@
+[package]
+name = "psyche-network"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+psyche-core = { path = "../core" }
+psyche-tui = { path = "../tui" }
+iroh.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+tracing.workspace = true
+bytes.workspace = true
+rand.workspace = true
+postcard.workspace = true
+sha2.workspace = true
+futures-util.workspace = true
+chrono.workspace = true
+
+# for examples
+[dev-dependencies]
+clap.workspace = true
