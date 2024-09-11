@@ -35,7 +35,10 @@ impl LocalDataProvider {
     ) -> Result<Self> {
         let dir = dir.as_ref();
         let mut bin_files = vec![];
-        for file in std::fs::read_dir(dir)?.flatten() {
+        for file in std::fs::read_dir(dir)
+            .map_err(|e| anyhow!("couldn't load training data from {}: {e}", dir.display()))?
+            .flatten()
+        {
             let file = file.path();
             if let Some(extension) = file.extension() {
                 if extension == "bin" || extension == "npy" {
