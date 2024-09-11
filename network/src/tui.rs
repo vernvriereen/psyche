@@ -1,3 +1,4 @@
+use psyche_core::Networkable;
 use psyche_tui::ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
@@ -15,11 +16,7 @@ use std::{
     time::Instant,
 };
 
-use crate::{
-    peer_list::PeerList,
-    util::{convert_bytes, Networkable},
-    NetworkConnection,
-};
+use crate::{peer_list::PeerList, util::convert_bytes, NetworkConnection};
 
 #[derive(Default, Debug)]
 pub struct NetworkTUI;

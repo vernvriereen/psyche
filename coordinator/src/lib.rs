@@ -10,4 +10,4 @@ pub use committee_selection::{
     WITNESS_SALT,
 };
 pub use coordinator::{Coordinator, Round, RunState};
-pub use traits::Backend;
+pub use traits::{Backend, NodeIdentity};

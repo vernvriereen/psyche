@@ -1,11 +1,12 @@
-
 use crate::traits::{Backend, Client};
-use psyche_coordinator::Coordinator;
+use psyche_coordinator::{Coordinator, NodeIdentity};
 
-pub async fn watcher<T, B: Backend<T>, C: Client<T>>(
-    backend: &dyn Backend<T>,
-    client: &dyn Client<T>,
-) {
+pub async fn watcher<T, B, C>(backend: &B, client: &C)
+where
+    T: NodeIdentity,
+    B: Backend<T> + 'static,
+    C: Client<T> + 'static,
+{
     let mut prev: Option<Coordinator<T>> = None;
     loop {
         let state = backend.wait_for_new_state().await;

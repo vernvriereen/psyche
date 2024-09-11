@@ -4,10 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-fast-math = {workspace = true}
+fast-math = { workspace = true }
+serde = { workspace = true }
+postcard = { workspace = true }
+anyhow = { workspace = true }
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
-sha2 = {workspace = true}
+sha2 = { workspace = true }
 
 [target.'cfg(target_os = "solana")'.dependencies]
-anchor-lang = {workspace = true}
+anchor-lang = { workspace = true }

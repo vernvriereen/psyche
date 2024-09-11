@@ -11,7 +11,7 @@ use iroh::{
     },
     node::{MemNode, Node},
 };
-use signed_message::SignedMessage;
+use psyche_core::Networkable;
 use state::State;
 use std::{
     fmt::Debug,
@@ -22,7 +22,7 @@ use std::{
 use tokio::select;
 use tokio::time::{interval, Interval};
 use tracing::info;
-use util::{fmt_relay_mode, gossip_topic, Networkable};
+use util::{fmt_relay_mode, gossip_topic};
 
 mod download_manager;
 mod peer_list;
@@ -32,6 +32,7 @@ mod tui;
 mod util;
 
 pub use peer_list::PeerList;
+pub use signed_message::SignedMessage;
 pub use tui::{NetworkTUI, NetworkTUIState};
 
 pub struct NetworkConnection<BroadcastMessage, Download>

@@ -1,16 +1,16 @@
 use anyhow::Result;
 use batcher::Batcher;
-use dataset::{Dataset, DatasetRandomIter};
 use llama::{Config, Llama};
 use psyche_client::download_repo_sync;
 use psyche_coordinator::model::HubRepo;
 use psyche_core::{CosineLR, LearningRateScheduler};
+use psyche_data_provider::LocalDataProvider;
+use rand::Rng;
 use std::time::SystemTime;
 use tch::nn::{self, OptimizerConfig};
 use tch::{Device, Tensor};
 
 mod batcher;
-mod dataset;
 mod llama;
 
 #[allow(dead_code)]
@@ -53,7 +53,7 @@ const PEAK_LEARNING_RATE: f64 = 4e-4;
 const WARMUP_STEPS: usize = 500;
 const TOTAL_STEPS: usize = 25000;
 const MAX_GRAD_NORM: f64 = 1.0;
-const REPO_ID: &str = "emozilla/llama2-1.2b-init"; 
+const REPO_ID: &str = "emozilla/llama2-1.2b-init";
 
 fn main() -> Result<()> {
     let repo_files = download_repo_sync(
@@ -63,19 +63,23 @@ fn main() -> Result<()> {
         },
         None,
         None,
-        true
+        true,
     )?;
     let device = Device::Cuda(0);
-    let dataset = Dataset::new("training/data")?;
+    let dataset = LocalDataProvider::new_from_directory(
+        "training/data",
+        TOKEN_SIZE_IN_BYTES,
+        CONFIG.seq_len,
+        rand::thread_rng().gen(),
+    )?;
     let mut vs: nn::VarStore = nn::VarStore::new(device);
     let model = Llama::new(vs.root(), CONFIG);
     vs.bfloat16();
-    let iter = DatasetRandomIter::new(
-        &dataset,
-        CONFIG.seq_len,
-        TOKEN_SIZE_IN_BYTES,
-        device.clone(),
-    );
+    let iter = dataset.into_iter().map(|tokens| {
+        let inputs = Tensor::from_slice(&tokens[..tokens.len() - 1]).to(device);
+        let targets = Tensor::from_slice(&tokens[1..]).to(device);
+        Ok((inputs, targets))
+    });
     let mut batch_iter = Batcher::new_r2(iter).batch_size(MICRO_BATCH_SIZE);
     let schedule = CosineLR::new(
         PEAK_LEARNING_RATE,

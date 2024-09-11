@@ -1,4 +1,4 @@
-use psyche_coordinator::{Coordinator, RunState};
+use psyche_coordinator::{Coordinator, NodeIdentity, RunState};
 use psyche_tui::ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
@@ -40,7 +40,7 @@ pub struct CoordinatorTUIState {
     tick: u64,
 }
 
-impl<T> From<&Coordinator<T>> for CoordinatorTUIState {
+impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTUIState {
     fn from(value: &Coordinator<T>) -> Self {
         Self {
             run_state: value.run_state,

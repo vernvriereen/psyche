@@ -1,9 +1,27 @@
 [workspace]
-members = ["client", "coordinator", "core", "network", "serde", "server", "training", "tui", "watcher"]
+members = [
+    "client",
+    "coordinator",
+    "core",
+    "network",
+    "serde",
+    "server",
+    "training",
+    "tui",
+    "watcher",
+    "data-provider",
+]
 resolver = "2"
 
 [workspace.dependencies]
-tokio = { version = "1", features = ["io-util", "rt"] }
+tokio = { version = "1", features = [
+    "io-util",
+    "rt",
+    "rt-multi-thread",
+    "net",
+    "macros",
+    "time",
+] }
 tokio-stream = "0.1"
 anyhow = "1.0.86"
 clap = { version = "4.5.16", features = ["derive"] }
@@ -11,7 +29,7 @@ serde = { version = "1.0.209", features = ["derive"] }
 tracing = "0.1.40"
 bytes = "1.7.1"
 rand = "0.8.5"
-postcard = "1.0.10"
+postcard = { version = "1.0.10", features = ["use-std"] }
 sha2 = "0.10.8"
 futures-util = "0.3.30"
 chrono = "0.4.38"
