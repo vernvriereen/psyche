@@ -1,4 +1,29 @@
 
+pub struct DistanceThresholds {
+    pub jaccard_threshold: f32,
+    pub manhattan_threshold: f32,
+    pub hamming_threshold: f32,
+}
+
+pub fn is_similar(a: &[f32], b: &[f32], thresholds: &DistanceThresholds) -> Result<bool, &'static str> {
+    let manhattan = manhattan_distance(a, b)?;
+    if manhattan > thresholds.manhattan_threshold {
+        return Ok(false);
+    }
+
+    let hamming = hamming_distance(a, b)?;
+    if hamming > thresholds.hamming_threshold {
+        return Ok(false);
+    }
+
+    let jaccard = jaccard_distance(a, b);
+    if jaccard > thresholds.jaccard_threshold {
+        return Ok(false);
+    }
+
+    Ok(true)
+}
+
 pub fn jaccard_distance(a: &[f32], b: &[f32]) -> f32 {
     let mut intersection = 0;
     let mut union = a.len();
@@ -161,5 +186,70 @@ mod tests {
         run_jaccard_tests(&a, &b, 0.6666666);
         run_manhattan_tests(&a, &b, Ok(800.0));
         run_hamming_tests(&[100.0, 200.0, 300.0, 1000.0], &[100.0, 150.0, 250.0, 300.0], Ok(0.75));
+    }
+
+    #[test]
+    fn test_is_similar_complete_match() {
+        let a = [1.0, 2.0, 3.0];
+        let b = [1.0, 2.0, 3.0];
+        let thresholds = DistanceThresholds {
+            jaccard_threshold: 0.1,
+            manhattan_threshold: 1.0,
+            hamming_threshold: 0.1,
+        };
+        
+        assert_eq!(is_similar(&a, &b, &thresholds), Ok(true));
+    }
+
+    #[test]
+    fn test_is_similar_partial_match() {
+        let a = [1.0, 2.0, 3.0];
+        let b = [1.0, 2.0, 5.0];
+        let thresholds = DistanceThresholds {
+            jaccard_threshold: 0.6,
+            manhattan_threshold: 3.0,
+            hamming_threshold: 0.5,
+        };
+        
+        assert_eq!(is_similar(&a, &b, &thresholds), Ok(true));
+    }
+
+    #[test]
+    fn test_is_similar_exceeds_manhattan() {
+        let a = [1.0, 2.0, 3.0];
+        let b = [1.0, 5.0, 7.0];
+        let thresholds = DistanceThresholds {
+            jaccard_threshold: 0.8,
+            manhattan_threshold: 2.0,
+            hamming_threshold: 0.8,
+        };
+        
+        assert_eq!(is_similar(&a, &b, &thresholds), Ok(false));
+    }
+
+    #[test]
+    fn test_is_similar_exceeds_hamming() {
+        let a = [1.0, 2.0, 3.0];
+        let b = [4.0, 5.0, 6.0];
+        let thresholds = DistanceThresholds {
+            jaccard_threshold: 1.0,
+            manhattan_threshold: 10.0,
+            hamming_threshold: 0.3,
+        };
+        
+        assert_eq!(is_similar(&a, &b, &thresholds), Ok(false));
+    }
+
+    #[test]
+    fn test_is_similar_exceeds_jaccard() {
+        let a = [1.0, 2.0, 3.0];
+        let b = [4.0, 5.0, 6.0];
+        let thresholds = DistanceThresholds {
+            jaccard_threshold: 0.5,
+            manhattan_threshold: 10.0,
+            hamming_threshold: 1.0,
+        };
+        
+        assert_eq!(is_similar(&a, &b, &thresholds), Ok(false));
     }
 }
