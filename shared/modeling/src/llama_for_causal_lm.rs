@@ -1,6 +1,7 @@
+use std::path::PathBuf;
+
 use crate::{
-    hub::download_repo_sync,
-    llama::{Config, Llama, Llama3RopeConfig, LlamaEosToks},
+    llama::{Cache, Config, Llama, Llama3RopeConfig, LlamaEosToks},
     safetensor_loader::load_safetensors_into_variables,
 };
 use anyhow::{bail, Error, Result};
@@ -8,7 +9,6 @@ use tch::{
     nn::{self, Module, VarStore},
     Device, Kind, Tensor,
 };
-use tokenizers::Tokenizer;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct LlamaConfig {
@@ -69,18 +69,18 @@ pub struct LlamaForCausalLM {
     pub model: Llama,
     pub config: Config,
     pub variables: VarStore,
-    pub tokenizer: Option<Tokenizer>,
+    pub device: Device,
     lm_head: nn::Linear,
+    cache: Cache,
 }
 
 impl LlamaForCausalLM {
     pub fn from_pretrained(
-        repo_id: &str,
+        repo_files: &[PathBuf],
         kind: Option<Kind>,
         attn_implementation: Option<AttentionImplementation>,
         device: Option<Device>,
     ) -> Result<Self> {
-        let repo_files = download_repo_sync(repo_id.to_owned(), None, None, None, true)?;
         let llama_config: LlamaConfig = serde_json::from_str(&String::from_utf8(std::fs::read(
             repo_files
                 .iter()
@@ -88,15 +88,16 @@ impl LlamaForCausalLM {
                 .ok_or(Error::msg("missing config.json"))?
                 .as_path(),
         )?)?)?;
-        if llama_config.rope_scaling.is_some() {
-            bail!("Rope scaling not currently supported");
-        }
         let config: Config = llama_config.into_config(match attn_implementation.unwrap_or(AttentionImplementation::SDPA) {
             AttentionImplementation::Eager => false,
             AttentionImplementation::SDPA => true,
             AttentionImplementation::FlashAttention2 => { bail!("Directly setting attention implementation to FlashAttention-2 unsupported for now"); }
         });
-        let mut variables: nn::VarStore = nn::VarStore::new(device.unwrap_or(Device::Cuda(0)));
+        let device = device.unwrap_or(Device::Cuda(0));
+        let mut variables: nn::VarStore = nn::VarStore::new(device);
+        if let Some(kind) = kind {
+            variables.set_kind(kind);
+        }
         let (model, lm_head) = {
             let _no_grad = tch::no_grad_guard();
             let model = Llama::new(variables.root(), &config);
@@ -110,36 +111,30 @@ impl LlamaForCausalLM {
                 config.vocab_size as i64,
                 c,
             );
-            match kind {
-                Some(Kind::BFloat16) => variables.bfloat16(),
-                Some(Kind::Float) => variables.float(),
-                Some(Kind::Half) => variables.half(),
-                _ => {}
-            };
             load_safetensors_into_variables(&mut variables, &repo_files)?;
             (model, lm_head)
         };
-        let tokenizer = match repo_files.iter().find(|x| x.ends_with("tokenizer.json")) {
-            Some(path) => Some(Tokenizer::from_file(path.as_path()).map_err(Error::msg)?),
-            None => None,
-        };
-        Ok(LlamaForCausalLM {
-            model,
-            config,
-            variables,
-            tokenizer,
-            lm_head,
-        })
+        let cache = Cache::new(false, kind.unwrap_or(Kind::Float), &config, &device);
+        Ok(
+            LlamaForCausalLM {
+                model,
+                config,
+                variables,
+                device,
+                lm_head,
+                cache,
+            },
+        )
     }
 
     pub fn forward(
-        &self,
+        &mut self,
         x: &Tensor,
         labels: Option<&Tensor>,
         num_logits_to_keep: Option<i64>,
     ) -> (Tensor, Option<Tensor>) {
         let (_, t) = x.size2().unwrap();
-        let mut x = self.model.forward(x);
+        let mut x = self.model.forward(x, 0, &mut self.cache);
         if let Some(num_logits_to_keep) = num_logits_to_keep {
             // Only compute necessary logits, and do not upcast them to float if we are not computing the loss
             x = x.slice(1, t - num_logits_to_keep, t, 1);

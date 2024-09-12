@@ -7,8 +7,8 @@ edition = "2021"
 psyche-core = { path = "../core" }
 psyche-data-provider = { path = "../data-provider" }
 hf-hub = { git = "https://github.com/huggingface/hf-hub.git", rev = "a66bdcf2f2664a55ab3a1415184c7aebd8ac4ed5" }
-tch = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "a4e9362e4acbbde54ab9503ab9e37a10835e7547" }
-torch-sys = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "a4e9362e4acbbde54ab9503ab9e37a10835e7547" }
+tch = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "4803ea0ba6288a7723941f9394fa46b684cf9977" }
+torch-sys = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "4803ea0ba6288a7723941f9394fa46b684cf9977" }
 rand.workspace = true
 anyhow.workspace = true
 serde.workspace = true

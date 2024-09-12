@@ -1,3 +1,4 @@
+use std::f32::consts::PI;
 use tch::nn::{self, Module};
 use tch::{Device, Kind, Tensor};
 
@@ -43,28 +44,80 @@ pub struct Config {
     pub use_sdpa: bool,
 }
 
-fn precompute_freqs_cis(config: &Config) -> Tensor {
-    let n_elem = config.hidden_size / config.num_attention_heads;
-    let theta: Vec<_> = (0..n_elem)
+pub struct Cache {
+    pub use_kv_cache: bool,
+    _kvs: Vec<Option<(Tensor, Tensor)>>,
+    cos: Tensor,
+    sin: Tensor,
+}
+
+fn calculate_default_inv_freq(cfg: &Config) -> Vec<f32> {
+    let head_dim = cfg.hidden_size / cfg.num_attention_heads;
+    (0..head_dim)
         .step_by(2)
-        .map(|i| 1f32 / config.rope_theta.powf(i as f32 / n_elem as f32))
-        .collect();
-    let arange: Vec<_> = (0..config.max_position_embeddings + 1)
-        .map(|c| c as f32)
-        .collect();
-    let theta = Tensor::from_slice(&theta);
-    let arange = Tensor::from_slice(&arange);
-    let idx_theta = arange.outer(&theta);
-    let shape = [
-        1,
-        1,
-        (config.max_position_embeddings + 1) as i64,
-        n_elem as i64 / 2,
-        1,
-    ];
-    let idx_theta_cos = idx_theta.cos().reshape(shape);
-    let idx_theta_sin = idx_theta.sin().reshape(shape);
-    Tensor::cat(&[&idx_theta_cos, &idx_theta_sin], -1)
+        .map(|i| 1f32 / cfg.rope_theta.powf(i as f32 / head_dim as f32))
+        .collect()
+}
+
+impl Cache {
+    pub fn new(use_kv_cache: bool, kind: Kind, config: &Config, device: &Device) -> Self {
+        assert!(!use_kv_cache); // until supported
+        // precompute freqs_cis
+        let theta = match &config.rope_scaling {
+            None
+            | Some(Llama3RopeConfig {
+                rope_type: Llama3RopeType::Default,
+                ..
+            }) => calculate_default_inv_freq(config),
+            Some(rope_scaling) => {
+                let low_freq_wavelen = rope_scaling.original_max_position_embeddings as f32
+                    / rope_scaling.low_freq_factor;
+                let high_freq_wavelen = rope_scaling.original_max_position_embeddings as f32
+                    / rope_scaling.high_freq_factor;
+
+                calculate_default_inv_freq(config)
+                    .into_iter()
+                    .map(|freq| {
+                        let wavelen = 2. * PI / freq;
+                        if wavelen < high_freq_wavelen {
+                            freq
+                        } else if wavelen > low_freq_wavelen {
+                            freq / rope_scaling.factor
+                        } else {
+                            let smooth = (rope_scaling.original_max_position_embeddings as f32
+                                / wavelen
+                                - rope_scaling.low_freq_factor)
+                                / (rope_scaling.high_freq_factor - rope_scaling.low_freq_factor);
+                            (1. - smooth) * freq / rope_scaling.factor + smooth * freq
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            }
+        };
+
+        let theta = Tensor::from_slice(&theta).to(*device);
+
+        let idx_theta = Tensor::arange(
+            (config.max_position_embeddings + 1) as i64,
+            (Kind::Float, *device),
+        )
+        .reshape(&[(config.max_position_embeddings + 1) as i64, 1])
+        .matmul(&theta.reshape(&[1i64, theta.numel() as i64]));
+        // This is different from the paper, see:
+        // https://github.com/huggingface/transformers/blob/6112b1c6442aaf7affd2b0676a1cd4eee30c45cf/src/transformers/models/llama/modeling_llama.py#L112
+        let cos = idx_theta.cos().to_kind(kind);
+        let sin = idx_theta.sin().to_kind(kind);
+        let mut kvs = Vec::new();
+        for _ in 0..config.num_hidden_layers {
+            kvs.push(None);
+        }
+        Self {
+            use_kv_cache,
+            _kvs: kvs,
+            cos,
+            sin,
+        }
+    }
 }
 
 fn repeat_kv(xs: Tensor, n_rep: i64) -> Tensor {
@@ -79,6 +132,13 @@ fn repeat_kv(xs: Tensor, n_rep: i64) -> Tensor {
             head_dim,
         ])
     }
+}
+
+fn rotate_half(xs: &Tensor) -> Tensor {
+    let last_dim = *xs.size().last().unwrap();
+    let xs1 = xs.narrow(-1, 0, last_dim / 2);
+    let xs2 = xs.narrow(-1, last_dim / 2, last_dim - last_dim / 2);
+    Tensor::cat(&[&xs2.neg(), &xs1], -1)
 }
 
 #[derive(Debug)]
@@ -176,28 +236,43 @@ impl CausalSelfAttention {
         }
     }
 
-    fn apply_rotary_emb(&self, x: &Tensor, freqs_cis: &Tensor) -> Tensor {
-        let mut dims = x.size();
-        let v = dims.pop().unwrap();
-        dims.push(v / 2);
-        dims.push(2);
-        let x = x.reshape(&dims);
-        let re_x = x.slice(-1, 0, 1, 1);
-        let im_x = x.slice(-1, 1, 2, 1);
-        let re_f = freqs_cis.slice(-1, 0, 1, 1);
-        let im_f = freqs_cis.slice(-1, 1, 2, 1);
-        let re = &re_x * &re_f - &im_x * &im_f;
-        let im = &re_x * &im_f + &im_x * &re_f;
-        let rope = Tensor::cat(&[&re, &im], -1);
-        // TODO: Add the flatten op.
-        let mut dims = rope.size();
-        let v1 = dims.pop().unwrap();
-        let v2 = dims.pop().unwrap();
-        dims.push(v1 * v2);
-        rope.reshape(&dims)
+    // fn apply_rotary_emb(&self, x: &Tensor, index_pos: i64, freqs_cis: &Tensor) -> Tensor {
+    //     let mut dims = x.size();
+    //     let seq_len = dims[2];
+    //     let v = dims.pop().unwrap();
+    //     dims.push(v / 2);
+    //     dims.push(2);
+    //     let x = x.reshape(&dims);
+    //     let freqs_cis = freqs_cis.narrow(2, index_pos, seq_len);
+    //     let re_x = x.slice(-1, 0, 1, 1);
+    //     let im_x = x.slice(-1, 1, 2, 1);
+    //     let re_f = freqs_cis.slice(-1, 0, 1, 1);
+    //     let im_f = freqs_cis.slice(-1, 1, 2, 1);
+    //     let re = &re_x * &re_f - &im_x * &im_f;
+    //     let im = &re_x * &im_f + &im_x * &re_f;
+    //     let rope = Tensor::cat(&[&re, &im], -1);
+    //     // TODO: Add the flatten op.
+    //     let mut dims = rope.size();
+    //     let v1 = dims.pop().unwrap();
+    //     let v2 = dims.pop().unwrap();
+    //     dims.push(v1 * v2);
+    //     rope.reshape(&dims)
+    // }
+
+    fn apply_rotary_emb(&self, x: &Tensor, index_pos: i64, cache: &Cache) -> Tensor {
+        let (_b_sz, _, seq_len, _hidden_size) = x.size4().unwrap();
+        let cos = cache.cos.narrow(0, index_pos, seq_len);
+        let sin = cache.sin.narrow(0, index_pos, seq_len);
+        let cos = Tensor::cat(&[cos.copy(), cos], -1);
+        let sin = Tensor::cat(&[sin.copy(), sin], -1);
+        let cos = cos.narrow(0, 0, seq_len);
+        let sin = sin.narrow(0, 0, seq_len);
+        let cos = cos.unsqueeze(0).unsqueeze(0);
+        let sin = sin.unsqueeze(0).unsqueeze(0);
+        (x * cos) + (rotate_half(x) * sin)
     }
 
-    fn forward(&self, x: &Tensor, freqs_cis: &Tensor) -> Tensor {
+    fn forward(&self, x: &Tensor, index_pos: i64, _block_idx: usize, cache: &mut Cache) -> Tensor {
         let (b, t, c) = x.size3().unwrap();
         let kind = x.kind();
         let q = self.q_proj.forward(x);
@@ -212,23 +287,13 @@ impl CausalSelfAttention {
         let v = v
             .reshape([b, t, self.n_kvhead, self.head_dim])
             .transpose(1, 2);
-        let q = self.apply_rotary_emb(&q, freqs_cis).to_kind(kind);
-        let k = self.apply_rotary_emb(&k, freqs_cis).to_kind(kind);
+        let q = self.apply_rotary_emb(&q, index_pos, cache).to_kind(kind);
+        let k = self.apply_rotary_emb(&k, index_pos, cache).to_kind(kind);
         let k = repeat_kv(k, self.n_head / self.n_kvhead);
         let v = repeat_kv(v, self.n_head / self.n_kvhead);
-        let mask = Tensor::ones([t, t], (kind, self.device))
-            .tril(0)
-            .reshape([1, 1, t, t]);
         let y = if self.use_sdpa {
-            let att = Tensor::scaled_dot_product_attention::<Tensor>(
-                &q,
-                &k,
-                &v,
-                Some(mask),
-                0.0,
-                t > 1,
-                None,
-            );
+            let att =
+                Tensor::scaled_dot_product_attention::<Tensor>(&q, &k, &v, None, 0.0, t > 1, None);
             att.transpose(1, 2).reshape([b, t, c])
         } else {
             let k_shape = k.size();
@@ -285,8 +350,11 @@ impl Block {
         }
     }
 
-    fn forward(&self, x: &Tensor, freqs_cis: &Tensor) -> Tensor {
-        let x = self.attn.forward(&self.rms_1.forward(x), freqs_cis) + x;
+    fn forward(&self, x: &Tensor, index_pos: i64, block_idx: usize, cache: &mut Cache) -> Tensor {
+        let x = self
+            .attn
+            .forward(&self.rms_1.forward(x), index_pos, block_idx, cache)
+            + x;
         self.mlp.forward(&self.rms_2.forward(&x)) + x
     }
 }
@@ -296,7 +364,6 @@ pub struct Llama {
     wte: nn::Embedding,
     blocks: Vec<Block>,
     ln_f: RmsNorm,
-    freqs_cis: Tensor,
 }
 
 impl Llama {
@@ -315,19 +382,13 @@ impl Llama {
         let blocks = (0..config.num_hidden_layers)
             .map(|i| Block::new(&vs / "model" / "layers" / i, config))
             .collect::<Vec<_>>();
-        let freqs_cis = precompute_freqs_cis(config).to(vs.device());
-        Self {
-            wte,
-            blocks,
-            ln_f,
-            freqs_cis,
-        }
+        Self { wte, blocks, ln_f }
     }
 
-    pub fn forward(&self, x: &Tensor) -> Tensor {
+    pub fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut Cache) -> Tensor {
         let mut x = self.wte.forward(x);
-        for block in self.blocks.iter() {
-            x = block.forward(&x, &self.freqs_cis);
+        for (block_idx, block) in self.blocks.iter().enumerate() {
+            x = block.forward(&x, index_pos, block_idx, cache);
         }
         self.ln_f.forward(&x)
     }

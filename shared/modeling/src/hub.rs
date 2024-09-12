@@ -24,7 +24,13 @@ pub async fn download_repo(
             Some(revision) => Repo::with_revision(repo_id, RepoType::Model, revision),
             None => Repo::model(repo_id),
         });
-    let siblings = api.info().await?.siblings;
+    let siblings = api
+        .info()
+        .await?
+        .siblings
+        .into_iter()
+        .filter(|x| x.rfilename.ends_with(".safetensors") || x.rfilename.ends_with(".json"))
+        .collect::<Vec<_>>();
     let mut ret: Vec<PathBuf> = Vec::new();
     for chunk in siblings.chunks(max_concurrent_downloads.unwrap_or(siblings.len())) {
         let futures = chunk
@@ -63,6 +69,7 @@ pub fn download_repo_sync(
         .info()?
         .siblings
         .into_iter()
+        .filter(|x| x.rfilename.ends_with(".safetensors") || x.rfilename.ends_with(".json"))
         .map(|x| api.get(&x.rfilename))
         .collect();
     Ok(res?)
