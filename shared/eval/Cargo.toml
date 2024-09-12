@@ -1,0 +1,11 @@
+[package]
+name = "psyche-eval"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+psyche-modeling = { path = "../modeling" }
+
+# for examples
+[dev-dependencies]
+clap = { workspace = true }

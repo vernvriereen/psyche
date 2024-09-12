@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 hf-hub = { git = "https://github.com/huggingface/hf-hub.git", rev = "a66bdcf2f2664a55ab3a1415184c7aebd8ac4ed5" }
+parquet = { version = "51.0.0" }
 tokio.workspace = true
 psyche-coordinator = { path = "../coordinator" }
 psyche-core = { path = "../core" }

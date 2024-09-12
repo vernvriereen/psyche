@@ -6,8 +6,8 @@ edition = "2021"
 [dependencies]
 psyche-core = { path = "../core" }
 psyche-data-provider = { path = "../data-provider" }
-tch = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "4803ea0ba6288a7723941f9394fa46b684cf9977" }
-torch-sys = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "4803ea0ba6288a7723941f9394fa46b684cf9977" }
+tch = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "9c498e6dcb83cebaf450fb4bfe0f265d660041b3" }
+torch-sys = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "9c498e6dcb83cebaf450fb4bfe0f265d660041b3" }
 rand.workspace = true
 anyhow.workspace = true
 serde.workspace = true

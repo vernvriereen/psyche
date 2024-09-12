@@ -4905,6 +4905,7 @@ dependencies = [
  "futures",
  "hf-hub",
  "memmap2 0.9.4",
+ "parquet",
  "psyche-coordinator",
  "psyche-core",
  "psyche-tui",
@@ -4922,7 +4923,6 @@ name = "psyche-eval"
 version = "0.1.0"
 dependencies = [
  "clap",
- "parquet",
  "psyche-modeling",
 ]
 
@@ -6508,7 +6508,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 [[package]]
 name = "tch"
 version = "0.17.0"
-source = "git+https://github.com/jquesnelle/tch-rs.git?rev=4803ea0ba6288a7723941f9394fa46b684cf9977#4803ea0ba6288a7723941f9394fa46b684cf9977"
+source = "git+https://github.com/LaurentMazare/tch-rs.git?rev=9c498e6dcb83cebaf450fb4bfe0f265d660041b3#9c498e6dcb83cebaf450fb4bfe0f265d660041b3"
 dependencies = [
  "half",
  "lazy_static",
@@ -6829,7 +6829,7 @@ dependencies = [
 [[package]]
 name = "torch-sys"
 version = "0.17.0"
-source = "git+https://github.com/jquesnelle/tch-rs.git?rev=4803ea0ba6288a7723941f9394fa46b684cf9977#4803ea0ba6288a7723941f9394fa46b684cf9977"
+source = "git+https://github.com/LaurentMazare/tch-rs.git?rev=9c498e6dcb83cebaf450fb4bfe0f265d660041b3#9c498e6dcb83cebaf450fb4bfe0f265d660041b3"
 dependencies = [
  "anyhow",
  "cc",
