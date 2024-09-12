@@ -1,5 +1,5 @@
 use anyhow::Result;
-pub trait DataProvider {
+pub trait TokenizedDataProvider {
     fn get_sample(
         &self,
         data_id: usize,

@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::info;
 
-use crate::DataProvider;
+use crate::TokenizedDataProvider;
 
 use super::shared::{ChallengeResponse, ServerToClientMessage, TrainingData};
 
@@ -76,7 +76,7 @@ impl<T: NodeIdentity> DataProviderTcpClient<T> {
     }
 }
 
-impl<T: NodeIdentity + Send + Sync> DataProvider for DataProviderTcpClient<T> {
+impl<T: NodeIdentity + Send + Sync> TokenizedDataProvider for DataProviderTcpClient<T> {
     async fn get_sample(&self, data_id: usize) -> Result<Vec<i32>> {
         info!("[{:?}] get sample..", self.identity);
         self.receive_training_data(data_id).await

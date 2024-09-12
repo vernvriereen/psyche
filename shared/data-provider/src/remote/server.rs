@@ -13,14 +13,14 @@ use tokio::sync::mpsc;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::{error, info, warn};
 
-use crate::traits::DataProvider;
+use crate::traits::TokenizedDataProvider;
 
 use super::shared::{ChallengeResponse, ServerToClientMessage, TrainingData};
 
 pub struct DataProviderTcpServer<T, D, W>
 where
     T: NodeIdentity,
-    D: DataProvider,
+    D: TokenizedDataProvider,
     W: Backend<T>,
 {
     clients: Arc<tokio::sync::Mutex<HashMap<T, mpsc::Sender<TrainingData>>>>,
@@ -31,7 +31,7 @@ where
 impl<T, D, W> DataProviderTcpServer<T, D, W>
 where
     T: NodeIdentity + 'static,
-    D: DataProvider + 'static,
+    D: TokenizedDataProvider + 'static,
     W: Backend<T> + 'static,
 {
     pub fn new(local_data_provider: D, backend: W) -> Self {

@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use futures::future::try_join_all;
 use psyche_coordinator::{Client, Coordinator, NodeIdentity, Round, RunState};
 use psyche_core::Networkable;
-use psyche_data_provider::{DataProvider, DataProviderTcpClient, DataProviderTcpServer};
+use psyche_data_provider::{TokenizedDataProvider, DataProviderTcpClient, DataProviderTcpServer};
 use psyche_tui::init_logging;
 use psyche_watcher::Backend as WatcherBackend;
 use rand::Rng;
@@ -73,7 +73,7 @@ impl NodeIdentity for DummyNodeIdentity {
 }
 
 struct DummyDataProvider;
-impl DataProvider for DummyDataProvider {
+impl TokenizedDataProvider for DummyDataProvider {
     async fn get_sample(&self, _data_id: usize) -> Result<Vec<i32>> {
         let mut data: [i32; 1024] = [0; 1024];
         rand::thread_rng().fill(&mut data);

@@ -6,7 +6,7 @@ use std::fs;
 use tracing::info;
 
 use crate::token_size::TokenSize;
-use crate::traits::DataProvider;
+use crate::traits::TokenizedDataProvider;
 
 fn mmap_file(p: &std::path::PathBuf) -> Result<memmap2::Mmap> {
     let file = std::fs::File::open(p)?;
@@ -121,7 +121,7 @@ impl LocalDataProvider {
     }
 }
 
-impl DataProvider for LocalDataProvider {
+impl TokenizedDataProvider for LocalDataProvider {
     async fn get_sample(&self, data_id: usize) -> Result<Vec<i32>> {
         self.internal_get_sample(data_id)
     }

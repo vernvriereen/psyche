@@ -6,4 +6,4 @@ mod traits;
 pub use local::LocalDataProvider;
 pub use remote::{DataProviderTcpClient, DataProviderTcpServer};
 pub use token_size::TokenSize;
-pub use traits::DataProvider;
+pub use traits::TokenizedDataProvider;
