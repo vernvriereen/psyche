@@ -2,9 +2,9 @@ use std::io::Write;
 
 use anyhow::{Error, Result};
 use clap::Parser;
+use psyche_data_provider::download_repo_sync;
 use psyche_modeling::{
-    auto_tokenizer, download_repo_sync, LlamaEosToks, LlamaForCausalLM, LogitsProcessor, Sampling,
-    TokenOutputStream,
+    auto_tokenizer, LlamaEosToks, LlamaForCausalLM, LogitsProcessor, Sampling, TokenOutputStream,
 };
 use tch::{Kind, Tensor};
 

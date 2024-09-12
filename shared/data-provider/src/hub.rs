@@ -29,7 +29,11 @@ pub async fn download_repo(
         .await?
         .siblings
         .into_iter()
-        .filter(|x| x.rfilename.ends_with(".safetensors") || x.rfilename.ends_with(".json"))
+        .filter(|x| {
+            x.rfilename.ends_with(".safetensors")
+                || x.rfilename.ends_with(".json")
+                || x.rfilename.ends_with(".parquet")
+        })
         .collect::<Vec<_>>();
     let mut ret: Vec<PathBuf> = Vec::new();
     for chunk in siblings.chunks(max_concurrent_downloads.unwrap_or(siblings.len())) {
@@ -69,7 +73,11 @@ pub fn download_repo_sync(
         .info()?
         .siblings
         .into_iter()
-        .filter(|x| x.rfilename.ends_with(".safetensors") || x.rfilename.ends_with(".json"))
+        .filter(|x| {
+            x.rfilename.ends_with(".safetensors")
+                || x.rfilename.ends_with(".json")
+                || x.rfilename.ends_with(".parquet")
+        })
         .map(|x| api.get(&x.rfilename))
         .collect();
     Ok(res?)
