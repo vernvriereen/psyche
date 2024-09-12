@@ -45,8 +45,6 @@ pub struct Config {
 }
 
 pub struct Cache {
-    pub use_kv_cache: bool,
-    _kvs: Vec<Option<(Tensor, Tensor)>>,
     cos: Tensor,
     sin: Tensor,
 }
@@ -60,9 +58,7 @@ fn calculate_default_inv_freq(cfg: &Config) -> Vec<f32> {
 }
 
 impl Cache {
-    pub fn new(use_kv_cache: bool, kind: Kind, config: &Config, device: &Device) -> Self {
-        assert!(!use_kv_cache); // until supported
-        // precompute freqs_cis
+    pub fn new(kind: Kind, config: &Config, device: &Device) -> Self {
         let theta = match &config.rope_scaling {
             None
             | Some(Llama3RopeConfig {
@@ -107,16 +103,7 @@ impl Cache {
         // https://github.com/huggingface/transformers/blob/6112b1c6442aaf7affd2b0676a1cd4eee30c45cf/src/transformers/models/llama/modeling_llama.py#L112
         let cos = idx_theta.cos().to_kind(kind);
         let sin = idx_theta.sin().to_kind(kind);
-        let mut kvs = Vec::new();
-        for _ in 0..config.num_hidden_layers {
-            kvs.push(None);
-        }
-        Self {
-            use_kv_cache,
-            _kvs: kvs,
-            cos,
-            sin,
-        }
+        Self { cos, sin }
     }
 }
 
@@ -204,13 +191,21 @@ struct CausalSelfAttention {
     n_head: i64,
     n_kvhead: i64,
     n_embd: i64,
+    n_max_seq_len: i64,
     head_dim: i64,
     device: Device,
     use_sdpa: bool,
 }
 
 impl CausalSelfAttention {
-    fn new(vs: nn::Path, n_head: i64, n_kvheads: i64, n_embd: i64, use_sdpa: bool) -> Self {
+    fn new(
+        vs: nn::Path,
+        n_head: i64,
+        n_kvheads: i64,
+        n_embd: i64,
+        n_max_seq_len: i64,
+        use_sdpa: bool,
+    ) -> Self {
         let c = nn::LinearConfig {
             bias: false,
             ..Default::default()
@@ -231,33 +226,11 @@ impl CausalSelfAttention {
             head_dim,
             n_kvhead: n_kvheads,
             n_embd,
+            n_max_seq_len,
             device: vs.device(),
             use_sdpa,
         }
     }
-
-    // fn apply_rotary_emb(&self, x: &Tensor, index_pos: i64, freqs_cis: &Tensor) -> Tensor {
-    //     let mut dims = x.size();
-    //     let seq_len = dims[2];
-    //     let v = dims.pop().unwrap();
-    //     dims.push(v / 2);
-    //     dims.push(2);
-    //     let x = x.reshape(&dims);
-    //     let freqs_cis = freqs_cis.narrow(2, index_pos, seq_len);
-    //     let re_x = x.slice(-1, 0, 1, 1);
-    //     let im_x = x.slice(-1, 1, 2, 1);
-    //     let re_f = freqs_cis.slice(-1, 0, 1, 1);
-    //     let im_f = freqs_cis.slice(-1, 1, 2, 1);
-    //     let re = &re_x * &re_f - &im_x * &im_f;
-    //     let im = &re_x * &im_f + &im_x * &re_f;
-    //     let rope = Tensor::cat(&[&re, &im], -1);
-    //     // TODO: Add the flatten op.
-    //     let mut dims = rope.size();
-    //     let v1 = dims.pop().unwrap();
-    //     let v2 = dims.pop().unwrap();
-    //     dims.push(v1 * v2);
-    //     rope.reshape(&dims)
-    // }
 
     fn apply_rotary_emb(&self, x: &Tensor, index_pos: i64, cache: &Cache) -> Tensor {
         let (_b_sz, _, seq_len, _hidden_size) = x.size4().unwrap();
@@ -272,7 +245,7 @@ impl CausalSelfAttention {
         (x * cos) + (rotate_half(x) * sin)
     }
 
-    fn forward(&self, x: &Tensor, index_pos: i64, _block_idx: usize, cache: &mut Cache) -> Tensor {
+    fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut Cache) -> Tensor {
         let (b, t, c) = x.size3().unwrap();
         let kind = x.kind();
         let q = self.q_proj.forward(x);
@@ -330,6 +303,7 @@ impl Block {
             config.num_attention_heads as i64,
             config.num_key_value_heads as i64,
             config.hidden_size as i64,
+            (config.max_position_embeddings + 1) as i64,
             config.use_sdpa,
         );
         let rms_2 = RmsNorm::new(
@@ -350,11 +324,8 @@ impl Block {
         }
     }
 
-    fn forward(&self, x: &Tensor, index_pos: i64, block_idx: usize, cache: &mut Cache) -> Tensor {
-        let x = self
-            .attn
-            .forward(&self.rms_1.forward(x), index_pos, block_idx, cache)
-            + x;
+    fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut Cache) -> Tensor {
+        let x = self.attn.forward(&self.rms_1.forward(x), index_pos, cache) + x;
         self.mlp.forward(&self.rms_2.forward(&x)) + x
     }
 }
@@ -387,8 +358,8 @@ impl Llama {
 
     pub fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut Cache) -> Tensor {
         let mut x = self.wte.forward(x);
-        for (block_idx, block) in self.blocks.iter().enumerate() {
-            x = block.forward(&x, index_pos, block_idx, cache);
+        for block in &self.blocks {
+            x = block.forward(&x, index_pos, cache);
         }
         self.ln_f.forward(&x)
     }

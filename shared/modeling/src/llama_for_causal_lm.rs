@@ -114,7 +114,7 @@ impl LlamaForCausalLM {
             load_safetensors_into_variables(&mut variables, &repo_files)?;
             (model, lm_head)
         };
-        let cache = Cache::new(false, kind.unwrap_or(Kind::Float), &config, &device);
+        let cache = Cache::new(kind.unwrap_or(Kind::Float), &config, &device);
         Ok(
             LlamaForCausalLM {
                 model,
