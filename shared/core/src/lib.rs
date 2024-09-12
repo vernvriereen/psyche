@@ -1,6 +1,7 @@
 #![allow(unexpected_cfgs)]
 
 mod deterministic_shuffle;
+mod similarity;
 mod lcg;
 mod lr_scheduler;
 mod merkle_tree;
