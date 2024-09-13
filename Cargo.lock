@@ -5012,6 +5012,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crossterm",
+ "rand 0.8.5",
  "ratatui",
  "tracing",
  "tracing-subscriber",

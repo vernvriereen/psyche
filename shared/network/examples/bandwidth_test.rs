@@ -218,7 +218,7 @@ async fn main() -> Result<()> {
     let tui = args.tui;
 
     let tx_state = if tui {
-        psyche_tui::start_render_loop::<TUI>().unwrap()
+        psyche_tui::start_render_loop(TUI::default()).unwrap()
     } else {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {

@@ -36,18 +36,13 @@ pub struct App<W: CustomWidget> {
     custom_widget_data_state: W::Data,
 }
 // TODO implement sending shutdown signal + graceful shutdown somehow..
-impl<W: CustomWidget> Default for App<W> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 impl<W: CustomWidget> App<W> {
-    pub fn new() -> Self {
+    pub fn new(widget: W) -> Self {
         Self {
             mode: AppMode::Run,
             logger_state: TuiWidgetState::new(),
-            custom_widget: Default::default(),
+            custom_widget: widget,
             custom_widget_data_state: Default::default(),
         }
     }
@@ -114,6 +109,8 @@ impl<W: CustomWidget> App<W> {
 
     fn handle_ui_event(&mut self, event: Event) {
         debug!(target: "App", "Handling UI event: {:?}",event);
+
+        self.custom_widget.on_ui_event(&event);
 
         if let Event::Key(key) = event {
             match key.code {

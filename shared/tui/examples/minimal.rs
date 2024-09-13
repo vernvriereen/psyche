@@ -1,6 +1,7 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use psyche_tui::{init_logging, start_render_loop, CustomWidget};
+use rand::RngCore;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     widgets::{Paragraph, Widget},
@@ -8,7 +9,7 @@ use ratatui::{
 use tracing::{error, info, warn};
 
 #[derive(Default)]
-struct MinimalWidget {
+pub struct MinimalWidget {
     persistant_state: u64,
 }
 
@@ -36,6 +37,7 @@ impl CustomWidget for MinimalWidget {
     }
 }
 
+#[allow(dead_code)]
 fn main() -> anyhow::Result<()> {
     init_logging(psyche_tui::LogOutput::TUI);
 
@@ -43,19 +45,10 @@ fn main() -> anyhow::Result<()> {
     warn!("bar");
     error!("baz");
 
-    let tx = start_render_loop::<MinimalWidget>()?;
+    let tx = start_render_loop(MinimalWidget::default())?;
     loop {
-        let prng_num = pseudo_rand();
-        tx.send(prng_num as u64).expect("sending works!");
+        let prng_num = rand::thread_rng().next_u64();
+        tx.send(prng_num).expect("sending works!");
         std::thread::sleep(Duration::from_secs(2));
     }
-}
-
-fn pseudo_rand() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time goes forwards")
-        .as_nanos()
-        .wrapping_mul(6364136223846793005)
-        .wrapping_add(1442695040888963407)
 }
