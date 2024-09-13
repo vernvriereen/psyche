@@ -4866,6 +4866,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "psyche-centralized-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "chrono",
+ "clap",
+ "futures-util",
+ "iroh",
+ "postcard",
+ "psyche-centralized-shared",
+ "psyche-coordinator",
+ "psyche-network",
+ "psyche-tui",
+ "psyche-watcher",
+ "rand 0.8.5",
+ "serde",
+ "sha2 0.10.8",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+]
+
+[[package]]
 name = "psyche-centralized-shared"
 version = "0.1.0"
 dependencies = [
@@ -4980,30 +5004,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "psyche-server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytes",
- "chrono",
- "clap",
- "futures-util",
- "iroh",
- "postcard",
- "psyche-centralized-shared",
- "psyche-coordinator",
- "psyche-network",
- "psyche-tui",
- "psyche-watcher",
- "rand 0.8.5",
- "serde",
- "sha2 0.10.8",
- "tokio",
- "tokio-stream",
- "tracing",
 ]
 
 [[package]]
