@@ -37,13 +37,26 @@ impl Display for Task {
     }
 }
 
-struct TokenizedDocument {
+enum PreparedTaskType {
+    LogLikelihood {
+        docs: Vec<TokenizedLLHDocument>,
+        tokenized_fewshot: Vec<i64>,
+    },
+}
+
+pub struct PreparedTask {
+    prepared_task_type: PreparedTaskType,
+    name: String,
+    num: usize,
+}
+
+struct TokenizedLLHDocument {
     text: Vec<i64>,
     choices: Vec<Vec<i64>>,
     answer: usize,
 }
 
-impl TokenizedDocument {
+impl TokenizedLLHDocument {
     pub fn from_document(doc: Document, tokenizer: &Tokenizer) -> Self {
         let text = tokenizer
             .encode(doc.text, false)
@@ -74,79 +87,74 @@ impl TokenizedDocument {
 }
 
 impl Task {
-    pub fn run<M: CausalLM>(
-        &mut self,
+    pub fn prepare<M: CausalLM>(
+        mut self,
         model: &mut M,
         tokenizer: &Tokenizer,
         quiet: bool,
         limit: Option<usize>,
-    ) -> HashMap<String, f32> {
-        let _no_grad = tch::no_grad_guard();
-        match &self.task_type {
-            TaskType::LogLikelihood(llh) => Task::run_log_likelihood(
-                model,
-                tokenizer,
-                llh,
-                self.num_fewshot,
-                &mut self.rand,
-                quiet,
-                limit,
-            ),
+    ) -> PreparedTask {
+        let name = format!("{}", &self);
+        if !quiet {
+            println!("Preparing {name}");
+        }
+        match self.task_type {
+            TaskType::LogLikelihood(llh) => {
+                let mut docs = llh.get_documents();
+                docs.shuffle(&mut self.rand);
+                if let Some(limit) = limit {
+                    docs.truncate(limit);
+                }
+                let fewshot = if self.num_fewshot > 0 {
+                    let mut fewshot_docs = llh.get_fewshot_documents();
+                    fewshot_docs.shuffle(&mut self.rand);
+                    fewshot_docs
+                        .into_iter()
+                        .take(self.num_fewshot)
+                        .map(|x| format!("{}{}", x.text, x.choices[x.answer]))
+                        .collect::<Vec<_>>()
+                        .join("\n\n")
+                        + "\n\n"
+                } else {
+                    String::new()
+                };
+                let mut tokenized_fewshot = match model.bos_token_id() {
+                    Some(bos_token_id) => vec![bos_token_id],
+                    None => Vec::new(),
+                };
+                tokenized_fewshot.append(
+                    &mut tokenizer
+                        .encode(fewshot, false)
+                        .unwrap()
+                        .get_ids()
+                        .iter()
+                        .map(|x| *x as i64)
+                        .collect::<Vec<_>>(),
+                );
+                let docs = docs
+                    .into_iter()
+                    .map(|x| TokenizedLLHDocument::from_document(x, tokenizer))
+                    .collect::<Vec<_>>();
+                PreparedTask {
+                    name,
+                    num: docs.len(),
+                    prepared_task_type: PreparedTaskType::LogLikelihood {
+                        docs,
+                        tokenized_fewshot,
+                    },
+                }
+            }
         }
     }
+}
 
-    fn run_log_likelihood<M: CausalLM>(
-        model: &mut M,
-        tokenizer: &Tokenizer,
-        llh: &Box<dyn LogLikelihoodTask>,
-        num_fewshot: usize,
-        rand: &mut ChaCha8Rng,
-        quiet: bool,
-        limit: Option<usize>,
-    ) -> HashMap<String, f32> {
-        if !quiet {
-            println!("Preparing {}", llh);
-        }
-        let mut docs = llh.get_documents();
-        docs.shuffle(rand);
-        if let Some(limit) = limit {
-            docs.truncate(limit);
-        }
-        let fewshot = if num_fewshot > 0 {
-            let mut fewshot_docs = llh.get_fewshot_documents();
-            fewshot_docs.shuffle(rand);
-            fewshot_docs
-                .into_iter()
-                .take(num_fewshot)
-                .map(|x| format!("{}{}", x.text, x.choices[x.answer]))
-                .collect::<Vec<_>>()
-                .join("\n\n")
-                + "\n\n"
-        } else {
-            String::new()
-        };
-        let mut tokenized_fewshot = match model.bos_token_id() {
-            Some(bos_token_id) => vec![bos_token_id],
-            None => Vec::new(),
-        };
-        tokenized_fewshot.append(
-            &mut tokenizer
-                .encode(fewshot, false)
-                .unwrap()
-                .get_ids()
-                .iter()
-                .map(|x| *x as i64)
-                .collect::<Vec<_>>(),
-        );
-        let docs = docs
-            .into_iter()
-            .map(|x| TokenizedDocument::from_document(x, tokenizer))
-            .collect::<Vec<_>>();
+impl PreparedTask {
+    pub fn run<M: CausalLM>(&self, model: &mut M, quiet: bool) -> HashMap<String, f32> {
         let pbar = match quiet {
             true => None,
             false => {
-                println!("Running {llh}");
-                let pbar = ProgressBar::new(docs.len() as u64);
+                println!("Running {}", self.name);
+                let pbar = ProgressBar::new(self.num as u64);
                 pbar.set_style(ProgressStyle::default_bar()
                     .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
                     .unwrap()
@@ -154,12 +162,27 @@ impl Task {
                 Some(pbar)
             }
         };
+
+        match &self.prepared_task_type {
+            PreparedTaskType::LogLikelihood {
+                docs,
+                tokenized_fewshot,
+            } => Self::run_log_likelihood(model, docs, tokenized_fewshot, pbar),
+        }
+    }
+
+    fn run_log_likelihood<M: CausalLM>(
+        model: &mut M,
+        docs: &Vec<TokenizedLLHDocument>,
+        tokenized_fewshot: &Vec<i64>,
+        pbar: Option<ProgressBar>,
+    ) -> HashMap<String, f32> {
         let mut acc_num = 0f32;
         let mut acc_norm_num = 0f32;
         let mut acc_denom = 0f32;
-        for mut doc in docs {
+        for doc in docs {
             let mut context = tokenized_fewshot.clone();
-            context.append(&mut doc.text);
+            context.extend_from_slice(&doc.text);
             let mut scores: Vec<(f32, bool)> = Vec::new();
             if doc.choices.iter().all(|x| x.len() == 1) {
                 let ids = Tensor::from_slice(&context).to(model.device()).unsqueeze(0);

@@ -17,9 +17,12 @@ fn main() -> Result<()> {
         Some(Device::Cuda(0)),
     )?;
     let tokenizer = auto_tokenizer(&repo)?;
-    for mut task in tasks {
-        let scores = task.run(&mut model, &tokenizer, false, None);
-        println!("{task}: {scores:?}");
+    for task in tasks {
+        let name = format!("{task}");
+        let scores = task
+            .prepare(&mut model, &tokenizer, false, None)
+            .run(&mut model, false);
+        println!("{name}: {scores:?}");
     }
     Ok(())
 }
