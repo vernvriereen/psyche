@@ -111,7 +111,7 @@ impl LlamaForCausalLM {
                 config.vocab_size as i64,
                 c,
             );
-            load_safetensors_into_variables(&mut variables, &repo_files)?;
+            load_safetensors_into_variables(&mut variables, repo_files)?;
             (model, lm_head)
         };
         let cache = Cache::new(kind.unwrap_or(Kind::Float), &config, &device);

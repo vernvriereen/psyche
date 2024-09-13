@@ -13,7 +13,7 @@ pub type NC = NetworkConnection<Message, Payload>;
 impl NodeIdentity for ClientId {
     type PrivateKey = SecretKey;
     fn from_signed_bytes(bytes: &[u8], challenge: [u8; 32]) -> anyhow::Result<Self> {
-        let (key, decoded_challenge) = SignedMessage::<[u8; 32]>::verify_and_decode(&bytes)?;
+        let (key, decoded_challenge) = SignedMessage::<[u8; 32]>::verify_and_decode(bytes)?;
         if decoded_challenge != challenge {
             return Err(anyhow!(
                 "Mismatch in decoded challenge {:?} != {:?}",

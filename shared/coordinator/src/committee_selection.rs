@@ -2,8 +2,8 @@ use std::cmp::Ordering;
 
 use psyche_core::{MerkleTree, Proof, sha256v};
 
-pub const COMMITTEE_SALT: &'static str = "committee";
-pub const WITNESS_SALT: &'static str = "witness";
+pub const COMMITTEE_SALT: &str = "committee";
+pub const WITNESS_SALT: &str = "witness";
 
 #[derive(Debug, PartialEq)]
 pub enum Committee {
@@ -187,7 +187,7 @@ mod tests {
             CommitteeSelection::new(10, 20, 30, &nodes, 12345);
 
         for node in &nodes {
-            let result = selection.get_selection(&node);
+            let result = selection.get_selection(node);
             assert!(matches!(
                 result.committee,
                 Committee::TieBreaker | Committee::Verifier | Committee::Trainer

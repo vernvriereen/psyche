@@ -5,8 +5,7 @@ use tch::{nn::VarStore, Device, Kind, Tensor};
 pub fn load_safetensors_into_variables(vs: &mut VarStore, repo_files: &[PathBuf]) -> Result<()> {
     let mut unmatched = vs
         .variables()
-        .keys()
-        .map(|x| x.clone())
+        .keys().cloned()
         .collect::<HashSet<_>>();
     for path in repo_files.iter().filter(|x| {
         x.extension()

@@ -140,7 +140,7 @@ impl<I: Iterator<Item = Result<Tensor>>> Iterator for Batcher<IterResult1<I>> {
             }
         }
         let items = items.into_iter().collect::<Result<Vec<Tensor>>>();
-        Some(items.and_then(|items| Ok(Tensor::stack(&items, 0))))
+        Some(items.map(|items| Tensor::stack(&items, 0)))
     }
 }
 

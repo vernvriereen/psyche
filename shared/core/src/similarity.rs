@@ -118,7 +118,7 @@ mod tests {
         let b = [1.0, 2.0];
 
         // Jaccard can handle different lengths because it's set-based
-        run_jaccard_tests(&a, &b, 0.3333333333333333);
+        run_jaccard_tests(&a, &b, 0.333_333_34);
 
         // Manhattan and Hamming should return errors for mismatched lengths
         run_manhattan_tests(&a, &b, Err("Input arrays must have the same length"));

@@ -96,7 +96,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         let clients = backend.select_new_clients();
         if clients.len() as u32 >= self.min_clients {
             self.clients = clients
-                .into_iter()
+                .iter()
                 .map(|id| Client { id: id.clone() })
                 .collect();
             self.rounds.fill(Round::empty());

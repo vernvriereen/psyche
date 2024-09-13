@@ -5,8 +5,8 @@ use hf_hub::{
 };
 use std::path::PathBuf;
 
-const MODEL_EXTENSIONS: [&'static str; 2] = [".safetensors", ".json"];
-const DATASET_EXTENSIONS: [&'static str; 1] = [".parquet"];
+const MODEL_EXTENSIONS: [&str; 2] = [".safetensors", ".json"];
+const DATASET_EXTENSIONS: [&str; 1] = [".parquet"];
 
 fn check_extensions(sibling: &Siblings, extensions: &[&'static str]) -> bool {
     match extensions.is_empty() {
@@ -46,7 +46,7 @@ async fn download_repo_async(
         .await?
         .siblings
         .into_iter()
-        .filter(|x| check_extensions(x, &extensions))
+        .filter(|x| check_extensions(x, extensions))
         .collect::<Vec<_>>();
     let mut ret: Vec<PathBuf> = Vec::new();
     for chunk in siblings.chunks(max_concurrent_downloads.unwrap_or(siblings.len())) {

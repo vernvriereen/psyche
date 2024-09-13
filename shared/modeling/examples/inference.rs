@@ -102,7 +102,7 @@ fn main() -> Result<()> {
         .encode(prompt, true)
         .map_err(Error::msg)?
         .get_ids()
-        .into_iter()
+        .iter()
         .map(|x| *x as i64)
         .collect::<Vec<_>>();
     let mut tokenizer = TokenOutputStream::new(tokenizer);

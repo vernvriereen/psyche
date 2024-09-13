@@ -101,12 +101,12 @@ impl Dataset {
                 bail!("Could not determine split");
             }
         };
-        to_load.sort_by(|a, b| order(a).cmp(&order(b)));
+        to_load.sort_by_key(order);
         let files: std::io::Result<Vec<File>> =
-            to_load.into_iter().map(|x| File::open(x)).collect();
+            to_load.into_iter().map(File::open).collect();
         let files: Result<Vec<SerializedFileReader<File>>, ParquetError> = files?
             .into_iter()
-            .map(|x| SerializedFileReader::new(x))
+            .map(SerializedFileReader::new)
             .collect();
         let files = files?;
         if files[0].metadata().file_metadata().num_rows() == 0 {
@@ -151,7 +151,7 @@ impl Dataset {
         let mut files_iter = self.files.iter();
         let row_iter = files_iter.next().unwrap().get_row_iter(None).unwrap();
         DatasetIter {
-            files_iter: files_iter,
+            files_iter,
             row_iter,
         }
     }
@@ -161,7 +161,7 @@ impl Dataset {
     }
 
     pub fn get_column_id<T: Into<String>>(&self, name: T) -> Option<usize> {
-        self.column_ids.get(&name.into()).and_then(|x| Some(*x))
+        self.column_ids.get(&name.into()).copied()
     }
 }
 

@@ -14,7 +14,7 @@ pub fn load_dataset(repo_id: &str, split: Split) -> Result<Dataset> {
     Dataset::load_dataset(&repo_files, Some(split))
 }
 
-pub const ASCII_UPPERCASE: [&'static str; 26] = [
+pub const ASCII_UPPERCASE: [&str; 26] = [
     "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S",
     "T", "U", "V", "W", "X", "Y", "Z",
 ];

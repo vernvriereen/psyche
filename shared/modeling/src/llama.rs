@@ -97,8 +97,8 @@ impl Cache {
             (config.max_position_embeddings + 1) as i64,
             (Kind::Float, *device),
         )
-        .reshape(&[(config.max_position_embeddings + 1) as i64, 1])
-        .matmul(&theta.reshape(&[1i64, theta.numel() as i64]));
+        .reshape([(config.max_position_embeddings + 1) as i64, 1])
+        .matmul(&theta.reshape([1i64, theta.numel() as i64]));
         // This is different from the paper, see:
         // https://github.com/huggingface/transformers/blob/6112b1c6442aaf7affd2b0676a1cd4eee30c45cf/src/transformers/models/llama/modeling_llama.py#L112
         let cos = idx_theta.cos().to_kind(kind);
@@ -296,7 +296,7 @@ impl Block {
         let rms_1 = RmsNorm::new(
             &vs / "input_layernorm",
             config.hidden_size as i64,
-            config.rms_norm_eps as f64,
+            config.rms_norm_eps,
         );
         let attn = CausalSelfAttention::new(
             &vs / "self_attn",
@@ -309,7 +309,7 @@ impl Block {
         let rms_2 = RmsNorm::new(
             &vs / "post_attention_layernorm",
             config.hidden_size as i64,
-            config.rms_norm_eps as f64,
+            config.rms_norm_eps,
         );
         let mlp = Mlp::new(
             &vs / "mlp",

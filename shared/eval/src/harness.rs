@@ -80,7 +80,7 @@ impl Task {
             TaskType::LogLikelihood(llh) => Task::run_log_likelihood(
                 model,
                 tokenizer,
-                &llh,
+                llh,
                 self.num_fewshot,
                 &mut self.rand,
                 quiet,
