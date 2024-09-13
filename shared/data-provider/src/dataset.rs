@@ -1,0 +1,189 @@
+use anyhow::{bail, Result};
+use parquet::{
+    errors::ParquetError,
+    file::reader::{FileReader, SerializedFileReader},
+    record::reader::RowIter,
+};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Formatter},
+    fs::File,
+    path::PathBuf,
+    usize,
+};
+
+pub type Row = parquet::record::Row;
+pub type Field = parquet::record::Field;
+
+const SPLITS: [Split; 3] = [Split::Train, Split::Test, Split::Validation];
+
+fn looks_like_parquet_file(x: &PathBuf) -> bool {
+    if let Some(ext) = x.extension() {
+        if ext.eq_ignore_ascii_case("parquet") {
+            if let Some(stem) = x.file_stem() {
+                if let Some(s) = stem.to_str() {
+                    return s.parse::<usize>().is_ok();
+                }
+            }
+        }
+    };
+    false
+}
+
+fn order(x: &PathBuf) -> usize {
+    x.file_stem()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .parse::<usize>()
+        .unwrap()
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Split {
+    Train,
+    Validation,
+    Test,
+}
+
+impl Display for Split {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Split::Train => "train",
+                Split::Validation => "validation",
+                Split::Test => "test",
+            }
+        )
+    }
+}
+
+pub struct Dataset {
+    files: Vec<SerializedFileReader<File>>,
+    split: Split,
+    column_ids: HashMap<String, usize>,
+    column_types: HashMap<String, Field>,
+}
+
+impl Dataset {
+    pub fn load_dataset(repo_files: &[PathBuf], split: Option<Split>) -> Result<Self> {
+        let mut split = split;
+        let mut to_load: Vec<PathBuf> = Vec::new();
+        for file in repo_files {
+            if looks_like_parquet_file(file) {
+                let mut parent = file.clone();
+                parent.pop();
+                if let Some(split_name) = parent.file_name() {
+                    if split.as_ref().is_some() {
+                        if split_name.eq_ignore_ascii_case(split.as_ref().unwrap().to_string()) {
+                            to_load.push(file.clone());
+                        }
+                    } else {
+                        for maybe_split in SPLITS {
+                            if split_name.eq_ignore_ascii_case(maybe_split.to_string()) {
+                                to_load.push(file.clone());
+                                split = Some(maybe_split);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if to_load.is_empty() {
+            bail!("No files in dataset")
+        }
+        let split = match split {
+            Some(split) => split,
+            None => {
+                bail!("Could not determine split");
+            }
+        };
+        to_load.sort_by(|a, b| order(a).cmp(&order(b)));
+        let files: std::io::Result<Vec<File>> =
+            to_load.into_iter().map(|x| File::open(x)).collect();
+        let files: Result<Vec<SerializedFileReader<File>>, ParquetError> = files?
+            .into_iter()
+            .map(|x| SerializedFileReader::new(x))
+            .collect();
+        let files = files?;
+        if files[0].metadata().file_metadata().num_rows() == 0 {
+            bail!("Empty dataset");
+        }
+        let first_row = files[0]
+            .get_row_group(0)
+            .unwrap()
+            .get_row_iter(None)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap();
+        let columns = first_row.get_column_iter().collect::<Vec<_>>();
+        let column_ids = HashMap::from_iter(
+            columns
+                .iter()
+                .enumerate()
+                .map(|(idx, x)| (x.0.clone(), idx)),
+        );
+        let column_types =
+            HashMap::from_iter(columns.into_iter().map(|x| (x.0.clone(), x.1.clone())));
+        Ok(Dataset {
+            files,
+            split,
+            column_ids,
+            column_types,
+        })
+    }
+
+    pub fn num_rows(&self) -> usize {
+        self.files
+            .iter()
+            .fold(0, |acc, x| acc + x.metadata().file_metadata().num_rows()) as usize
+    }
+
+    pub fn split(&self) -> Split {
+        self.split
+    }
+
+    pub fn iter(&self) -> DatasetIter {
+        let mut files_iter = self.files.iter();
+        let row_iter = files_iter.next().unwrap().get_row_iter(None).unwrap();
+        DatasetIter {
+            files_iter: files_iter,
+            row_iter,
+        }
+    }
+
+    pub fn columns(&self) -> impl Iterator<Item = (&String, &Field)> {
+        self.column_types.iter()
+    }
+
+    pub fn get_column_id<T: Into<String>>(&self, name: T) -> Option<usize> {
+        self.column_ids.get(&name.into()).and_then(|x| Some(*x))
+    }
+}
+
+pub struct DatasetIter<'a> {
+    files_iter: std::slice::Iter<'a, SerializedFileReader<File>>,
+    row_iter: RowIter<'a>,
+}
+
+impl<'a> Iterator for DatasetIter<'a> {
+    type Item = Row;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.row_iter.next() {
+            Some(Ok(item)) => Some(item),
+            Some(Err(_)) => None,
+            None => match self.files_iter.next() {
+                Some(file) => {
+                    self.row_iter = file.get_row_iter(None).unwrap();
+                    self.next()
+                }
+                None => None,
+            },
+        }
+    }
+}

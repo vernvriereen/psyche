@@ -4922,8 +4922,15 @@ dependencies = [
 name = "psyche-eval"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "clap",
+ "indicatif",
+ "psyche-data-provider",
  "psyche-modeling",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "tch",
+ "tokenizers",
 ]
 
 [[package]]

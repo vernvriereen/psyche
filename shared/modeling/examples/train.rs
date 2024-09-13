@@ -1,7 +1,7 @@
 use anyhow::Result;
 use psyche_core::{CosineLR, LearningRateScheduler};
-use psyche_data_provider::{download_repo_sync, LocalDataProvider, TokenSize};
-use psyche_modeling::{Batcher, LlamaForCausalLM};
+use psyche_data_provider::{download_model_repo_sync, LocalDataProvider, TokenSize};
+use psyche_modeling::{Batcher, CausalLM, LlamaForCausalLM};
 use rand::Rng;
 use std::time::SystemTime;
 use tch::nn::{self, OptimizerConfig};
@@ -25,7 +25,7 @@ const MAX_GRAD_NORM: f64 = 1.0;
 const REPO_ID: &str = "emozilla/llama2-20m-init";
 
 fn main() -> Result<()> {
-    let repo_files = download_repo_sync(REPO_ID.to_owned(), None, None, None, false)?;
+    let repo_files = download_model_repo_sync(REPO_ID, None, None, None, false)?;
     let mut model =
         LlamaForCausalLM::from_pretrained(&repo_files, Some(Kind::BFloat16), None, None)?;
     let device = Device::Cuda(0);

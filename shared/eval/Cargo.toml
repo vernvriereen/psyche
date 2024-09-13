@@ -4,7 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+psyche-data-provider = { path = "../data-provider" }
 psyche-modeling = { path = "../modeling" }
+anyhow.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+indicatif.workspace = true
+tokenizers.workspace = true
+tch.workspace = true
 
 # for examples
 [dev-dependencies]

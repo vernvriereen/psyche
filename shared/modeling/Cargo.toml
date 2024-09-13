@@ -6,16 +6,16 @@ edition = "2021"
 [dependencies]
 psyche-core = { path = "../core" }
 psyche-data-provider = { path = "../data-provider" }
-tch = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "9c498e6dcb83cebaf450fb4bfe0f265d660041b3" }
-torch-sys = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "9c498e6dcb83cebaf450fb4bfe0f265d660041b3" }
+tch.workspace = true
+torch-sys.workspace = true
 rand.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 memmap2.workspace = true
+tokenizers.workspace = true
 byteorder = "1.4.3"
 safetensors = "0.3.0"
-tokenizers = { version = "0.20.0", default-features = false, features = ["onig"] }
 
 
 # for examples

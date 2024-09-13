@@ -29,6 +29,7 @@ serde_json = "1.0.28"
 tracing = "0.1.40"
 bytes = "1.7.1"
 rand = "0.8.5"
+rand_chacha = "0.3.1"
 postcard = { version = "1.0.10", features = ["use-std"] }
 sha2 = "0.10.8"
 futures-util = "0.3.30"
@@ -38,6 +39,10 @@ fast-math = "0.1"
 async-trait = "0.1.82"
 iroh = "0.24.0"
 memmap2 = { version = "0.9.3", features = ["stable_deref_trait"] }
+indicatif = "0.17.5"
+tokenizers = { version = "0.20.0", default-features = false, features = ["onig"] }
+tch = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "9c498e6dcb83cebaf450fb4bfe0f265d660041b3" }
+torch-sys = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "9c498e6dcb83cebaf450fb4bfe0f265d660041b3" }
 
 
 # solana-program uses curve25519-dalek v3.2.1, which pins zeroize <1.4 for MSRV cares.

@@ -2,9 +2,10 @@ use std::io::Write;
 
 use anyhow::{Error, Result};
 use clap::Parser;
-use psyche_data_provider::download_repo_sync;
+use psyche_data_provider::download_model_repo_sync;
 use psyche_modeling::{
-    auto_tokenizer, LlamaEosToks, LlamaForCausalLM, LogitsProcessor, Sampling, TokenOutputStream,
+    auto_tokenizer, CausalLM, LlamaEosToks, LlamaForCausalLM, LogitsProcessor, Sampling,
+    TokenOutputStream,
 };
 use tch::{Kind, Tensor};
 
@@ -87,7 +88,7 @@ struct Args {
 fn main() -> Result<()> {
     let _no_grad = tch::no_grad_guard();
     let args = Args::parse();
-    let repo_files = download_repo_sync(args.model.unwrap(), None, None, None, true)?;
+    let repo_files = download_model_repo_sync(&args.model.unwrap(), None, None, None, true)?;
     let mut model =
         LlamaForCausalLM::from_pretrained(&repo_files, Some(Kind::BFloat16), None, None)?;
     let tokenizer = auto_tokenizer(&repo_files)?;

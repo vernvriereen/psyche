@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::{
     llama::{Cache, Config, Llama, Llama3RopeConfig, LlamaEosToks},
-    safetensor_loader::load_safetensors_into_variables,
+    safetensor_loader::load_safetensors_into_variables, CausalLM,
 };
 use anyhow::{bail, Error, Result};
 use tch::{
@@ -126,8 +126,10 @@ impl LlamaForCausalLM {
             },
         )
     }
+}
 
-    pub fn forward(
+impl CausalLM for LlamaForCausalLM {
+    fn forward(
         &mut self,
         x: &Tensor,
         labels: Option<&Tensor>,
@@ -154,5 +156,13 @@ impl LlamaForCausalLM {
             None => None,
         };
         (logits, loss)
+    }
+    
+    fn bos_token_id(&self) -> Option<i64> {
+        self.config.bos_token_id.map(|x| x as i64)
+    }
+    
+    fn device(&self) -> Device {
+        self.device
     }
 }
