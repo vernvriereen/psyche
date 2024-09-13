@@ -12,6 +12,7 @@ rand_chacha.workspace = true
 indicatif.workspace = true
 tokenizers.workspace = true
 tch.workspace = true
+regex = "1.5"
 
 # for examples
 [dev-dependencies]

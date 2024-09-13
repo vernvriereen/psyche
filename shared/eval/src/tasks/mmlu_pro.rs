@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use crate::{
     load_dataset,
     traits::{Document, LogLikelihoodTask},
@@ -7,6 +5,16 @@ use crate::{
 };
 use anyhow::Result;
 use psyche_data_provider::{Dataset, ListAccessor, Row, RowAccessor, Split};
+use std::fmt::Display;
+
+/**
+    hf (pretrained=meta-llama/Meta-Llama-3.1-8B,dtype=bfloat16), gen_kwargs: (None), limit: None, num_fewshot: None, batch_size: 1
+    |       Tasks        |Version|Filter|n-shot|Metric|   |Value |   |Stderr|
+    |--------------------|------:|------|-----:|------|---|-----:|---|-----:|
+    |leaderboard_mmlu_pro|    0.1|none  |     5|acc   |↑  |0.3268|±  |0.0043|
+
+    MMLU Pro: {"acc": 0.32646278, "acc_norm": 0.32646278}
+*/
 
 pub struct MMLUPro {
     test_dataset: Dataset,

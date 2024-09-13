@@ -5,7 +5,7 @@ mod harness;
 mod tasks;
 mod traits;
 
-pub use tasks::MMLUPro;
+pub use tasks::{Hellaswag, MMLUPro};
 pub use harness::{Task, TaskType};
 
 pub fn load_dataset(repo_id: &str, split: Split) -> Result<Dataset> {

@@ -3,7 +3,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use psyche_modeling::CausalLM;
 use rand::{seq::SliceRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use std::{cmp::Ordering, fmt::Display};
+use std::{collections::HashMap, fmt::Display};
 use tch::{Kind, Tensor};
 use tokenizers::Tokenizer;
 
@@ -74,7 +74,13 @@ impl TokenizedDocument {
 }
 
 impl Task {
-    pub fn run<M: CausalLM>(&mut self, model: &mut M, tokenizer: &Tokenizer, quiet: bool) -> f32 {
+    pub fn run<M: CausalLM>(
+        &mut self,
+        model: &mut M,
+        tokenizer: &Tokenizer,
+        quiet: bool,
+        limit: Option<usize>,
+    ) -> HashMap<String, f32> {
         let _no_grad = tch::no_grad_guard();
         match &self.task_type {
             TaskType::LogLikelihood(llh) => Task::run_log_likelihood(
@@ -84,6 +90,7 @@ impl Task {
                 self.num_fewshot,
                 &mut self.rand,
                 quiet,
+                limit,
             ),
         }
     }
@@ -95,17 +102,16 @@ impl Task {
         num_fewshot: usize,
         rand: &mut ChaCha8Rng,
         quiet: bool,
-    ) -> f32 {
+        limit: Option<usize>,
+    ) -> HashMap<String, f32> {
         if !quiet {
             println!("Preparing {}", llh);
         }
-        let docs = llh.get_documents();
-        // test all answers are one character along until length stuff is done
-        assert_eq!(
-            docs.iter()
-                .fold(0, |acc, e| acc + e.choices[e.answer].len()),
-            docs.len()
-        );
+        let mut docs = llh.get_documents();
+        docs.shuffle(rand);
+        if let Some(limit) = limit {
+            docs.truncate(limit);
+        }
         let fewshot = if num_fewshot > 0 {
             let mut fewshot_docs = llh.get_fewshot_documents();
             fewshot_docs.shuffle(rand);
@@ -149,34 +155,80 @@ impl Task {
             }
         };
         let mut acc_num = 0f32;
+        let mut acc_norm_num = 0f32;
         let mut acc_denom = 0f32;
         for mut doc in docs {
-            let mut ids = tokenized_fewshot.clone();
-            ids.append(&mut doc.text);
-            let ids = Tensor::from_slice(&ids).to(model.device()).unsqueeze(0);
-            let (logits, _) = model.forward(&ids, None, Some(1));
-            let logits = logits.squeeze();
-            let answer_probs: Vec<f32> = doc
-                .choices
-                .into_iter()
-                .map(|x| logits.get(x[0]).to_kind(Kind::Float).try_into().unwrap())
-                .collect::<Vec<_>>();
-            let selected = answer_probs
-                .into_iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(Ordering::Equal))
-                .map(|(index, _)| index)
+            let mut context = tokenized_fewshot.clone();
+            context.append(&mut doc.text);
+            let mut scores: Vec<(f32, bool)> = Vec::new();
+            if doc.choices.iter().all(|x| x.len() == 1) {
+                let ids = Tensor::from_slice(&context).to(model.device()).unsqueeze(0);
+                let (logits, _) = model.forward(&ids, None, Some(1));
+                let logits = logits.squeeze().log_softmax(-1, None);
+                let greedy: i64 = logits.argmax(-1, false).try_into().unwrap();
+                let index =
+                    Tensor::from_slice(&doc.choices.iter().map(|x| x[0]).collect::<Vec<_>>())
+                        .to(logits.device());
+                let logits = logits.gather(-1, &index, false);
+                let logits: Vec<f32> = logits.try_into().unwrap();
+                scores.extend(
+                    logits
+                        .into_iter()
+                        .zip(doc.choices.iter())
+                        .map(|(score, choice)| (score, choice[0] == greedy)),
+                );
+            } else {
+                for choice in &doc.choices {
+                    let mut ids = context.clone();
+                    ids.extend_from_slice(&choice);
+                    let ids = Tensor::from_slice(&ids).to(model.device()).unsqueeze(0);
+                    let (logits, _) = model.forward(&ids, None, Some((choice.len() + 1) as i64));
+                    let logits =
+                        logits
+                            .log_softmax(-1, None)
+                            .squeeze()
+                            .slice(0, 0, choice.len() as i64, 1);
+                    let greedy_tokens: Vec<i64> = logits.argmax(-1, false).try_into().unwrap();
+                    let exact_match = greedy_tokens.eq(choice);
+                    let index = Tensor::from_slice(&choice)
+                        .to(logits.device())
+                        .unsqueeze(-1);
+                    let logits = logits.gather(-1, &index, false);
+                    let loglikelihood: f32 = logits.sum(Kind::Float).try_into().unwrap();
+                    scores.push((loglikelihood, exact_match));
+                }
+            }
+            let selected: i64 = Tensor::from_slice(&scores.iter().map(|x| x.0).collect::<Vec<_>>())
+                .argmax(-1, false)
+                .try_into()
                 .unwrap();
-            if selected == doc.answer {
+            let selected_norm: i64 = Tensor::from_slice(
+                &scores
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, x)| x.0 / doc.choices[idx].len() as f32)
+                    .collect::<Vec<_>>(),
+            )
+            .argmax(-1, false)
+            .try_into()
+            .unwrap();
+
+            if selected as usize == doc.answer {
                 acc_num += 1.;
             }
+            if selected_norm as usize == doc.answer {
+                acc_norm_num += 1.;
+            }
             acc_denom += 1.;
-            if let Some(pbar) = pbar.as_ref() {
-                let acc = acc_num / acc_denom;
-                pbar.set_message(format!("{acc:.3}"));
-                pbar.inc(1)
+
+            if let Some(pbar) = &pbar {
+                pbar.set_message(format!("acc_norm: {:.3}", acc_norm_num / acc_denom));
+                pbar.inc(1);
             }
         }
-        acc_num / acc_denom
+        HashMap::from([
+            ("acc".to_owned(), acc_num / acc_denom),
+            ("acc_norm".to_owned(), acc_norm_num / acc_denom),
+        ])
     }
 }
