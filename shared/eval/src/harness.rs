@@ -1,10 +1,9 @@
-use std::cmp::Ordering;
-
 use crate::traits::{Document, LogLikelihoodTask};
 use indicatif::{ProgressBar, ProgressStyle};
 use psyche_modeling::CausalLM;
 use rand::{seq::SliceRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use std::{cmp::Ordering, fmt::Display};
 use tch::{Kind, Tensor};
 use tokenizers::Tokenizer;
 
@@ -26,6 +25,14 @@ impl Task {
             task_type,
             num_fewshot,
             rand: ChaCha8Rng::from_seed(seed),
+        }
+    }
+}
+
+impl Display for Task {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.task_type {
+            TaskType::LogLikelihood(x) => write!(f, "{x}"),
         }
     }
 }

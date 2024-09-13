@@ -6,10 +6,11 @@ use tch::{Device, Kind};
 
 fn main() -> Result<()> {
     let mut task = Task::new(MMLUPro::load()?, 5, 42);
-    let repo = download_model_repo_sync("unsloth/Meta-Llama-3.1-8B", None, None, None, true)?;
+    let repo = download_model_repo_sync("NousResearch/Llama-2-7b-hf", None, None, None, true)?;
     let mut model =
         LlamaForCausalLM::from_pretrained(&repo, Some(Kind::BFloat16), None, Some(Device::Cuda(0)))?;
     let tokenizer = auto_tokenizer(&repo)?;
-    task.run(&mut model, &tokenizer, false);
+    let score = task.run(&mut model, &tokenizer, false);
+    println!("{task}: {score:.3}");
     Ok(())
 }
