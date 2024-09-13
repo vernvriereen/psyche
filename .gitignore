@@ -27,4 +27,8 @@ perf.data
 perf.data.*
 .vscode/
 
+### Training Data ###
 data/
+
+### Nix ###
+result
