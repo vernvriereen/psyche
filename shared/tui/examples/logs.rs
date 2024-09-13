@@ -1,0 +1,67 @@
+use std::time::Duration;
+
+use minimal::MinimalWidget;
+use psyche_tui::{init_logging, logging::LoggerWidget, start_render_loop, CustomWidget};
+use rand::RngCore;
+use ratatui::layout::{Constraint, Direction, Layout};
+use tracing::{error, info, warn};
+mod minimal;
+
+struct MinimalAndLogs {
+    minimal: MinimalWidget,
+    logger: LoggerWidget,
+}
+
+impl MinimalAndLogs {
+    fn new() -> Self {
+        Self {
+            logger: LoggerWidget::new()
+                .with_separator('|')
+                .with_show_target_field(true),
+            minimal: Default::default(),
+        }
+    }
+}
+
+impl CustomWidget for MinimalAndLogs {
+    type Data = <MinimalWidget as CustomWidget>::Data;
+
+    fn render(
+        &mut self,
+        area: ratatui::prelude::Rect,
+        buf: &mut ratatui::prelude::Buffer,
+        state: &Self::Data,
+    ) {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints(
+                [
+                    // minimal widget
+                    Constraint::Percentage(20),
+                    // logs
+                    Constraint::Percentage(80),
+                ]
+                .as_ref(),
+            )
+            .split(area);
+        self.minimal.render(chunks[0], buf, state);
+        self.logger.render(chunks[1], buf);
+    }
+}
+#[allow(dead_code)]
+fn main() -> anyhow::Result<()> {
+    init_logging(psyche_tui::LogOutput::TUI);
+
+    let tx = start_render_loop(MinimalAndLogs::new())?;
+    loop {
+        let prng_num = rand::thread_rng().next_u64();
+        tx.send(prng_num).expect("sending works!");
+
+        info!("foo");
+        warn!("bar");
+        error!("baz");
+
+        std::thread::sleep(Duration::from_secs(2));
+    }
+}

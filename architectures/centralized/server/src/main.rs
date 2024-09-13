@@ -10,6 +10,7 @@ use psyche_tui::LogOutput;
 use std::{str::FromStr, sync::mpsc, thread, time::Duration};
 use tokio::time::{interval, interval_at, Instant};
 use tracing::info;
+use tui::TUIState;
 
 mod app;
 mod protocol;
@@ -77,10 +78,10 @@ async fn main() -> Result<()> {
     let tx_state = if tui {
         psyche_tui::start_render_loop(TUI::default()).unwrap()
     } else {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::channel::<TUIState>();
         thread::spawn(move || {
             for item in rx {
-                info!("{:?}", item);
+                info!("{:?}", item.coordinator);
             }
         });
         tx

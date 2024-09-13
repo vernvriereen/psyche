@@ -1,20 +1,23 @@
 use psyche_network::{NetworkTUI, NetworkTUIState};
 use psyche_tui::{
+    logging::LoggerWidget,
     ratatui::layout::{Constraint, Direction, Layout},
     CustomWidget,
 };
 use psyche_watcher::{CoordinatorTUI, CoordinatorTUIState};
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct TUIState {
     pub coordinator: CoordinatorTUIState,
     pub network: NetworkTUIState,
+    pub console: (),
 }
 
 #[derive(Default)]
 pub struct TUI {
     coordinator: CoordinatorTUI,
     network: NetworkTUI,
+    console: LoggerWidget,
 }
 
 impl CustomWidget for TUI {
@@ -34,11 +37,14 @@ impl CustomWidget for TUI {
                     Constraint::Max(1),
                     // network info
                     Constraint::Fill(1),
+                    // logs
+                    Constraint::Fill(1),
                 ]
                 .as_ref(),
             )
             .split(area);
         self.coordinator.render(chunks[0], buf, &state.coordinator);
         self.network.render(chunks[1], buf, &state.network);
+        self.console.render(chunks[2], buf, &state.console);
     }
 }

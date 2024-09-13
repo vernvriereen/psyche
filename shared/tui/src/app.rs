@@ -1,17 +1,11 @@
-use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
-use ratatui::{
-    backend::Backend,
-    layout::{Constraint, Direction, Layout, Margin},
-    widgets::{Block, Widget},
-    Terminal,
-};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use ratatui::{backend::Backend, Terminal};
 use std::{
     sync::mpsc::{self, Receiver},
     thread,
     time::Duration,
 };
 use tracing::{debug, trace};
-use tui_logger::{TuiLoggerLevelOutput, TuiLoggerWidget, TuiWidgetEvent, TuiWidgetState};
 
 use crate::widget::CustomWidget;
 
@@ -31,7 +25,6 @@ enum AppEvent<S> {
 
 pub struct App<W: CustomWidget> {
     mode: AppMode,
-    logger_state: TuiWidgetState,
     custom_widget: W,
     custom_widget_data_state: W::Data,
 }
@@ -41,7 +34,6 @@ impl<W: CustomWidget> App<W> {
     pub fn new(widget: W) -> Self {
         Self {
             mode: AppMode::Run,
-            logger_state: TuiWidgetState::new(),
             custom_widget: widget,
             custom_widget_data_state: Default::default(),
         }
@@ -118,17 +110,6 @@ impl<W: CustomWidget> App<W> {
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.mode = AppMode::Quit
                 }
-                KeyCode::Esc => self.logger_state.transition(TuiWidgetEvent::EscapeKey),
-                _ => {}
-            }
-        } else if let Event::Mouse(mouse) = event {
-            match mouse.kind {
-                MouseEventKind::ScrollUp => {
-                    self.logger_state.transition(TuiWidgetEvent::PrevPageKey);
-                }
-                MouseEventKind::ScrollDown => {
-                    self.logger_state.transition(TuiWidgetEvent::NextPageKey);
-                }
                 _ => {}
             }
         }
@@ -136,37 +117,11 @@ impl<W: CustomWidget> App<W> {
 
     fn draw(&mut self, terminal: &mut Terminal<impl Backend>) -> anyhow::Result<()> {
         terminal.draw(|frame| {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .margin(1)
-                .constraints(
-                    [
-                        // custom widget
-                        Constraint::Percentage(80),
-                        // logs
-                        Constraint::Percentage(20),
-                    ]
-                    .as_ref(),
-                )
-                .split(frame.area());
             self.custom_widget.render(
-                chunks[0],
+                frame.area(),
                 frame.buffer_mut(),
                 &self.custom_widget_data_state,
             );
-            let log_area = chunks[1].inner(Margin {
-                vertical: 1,
-                horizontal: 0,
-            });
-            TuiLoggerWidget::default()
-                .block(Block::bordered().title("Logs"))
-                .output_separator('|')
-                .output_timestamp(Some("%H:%M:%S%.3f".to_string()))
-                .output_level(Some(TuiLoggerLevelOutput::Long))
-                .output_target(false)
-                .output_file(false)
-                .output_line(false)
-                .render(log_area, frame.buffer_mut());
         })?;
         Ok(())
     }

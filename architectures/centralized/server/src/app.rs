@@ -70,6 +70,7 @@ impl App {
         let tui_state = TUIState {
             coordinator: (&self.coordinator).into(),
             network: (&self.backend.network).into(),
+            console: Default::default(),
         };
         self.tx_tui_state.send(tui_state)?;
         Ok(())
