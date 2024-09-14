@@ -1,8 +1,5 @@
-use crate::protocol::Message;
-use crate::protocol::{ClientId, NC};
-
 use anyhow::Result;
-use psyche_centralized_shared::Payload;
+use psyche_centralized_shared::{ClientId, Message, Payload, NC};
 use psyche_coordinator::Coordinator;
 use psyche_network::{NetworkEvent, NetworkTUI};
 use psyche_tui::logging::LoggerWidget;

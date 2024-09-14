@@ -1,6 +1,5 @@
 use anyhow::anyhow;
 use iroh::net::{key::SecretKey, NodeId};
-use psyche_centralized_shared::Payload;
 use psyche_coordinator::{Coordinator, NodeIdentity};
 use psyche_network::{NetworkConnection, SignedMessage};
 use serde::{Deserialize, Serialize};
@@ -36,4 +35,8 @@ impl NodeIdentity for ClientId {
 pub enum Message {
     Coordinator(Coordinator<ClientId>),
     Join,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Payload {
 }

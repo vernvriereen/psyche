@@ -4862,7 +4862,10 @@ dependencies = [
 name = "psyche-centralized-client"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "clap",
  "psyche-centralized-shared",
+ "tokio",
 ]
 
 [[package]]
@@ -4893,6 +4896,10 @@ dependencies = [
 name = "psyche-centralized-shared"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "iroh",
+ "psyche-coordinator",
+ "psyche-network",
  "serde",
 ]
 

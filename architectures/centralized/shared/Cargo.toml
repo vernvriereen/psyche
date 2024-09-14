@@ -2,5 +2,10 @@
 name = "psyche-centralized-shared"
 version = "0.1.0"
 edition = "2021"
+
 [dependencies]
+anyhow.workspace = true
 serde.workspace = true
+psyche-coordinator.workspace = true
+psyche-network.workspace = true
+iroh.workspace = true

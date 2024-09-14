@@ -1,2 +1,3 @@
-mod payload;
-pub use payload::Payload;
+mod protocol;
+
+pub use protocol::{Message, Payload, ClientId, NC};

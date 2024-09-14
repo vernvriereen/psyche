@@ -1,10 +1,10 @@
 use crate::app::App;
-use crate::protocol::NC;
 
 use anyhow::{bail, Result};
 use app::{Tabs, TAB_NAMES};
 use clap::{ArgAction, Parser};
 use iroh::net::relay::{RelayMap, RelayMode, RelayUrl};
+use psyche_centralized_shared::NC;
 use psyche_network::PeerList;
 use psyche_tui::LogOutput;
 use std::{str::FromStr, time::Duration};
@@ -12,7 +12,6 @@ use tokio::time::{interval, interval_at, Instant};
 use tracing::info;
 
 mod app;
-mod protocol;
 
 #[derive(Parser, Debug)]
 struct Args {
