@@ -24,11 +24,11 @@ pub trait CustomWidgetTuple: Send + 'static {
 }
 
 impl<T: CustomWidgetTuple> TabbedWidget<T> {
-    pub fn new(widgets: T, tab_titles: Vec<String>) -> Self {
+    pub fn new<S: ToString>(widgets: T, tab_titles: &[S]) -> Self {
         Self {
             widgets,
             current_tab: 0,
-            tab_titles,
+            tab_titles: tab_titles.iter().map(|x| x.to_string()).collect(),
             _phantom: PhantomData,
         }
     }
@@ -165,7 +165,7 @@ where
     type Data = (T1::Data, T2::Data, T3::Data);
 
     fn len(&self) -> usize {
-        2
+        3
     }
 
     fn render_at(&mut self, index: usize, area: Rect, buf: &mut Buffer, state: &Self::Data) {

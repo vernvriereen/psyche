@@ -46,7 +46,7 @@ impl CustomWidget for MinimalAndLogs {
             )
             .split(area);
         self.minimal.render(chunks[0], buf, state);
-        self.logger.render(chunks[1], buf);
+        self.logger.render(chunks[1], buf, &Default::default());
     }
 }
 #[allow(dead_code)]

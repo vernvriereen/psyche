@@ -1,14 +1,21 @@
+use crate::protocol::Message;
 use crate::protocol::{ClientId, NC};
-use crate::{protocol::Message, tui::TUIState};
 
 use anyhow::Result;
 use psyche_centralized_shared::Payload;
 use psyche_coordinator::Coordinator;
-use psyche_network::NetworkEvent;
+use psyche_network::{NetworkEvent, NetworkTUI};
+use psyche_tui::logging::LoggerWidget;
+use psyche_tui::{CustomWidget, TabbedWidget};
+use psyche_watcher::CoordinatorTUI;
 use rand::RngCore;
 use std::sync::mpsc::Sender;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::{select, time::Interval};
+
+pub(super) type Tabs = TabbedWidget<(CoordinatorTUI, NetworkTUI, LoggerWidget)>;
+pub(super) const TAB_NAMES: [&'static str; 3] = ["Coordinator", "Network", "Logger"];
+type TabsData = <TabbedWidget<(CoordinatorTUI, NetworkTUI, LoggerWidget)> as CustomWidget>::Data;
 
 struct Backend {
     network: NC,
@@ -22,7 +29,7 @@ impl psyche_coordinator::Backend<ClientId> for Backend {
 }
 
 pub struct App {
-    tx_tui_state: Sender<TUIState>,
+    tx_tui_state: Option<Sender<TabsData>>,
     tick_interval: Interval,
     update_tui_interval: Interval,
     coordinator: Coordinator<ClientId>,
@@ -32,7 +39,7 @@ pub struct App {
 impl App {
     pub fn new(
         network: NC,
-        tx_tui_state: Sender<TUIState>,
+        tx_tui_state: Option<Sender<TabsData>>,
         tick_interval: Interval,
         update_tui_interval: Interval,
     ) -> Self {
@@ -67,12 +74,14 @@ impl App {
     }
 
     fn update_tui(&mut self) -> Result<()> {
-        let tui_state = TUIState {
-            coordinator: (&self.coordinator).into(),
-            network: (&self.backend.network).into(),
-            console: Default::default(),
-        };
-        self.tx_tui_state.send(tui_state)?;
+        if let Some(tx_tui_state) = &self.tx_tui_state {
+            let states = (
+                (&self.coordinator).into(),
+                (&self.backend.network).into(),
+                Default::default(),
+            );
+            tx_tui_state.send(states)?;
+        }
         Ok(())
     }
 

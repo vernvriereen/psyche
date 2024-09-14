@@ -1,20 +1,18 @@
 use crate::app::App;
 use crate::protocol::NC;
-use crate::tui::TUI;
 
 use anyhow::{bail, Result};
+use app::{Tabs, TAB_NAMES};
 use clap::{ArgAction, Parser};
 use iroh::net::relay::{RelayMap, RelayMode, RelayUrl};
 use psyche_network::PeerList;
 use psyche_tui::LogOutput;
-use std::{str::FromStr, sync::mpsc, thread, time::Duration};
+use std::{str::FromStr, time::Duration};
 use tokio::time::{interval, interval_at, Instant};
 use tracing::info;
-use tui::TUIState;
 
 mod app;
 mod protocol;
-mod tui;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -75,16 +73,12 @@ async fn main() -> Result<()> {
 
     let tui = args.tui;
 
-    let tx_state = if tui {
-        psyche_tui::start_render_loop(TUI::default()).unwrap()
-    } else {
-        let (tx, rx) = mpsc::channel::<TUIState>();
-        thread::spawn(move || {
-            for item in rx {
-                info!("{:?}", item.coordinator);
-            }
-        });
-        tx
+    let tx_state = match tui {
+        true => Some(psyche_tui::start_render_loop(Tabs::new(
+            Default::default(),
+            &TAB_NAMES,
+        ))?),
+        false => None,
     };
 
     // tick every second

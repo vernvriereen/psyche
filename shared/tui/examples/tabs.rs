@@ -44,7 +44,7 @@ fn main() -> anyhow::Result<()> {
 
     let tx = start_render_loop(Widgets::new(
         Default::default(),
-        vec!["Silly Dog".to_string(), "State Example".to_string()],
+        &["Silly Dog", "State Example"],
     ))?;
 
     loop {
