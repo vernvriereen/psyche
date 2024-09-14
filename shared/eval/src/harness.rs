@@ -87,10 +87,10 @@ impl TokenizedLLHDocument {
 }
 
 impl Task {
-    pub fn prepare<M: CausalLM>(
+    pub fn prepare(
         mut self,
-        model: &mut M,
         tokenizer: &Tokenizer,
+        bos_token_id: Option<i64>,
         quiet: bool,
         limit: Option<usize>,
     ) -> PreparedTask {
@@ -118,7 +118,7 @@ impl Task {
                 } else {
                     String::new()
                 };
-                let mut tokenized_fewshot = match model.bos_token_id() {
+                let mut tokenized_fewshot = match bos_token_id {
                     Some(bos_token_id) => vec![bos_token_id],
                     None => Vec::new(),
                 };

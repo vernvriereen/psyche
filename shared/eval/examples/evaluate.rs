@@ -1,7 +1,7 @@
 use anyhow::Result;
 use psyche_data_provider::download_model_repo_sync;
 use psyche_eval::{Hellaswag, MMLUPro, Task};
-use psyche_modeling::{auto_tokenizer, LlamaForCausalLM};
+use psyche_modeling::{auto_tokenizer, CausalLM, LlamaForCausalLM};
 use tch::{Device, Kind};
 
 fn main() -> Result<()> {
@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     for task in tasks {
         let name = format!("{task}");
         let scores = task
-            .prepare(&mut model, &tokenizer, false, None)
+            .prepare(&tokenizer, model.bos_token_id(), false, None)
             .run(&mut model, false);
         println!("{name}: {scores:?}");
     }
