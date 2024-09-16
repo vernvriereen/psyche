@@ -16,10 +16,10 @@ impl psyche_tui::CustomWidget for CoordinatorTUI {
             .direction(Direction::Horizontal)
             .constraints(
                 [
-                    Constraint::Ratio(1, 4),
-                    Constraint::Ratio(1, 4),
-                    Constraint::Ratio(1, 4),
-                    Constraint::Ratio(1, 4),
+                    Constraint::Ratio(2, 5),
+                    Constraint::Ratio(1, 5),
+                    Constraint::Ratio(1, 5),
+                    Constraint::Ratio(1, 5),
                 ]
                 .as_ref(),
             )

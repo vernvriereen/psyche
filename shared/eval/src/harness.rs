@@ -173,15 +173,15 @@ impl PreparedTask {
 
     fn run_log_likelihood<M: CausalLM>(
         model: &mut M,
-        docs: &Vec<TokenizedLLHDocument>,
-        tokenized_fewshot: &Vec<i64>,
+        docs: &[TokenizedLLHDocument],
+        tokenized_fewshot: &[i64],
         pbar: Option<ProgressBar>,
     ) -> HashMap<String, f32> {
         let mut acc_num = 0f32;
         let mut acc_norm_num = 0f32;
         let mut acc_denom = 0f32;
         for doc in docs {
-            let mut context = tokenized_fewshot.clone();
+            let mut context = tokenized_fewshot.to_vec();
             context.extend_from_slice(&doc.text);
             let mut scores: Vec<(f32, bool)> = Vec::new();
             if doc.choices.iter().all(|x| x.len() == 1) {
@@ -203,7 +203,7 @@ impl PreparedTask {
             } else {
                 for choice in &doc.choices {
                     let mut ids = context.clone();
-                    ids.extend_from_slice(&choice);
+                    ids.extend_from_slice(choice);
                     let ids = Tensor::from_slice(&ids).to(model.device()).unsqueeze(0);
                     let (logits, _) = model.forward(&ids, None, Some((choice.len() + 1) as i64));
                     let logits =
@@ -213,9 +213,7 @@ impl PreparedTask {
                             .slice(0, 0, choice.len() as i64, 1);
                     let greedy_tokens: Vec<i64> = logits.argmax(-1, false).try_into().unwrap();
                     let exact_match = greedy_tokens.eq(choice);
-                    let index = Tensor::from_slice(&choice)
-                        .to(logits.device())
-                        .unsqueeze(-1);
+                    let index = Tensor::from_slice(choice).to(logits.device()).unsqueeze(-1);
                     let logits = logits.gather(-1, &index, false);
                     let loglikelihood: f32 = logits.sum(Kind::Float).try_into().unwrap();
                     scores.push((loglikelihood, exact_match));

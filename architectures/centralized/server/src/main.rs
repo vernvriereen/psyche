@@ -1,13 +1,12 @@
 use crate::app::App;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use app::{Tabs, TAB_NAMES};
 use clap::{ArgAction, Parser};
-use iroh::net::relay::{RelayMap, RelayMode, RelayUrl};
 use psyche_centralized_shared::NC;
-use psyche_network::PeerList;
+use psyche_network::RelayMode;
 use psyche_tui::LogOutput;
-use std::{str::FromStr, time::Duration};
+use std::time::Duration;
 use tokio::time::{interval, interval_at, Instant};
 use tracing::info;
 
@@ -17,10 +16,6 @@ mod app;
 struct Args {
     #[clap(long)]
     secret_key: Option<String>,
-    #[clap(short, long)]
-    relay: Option<RelayUrl>,
-    #[clap(long)]
-    no_relay: bool,
 
     #[clap(short, long)]
     bind_port: Option<u16>,
@@ -34,8 +29,6 @@ struct Args {
         require_equals = false
     )]
     tui: bool,
-
-    peer_list: Option<String>,
 
     #[clap(long)]
     run_id: String,
@@ -51,24 +44,18 @@ async fn main() -> Result<()> {
         LogOutput::Console
     });
 
-    let PeerList(peers) = args
-        .peer_list
-        .map(|p| PeerList::from_str(&p).unwrap())
-        .unwrap_or_default();
-
     info!("joining gossip room");
 
     let secret_key = args.secret_key.map(|k| k.parse().unwrap());
 
-    let relay_mode = match (args.no_relay, args.relay) {
-        (false, None) => RelayMode::Default,
-        (false, Some(url)) => RelayMode::Custom(RelayMap::from_url(url)),
-        (true, None) => RelayMode::Disabled,
-        (true, Some(_)) => bail!("You cannot set --no-relay and --relay at the same time"),
-    };
-    info!("using relay servers: {:?}", &relay_mode);
-
-    let network = NC::init(&args.run_id, args.bind_port, relay_mode, peers, secret_key).await?;
+    let network = NC::init(
+        &args.run_id,
+        args.bind_port,
+        RelayMode::Default,
+        vec![],
+        secret_key,
+    )
+    .await?;
 
     let tui = args.tui;
 

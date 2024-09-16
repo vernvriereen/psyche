@@ -5,6 +5,12 @@ edition = "2021"
 
 [dependencies]
 psyche-centralized-shared = { path = "../shared" }
+psyche-coordinator.workspace = true
+psyche-network.workspace = true
+psyche-tui.workspace = true
+psyche-watcher.workspace = true
+rand.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 tokio.workspace = true
+tracing.workspace = true

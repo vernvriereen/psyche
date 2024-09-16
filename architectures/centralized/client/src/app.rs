@@ -53,6 +53,7 @@ impl App {
     }
 
     pub async fn run(&mut self) -> Result<()> {
+        self.backend.network.broadcast(&Message::Join).await?;
         loop {
             select! {
                 Ok(Some(event)) = self.backend.network.poll_next() => {
@@ -83,12 +84,12 @@ impl App {
     }
 
     fn on_network_event(&mut self, event: NetworkEvent<Message, Payload>) {
-        if let NetworkEvent::MessageReceived((key, message)) = event { match message {
+        if let NetworkEvent::MessageReceived((_, message)) = event { match message {
             Message::Join => {
-                self.backend.pending_clients.push(key.into());
+                // ignore :)
             }
-            Message::Coordinator(..) => {
-                // im the server, whoever sent this sucks >:(
+            Message::Coordinator(state) => {
+                self.coordinator = state;
             }
         } }
     }
@@ -100,10 +101,5 @@ impl App {
             .as_secs();
         self.coordinator
             .tick(&self.backend, unix_timestamp, rand::thread_rng().next_u64());
-        self.backend
-            .network
-            .broadcast(&Message::Coordinator(self.coordinator.clone()))
-            .await
-            .unwrap();
     }
 }

@@ -1,15 +1,12 @@
 use psyche_core::Networkable;
-use psyche_tui::{
-    logging::LoggerWidget,
-    ratatui::{
-        buffer::Buffer,
-        layout::{Constraint, Direction, Layout, Rect},
-        style::{Color, Modifier, Style, Stylize},
-        symbols,
-        widgets::{
-            Axis, Block, Borders, Chart, Dataset, GraphType, List, ListItem, Padding, Paragraph,
-            Widget, Wrap,
-        },
+use psyche_tui::ratatui::{
+    buffer::Buffer,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style, Stylize},
+    symbols,
+    widgets::{
+        Axis, Block, Borders, Chart, Dataset, GraphType, List, ListItem, Padding, Paragraph,
+        Widget, Wrap,
     },
 };
 
@@ -33,24 +30,19 @@ impl psyche_tui::CustomWidget for NetworkTUI {
             .direction(Direction::Vertical)
             .constraints(
                 [
-                    // clients and join ticket
-                    Constraint::Percentage(40),
+                    // join ticket
+                    Constraint::Max(5),
+                    // clients
+                    Constraint::Percentage(35),
                     // uploads & download
-                    Constraint::Percentage(40),
-                    // console
                     Constraint::Fill(1),
                 ]
                 .as_ref(),
             )
             .split(area);
 
-        // Clients and Join Ticket
+        // Clients
         {
-            let client_chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
-                .split(chunks[0]);
-
             Paragraph::new(state.join_ticket.to_string())
                 .wrap(Wrap { trim: true })
                 .block(
@@ -59,7 +51,7 @@ impl psyche_tui::CustomWidget for NetworkTUI {
                         .padding(Padding::symmetric(1, 0))
                         .borders(Borders::ALL),
                 )
-                .render(client_chunks[0], buf);
+                .render(chunks[0], buf);
 
             List::new(state.last_seen.iter().map(|(peer_id, last_seen_instant)| {
                 let last_seen_time = Instant::now().sub(*last_seen_instant).as_secs_f64();
@@ -75,14 +67,14 @@ impl psyche_tui::CustomWidget for NetworkTUI {
                     .title("Recently Seen Peers")
                     .borders(Borders::ALL),
             )
-            .render(client_chunks[1], buf);
+            .render(chunks[1], buf);
         }
 
         // Upload & Download
         {
             let network_chunks =
                 Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
-                    .split(chunks[1]);
+                    .split(chunks[2]);
 
             // Downloads and Download Bandwidth
             {
@@ -183,9 +175,6 @@ impl psyche_tui::CustomWidget for NetworkTUI {
                     );
                 upload_bandwidth.render(upload_chunks[1], buf);
             }
-
-            // console
-            LoggerWidget::new().render(chunks[2], buf, &());
         }
     }
 }

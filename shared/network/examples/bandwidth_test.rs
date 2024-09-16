@@ -7,6 +7,7 @@ use iroh::{
 };
 use psyche_network::{NetworkConnection, NetworkEvent, NetworkTUI, NetworkTUIState, PeerList};
 use psyche_tui::{
+    logging::LoggerWidget,
     ratatui::{
         layout::{Constraint, Direction, Layout},
         widgets::{Block, Borders, Paragraph, Widget},
@@ -61,11 +62,11 @@ struct TUIState {
 }
 
 #[derive(Default)]
-struct TUI {
+struct Tui {
     network: NetworkTUI,
 }
 
-impl CustomWidget for TUI {
+impl CustomWidget for Tui {
     type Data = TUIState;
 
     fn render(
@@ -82,6 +83,8 @@ impl CustomWidget for TUI {
                     Constraint::Max(3),
                     // network info
                     Constraint::Fill(1),
+                    // console
+                    Constraint::Fill(1),
                 ]
                 .as_ref(),
             )
@@ -90,6 +93,9 @@ impl CustomWidget for TUI {
             .block(Block::new().borders(Borders::ALL))
             .render(chunks[0], buf);
         self.network.render(chunks[1], buf, &state.network);
+
+        // console
+        LoggerWidget::new().render(chunks[2], buf, &());
     }
 }
 
@@ -218,7 +224,7 @@ async fn main() -> Result<()> {
     let tui = args.tui;
 
     let tx_state = if tui {
-        psyche_tui::start_render_loop(TUI::default()).unwrap()
+        psyche_tui::start_render_loop(Tui::default()).unwrap()
     } else {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {

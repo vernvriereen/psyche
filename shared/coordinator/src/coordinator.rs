@@ -31,6 +31,7 @@ pub struct Round {
 }
 
 #[derive_serialize]
+#[derive(Clone)]
 pub struct Coordinator<T: NodeIdentity> {
     pub run_state: RunState,
     pub run_state_start_unix_timestamp: u64,
@@ -95,10 +96,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     fn waiting_for_members(&mut self, backend: &dyn Backend<T>, unix_timestamp: u64) {
         let clients = backend.select_new_clients();
         if clients.len() as u32 >= self.min_clients {
-            self.clients = clients
-                .iter()
-                .map(|id| Client { id: id.clone() })
-                .collect();
+            self.clients = clients.iter().map(|id| Client { id: id.clone() }).collect();
             self.rounds.fill(Round::empty());
             self.change_state(unix_timestamp, RunState::Warmup);
         }

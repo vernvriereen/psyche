@@ -8,8 +8,7 @@ use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
     fs::File,
-    path::PathBuf,
-    usize,
+    path::{Path, PathBuf},
 };
 
 pub type Row = parquet::record::Row;
@@ -17,7 +16,7 @@ pub type Field = parquet::record::Field;
 
 const SPLITS: [Split; 3] = [Split::Train, Split::Test, Split::Validation];
 
-fn looks_like_parquet_file(x: &PathBuf) -> bool {
+fn looks_like_parquet_file(x: &Path) -> bool {
     if let Some(ext) = x.extension() {
         if ext.eq_ignore_ascii_case("parquet") {
             if let Some(stem) = x.file_stem() {
@@ -30,7 +29,7 @@ fn looks_like_parquet_file(x: &PathBuf) -> bool {
     false
 }
 
-fn order(x: &PathBuf) -> usize {
+fn order(x: &Path) -> usize {
     x.file_stem()
         .unwrap()
         .to_str()
@@ -101,13 +100,10 @@ impl Dataset {
                 bail!("Could not determine split");
             }
         };
-        to_load.sort_by_key(order);
-        let files: std::io::Result<Vec<File>> =
-            to_load.into_iter().map(File::open).collect();
-        let files: Result<Vec<SerializedFileReader<File>>, ParquetError> = files?
-            .into_iter()
-            .map(SerializedFileReader::new)
-            .collect();
+        to_load.sort_by_key(|x| order(x));
+        let files: std::io::Result<Vec<File>> = to_load.into_iter().map(File::open).collect();
+        let files: Result<Vec<SerializedFileReader<File>>, ParquetError> =
+            files?.into_iter().map(SerializedFileReader::new).collect();
         let files = files?;
         if files[0].metadata().file_metadata().num_rows() == 0 {
             bail!("Empty dataset");

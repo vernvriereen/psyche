@@ -4,11 +4,7 @@ use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use iroh::{
     base::ticket::BlobTicket,
     gossip::net::{Command, Event, GossipEvent},
-    net::{
-        key::{PublicKey, SecretKey},
-        relay::RelayMode,
-        NodeAddr,
-    },
+    net::NodeAddr,
     node::{MemNode, Node},
 };
 use psyche_core::Networkable;
@@ -31,10 +27,14 @@ mod state;
 mod tui;
 mod util;
 
+pub use iroh::net::{
+    key::{PublicKey, SecretKey},
+    relay::RelayMode,
+    NodeId,
+};
 pub use peer_list::PeerList;
 pub use signed_message::SignedMessage;
 pub use tui::{NetworkTUI, NetworkTUIState};
-
 pub struct NetworkConnection<BroadcastMessage, Download>
 where
     BroadcastMessage: Networkable,

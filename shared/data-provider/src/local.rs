@@ -90,9 +90,12 @@ impl LocalDataProvider {
             token_size_in_bytes,
         })
     }
-    /// len in data_ids
+
     pub fn len(&self) -> usize {
         self.sequences.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.sequences.is_empty()
     }
 
     fn internal_get_sample(&self, data_id: usize) -> Result<Vec<i32>> {

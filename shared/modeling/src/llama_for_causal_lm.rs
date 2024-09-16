@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use crate::{
     llama::{Cache, Config, Llama, Llama3RopeConfig, LlamaEosToks},
-    safetensor_loader::load_safetensors_into_variables, CausalLM,
+    safetensor_loader::load_safetensors_into_variables,
+    CausalLM,
 };
 use anyhow::{bail, Error, Result};
 use tch::{
@@ -32,7 +33,7 @@ pub enum AttentionImplementation {
     #[serde(rename = "eager")]
     Eager,
     #[serde(rename = "sdpa")]
-    SDPA,
+    Sdpa,
     #[serde(rename = "flash_attention_2")]
     FlashAttention2,
 }
@@ -88,9 +89,9 @@ impl LlamaForCausalLM {
                 .ok_or(Error::msg("missing config.json"))?
                 .as_path(),
         )?)?)?;
-        let config: Config = llama_config.into_config(match attn_implementation.unwrap_or(AttentionImplementation::SDPA) {
+        let config: Config = llama_config.into_config(match attn_implementation.unwrap_or(AttentionImplementation::Sdpa) {
             AttentionImplementation::Eager => false,
-            AttentionImplementation::SDPA => true,
+            AttentionImplementation::Sdpa => true,
             AttentionImplementation::FlashAttention2 => { bail!("Directly setting attention implementation to FlashAttention-2 unsupported for now"); }
         });
         let device = device.unwrap_or(Device::Cuda(0));
@@ -115,16 +116,14 @@ impl LlamaForCausalLM {
             (model, lm_head)
         };
         let cache = Cache::new(kind.unwrap_or(Kind::Float), &config, &device);
-        Ok(
-            LlamaForCausalLM {
-                model,
-                config,
-                variables,
-                device,
-                lm_head,
-                cache,
-            },
-        )
+        Ok(LlamaForCausalLM {
+            model,
+            config,
+            variables,
+            device,
+            lm_head,
+            cache,
+        })
     }
 }
 
@@ -157,11 +156,11 @@ impl CausalLM for LlamaForCausalLM {
         };
         (logits, loss)
     }
-    
+
     fn bos_token_id(&self) -> Option<i64> {
         self.config.bos_token_id.map(|x| x as i64)
     }
-    
+
     fn device(&self) -> Device {
         self.device
     }

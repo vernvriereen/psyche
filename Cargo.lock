@@ -4865,7 +4865,13 @@ dependencies = [
  "anyhow",
  "clap",
  "psyche-centralized-shared",
+ "psyche-coordinator",
+ "psyche-network",
+ "psyche-tui",
+ "psyche-watcher",
+ "rand 0.8.5",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4877,7 +4883,6 @@ dependencies = [
  "chrono",
  "clap",
  "futures-util",
- "iroh",
  "postcard",
  "psyche-centralized-shared",
  "psyche-coordinator",
@@ -4897,7 +4902,6 @@ name = "psyche-centralized-shared"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "iroh",
  "psyche-coordinator",
  "psyche-network",
  "serde",

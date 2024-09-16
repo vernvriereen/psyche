@@ -72,7 +72,7 @@ impl<T: CustomWidgetTuple> CustomWidget for TabbedWidget<T> {
     fn render(&mut self, area: Rect, buf: &mut Buffer, state: &Self::Data) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(0)].as_ref())
+            .constraints([Constraint::Length(2), Constraint::Min(0)].as_ref())
             .split(area);
 
         self.render_tab_bar(chunks[0], buf);

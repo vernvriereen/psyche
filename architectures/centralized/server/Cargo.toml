@@ -9,7 +9,6 @@ psyche-coordinator.workspace = true
 psyche-network.workspace = true
 psyche-tui.workspace = true
 psyche-watcher.workspace = true
-iroh.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 anyhow.workspace = true
