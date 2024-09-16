@@ -254,7 +254,6 @@ async fn on_update_stats(node: &MemNode, stats: &mut State) -> Result<()> {
     stats
         .bandwidth_history
         .push_back(stats.bandwidth_tracker.get_bandwidth());
-
     const BANDWIDTH_GRAPH_SIZE: usize = 60;
     if stats.bandwidth_history.len() > BANDWIDTH_GRAPH_SIZE {
         stats.bandwidth_history.pop_front();

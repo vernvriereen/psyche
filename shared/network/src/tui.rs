@@ -1,11 +1,15 @@
 use psyche_core::Networkable;
-use psyche_tui::ratatui::{
-    buffer::Buffer,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style, Stylize},
-    widgets::{
-        Axis, Block, Borders, Chart, Dataset, GraphType, List, ListItem, Padding, Paragraph,
-        Widget, Wrap,
+use psyche_tui::{
+    logging::LoggerWidget,
+    ratatui::{
+        buffer::Buffer,
+        layout::{Constraint, Direction, Layout, Rect},
+        style::{Color, Modifier, Style, Stylize},
+        symbols,
+        widgets::{
+            Axis, Block, Borders, Chart, Dataset, GraphType, List, ListItem, Padding, Paragraph,
+            Widget, Wrap,
+        },
     },
 };
 
@@ -32,7 +36,9 @@ impl psyche_tui::CustomWidget for NetworkTUI {
                     // clients and join ticket
                     Constraint::Percentage(40),
                     // uploads & download
-                    Constraint::Percentage(60),
+                    Constraint::Percentage(40),
+                    // console
+                    Constraint::Fill(1),
                 ]
                 .as_ref(),
             )
@@ -111,7 +117,15 @@ impl psyche_tui::CustomWidget for NetworkTUI {
                     .map(|(x, y)| (x as f64, *y))
                     .collect::<Vec<_>>();
 
+                let ymax = bw_history
+                    .iter()
+                    .map(|(_, y)| *y)
+                    .max_by(|a, b| a.partial_cmp(b).unwrap())
+                    .unwrap_or(0.0)
+                    .max(1024.0);
+
                 Chart::new(vec![Dataset::default()
+                    .marker(symbols::Marker::Braille)
                     .graph_type(GraphType::Line)
                     .data(&bw_history)])
                 .block(
@@ -122,11 +136,22 @@ impl psyche_tui::CustomWidget for NetworkTUI {
                         ))
                         .borders(Borders::ALL),
                 )
-                .x_axis(Axis::default().title("Time").labels(vec!["0", "30", "60"]))
-                .y_axis(Axis::default().title("Bytes/s)").labels(vec![
-                    convert_bytes(0.0),
-                    convert_bytes(5.0 * 1024.0 * 1024.0),
-                ]))
+                .x_axis(
+                    Axis::default()
+                        .title("Time")
+                        .labels(vec!["0", "30", "60"])
+                        .bounds([0.0, 60.0]),
+                )
+                .y_axis(
+                    Axis::default()
+                        .title("Bytes/s)")
+                        .labels(vec![
+                            convert_bytes(0.0),
+                            convert_bytes(ymax / 2.0),
+                            convert_bytes(ymax),
+                        ])
+                        .bounds([0.0, ymax]),
+                )
                 .render(download_chunks[1], buf);
             }
 
@@ -158,6 +183,9 @@ impl psyche_tui::CustomWidget for NetworkTUI {
                     );
                 upload_bandwidth.render(upload_chunks[1], buf);
             }
+
+            // console
+            LoggerWidget::new().render(chunks[2], buf, &());
         }
     }
 }
