@@ -1,5 +1,5 @@
 {
-  description = "Rust shells";
+  description = "Nous Psyche";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -18,9 +18,7 @@
     flake-parts.lib.mkFlake {inherit inputs;} {
       systems = [
         "x86_64-linux"
-        "x86_64-darwin"
         "aarch64-linux"
-        "aarch64-darwin"
       ];
 
       perSystem = {
@@ -39,7 +37,6 @@
         };
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = ["rust-src"];
-          targets = ["x86_64-unknown-linux-musl"];
         };
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
         src = craneLib.cleanCargoSource ./.;
@@ -53,16 +50,6 @@
           };
         });
 
-        # build env only
-        nativeBuildInputs = with pkgs; [
-          pkg-config
-
-          alejandra # nix fmtter
-        ];
-
-        # runtime env
-        buildInputs = [torch pkgs.openssl];
-
         env = {
           LIBTORCH = torch.out;
           LIBTORCH_INCLUDE = torch.dev;
@@ -70,7 +57,18 @@
         };
 
         commonArgs = {
-          inherit env src buildInputs nativeBuildInputs;
+          inherit env src;
+          strictDeps = true;
+
+          # build env only
+          nativeBuildInputs = with pkgs; [
+            pkg-config
+
+            alejandra # nix fmtter
+          ];
+
+          # runtime env
+          buildInputs = [torch pkgs.openssl];
         };
 
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;

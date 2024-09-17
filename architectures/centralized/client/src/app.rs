@@ -7,6 +7,7 @@ use psyche_network::{NetworkEvent, NetworkTUI, TcpClient};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
 use psyche_watcher::CoordinatorTui;
+use std::mem::replace;
 use std::sync::mpsc::Sender;
 use tokio::{select, time::Interval};
 
@@ -18,7 +19,8 @@ pub struct App {
     tx_tui_state: Option<Sender<TabsData>>,
     tick_interval: Interval,
     update_tui_interval: Interval,
-    coordinator: Coordinator<ClientId>,
+    coordinator_state: Coordinator<ClientId>,
+    last_coordinator_state: Coordinator<ClientId>,
     p2p: NC,
     server_conn: TcpClient<ClientId, ClientToServerMessage, ServerToClientMessage>,
 }
@@ -35,7 +37,8 @@ impl App {
             tx_tui_state,
             tick_interval,
             update_tui_interval,
-            coordinator: Coordinator::default(),
+            last_coordinator_state: Coordinator::default(),
+            coordinator_state: Coordinator::default(),
             p2p,
             server_conn,
         }
@@ -66,7 +69,7 @@ impl App {
     fn update_tui(&mut self) -> Result<()> {
         if let Some(tx_tui_state) = &self.tx_tui_state {
             let states = (
-                (&self.coordinator).into(),
+                (&self.coordinator_state).into(),
                 (&self.p2p).into(),
                 Default::default(),
             );
@@ -76,13 +79,7 @@ impl App {
     }
 
     async fn on_peer_network_event(&mut self, event: NetworkEvent<BroadcastMessage, Payload>) {
-        match event {
-            NetworkEvent::MessageReceived((_, message)) => match message {
-                // todo start distro data download if step, etc, is good..
-                _ => (),
-            },
-            _ => (),
-        }
+        if let NetworkEvent::MessageReceived((_, _message)) = event {}
     }
 
     async fn on_server_message(&mut self, message: ServerToClientMessage) {
@@ -94,7 +91,9 @@ impl App {
                     .expect("Failed to add peers from server.");
             }
             ServerToClientMessage::Coordinator(state) => {
-                self.coordinator = state;
+                let prev_state = replace(&mut self.coordinator_state, state);
+                self.last_coordinator_state = prev_state;
+                // TODO on state change!
             }
         }
     }

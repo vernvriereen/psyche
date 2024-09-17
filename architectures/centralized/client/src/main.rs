@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
     let secret_key: SecretKey = args
         .secret_key
         .map(|k| k.parse().unwrap())
-        .unwrap_or_else(|| SecretKey::generate());
+        .unwrap_or_else(SecretKey::generate);
     let p2p = NC::init(
         &args.run_id,
         args.bind_port,

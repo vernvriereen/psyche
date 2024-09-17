@@ -98,11 +98,12 @@ impl App {
     }
 
     fn on_network_event(&mut self, event: NetworkEvent<BroadcastMessage, Payload>) {
-        if let NetworkEvent::MessageReceived((_from, message)) = event {
-            match message {
-                _ => {
-                    todo!();
-                }
+        if let NetworkEvent::MessageReceived((from, message)) = event {
+            {
+                warn!(
+                    "got gossip message we don't handle yet {:?} {:?}",
+                    from, message
+                );
             }
         }
     }

@@ -139,7 +139,7 @@ where
         loop {
             tokio::select! {
                 Some(message) = client_rx.recv() => {
-                    framed.send(ToClient::to_bytes(&message).into()).await?;
+                    framed.send(ServerToClientMessage::Else(message).to_bytes().into()).await?;
                 }
                 result = framed.next() => match result {
                     Some(Ok(bytes)) => {
@@ -150,7 +150,6 @@ where
                             }
                             ClientToServerMessage::Else(m) => {
                                 incoming_tx.send((identity.clone(), m)).await?;
-
                             }
                         }
                     }

@@ -18,8 +18,6 @@ struct DummyBackend<T: NodeIdentity>(Vec<T>);
 #[async_trait]
 impl<T: NodeIdentity> WatcherBackend<T> for DummyBackend<T> {
     async fn wait_for_new_state(&self) -> Coordinator<T> {
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-        info!("new step!");
         Coordinator {
             tick: 0,
             step: 0,
@@ -74,7 +72,7 @@ impl NodeIdentity for DummyNodeIdentity {
 
 struct DummyDataProvider;
 impl TokenizedDataProvider for DummyDataProvider {
-    async fn get_sample(&self, _data_id: usize) -> Result<Vec<i32>> {
+    async fn get_sample(&mut self, _data_id: usize) -> Result<Vec<i32>> {
         let mut data: [i32; 1024] = [0; 1024];
         rand::thread_rng().fill(&mut data);
         Ok(data.to_vec())
@@ -90,11 +88,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::spawn(async move {
         let local_data_provider = DummyDataProvider;
-        let mut server = DataProviderTcpServer::new(local_data_provider, backend);
-        server.run(5740).await
+        let mut server = DataProviderTcpServer::start(local_data_provider, backend, 5740)
+            .await
+            .unwrap();
+        loop {
+            server.poll().await.unwrap();
+        }
     });
 
-    let clients = try_join_all(
+    let mut clients = try_join_all(
         clients
             .into_iter()
             .map(|i| DataProviderTcpClient::connect("localhost:5740", i, ())),
@@ -102,7 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     info!("clients initialized successfully");
     loop {
-        for (i, c) in clients.iter().enumerate() {
+        for (i, c) in clients.iter_mut().enumerate() {
             c.get_sample(0).await?;
             info!("client {} got data! ", i);
         }

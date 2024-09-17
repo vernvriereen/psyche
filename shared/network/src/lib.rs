@@ -183,7 +183,7 @@ where
     }
 
     pub async fn node_addr(&self) -> Result<NodeAddr> {
-        self.node.endpoint().node_addr().await.map_err(|e| e.into())
+        self.node.endpoint().node_addr().await
     }
 
     pub async fn join_ticket(&self) -> Result<String> {

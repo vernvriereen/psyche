@@ -4948,6 +4948,7 @@ dependencies = [
  "parquet",
  "psyche-coordinator",
  "psyche-core",
+ "psyche-network",
  "psyche-tui",
  "psyche-watcher",
  "rand 0.8.5",

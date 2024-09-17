@@ -48,7 +48,7 @@ pub enum ServerToClientMessage {
     Coordinator(Coordinator<ClientId>),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct BroadcastMessage {
     step: usize,
     distro_result: Vec<u8>,

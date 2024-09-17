@@ -1,16 +1,24 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ServerToClientMessage {
-    Challenge([u8; 32]),
-    TrainingData(TrainingData),
+    TrainingData {
+        data_id: usize,
+        raw_data: Vec<i32>,
+    },
+    RequestRejected {
+        data_id: usize,
+        reason: RejectionReason,
+    },
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct TrainingData {
-    pub data_id: usize,
-    pub raw_data: Vec<i32>,
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum RejectionReason {
+    NotInThisRound,
+    WrongDataIdForStep,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ChallengeResponse(pub Vec<u8>);
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum ClientToServerMessage {
+    RequestTrainingData { data_id: usize },
+}

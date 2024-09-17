@@ -128,7 +128,7 @@ impl LocalDataProvider {
 }
 
 impl TokenizedDataProvider for LocalDataProvider {
-    async fn get_sample(&self, data_id: usize) -> Result<Vec<i32>> {
+    async fn get_sample(&mut self, data_id: usize) -> Result<Vec<i32>> {
         self.internal_get_sample(data_id)
     }
 }
