@@ -1,3 +1,5 @@
 mod protocol;
 
-pub use protocol::{Message, Payload, ClientId, NC};
+pub use protocol::{
+    BroadcastMessage, ClientId, ClientToServerMessage, Payload, ServerToClientMessage, NC,
+};

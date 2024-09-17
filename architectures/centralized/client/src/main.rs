@@ -3,10 +3,10 @@ use crate::app::App;
 use anyhow::Result;
 use app::{Tabs, TAB_NAMES};
 use clap::{ArgAction, Parser};
-use psyche_centralized_shared::NC;
-use psyche_network::{PeerList, RelayMode};
+use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage, NC};
+use psyche_network::{RelayMode, SecretKey, TcpClient};
 use psyche_tui::LogOutput;
-use std::{str::FromStr, time::Duration};
+use std::time::Duration;
 use tokio::time::{interval, interval_at, Instant};
 use tracing::info;
 
@@ -30,10 +30,11 @@ struct Args {
     )]
     tui: bool,
 
-    peer_list: String,
-
     #[clap(long)]
     run_id: String,
+
+    #[clap(long)]
+    server_addr: String,
 }
 
 #[tokio::main]
@@ -46,18 +47,18 @@ async fn main() -> Result<()> {
         LogOutput::Console
     });
 
-    let PeerList(peers) = PeerList::from_str(&args.peer_list)?;
-
     info!("joining gossip room");
 
-    let secret_key = args.secret_key.map(|k| k.parse().unwrap());
-
-    let network = NC::init(
+    let secret_key: SecretKey = args
+        .secret_key
+        .map(|k| k.parse().unwrap())
+        .unwrap_or_else(|| SecretKey::generate());
+    let p2p = NC::init(
         &args.run_id,
         args.bind_port,
         RelayMode::Default,
-        peers,
-        secret_key,
+        vec![],
+        Some(secret_key.clone()),
     )
     .await?;
 
@@ -77,8 +78,16 @@ async fn main() -> Result<()> {
         interval_at(Instant::now() + duration, duration)
     };
 
+    let server_conn = TcpClient::<ClientId, ClientToServerMessage, ServerToClientMessage>::connect(
+        &args.server_addr,
+        secret_key.public().into(),
+        secret_key,
+    )
+    .await?;
+
     App::new(
-        network,
+        p2p,
+        server_conn,
         tx_state,
         tick_interval,
         interval(Duration::from_millis(150)),

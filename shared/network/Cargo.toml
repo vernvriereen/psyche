@@ -7,6 +7,7 @@ edition = "2021"
 psyche-core = { path = "../core" }
 psyche-tui = { path = "../tui" }
 iroh.workspace = true
+tokio-util.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 anyhow.workspace = true

@@ -1,4 +1,5 @@
-use psyche_coordinator::{Coordinator, NodeIdentity};
+use psyche_coordinator::Coordinator;
+use psyche_core::NodeIdentity;
 
 #[async_trait::async_trait]
 pub trait Backend<T: NodeIdentity> {

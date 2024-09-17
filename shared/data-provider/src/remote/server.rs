@@ -1,7 +1,7 @@
 use anyhow::Result;
 use futures::{SinkExt, StreamExt};
-use psyche_coordinator::{Coordinator, NodeIdentity};
-use psyche_core::Networkable;
+use psyche_coordinator::Coordinator;
+use psyche_core::{Networkable, NodeIdentity};
 use psyche_watcher::Backend;
 use rand::RngCore;
 use std::collections::HashMap;
@@ -126,8 +126,8 @@ where
                             Self::handle_new_connection(stream, clients).await;
                         });
                     },
-                    new_state =       self.backend.wait_for_new_state() => {
-                    self.handle_coordinator_update((&new_state).into()).await?;
+                    new_state = self.backend.wait_for_new_state() => {
+                    self.handle_coordinator_update(new_state.clone()).await?;
                 }
             }
         }
@@ -135,13 +135,13 @@ where
 
     async fn handle_coordinator_update(
         &mut self,
-        new_state: CoordinatorTrainingUpdate<T>,
+        new_state: Coordinator<T>,
     ) -> Result<(), anyhow::Error> {
         let mut connected_clients = self.clients.lock().await;
         let this_round_clients = new_state.clients;
         let to_remove: Vec<T> = connected_clients
             .keys()
-            .filter(|connected_id| !this_round_clients.iter().any(|c| c == *connected_id))
+            .filter(|connected_id| !this_round_clients.iter().any(|c| &&c.id == connected_id))
             .cloned()
             .collect();
 
@@ -154,7 +154,7 @@ where
         }
 
         for client in this_round_clients {
-            if let Some(conn) = connected_clients.get(&client) {
+            if let Some(conn) = connected_clients.get(&client.id) {
                 let data = self.local_data_provider.get_sample(0).await?; // TODO: how to compute data ID?
                 conn.send(TrainingData {
                     data_id: 0,
@@ -166,17 +166,5 @@ where
         }
 
         Ok(())
-    }
-}
-
-struct CoordinatorTrainingUpdate<T: NodeIdentity> {
-    clients: Vec<T>,
-}
-
-impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTrainingUpdate<T> {
-    fn from(c: &Coordinator<T>) -> Self {
-        Self {
-            clients: c.clients.iter().map(|c| c.id.clone()).collect(),
-        }
     }
 }

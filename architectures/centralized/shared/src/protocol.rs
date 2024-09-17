@@ -1,12 +1,13 @@
 use anyhow::anyhow;
-use psyche_coordinator::{Coordinator, NodeIdentity};
-use psyche_network::{NetworkConnection, NodeId, PublicKey, SecretKey, SignedMessage};
+use psyche_coordinator::Coordinator;
+use psyche_core::NodeIdentity;
+use psyche_network::{NetworkConnection, NodeId, PeerList, PublicKey, SecretKey, SignedMessage};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ClientId(NodeId);
 
-pub type NC = NetworkConnection<Message, Payload>;
+pub type NC = NetworkConnection<BroadcastMessage, Payload>;
 
 impl NodeIdentity for ClientId {
     type PrivateKey = SecretKey;
@@ -36,11 +37,21 @@ impl From<PublicKey> for ClientId {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub enum Message {
-    Coordinator(Coordinator<ClientId>),
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum ClientToServerMessage {
     Join,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum ServerToClientMessage {
+    P2PConnect(PeerList),
+    Coordinator(Coordinator<ClientId>),
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct BroadcastMessage {
+    step: usize,
+    distro_result: Vec<u8>,
+}
 #[derive(Serialize, Deserialize)]
 pub struct Payload {}

@@ -1,21 +1,26 @@
 use anyhow::Result;
-use psyche_centralized_shared::{ClientId, Message, Payload, NC};
+use psyche_centralized_shared::{
+    BroadcastMessage, ClientId, ClientToServerMessage, Payload, ServerToClientMessage, NC,
+};
 use psyche_coordinator::Coordinator;
-use psyche_network::{NetworkEvent, NetworkTUI};
+use psyche_network::{NetworkEvent, NetworkTUI, PeerList, TcpServer};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
-use psyche_watcher::CoordinatorTUI;
+use psyche_watcher::CoordinatorTui;
 use rand::RngCore;
 use std::sync::mpsc::Sender;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::{select, time::Interval};
+use tracing::warn;
 
-pub(super) type Tabs = TabbedWidget<(CoordinatorTUI, NetworkTUI, LoggerWidget)>;
-pub(super) const TAB_NAMES: [&str; 3] = ["Coordinator", "Network", "Logger"];
-type TabsData = <TabbedWidget<(CoordinatorTUI, NetworkTUI, LoggerWidget)> as CustomWidget>::Data;
+use crate::dashboard::{DashboardState, DashboardTui};
+
+pub(super) type Tabs = TabbedWidget<(DashboardTui, CoordinatorTui, NetworkTUI, LoggerWidget)>;
+pub(super) const TAB_NAMES: [&str; 4] = ["Dashboard", "Coordinator", "P2P Network", "Logger"];
+type TabsData = <Tabs as CustomWidget>::Data;
 
 struct Backend {
-    network: NC,
+    net_server: TcpServer<ClientId, ClientToServerMessage, ServerToClientMessage>,
     pending_clients: Vec<ClientId>,
 }
 
@@ -26,6 +31,8 @@ impl psyche_coordinator::Backend<ClientId> for Backend {
 }
 
 pub struct App {
+    run_id: String,
+    p2p: NC,
     tx_tui_state: Option<Sender<TabsData>>,
     tick_interval: Interval,
     update_tui_interval: Interval,
@@ -35,18 +42,22 @@ pub struct App {
 
 impl App {
     pub fn new(
-        network: NC,
+        run_id: String,
+        p2p: NC,
+        net_server: TcpServer<ClientId, ClientToServerMessage, ServerToClientMessage>,
         tx_tui_state: Option<Sender<TabsData>>,
         tick_interval: Interval,
         update_tui_interval: Interval,
     ) -> Self {
         Self {
+            run_id,
+            p2p,
             tx_tui_state,
             tick_interval,
             update_tui_interval,
             coordinator: Coordinator::default(),
             backend: Backend {
-                network,
+                net_server,
                 pending_clients: Vec::new(),
             },
         }
@@ -55,8 +66,11 @@ impl App {
     pub async fn run(&mut self) -> Result<()> {
         loop {
             select! {
-                Ok(Some(event)) = self.backend.network.poll_next() => {
+                Ok(Some(event)) = self.p2p.poll_next() => {
                     self.on_network_event(event);
+                }
+                Some(event) = self.backend.net_server.next() => {
+                    self.on_client_message(event.0, event.1).await;
                 }
                 _ = self.tick_interval.tick() => {
                     self.on_tick().await;
@@ -73,8 +87,9 @@ impl App {
     fn update_tui(&mut self) -> Result<()> {
         if let Some(tx_tui_state) = &self.tx_tui_state {
             let states = (
+                (&*self).into(),
                 (&self.coordinator).into(),
-                (&self.backend.network).into(),
+                (&self.p2p).into(),
                 Default::default(),
             );
             tx_tui_state.send(states)?;
@@ -82,15 +97,37 @@ impl App {
         Ok(())
     }
 
-    fn on_network_event(&mut self, event: NetworkEvent<Message, Payload>) {
-        if let NetworkEvent::MessageReceived((key, message)) = event { match message {
-            Message::Join => {
-                self.backend.pending_clients.push(key.into());
+    fn on_network_event(&mut self, event: NetworkEvent<BroadcastMessage, Payload>) {
+        if let NetworkEvent::MessageReceived((_from, message)) = event {
+            match message {
+                _ => {
+                    todo!();
+                }
             }
-            Message::Coordinator(..) => {
-                // im the server, whoever sent this sucks >:(
+        }
+    }
+
+    async fn on_client_message(&mut self, from: ClientId, event: ClientToServerMessage) {
+        match event {
+            ClientToServerMessage::Join => {
+                self.backend.pending_clients.push(from.clone());
+                let client_joined = self
+                    .backend
+                    .net_server
+                    .send_to(
+                        from,
+                        ServerToClientMessage::P2PConnect(PeerList(vec![self
+                            .p2p
+                            .node_addr()
+                            .await
+                            .expect("node addr works..")])),
+                    )
+                    .await;
+                if let Err(e) = client_joined {
+                    warn!("Error sending p2p list to client: {e}");
+                }
             }
-        } }
+        }
     }
 
     async fn on_tick(&mut self) {
@@ -100,10 +137,23 @@ impl App {
             .as_secs();
         self.coordinator
             .tick(&self.backend, unix_timestamp, rand::thread_rng().next_u64());
-        self.backend
-            .network
-            .broadcast(&Message::Coordinator(self.coordinator.clone()))
+        if let Err(err) = self
+            .backend
+            .net_server
+            .broadcast(ServerToClientMessage::Coordinator(self.coordinator.clone()))
             .await
-            .unwrap();
+        {
+            warn!("error in tick: {err}");
+        }
+    }
+}
+
+impl From<&App> for DashboardState {
+    fn from(app: &App) -> Self {
+        Self {
+            run_id: app.run_id.clone(),
+            coordinator_state: (&app.coordinator).into(),
+            server_addr: app.backend.net_server.local_addr().to_string(),
+        }
     }
 }

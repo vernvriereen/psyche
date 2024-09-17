@@ -9,5 +9,5 @@ pub use committee_selection::{
     tree_item, Committee, CommitteeAndWitnessWithProof, CommitteeSelection, COMMITTEE_SALT,
     WITNESS_SALT,
 };
-pub use coordinator::{Coordinator, Client, Round, RunState};
-pub use traits::{Backend, NodeIdentity};
+pub use coordinator::{Client, Coordinator, Round, RunState};
+pub use traits::Backend;

@@ -1,4 +1,5 @@
-use crate::traits::{Backend, NodeIdentity};
+use crate::traits::Backend;
+use psyche_core::NodeIdentity;
 use psyche_serde::derive_serialize;
 
 #[cfg(target_os = "solana")]
@@ -16,12 +17,12 @@ pub enum RunState {
 }
 
 #[derive_serialize]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Client<I: NodeIdentity> {
     pub id: I,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 #[derive_serialize]
 pub struct Round {
     pub height: u32,
@@ -31,7 +32,7 @@ pub struct Round {
 }
 
 #[derive_serialize]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Coordinator<T: NodeIdentity> {
     pub run_state: RunState,
     pub run_state_start_unix_timestamp: u64,

@@ -3,14 +3,18 @@ use crate::app::App;
 use anyhow::Result;
 use app::{Tabs, TAB_NAMES};
 use clap::{ArgAction, Parser};
-use psyche_centralized_shared::NC;
-use psyche_network::RelayMode;
+use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage, NC};
+use psyche_network::{RelayMode, TcpServer};
 use psyche_tui::LogOutput;
-use std::time::Duration;
+use std::{
+    net::{Ipv4Addr, SocketAddr},
+    time::Duration,
+};
 use tokio::time::{interval, interval_at, Instant};
 use tracing::info;
 
 mod app;
+mod dashboard;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -18,7 +22,13 @@ struct Args {
     secret_key: Option<String>,
 
     #[clap(short, long)]
-    bind_port: Option<u16>,
+    p2p_port: Option<u16>,
+
+    #[clap(short, long)]
+    server_port: Option<u16>,
+
+    #[clap(short, long)]
+    training_port: Option<u16>,
 
     #[clap(
         long,
@@ -48,9 +58,9 @@ async fn main() -> Result<()> {
 
     let secret_key = args.secret_key.map(|k| k.parse().unwrap());
 
-    let network = NC::init(
+    let p2p = NC::init(
         &args.run_id,
-        args.bind_port,
+        args.p2p_port,
         RelayMode::Default,
         vec![],
         secret_key,
@@ -73,8 +83,18 @@ async fn main() -> Result<()> {
         interval_at(Instant::now() + duration, duration)
     };
 
+    let net_server = TcpServer::<ClientId, ClientToServerMessage, ServerToClientMessage>::start(
+        SocketAddr::new(
+            std::net::IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+            args.server_port.unwrap_or(0),
+        ),
+    )
+    .await?;
+
     App::new(
-        network,
+        args.run_id,
+        p2p,
+        net_server,
         tx_state,
         tick_interval,
         interval(Duration::from_millis(150)),

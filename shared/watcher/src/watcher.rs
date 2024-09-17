@@ -1,5 +1,6 @@
 use crate::traits::{Backend, Client};
-use psyche_coordinator::{Coordinator, NodeIdentity};
+use psyche_coordinator::Coordinator;
+use psyche_core::NodeIdentity;
 
 pub async fn watcher<T, B, C>(backend: &B, client: &C)
 where

@@ -4882,10 +4882,12 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
+ "futures",
  "futures-util",
  "postcard",
  "psyche-centralized-shared",
  "psyche-coordinator",
+ "psyche-core",
  "psyche-network",
  "psyche-tui",
  "psyche-watcher",
@@ -4894,6 +4896,7 @@ dependencies = [
  "sha2 0.10.8",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "tracing",
 ]
 
@@ -4903,6 +4906,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "psyche-coordinator",
+ "psyche-core",
  "psyche-network",
  "serde",
 ]
@@ -4917,6 +4921,7 @@ dependencies = [
  "psyche-core",
  "psyche-serde",
  "serde",
+ "tracing",
 ]
 
 [[package]]
@@ -5006,6 +5011,7 @@ dependencies = [
  "sha2 0.10.8",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "tracing",
 ]
 

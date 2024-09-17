@@ -1,6 +1,6 @@
 use anyhow::{Error, Result};
 use download_manager::{DownloadManager, DownloadUpdate};
-use futures_util::{Sink, SinkExt, Stream, StreamExt};
+use futures_util::{future::join_all, Sink, SinkExt, Stream, StreamExt};
 use iroh::{
     base::ticket::BlobTicket,
     gossip::net::{Command, Event, GossipEvent},
@@ -24,6 +24,7 @@ mod download_manager;
 mod peer_list;
 mod signed_message;
 mod state;
+mod tcp;
 mod tui;
 mod util;
 
@@ -34,7 +35,9 @@ pub use iroh::net::{
 };
 pub use peer_list::PeerList;
 pub use signed_message::SignedMessage;
+pub use tcp::{TcpClient, TcpServer};
 pub use tui::{NetworkTUI, NetworkTUIState};
+
 pub struct NetworkConnection<BroadcastMessage, Download>
 where
     BroadcastMessage: Networkable,
@@ -127,6 +130,17 @@ where
         })
     }
 
+    pub async fn add_peers(&self, peers: Vec<NodeAddr>) -> Result<()> {
+        join_all(
+            peers
+                .into_iter()
+                .map(|peer| self.node.net().add_node_addr(peer)),
+        )
+        .await
+        .into_iter()
+        .collect()
+    }
+
     pub async fn broadcast(&mut self, message: &BroadcastMessage) -> Result<()> {
         let encoded_message =
             SignedMessage::sign_and_encode(self.node.endpoint().secret_key(), message)?;
@@ -168,8 +182,12 @@ where
         self.node.blobs().delete_blob(ticket.hash()).await
     }
 
+    pub async fn node_addr(&self) -> Result<NodeAddr> {
+        self.node.endpoint().node_addr().await.map_err(|e| e.into())
+    }
+
     pub async fn join_ticket(&self) -> Result<String> {
-        let me = self.node.endpoint().node_addr().await?;
+        let me = self.node_addr().await?;
         Ok(PeerList(vec![me]).to_string())
     }
 

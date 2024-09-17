@@ -22,3 +22,6 @@ centralized/
   server/
   client/
 ```
+
+# todo centralized:
+- [ ] how is a data id computed from coordinator state

@@ -1,4 +1,5 @@
-use psyche_coordinator::{Coordinator, NodeIdentity, RunState};
+use psyche_coordinator::{Coordinator, RunState};
+use psyche_core::NodeIdentity;
 use psyche_tui::ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
@@ -6,10 +7,10 @@ use psyche_tui::ratatui::{
 };
 
 #[derive(Default, Debug)]
-pub struct CoordinatorTUI;
+pub struct CoordinatorTui;
 
-impl psyche_tui::CustomWidget for CoordinatorTUI {
-    type Data = CoordinatorTUIState;
+impl psyche_tui::CustomWidget for CoordinatorTui {
+    type Data = CoordinatorTuiState;
 
     fn render(&mut self, area: Rect, buf: &mut Buffer, state: &Self::Data) {
         let chunks = Layout::default()
@@ -33,14 +34,14 @@ impl psyche_tui::CustomWidget for CoordinatorTUI {
 }
 
 #[derive(Default, Debug)]
-pub struct CoordinatorTUIState {
-    run_state: RunState,
-    height: u32,
-    clients: u32,
-    tick: u64,
+pub struct CoordinatorTuiState {
+    pub run_state: RunState,
+    pub height: u32,
+    pub clients: u32,
+    pub tick: u64,
 }
 
-impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTUIState {
+impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
     fn from(value: &Coordinator<T>) -> Self {
         Self {
             run_state: value.run_state,

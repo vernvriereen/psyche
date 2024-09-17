@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Result};
 use futures::{SinkExt, StreamExt};
-use psyche_coordinator::NodeIdentity;
-use psyche_core::Networkable;
+use psyche_core::{Networkable, NodeIdentity};
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;

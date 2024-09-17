@@ -8,3 +8,4 @@ anyhow.workspace = true
 serde.workspace = true
 psyche-coordinator.workspace = true
 psyche-network.workspace = true
+psyche-core.workspace = true
