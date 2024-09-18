@@ -1,6 +1,6 @@
 use std::array;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 use futures::future::try_join_all;
 use psyche_coordinator::{Client, Coordinator, Round, RunState};
@@ -58,7 +58,7 @@ impl NodeIdentity for DummyNodeIdentity {
     fn from_signed_bytes(bytes: &[u8], challenge: [u8; 32]) -> Result<Self> {
         let (serialized_challenge, bytes) = bytes.split_at(32);
         if challenge != serialized_challenge {
-            return Err(anyhow!("challenge doesn't match serialized challenge: {challenge:?} != {serialized_challenge:?}"));
+            bail!("challenge doesn't match serialized challenge: {challenge:?} != {serialized_challenge:?}");
         }
         Self::from_bytes(bytes)
     }

@@ -113,7 +113,7 @@ impl App {
         loop {
             select! {
                 Ok(Some(event)) = self.network.poll_next() => {
-                    self.on_network_event(event);
+                    self.on_network_event(event).await;
                 }
                 _ = self.send_data_interval.tick() => {
                     self.on_tick().await;
@@ -134,13 +134,14 @@ impl App {
         self.tx_tui_state.send(tui_state).unwrap();
     }
 
-    fn on_network_event(&mut self, event: NetworkEvent<Message, DistroResultBlob>) {
+    async fn on_network_event(&mut self, event: NetworkEvent<Message, DistroResultBlob>) {
         match event {
             NetworkEvent::MessageReceived((from, Message::Message { text })) => {
                 info!("[{from}]: {text}")
             }
             NetworkEvent::MessageReceived((from, Message::DistroResult { step, blob_ticket })) => {
-                info!("[{from}]: step {step} blob ticket {blob_ticket}")
+                info!("[{from}]: step {step} blob ticket {blob_ticket}");
+                self.network.download(blob_ticket).await.unwrap();
             }
             NetworkEvent::DownloadComplete(file) => {
                 info!(

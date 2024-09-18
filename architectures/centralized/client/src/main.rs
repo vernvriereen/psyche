@@ -1,6 +1,6 @@
 use crate::app::App;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use app::{Tabs, TAB_NAMES};
 use clap::{ArgAction, Parser};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage, NC};
@@ -53,14 +53,6 @@ async fn main() -> Result<()> {
         .secret_key
         .map(|k| k.parse().unwrap())
         .unwrap_or_else(SecretKey::generate);
-    let p2p = NC::init(
-        &args.run_id,
-        args.bind_port,
-        RelayMode::Default,
-        vec![],
-        Some(secret_key.clone()),
-    )
-    .await?;
 
     let tui = args.tui;
 
@@ -78,13 +70,27 @@ async fn main() -> Result<()> {
         interval_at(Instant::now() + duration, duration)
     };
 
-    let server_conn = TcpClient::<ClientId, ClientToServerMessage, ServerToClientMessage>::connect(
-        &args.server_addr,
-        secret_key.public().into(),
-        secret_key,
+    let mut server_conn =
+        TcpClient::<ClientId, ClientToServerMessage, ServerToClientMessage>::connect(
+            &args.server_addr,
+            secret_key.public().into(),
+            secret_key.clone(),
+        )
+        .await?;
+
+    server_conn.send(ClientToServerMessage::Join).await?;
+    let peers = match server_conn.receive().await {
+        Ok(ServerToClientMessage::P2PConnect(peers)) => peers,
+        err => bail!("Unexpected first message {:?}", err),
+    };
+    let p2p = NC::init(
+        &args.run_id,
+        args.bind_port,
+        RelayMode::Default,
+        peers.0,
+        Some(secret_key),
     )
     .await?;
-
     App::new(
         p2p,
         server_conn,

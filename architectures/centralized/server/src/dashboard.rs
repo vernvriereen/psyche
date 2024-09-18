@@ -49,7 +49,7 @@ impl CustomWidget for DashboardTui {
 
             Paragraph::new(
                 [
-                    format!("Clients: {:?}", state.coordinator_state.clients),
+                    format!("Clients: {:?}", state.coordinator_state.clients.len()),
                     format!("Height: {:?}", state.coordinator_state.height),
                     format!("Tick: {:?}", state.coordinator_state.tick),
                 ]

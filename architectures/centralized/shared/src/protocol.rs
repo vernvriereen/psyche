@@ -50,8 +50,8 @@ pub enum ServerToClientMessage {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BroadcastMessage {
-    step: usize,
-    distro_result: Vec<u8>,
+    pub step: usize,
+    pub distro_result: Vec<u8>,
 }
 #[derive(Serialize, Deserialize)]
 pub struct Payload {}

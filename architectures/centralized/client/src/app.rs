@@ -10,10 +10,11 @@ use psyche_watcher::CoordinatorTui;
 use std::mem::replace;
 use std::sync::mpsc::Sender;
 use tokio::{select, time::Interval};
+use tracing::info;
 
 pub(super) type Tabs = TabbedWidget<(CoordinatorTui, NetworkTUI, LoggerWidget)>;
 pub(super) const TAB_NAMES: [&str; 3] = ["Coordinator", "Network", "Logger"];
-type TabsData = <TabbedWidget<(CoordinatorTui, NetworkTUI, LoggerWidget)> as CustomWidget>::Data;
+type TabsData = <Tabs as CustomWidget>::Data;
 
 pub struct App {
     tx_tui_state: Option<Sender<TabsData>>,
@@ -79,16 +80,18 @@ impl App {
     }
 
     async fn on_peer_network_event(&mut self, event: NetworkEvent<BroadcastMessage, Payload>) {
-        if let NetworkEvent::MessageReceived((_, _message)) = event {}
+        if let NetworkEvent::MessageReceived((from, message)) = event {
+            info!(
+                "got network event broadcasted from {:?}! {:?}",
+                from, message
+            );
+        }
     }
 
     async fn on_server_message(&mut self, message: ServerToClientMessage) {
         match message {
-            ServerToClientMessage::P2PConnect(peers) => {
-                self.p2p
-                    .add_peers(peers.0)
-                    .await
-                    .expect("Failed to add peers from server.");
+            ServerToClientMessage::P2PConnect(_) => {
+                // ignore.
             }
             ServerToClientMessage::Coordinator(state) => {
                 let prev_state = replace(&mut self.coordinator_state, state);
