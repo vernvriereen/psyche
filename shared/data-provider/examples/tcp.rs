@@ -1,9 +1,7 @@
-use std::array;
-
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use async_trait::async_trait;
 use futures::future::try_join_all;
-use psyche_coordinator::{Client, Coordinator, Round, RunState};
+use psyche_coordinator::Coordinator;
 use psyche_core::{Networkable, NodeIdentity};
 use psyche_data_provider::{DataProviderTcpClient, DataProviderTcpServer, TokenizedDataProvider};
 use psyche_tui::init_logging;
@@ -13,41 +11,13 @@ use serde::{Deserialize, Serialize};
 use tracing::info;
 
 // Simulated backend for demonstration
+#[allow(dead_code)]
 struct DummyBackend<T: NodeIdentity>(Vec<T>);
 
 #[async_trait]
 impl<T: NodeIdentity> WatcherBackend<T> for DummyBackend<T> {
     async fn wait_for_new_state(&self) -> Coordinator<T> {
-        Coordinator {
-            tick: 0,
-            step: 0,
-            run_state: RunState::WaitingForMembers,
-            run_state_start_unix_timestamp: 0,
-
-            warmup_time: 0,
-
-            max_rounds: 0,
-            max_round_time: 0,
-            rounds: array::from_fn(|_| Round {
-                height: 0,
-                clients_len: 0,
-                data_index: 0,
-                random_seed: 0,
-            }),
-            rounds_head: 0,
-
-            min_clients: 0,
-            clients: self.0.iter().map(|i| Client { id: i.clone() }).collect(),
-            dropped_clients: Vec::new(),
-
-            last_tick_unix_timestamp: 0,
-            last_step_unix_timestamp: 0,
-
-            data_indicies_per_round: 0,
-            verification_percent: 0,
-
-            epoch: 0,
-        }
+        Coordinator::default()
     }
 }
 

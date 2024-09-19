@@ -6,28 +6,33 @@ use anchor_lang::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive_serialize]
+#[derive(Clone, Debug)]
 pub enum Model {
     LLM(LLM),
 }
 
 #[derive_serialize]
+#[derive(Clone, Debug)]
 pub enum LLMArchitecture {
     HfLlama,
 }
 
 #[derive_serialize]
+#[derive(Clone, Debug)]
 pub enum LLMTrainingDataType {
     Pretraining,
     Finetuning,
 }
 
 #[derive_serialize]
+#[derive(Clone, Debug)]
 pub enum LLMTrainingDataLocation {
     Server(String),
     Local(String),
 }
 
 #[derive_serialize]
+#[derive(Clone, Debug)]
 pub struct ConstantLR {
     base_lr: f32,
     warmup_steps: u32,
@@ -35,6 +40,7 @@ pub struct ConstantLR {
 }
 
 #[derive_serialize]
+#[derive(Clone, Debug)]
 pub struct LinearLR {
     base_lr: f32,
     warmup_steps: u32,
@@ -44,6 +50,7 @@ pub struct LinearLR {
 }
 
 #[derive_serialize]
+#[derive(Clone, Debug)]
 pub struct CosineLR {
     base_lr: f32,
     warmup_steps: u32,
@@ -53,6 +60,7 @@ pub struct CosineLR {
 }
 
 #[derive_serialize]
+#[derive(Clone, Debug)]
 pub enum LearningRateSchedule {
     Constant(ConstantLR),
     Linear(LinearLR),
@@ -60,6 +68,7 @@ pub enum LearningRateSchedule {
 }
 
 #[derive_serialize]
+#[derive(Clone, Debug)]
 pub enum Optimizer {
     Distro {
         betas: [f32; 3],
@@ -71,6 +80,7 @@ pub enum Optimizer {
 }
 
 #[derive_serialize]
+#[derive(Clone, Debug)]
 pub struct LLM {
     pub architecture: LLMArchitecture,
     pub checkpoint: Checkpoint,
@@ -82,12 +92,14 @@ pub struct LLM {
 }
 
 #[derive_serialize]
+#[derive(Clone, Debug)]
 pub struct HubRepo {
     pub repo_id: String,
     pub revision: Option<String>,
 }
 
 #[derive_serialize]
+#[derive(Clone, Debug)]
 pub enum Checkpoint {
     Hub(HubRepo),
 }

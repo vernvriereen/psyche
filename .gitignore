@@ -26,9 +26,8 @@ flamegraph.svg
 perf.data
 perf.data.*
 .vscode/
+.venv/
+libtorch/
 
 ### Training Data ###
 data/
-
-### Nix ###
-result

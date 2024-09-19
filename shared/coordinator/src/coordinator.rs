@@ -1,4 +1,4 @@
-use crate::traits::Backend;
+use crate::{model::Model, traits::Backend};
 use psyche_core::NodeIdentity;
 use psyche_serde::derive_serialize;
 
@@ -57,6 +57,8 @@ pub struct Coordinator<T: NodeIdentity> {
     pub epoch: u32,
     pub step: u32,
     pub last_step_unix_timestamp: u64,
+
+    pub model: Option<Model>,
 }
 
 impl<T: NodeIdentity> Default for Coordinator<T> {
@@ -79,6 +81,7 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             step: Default::default(),
             last_step_unix_timestamp: Default::default(),
             epoch: Default::default(),
+            model: Default::default(),
         }
     }
 }
