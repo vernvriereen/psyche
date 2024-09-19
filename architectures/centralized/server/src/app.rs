@@ -31,7 +31,6 @@ impl psyche_coordinator::Backend<ClientId> for Backend {
 }
 
 pub struct App {
-    run_id: String,
     p2p: NC,
     tx_tui_state: Option<Sender<TabsData>>,
     tick_interval: Interval,
@@ -42,20 +41,19 @@ pub struct App {
 
 impl App {
     pub fn new(
-        run_id: String,
         p2p: NC,
         net_server: TcpServer<ClientId, ClientToServerMessage, ServerToClientMessage>,
         tx_tui_state: Option<Sender<TabsData>>,
         tick_interval: Interval,
         update_tui_interval: Interval,
+        coordinator: Coordinator<ClientId>,
     ) -> Self {
         Self {
-            run_id,
             p2p,
             tx_tui_state,
             tick_interval,
             update_tui_interval,
-            coordinator: Coordinator::default(),
+            coordinator,
             backend: Backend {
                 net_server,
                 pending_clients: Vec::new(),
@@ -152,7 +150,6 @@ impl App {
 impl From<&App> for DashboardState {
     fn from(app: &App) -> Self {
         Self {
-            run_id: app.run_id.clone(),
             coordinator_state: (&app.coordinator).into(),
             server_addr: app.backend.net_server.local_addr().to_string(),
         }

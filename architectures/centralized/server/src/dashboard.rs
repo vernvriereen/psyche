@@ -12,7 +12,6 @@ use psyche_watcher::CoordinatorTuiState;
 pub struct DashboardState {
     pub server_addr: String,
     pub coordinator_state: CoordinatorTuiState,
-    pub run_id: String,
 }
 #[derive(Default)]
 pub struct DashboardTui;
@@ -33,7 +32,7 @@ impl CustomWidget for DashboardTui {
             Paragraph::new(state.server_addr.clone())
                 .block(Block::bordered().title("Server Address"))
                 .render(title_split[0], buf);
-            Paragraph::new(state.run_id.clone())
+            Paragraph::new(state.coordinator_state.run_id.clone())
                 .block(Block::bordered().title("Run ID"))
                 .render(title_split[1], buf);
         }

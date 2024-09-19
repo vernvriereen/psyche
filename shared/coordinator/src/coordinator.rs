@@ -7,6 +7,9 @@ use anchor_lang::prelude::*;
 #[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
 
+#[allow(dead_code)]
+const MAX_STRING_LEN: usize = 64;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 #[derive_serialize]
 pub enum RunState {
@@ -34,6 +37,8 @@ pub struct Round {
 #[derive_serialize]
 #[derive(Clone, Debug)]
 pub struct Coordinator<T: NodeIdentity> {
+    #[cfg_attr(target_os = "solana", max_len(MAX_STRING_LEN))]
+    pub run_id: String,
     pub run_state: RunState,
     pub run_state_start_unix_timestamp: u64,
 
@@ -64,6 +69,7 @@ pub struct Coordinator<T: NodeIdentity> {
 impl<T: NodeIdentity> Default for Coordinator<T> {
     fn default() -> Self {
         Self {
+            run_id: Default::default(),
             run_state: Default::default(),
             run_state_start_unix_timestamp: Default::default(),
             warmup_time: Default::default(),

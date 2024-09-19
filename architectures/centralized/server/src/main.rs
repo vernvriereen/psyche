@@ -1,9 +1,8 @@
-use crate::app::App;
-
 use anyhow::Result;
-use app::{Tabs, TAB_NAMES};
+use app::{App, Tabs, TAB_NAMES};
 use clap::{ArgAction, Parser};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage, NC};
+use psyche_coordinator::Coordinator;
 use psyche_network::{RelayMode, TcpServer};
 use psyche_tui::LogOutput;
 use std::{
@@ -11,6 +10,7 @@ use std::{
     time::Duration,
 };
 use tokio::time::{interval, interval_at, Instant};
+use toml;
 use tracing::info;
 
 mod app;
@@ -40,13 +40,19 @@ struct Args {
     )]
     tui: bool,
 
+    /// Path to TOML of Coordinator state
     #[clap(long)]
-    run_id: String,
+    state: Option<String>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+
+    let coordinator = match args.state {
+        Some(state) => toml::from_str(std::str::from_utf8(&std::fs::read(state)?)?)?,
+        None => Coordinator::default(),
+    };
 
     psyche_tui::init_logging(if args.tui {
         LogOutput::TUI
@@ -59,7 +65,7 @@ async fn main() -> Result<()> {
     let secret_key = args.secret_key.map(|k| k.parse().unwrap());
 
     let p2p = NC::init(
-        &args.run_id,
+        &coordinator.run_id,
         args.p2p_port,
         RelayMode::Default,
         vec![],
@@ -92,12 +98,12 @@ async fn main() -> Result<()> {
     .await?;
 
     App::new(
-        args.run_id,
         p2p,
         net_server,
         tx_state,
         tick_interval,
         interval(Duration::from_millis(150)),
+        coordinator,
     )
     .run()
     .await?;

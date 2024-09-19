@@ -53,6 +53,7 @@ impl psyche_tui::CustomWidget for CoordinatorTui {
 
 #[derive(Default, Debug)]
 pub struct CoordinatorTuiState {
+    pub run_id: String,
     pub run_state: RunState,
     pub height: u32,
     pub clients: Vec<String>,
@@ -62,6 +63,7 @@ pub struct CoordinatorTuiState {
 impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
     fn from(value: &Coordinator<T>) -> Self {
         Self {
+            run_id: value.run_id.clone(),
             run_state: value.run_state,
             height: value.rounds[value.rounds_head as usize].height,
             clients: value
