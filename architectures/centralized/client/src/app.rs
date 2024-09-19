@@ -24,6 +24,8 @@ pub struct App {
     last_coordinator_state: Coordinator<ClientId>,
     p2p: NC,
     server_conn: TcpClient<ClientId, ClientToServerMessage, ServerToClientMessage>,
+    run_id: String,
+    data_bid: u32,
 }
 
 impl App {
@@ -33,6 +35,8 @@ impl App {
         tx_tui_state: Option<Sender<TabsData>>,
         tick_interval: Interval,
         update_tui_interval: Interval,
+        run_id: &str,
+        data_bid: u32,
     ) -> Self {
         Self {
             tx_tui_state,
@@ -42,11 +46,18 @@ impl App {
             coordinator_state: Coordinator::default(),
             p2p,
             server_conn,
+            run_id: run_id.into(),
+            data_bid,
         }
     }
 
     pub async fn run(&mut self) -> Result<()> {
-        self.server_conn.send(ClientToServerMessage::Join).await?;
+        self.server_conn
+            .send(ClientToServerMessage::Join {
+                run_id: self.run_id.clone(),
+                data_bid: self.data_bid,
+            })
+            .await?;
         loop {
             select! {
                 Ok(Some(event)) = self.p2p.poll_next() => {

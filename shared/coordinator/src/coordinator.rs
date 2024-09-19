@@ -23,6 +23,7 @@ pub enum RunState {
 #[derive(Clone, Debug)]
 pub struct Client<I: NodeIdentity> {
     pub id: I,
+    pub num_data_indicies: u32,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -106,7 +107,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     fn waiting_for_members(&mut self, backend: &dyn Backend<T>, unix_timestamp: u64) {
         let clients = backend.select_new_clients();
         if clients.len() as u32 >= self.min_clients {
-            self.clients = clients.iter().map(|id| Client { id: id.clone() }).collect();
+            self.clients = clients.into();
             self.rounds.fill(Round::empty());
             self.change_state(unix_timestamp, RunState::Warmup);
         }

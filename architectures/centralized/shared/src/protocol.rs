@@ -39,7 +39,7 @@ impl From<PublicKey> for ClientId {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ClientToServerMessage {
-    Join,
+    Join { run_id: String, data_bid: u32 },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

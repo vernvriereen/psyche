@@ -33,6 +33,9 @@ struct Args {
     #[clap(long)]
     run_id: String,
 
+    #[clap(long, default_value_t = 1)]
+    data_bid: u32,
+
     #[clap(long)]
     server_addr: String,
 }
@@ -91,6 +94,8 @@ async fn main() -> Result<()> {
         tx_state,
         tick_interval,
         interval(Duration::from_millis(150)),
+        &args.run_id,
+        args.data_bid,
     )
     .run()
     .await?;

@@ -2,7 +2,7 @@ use anyhow::Result;
 use psyche_centralized_shared::{
     BroadcastMessage, ClientId, ClientToServerMessage, Payload, ServerToClientMessage, NC,
 };
-use psyche_coordinator::Coordinator;
+use psyche_coordinator::{Client, Coordinator};
 use psyche_network::{NetworkEvent, NetworkTUI, PeerList, TcpServer};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
@@ -11,7 +11,7 @@ use rand::RngCore;
 use std::sync::mpsc::Sender;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::{select, time::Interval};
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::dashboard::{DashboardState, DashboardTui};
 
@@ -21,11 +21,11 @@ type TabsData = <Tabs as CustomWidget>::Data;
 
 struct Backend {
     net_server: TcpServer<ClientId, ClientToServerMessage, ServerToClientMessage>,
-    pending_clients: Vec<ClientId>,
+    pending_clients: Vec<Client<ClientId>>,
 }
 
 impl psyche_coordinator::Backend<ClientId> for Backend {
-    fn select_new_clients(&self) -> &[ClientId] {
+    fn select_new_clients(&self) -> &[Client<ClientId>] {
         &self.pending_clients
     }
 }
@@ -108,22 +108,30 @@ impl App {
 
     async fn on_client_message(&mut self, from: ClientId, event: ClientToServerMessage) {
         match event {
-            ClientToServerMessage::Join => {
-                self.backend.pending_clients.push(from.clone());
-                let client_joined = self
-                    .backend
-                    .net_server
-                    .send_to(
-                        from,
-                        ServerToClientMessage::P2PConnect(PeerList(vec![self
-                            .p2p
-                            .node_addr()
-                            .await
-                            .expect("node addr works..")])),
-                    )
-                    .await;
-                if let Err(e) = client_joined {
-                    warn!("Error sending p2p list to client: {e}");
+            ClientToServerMessage::Join { run_id, data_bid } => {
+                // TODO: check whitelist
+                if self.coordinator.run_id == run_id {
+                    self.backend.pending_clients.push(Client {
+                        id: from.clone(),
+                        num_data_indicies: data_bid,
+                    });
+                    let client_joined = self
+                        .backend
+                        .net_server
+                        .send_to(
+                            from,
+                            ServerToClientMessage::P2PConnect(PeerList(vec![self
+                                .p2p
+                                .node_addr()
+                                .await
+                                .expect("node addr works..")])),
+                        )
+                        .await;
+                    if let Err(e) = client_joined {
+                        warn!("Error sending p2p list to client: {e}");
+                    }
+                } else {
+                    info!("{from:?} tried to join unknown run {run_id}");
                 }
             }
         }
