@@ -4879,6 +4879,7 @@ name = "psyche-centralized-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bytes",
  "chrono",
  "clap",
@@ -4888,6 +4889,7 @@ dependencies = [
  "psyche-centralized-shared",
  "psyche-coordinator",
  "psyche-core",
+ "psyche-data-provider",
  "psyche-network",
  "psyche-tui",
  "psyche-watcher",

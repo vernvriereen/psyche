@@ -1,26 +1,26 @@
-use crate::traits::{Backend, Client};
+use std::mem::replace;
+
+use crate::traits::Backend;
 use psyche_coordinator::Coordinator;
 use psyche_core::NodeIdentity;
 
-pub async fn watcher<T, B, C>(backend: &B, client: &C)
+pub struct BackendWatcher<T, B>
 where
     T: NodeIdentity,
     B: Backend<T> + 'static,
-    C: Client<T> + 'static,
 {
-    let mut prev: Option<Coordinator<T>> = None;
-    loop {
-        let state = backend.wait_for_new_state().await;
-        match prev {
-            None => {
-                client.on_run_state_change(&state, &prev).await;
-            }
-            Some(ref old) => {
-                if old.run_state != state.run_state {
-                    client.on_run_state_change(&state, &prev).await;
-                }
-            }
-        }
-        prev = Some(state);
+    backend: B,
+    state: Option<Coordinator<T>>,
+}
+
+impl<T, B> BackendWatcher<T, B>
+where
+    T: NodeIdentity,
+    B: Backend<T> + 'static,
+{
+    pub async fn poll_next(&mut self) -> (Option<Coordinator<T>>, &Coordinator<T>) {
+        let new_state = self.backend.wait_for_new_state().await;
+        let prev = replace(&mut self.state, Some(new_state));
+        (prev, self.state.as_ref().unwrap())
     }
 }

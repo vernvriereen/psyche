@@ -12,13 +12,13 @@ pub enum Model {
 }
 
 #[derive_serialize]
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum LLMArchitecture {
     HfLlama,
 }
 
 #[derive_serialize]
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum LLMTrainingDataType {
     Pretraining,
     Finetuning,
@@ -32,7 +32,7 @@ pub enum LLMTrainingDataLocation {
 }
 
 #[derive_serialize]
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct ConstantLR {
     base_lr: f32,
     warmup_steps: u32,
@@ -40,7 +40,7 @@ pub struct ConstantLR {
 }
 
 #[derive_serialize]
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct LinearLR {
     base_lr: f32,
     warmup_steps: u32,
@@ -50,7 +50,7 @@ pub struct LinearLR {
 }
 
 #[derive_serialize]
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct CosineLR {
     base_lr: f32,
     warmup_steps: u32,
@@ -60,7 +60,7 @@ pub struct CosineLR {
 }
 
 #[derive_serialize]
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum LearningRateSchedule {
     Constant(ConstantLR),
     Linear(LinearLR),
@@ -68,7 +68,7 @@ pub enum LearningRateSchedule {
 }
 
 #[derive_serialize]
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum Optimizer {
     Distro {
         betas: [f32; 3],

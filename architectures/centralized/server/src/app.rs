@@ -1,15 +1,24 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 use psyche_centralized_shared::{
     BroadcastMessage, ClientId, ClientToServerMessage, Payload, ServerToClientMessage, NC,
 };
+use psyche_coordinator::model::{LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM};
 use psyche_coordinator::{Client, Coordinator};
-use psyche_network::{NetworkEvent, NetworkTUI, PeerList, TcpServer};
+use psyche_data_provider::{DataProviderTcpServer, LocalDataProvider, TokenSize};
+use psyche_network::{NetworkEvent, NetworkTUI, PeerList, RelayMode, TcpServer};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
 use psyche_watcher::CoordinatorTui;
 use rand::RngCore;
-use std::sync::mpsc::Sender;
-use std::time::{SystemTime, UNIX_EPOCH};
+use serde::{Deserialize, Serialize};
+use std::net::{Ipv4Addr, SocketAddr};
+use std::path::PathBuf;
+use std::sync::mpsc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::Mutex;
+use tokio::time::interval;
 use tokio::{select, time::Interval};
 use tracing::{info, warn};
 
@@ -30,25 +39,117 @@ impl psyche_coordinator::Backend<ClientId> for Backend {
     }
 }
 
+struct ChannelCoordinatorBackend {
+    rx: Mutex<Receiver<Coordinator<ClientId>>>,
+}
+
+impl ChannelCoordinatorBackend {
+    fn new() -> (Sender<Coordinator<ClientId>>, Self) {
+        let (tx, rx) = channel(10);
+        (tx, Self { rx: rx.into() })
+    }
+}
+
+#[async_trait]
+impl psyche_watcher::Backend<ClientId> for ChannelCoordinatorBackend {
+    async fn wait_for_new_state(&self) -> Coordinator<ClientId> {
+        self.rx
+            .lock()
+            .await
+            .recv()
+            .await
+            .expect("channel closed? :(")
+    }
+}
+
 pub struct App {
     p2p: NC,
-    tx_tui_state: Option<Sender<TabsData>>,
+    tx_tui_state: Option<mpsc::Sender<TabsData>>,
     tick_interval: Interval,
     update_tui_interval: Interval,
     coordinator: Coordinator<ClientId>,
     backend: Backend,
+    training_data_server: Option<(
+        Sender<Coordinator<ClientId>>,
+        DataProviderTcpServer<ClientId, LocalDataProvider, ChannelCoordinatorBackend>,
+    )>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DataServerInfo {
+    pub dir: PathBuf,
+    pub token_size: TokenSize,
+    pub seq_len: usize,
+    pub shuffle_seed: [u8; 32],
 }
 
 impl App {
-    pub fn new(
-        p2p: NC,
-        net_server: TcpServer<ClientId, ClientToServerMessage, ServerToClientMessage>,
-        tx_tui_state: Option<Sender<TabsData>>,
-        tick_interval: Interval,
-        update_tui_interval: Interval,
+    pub async fn new(
+        tui: bool,
         coordinator: Coordinator<ClientId>,
-    ) -> Self {
-        Self {
+        data_server_config: Option<DataServerInfo>,
+        p2p_port: Option<u16>,
+        server_port: Option<u16>,
+    ) -> Result<Self> {
+        let p2p = NC::init(
+            &coordinator.run_id,
+            p2p_port,
+            RelayMode::Default,
+            vec![],
+            None,
+        )
+        .await?;
+
+        let training_data_server = if let Some(Model::LLM(LLM {
+            data_location: LLMTrainingDataLocation::Server(url),
+            data_type,
+            ..
+        })) = &coordinator.model
+        {
+            if let LLMTrainingDataType::Finetuning = data_type {
+                panic!("Finetuning is not supported yet.")
+            }
+            let server_addr: SocketAddr = url.parse()?;
+            let server_port = server_addr.port();
+            let DataServerInfo {
+                dir,
+               seq_len,
+               shuffle_seed,
+               token_size
+            } = data_server_config.ok_or_else(|| anyhow!("Coordinator state requires we host training data, but no data server config passed."))?;
+            let local_data_provider =
+                LocalDataProvider::new_from_directory(dir, token_size, seq_len, shuffle_seed)?;
+            let (tx, backend) = ChannelCoordinatorBackend::new();
+            let data_server =
+                DataProviderTcpServer::start(local_data_provider, backend, server_port).await?;
+            Some((tx, data_server))
+        } else {
+            None
+        };
+
+        let tx_tui_state = match tui {
+            true => Some(psyche_tui::start_render_loop(Tabs::new(
+                Default::default(),
+                &TAB_NAMES,
+            ))?),
+            false => None,
+        };
+
+        let tick_interval = interval(Duration::from_secs(1));
+
+        let update_tui_interval = interval(Duration::from_millis(150));
+
+        let net_server =
+            TcpServer::<ClientId, ClientToServerMessage, ServerToClientMessage>::start(
+                SocketAddr::new(
+                    std::net::IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                    server_port.unwrap_or(0),
+                ),
+            )
+            .await?;
+
+        Ok(Self {
+            training_data_server,
             p2p,
             tx_tui_state,
             tick_interval,
@@ -58,7 +159,7 @@ impl App {
                 net_server,
                 pending_clients: Vec::new(),
             },
-        }
+        })
     }
 
     pub async fn run(&mut self) -> Result<()> {
@@ -76,6 +177,11 @@ impl App {
                 _ = self.update_tui_interval.tick() => {
                     self.update_tui()?;
                 }
+                _ = async {
+                    if let Some((_, server))  = &mut self.training_data_server {
+                        server.poll().await
+                    }
+                } => {}
                 else => break,
             }
         }
@@ -97,12 +203,10 @@ impl App {
 
     fn on_network_event(&mut self, event: NetworkEvent<BroadcastMessage, Payload>) {
         if let NetworkEvent::MessageReceived((from, message)) = event {
-            {
-                warn!(
-                    "got gossip message we don't handle yet {:?} {:?}",
-                    from, message
-                );
-            }
+            warn!(
+                "got gossip message we don't handle yet {:?} {:?}",
+                from, message
+            );
         }
     }
 
@@ -151,6 +255,9 @@ impl App {
             .await
         {
             warn!("error in tick: {err}");
+        }
+        if let Some((ref sender, _)) = self.training_data_server {
+            sender.send(self.coordinator.clone()).await.unwrap();
         }
     }
 }

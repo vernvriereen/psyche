@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use psyche_core::{MerkleTree, Proof, sha256v};
+use psyche_core::{sha256v, MerkleTree, Proof};
 
 pub const COMMITTEE_SALT: &str = "committee";
 pub const WITNESS_SALT: &str = "witness";

@@ -5,12 +5,11 @@ mod harness;
 mod tasks;
 mod traits;
 
-pub use tasks::{Hellaswag, MMLUPro};
 pub use harness::{Task, TaskType};
+pub use tasks::{Hellaswag, MMLUPro};
 
 pub fn load_dataset(repo_id: &str, split: Split) -> Result<Dataset> {
-    let repo_files =
-        psyche_data_provider::download_dataset_repo_sync(repo_id, None, None, true)?;
+    let repo_files = psyche_data_provider::download_dataset_repo_sync(repo_id, None, None, true)?;
     Dataset::load_dataset(&repo_files, Some(split))
 }
 

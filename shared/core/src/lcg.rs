@@ -13,8 +13,7 @@ impl LCG {
     }
 
     pub fn next(&mut self) -> u64 {
-        self.state = self.state.wrapping_mul(LCG_A)
-            .wrapping_add(LCG_C);
+        self.state = self.state.wrapping_mul(LCG_A).wrapping_add(LCG_C);
         self.state
     }
 
@@ -85,7 +84,7 @@ mod tests {
     fn test_lcg_next_range_edge_cases() {
         let mut lcg = LCG::new(12345);
         assert_eq!(lcg.next_range(1), 0);
-        
+
         let large_max = usize::MAX;
         let large_value = lcg.next_range(large_max);
         assert!(large_value < large_max);

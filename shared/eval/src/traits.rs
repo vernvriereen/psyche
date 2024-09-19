@@ -3,7 +3,7 @@ use std::fmt::Display;
 pub struct Document {
     pub text: String,
     pub choices: Vec<String>,
-    pub answer: usize
+    pub answer: usize,
 }
 
 pub trait LogLikelihoodTask: Display {

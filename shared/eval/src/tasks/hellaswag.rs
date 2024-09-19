@@ -9,14 +9,14 @@ use regex::Regex;
 use std::fmt::Display;
 
 /**
-    hf (pretrained=meta-llama/Meta-Llama-3.1-8B,dtype=bfloat16), gen_kwargs: (None), limit: None, num_fewshot: None, batch_size: 1
-    |  Tasks  |Version|Filter|n-shot| Metric |   |Value |   |Stderr|
-    |---------|------:|------|-----:|--------|---|-----:|---|-----:|
-    |hellaswag|      1|none  |     0|acc     |↑  |0.6008|±  |0.0049|
-    |         |       |none  |     0|acc_norm|↑  |0.7893|±  |0.0041|
+   hf (pretrained=meta-llama/Meta-Llama-3.1-8B,dtype=bfloat16), gen_kwargs: (None), limit: None, num_fewshot: None, batch_size: 1
+   |  Tasks  |Version|Filter|n-shot| Metric |   |Value |   |Stderr|
+   |---------|------:|------|-----:|--------|---|-----:|---|-----:|
+   |hellaswag|      1|none  |     0|acc     |↑  |0.6008|±  |0.0049|
+   |         |       |none  |     0|acc_norm|↑  |0.7893|±  |0.0041|
 
-    Hellaswag: {"acc": 0.59151566, "acc_norm": 0.76508665}
- */
+   Hellaswag: {"acc": 0.59151566, "acc_norm": 0.76508665}
+*/
 
 fn preprocess(text: &str) -> String {
     let mut processed = text.trim().to_string();

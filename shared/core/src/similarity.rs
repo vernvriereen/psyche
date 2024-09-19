@@ -1,11 +1,14 @@
-
 pub struct DistanceThresholds {
     pub jaccard_threshold: f32,
     pub manhattan_threshold: f32,
     pub hamming_threshold: f32,
 }
 
-pub fn is_similar(a: &[f32], b: &[f32], thresholds: &DistanceThresholds) -> Result<bool, &'static str> {
+pub fn is_similar(
+    a: &[f32],
+    b: &[f32],
+    thresholds: &DistanceThresholds,
+) -> Result<bool, &'static str> {
     let manhattan = manhattan_distance(a, b)?;
     if manhattan > thresholds.manhattan_threshold {
         return Ok(false);
@@ -52,10 +55,7 @@ pub fn manhattan_distance(a: &[f32], b: &[f32]) -> Result<f32, &'static str> {
         return Err("Input arrays must not be empty");
     }
 
-    Ok(a.iter()
-        .zip(b.iter())
-        .map(|(x, y)| (x - y).abs())
-        .sum())
+    Ok(a.iter().zip(b.iter()).map(|(x, y)| (x - y).abs()).sum())
 }
 
 pub fn hamming_distance(a: &[f32], b: &[f32]) -> Result<f32, &'static str> {
@@ -67,10 +67,7 @@ pub fn hamming_distance(a: &[f32], b: &[f32]) -> Result<f32, &'static str> {
         return Err("Input arrays must not be empty");
     }
 
-    let count: f32 = a.iter()
-        .zip(b.iter())
-        .filter(|(x, y)| x != y)
-        .count() as f32;
+    let count: f32 = a.iter().zip(b.iter()).filter(|(x, y)| x != y).count() as f32;
 
     Ok(count / a.len() as f32)
 }
@@ -185,7 +182,11 @@ mod tests {
         let b = [100.0, 150.0, 250.0, 300.0];
         run_jaccard_tests(&a, &b, 0.6666666);
         run_manhattan_tests(&a, &b, Ok(800.0));
-        run_hamming_tests(&[100.0, 200.0, 300.0, 1000.0], &[100.0, 150.0, 250.0, 300.0], Ok(0.75));
+        run_hamming_tests(
+            &[100.0, 200.0, 300.0, 1000.0],
+            &[100.0, 150.0, 250.0, 300.0],
+            Ok(0.75),
+        );
     }
 
     #[test]
@@ -197,7 +198,7 @@ mod tests {
             manhattan_threshold: 1.0,
             hamming_threshold: 0.1,
         };
-        
+
         assert_eq!(is_similar(&a, &b, &thresholds), Ok(true));
     }
 
@@ -210,7 +211,7 @@ mod tests {
             manhattan_threshold: 3.0,
             hamming_threshold: 0.5,
         };
-        
+
         assert_eq!(is_similar(&a, &b, &thresholds), Ok(true));
     }
 
@@ -223,7 +224,7 @@ mod tests {
             manhattan_threshold: 2.0,
             hamming_threshold: 0.8,
         };
-        
+
         assert_eq!(is_similar(&a, &b, &thresholds), Ok(false));
     }
 
@@ -236,7 +237,7 @@ mod tests {
             manhattan_threshold: 10.0,
             hamming_threshold: 0.3,
         };
-        
+
         assert_eq!(is_similar(&a, &b, &thresholds), Ok(false));
     }
 
@@ -249,7 +250,7 @@ mod tests {
             manhattan_threshold: 10.0,
             hamming_threshold: 1.0,
         };
-        
+
         assert_eq!(is_similar(&a, &b, &thresholds), Ok(false));
     }
 }

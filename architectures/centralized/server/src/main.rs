@@ -1,16 +1,8 @@
 use anyhow::Result;
-use app::{App, Tabs, TAB_NAMES};
+use app::App;
 use clap::{ArgAction, Parser};
-use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage, NC};
 use psyche_coordinator::Coordinator;
-use psyche_network::{RelayMode, TcpServer};
 use psyche_tui::LogOutput;
-use std::{
-    net::{Ipv4Addr, SocketAddr},
-    time::Duration,
-};
-use tokio::time::{interval, interval_at, Instant};
-use toml;
 use tracing::info;
 
 mod app;
@@ -18,17 +10,13 @@ mod dashboard;
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[clap(long)]
-    secret_key: Option<String>,
-
+    /// if not specified, a random free port will be chosen.
     #[clap(short, long)]
     p2p_port: Option<u16>,
 
+    /// if not specified, a random free port will be chosen.
     #[clap(short, long)]
     server_port: Option<u16>,
-
-    #[clap(short, long)]
-    training_port: Option<u16>,
 
     #[clap(
         long,
@@ -43,16 +31,15 @@ struct Args {
     /// Path to TOML of Coordinator state
     #[clap(long)]
     state: Option<String>,
+
+    /// Path to TOML of data server config
+    #[clap(long)]
+    data_config: Option<String>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-
-    let coordinator = match args.state {
-        Some(state) => toml::from_str(std::str::from_utf8(&std::fs::read(state)?)?)?,
-        None => Coordinator::default(),
-    };
 
     psyche_tui::init_logging(if args.tui {
         LogOutput::TUI
@@ -60,51 +47,28 @@ async fn main() -> Result<()> {
         LogOutput::Console
     });
 
+    let coordinator = match args.state {
+        Some(state_path) => toml::from_str(std::str::from_utf8(&std::fs::read(state_path)?)?)?,
+        None => Coordinator::default(),
+    };
+
     info!("joining gossip room");
 
-    let secret_key = args.secret_key.map(|k| k.parse().unwrap());
-
-    let p2p = NC::init(
-        &coordinator.run_id,
-        args.p2p_port,
-        RelayMode::Default,
-        vec![],
-        secret_key,
-    )
-    .await?;
-
-    let tui = args.tui;
-
-    let tx_state = match tui {
-        true => Some(psyche_tui::start_render_loop(Tabs::new(
-            Default::default(),
-            &TAB_NAMES,
-        ))?),
-        false => None,
+    let data_server_config = match args.data_config {
+        Some(config_path) => Some(toml::from_str(std::str::from_utf8(&std::fs::read(
+            config_path,
+        )?)?)?),
+        None => None,
     };
-
-    // tick every second
-    let tick_interval = {
-        let duration = Duration::from_secs(1);
-        interval_at(Instant::now() + duration, duration)
-    };
-
-    let net_server = TcpServer::<ClientId, ClientToServerMessage, ServerToClientMessage>::start(
-        SocketAddr::new(
-            std::net::IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-            args.server_port.unwrap_or(0),
-        ),
-    )
-    .await?;
 
     App::new(
-        p2p,
-        net_server,
-        tx_state,
-        tick_interval,
-        interval(Duration::from_millis(150)),
+        args.tui,
         coordinator,
+        data_server_config,
+        args.p2p_port,
+        args.server_port,
     )
+    .await?
     .run()
     .await?;
 

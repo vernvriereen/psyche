@@ -41,7 +41,7 @@ where
         })
     }
 
-    pub async fn poll(&mut self) -> Result<()> {
+    pub async fn poll(&mut self) {
         tokio::select! {
             new_state = self.backend.wait_for_new_state() => {
                 self.state = new_state;
@@ -50,7 +50,6 @@ where
                 self.handle_client_message(from, message).await;
             }
         }
-        Ok(())
     }
 
     pub async fn handle_client_message(&mut self, from: T, message: ClientToServerMessage) {
@@ -62,7 +61,7 @@ where
                         .send_to(
                             from.clone(),
                             ServerToClientMessage::RequestRejected {
-                                data_id: data_id,
+                                data_id,
                                 reason: RejectionReason::NotInThisRound,
                             },
                         )
@@ -76,7 +75,7 @@ where
                         .send_to(
                             from.clone(),
                             ServerToClientMessage::RequestRejected {
-                                data_id: data_id,
+                                data_id,
                                 reason: RejectionReason::WrongDataIdForStep,
                             },
                         )
