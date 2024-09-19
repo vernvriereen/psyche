@@ -1,6 +1,6 @@
 use crate::app::App;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use app::{Tabs, TAB_NAMES};
 use clap::{ArgAction, Parser};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage, NC};
@@ -70,24 +70,18 @@ async fn main() -> Result<()> {
         interval_at(Instant::now() + duration, duration)
     };
 
-    let mut server_conn =
-        TcpClient::<ClientId, ClientToServerMessage, ServerToClientMessage>::connect(
-            &args.server_addr,
-            secret_key.public().into(),
-            secret_key.clone(),
-        )
-        .await?;
+    let server_conn = TcpClient::<ClientId, ClientToServerMessage, ServerToClientMessage>::connect(
+        &args.server_addr,
+        secret_key.public().into(),
+        secret_key.clone(),
+    )
+    .await?;
 
-    server_conn.send(ClientToServerMessage::Join).await?;
-    let peers = match server_conn.receive().await {
-        Ok(ServerToClientMessage::P2PConnect(peers)) => peers,
-        err => bail!("Unexpected first message {:?}", err),
-    };
     let p2p = NC::init(
         &args.run_id,
         args.bind_port,
         RelayMode::Default,
-        peers.0,
+        vec![],
         Some(secret_key),
     )
     .await?;

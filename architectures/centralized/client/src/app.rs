@@ -90,8 +90,11 @@ impl App {
 
     async fn on_server_message(&mut self, message: ServerToClientMessage) {
         match message {
-            ServerToClientMessage::P2PConnect(_) => {
-                // ignore.
+            ServerToClientMessage::P2PConnect(peers) => {
+                self.p2p
+                    .add_peers(peers.0)
+                    .await
+                    .expect("Failed to add peers from server.");
             }
             ServerToClientMessage::Coordinator(state) => {
                 let prev_state = replace(&mut self.coordinator_state, state);

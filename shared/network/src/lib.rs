@@ -1,6 +1,6 @@
 use anyhow::{Error, Result};
 use download_manager::{DownloadManager, DownloadUpdate};
-use futures_util::{Sink, SinkExt, Stream, StreamExt};
+use futures_util::{future::join_all, Sink, SinkExt, Stream, StreamExt};
 use iroh::{
     base::ticket::BlobTicket,
     gossip::net::{Command, Event, GossipEvent},
@@ -128,6 +128,23 @@ where
             _broadcast_message: Default::default(),
             _download: Default::default(),
         })
+    }
+
+    pub async fn add_peers(&mut self, peers: Vec<NodeAddr>) -> Result<()> {
+        join_all(
+            peers
+                .iter()
+                .map(|peer| self.node.net().add_node_addr(peer.clone())),
+        )
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?;
+        self.gossip_tx
+            .send(Command::JoinPeers(
+                peers.into_iter().map(|i| i.node_id).collect(),
+            ))
+            .await?;
+        Ok(())
     }
 
     pub async fn broadcast(&mut self, message: &BroadcastMessage) -> Result<()> {
