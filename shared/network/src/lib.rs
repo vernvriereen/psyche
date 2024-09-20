@@ -36,7 +36,7 @@ pub use iroh::net::{
 pub use peer_list::PeerList;
 pub use signed_message::SignedMessage;
 pub use tcp::{TcpClient, TcpServer};
-pub use tui::{NetworkTUI, NetworkTUIState};
+pub use tui::{NetworkTUIState, NetworkTui};
 
 pub struct NetworkConnection<BroadcastMessage, Download>
 where

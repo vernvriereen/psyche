@@ -3,7 +3,7 @@ use psyche_centralized_shared::{
     BroadcastMessage, ClientId, ClientToServerMessage, Payload, ServerToClientMessage, NC,
 };
 use psyche_coordinator::Coordinator;
-use psyche_network::{NetworkEvent, NetworkTUI, TcpClient};
+use psyche_network::{NetworkEvent, NetworkTui, TcpClient};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
 use psyche_watcher::CoordinatorTui;
@@ -12,7 +12,7 @@ use std::sync::mpsc::Sender;
 use tokio::{select, time::Interval};
 use tracing::info;
 
-pub(super) type Tabs = TabbedWidget<(CoordinatorTui, NetworkTUI, LoggerWidget)>;
+pub(super) type Tabs = TabbedWidget<(CoordinatorTui, NetworkTui, LoggerWidget)>;
 pub(super) const TAB_NAMES: [&str; 3] = ["Coordinator", "Network", "Logger"];
 type TabsData = <Tabs as CustomWidget>::Data;
 

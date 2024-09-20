@@ -1,6 +1,10 @@
 use anyhow::Result;
+use std::{
+    fmt::{Debug, Display},
+    hash::Hash,
+};
 pub trait NodeIdentity:
-    std::fmt::Debug + PartialEq + Eq + std::hash::Hash + Clone + Send + Sync + 'static
+    Display + Debug + PartialEq + Eq + Hash + Clone + Send + Sync + 'static
 {
     type PrivateKey: Send + Sync;
     fn from_signed_bytes(bytes: &[u8], challenge: [u8; 32]) -> Result<Self>;

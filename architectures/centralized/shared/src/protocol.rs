@@ -1,13 +1,22 @@
+use std::fmt::Display;
+
 use anyhow::anyhow;
 use psyche_coordinator::Coordinator;
 use psyche_core::NodeIdentity;
 use psyche_network::{NetworkConnection, NodeId, PeerList, PublicKey, SecretKey, SignedMessage};
 use serde::{Deserialize, Serialize};
 
+pub type NC = NetworkConnection<BroadcastMessage, Payload>;
+
 #[derive(Serialize, Deserialize, Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ClientId(NodeId);
 
-pub type NC = NetworkConnection<BroadcastMessage, Payload>;
+impl Display for ClientId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{}", self.0.fmt_short()))?;
+        Ok(())
+    }
+}
 
 impl NodeIdentity for ClientId {
     type PrivateKey = SecretKey;

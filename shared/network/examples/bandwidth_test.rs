@@ -5,7 +5,7 @@ use iroh::{
     base::ticket::BlobTicket,
     net::relay::{RelayMap, RelayMode, RelayUrl},
 };
-use psyche_network::{NetworkConnection, NetworkEvent, NetworkTUI, NetworkTUIState, PeerList};
+use psyche_network::{NetworkConnection, NetworkEvent, NetworkTUIState, NetworkTui, PeerList};
 use psyche_tui::{
     logging::LoggerWidget,
     ratatui::{
@@ -63,7 +63,7 @@ struct TUIState {
 
 #[derive(Default)]
 struct Tui {
-    network: NetworkTUI,
+    network: NetworkTui,
 }
 
 impl CustomWidget for Tui {

@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use futures::future::try_join_all;
@@ -23,6 +25,14 @@ impl<T: NodeIdentity> WatcherBackend<T> for DummyBackend<T> {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq)]
 struct DummyNodeIdentity(u64);
+
+impl Display for DummyNodeIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{}", self.0))?;
+        Ok(())
+    }
+}
+
 impl NodeIdentity for DummyNodeIdentity {
     type PrivateKey = ();
     fn from_signed_bytes(bytes: &[u8], challenge: [u8; 32]) -> Result<Self> {

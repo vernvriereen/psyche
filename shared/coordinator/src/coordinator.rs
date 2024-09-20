@@ -67,6 +67,13 @@ pub struct Coordinator<T: NodeIdentity> {
     pub model: Option<Model>,
 }
 
+impl<T: NodeIdentity> Coordinator<T> {
+    // TODO: implement this!
+    pub fn data_id(&self, _client_id: &T) -> Option<usize> {
+        Some(0)
+    }
+}
+
 impl<T: NodeIdentity> Default for Coordinator<T> {
     fn default() -> Self {
         Self {

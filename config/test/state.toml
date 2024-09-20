@@ -1,0 +1,66 @@
+run_id = "yo"
+run_state = "WaitingForMembers"
+run_state_start_unix_timestamp = 0
+warmup_time = 30
+max_rounds = 1000
+max_round_time = 10
+rounds_head = 0
+min_clients = 1
+tick = 0
+last_tick_unix_timestamp = 0
+data_indicies_per_round = 4096
+verification_percent = 0
+epoch = 0
+step = 0
+last_step_unix_timestamp = 0
+clients = []
+dropped_clients = []
+
+
+[[rounds]]
+height = 0
+clients_len = 0
+data_index = 0
+random_seed = 0
+
+[[rounds]]
+height = 0
+clients_len = 0
+data_index = 0
+random_seed = 0
+
+[[rounds]]
+height = 0
+clients_len = 0
+data_index = 0
+random_seed = 0
+
+[[rounds]]
+height = 0
+clients_len = 0
+data_index = 0
+random_seed = 0
+
+
+[model.LLM]
+architecture = "HfLlama"
+data_type = "Pretraining"
+max_seq_len = 1234
+
+[model.LLM.data_location]
+Server = "127.0.0.1:4269"
+
+[model.LLM.checkpoint.Hub]
+repo_id = "asdf"
+
+[model.LLM.lr_schedule.Constant]
+base_lr = 1.0
+warmup_steps = 3
+warmup_init_lr = 1.23
+
+[model.LLM.optimizer.Distro]
+betas = [1.0, 5.0, 2.3]
+weight_decay = 5.0
+eps = 1.2
+compression_topk = 55
+compression_chunk = 1858

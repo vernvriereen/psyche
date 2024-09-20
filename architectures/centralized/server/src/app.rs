@@ -5,10 +5,10 @@ use psyche_centralized_shared::{
 };
 use psyche_coordinator::model::{LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM};
 use psyche_coordinator::{Client, Coordinator};
-use psyche_data_provider::{DataProviderTcpServer, LocalDataProvider, TokenSize};
-use psyche_network::{NetworkEvent, NetworkTUI, PeerList, RelayMode, TcpServer};
+use psyche_data_provider::{DataProviderTcpServer, DataServerTui, LocalDataProvider, TokenSize};
+use psyche_network::{NetworkEvent, NetworkTui, PeerList, RelayMode, TcpServer};
 use psyche_tui::logging::LoggerWidget;
-use psyche_tui::{CustomWidget, TabbedWidget};
+use psyche_tui::{CustomWidget, MaybeTui, TabbedWidget};
 use psyche_watcher::CoordinatorTui;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -24,8 +24,20 @@ use tracing::{info, warn};
 
 use crate::dashboard::{DashboardState, DashboardTui};
 
-pub(super) type Tabs = TabbedWidget<(DashboardTui, CoordinatorTui, NetworkTUI, LoggerWidget)>;
-pub(super) const TAB_NAMES: [&str; 4] = ["Dashboard", "Coordinator", "P2P Network", "Logger"];
+pub(super) type Tabs = TabbedWidget<(
+    DashboardTui,
+    CoordinatorTui,
+    NetworkTui,
+    MaybeTui<DataServerTui>,
+    LoggerWidget,
+)>;
+pub(super) const TAB_NAMES: [&str; 5] = [
+    "Dashboard",
+    "Coordinator",
+    "P2P Network",
+    "Training Data Server",
+    "Logger",
+];
 type TabsData = <Tabs as CustomWidget>::Data;
 
 struct Backend {
@@ -109,14 +121,16 @@ impl App {
             if let LLMTrainingDataType::Finetuning = data_type {
                 panic!("Finetuning is not supported yet.")
             }
-            let server_addr: SocketAddr = url.parse()?;
+            let server_addr: SocketAddr = url
+                .parse()
+                .map_err(|e| anyhow!("Failed to parse training data server URL {url}: {e}"))?;
             let server_port = server_addr.port();
             let DataServerInfo {
                 dir,
                seq_len,
                shuffle_seed,
                token_size
-            } = data_server_config.ok_or_else(|| anyhow!("Coordinator state requires we host training data, but no data server config passed."))?;
+            } = data_server_config.ok_or_else(|| anyhow!("Coordinator state requires we host training data, but no --data-config passed."))?;
             let local_data_provider =
                 LocalDataProvider::new_from_directory(dir, token_size, seq_len, shuffle_seed)?;
             let (tx, backend) = ChannelCoordinatorBackend::new();
@@ -194,6 +208,7 @@ impl App {
                 (&*self).into(),
                 (&self.coordinator).into(),
                 (&self.p2p).into(),
+                self.training_data_server.as_ref().map(|o| (&o.1).into()),
                 Default::default(),
             );
             tx_tui_state.send(states)?;

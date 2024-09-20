@@ -7,6 +7,7 @@ edition = "2021"
 psyche-coordinator.workspace = true
 psyche-core.workspace = true
 psyche-watcher.workspace = true
+psyche-tui.workspace = true
 psyche-network.workspace = true
 hf-hub = { git = "https://github.com/huggingface/hf-hub.git", rev = "a66bdcf2f2664a55ab3a1415184c7aebd8ac4ed5" }
 parquet = { version = "51.0.0" }

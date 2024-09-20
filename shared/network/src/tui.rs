@@ -20,9 +20,9 @@ use std::{
 use crate::{peer_list::PeerList, util::convert_bytes, NetworkConnection};
 
 #[derive(Default, Debug)]
-pub struct NetworkTUI;
+pub struct NetworkTui;
 
-impl psyche_tui::CustomWidget for NetworkTUI {
+impl psyche_tui::CustomWidget for NetworkTui {
     type Data = NetworkTUIState;
 
     fn render(&mut self, area: Rect, buf: &mut Buffer, state: &Self::Data) {

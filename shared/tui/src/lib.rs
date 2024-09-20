@@ -1,5 +1,6 @@
 mod app;
 pub mod logging;
+mod maybe;
 mod tabbed;
 mod terminal;
 mod widget;
@@ -13,6 +14,7 @@ use terminal::{init_terminal, restore_terminal};
 
 pub use app::App;
 pub use logging::{init_logging, LogOutput};
+pub use maybe::MaybeTui;
 pub use tabbed::TabbedWidget;
 pub use widget::CustomWidget;
 
