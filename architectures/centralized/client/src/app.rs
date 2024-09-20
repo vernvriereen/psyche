@@ -68,7 +68,7 @@ impl App {
             })
             .await?;
         let (tx, rx) = broadcast::channel(10);
-        let _client = Client::start(Backend { rx });
+        let mut client = Client::start(Backend { rx });
         loop {
             select! {
                 Ok(Some(event)) = self.p2p.poll_next() => {
@@ -82,6 +82,9 @@ impl App {
                 }
                 _ = self.update_tui_interval.tick() => {
                     self.update_tui()?;
+                }
+                finished = client.finish() => {
+                    return finished;
                 }
                 else => break,
             }
