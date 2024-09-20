@@ -68,7 +68,7 @@ impl App {
             })
             .await?;
         let (tx, rx) = broadcast::channel(10);
-        let _client = Client::new(Backend { rx });
+        let _client = Client::start(Backend { rx });
         loop {
             select! {
                 Ok(Some(event)) = self.p2p.poll_next() => {

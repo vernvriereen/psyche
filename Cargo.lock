@@ -4920,8 +4920,10 @@ dependencies = [
 name = "psyche-client"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "psyche-core",
  "psyche-watcher",
+ "tokio",
 ]
 
 [[package]]

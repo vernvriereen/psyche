@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 psyche-core.workspace = true
 psyche-watcher.workspace = true
+anyhow.workspace = true
+tokio.workspace = true

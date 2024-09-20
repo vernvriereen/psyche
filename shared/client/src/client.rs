@@ -6,7 +6,7 @@ pub struct Client<T: NodeIdentity, B: Backend<T> + 'static> {
 }
 
 impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
-    pub fn new(backend: B) -> Self {
+    pub fn start(backend: B) -> Self {
         Self {
             _watcher: BackendWatcher::new(backend),
         }
