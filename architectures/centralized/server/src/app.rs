@@ -17,7 +17,6 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::sync::Mutex;
 use tokio::time::interval;
 use tokio::{select, time::Interval};
 use tracing::{info, warn};
@@ -52,7 +51,7 @@ impl psyche_coordinator::Backend<ClientId> for Backend {
 }
 
 struct ChannelCoordinatorBackend {
-    rx: Mutex<Receiver<Coordinator<ClientId>>>,
+    rx: Receiver<Coordinator<ClientId>>,
 }
 
 impl ChannelCoordinatorBackend {
@@ -64,13 +63,8 @@ impl ChannelCoordinatorBackend {
 
 #[async_trait]
 impl psyche_watcher::Backend<ClientId> for ChannelCoordinatorBackend {
-    async fn wait_for_new_state(&self) -> Coordinator<ClientId> {
-        self.rx
-            .lock()
-            .await
-            .recv()
-            .await
-            .expect("channel closed? :(")
+    async fn wait_for_new_state(&mut self) -> Result<Coordinator<ClientId>> {
+        Ok(self.rx.recv().await.expect("channel closed? :("))
     }
 }
 

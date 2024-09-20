@@ -6,6 +6,7 @@ resolver = "2"
 
 psyche-coordinator = { path = "./shared/coordinator" }
 psyche-core = { path = "./shared/core" }
+psyche-client = { path = "./shared/client" }
 psyche-data-provider = { path = "./shared/data-provider" }
 psyche-network = { path = "./shared/network" }
 psyche-serde = { path = "./shared/serde" }

@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-async-trait = {workspace = true}
-psyche-core = {path = "../core"}
-psyche-coordinator = {path = "../coordinator"}
-psyche-tui = {path = "../tui"}
+psyche-core.workspace = true
+psyche-coordinator.workspace = true
+psyche-tui.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true

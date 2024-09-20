@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use futures::future::try_join_all;
@@ -10,6 +8,7 @@ use psyche_tui::init_logging;
 use psyche_watcher::Backend as WatcherBackend;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 use tracing::info;
 
 // Simulated backend for demonstration
@@ -18,8 +17,8 @@ struct DummyBackend<T: NodeIdentity>(Vec<T>);
 
 #[async_trait]
 impl<T: NodeIdentity> WatcherBackend<T> for DummyBackend<T> {
-    async fn wait_for_new_state(&self) -> Coordinator<T> {
-        Coordinator::default()
+    async fn wait_for_new_state(&mut self) -> Result<Coordinator<T>> {
+        Ok(Coordinator::default())
     }
 }
 

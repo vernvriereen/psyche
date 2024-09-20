@@ -3,7 +3,7 @@ use psyche_coordinator::Coordinator;
 use psyche_core::NodeIdentity;
 use psyche_network::TcpServer;
 use psyche_watcher::Backend;
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 use tracing::{info, warn};
 
 use crate::traits::TokenizedDataProvider;
@@ -18,7 +18,7 @@ where
 {
     pub(crate) tcp_server: TcpServer<T, ClientToServerMessage, ServerToClientMessage>,
     pub(crate) local_data_provider: D,
-    pub(crate) backend: Arc<W>,
+    pub(crate) backend: W,
     pub(crate) state: Coordinator<T>,
     pub(crate) provided_sequences: HashMap<usize, bool>,
 }
@@ -38,7 +38,7 @@ where
             tcp_server,
             local_data_provider,
             provided_sequences: HashMap::new(),
-            backend: Arc::new(backend),
+            backend,
             state: Coordinator::default(),
         })
     }
@@ -46,7 +46,7 @@ where
     pub async fn poll(&mut self) {
         tokio::select! {
             new_state = self.backend.wait_for_new_state() => {
-                self.state = new_state;
+                self.state = new_state.unwrap();
             }
             Some((from, message)) = self.tcp_server.next() => {
                 self.handle_client_message(from, message).await;

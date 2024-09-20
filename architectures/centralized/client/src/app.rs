@@ -2,26 +2,36 @@ use anyhow::Result;
 use psyche_centralized_shared::{
     BroadcastMessage, ClientId, ClientToServerMessage, Payload, ServerToClientMessage, NC,
 };
+use psyche_client::Client;
 use psyche_coordinator::Coordinator;
 use psyche_network::{NetworkEvent, NetworkTui, TcpClient};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
-use psyche_watcher::CoordinatorTui;
-use std::mem::replace;
+use psyche_watcher::{Backend as WatcherBackend, CoordinatorTui};
 use std::sync::mpsc::Sender;
-use tokio::{select, time::Interval};
+use tokio::{select, sync::broadcast, time::Interval};
 use tracing::info;
 
 pub(super) type Tabs = TabbedWidget<(CoordinatorTui, NetworkTui, LoggerWidget)>;
 pub(super) const TAB_NAMES: [&str; 3] = ["Coordinator", "Network", "Logger"];
 type TabsData = <Tabs as CustomWidget>::Data;
 
+struct Backend {
+    rx: broadcast::Receiver<Coordinator<ClientId>>,
+}
+
+#[async_trait::async_trait]
+impl WatcherBackend<ClientId> for Backend {
+    async fn wait_for_new_state(&mut self) -> Result<Coordinator<ClientId>> {
+        Ok(self.rx.recv().await?)
+    }
+}
+
 pub struct App {
     tx_tui_state: Option<Sender<TabsData>>,
     tick_interval: Interval,
     update_tui_interval: Interval,
     coordinator_state: Coordinator<ClientId>,
-    last_coordinator_state: Coordinator<ClientId>,
     p2p: NC,
     server_conn: TcpClient<ClientId, ClientToServerMessage, ServerToClientMessage>,
     run_id: String,
@@ -42,7 +52,6 @@ impl App {
             tx_tui_state,
             tick_interval,
             update_tui_interval,
-            last_coordinator_state: Coordinator::default(),
             coordinator_state: Coordinator::default(),
             p2p,
             server_conn,
@@ -58,13 +67,15 @@ impl App {
                 data_bid: self.data_bid,
             })
             .await?;
+        let (tx, rx) = broadcast::channel(10);
+        let _client = Client::new(Backend { rx });
         loop {
             select! {
                 Ok(Some(event)) = self.p2p.poll_next() => {
                     self.on_peer_network_event(event).await;
                 }
                 Ok(message) = self.server_conn.receive() => {
-                    self.on_server_message(message).await;
+                    self.on_server_message(message, &tx).await;
                 }
                 _ = self.tick_interval.tick() => {
                     self.on_tick().await;
@@ -99,7 +110,11 @@ impl App {
         }
     }
 
-    async fn on_server_message(&mut self, message: ServerToClientMessage) {
+    async fn on_server_message(
+        &mut self,
+        message: ServerToClientMessage,
+        tx: &broadcast::Sender<Coordinator<ClientId>>,
+    ) {
         match message {
             ServerToClientMessage::P2PConnect(peers) => {
                 self.p2p
@@ -108,9 +123,9 @@ impl App {
                     .expect("Failed to add peers from server.");
             }
             ServerToClientMessage::Coordinator(state) => {
-                let prev_state = replace(&mut self.coordinator_state, state);
-                self.last_coordinator_state = prev_state;
-                // TODO on state change!
+                self.coordinator_state = state.clone();
+                tx.send(state)
+                    .expect("Failed to send coordinator update to client");
             }
         }
     }

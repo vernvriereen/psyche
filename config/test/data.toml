@@ -1,6 +1,6 @@
 dir = "data/"
 token_size = "TwoBytes"
-seq_len = 5
+seq_len = 2048
 shuffle_seed = [
     1,
     2,

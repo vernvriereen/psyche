@@ -4863,8 +4863,10 @@ name = "psyche-centralized-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "clap",
  "psyche-centralized-shared",
+ "psyche-client",
  "psyche-coordinator",
  "psyche-network",
  "psyche-tui",
@@ -4912,6 +4914,14 @@ dependencies = [
  "psyche-core",
  "psyche-network",
  "serde",
+]
+
+[[package]]
+name = "psyche-client"
+version = "0.1.0"
+dependencies = [
+ "psyche-core",
+ "psyche-watcher",
 ]
 
 [[package]]
@@ -5045,6 +5055,7 @@ dependencies = [
 name = "psyche-watcher"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "psyche-coordinator",
  "psyche-core",
