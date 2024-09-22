@@ -4889,6 +4889,7 @@ dependencies = [
  "futures-util",
  "postcard",
  "psyche-centralized-shared",
+ "psyche-client",
  "psyche-coordinator",
  "psyche-core",
  "psyche-data-provider",
@@ -4921,8 +4922,11 @@ name = "psyche-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "psyche-coordinator",
  "psyche-core",
+ "psyche-network",
  "psyche-watcher",
+ "serde",
  "tokio",
 ]
 

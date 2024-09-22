@@ -3,7 +3,8 @@ use crate::app::App;
 use anyhow::Result;
 use app::{Tabs, TAB_NAMES};
 use clap::{ArgAction, Parser};
-use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage, NC};
+use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
+use psyche_client::NC;
 use psyche_network::{RelayMode, SecretKey, TcpClient};
 use psyche_tui::LogOutput;
 use std::time::Duration;
@@ -80,16 +81,7 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    let p2p = NC::init(
-        &args.run_id,
-        args.bind_port,
-        RelayMode::Default,
-        vec![],
-        Some(secret_key),
-    )
-    .await?;
     App::new(
-        p2p,
         server_conn,
         tx_state,
         tick_interval,
@@ -97,7 +89,16 @@ async fn main() -> Result<()> {
         &args.run_id,
         args.data_bid,
     )
-    .run()
+    .run(
+        NC::init(
+            &args.run_id,
+            args.bind_port,
+            RelayMode::Default,
+            vec![],
+            Some(secret_key),
+        )
+        .await?,
+    )
     .await?;
 
     Ok(())

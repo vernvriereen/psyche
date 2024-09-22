@@ -3,10 +3,8 @@ use std::fmt::Display;
 use anyhow::anyhow;
 use psyche_coordinator::Coordinator;
 use psyche_core::NodeIdentity;
-use psyche_network::{NetworkConnection, NodeId, PeerList, PublicKey, SecretKey, SignedMessage};
+use psyche_network::{NodeId, PeerList, PublicKey, SecretKey, SignedMessage};
 use serde::{Deserialize, Serialize};
-
-pub type NC = NetworkConnection<BroadcastMessage, Payload>;
 
 #[derive(Serialize, Deserialize, Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ClientId(NodeId);
@@ -56,11 +54,3 @@ pub enum ServerToClientMessage {
     P2PConnect(PeerList),
     Coordinator(Coordinator<ClientId>),
 }
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct BroadcastMessage {
-    pub step: usize,
-    pub distro_result: Vec<u8>,
-}
-#[derive(Serialize, Deserialize)]
-pub struct Payload {}

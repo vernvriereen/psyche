@@ -5,12 +5,13 @@ edition = "2021"
 
 [dependencies]
 psyche-centralized-shared = { path = "../shared" }
-psyche-data-provider.workspace = true
+psyche-client.workspace = true
 psyche-coordinator.workspace = true
+psyche-core.workspace = true
+psyche-data-provider.workspace = true
 psyche-network.workspace = true
 psyche-tui.workspace = true
 psyche-watcher.workspace = true
-psyche-core.workspace = true
 async-trait.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true

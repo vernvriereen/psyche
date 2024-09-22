@@ -1,15 +1,13 @@
-use anyhow::Result;
-use psyche_centralized_shared::{
-    BroadcastMessage, ClientId, ClientToServerMessage, Payload, ServerToClientMessage, NC,
-};
-use psyche_client::Client;
+use anyhow::{Error, Result};
+use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
+use psyche_client::{Client, NC};
 use psyche_coordinator::Coordinator;
-use psyche_network::{NetworkEvent, NetworkTui, TcpClient};
+use psyche_network::{NetworkTUIState, NetworkTui, TcpClient};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
 use psyche_watcher::{Backend as WatcherBackend, CoordinatorTui};
 use std::sync::mpsc::Sender;
-use tokio::{select, sync::broadcast, time::Interval};
+use tokio::{select, sync::mpsc, time::Interval};
 use tracing::info;
 
 pub(super) type Tabs = TabbedWidget<(CoordinatorTui, NetworkTui, LoggerWidget)>;
@@ -17,13 +15,13 @@ pub(super) const TAB_NAMES: [&str; 3] = ["Coordinator", "Network", "Logger"];
 type TabsData = <Tabs as CustomWidget>::Data;
 
 struct Backend {
-    rx: broadcast::Receiver<Coordinator<ClientId>>,
+    rx: mpsc::Receiver<Coordinator<ClientId>>,
 }
 
 #[async_trait::async_trait]
 impl WatcherBackend<ClientId> for Backend {
     async fn wait_for_new_state(&mut self) -> Result<Coordinator<ClientId>> {
-        Ok(self.rx.recv().await?)
+        self.rx.recv().await.ok_or(Error::msg("channel closed"))
     }
 }
 
@@ -32,7 +30,6 @@ pub struct App {
     tick_interval: Interval,
     update_tui_interval: Interval,
     coordinator_state: Coordinator<ClientId>,
-    p2p: NC,
     server_conn: TcpClient<ClientId, ClientToServerMessage, ServerToClientMessage>,
     run_id: String,
     data_bid: u32,
@@ -40,7 +37,6 @@ pub struct App {
 
 impl App {
     pub fn new(
-        p2p: NC,
         server_conn: TcpClient<ClientId, ClientToServerMessage, ServerToClientMessage>,
         tx_tui_state: Option<Sender<TabsData>>,
         tick_interval: Interval,
@@ -53,27 +49,36 @@ impl App {
             tick_interval,
             update_tui_interval,
             coordinator_state: Coordinator::default(),
-            p2p,
             server_conn,
             run_id: run_id.into(),
             data_bid,
         }
     }
 
-    pub async fn run(&mut self) -> Result<()> {
+    pub async fn run(&mut self, mut p2p: NC) -> Result<()> {
         self.server_conn
             .send(ClientToServerMessage::Join {
                 run_id: self.run_id.clone(),
                 data_bid: self.data_bid,
             })
             .await?;
-        let (tx, rx) = broadcast::channel(10);
-        let mut client = Client::start(Backend { rx });
         loop {
             select! {
-                Ok(Some(event)) = self.p2p.poll_next() => {
-                    self.on_peer_network_event(event).await;
+                Ok(ServerToClientMessage::P2PConnect(peers)) = self.server_conn.receive() => {
+                    p2p
+                    .add_peers(peers.0)
+                    .await?;
+                    break;
                 }
+                _ = self.update_tui_interval.tick() => {
+                    self.update_tui(NetworkTUIState::default())?;
+                }
+            }
+        }
+        let (tx, rx) = mpsc::channel(10);
+        let mut client = Client::new(Backend { rx }, p2p);
+        loop {
+            select! {
                 Ok(message) = self.server_conn.receive() => {
                     self.on_server_message(message, &tx).await;
                 }
@@ -81,10 +86,10 @@ impl App {
                     self.on_tick().await;
                 }
                 _ = self.update_tui_interval.tick() => {
-                    self.update_tui()?;
+                    self.update_tui(client.network_tui_state())?;
                 }
-                finished = client.finish() => {
-                    return finished;
+                _ = client.run() => {
+
                 }
                 else => break,
             }
@@ -92,11 +97,11 @@ impl App {
         Ok(())
     }
 
-    fn update_tui(&mut self) -> Result<()> {
+    fn update_tui(&mut self, network_tui_state: NetworkTUIState) -> Result<()> {
         if let Some(tx_tui_state) = &self.tx_tui_state {
             let states = (
                 (&self.coordinator_state).into(),
-                (&self.p2p).into(),
+                network_tui_state,
                 Default::default(),
             );
             tx_tui_state.send(states)?;
@@ -104,31 +109,18 @@ impl App {
         Ok(())
     }
 
-    async fn on_peer_network_event(&mut self, event: NetworkEvent<BroadcastMessage, Payload>) {
-        if let NetworkEvent::MessageReceived((from, message)) = event {
-            info!(
-                "got network event broadcasted from {:?}! {:?}",
-                from, message
-            );
-        }
-    }
-
     async fn on_server_message(
         &mut self,
         message: ServerToClientMessage,
-        tx: &broadcast::Sender<Coordinator<ClientId>>,
+        tx: &mpsc::Sender<Coordinator<ClientId>>,
     ) {
         match message {
-            ServerToClientMessage::P2PConnect(peers) => {
-                self.p2p
-                    .add_peers(peers.0)
-                    .await
-                    .expect("Failed to add peers from server.");
+            ServerToClientMessage::P2PConnect(_peers) => {
+                info!("Got peer list from server, but already connected");
             }
             ServerToClientMessage::Coordinator(state) => {
                 self.coordinator_state = state.clone();
-                tx.send(state)
-                    .expect("Failed to send coordinator update to client");
+                let _ = tx.send(state).await;
             }
         }
     }

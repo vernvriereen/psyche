@@ -1,8 +1,7 @@
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use psyche_centralized_shared::{
-    BroadcastMessage, ClientId, ClientToServerMessage, Payload, ServerToClientMessage, NC,
-};
+use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
+use psyche_client::{BroadcastMessage, Payload, NC};
 use psyche_coordinator::model::{LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM};
 use psyche_coordinator::{Client, Coordinator};
 use psyche_data_provider::{DataProviderTcpServer, DataServerTui, LocalDataProvider, TokenSize};
