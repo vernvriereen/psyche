@@ -4925,9 +4925,11 @@ dependencies = [
  "psyche-coordinator",
  "psyche-core",
  "psyche-data-provider",
+ "psyche-modeling",
  "psyche-network",
  "psyche-watcher",
  "serde",
+ "tch",
  "tokio",
  "tracing",
 ]
