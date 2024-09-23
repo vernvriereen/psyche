@@ -44,6 +44,12 @@ impl From<PublicKey> for ClientId {
     }
 }
 
+impl AsRef<[u8]> for ClientId {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ClientToServerMessage {
     Join { run_id: String, data_bid: u32 },

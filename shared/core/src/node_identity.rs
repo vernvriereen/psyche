@@ -4,7 +4,7 @@ use std::{
     hash::Hash,
 };
 pub trait NodeIdentity:
-    Display + Debug + PartialEq + Eq + Hash + Clone + Send + Sync + 'static
+    Display + Debug + PartialEq + Eq + Hash + AsRef<[u8]> + Clone + Send + Sync + 'static
 {
     type PrivateKey: Send + Sync + Clone;
     fn from_signed_bytes(bytes: &[u8], challenge: [u8; 32]) -> Result<Self>;

@@ -1,5 +1,6 @@
 mod client;
-mod trainer;
+mod state;
+mod training;
 mod protocol;
 
 pub use client::Client;

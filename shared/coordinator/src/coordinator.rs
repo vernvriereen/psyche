@@ -31,6 +31,7 @@ pub struct Client<I: NodeIdentity> {
 pub struct Round {
     pub height: u32,
     pub clients_len: u32,
+    pub tie_breaker_tasks: u32,
     pub data_index: u64,
     pub random_seed: u64,
 }
@@ -59,6 +60,7 @@ pub struct Coordinator<T: NodeIdentity> {
 
     pub data_indicies_per_round: u32,
     pub verification_percent: u8,
+    pub witness_nodes: u32,
 
     pub epoch: u32,
     pub step: u32,
@@ -67,12 +69,19 @@ pub struct Coordinator<T: NodeIdentity> {
     pub model: Option<Model>,
 }
 
-impl<T: NodeIdentity> Coordinator<T> {
-    // TODO: implement this!
-    pub fn data_id(&self, _client_id: &T) -> Option<usize> {
-        Some(0)
+impl<T: NodeIdentity> AsRef<[u8]> for Client<T> {
+    fn as_ref(&self) -> &[u8] {
+        self.id.as_ref()
     }
 }
+
+impl<T: NodeIdentity> PartialEq for Client<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl<T: NodeIdentity> Eq for Client<T> {}
 
 impl<T: NodeIdentity> Default for Coordinator<T> {
     fn default() -> Self {
@@ -92,6 +101,7 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             last_tick_unix_timestamp: Default::default(),
             data_indicies_per_round: Default::default(),
             verification_percent: Default::default(),
+            witness_nodes: Default::default(),
             step: Default::default(),
             last_step_unix_timestamp: Default::default(),
             epoch: Default::default(),
@@ -103,15 +113,29 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
 impl<T: NodeIdentity> Coordinator<T> {
     pub fn tick(&mut self, backend: &dyn Backend<T>, unix_timestamp: u64, random_seed: u64) {
         match self.run_state {
-            RunState::WaitingForMembers => self.waiting_for_members(backend, unix_timestamp),
-            RunState::Warmup => self.warmup(unix_timestamp),
-            RunState::RoundStart => self.round_start(unix_timestamp, random_seed),
+            RunState::WaitingForMembers => self.tick_waiting_for_members(backend, unix_timestamp),
+            RunState::Warmup => self.tick_warmup(unix_timestamp, random_seed),
+            RunState::RoundStart => self.tick_round_start(unix_timestamp),
         }
         self.tick += 1;
         self.last_tick_unix_timestamp = unix_timestamp;
     }
 
-    fn waiting_for_members(&mut self, backend: &dyn Backend<T>, unix_timestamp: u64) {
+    pub fn current_round(&self) -> Option<&Round> {
+        match self.active() {
+            true => Some(&self.rounds[self.rounds_head as usize]),
+            false => None,
+        }
+    }
+
+    pub fn active(&self) -> bool {
+        match self.run_state {
+            RunState::WaitingForMembers | RunState::Warmup => false,
+            _ => true,
+        }
+    }
+
+    fn tick_waiting_for_members(&mut self, backend: &dyn Backend<T>, unix_timestamp: u64) {
         let clients = backend.select_new_clients();
         if clients.len() as u32 >= self.min_clients {
             self.clients = clients.into();
@@ -120,21 +144,24 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
     }
 
-    fn warmup(&mut self, unix_timestamp: u64) {
+    fn tick_warmup(&mut self, unix_timestamp: u64, random_seed: u64) {
         if unix_timestamp >= self.warmup_time + self.run_state_start_unix_timestamp {
-            self.change_state(unix_timestamp, RunState::RoundStart);
+            self.start_round(unix_timestamp, random_seed, 0);
         }
     }
 
-    fn round_start(&mut self, unix_timestamp: u64, random_seed: u64) {
+    fn tick_round_start(&mut self, unix_timestamp: u64) {
         if (self.clients.len() as u32) < self.min_clients {
             self.change_state(unix_timestamp, RunState::WaitingForMembers);
             return;
         }
-        let (next_rounds_head, next_height) = if self.rounds_head == 0 && self.rounds[0].height == 0
+    }
+
+    fn start_round(&mut self, unix_timestamp: u64, random_seed: u64, tie_breaker_tasks: u32) {
+        let (next_rounds_head, next_height, next_data_index) = if self.rounds_head == 0 && self.rounds[0].height == 0
         {
             // very first round, don't increment -- just start here
-            (0usize, 0u32)
+            (0usize, 0u32, 0u64)
         } else {
             let current_round = &self.rounds[self.rounds_head as usize];
             if current_round.height == self.max_rounds - 1 {
@@ -143,6 +170,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 (
                     (self.rounds_head + 1) as usize % self.rounds.len(),
                     current_round.height + 1,
+                    current_round.data_index + self.data_indicies_per_round as u64,
                 )
             }
         };
@@ -150,8 +178,10 @@ impl<T: NodeIdentity> Coordinator<T> {
         self.rounds_head = next_rounds_head as u32;
         round.clients_len = self.clients.len() as u32;
         round.height = next_height;
-        round.data_index += self.data_indicies_per_round as u64;
+        round.data_index = next_data_index;
+        round.tie_breaker_tasks = tie_breaker_tasks;
         round.random_seed = random_seed;
+        self.change_state(unix_timestamp, RunState::RoundStart);
     }
 
     fn change_state(&mut self, unix_timestamp: u64, new_state: RunState) {
@@ -165,6 +195,7 @@ impl Round {
         Self {
             height: 0,
             clients_len: 0,
+            tie_breaker_tasks: 0,
             data_index: 0,
             random_seed: 0,
         }

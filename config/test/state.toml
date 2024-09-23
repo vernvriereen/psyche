@@ -10,6 +10,7 @@ tick = 0
 last_tick_unix_timestamp = 0
 data_indicies_per_round = 4096
 verification_percent = 0
+witness_nodes = 0
 epoch = 0
 step = 0
 last_step_unix_timestamp = 0
@@ -22,25 +23,28 @@ height = 0
 clients_len = 0
 data_index = 0
 random_seed = 0
+tie_breaker_tasks = 0
 
 [[rounds]]
 height = 0
 clients_len = 0
 data_index = 0
 random_seed = 0
+tie_breaker_tasks = 0
 
 [[rounds]]
 height = 0
 clients_len = 0
 data_index = 0
 random_seed = 0
+tie_breaker_tasks = 0
 
 [[rounds]]
 height = 0
 clients_len = 0
 data_index = 0
 random_seed = 0
-
+tie_breaker_tasks = 0
 
 [model.LLM]
 architecture = "HfLlama"

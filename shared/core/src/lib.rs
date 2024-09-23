@@ -13,7 +13,7 @@ mod similarity;
 pub use deterministic_shuffle::deterministic_shuffle;
 pub use lcg::LCG;
 pub use lr_scheduler::*;
-pub use interval_tree::{Interval, IntervalTree};
+pub use interval_tree::{ClosedInterval, IntervalTree};
 pub use merkle_tree::{MerkleTree, Proof};
 pub use serde::Networkable;
 pub use sha256::{sha256, sha256v};

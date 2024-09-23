@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use futures::future::try_join_all;
+use parquet::data_type::AsBytes;
 use psyche_coordinator::Coordinator;
 use psyche_core::{Networkable, NodeIdentity};
 use psyche_data_provider::{DataProviderTcpClient, DataProviderTcpServer, TokenizedDataProvider};
@@ -46,6 +47,12 @@ impl NodeIdentity for DummyNodeIdentity {
         let mut b = challenge.to_vec();
         b.extend(self.to_bytes());
         b
+    }
+}
+
+impl AsRef<[u8]> for DummyNodeIdentity {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_bytes()
     }
 }
 

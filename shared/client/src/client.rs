@@ -1,14 +1,15 @@
-use crate::{trainer::Trainer, NC};
+use crate::{NC, state::State};
 use anyhow::Result;
 use psyche_core::NodeIdentity;
 use psyche_network::NetworkTUIState;
 use psyche_watcher::{Backend, BackendWatcher};
 use tokio::{select, sync::Mutex};
 
+
 pub struct Client<T: NodeIdentity, B: Backend<T> + 'static> {
     watcher: BackendWatcher<T, B>,
     p2p: NC,
-    trainer: Mutex<Trainer<T>>,
+    state: Mutex<State<T>>,
 }
 
 impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
@@ -16,7 +17,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         Self {
             watcher: BackendWatcher::new(backend),
             p2p,
-            trainer: Mutex::new(Trainer::new(identity, private_key)),
+            state: Mutex::new(State::new(identity, private_key)),
         }
     }
 
@@ -25,7 +26,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
             res = self.watcher.poll_next() => {
                 match res {
                     Ok((prev_state, state)) => {
-                        self.trainer.lock().await.process_new_state(state, prev_state).await?
+                        self.state.lock().await.process_new_state(state, prev_state).await?
                     }
                     Err(err) => { return Err(err); }
                 }

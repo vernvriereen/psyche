@@ -26,7 +26,7 @@ impl psyche_tui::CustomWidget for DataServerTui {
                     .iter()
                     .map(|c| {
                         let status = if c.2 { "⏳" } else { "✅" };
-                        Line::from(format!("{status} [{}]: {}", c.0, c.1))
+                        Line::from(format!("{status} [{}]: {:?}", c.0, c.1))
                     })
                     .collect::<Vec<Line>>(),
             )
@@ -53,7 +53,7 @@ impl psyche_tui::CustomWidget for DataServerTui {
 #[derive(Default, Debug)]
 pub struct DataServerTuiState {
     pub height: u32,
-    pub clients: Vec<(String, usize, bool)>,
+    pub clients: Vec<(String, [u64; 2], bool)>,
     pub tick: u64,
 }
 
@@ -65,16 +65,24 @@ where
 {
     fn from(v: &DataProviderTcpServer<T, D, W>) -> Self {
         Self {
-            height: v.state.rounds[v.state.rounds_head as usize].height,
-            clients: v
+            height: v
                 .state
-                .clients
+                .current_round()
+                .and_then(|x| Some(x.height))
+                .unwrap_or_default(),
+            clients: v
+                .selected_data
                 .iter()
-                .map(|c| {
-                    let id = format!("{}", c.id);
-                    let data_id = v.state.data_id(&c.id).unwrap_or(0);
-                    let has_fetched = *v.provided_sequences.get(&data_id).unwrap_or(&false);
-                    (id, data_id, has_fetched)
+                .map(|(data_ids, client_id)| {
+                    let id = format!("{}", client_id);
+                    let data_ids = [data_ids.start, data_ids.end];
+                    let has_fetched =
+                        (data_ids[0]..data_ids[1] + 1)
+                            .into_iter()
+                            .fold(true, |acc, val| {
+                                acc && *v.provided_sequences.get(&(val as usize)).unwrap_or(&false)
+                            });
+                    (id, data_ids, has_fetched)
                 })
                 .collect(),
             tick: v.state.tick,

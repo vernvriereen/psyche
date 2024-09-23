@@ -1,6 +1,6 @@
 use anyhow::Result;
-use psyche_coordinator::Coordinator;
-use psyche_core::NodeIdentity;
+use psyche_coordinator::{select_data_for_clients, Coordinator};
+use psyche_core::{IntervalTree, NodeIdentity};
 use psyche_network::TcpServer;
 use psyche_watcher::Backend;
 use std::collections::HashMap;
@@ -16,10 +16,11 @@ where
     D: TokenizedDataProvider,
     W: Backend<T>,
 {
-    pub(crate) tcp_server: TcpServer<T, ClientToServerMessage, ServerToClientMessage>,
-    pub(crate) local_data_provider: D,
-    pub(crate) backend: W,
+    tcp_server: TcpServer<T, ClientToServerMessage, ServerToClientMessage>,
+    local_data_provider: D,
+    backend: W,
     pub(crate) state: Coordinator<T>,
+    pub(crate) selected_data: IntervalTree<u64, T>,
     pub(crate) provided_sequences: HashMap<usize, bool>,
 }
 
@@ -37,6 +38,7 @@ where
         Ok(DataProviderTcpServer {
             tcp_server,
             local_data_provider,
+            selected_data: IntervalTree::new(),
             provided_sequences: HashMap::new(),
             backend,
             state: Coordinator::default(),
@@ -46,7 +48,7 @@ where
     pub async fn poll(&mut self) {
         tokio::select! {
             new_state = self.backend.wait_for_new_state() => {
-                self.state = new_state.unwrap();
+                self.handle_new_state(new_state.unwrap());
             }
             Some((from, message)) = self.tcp_server.next() => {
                 self.handle_client_message(from, message).await;
@@ -101,26 +103,37 @@ where
             }
         }
     }
+
     async fn try_send_data(&mut self, to: T, data_id: usize) -> Result<Vec<i32>, RejectionReason> {
         let in_round = self.state.clients.iter().any(|c| c.id == to);
         if !in_round {
             return Err(RejectionReason::NotInThisRound);
         }
 
-        let current_data_id_for_client = match self.state.data_id(&to) {
-            Some(id) => id,
-            None => {
-                return Err(RejectionReason::NotInThisRound);
-            }
-        };
-        if current_data_id_for_client != data_id {
+        if self
+            .selected_data
+            .get(data_id as u64)
+            .is_some_and(|x| *x == to)
+        {
             return Err(RejectionReason::WrongDataIdForStep);
         }
         let data = self
             .local_data_provider
-            .get_sample(current_data_id_for_client)
+            .get_sample(data_id)
             .await
             .expect("data failed to fetch...");
         Ok(data)
+    }
+
+    fn handle_new_state(&mut self, state: Coordinator<T>) {
+        self.state = state;
+        self.selected_data = match self.state.current_round() {
+            Some(round) => select_data_for_clients(
+                &self.state.clients,
+                round.data_index,
+                self.state.data_indicies_per_round.into(),
+            ),
+            None => IntervalTree::new(),
+        };
     }
 }
