@@ -82,6 +82,7 @@ async fn main() -> Result<()> {
     .await?;
 
     App::new(
+        secret_key.clone(),
         server_conn,
         tx_state,
         tick_interval,

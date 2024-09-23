@@ -2,7 +2,7 @@ use anyhow::{Error, Result};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{Client, NC};
 use psyche_coordinator::Coordinator;
-use psyche_network::{NetworkTUIState, NetworkTui, TcpClient};
+use psyche_network::{NetworkTUIState, NetworkTui, SecretKey, TcpClient};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
 use psyche_watcher::{Backend as WatcherBackend, CoordinatorTui};
@@ -26,6 +26,7 @@ impl WatcherBackend<ClientId> for Backend {
 }
 
 pub struct App {
+    secret_key: SecretKey,
     tx_tui_state: Option<Sender<TabsData>>,
     tick_interval: Interval,
     update_tui_interval: Interval,
@@ -37,6 +38,7 @@ pub struct App {
 
 impl App {
     pub fn new(
+        secret_key: SecretKey,
         server_conn: TcpClient<ClientId, ClientToServerMessage, ServerToClientMessage>,
         tx_tui_state: Option<Sender<TabsData>>,
         tick_interval: Interval,
@@ -45,6 +47,7 @@ impl App {
         data_bid: u32,
     ) -> Self {
         Self {
+            secret_key,
             tx_tui_state,
             tick_interval,
             update_tui_interval,
@@ -76,11 +79,12 @@ impl App {
             }
         }
         let (tx, rx) = mpsc::channel(10);
-        let mut client = Client::new(Backend { rx }, p2p);
+        let identity = ClientId::from(p2p.node_addr().await?.node_id);
+        let mut client = Client::new(Backend { rx }, p2p, identity, self.secret_key.clone());
         loop {
             select! {
-                Ok(message) = self.server_conn.receive() => {
-                    self.on_server_message(message, &tx).await;
+                message = self.server_conn.receive() => {
+                    self.on_server_message(message?, &tx).await;
                 }
                 _ = self.tick_interval.tick() => {
                     self.on_tick().await;
@@ -88,13 +92,11 @@ impl App {
                 _ = self.update_tui_interval.tick() => {
                     self.update_tui(client.network_tui_state())?;
                 }
-                _ = client.run() => {
-
+                res = client.process() => {
+                    res?;
                 }
-                else => break,
             }
         }
-        Ok(())
     }
 
     fn update_tui(&mut self, network_tui_state: NetworkTUIState) -> Result<()> {

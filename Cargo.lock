@@ -4924,10 +4924,12 @@ dependencies = [
  "anyhow",
  "psyche-coordinator",
  "psyche-core",
+ "psyche-data-provider",
  "psyche-network",
  "psyche-watcher",
  "serde",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

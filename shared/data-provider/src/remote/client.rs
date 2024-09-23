@@ -8,6 +8,7 @@ use crate::TokenizedDataProvider;
 use super::shared::{ClientToServerMessage, ServerToClientMessage};
 
 pub struct DataProviderTcpClient<T: NodeIdentity> {
+    address: String,
     tcp_client: TcpClient<T, ClientToServerMessage, ServerToClientMessage>,
 }
 
@@ -19,7 +20,7 @@ impl<T: NodeIdentity> DataProviderTcpClient<T> {
             private_key,
         )
         .await?;
-        Ok(Self { tcp_client })
+        Ok(Self { tcp_client, address: addr.to_owned() })
     }
 
     async fn receive_training_data(&mut self, data_id: usize) -> Result<Vec<i32>> {
@@ -41,6 +42,10 @@ impl<T: NodeIdentity> DataProviderTcpClient<T> {
             }
             e => bail!("Unexpected message from server {:?}", e),
         }
+    }
+
+    pub fn address(&self) -> &str {
+        &self.address
     }
 }
 
