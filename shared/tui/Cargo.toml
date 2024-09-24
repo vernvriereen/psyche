@@ -10,6 +10,9 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 ratatui = "0.28.1"
 tracing.workspace = true
 anyhow.workspace = true
+tokio-util.workspace = true
+tokio.workspace = true
+futures.workspace = true
 
 [dev-dependencies]
 rand.workspace = true

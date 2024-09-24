@@ -1,20 +1,14 @@
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
-use ratatui::{backend::Backend, Terminal};
-use std::{
-    sync::mpsc::{self, Receiver},
-    thread,
-    time::Duration,
-};
-use tracing::{debug, trace};
-
 use crate::widget::CustomWidget;
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-enum AppMode {
-    #[default]
-    Run,
-    Quit,
-}
+use crossterm::event::{Event, EventStream, KeyCode, KeyModifiers};
+use futures::StreamExt;
+use ratatui::{backend::Backend, Terminal};
+use std::time::Duration;
+use tokio::{
+    select,
+    sync::mpsc::{self, Receiver},
+};
+use tokio_util::sync::CancellationToken;
+use tracing::{debug, trace};
 
 #[derive(Debug)]
 enum AppEvent<S> {
@@ -24,7 +18,6 @@ enum AppEvent<S> {
 }
 
 pub struct App<W: CustomWidget> {
-    mode: AppMode,
     custom_widget: W,
     custom_widget_data_state: W::Data,
 }
@@ -33,82 +26,111 @@ pub struct App<W: CustomWidget> {
 impl<W: CustomWidget> App<W> {
     pub fn new(widget: W) -> Self {
         Self {
-            mode: AppMode::Run,
             custom_widget: widget,
             custom_widget_data_state: Default::default(),
         }
     }
 
-    pub fn start(
+    pub async fn start(
         mut self,
-        terminal: &mut Terminal<impl Backend>,
-        state_rx: Receiver<W::Data>,
+        shutdown_token: CancellationToken,
+        mut terminal: Terminal<impl Backend>,
+        mut state_rx: Receiver<W::Data>,
     ) -> anyhow::Result<()> {
-        let (tx, rx) = mpsc::channel();
+        let (tx, mut rx) = mpsc::channel(10);
 
-        // TODO these 3 threads make quitting weird, should detect Quit event somehow.
-        thread::spawn({
+        tokio::spawn({
             let tx = tx.clone();
-            move || loop {
-                if tx.send(AppEvent::Frame).is_err() {
-                    return;
-                }
-                std::thread::sleep(Duration::from_millis(150));
-            }
-        });
-
-        thread::spawn({
-            let tx = tx.clone();
-            move || {
-                while let Ok(event) = event::read() {
-                    trace!(target:"crossterm", "Stdin event received {:?}", event);
-                    if tx.send(AppEvent::UiEvent(event)).is_err() {
-                        return;
-                    }
-                }
-                panic!("crossterm input thread exited")
-            }
-        });
-
-        thread::spawn({
-            let tx = tx.clone();
-            move || {
-                for state in state_rx {
-                    if tx.send(AppEvent::StateUpdated(state)).is_err() {
-                        return;
+            let shutdown_token = shutdown_token.clone();
+            async move {
+                let mut interval = tokio::time::interval(Duration::from_millis(150));
+                loop {
+                    select! {
+                        _ = shutdown_token.cancelled() => {
+                            break;
+                        }
+                        _ = interval.tick() => {
+                            if tx.send(AppEvent::Frame).await.is_err() {
+                                break;
+                            }
+                        }
                     }
                 }
             }
         });
 
-        for event in rx {
-            match event {
-                AppEvent::UiEvent(event) => self.handle_ui_event(event),
-                AppEvent::StateUpdated(s) => {
-                    self.custom_widget_data_state = s;
-                }
-                AppEvent::Frame => {
-                    // just render!
+        tokio::spawn({
+            let tx = tx.clone();
+            let shutdown_token = shutdown_token.clone();
+            let mut reader = EventStream::new();
+            async move {
+                loop {
+                    select! {
+                        _ = shutdown_token.cancelled() => {
+                            break;
+                        }
+                        Some(Ok(event)) = reader.next() => {
+                            trace!(target:"crossterm", "Stdin event received {:?}", event);
+                            if tx.send(AppEvent::UiEvent(event)).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
                 }
             }
-            if self.mode == AppMode::Quit {
-                break;
+        });
+
+        tokio::spawn({
+            let tx = tx.clone();
+            let shutdown_token = shutdown_token.clone();
+            async move {
+                loop {
+                    select! {
+                        _ = shutdown_token.cancelled() => {
+                            break;
+                        }
+                        Some(state) = state_rx.recv() => {
+                            if tx.send(AppEvent::StateUpdated(state)).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                }
             }
-            self.draw(terminal)?;
+        });
+
+        loop {
+            select! {
+                _ = shutdown_token.cancelled() => {
+                    break;
+                }
+                Some(event) = rx.recv() => {
+                    match event {
+                        AppEvent::UiEvent(event) => self.handle_ui_event(event, shutdown_token.clone()),
+                        AppEvent::StateUpdated(s) => {
+                            self.custom_widget_data_state = s;
+                        }
+                        AppEvent::Frame => {
+                            // just render!
+                        }
+                    }
+                    self.draw(&mut terminal)?;
+                }
+            }
         }
         Ok(())
     }
 
-    fn handle_ui_event(&mut self, event: Event) {
+    fn handle_ui_event(&mut self, event: Event, shutdown_token: CancellationToken) {
         debug!(target: "App", "Handling UI event: {:?}",event);
 
         self.custom_widget.on_ui_event(&event);
 
         if let Event::Key(key) = event {
             match key.code {
-                KeyCode::Char('q') => self.mode = AppMode::Quit,
+                KeyCode::Char('q') => shutdown_token.cancel(),
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.mode = AppMode::Quit
+                    shutdown_token.cancel()
                 }
                 _ => {}
             }

@@ -6,7 +6,7 @@ use clap::{ArgAction, Parser};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::NC;
 use psyche_network::{RelayMode, SecretKey, TcpClient};
-use psyche_tui::LogOutput;
+use psyche_tui::{maybe_start_render_loop, LogOutput};
 use std::time::Duration;
 use tokio::time::{interval, interval_at, Instant};
 use tracing::info;
@@ -60,13 +60,8 @@ async fn main() -> Result<()> {
 
     let tui = args.tui;
 
-    let tx_state = match tui {
-        true => Some(psyche_tui::start_render_loop(Tabs::new(
-            Default::default(),
-            &TAB_NAMES,
-        ))?),
-        false => None,
-    };
+    let (cancel, tx_tui_state) =
+        maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;
 
     // tick every second
     let tick_interval = {
@@ -82,9 +77,10 @@ async fn main() -> Result<()> {
     .await?;
 
     App::new(
+        cancel,
         secret_key.clone(),
         server_conn,
-        tx_state,
+        tx_tui_state,
         tick_interval,
         interval(Duration::from_millis(150)),
         &args.run_id,

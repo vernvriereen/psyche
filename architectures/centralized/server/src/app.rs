@@ -7,17 +7,17 @@ use psyche_coordinator::{Client, Coordinator};
 use psyche_data_provider::{DataProviderTcpServer, DataServerTui, LocalDataProvider, TokenSize};
 use psyche_network::{NetworkEvent, NetworkTui, PeerList, RelayMode, TcpServer};
 use psyche_tui::logging::LoggerWidget;
-use psyche_tui::{CustomWidget, MaybeTui, TabbedWidget};
+use psyche_tui::{maybe_start_render_loop, CustomWidget, MaybeTui, TabbedWidget};
 use psyche_watcher::CoordinatorTui;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
-use std::sync::mpsc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::time::interval;
 use tokio::{select, time::Interval};
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::dashboard::{DashboardState, DashboardTui};
@@ -56,7 +56,7 @@ struct ChannelCoordinatorBackend {
 impl ChannelCoordinatorBackend {
     fn new() -> (Sender<Coordinator<ClientId>>, Self) {
         let (tx, rx) = channel(10);
-        (tx, Self { rx: rx.into() })
+        (tx, Self { rx })
     }
 }
 
@@ -68,8 +68,9 @@ impl psyche_watcher::Backend<ClientId> for ChannelCoordinatorBackend {
 }
 
 pub struct App {
+    cancel: CancellationToken,
     p2p: NC,
-    tx_tui_state: Option<mpsc::Sender<TabsData>>,
+    tx_tui_state: Option<Sender<TabsData>>,
     tick_interval: Interval,
     update_tui_interval: Interval,
     coordinator: Coordinator<ClientId>,
@@ -134,13 +135,8 @@ impl App {
             None
         };
 
-        let tx_tui_state = match tui {
-            true => Some(psyche_tui::start_render_loop(Tabs::new(
-                Default::default(),
-                &TAB_NAMES,
-            ))?),
-            false => None,
-        };
+        let (cancel, tx_tui_state) =
+            maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;
 
         let tick_interval = interval(Duration::from_secs(1));
 
@@ -156,6 +152,7 @@ impl App {
             .await?;
 
         Ok(Self {
+            cancel,
             training_data_server,
             p2p,
             tx_tui_state,
@@ -172,6 +169,10 @@ impl App {
     pub async fn run(&mut self) -> Result<()> {
         loop {
             select! {
+                _ = self.cancel.cancelled() => {
+                    return Ok(());
+                }
+
                 Ok(Some(event)) = self.p2p.poll_next() => {
                     self.on_network_event(event);
                 }
@@ -182,7 +183,7 @@ impl App {
                     self.on_tick().await;
                 }
                 _ = self.update_tui_interval.tick() => {
-                    self.update_tui()?;
+                    self.update_tui().await?;
                 }
                 _ = async {
                     if let Some((_, server))  = &mut self.training_data_server {
@@ -195,7 +196,7 @@ impl App {
         Ok(())
     }
 
-    fn update_tui(&mut self) -> Result<()> {
+    async fn update_tui(&mut self) -> Result<()> {
         if let Some(tx_tui_state) = &self.tx_tui_state {
             let states = (
                 (&*self).into(),
@@ -204,7 +205,7 @@ impl App {
                 self.training_data_server.as_ref().map(|o| (&o.1).into()),
                 Default::default(),
             );
-            tx_tui_state.send(states)?;
+            tx_tui_state.send(states).await?;
         }
         Ok(())
     }

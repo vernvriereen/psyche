@@ -8,6 +8,7 @@ use iroh::{
 use psyche_network::{NetworkConnection, NetworkEvent, NetworkTUIState, NetworkTui, PeerList};
 use psyche_tui::{
     logging::LoggerWidget,
+    maybe_start_render_loop,
     ratatui::{
         layout::{Constraint, Direction, Layout},
         widgets::{Block, Borders, Paragraph, Widget},
@@ -18,14 +19,14 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::{
     str::FromStr,
-    sync::mpsc::{self, Sender},
-    thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
     select,
+    sync::mpsc::Sender,
     time::{interval, interval_at, Interval},
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 #[derive(Parser, Debug)]
@@ -101,9 +102,10 @@ impl CustomWidget for Tui {
 
 #[derive(Debug)]
 struct App {
+    cancel: CancellationToken,
     current_step: u64,
     network: NC,
-    tx_tui_state: Sender<TUIState>,
+    tx_tui_state: Option<Sender<TUIState>>,
     send_data_interval: Interval,
     update_tui_interval: Interval,
 }
@@ -112,6 +114,9 @@ impl App {
     async fn run(&mut self) {
         loop {
             select! {
+                _ = self.cancel.cancelled() => {
+                    break;
+                }
                 Ok(Some(event)) = self.network.poll_next() => {
                     self.on_network_event(event).await;
                 }
@@ -119,19 +124,21 @@ impl App {
                     self.on_tick().await;
                 }
                 _ = self.update_tui_interval.tick() => {
-                    self.update_tui();
+                    self.update_tui().await;
                 }
                 else => break,
             }
         }
     }
 
-    fn update_tui(&mut self) {
-        let tui_state = TUIState {
-            current_step: self.current_step,
-            network: (&self.network).into(),
-        };
-        self.tx_tui_state.send(tui_state).unwrap();
+    async fn update_tui(&mut self) {
+        if let Some(tx_tui_state) = &self.tx_tui_state {
+            let tui_state = TUIState {
+                current_step: self.current_step,
+                network: (&self.network).into(),
+            };
+            tx_tui_state.send(tui_state).await.unwrap();
+        }
     }
 
     async fn on_network_event(&mut self, event: NetworkEvent<Message, DistroResultBlob>) {
@@ -224,17 +231,7 @@ async fn main() -> Result<()> {
 
     let tui = args.tui;
 
-    let tx_state = if tui {
-        psyche_tui::start_render_loop(Tui::default()).unwrap()
-    } else {
-        let (tx, rx) = mpsc::channel();
-        thread::spawn(move || {
-            for item in rx {
-                info!("{:?}", item);
-            }
-        });
-        tx
-    };
+    let (cancel, tx_tui_state) = maybe_start_render_loop(tui.then(Tui::default))?;
 
     // fire at wall-clock 15-second intervals.
     let send_data_interval = {
@@ -245,9 +242,10 @@ async fn main() -> Result<()> {
     };
 
     App {
+        cancel,
         current_step: 0,
         network,
-        tx_tui_state: tx_state,
+        tx_tui_state,
         send_data_interval,
         update_tui_interval: interval(Duration::from_millis(150)),
     }

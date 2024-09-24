@@ -47,7 +47,7 @@ impl<'a> ProofEntry<'a> {
 
 impl<'a> From<ProofEntry<'a>> for OwnedProofEntry {
     fn from(value: ProofEntry<'a>) -> Self {
-        Self(value.0.clone(), value.1.cloned(), value.2.cloned())
+        Self(*value.0, value.1.cloned(), value.2.cloned())
     }
 }
 

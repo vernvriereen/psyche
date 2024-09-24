@@ -4873,6 +4873,7 @@ dependencies = [
  "psyche-watcher",
  "rand 0.8.5",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -5054,8 +5055,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crossterm",
+ "futures",
  "rand 0.8.5",
  "ratatui",
+ "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "tui-logger",

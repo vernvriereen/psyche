@@ -6,11 +6,12 @@ mod terminal;
 mod widget;
 
 use anyhow::Result;
-use std::{
-    sync::mpsc::{self, Sender},
-    thread,
-};
 use terminal::{init_terminal, restore_terminal};
+use tokio::{
+    signal,
+    sync::mpsc::{self, Sender},
+};
+use tokio_util::sync::CancellationToken;
 
 pub use app::App;
 pub use logging::{init_logging, LogOutput};
@@ -18,19 +19,49 @@ pub use maybe::MaybeTui;
 pub use tabbed::TabbedWidget;
 pub use widget::CustomWidget;
 
-pub fn start_render_loop<T: CustomWidget>(widget: T) -> Result<Sender<T::Data>> {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(|| {
-        let mut terminal = init_terminal().unwrap();
-        terminal.clear().unwrap();
-        terminal.hide_cursor().unwrap();
-
-        let start_result = App::new(widget).start(&mut terminal, rx);
-        let restore_result = restore_terminal();
-        start_result.unwrap();
-        restore_result.unwrap();
+pub fn start_render_loop<T: CustomWidget>(
+    widget: T,
+) -> Result<(CancellationToken, Sender<T::Data>)> {
+    let (tx, rx) = mpsc::channel(10);
+    let cancel = CancellationToken::new();
+    tokio::spawn({
+        let cancel = cancel.clone();
+        async move {
+            let mut terminal = init_terminal().unwrap();
+            terminal.clear().unwrap();
+            terminal.hide_cursor().unwrap();
+            let start_result = App::new(widget).start(cancel, terminal, rx).await;
+            let restore_result = restore_terminal();
+            start_result.unwrap();
+            restore_result.unwrap();
+        }
     });
-    Ok(tx)
+    Ok((cancel, tx))
+}
+
+pub fn maybe_start_render_loop<T: CustomWidget>(
+    widget: Option<T>,
+) -> Result<(CancellationToken, Option<Sender<T::Data>>)> {
+    Ok(match widget {
+        Some(widget) => {
+            let (cancel, tx) = start_render_loop(widget)?;
+            (cancel, Some(tx))
+        }
+        None => (
+            {
+                let token = CancellationToken::new();
+                tokio::spawn({
+                    let token = token.clone();
+                    async move {
+                        signal::ctrl_c().await.unwrap();
+                        token.cancel();
+                    }
+                });
+                token
+            },
+            None,
+        ),
+    })
 }
 
 pub use crossterm;

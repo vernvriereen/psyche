@@ -26,6 +26,12 @@ pub struct IntervalTree<T, V> {
     tree: BTreeMap<T, (ClosedInterval<T>, V)>,
 }
 
+impl<T: Copy + Ord, V> Default for IntervalTree<T, V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Copy + Ord, V> IntervalTree<T, V> {
     pub fn new() -> Self {
         IntervalTree {

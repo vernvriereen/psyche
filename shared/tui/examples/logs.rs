@@ -4,6 +4,7 @@ use minimal::MinimalWidget;
 use psyche_tui::{init_logging, logging::LoggerWidget, start_render_loop, CustomWidget};
 use rand::RngCore;
 use ratatui::layout::{Constraint, Direction, Layout};
+use tokio::{select, time::interval};
 use tracing::{error, info, warn};
 mod minimal;
 
@@ -49,19 +50,29 @@ impl CustomWidget for MinimalAndLogs {
         self.logger.render(chunks[1], buf, &Default::default());
     }
 }
+
 #[allow(dead_code)]
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     init_logging(psyche_tui::LogOutput::TUI);
 
-    let tx = start_render_loop(MinimalAndLogs::new())?;
+    let (cancel, tx) = start_render_loop(MinimalAndLogs::new())?;
+    let mut interval = interval(Duration::from_secs(2));
+
     loop {
-        let prng_num = rand::thread_rng().next_u64();
-        tx.send(prng_num).expect("sending works!");
+        select! {
+            _ = cancel.cancelled() => {
+                break;
+            }
+            _ = interval.tick() => {
+                let prng_num = rand::thread_rng().next_u64();
+                tx.send(prng_num).await.expect("sending works!");
 
-        info!("foo");
-        warn!("bar");
-        error!("baz");
-
-        std::thread::sleep(Duration::from_secs(2));
+                info!("foo");
+                warn!("bar");
+                error!("baz");
+            }
+        }
     }
+    Ok(())
 }

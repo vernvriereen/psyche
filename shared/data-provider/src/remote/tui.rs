@@ -67,8 +67,7 @@ where
         Self {
             height: v
                 .state
-                .current_round()
-                .and_then(|x| Some(x.height))
+                .current_round().map(|x| x.height)
                 .unwrap_or_default(),
             clients: v
                 .selected_data
@@ -78,10 +77,7 @@ where
                     let data_ids = [data_ids.start, data_ids.end];
                     let has_fetched =
                         (data_ids[0]..data_ids[1] + 1)
-                            .into_iter()
-                            .fold(true, |acc, val| {
-                                acc && *v.provided_sequences.get(&(val as usize)).unwrap_or(&false)
-                            });
+                            .all(|val| *v.provided_sequences.get(&(val as usize)).unwrap_or(&false));
                     (id, data_ids, has_fetched)
                 })
                 .collect(),

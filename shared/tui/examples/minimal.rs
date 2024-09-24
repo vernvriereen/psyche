@@ -1,12 +1,12 @@
 use std::time::Duration;
 
-use psyche_tui::{init_logging, start_render_loop, CustomWidget};
+use psyche_tui::{start_render_loop, CustomWidget};
 use rand::RngCore;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     widgets::{Paragraph, Widget},
 };
-use tracing::{error, info, warn};
+use tokio::{select, time::interval};
 
 #[derive(Default)]
 pub struct MinimalWidget {
@@ -38,17 +38,21 @@ impl CustomWidget for MinimalWidget {
 }
 
 #[allow(dead_code)]
-fn main() -> anyhow::Result<()> {
-    init_logging(psyche_tui::LogOutput::TUI);
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let (cancel, tx) = start_render_loop(MinimalWidget::default())?;
+    let mut interval = interval(Duration::from_secs(2));
 
-    info!("foo");
-    warn!("bar");
-    error!("baz");
-
-    let tx = start_render_loop(MinimalWidget::default())?;
     loop {
-        let prng_num = rand::thread_rng().next_u64();
-        tx.send(prng_num).expect("sending works!");
-        std::thread::sleep(Duration::from_secs(2));
+        select! {
+            _ = cancel.cancelled() => {
+                break;
+            }
+            _ = interval.tick() => {
+                let prng_num = rand::thread_rng().next_u64();
+                tx.send(prng_num).await.expect("sending works!");
+            }
+        }
     }
+    Ok(())
 }

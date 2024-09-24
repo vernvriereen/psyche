@@ -13,15 +13,17 @@ use tch::Kind;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
+type TaskResult<T> = Option<JoinHandle<Result<T>>>;
+
 pub(crate) struct State<T: NodeIdentity> {
     identity: T,
     private_key: T::PrivateKey,
     showed_inclusion_message: bool,
-    data_and_model_load: Option<JoinHandle<Result<(DataProviderTcpClient<T>, LlamaForCausalLM)>>>,
+    data_and_model_load: TaskResult<(DataProviderTcpClient<T>, LlamaForCausalLM)>,
     data_provider: Option<DataProviderTcpClient<T>>,
     trainer: Option<Trainer>,
-    training: Option<JoinHandle<Result<Trainer>>>,
-    fetching_data: Option<JoinHandle<Result<(DataProviderTcpClient<T>, Vec<Vec<i32>>)>>>,
+    training: TaskResult<Trainer>,
+    fetching_data: TaskResult<(DataProviderTcpClient<T>, Vec<Vec<i32>>)>,
     committee_proof: Option<OwnedCommitteeAndWitnessWithProof>,
     state: Option<Coordinator<T>>,
     prev_state: Option<Coordinator<T>>,
@@ -71,7 +73,10 @@ impl<T: NodeIdentity> State<T> {
 
     pub async fn poll_next(&mut self) -> Result<()> {
         if let Some(fetching_data) = &mut self.fetching_data {
-            let state = self.state.as_ref().ok_or(Error::msg("Data finished, but no state"))?;
+            let state = self
+                .state
+                .as_ref()
+                .ok_or(Error::msg("Data finished, but no state"))?;
             let (data_provider, data) = fetching_data.await??;
             self.data_provider = Some(data_provider);
             let model = match &state.model {
@@ -85,7 +90,11 @@ impl<T: NodeIdentity> State<T> {
             let _llm = llm.clone();
             let trainer: Trainer = std::mem::take(&mut self.trainer)
                 .ok_or(Error::msg("Round start but no trainer object"))?;
-            self.training = Some(tokio::spawn(trainer.train(llm.lr_schedule.into(), llm.optimizer, data)));
+            self.training = Some(tokio::spawn(trainer.train(
+                llm.lr_schedule.into(),
+                llm.optimizer,
+                data,
+            )));
         }
         Ok(())
     }
@@ -156,14 +165,13 @@ impl<T: NodeIdentity> State<T> {
         let committee = committee_proof.committee;
         self.committee_proof = Some(committee_proof);
 
-
         let data_ids = match committee {
             Committee::TieBreaker => todo!(),
             Committee::Verifier => todo!(),
             Committee::Trainer => State::get_data_ids(
                 &self.identity,
                 &state.clients,
-                &round,
+                round,
                 state.data_indicies_per_round.into(),
             ),
         };
@@ -195,7 +203,7 @@ impl<T: NodeIdentity> State<T> {
         let model::Model::LLM(llm) = model;
         let data_future = match &llm.data_location {
             model::LLMTrainingDataLocation::Server(data_server) => {
-                DataProviderTcpClient::connect(&data_server, identity, private_key)
+                DataProviderTcpClient::connect(data_server, identity, private_key)
             }
             model::LLMTrainingDataLocation::Local(_) => todo!(),
         };
@@ -229,7 +237,7 @@ impl<T: NodeIdentity> State<T> {
             },
         };
         let (data, model) = tokio::join!(data_future, model_future);
-        return Ok((data?, model??));
+        Ok((data?, model??))
     }
 
     fn get_data_ids(
@@ -246,7 +254,7 @@ impl<T: NodeIdentity> State<T> {
         )
         .iter()
         .filter_map(|x| match x.1 == identity {
-            true => Some(x.0.clone()),
+            true => Some(*x.0),
             false => None,
         })
         .collect::<Vec<_>>()

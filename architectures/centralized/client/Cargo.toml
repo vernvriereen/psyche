@@ -16,3 +16,4 @@ async-trait.workspace = true
 clap.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+tokio-util.workspace = true

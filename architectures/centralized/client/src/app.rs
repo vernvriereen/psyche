@@ -6,8 +6,9 @@ use psyche_network::{NetworkTUIState, NetworkTui, SecretKey, TcpClient};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
 use psyche_watcher::{Backend as WatcherBackend, CoordinatorTui};
-use std::sync::mpsc::Sender;
+use tokio::sync::mpsc::Sender;
 use tokio::{select, sync::mpsc, time::Interval};
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 pub(super) type Tabs = TabbedWidget<(CoordinatorTui, NetworkTui, LoggerWidget)>;
@@ -26,6 +27,7 @@ impl WatcherBackend<ClientId> for Backend {
 }
 
 pub struct App {
+    cancel: CancellationToken,
     secret_key: SecretKey,
     tx_tui_state: Option<Sender<TabsData>>,
     tick_interval: Interval,
@@ -38,6 +40,7 @@ pub struct App {
 
 impl App {
     pub fn new(
+        cancel: CancellationToken,
         secret_key: SecretKey,
         server_conn: TcpClient<ClientId, ClientToServerMessage, ServerToClientMessage>,
         tx_tui_state: Option<Sender<TabsData>>,
@@ -47,6 +50,7 @@ impl App {
         data_bid: u32,
     ) -> Self {
         Self {
+            cancel,
             secret_key,
             tx_tui_state,
             tick_interval,
@@ -67,6 +71,9 @@ impl App {
             .await?;
         loop {
             select! {
+                _ = self.cancel.cancelled() => {
+                    return Ok(());
+                }
                 Ok(ServerToClientMessage::P2PConnect(peers)) = self.server_conn.receive() => {
                     p2p
                     .add_peers(peers.0)
@@ -74,7 +81,7 @@ impl App {
                     break;
                 }
                 _ = self.update_tui_interval.tick() => {
-                    self.update_tui(NetworkTUIState::default())?;
+                    self.update_tui(NetworkTUIState::default()).await?;
                 }
             }
         }
@@ -83,6 +90,9 @@ impl App {
         let mut client = Client::new(Backend { rx }, p2p, identity, self.secret_key.clone());
         loop {
             select! {
+                _ = self.cancel.cancelled() => {
+                   break;
+                }
                 message = self.server_conn.receive() => {
                     self.on_server_message(message?, &tx).await;
                 }
@@ -90,23 +100,24 @@ impl App {
                     self.on_tick().await;
                 }
                 _ = self.update_tui_interval.tick() => {
-                    self.update_tui(client.network_tui_state())?;
+                    self.update_tui(client.network_tui_state()).await?;
                 }
                 res = client.process() => {
                     res?;
                 }
             }
         }
+        Ok(())
     }
 
-    fn update_tui(&mut self, network_tui_state: NetworkTUIState) -> Result<()> {
+    async fn update_tui(&mut self, network_tui_state: NetworkTUIState) -> Result<()> {
         if let Some(tx_tui_state) = &self.tx_tui_state {
             let states = (
                 (&self.coordinator_state).into(),
                 network_tui_state,
                 Default::default(),
             );
-            tx_tui_state.send(states)?;
+            tx_tui_state.send(states).await?;
         }
         Ok(())
     }
