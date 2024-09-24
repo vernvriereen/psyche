@@ -3,11 +3,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ServerToClientMessage {
     TrainingData {
-        data_id: usize,
-        raw_data: Vec<i32>,
+        data_ids: Vec<usize>,
+        raw_data: Vec<Vec<i32>>,
     },
     RequestRejected {
-        data_id: usize,
+        data_ids: Vec<usize>,
         reason: RejectionReason,
     },
 }
@@ -20,5 +20,5 @@ pub enum RejectionReason {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ClientToServerMessage {
-    RequestTrainingData { data_id: usize },
+    RequestTrainingData { data_ids: Vec<usize> },
 }

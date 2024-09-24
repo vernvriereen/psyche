@@ -1,11 +1,10 @@
+use psyche_core::{sha256v, MerkleTree, OwnedProof, Proof};
 use std::cmp::Ordering;
-
-use psyche_core::{sha256v, MerkleTree, Proof};
 
 pub const COMMITTEE_SALT: &str = "committee";
 pub const WITNESS_SALT: &str = "witness";
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Committee {
     TieBreaker,
     Verifier,
@@ -19,6 +18,28 @@ pub struct CommitteeAndWitnessWithProof<'a> {
     pub witness: bool,
     pub witness_position: usize,
     pub witness_proof: Proof<'a>,
+}
+
+pub struct OwnedCommitteeAndWitnessWithProof {
+    pub committee: Committee,
+    pub committee_position: usize,
+    pub committee_proof: OwnedProof,
+    pub witness: bool,
+    pub witness_position: usize,
+    pub witness_proof: OwnedProof,
+}
+
+impl<'a> From<CommitteeAndWitnessWithProof<'a>> for OwnedCommitteeAndWitnessWithProof {
+    fn from(value: CommitteeAndWitnessWithProof<'a>) -> Self {
+        Self {
+            committee: value.committee,
+            committee_position: value.committee_position,
+            committee_proof: value.committee_proof.into(),
+            witness: value.witness,
+            witness_position: value.witness_position,
+            witness_proof: value.witness_proof.into()
+        }
+    }
 }
 
 #[derive(Eq)]
@@ -121,15 +142,15 @@ where
         u64::from_be_bytes(sha256v(&[salt, seed, id])[0..8].try_into().unwrap())
     }
 
-    pub fn get_selection(&self, item: &T) -> CommitteeAndWitnessWithProof {
-        let witness_position = self.witness_order.iter().position(|x| *x == item).unwrap();
-        let witness_proof = self.witness_tree.find_path(witness_position).unwrap();
+    pub fn get_selection(&self, item: &T) -> Option<CommitteeAndWitnessWithProof> {
+        let witness_position = self.witness_order.iter().position(|x| *x == item)?;
+        let witness_proof = self.witness_tree.find_path(witness_position)?;
         let committee_position = self
             .committee_order
             .iter()
             .position(|x| *x == item)
             .unwrap();
-        let committee_proof = self.committee_tree.find_path(committee_position).unwrap();
+        let committee_proof = self.committee_tree.find_path(committee_position)?;
         let committee = if committee_position < self.tie_breaker_nodes {
             Committee::TieBreaker
         } else if committee_position < self.tie_breaker_nodes + self.verifier_nodes {
@@ -137,14 +158,14 @@ where
         } else {
             Committee::Trainer
         };
-        CommitteeAndWitnessWithProof {
+        Some(CommitteeAndWitnessWithProof {
             committee,
             committee_position,
             committee_proof,
             witness: witness_position < self.witness_nodes,
             witness_position,
             witness_proof,
-        }
+        })
     }
 
     pub fn get_seed(&self) -> u64 {
@@ -187,7 +208,7 @@ mod tests {
             CommitteeSelection::new(10, 20, 30, &nodes, 12345);
 
         for node in &nodes {
-            let result = selection.get_selection(node);
+            let result = selection.get_selection(node).unwrap();
             assert!(matches!(
                 result.committee,
                 Committee::TieBreaker | Committee::Verifier | Committee::Trainer
@@ -214,8 +235,8 @@ mod tests {
         let selection2 = CommitteeSelection::new(10, 20, 30, &nodes, 12345);
 
         for node in &nodes {
-            let result1 = selection1.get_selection(node);
-            let result2 = selection2.get_selection(node);
+            let result1 = selection1.get_selection(node).unwrap();
+            let result2 = selection2.get_selection(node).unwrap();
             assert_eq!(result1.committee, result2.committee);
             assert_eq!(result1.witness, result2.witness);
         }
@@ -229,8 +250,8 @@ mod tests {
 
         let mut all_same = true;
         for node in &nodes {
-            let result1 = selection1.get_selection(node);
-            let result2 = selection2.get_selection(node);
+            let result1 = selection1.get_selection(node).unwrap();
+            let result2 = selection2.get_selection(node).unwrap();
             if result1.committee != result2.committee || result1.witness != result2.witness {
                 all_same = false;
                 break;

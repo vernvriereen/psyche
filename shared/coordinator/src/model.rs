@@ -1,3 +1,4 @@
+use psyche_core::LearningRateScheduler;
 use psyche_serde::derive_serialize;
 
 #[cfg(target_os = "solana")]
@@ -135,5 +136,21 @@ impl From<CosineLR> for psyche_core::CosineLR {
             value.total_steps as usize,
             value.final_lr as f64,
         )
+    }
+}
+
+impl From<LearningRateSchedule> for Box<dyn LearningRateScheduler> {
+    fn from(value: LearningRateSchedule) -> Self {
+        match value {
+            LearningRateSchedule::Constant(constant_lr) => {
+                Box::new(psyche_core::ConstantLR::from(constant_lr))
+            }
+            LearningRateSchedule::Linear(linear_lr) => {
+                Box::new(psyche_core::LinearLR::from(linear_lr))
+            }
+            LearningRateSchedule::Cosine(cosine_lr) => {
+                Box::new(psyche_core::CosineLR::from(cosine_lr))
+            }
+        }
     }
 }

@@ -31,6 +31,9 @@ pub struct MerkleTree {
 #[derive(Debug, PartialEq, Eq)]
 pub struct ProofEntry<'a>(&'a Hash, Option<&'a Hash>, Option<&'a Hash>);
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct OwnedProofEntry(Hash, Option<Hash>, Option<Hash>);
+
 impl<'a> ProofEntry<'a> {
     pub fn new(
         target: &'a Hash,
@@ -42,8 +45,23 @@ impl<'a> ProofEntry<'a> {
     }
 }
 
+impl<'a> From<ProofEntry<'a>> for OwnedProofEntry {
+    fn from(value: ProofEntry<'a>) -> Self {
+        Self(value.0.clone(), value.1.cloned(), value.2.cloned())
+    }
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Proof<'a>(Vec<ProofEntry<'a>>);
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct OwnedProof(Vec<OwnedProofEntry>);
+
+impl<'a> From<Proof<'a>> for OwnedProof {
+    fn from(value: Proof<'a>) -> Self {
+        Self(value.0.into_iter().map(|x| x.into()).collect())
+    }
+}
 
 impl<'a> Proof<'a> {
     pub fn push(&mut self, entry: ProofEntry<'a>) {

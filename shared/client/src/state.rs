@@ -1,8 +1,13 @@
 use crate::training::Trainer;
 use anyhow::{bail, Error, Result};
-use psyche_coordinator::{model, CommitteeSelection, Coordinator, RunState};
-use psyche_core::NodeIdentity;
-use psyche_data_provider::{download_model_repo_async, DataProviderTcpClient};
+use psyche_coordinator::{
+    model, select_data_for_clients, Client, Committee, CommitteeSelection, Coordinator,
+    OwnedCommitteeAndWitnessWithProof, Round, RunState,
+};
+use psyche_core::{ClosedInterval, NodeIdentity};
+use psyche_data_provider::{
+    download_model_repo_async, DataProviderTcpClient, TokenizedDataProvider,
+};
 use psyche_modeling::LlamaForCausalLM;
 use tch::Kind;
 use tokio::task::JoinHandle;
@@ -11,10 +16,15 @@ use tracing::{info, warn};
 pub(crate) struct State<T: NodeIdentity> {
     identity: T,
     private_key: T::PrivateKey,
-    active_client: bool,
+    showed_inclusion_message: bool,
     data_and_model_load: Option<JoinHandle<Result<(DataProviderTcpClient<T>, LlamaForCausalLM)>>>,
-    trainer: Option<Trainer<T>>,
-    training: Option<JoinHandle<Trainer<T>>>,
+    data_provider: Option<DataProviderTcpClient<T>>,
+    trainer: Option<Trainer>,
+    training: Option<JoinHandle<Result<Trainer>>>,
+    fetching_data: Option<JoinHandle<Result<(DataProviderTcpClient<T>, Vec<Vec<i32>>)>>>,
+    committee_proof: Option<OwnedCommitteeAndWitnessWithProof>,
+    state: Option<Coordinator<T>>,
+    prev_state: Option<Coordinator<T>>,
 }
 
 impl<T: NodeIdentity> State<T> {
@@ -22,10 +32,15 @@ impl<T: NodeIdentity> State<T> {
         Self {
             identity,
             private_key,
-            active_client: true,
+            showed_inclusion_message: false,
             data_and_model_load: None,
+            data_provider: None,
             trainer: None,
             training: None,
+            fetching_data: None,
+            committee_proof: None,
+            state: None,
+            prev_state: None,
         }
     }
 
@@ -34,30 +49,53 @@ impl<T: NodeIdentity> State<T> {
         state: &Coordinator<T>,
         prev_state: Option<Coordinator<T>>,
     ) -> Result<()> {
-        let active_client = state
-            .clients
-            .iter()
-            .position(|x| x.id == self.identity)
-            .is_some();
-        if !active_client {
-            if self.active_client {
-                info!("Awaiting inclusion in round");
-                self.active_client = false;
+        self.state = Some(state.clone());
+        self.prev_state = prev_state;
+        let position = match state.clients.iter().position(|x| x.id == self.identity) {
+            Some(position) => position,
+            None => {
+                if !self.showed_inclusion_message {
+                    info!("Awaiting inclusion in round");
+                    self.showed_inclusion_message = true;
+                }
+                return Ok(());
             }
-            return Ok(());
-        }
+        };
         match state.run_state {
             RunState::WaitingForMembers => {}
-            RunState::Warmup => self.warmup(state, prev_state).await,
-            RunState::RoundStart => self.round_start(state, prev_state).await?,
+            RunState::Warmup => self.warmup().await,
+            RunState::RoundStart => self.round_start(position).await?,
         }
         Ok(())
     }
 
-    async fn warmup(&mut self, state: &Coordinator<T>, prev_state: Option<Coordinator<T>>) {
+    pub async fn poll_next(&mut self) -> Result<()> {
+        if let Some(fetching_data) = &mut self.fetching_data {
+            let state = self.state.as_ref().ok_or(Error::msg("Data finished, but no state"))?;
+            let (data_provider, data) = fetching_data.await??;
+            self.data_provider = Some(data_provider);
+            let model = match &state.model {
+                Some(model) => model,
+                None => {
+                    warn!("Run has no model");
+                    return Ok(());
+                }
+            };
+            let model::Model::LLM(llm) = model;
+            let _llm = llm.clone();
+            let trainer: Trainer = std::mem::take(&mut self.trainer)
+                .ok_or(Error::msg("Round start but no trainer object"))?;
+            self.training = Some(tokio::spawn(trainer.train(llm.lr_schedule.into(), llm.optimizer, data)));
+        }
+        Ok(())
+    }
+
+    async fn warmup(&mut self) {
+        let state = self.state.as_ref().unwrap();
         assert_eq!(state.run_state, RunState::Warmup);
-        if prev_state.is_none()
-            || prev_state
+        if self.prev_state.is_none()
+            || self
+                .prev_state
                 .as_ref()
                 .is_some_and(|x| x.run_state != state.run_state)
         {
@@ -76,14 +114,10 @@ impl<T: NodeIdentity> State<T> {
         }
     }
 
-    async fn round_start(
-        &mut self,
-        state: &Coordinator<T>,
-        prev_state: Option<Coordinator<T>>,
-    ) -> Result<()> {
+    async fn round_start(&mut self, position: usize) -> Result<()> {
+        let state = self.state.as_ref().unwrap();
         assert_eq!(state.run_state, RunState::RoundStart);
-        if self.trainer.is_none() {
-            assert!(self.training.is_none());
+        if self.trainer.is_none() && self.training.is_none() && self.data_provider.is_none() {
             let data_and_model_load = std::mem::take(&mut self.data_and_model_load).ok_or(
                 Error::msg("Round started but no model load was running. Did we miss warmup?"),
             )?;
@@ -91,9 +125,12 @@ impl<T: NodeIdentity> State<T> {
                 bail!("Data and model load not finished when round started!")
             }
             let (data, model) = data_and_model_load.await??;
-            self.trainer = Some(Trainer::new(data, model));
+            self.data_provider = Some(data);
+            self.trainer = Some(Trainer::new(model));
         }
-        if prev_state
+        if self
+            .prev_state
+            .as_ref()
             .ok_or(Error::msg("First seen state was round state"))?
             .run_state
             == RunState::RoundStart
@@ -103,27 +140,51 @@ impl<T: NodeIdentity> State<T> {
         if self.training.is_some() {
             bail!("Ready to train but previous training batch still running");
         }
+
         let round = state.current_round().unwrap();
-        let _committee = CommitteeSelection::new(
+
+        let committee_proof: OwnedCommitteeAndWitnessWithProof = CommitteeSelection::new(
             round.tie_breaker_tasks as usize,
             state.witness_nodes as usize,
             state.verification_percent,
             &state.clients,
             round.random_seed,
-        );
-        let model = match &state.model {
-            Some(model) => model,
-            None => {
-                warn!("Run has no model");
-                return Ok(());
-            }
+        )
+        .get_selection(&state.clients[position])
+        .unwrap()
+        .into();
+        let committee = committee_proof.committee;
+        self.committee_proof = Some(committee_proof);
+
+
+        let data_ids = match committee {
+            Committee::TieBreaker => todo!(),
+            Committee::Verifier => todo!(),
+            Committee::Trainer => State::get_data_ids(
+                &self.identity,
+                &state.clients,
+                &round,
+                state.data_indicies_per_round.into(),
+            ),
         };
-        let trainer = std::mem::take(&mut self.trainer)
-            .ok_or(Error::msg("Round start but no trainer object"))?;
-        let model::Model::LLM(llm) = model;
-        let llm = llm.clone();
-        self.training = Some(tokio::task::spawn_blocking(|| trainer.train(llm)));
+
+        let data_ids = data_ids
+            .into_iter()
+            .flat_map(|x| ((x.start as usize)..(x.end as usize + 1)).collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+
+        let data_provider = std::mem::take(&mut self.data_provider)
+            .ok_or(Error::msg("Round start but no data provider object"))?;
+        self.fetching_data = Some(tokio::spawn(Self::fetch_data(data_provider, data_ids)));
         Ok(())
+    }
+
+    async fn fetch_data(
+        mut data_provider: DataProviderTcpClient<T>,
+        data_ids: Vec<usize>,
+    ) -> Result<(DataProviderTcpClient<T>, Vec<Vec<i32>>)> {
+        let data = data_provider.get_samples(data_ids).await?;
+        Ok((data_provider, data))
     }
 
     async fn load_data_and_model(
@@ -169,5 +230,25 @@ impl<T: NodeIdentity> State<T> {
         };
         let (data, model) = tokio::join!(data_future, model_future);
         return Ok((data?, model??));
+    }
+
+    fn get_data_ids(
+        identity: &T,
+        clients: &[Client<T>],
+        round: &Round,
+        data_indicies_per_round: u64,
+    ) -> Vec<ClosedInterval<u64>> {
+        select_data_for_clients(
+            clients,
+            round.data_index,
+            data_indicies_per_round,
+            round.random_seed,
+        )
+        .iter()
+        .filter_map(|x| match x.1 == identity {
+            true => Some(x.0.clone()),
+            false => None,
+        })
+        .collect::<Vec<_>>()
     }
 }

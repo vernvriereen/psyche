@@ -1,7 +1,7 @@
 use anyhow::Result;
 pub trait TokenizedDataProvider {
-    fn get_sample(
+    fn get_samples(
         &mut self,
-        data_id: usize,
-    ) -> impl std::future::Future<Output = Result<Vec<i32>>> + Send;
+        data_ids: Vec<usize>,
+    ) -> impl std::future::Future<Output = Result<Vec<Vec<i32>>>> + Send;
 }

@@ -14,7 +14,7 @@ pub use deterministic_shuffle::deterministic_shuffle;
 pub use lcg::LCG;
 pub use lr_scheduler::*;
 pub use interval_tree::{ClosedInterval, IntervalTree};
-pub use merkle_tree::{MerkleTree, Proof};
+pub use merkle_tree::{MerkleTree, Proof, OwnedProof};
 pub use serde::Networkable;
 pub use sha256::{sha256, sha256v};
 pub use similarity::{

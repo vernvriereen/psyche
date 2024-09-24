@@ -7,8 +7,8 @@ pub mod model;
 mod traits;
 
 pub use committee_selection::{
-    tree_item, Committee, CommitteeAndWitnessWithProof, CommitteeSelection, COMMITTEE_SALT,
-    WITNESS_SALT,
+    tree_item, Committee, CommitteeAndWitnessWithProof, CommitteeSelection,
+    OwnedCommitteeAndWitnessWithProof, COMMITTEE_SALT, WITNESS_SALT,
 };
 pub use coordinator::{Client, Coordinator, Round, RunState};
 pub use data_selection::select_data_for_clients;

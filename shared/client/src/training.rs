@@ -1,25 +1,23 @@
+use anyhow::Result;
 use psyche_coordinator::model;
-use psyche_core::NodeIdentity;
-use psyche_data_provider::DataProviderTcpClient;
+use psyche_core::LearningRateScheduler;
 use psyche_modeling::LlamaForCausalLM;
 
-pub struct Trainer<T: NodeIdentity> {
-    _data: DataProviderTcpClient<T>,
+pub struct Trainer {
     _model: LlamaForCausalLM,
 }
 
-impl<T: NodeIdentity> Trainer<T> {
-    pub fn new(
-        data: DataProviderTcpClient<T>,
-        model: LlamaForCausalLM,
-    ) -> Self {
-        Self {
-            _data: data,
-            _model: model,
-        }
+impl Trainer {
+    pub fn new(model: LlamaForCausalLM) -> Self {
+        Self { _model: model }
     }
 
-    pub fn train(self, _llm: model::LLM) -> Trainer<T> {
-        self
+    pub async fn train(
+        self,
+        _lr_schedule: Box<dyn LearningRateScheduler>,
+        _optimizer: model::Optimizer,
+        _data: Vec<Vec<i32>>,
+    ) -> Result<Trainer> {
+        Ok(self)
     }
 }

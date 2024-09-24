@@ -3,13 +3,13 @@ use anyhow::Result;
 use psyche_core::NodeIdentity;
 use psyche_network::NetworkTUIState;
 use psyche_watcher::{Backend, BackendWatcher};
-use tokio::{select, sync::Mutex};
+use tokio::select;
 
 
 pub struct Client<T: NodeIdentity, B: Backend<T> + 'static> {
     watcher: BackendWatcher<T, B>,
     p2p: NC,
-    state: Mutex<State<T>>,
+    state: State<T>,
 }
 
 impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
@@ -17,7 +17,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         Self {
             watcher: BackendWatcher::new(backend),
             p2p,
-            state: Mutex::new(State::new(identity, private_key)),
+            state: State::new(identity, private_key),
         }
     }
 
@@ -26,7 +26,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
             res = self.watcher.poll_next() => {
                 match res {
                     Ok((prev_state, state)) => {
-                        self.state.lock().await.process_new_state(state, prev_state).await?
+                        self.state.process_new_state(state, prev_state).await?
                     }
                     Err(err) => { return Err(err); }
                 }
@@ -37,6 +37,10 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                 },
                 Err(err) => { return Err(err); }
                 _ => {},
+            },
+            res = self.state.poll_next() => match res {
+                Ok(_) => {},
+                Err(err) => { return Err(err); }
             }
         }
         Ok(())

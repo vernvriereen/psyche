@@ -23,18 +23,18 @@ impl<T: NodeIdentity> DataProviderTcpClient<T> {
         Ok(Self { tcp_client, address: addr.to_owned() })
     }
 
-    async fn receive_training_data(&mut self, data_id: usize) -> Result<Vec<i32>> {
+    async fn receive_training_data(&mut self, data_ids: &[usize]) -> Result<Vec<Vec<i32>>> {
         self.tcp_client
-            .send(ClientToServerMessage::RequestTrainingData { data_id })
+            .send(ClientToServerMessage::RequestTrainingData { data_ids: data_ids.into() })
             .await?;
 
         let message = self.tcp_client.receive().await?;
         match message {
             ServerToClientMessage::TrainingData {
-                data_id: received_id,
+                data_ids: received_id,
                 raw_data,
             } => {
-                if received_id == data_id {
+                if received_id == data_ids {
                     Ok(raw_data)
                 } else {
                     bail!("Received data_id does not match requested data_id")
@@ -50,8 +50,8 @@ impl<T: NodeIdentity> DataProviderTcpClient<T> {
 }
 
 impl<T: NodeIdentity + Send + Sync> TokenizedDataProvider for DataProviderTcpClient<T> {
-    async fn get_sample(&mut self, data_id: usize) -> Result<Vec<i32>> {
-        info!("[{:?}] get sample..", self.tcp_client.get_identity());
-        self.receive_training_data(data_id).await
+    async fn get_samples(&mut self, data_ids: Vec<usize>) -> Result<Vec<Vec<i32>>> {
+        info!("[{:?}] get samples..", self.tcp_client.get_identity());
+        self.receive_training_data(&data_ids).await
     }
 }

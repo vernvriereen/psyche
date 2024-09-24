@@ -98,38 +98,42 @@ impl LocalDataProvider {
         self.sequences.is_empty()
     }
 
-    fn internal_get_sample(&self, data_id: usize) -> Result<Vec<i32>> {
-        let SequencePointer {
-            byte_offset,
-            file_index,
-        } = self.sequences.get(data_id).ok_or_else(|| {
-            anyhow!(
-                "index {data_id} is out of bounds, we only have {} samples.",
-                self.sequences.len()
-            )
-        })?;
+    fn internal_get_samples(&self, data_ids: &[usize]) -> Result<Vec<Vec<i32>>> {
+        let mut ret: Vec<_> = Vec::new();
+        for data_id in data_ids {
+            let SequencePointer {
+                byte_offset,
+                file_index,
+            } = self.sequences.get(*data_id).ok_or_else(|| {
+                anyhow!(
+                    "index {data_id} is out of bounds, we only have {} samples.",
+                    self.sequences.len()
+                )
+            })?;
 
-        let file = &self.data_files[*file_index];
-        let data_len = usize::from(self.token_size_in_bytes) * (self.seq_len + 1);
-        let data = &file[*byte_offset..*byte_offset + data_len];
+            let file = &self.data_files[*file_index];
+            let data_len = usize::from(self.token_size_in_bytes) * (self.seq_len + 1);
+            let data = &file[*byte_offset..*byte_offset + data_len];
 
-        let tokens: Vec<i32> = data
-            .chunks(self.token_size_in_bytes.into())
-            .map(|t| {
-                use TokenSize::*;
-                match self.token_size_in_bytes {
-                    TwoBytes => u16::from_le_bytes(t.try_into().unwrap()) as i32,
-                    FourBytes => u32::from_le_bytes(t.try_into().unwrap()) as i32,
-                }
-            })
-            .collect();
-        Ok(tokens)
+            let tokens: Vec<i32> = data
+                .chunks(self.token_size_in_bytes.into())
+                .map(|t| {
+                    use TokenSize::*;
+                    match self.token_size_in_bytes {
+                        TwoBytes => u16::from_le_bytes(t.try_into().unwrap()) as i32,
+                        FourBytes => u32::from_le_bytes(t.try_into().unwrap()) as i32,
+                    }
+                })
+                .collect();
+            ret.push(tokens);
+        }
+        Ok(ret)
     }
 }
 
 impl TokenizedDataProvider for LocalDataProvider {
-    async fn get_sample(&mut self, data_id: usize) -> Result<Vec<i32>> {
-        self.internal_get_sample(data_id)
+    async fn get_samples(&mut self, data_ids: Vec<usize>) -> Result<Vec<Vec<i32>>> {
+        self.internal_get_samples(&data_ids)
     }
 }
 
@@ -145,7 +149,9 @@ impl Iterator for LocalDataProviderIter {
         if self.current_index < self.provider.len() {
             let result = self
                 .provider
-                .internal_get_sample(self.current_index)
+                .internal_get_samples(&[self.current_index])
+                .unwrap()
+                .pop()
                 .unwrap();
             self.current_index += 1;
             Some(result)

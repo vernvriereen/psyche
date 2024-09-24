@@ -1,6 +1,6 @@
 use std::f64::consts::PI;
 
-pub trait LearningRateScheduler {
+pub trait LearningRateScheduler: Send + Sync {
     fn get_lr(&self, step: usize) -> f64;
 }
 

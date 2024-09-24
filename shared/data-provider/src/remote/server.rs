@@ -58,17 +58,19 @@ where
 
     pub async fn handle_client_message(&mut self, from: T, message: ClientToServerMessage) {
         match message {
-            ClientToServerMessage::RequestTrainingData { data_id } => {
-                let result = self.try_send_data(from.clone(), data_id).await;
+            ClientToServerMessage::RequestTrainingData { data_ids } => {
+                let result = self.try_send_data(from.clone(), data_ids.clone()).await;
                 match result {
                     Ok(data) => {
-                        self.provided_sequences.insert(data_id, true);
+                        for data_id in &data_ids {
+                            self.provided_sequences.insert(*data_id, true);
+                        }
                         match self
                             .tcp_server
                             .send_to(
                                 from.clone(),
                                 ServerToClientMessage::TrainingData {
-                                    data_id,
+                                    data_ids,
                                     raw_data: data,
                                 },
                             )
@@ -87,7 +89,7 @@ where
                             .tcp_server
                             .send_to(
                                 from.clone(),
-                                ServerToClientMessage::RequestRejected { data_id, reason },
+                                ServerToClientMessage::RequestRejected { data_ids, reason },
                             )
                             .await
                         {
@@ -104,22 +106,24 @@ where
         }
     }
 
-    async fn try_send_data(&mut self, to: T, data_id: usize) -> Result<Vec<i32>, RejectionReason> {
+    async fn try_send_data(&mut self, to: T, data_ids: Vec<usize>) -> Result<Vec<Vec<i32>>, RejectionReason> {
         let in_round = self.state.clients.iter().any(|c| c.id == to);
         if !in_round {
             return Err(RejectionReason::NotInThisRound);
         }
 
-        if self
-            .selected_data
-            .get(data_id as u64)
-            .is_some_and(|x| *x == to)
-        {
-            return Err(RejectionReason::WrongDataIdForStep);
+        for data_id in &data_ids {
+            if self
+                .selected_data
+                .get(*data_id as u64)
+                .is_some_and(|x| *x == to)
+            {
+                return Err(RejectionReason::WrongDataIdForStep);
+            }
         }
         let data = self
             .local_data_provider
-            .get_sample(data_id)
+            .get_samples(data_ids)
             .await
             .expect("data failed to fetch...");
         Ok(data)
@@ -132,6 +136,7 @@ where
                 &self.state.clients,
                 round.data_index,
                 self.state.data_indicies_per_round.into(),
+                round.random_seed,
             ),
             None => IntervalTree::new(),
         };
