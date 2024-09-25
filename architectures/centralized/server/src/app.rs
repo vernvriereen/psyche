@@ -221,13 +221,12 @@ impl App {
 
     async fn on_client_message(&mut self, from: ClientId, event: ClientToServerMessage) {
         match event {
-            ClientToServerMessage::Join { run_id, data_bid } => {
+            ClientToServerMessage::Join { run_id } => {
                 // TODO: check whitelist
                 if self.coordinator.run_id == run_id {
-                    self.backend.pending_clients.push(Client {
-                        id: from.clone(),
-                        num_data_indicies: data_bid,
-                    });
+                    self.backend
+                        .pending_clients
+                        .push(Client { id: from.clone() });
                     let client_joined = self
                         .backend
                         .net_server

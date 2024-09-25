@@ -142,7 +142,7 @@ where
         u64::from_be_bytes(sha256v(&[salt, seed, id])[0..8].try_into().unwrap())
     }
 
-    pub fn get_selection(&self, item: &T) -> Option<CommitteeAndWitnessWithProof> {
+    pub fn get_selection_with_proof(&self, item: &T) -> Option<CommitteeAndWitnessWithProof> {
         let witness_position = self.witness_order.iter().position(|x| *x == item)?;
         let witness_proof = self.witness_tree.find_path(witness_position)?;
         let committee_position = self
@@ -158,14 +158,33 @@ where
         } else {
             Committee::Trainer
         };
+        let witness = witness_position < self.witness_nodes;
         Some(CommitteeAndWitnessWithProof {
             committee,
             committee_position,
             committee_proof,
-            witness: witness_position < self.witness_nodes,
+            witness,
             witness_position,
             witness_proof,
         })
+    }
+
+    pub fn get_selection(&self, item: &T) -> Option<(Committee, bool)> {
+        let witness_position = self.witness_order.iter().position(|x| *x == item)?;
+        let committee_position = self
+            .committee_order
+            .iter()
+            .position(|x| *x == item)
+            .unwrap();
+        let committee = if committee_position < self.tie_breaker_nodes {
+            Committee::TieBreaker
+        } else if committee_position < self.tie_breaker_nodes + self.verifier_nodes {
+            Committee::Verifier
+        } else {
+            Committee::Trainer
+        };
+        let witness = witness_position < self.witness_nodes;
+        Some((committee, witness))
     }
 
     pub fn get_seed(&self) -> u64 {
@@ -208,7 +227,7 @@ mod tests {
             CommitteeSelection::new(10, 20, 30, &nodes, 12345);
 
         for node in &nodes {
-            let result = selection.get_selection(node).unwrap();
+            let result = selection.get_selection_with_proof(node).unwrap();
             assert!(matches!(
                 result.committee,
                 Committee::TieBreaker | Committee::Verifier | Committee::Trainer
@@ -235,8 +254,8 @@ mod tests {
         let selection2 = CommitteeSelection::new(10, 20, 30, &nodes, 12345);
 
         for node in &nodes {
-            let result1 = selection1.get_selection(node).unwrap();
-            let result2 = selection2.get_selection(node).unwrap();
+            let result1 = selection1.get_selection_with_proof(node).unwrap();
+            let result2 = selection2.get_selection_with_proof(node).unwrap();
             assert_eq!(result1.committee, result2.committee);
             assert_eq!(result1.witness, result2.witness);
         }
@@ -250,8 +269,8 @@ mod tests {
 
         let mut all_same = true;
         for node in &nodes {
-            let result1 = selection1.get_selection(node).unwrap();
-            let result2 = selection2.get_selection(node).unwrap();
+            let result1 = selection1.get_selection_with_proof(node).unwrap();
+            let result2 = selection2.get_selection_with_proof(node).unwrap();
             if result1.committee != result2.committee || result1.witness != result2.witness {
                 all_same = false;
                 break;

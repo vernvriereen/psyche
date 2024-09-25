@@ -35,7 +35,6 @@ pub struct App {
     coordinator_state: Coordinator<ClientId>,
     server_conn: TcpClient<ClientId, ClientToServerMessage, ServerToClientMessage>,
     run_id: String,
-    data_bid: u32,
 }
 
 impl App {
@@ -47,7 +46,6 @@ impl App {
         tick_interval: Interval,
         update_tui_interval: Interval,
         run_id: &str,
-        data_bid: u32,
     ) -> Self {
         Self {
             cancel,
@@ -58,7 +56,6 @@ impl App {
             coordinator_state: Coordinator::default(),
             server_conn,
             run_id: run_id.into(),
-            data_bid,
         }
     }
 
@@ -66,7 +63,6 @@ impl App {
         self.server_conn
             .send(ClientToServerMessage::Join {
                 run_id: self.run_id.clone(),
-                data_bid: self.data_bid,
             })
             .await?;
         loop {

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use psyche_coordinator::{select_data_for_clients, Coordinator};
+use psyche_coordinator::{select_data_for_state, CommitteeSelection, Coordinator};
 use psyche_core::{IntervalTree, NodeIdentity};
 use psyche_network::TcpServer;
 use psyche_watcher::Backend;
@@ -106,7 +106,11 @@ where
         }
     }
 
-    async fn try_send_data(&mut self, to: T, data_ids: Vec<usize>) -> Result<Vec<Vec<i32>>, RejectionReason> {
+    async fn try_send_data(
+        &mut self,
+        to: T,
+        data_ids: Vec<usize>,
+    ) -> Result<Vec<Vec<i32>>, RejectionReason> {
         let in_round = self.state.clients.iter().any(|c| c.id == to);
         if !in_round {
             return Err(RejectionReason::NotInThisRound);
@@ -116,7 +120,7 @@ where
             if self
                 .selected_data
                 .get(*data_id as u64)
-                .is_some_and(|x| *x == to)
+                .is_some_and(|x| *x != to)
             {
                 return Err(RejectionReason::WrongDataIdForStep);
             }
@@ -132,12 +136,16 @@ where
     fn handle_new_state(&mut self, state: Coordinator<T>) {
         self.state = state;
         self.selected_data = match self.state.current_round() {
-            Some(round) => select_data_for_clients(
-                &self.state.clients,
-                round.data_index,
-                self.state.data_indicies_per_round.into(),
-                round.random_seed,
-            ),
+            Some(round) => {
+                let committee = CommitteeSelection::new(
+                    round.tie_breaker_tasks as usize,
+                    self.state.witness_nodes as usize,
+                    self.state.verification_percent,
+                    &self.state.clients,
+                    round.random_seed,
+                );
+                select_data_for_state(&self.state, &committee)
+            }
             None => IntervalTree::new(),
         };
     }

@@ -1,16 +1,16 @@
-use crate::training::Trainer;
+use crate::trainer::Trainer;
 use anyhow::{bail, Error, Result};
 use psyche_coordinator::{
-    model, select_data_for_clients, Client, Committee, CommitteeSelection, Coordinator,
-    OwnedCommitteeAndWitnessWithProof, Round, RunState,
+    model, select_data_for_state, CommitteeSelection, Coordinator,
+    OwnedCommitteeAndWitnessWithProof, RunState,
 };
-use psyche_core::{ClosedInterval, NodeIdentity};
+use psyche_core::NodeIdentity;
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpClient, TokenizedDataProvider,
 };
 use psyche_modeling::LlamaForCausalLM;
 use tch::Kind;
-use tokio::task::JoinHandle;
+use tokio::{sync::Notify, task::JoinHandle};
 use tracing::{info, warn};
 
 type TaskResult<T> = Option<JoinHandle<Result<T>>>;
@@ -27,6 +27,7 @@ pub(crate) struct State<T: NodeIdentity> {
     committee_proof: Option<OwnedCommitteeAndWitnessWithProof>,
     state: Option<Coordinator<T>>,
     prev_state: Option<Coordinator<T>>,
+    notify: Notify,
 }
 
 impl<T: NodeIdentity> State<T> {
@@ -43,6 +44,7 @@ impl<T: NodeIdentity> State<T> {
             committee_proof: None,
             state: None,
             prev_state: None,
+            notify: Notify::new(),
         }
     }
 
@@ -72,11 +74,12 @@ impl<T: NodeIdentity> State<T> {
     }
 
     pub async fn poll_next(&mut self) -> Result<()> {
-        if let Some(fetching_data) = &mut self.fetching_data {
+        if self.fetching_data.is_some() {
+            let fetching_data = std::mem::take(&mut self.fetching_data).unwrap();
             let state = self
                 .state
                 .as_ref()
-                .ok_or(Error::msg("Data finished, but no state"))?;
+                .ok_or(Error::msg("Data fetch running, but no state"))?;
             let (data_provider, data) = fetching_data.await??;
             self.data_provider = Some(data_provider);
             let model = match &state.model {
@@ -95,6 +98,9 @@ impl<T: NodeIdentity> State<T> {
                 llm.optimizer,
                 data,
             )));
+            self.notify.notify_one();
+        } else {
+            self.notify.notified().await;
         }
         Ok(())
     }
@@ -146,44 +152,46 @@ impl<T: NodeIdentity> State<T> {
         {
             return Ok(());
         }
+        if self.fetching_data.is_some() {
+            bail!("Ready to train but previous data fetch still running");
+        }
         if self.training.is_some() {
             bail!("Ready to train but previous training batch still running");
         }
 
         let round = state.current_round().unwrap();
 
-        let committee_proof: OwnedCommitteeAndWitnessWithProof = CommitteeSelection::new(
+        let committee_selection = CommitteeSelection::new(
             round.tie_breaker_tasks as usize,
             state.witness_nodes as usize,
             state.verification_percent,
             &state.clients,
             round.random_seed,
-        )
-        .get_selection(&state.clients[position])
-        .unwrap()
-        .into();
-        let committee = committee_proof.committee;
-        self.committee_proof = Some(committee_proof);
+        );
 
-        let data_ids = match committee {
-            Committee::TieBreaker => todo!(),
-            Committee::Verifier => todo!(),
-            Committee::Trainer => State::get_data_ids(
-                &self.identity,
-                &state.clients,
-                round,
-                state.data_indicies_per_round.into(),
-            ),
-        };
-
-        let data_ids = data_ids
-            .into_iter()
-            .flat_map(|x| ((x.start as usize)..(x.end as usize + 1)).collect::<Vec<_>>())
+        let data_ids = select_data_for_state(&state, &committee_selection)
+            .iter()
+            .filter(|(_, v)| **v == self.identity)
+            .flat_map(|(k, _)| (k.start as usize..k.end as usize + 1).collect::<Vec<_>>())
             .collect::<Vec<_>>();
 
-        let data_provider = std::mem::take(&mut self.data_provider)
-            .ok_or(Error::msg("Round start but no data provider object"))?;
-        self.fetching_data = Some(tokio::spawn(Self::fetch_data(data_provider, data_ids)));
+        let committee_proof: OwnedCommitteeAndWitnessWithProof = committee_selection
+            .get_selection_with_proof(&state.clients[position])
+            .unwrap()
+            .into();
+        self.committee_proof = Some(committee_proof);
+
+        if !data_ids.is_empty() {
+            let data_provider = std::mem::take(&mut self.data_provider)
+                .ok_or(Error::msg("Round start but no data provider object"))?;
+            self.fetching_data = Some(tokio::spawn(Self::fetch_data(data_provider, data_ids)));
+            self.notify.notify_one()
+        } else {
+            info!(
+                "No data assigned for round {} of run {}",
+                round.height, state.run_id
+            );
+        }
         Ok(())
     }
 
@@ -238,25 +246,5 @@ impl<T: NodeIdentity> State<T> {
         };
         let (data, model) = tokio::join!(data_future, model_future);
         Ok((data?, model??))
-    }
-
-    fn get_data_ids(
-        identity: &T,
-        clients: &[Client<T>],
-        round: &Round,
-        data_indicies_per_round: u64,
-    ) -> Vec<ClosedInterval<u64>> {
-        select_data_for_clients(
-            clients,
-            round.data_index,
-            data_indicies_per_round,
-            round.random_seed,
-        )
-        .iter()
-        .filter_map(|x| match x.1 == identity {
-            true => Some(*x.0),
-            false => None,
-        })
-        .collect::<Vec<_>>()
     }
 }

@@ -5,12 +5,13 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt::Debug, marker::PhantomData, net::SocketAddr, sync::Arc};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::{error, info};
-
 use psyche_core::{Networkable, NodeIdentity};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{mpsc, Mutex},
 };
+
+const MAX_FRAME_LENGTH: usize = 64 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize, Debug)]
 enum ServerToClientMessage<T: Debug> {
@@ -219,7 +220,9 @@ where
         let stream = TcpStream::connect(addr).await?;
         info!("Connected to server at: {}", addr);
 
-        let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
+        let mut codec = LengthDelimitedCodec::new();
+        codec.set_max_frame_length(MAX_FRAME_LENGTH);
+        let mut framed = Framed::new(stream, codec);
 
         // Receive challenge
         let challenge = match Self::receive_message(&mut framed).await? {

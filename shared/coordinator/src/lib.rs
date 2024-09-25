@@ -11,5 +11,5 @@ pub use committee_selection::{
     OwnedCommitteeAndWitnessWithProof, COMMITTEE_SALT, WITNESS_SALT,
 };
 pub use coordinator::{Client, Coordinator, Round, RunState};
-pub use data_selection::select_data_for_clients;
+pub use data_selection::select_data_for_state;
 pub use traits::Backend;

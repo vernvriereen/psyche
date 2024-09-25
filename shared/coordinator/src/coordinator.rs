@@ -23,7 +23,6 @@ pub enum RunState {
 #[derive(Clone, Debug)]
 pub struct Client<I: NodeIdentity> {
     pub id: I,
-    pub num_data_indicies: u32,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -59,6 +58,7 @@ pub struct Coordinator<T: NodeIdentity> {
     pub last_tick_unix_timestamp: u64,
 
     pub data_indicies_per_round: u32,
+    pub data_indicies_per_client: u32,
     pub verification_percent: u8,
     pub witness_nodes: u32,
 
@@ -100,6 +100,7 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             tick: Default::default(),
             last_tick_unix_timestamp: Default::default(),
             data_indicies_per_round: Default::default(),
+            data_indicies_per_client: Default::default(),
             verification_percent: Default::default(),
             witness_nodes: Default::default(),
             step: Default::default(),
@@ -125,6 +126,19 @@ impl<T: NodeIdentity> Coordinator<T> {
         match self.active() {
             true => Some(&self.rounds[self.rounds_head as usize]),
             false => None,
+        }
+    }
+
+    pub fn previous_round(&self) -> Option<&Round> {
+        match self.current_round() {
+            Some(round) => match self.rounds_head == 0 && round.height == 0 {
+                true => None,
+                false => match self.rounds_head == 0 {
+                    true => Some(&self.rounds[3]),
+                    false => Some(&self.rounds[self.rounds_head as usize - 1]),
+                },
+            },
+            None => None,
         }
     }
 

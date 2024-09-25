@@ -52,7 +52,7 @@ impl AsRef<[u8]> for ClientId {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ClientToServerMessage {
-    Join { run_id: String, data_bid: u32 },
+    Join { run_id: String },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
