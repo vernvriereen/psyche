@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::sha256::sha256v;
 
 // from https://github.com/solana-labs/solana/blob/27eff8408b7223bb3c4ab70523f8a8dca3ca6645/merkle-tree/src/merkle_tree.rs
@@ -20,7 +22,7 @@ macro_rules! hash_intermediate {
     }
 }
 
-type Hash = [u8; 32];
+pub type Hash = [u8; 32];
 
 #[derive(Debug)]
 pub struct MerkleTree {
@@ -31,7 +33,7 @@ pub struct MerkleTree {
 #[derive(Debug, PartialEq, Eq)]
 pub struct ProofEntry<'a>(&'a Hash, Option<&'a Hash>, Option<&'a Hash>);
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub struct OwnedProofEntry(Hash, Option<Hash>, Option<Hash>);
 
 impl<'a> ProofEntry<'a> {
@@ -54,12 +56,38 @@ impl<'a> From<ProofEntry<'a>> for OwnedProofEntry {
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Proof<'a>(Vec<ProofEntry<'a>>);
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub struct OwnedProof(Vec<OwnedProofEntry>);
 
 impl<'a> From<Proof<'a>> for OwnedProof {
     fn from(value: Proof<'a>) -> Self {
         Self(value.0.into_iter().map(|x| x.into()).collect())
+    }
+}
+
+impl OwnedProof {
+    pub fn verify(&self, candidate: Hash) -> bool {
+        let result = self.0.iter().try_fold(candidate, |candidate, pe| {
+            let lsib = pe.1.unwrap_or(candidate);
+            let rsib = pe.2.unwrap_or(candidate);
+            let hash = hash_intermediate!(lsib, rsib);
+
+            if hash == pe.0 {
+                Some(hash)
+            } else {
+                None
+            }
+        });
+        result.is_some()
+    }
+
+    pub fn verify_item<T: AsRef<[u8]>>(&self, item: &T) -> bool {
+        let candidate_item = item.as_ref();
+        self.verify(hash_leaf!(candidate_item))
+    }
+
+    pub fn get_root(&self) -> Option<&Hash> {
+        self.0.last().map(|x| &x.0)
     }
 }
 
@@ -86,6 +114,10 @@ impl<'a> Proof<'a> {
     pub fn verify_item<T: AsRef<[u8]>>(&self, item: &T) -> bool {
         let candidate_item = item.as_ref();
         self.verify(hash_leaf!(candidate_item))
+    }
+
+    pub fn get_root(&self) -> Option<&Hash> {
+        self.0.last().map(|x| x.0)
     }
 }
 

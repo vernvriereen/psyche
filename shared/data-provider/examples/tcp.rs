@@ -48,6 +48,10 @@ impl NodeIdentity for DummyNodeIdentity {
         b.extend(self.to_bytes());
         b
     }
+
+    fn get_p2p_public_key(&self) -> &[u8; 32] {
+        todo!()
+    }
 }
 
 impl AsRef<[u8]> for DummyNodeIdentity {

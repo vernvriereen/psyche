@@ -71,10 +71,14 @@ pub enum LearningRateSchedule {
 #[derive_serialize]
 #[derive(Copy, Clone, Debug)]
 pub enum Optimizer {
-    Distro {
-        betas: [f32; 3],
+    AdamW {
+        betas: [f32; 2],
         weight_decay: f32,
         eps: f32,
+        clip_grad_norm: Option<f32>,
+    },
+    Distro {
+        compression_decay: f32,
         compression_topk: u16,
         compression_chunk: u16,
     },

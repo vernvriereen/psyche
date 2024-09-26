@@ -36,6 +36,10 @@ impl NodeIdentity for ClientId {
             .expect("alloc error")
             .to_vec()
     }
+
+    fn get_p2p_public_key(&self) -> &[u8; 32] {
+        self.0.as_bytes()
+    }
 }
 
 impl From<PublicKey> for ClientId {

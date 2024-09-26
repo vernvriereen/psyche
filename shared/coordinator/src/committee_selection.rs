@@ -1,10 +1,11 @@
-use psyche_core::{sha256v, MerkleTree, OwnedProof, Proof};
+use psyche_core::{sha256v, MerkleTree, OwnedProof, Proof, RootType};
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
 pub const COMMITTEE_SALT: &str = "committee";
 pub const WITNESS_SALT: &str = "witness";
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Committee {
     TieBreaker,
     Verifier,
@@ -20,6 +21,7 @@ pub struct CommitteeAndWitnessWithProof<'a> {
     pub witness_proof: Proof<'a>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OwnedCommitteeAndWitnessWithProof {
     pub committee: Committee,
     pub committee_position: usize,
@@ -201,6 +203,14 @@ where
 
     pub fn get_num_trainer_nodes(&self) -> usize {
         self.committee_order.len() - self.tie_breaker_nodes - self.verifier_nodes
+    }
+
+    pub fn get_committee_tree_root(&self) -> &RootType {
+        self.committee_tree.get_root().unwrap()
+    }
+
+    pub fn get_witness_tree_root(&self) -> &RootType {
+        self.witness_tree.get_root().unwrap()
     }
 }
 

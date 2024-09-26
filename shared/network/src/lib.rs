@@ -2,7 +2,6 @@ use anyhow::{Error, Result};
 use download_manager::{DownloadManager, DownloadUpdate};
 use futures_util::{future::join_all, Sink, SinkExt, Stream, StreamExt};
 use iroh::{
-    base::ticket::BlobTicket,
     gossip::net::{Command, Event, GossipEvent},
     net::NodeAddr,
     node::{MemNode, Node},
@@ -28,10 +27,13 @@ mod tcp;
 mod tui;
 mod util;
 
-pub use iroh::net::{
-    key::{PublicKey, SecretKey},
-    relay::RelayMode,
-    NodeId,
+pub use iroh::{
+    base::ticket::BlobTicket,
+    net::{
+        key::{PublicKey, SecretKey},
+        relay::RelayMode,
+        NodeId,
+    },
 };
 pub use peer_list::PeerList;
 pub use signed_message::SignedMessage;
