@@ -6,6 +6,7 @@ use tch::{
     nn::{self, OptimizerConfig},
     Tensor,
 };
+use tracing::info;
 
 enum Optimizer {
     AdamW {
@@ -63,7 +64,7 @@ impl Trainer {
         }
     }
 
-    pub async fn train(mut self, step: usize, data: Vec<Vec<i32>>) -> Result<TrainOutput> {
+    pub fn train(mut self, step: usize, data: Vec<Vec<i32>>) -> Result<TrainOutput> {
         let inputs = Tensor::from_slice2(&data).to(self.model.device());
         let targets = inputs.copy();
         let (_, loss) = self.model.forward(&inputs, Some(&targets), None);
@@ -83,6 +84,7 @@ impl Trainer {
                 optimizer.zero_grad();
             }
         }
+        info!("step: {step}, loss: {loss_value}");
         Ok(TrainOutput {
             trainer: self,
             _loss: loss_value,

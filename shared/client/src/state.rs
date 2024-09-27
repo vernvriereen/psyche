@@ -1,5 +1,4 @@
 use crate::{
-    protocol::IndexAndCommitteeProof,
     trainer::{TrainOutput, Trainer},
     BroadcastMessage, Payload,
 };
@@ -30,7 +29,7 @@ pub struct State<T: NodeIdentity> {
     trainer: Option<Trainer>,
     training: TaskResult<TrainOutput>,
     fetching_data: TaskResult<(DataProviderTcpClient<T>, Vec<Vec<i32>>)>,
-    index_and_proofs: Option<(u64, CommitteeProof, WitnessProof, CommitteeSelection)>,
+    committee_info: Option<(CommitteeProof, WitnessProof, CommitteeSelection)>,
     state: Option<Coordinator<T>>,
     prev_state: Option<Coordinator<T>>,
     notify: Notify,
@@ -47,7 +46,7 @@ impl<T: NodeIdentity> State<T> {
             trainer: None,
             training: None,
             fetching_data: None,
-            index_and_proofs: None,
+            committee_info: None,
             state: None,
             prev_state: None,
             notify: Notify::new(),
@@ -75,13 +74,13 @@ impl<T: NodeIdentity> State<T> {
             RunState::WaitingForMembers => {}
             RunState::Warmup => self.warmup().await,
             RunState::RoundTrain => self.round_start(position).await?,
-            RunState::RoundWitness => todo!(),
-            RunState::RoundApply => todo!(),
+            RunState::RoundWitness => {}
+            RunState::RoundApply => {}
         }
         Ok(())
     }
 
-    pub async fn poll_next(&mut self) -> Result<Option<(IndexAndCommitteeProof, Payload)>> {
+    pub async fn poll_next(&mut self) -> Result<Option<(CommitteeProof, Payload)>> {
         if self.fetching_data.is_some() {
             let fetching_data = std::mem::take(&mut self.fetching_data).unwrap();
             let state = self
@@ -93,21 +92,23 @@ impl<T: NodeIdentity> State<T> {
 
             let trainer: Trainer = std::mem::take(&mut self.trainer)
                 .ok_or(Error::msg("Round start but no trainer object"))?;
-            self.training = Some(tokio::spawn(trainer.train(state.step as usize, data)));
+            let step = state.step as usize;
+            self.training = Some(tokio::task::spawn_blocking(move || {
+                trainer.train(step as usize, data)
+            }));
         } else if self.training.is_some() {
             let training = std::mem::take(&mut self.training).unwrap();
+            info!("Waiting for training to finish");
             let output = training.await??;
+            info!("Training finished");
             self.trainer = Some(output.trainer);
-            let (index, committee_proof, _, _) = self
-                .index_and_proofs
+            let (committee_proof, _, _) = self
+                .committee_info
                 .as_ref()
                 .expect("Training complete but no self proofs");
             // TODO DISTRO
             return Ok(Some((
-                IndexAndCommitteeProof {
-                    index: *index,
-                    committee_proof: *committee_proof,
-                },
+                *committee_proof,
                 Payload {
                     step: output.step as u64,
                 },
@@ -128,19 +129,16 @@ impl<T: NodeIdentity> State<T> {
                 // verify they are who they say they are
                 if let Some(state) = &self.state {
                     if state.step == message.step as u32 {
-                        if let Some((_, _, _, committee_selection)) = self.index_and_proofs.as_ref()
-                        {
+                        if let Some((_, _, committee_selection)) = self.committee_info.as_ref() {
                             if let Some(client) =
                                 watcher.get_client_for_p2p_public_key(public_key.as_bytes())
                             {
-                                let index = message.proof.index as usize;
-                                if index <= state.clients.len() && state.clients[index] == *client {
-                                    if committee_selection.verify_committee(
-                                        message.proof.index,
-                                        message.proof.committee_proof,
-                                    ) {
-                                        self.on_broadcast(client, message);
-                                    }
+                                if committee_selection.verify_committee_for_client(
+                                    client,
+                                    &message.proof,
+                                    &state.clients,
+                                ) {
+                                    self.on_broadcast(client, message);
                                 }
                             }
                         }
@@ -157,15 +155,21 @@ impl<T: NodeIdentity> State<T> {
         _client: &psyche_coordinator::Client<T>,
         _message: BroadcastMessage,
     ) {
-        let (_, committee_proof, witness_proof, _) = self
-            .index_and_proofs
+        let (committee_proof, witness_proof, _) = self
+            .committee_info
             .as_ref()
             .expect("Broadcast message processor has no self proofs");
         if committee_proof.committee == Committee::Trainer {
-            // TODO: start applying gradients
+            // TODO: save gradients
         }
-        if witness_proof.witness {}
+        if witness_proof.witness {
+            // TODO: build bloom
+            // TODO: check for early completion (assuming it here for one node)
+            self.send_witness();
+        }
     }
+
+    fn send_witness(&mut self) {}
 
     async fn warmup(&mut self) {
         let state = self.state.as_ref().expect("No state in warmup");
@@ -249,7 +253,7 @@ impl<T: NodeIdentity> State<T> {
 
         let committee_proof = committee_selection.get_committee(index);
         let witness_proof = committee_selection.get_witness(index);
-        self.index_and_proofs = Some((index, committee_proof, witness_proof, committee_selection));
+        self.committee_info = Some((committee_proof, witness_proof, committee_selection));
 
         if !data_ids.is_empty() {
             let data_provider = std::mem::take(&mut self.data_provider)

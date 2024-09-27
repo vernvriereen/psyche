@@ -35,7 +35,7 @@ pub fn select_data_for_state<'a, T: NodeIdentity>(
                 Committee::Verifier => {
                     if first_pass {
                         match state.previous_round() {
-                            Some(previous_round) => {
+                            Ok(Some(previous_round)) => {
                                 let selected = verifier_shuffle.pop().unwrap();
                                 let start = previous_round.data_index as u64
                                     + (selected * state.data_indicies_per_client as u64);
@@ -48,7 +48,7 @@ pub fn select_data_for_state<'a, T: NodeIdentity>(
                                 )
                                 .unwrap();
                             }
-                            None => {}
+                            _ => {}
                         }
                     }
                 }

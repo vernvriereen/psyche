@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{BroadcastMessage, Payload, NC};
 use psyche_coordinator::model::{LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM};
-use psyche_coordinator::{Client, Coordinator};
+use psyche_coordinator::{Client, Coordinator, Witness};
 use psyche_data_provider::{DataProviderTcpServer, DataServerTui, LocalDataProvider, TokenSize};
 use psyche_network::{NetworkEvent, NetworkTui, PeerList, RelayMode, TcpServer};
 use psyche_tui::logging::LoggerWidget;
@@ -64,6 +64,11 @@ impl ChannelCoordinatorBackend {
 impl psyche_watcher::Backend<ClientId> for ChannelCoordinatorBackend {
     async fn wait_for_new_state(&mut self) -> Result<Coordinator<ClientId>> {
         Ok(self.rx.recv().await.expect("channel closed? :("))
+    }
+
+    async fn send_witness(&mut self, _witness: Witness) -> Result<()> {
+        assert!(false, "Server does not send witnesses");
+        Ok(())
     }
 }
 
@@ -246,16 +251,23 @@ impl App {
                     info!("{from:?} tried to join unknown run {run_id}");
                 }
             }
+            ClientToServerMessage::Witness(witness) => {
+                if let Err(error) =
+                    self.coordinator
+                        .witness(&Client { id: from }, witness, Self::get_timestamp())
+                {
+                    warn!("Error when processing witness: {error}");
+                }
+            }
         }
     }
 
     async fn on_tick(&mut self) {
-        let unix_timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        self.coordinator
-            .tick(&self.backend, unix_timestamp, rand::thread_rng().next_u64());
+        self.coordinator.tick(
+            &self.backend,
+            Self::get_timestamp(),
+            rand::thread_rng().next_u64(),
+        );
         if let Err(err) = self
             .backend
             .net_server
@@ -267,6 +279,13 @@ impl App {
         if let Some((ref sender, _)) = self.training_data_server {
             sender.send(self.coordinator.clone()).await.unwrap();
         }
+    }
+
+    fn get_timestamp() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
     }
 }
 

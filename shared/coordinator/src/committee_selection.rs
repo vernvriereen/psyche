@@ -1,4 +1,5 @@
-use psyche_core::{compute_shuffled_index, sha256, sha256v};
+use crate::{Client, Coordinator, CoordinatorError};
+use psyche_core::{compute_shuffled_index, sha256, sha256v, NodeIdentity};
 use serde::{Deserialize, Serialize};
 
 pub const COMMITTEE_SALT: &str = "committee";
@@ -23,12 +24,14 @@ pub struct CommitteeSelection {
 pub struct CommitteeProof {
     pub committee: Committee,
     pub position: u64,
+    pub index: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WitnessProof {
     pub witness: bool,
     pub position: u64,
+    pub index: u64,
 }
 
 impl CommitteeSelection {
@@ -58,10 +61,27 @@ impl CommitteeSelection {
         }
     }
 
+    pub fn from_coordinator<T: NodeIdentity>(
+        coordinator: &Coordinator<T>,
+    ) -> Result<Self, CoordinatorError> {
+        let round = coordinator.current_round()?;
+        Ok(Self::new(
+            round.tie_breaker_tasks as usize,
+            coordinator.witness_nodes as usize,
+            coordinator.verification_percent,
+            coordinator.clients.len(),
+            round.random_seed,
+        ))
+    }
+
     pub fn get_witness(&self, index: u64) -> WitnessProof {
         let position = self.compute_shuffled_index(index, WITNESS_SALT);
         let witness = self.get_witness_from_position(position);
-        WitnessProof { witness, position }
+        WitnessProof {
+            witness,
+            position,
+            index,
+        }
     }
 
     pub fn get_committee(&self, index: u64) -> CommitteeProof {
@@ -70,6 +90,7 @@ impl CommitteeSelection {
         CommitteeProof {
             committee,
             position,
+            index,
         }
     }
 
@@ -87,13 +108,40 @@ impl CommitteeSelection {
         witness_position < self.witness_nodes
     }
 
-    pub fn verify_committee(&self, index: u64, proof: CommitteeProof) -> bool {
-        let position = self.compute_shuffled_index(index, COMMITTEE_SALT);
+    pub fn verify_committee_for_client<T: NodeIdentity>(
+        &self,
+        client: &Client<T>,
+        proof: &CommitteeProof,
+        clients: &[Client<T>],
+    ) -> bool {
+        Self::verify_client(client, proof.index, clients) && self.verify_committee(proof)
+    }
+
+    pub fn verify_witness_for_client<T: NodeIdentity>(
+        &self,
+        client: &Client<T>,
+        proof: &WitnessProof,
+        clients: &[Client<T>],
+    ) -> bool {
+        Self::verify_client(client, proof.index, clients) && self.verify_witness(proof)
+    }
+
+    fn verify_client<T: NodeIdentity>(
+        client: &Client<T>,
+        index: u64,
+        clients: &[Client<T>],
+    ) -> bool {
+        let index = index as usize;
+        index < clients.len() && clients[index] == *client
+    }
+
+    fn verify_committee(&self, proof: &CommitteeProof) -> bool {
+        let position = self.compute_shuffled_index(proof.index, COMMITTEE_SALT);
         proof.position == position && proof.committee == self.get_committee_from_position(position)
     }
 
-    pub fn verify_witness(&self, index: u64, proof: WitnessProof) -> bool {
-        let position = self.compute_shuffled_index(index, WITNESS_SALT);
+    fn verify_witness(&self, proof: &WitnessProof) -> bool {
+        let position = self.compute_shuffled_index(proof.index, WITNESS_SALT);
         proof.position == position && proof.witness == self.get_witness_from_position(position)
     }
 
@@ -176,14 +224,15 @@ mod tests {
 
         for i in 0..100 {
             let proof = cs.get_committee(i);
-            assert!(cs.verify_committee(i, proof));
+            assert!(cs.verify_committee(&proof));
 
             // Test with incorrect proof
             let incorrect_proof = CommitteeProof {
                 committee: Committee::Verifier,
                 position: 99,
+                index: i,
             };
-            assert!(!cs.verify_committee(i, incorrect_proof));
+            assert!(!cs.verify_committee(&incorrect_proof));
         }
     }
 
@@ -193,14 +242,15 @@ mod tests {
 
         for i in 0..100 {
             let proof = cs.get_witness(i);
-            assert!(cs.verify_witness(i, proof));
+            assert!(cs.verify_witness(&proof));
 
             // Test with incorrect proof
             let incorrect_proof = WitnessProof {
                 witness: !proof.witness,
                 position: 99,
+                index: i,
             };
-            assert!(!cs.verify_witness(i, incorrect_proof));
+            assert!(!cs.verify_witness(&incorrect_proof));
         }
     }
 

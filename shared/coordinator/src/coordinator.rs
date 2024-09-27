@@ -1,4 +1,4 @@
-use crate::{model::Model, traits::Backend};
+use crate::{model::Model, traits::Backend, CommitteeSelection, WitnessProof};
 use psyche_core::NodeIdentity;
 use psyche_serde::derive_serialize;
 
@@ -37,10 +37,18 @@ pub struct Round {
     pub random_seed: u64,
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 #[derive_serialize]
 pub struct Witness {
+    pub index: u64,
+    pub proof: WitnessProof,
+}
 
+#[derive(Clone, Debug)]
+pub enum CoordinatorError {
+    NoActiveRound,
+    InvalidWitness,
+    InvalidRunState,
 }
 
 #[derive_serialize]
@@ -123,40 +131,71 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
     }
 }
 
+impl std::fmt::Display for CoordinatorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CoordinatorError::NoActiveRound => write!(f, "No active round"),
+            CoordinatorError::InvalidWitness => write!(f, "Invalid witness"),
+            CoordinatorError::InvalidRunState => write!(f, "Invalid run state"),
+        }
+    }
+}
+
 impl<T: NodeIdentity> Coordinator<T> {
     pub fn tick(&mut self, backend: &dyn Backend<T>, unix_timestamp: u64, random_seed: u64) {
         match self.run_state {
             RunState::WaitingForMembers => self.tick_waiting_for_members(backend, unix_timestamp),
             RunState::Warmup => self.tick_warmup(unix_timestamp, random_seed),
             RunState::RoundTrain => self.tick_round_train(unix_timestamp),
-            RunState::RoundWitness => todo!(),
-            RunState::RoundApply => todo!(),
+            RunState::RoundWitness => self.tick_round_witness(unix_timestamp),
+            RunState::RoundApply => self.tick_round_apply(unix_timestamp, random_seed),
         }
         self.tick += 1;
         self.last_tick_unix_timestamp = unix_timestamp;
     }
 
-    pub fn witness(&mut self, _from: &Client<T>, _witness: Witness) {
-        
+    pub fn witness(
+        &mut self,
+        from: &Client<T>,
+        witness: Witness,
+        unix_timestamp: u64,
+    ) -> Result<(), CoordinatorError> {
+        if !CommitteeSelection::from_coordinator(&self)?.verify_witness_for_client(
+            from,
+            &witness.proof,
+            &self.clients,
+        ) {
+            return Err(CoordinatorError::InvalidWitness);
+        }
+        if self.run_state == RunState::RoundTrain {
+            self.round_train_check_witness_time(unix_timestamp);
+        }
+        if self.run_state != RunState::RoundTrain && self.run_state != RunState::RoundWitness {
+            return Err(CoordinatorError::InvalidRunState);
+        }
+        // TODO: record bloom filters
+        // TODO: check for quorum of witnesses
+        self.change_state(unix_timestamp, RunState::RoundApply);
+        Ok(())
     }
 
-    pub fn current_round(&self) -> Option<&Round> {
+    pub fn current_round(&self) -> Result<&Round, CoordinatorError> {
         match self.active() {
-            true => Some(&self.rounds[self.rounds_head as usize]),
-            false => None,
+            true => Ok(&self.rounds[self.rounds_head as usize]),
+            false => Err(CoordinatorError::NoActiveRound),
         }
     }
 
-    pub fn previous_round(&self) -> Option<&Round> {
+    pub fn previous_round(&self) -> Result<Option<&Round>, CoordinatorError> {
         match self.current_round() {
-            Some(round) => match self.rounds_head == 0 && round.height == 0 {
-                true => None,
+            Ok(round) => match self.rounds_head == 0 && round.height == 0 {
+                true => Ok(None),
                 false => match self.rounds_head == 0 {
-                    true => Some(&self.rounds[3]),
-                    false => Some(&self.rounds[self.rounds_head as usize - 1]),
+                    true => Ok(Some(&self.rounds[3])),
+                    false => Ok(Some(&self.rounds[self.rounds_head as usize - 1])),
                 },
             },
-            None => None,
+            Err(err) => Err(err),
         }
     }
 
@@ -171,12 +210,14 @@ impl<T: NodeIdentity> Coordinator<T> {
         let clients = backend.select_new_clients();
         if clients.len() as u32 >= self.min_clients {
             self.clients = clients.into();
-            self.rounds.fill(Round::empty());
-            self.change_state(unix_timestamp, RunState::Warmup);
+            self.start_warmup(unix_timestamp);
         }
     }
 
     fn tick_warmup(&mut self, unix_timestamp: u64, random_seed: u64) {
+        if (self.clients.len() as u32) < self.min_clients {
+            self.change_state(unix_timestamp, RunState::WaitingForMembers);
+        }
         if unix_timestamp >= self.warmup_time + self.run_state_start_unix_timestamp {
             self.start_round_train(unix_timestamp, random_seed, 0);
         }
@@ -186,6 +227,30 @@ impl<T: NodeIdentity> Coordinator<T> {
         if (self.clients.len() as u32) < self.min_clients {
             self.change_state(unix_timestamp, RunState::WaitingForMembers);
         }
+        self.round_train_check_witness_time(unix_timestamp);
+    }
+
+    fn tick_round_witness(&mut self, unix_timestamp: u64) {
+        if unix_timestamp >= self.max_round_witness_time + self.run_state_start_unix_timestamp {
+            // TODO: Punish idle witnesses
+            self.change_state(unix_timestamp, RunState::RoundApply);
+        }
+    }
+
+    fn tick_round_apply(&mut self, unix_timestamp: u64, random_seed: u64) {
+        if unix_timestamp >= self.round_apply_time + self.run_state_start_unix_timestamp {
+            self.step += 1;
+            if self.current_round().unwrap().height == self.max_rounds {
+                self.rounds = Default::default();
+                self.epoch += 1;
+                self.start_warmup(unix_timestamp);
+            } else {
+                self.start_round_train(unix_timestamp, random_seed, 0);
+            }
+        }
+    }
+
+    fn round_train_check_witness_time(&mut self, unix_timestamp: u64) {
         if unix_timestamp >= self.max_round_train_time + self.run_state_start_unix_timestamp {
             self.change_state(unix_timestamp, RunState::RoundWitness);
         }
@@ -216,6 +281,11 @@ impl<T: NodeIdentity> Coordinator<T> {
         round.tie_breaker_tasks = tie_breaker_tasks;
         round.random_seed = random_seed;
         self.change_state(unix_timestamp, RunState::RoundTrain);
+    }
+
+    fn start_warmup(&mut self, unix_timestamp: u64) {
+        self.rounds.fill(Round::empty());
+        self.change_state(unix_timestamp, RunState::Warmup);
     }
 
     fn change_state(&mut self, unix_timestamp: u64, new_state: RunState) {

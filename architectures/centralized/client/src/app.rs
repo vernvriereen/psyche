@@ -1,7 +1,7 @@
 use anyhow::{Error, Result};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{Client, NC};
-use psyche_coordinator::Coordinator;
+use psyche_coordinator::{Coordinator, Witness};
 use psyche_network::{NetworkTUIState, NetworkTui, SecretKey, TcpClient};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
@@ -17,12 +17,21 @@ type TabsData = <Tabs as CustomWidget>::Data;
 
 struct Backend {
     rx: mpsc::Receiver<Coordinator<ClientId>>,
+    tx: mpsc::Sender<Witness>,
 }
 
 #[async_trait::async_trait]
 impl WatcherBackend<ClientId> for Backend {
     async fn wait_for_new_state(&mut self) -> Result<Coordinator<ClientId>> {
-        self.rx.recv().await.ok_or(Error::msg("channel closed"))
+        self.rx
+            .recv()
+            .await
+            .ok_or(Error::msg("watcher backend rx channel closed"))
+    }
+
+    async fn send_witness(&mut self, witness: Witness) -> Result<()> {
+        self.tx.send(witness).await?;
+        Ok(())
     }
 }
 
@@ -82,8 +91,15 @@ impl App {
             }
         }
         let (tx, rx) = mpsc::channel(10);
+        let (witness_tx, mut witness_rx) = mpsc::channel(10);
         let identity = ClientId::from(p2p.node_addr().await?.node_id);
-        let mut client = Client::new(Backend { rx }, p2p, identity, self.secret_key.clone());
+        let mut client = Client::new(
+            Backend { rx, tx: witness_tx },
+            p2p,
+            identity,
+            self.secret_key.clone(),
+        );
+
         loop {
             select! {
                 _ = self.cancel.cancelled() => {
@@ -100,6 +116,9 @@ impl App {
                 }
                 res = client.process() => {
                     res?;
+                }
+                Some(witness) = witness_rx.recv() => {
+                    self.server_conn.send(ClientToServerMessage::Witness(witness)).await?;
                 }
             }
         }

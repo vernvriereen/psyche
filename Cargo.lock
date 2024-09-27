@@ -4940,12 +4940,10 @@ name = "psyche-coordinator"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
- "anyhow",
  "async-trait",
  "psyche-core",
  "psyche-serde",
  "serde",
- "tracing",
 ]
 
 [[package]]

@@ -136,7 +136,7 @@ where
     fn handle_new_state(&mut self, state: Coordinator<T>) {
         self.state = state;
         self.selected_data = match self.state.current_round() {
-            Some(round) => {
+            Ok(round) => {
                 let committee = CommitteeSelection::new(
                     round.tie_breaker_tasks as usize,
                     self.state.witness_nodes as usize,
@@ -146,7 +146,7 @@ where
                 );
                 select_data_for_state(&self.state, &committee)
             }
-            None => IntervalTree::new(),
+            Err(_) => IntervalTree::new(),
         };
     }
 }
