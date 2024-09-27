@@ -81,13 +81,13 @@ impl<T: NodeIdentity> State<T> {
     }
 
     pub async fn poll_next(&mut self) -> Result<Option<(CommitteeProof, Payload)>> {
-        if self.fetching_data.is_some() {
-            let fetching_data = std::mem::take(&mut self.fetching_data).unwrap();
+        if let Some(fetching_data) = &mut self.fetching_data {
             let state = self
                 .state
                 .as_ref()
                 .ok_or(Error::msg("Data fetch running, but no state"))?;
             let (data_provider, data) = fetching_data.await??;
+            self.fetching_data = None;
             self.data_provider = Some(data_provider);
 
             let trainer: Trainer = std::mem::take(&mut self.trainer)
@@ -96,11 +96,9 @@ impl<T: NodeIdentity> State<T> {
             self.training = Some(tokio::task::spawn_blocking(move || {
                 trainer.train(step as usize, data)
             }));
-        } else if self.training.is_some() {
-            let training = std::mem::take(&mut self.training).unwrap();
-            info!("Waiting for training to finish");
+        } else if let Some(training) = &mut self.training {
             let output = training.await??;
-            info!("Training finished");
+            self.training = None;
             self.trainer = Some(output.trainer);
             let (committee_proof, _, _) = self
                 .committee_info
