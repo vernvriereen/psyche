@@ -39,13 +39,13 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                 _ => {},
             },
             res = self.state.poll_next() => match res {
-                Ok(Some((committee, payload))) => {
+                Ok(Some((proof, payload))) => {
                     if let Some(ticket) = ticket {
                         self.p2p.remove_downloadable(ticket).await?;
                     }
                     let step = payload.step;
                     ticket = Some(self.p2p.add_downloadable(payload).await?);
-                    self.p2p.broadcast(&BroadcastMessage { step, ticket: ticket.clone().unwrap(), committee }).await?;
+                    self.p2p.broadcast(&BroadcastMessage { step, ticket: ticket.clone().unwrap(), proof }).await?;
                 },
                 Ok(None) => {},
                 Err(err) => { return Err(err); }

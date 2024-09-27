@@ -1,9 +1,9 @@
-use crate::{Client, Committee, CommitteeSelection, Coordinator};
+use crate::{Committee, CommitteeSelection, Coordinator};
 use psyche_core::{deterministic_shuffle, ClosedInterval, IntervalTree, NodeIdentity};
 
 pub fn select_data_for_state<'a, T: NodeIdentity>(
     state: &Coordinator<T>,
-    committee_selection: &CommitteeSelection<'a, Client<T>>,
+    committee_selection: &CommitteeSelection,
 ) -> IntervalTree<u64, T> {
     let data_indicies_per_client = state.data_indicies_per_client as u64;
     let round = state.current_round().unwrap();
@@ -14,10 +14,7 @@ pub fn select_data_for_state<'a, T: NodeIdentity>(
         .map(|i| {
             (
                 &state.clients[i],
-                committee_selection
-                    .get_selection(&state.clients[i])
-                    .unwrap()
-                    .0,
+                committee_selection.get_committee(i as u64).committee
             )
         })
         .collect::<Vec<_>>();

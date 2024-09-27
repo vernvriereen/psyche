@@ -9,6 +9,7 @@ mod node_identity;
 mod serde;
 mod sha256;
 mod similarity;
+mod swap_or_not;
 
 pub use deterministic_shuffle::deterministic_shuffle;
 pub use lcg::LCG;
@@ -20,5 +21,6 @@ pub use sha256::{sha256, sha256v};
 pub use similarity::{
     hamming_distance, is_similar, jaccard_distance, manhattan_distance, DistanceThresholds,
 };
+pub use swap_or_not::compute_shuffled_index;
 
 pub use node_identity::NodeIdentity;

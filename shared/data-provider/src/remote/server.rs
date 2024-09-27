@@ -141,7 +141,7 @@ where
                     round.tie_breaker_tasks as usize,
                     self.state.witness_nodes as usize,
                     self.state.verification_percent,
-                    &self.state.clients,
+                    self.state.clients.len(),
                     round.random_seed,
                 );
                 select_data_for_state(&self.state, &committee)

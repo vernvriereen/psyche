@@ -1,6 +1,5 @@
-use psyche_core::{sha256v, MerkleTree, OwnedProof, Proof, RootType};
+use psyche_core::{compute_shuffled_index, sha256, sha256v};
 use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
 
 pub const COMMITTEE_SALT: &str = "committee";
 pub const WITNESS_SALT: &str = "witness";
@@ -12,205 +11,113 @@ pub enum Committee {
     Trainer,
 }
 
-pub struct CommitteeAndWitnessWithProof<'a> {
+pub struct CommitteeSelection {
+    tie_breaker_nodes: u64,
+    verifier_nodes: u64,
+    total_nodes: u64,
+    witness_nodes: u64,
+    seed: [u8; 32],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CommitteeProof {
     pub committee: Committee,
-    pub committee_position: usize,
-    pub committee_proof: Proof<'a>,
+    pub position: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WitnessProof {
     pub witness: bool,
-    pub witness_position: usize,
-    pub witness_proof: Proof<'a>,
+    pub position: u64,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct OwnedCommitteeAndWitnessWithProof {
-    pub committee: Committee,
-    pub committee_position: usize,
-    pub committee_proof: OwnedProof,
-    pub witness: bool,
-    pub witness_position: usize,
-    pub witness_proof: OwnedProof,
-}
-
-impl<'a> From<CommitteeAndWitnessWithProof<'a>> for OwnedCommitteeAndWitnessWithProof {
-    fn from(value: CommitteeAndWitnessWithProof<'a>) -> Self {
-        Self {
-            committee: value.committee,
-            committee_position: value.committee_position,
-            committee_proof: value.committee_proof.into(),
-            witness: value.witness,
-            witness_position: value.witness_position,
-            witness_proof: value.witness_proof.into()
-        }
-    }
-}
-
-#[derive(Eq)]
-struct OrderEntry {
-    rank: u64,
-    index: usize,
-}
-
-impl PartialOrd for OrderEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for OrderEntry {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.rank.cmp(&other.rank)
-    }
-}
-
-impl PartialEq for OrderEntry {
-    fn eq(&self, other: &Self) -> bool {
-        self.rank == other.rank
-    }
-}
-
-pub fn tree_item(salt: &[u8], seed: u64, id: &[u8], index: usize) -> [u8; 32] {
-    sha256v(&[salt, &seed.to_be_bytes(), id, &(index as u64).to_be_bytes()])
-}
-
-pub struct CommitteeSelection<'a, T> {
-    committee_order: Vec<&'a T>,
-    committee_tree: MerkleTree,
-    tie_breaker_nodes: usize,
-    verifier_nodes: usize,
-    witness_order: Vec<&'a T>,
-    witness_tree: MerkleTree,
-    witness_nodes: usize,
-    seed: u64,
-}
-
-impl<'a, T> CommitteeSelection<'a, T>
-where
-    T: AsRef<[u8]> + Eq,
-{
+impl CommitteeSelection {
     pub fn new(
         tie_breaker_nodes: usize,
         witness_nodes: usize,
         verification_percent: u8,
-        nodes: &'a [T],
+        total_nodes: usize,
         seed: u64,
     ) -> Self {
-        assert!(nodes.len() < u64::MAX as usize);
-        assert!(nodes.len() >= tie_breaker_nodes);
-        assert!(nodes.len() >= witness_nodes);
+        assert!(total_nodes < u64::MAX as usize);
+        assert!(total_nodes >= tie_breaker_nodes);
+        assert!(total_nodes >= witness_nodes);
         assert!(verification_percent <= 100);
 
-        let (committee_order, committee_tree) =
-            Self::make_order_and_tree(COMMITTEE_SALT, seed, nodes);
-        let (witness_order, witness_tree) = Self::make_order_and_tree(WITNESS_SALT, seed, nodes);
-
-        let free_nodes = nodes.len() - tie_breaker_nodes;
+        let free_nodes = total_nodes - tie_breaker_nodes;
         let verifier_nodes = (free_nodes * verification_percent as usize) / 100;
 
+        let seed = sha256(&seed.to_le_bytes());
+
         Self {
-            committee_order,
-            committee_tree,
-            tie_breaker_nodes,
-            verifier_nodes,
-            witness_order,
-            witness_tree,
-            witness_nodes,
+            tie_breaker_nodes: tie_breaker_nodes as u64,
+            verifier_nodes: verifier_nodes as u64,
+            total_nodes: total_nodes as u64,
+            witness_nodes: witness_nodes as u64,
             seed,
         }
     }
 
-    fn make_order_and_tree(salt: &str, seed: u64, nodes: &'a [T]) -> (Vec<&'a T>, MerkleTree) {
-        let mut order_entries: Vec<_> = nodes
-            .iter()
-            .enumerate()
-            .map(|(index, x)| OrderEntry {
-                rank: Self::get_rank(salt.as_bytes(), &seed.to_be_bytes(), x.as_ref()),
-                index,
-            })
-            .collect();
-        order_entries.sort();
-        let tree_items: Vec<_> = order_entries
-            .iter()
-            .enumerate()
-            .map(|(index, item)| {
-                tree_item(salt.as_bytes(), seed, nodes[item.index].as_ref(), index)
-            })
-            .collect();
-        let order = order_entries.into_iter().map(|x| &nodes[x.index]).collect();
-        let tree = MerkleTree::new(&tree_items);
-        (order, tree)
+    pub fn get_witness(&self, index: u64) -> WitnessProof {
+        let position = self.compute_shuffled_index(index, WITNESS_SALT);
+        let witness = self.get_witness_from_position(position);
+        WitnessProof { witness, position }
     }
 
-    fn get_rank(salt: &[u8], seed: &[u8], id: &[u8]) -> u64 {
-        u64::from_be_bytes(sha256v(&[salt, seed, id])[0..8].try_into().unwrap())
-    }
-
-    pub fn get_selection_with_proof(&self, item: &T) -> Option<CommitteeAndWitnessWithProof> {
-        let witness_position = self.witness_order.iter().position(|x| *x == item)?;
-        let witness_proof = self.witness_tree.find_path(witness_position)?;
-        let committee_position = self
-            .committee_order
-            .iter()
-            .position(|x| *x == item)
-            .unwrap();
-        let committee_proof = self.committee_tree.find_path(committee_position)?;
-        let committee = if committee_position < self.tie_breaker_nodes {
-            Committee::TieBreaker
-        } else if committee_position < self.tie_breaker_nodes + self.verifier_nodes {
-            Committee::Verifier
-        } else {
-            Committee::Trainer
-        };
-        let witness = witness_position < self.witness_nodes;
-        Some(CommitteeAndWitnessWithProof {
+    pub fn get_committee(&self, index: u64) -> CommitteeProof {
+        let position = self.compute_shuffled_index(index, COMMITTEE_SALT);
+        let committee = self.get_committee_from_position(position);
+        CommitteeProof {
             committee,
-            committee_position,
-            committee_proof,
-            witness,
-            witness_position,
-            witness_proof,
-        })
+            position,
+        }
     }
 
-    pub fn get_selection(&self, item: &T) -> Option<(Committee, bool)> {
-        let witness_position = self.witness_order.iter().position(|x| *x == item)?;
-        let committee_position = self
-            .committee_order
-            .iter()
-            .position(|x| *x == item)
-            .unwrap();
-        let committee = if committee_position < self.tie_breaker_nodes {
+    fn get_committee_from_position(&self, committee_position: u64) -> Committee {
+        if committee_position < self.tie_breaker_nodes {
             Committee::TieBreaker
         } else if committee_position < self.tie_breaker_nodes + self.verifier_nodes {
             Committee::Verifier
         } else {
             Committee::Trainer
-        };
-        let witness = witness_position < self.witness_nodes;
-        Some((committee, witness))
+        }
     }
 
-    pub fn get_seed(&self) -> u64 {
+    fn get_witness_from_position(&self, witness_position: u64) -> bool {
+        witness_position < self.witness_nodes
+    }
+
+    pub fn verify_committee(&self, index: u64, proof: CommitteeProof) -> bool {
+        let position = self.compute_shuffled_index(index, COMMITTEE_SALT);
+        proof.position == position && proof.committee == self.get_committee_from_position(position)
+    }
+
+    pub fn verify_witness(&self, index: u64, proof: WitnessProof) -> bool {
+        let position = self.compute_shuffled_index(index, WITNESS_SALT);
+        proof.position == position && proof.witness == self.get_witness_from_position(position)
+    }
+
+    fn compute_shuffled_index(&self, index: u64, salt: &str) -> u64 {
+        let mut seed = [0u8; 32];
+        seed.copy_from_slice(&sha256v(&[&self.seed, salt.as_bytes()]));
+
+        compute_shuffled_index(index, self.total_nodes as u64, &seed)
+    }
+
+    pub fn get_seed(&self) -> [u8; 32] {
         self.seed
     }
 
-    pub fn get_num_tie_breaker_nodes(&self) -> usize {
+    pub fn get_num_tie_breaker_nodes(&self) -> u64 {
         self.tie_breaker_nodes
     }
 
-    pub fn get_num_verifier_nodes(&self) -> usize {
+    pub fn get_num_verifier_nodes(&self) -> u64 {
         self.verifier_nodes
     }
 
-    pub fn get_num_trainer_nodes(&self) -> usize {
-        self.committee_order.len() - self.tie_breaker_nodes - self.verifier_nodes
-    }
-
-    pub fn get_committee_tree_root(&self) -> &RootType {
-        self.committee_tree.get_root().unwrap()
-    }
-
-    pub fn get_witness_tree_root(&self) -> &RootType {
-        self.witness_tree.get_root().unwrap()
+    pub fn get_num_trainer_nodes(&self) -> u64 {
+        self.total_nodes - self.tie_breaker_nodes - self.verifier_nodes
     }
 }
 
@@ -219,73 +126,168 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_committee_selection_creation() {
-        let nodes: Vec<String> = (0..100).map(|i| format!("Node{}", i)).collect();
-        let selection = CommitteeSelection::new(10, 20, 30, &nodes, 12345);
-
-        assert_eq!(selection.tie_breaker_nodes, 10);
-        assert_eq!(selection.witness_nodes, 20);
-        assert_eq!(selection.verifier_nodes, 27); // 30% of (100 - 10) = 27
-        assert_eq!(selection.committee_order.len(), 100);
-        assert_eq!(selection.witness_order.len(), 100);
+    fn test_new_committee_selection() {
+        let cs = CommitteeSelection::new(10, 20, 30, 100, 12345);
+        assert_eq!(cs.tie_breaker_nodes, 10);
+        assert_eq!(cs.witness_nodes, 20);
+        assert_eq!(cs.verifier_nodes, 27); // (100 - 10) * 30% = 27
+        assert_eq!(cs.total_nodes, 100);
     }
 
     #[test]
-    fn test_get_selection() {
-        let nodes: Vec<String> = (0..100).map(|i| format!("Node{}", i)).collect();
-        let selection: CommitteeSelection<'_, String> =
-            CommitteeSelection::new(10, 20, 30, &nodes, 12345);
+    fn test_get_committee() {
+        let cs = CommitteeSelection::new(10, 20, 30, 100, 12345);
 
-        for node in &nodes {
-            let result = selection.get_selection_with_proof(node).unwrap();
-            assert!(matches!(
-                result.committee,
-                Committee::TieBreaker | Committee::Verifier | Committee::Trainer
-            ));
-            assert!(result.committee_proof.verify_item(&tree_item(
-                COMMITTEE_SALT.as_bytes(),
-                selection.get_seed(),
-                node.as_ref(),
-                result.committee_position
-            )));
-            assert!(result.witness_proof.verify_item(&tree_item(
-                WITNESS_SALT.as_bytes(),
-                selection.get_seed(),
-                node.as_ref(),
-                result.witness_position
-            )));
-        }
-    }
+        // Test for all possible indexes
+        for i in 0..100 {
+            let proof = cs.get_committee(i);
+            assert!(proof.position < 100);
 
-    #[test]
-    fn test_deterministic_selection() {
-        let nodes: Vec<String> = (0..100).map(|i: i32| format!("Node{}", i)).collect();
-        let selection1 = CommitteeSelection::new(10, 20, 30, &nodes, 12345);
-        let selection2 = CommitteeSelection::new(10, 20, 30, &nodes, 12345);
-
-        for node in &nodes {
-            let result1 = selection1.get_selection_with_proof(node).unwrap();
-            let result2 = selection2.get_selection_with_proof(node).unwrap();
-            assert_eq!(result1.committee, result2.committee);
-            assert_eq!(result1.witness, result2.witness);
-        }
-    }
-
-    #[test]
-    fn test_different_seeds_produce_different_results() {
-        let nodes: Vec<String> = (0..100).map(|i| format!("Node{}", i)).collect();
-        let selection1 = CommitteeSelection::new(10, 20, 30, &nodes, 12345);
-        let selection2 = CommitteeSelection::new(10, 20, 30, &nodes, 54321);
-
-        let mut all_same = true;
-        for node in &nodes {
-            let result1 = selection1.get_selection_with_proof(node).unwrap();
-            let result2 = selection2.get_selection_with_proof(node).unwrap();
-            if result1.committee != result2.committee || result1.witness != result2.witness {
-                all_same = false;
-                break;
+            // Verify that the committee matches the position
+            match proof.committee {
+                Committee::TieBreaker => assert!(proof.position < 10),
+                Committee::Verifier => assert!(proof.position >= 10 && proof.position < 37),
+                Committee::Trainer => assert!(proof.position >= 37),
             }
         }
-        assert!(!all_same);
+    }
+
+    #[test]
+    fn test_get_witness() {
+        let cs = CommitteeSelection::new(10, 20, 30, 100, 12345);
+
+        // Test for all possible indexes
+        for i in 0..100 {
+            let proof = cs.get_witness(i);
+            assert!(proof.position < 100);
+
+            // Verify that the witness status matches the position
+            if proof.witness {
+                assert!(proof.position < 20);
+            } else {
+                assert!(proof.position >= 20);
+            }
+        }
+    }
+
+    #[test]
+    fn test_verify_committee() {
+        let cs = CommitteeSelection::new(10, 20, 30, 100, 12345);
+
+        for i in 0..100 {
+            let proof = cs.get_committee(i);
+            assert!(cs.verify_committee(i, proof));
+
+            // Test with incorrect proof
+            let incorrect_proof = CommitteeProof {
+                committee: Committee::Verifier,
+                position: 99,
+            };
+            assert!(!cs.verify_committee(i, incorrect_proof));
+        }
+    }
+
+    #[test]
+    fn test_verify_witness() {
+        let cs = CommitteeSelection::new(10, 20, 30, 100, 12345);
+
+        for i in 0..100 {
+            let proof = cs.get_witness(i);
+            assert!(cs.verify_witness(i, proof));
+
+            // Test with incorrect proof
+            let incorrect_proof = WitnessProof {
+                witness: !proof.witness,
+                position: 99,
+            };
+            assert!(!cs.verify_witness(i, incorrect_proof));
+        }
+    }
+
+    #[test]
+    fn test_committee_distribution() {
+        let cs = CommitteeSelection::new(10, 20, 30, 100, 12345);
+        let mut tie_breaker_count = 0;
+        let mut verifier_count = 0;
+        let mut trainer_count = 0;
+
+        for i in 0..100 {
+            match cs.get_committee(i).committee {
+                Committee::TieBreaker => tie_breaker_count += 1,
+                Committee::Verifier => verifier_count += 1,
+                Committee::Trainer => trainer_count += 1,
+            }
+        }
+
+        assert_eq!(tie_breaker_count, 10);
+        assert_eq!(verifier_count, 27);
+        assert_eq!(trainer_count, 63);
+    }
+
+    #[test]
+    fn test_witness_distribution() {
+        let cs = CommitteeSelection::new(10, 20, 30, 100, 12345);
+        let mut witness_count = 0;
+
+        for i in 0..100 {
+            if cs.get_witness(i).witness {
+                witness_count += 1;
+            }
+        }
+
+        assert_eq!(witness_count, 20);
+    }
+
+    #[test]
+    fn test_get_num_nodes() {
+        let cs = CommitteeSelection::new(10, 5, 20, 100, 12345);
+        assert_eq!(cs.get_num_tie_breaker_nodes(), 10);
+        assert_eq!(cs.get_num_verifier_nodes(), 18);
+        assert_eq!(cs.get_num_trainer_nodes(), 72);
+    }
+
+    #[test]
+    fn test_seed_consistency() {
+        let cs1 = CommitteeSelection::new(10, 5, 20, 100, 12345);
+        let cs2 = CommitteeSelection::new(10, 5, 20, 100, 12345);
+        assert_eq!(cs1.get_seed(), cs2.get_seed());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_total_nodes() {
+        CommitteeSelection::new(10, 5, 20, 9, 12345);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_verification_percent() {
+        CommitteeSelection::new(10, 5, 101, 100, 12345);
+    }
+
+    #[test]
+    fn test_edge_case_all_tie_breakers() {
+        let cs = CommitteeSelection::new(100, 5, 20, 100, 12345);
+        for i in 0..100 {
+            let committee = cs.get_committee(i).committee;
+            assert_eq!(committee, Committee::TieBreaker);
+        }
+    }
+
+    #[test]
+    fn test_edge_case_no_verifiers() {
+        let cs = CommitteeSelection::new(10, 5, 0, 100, 12345);
+        let mut tie_breaker_count = 0;
+        let mut trainer_count = 0;
+        for i in 0..100 {
+            let committee = cs.get_committee(i).committee;
+            match committee {
+                Committee::TieBreaker => tie_breaker_count += 1,
+                Committee::Trainer => trainer_count += 1,
+                _ => panic!("Unexpected committee type"),
+            }
+        }
+        assert_eq!(tie_breaker_count, 10);
+        assert_eq!(trainer_count, 90);
     }
 }

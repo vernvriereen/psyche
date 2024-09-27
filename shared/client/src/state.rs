@@ -1,13 +1,14 @@
 use crate::{
+    protocol::IndexAndCommitteeProof,
     trainer::{TrainOutput, Trainer},
-    BroadcastMessage, Payload
+    BroadcastMessage, Payload,
 };
 use anyhow::{bail, Error, Result};
 use psyche_coordinator::{
-    model, select_data_for_state, tree_item, Committee, CommitteeSelection, Coordinator,
-    OwnedCommitteeAndWitnessWithProof, RunState, COMMITTEE_SALT,
+    model, select_data_for_state, Committee, CommitteeProof, CommitteeSelection, Coordinator,
+    RunState, WitnessProof,
 };
-use psyche_core::{NodeIdentity, RootType};
+use psyche_core::NodeIdentity;
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpClient, TokenizedDataProvider,
 };
@@ -29,9 +30,7 @@ pub struct State<T: NodeIdentity> {
     trainer: Option<Trainer>,
     training: TaskResult<TrainOutput>,
     fetching_data: TaskResult<(DataProviderTcpClient<T>, Vec<Vec<i32>>)>,
-    committee_proof: Option<OwnedCommitteeAndWitnessWithProof>,
-    committee_root: RootType,
-    witness_root: RootType,
+    index_and_proofs: Option<(u64, CommitteeProof, WitnessProof, CommitteeSelection)>,
     state: Option<Coordinator<T>>,
     prev_state: Option<Coordinator<T>>,
     notify: Notify,
@@ -48,12 +47,10 @@ impl<T: NodeIdentity> State<T> {
             trainer: None,
             training: None,
             fetching_data: None,
-            committee_proof: None,
+            index_and_proofs: None,
             state: None,
             prev_state: None,
             notify: Notify::new(),
-            committee_root: RootType::default(),
-            witness_root: RootType::default(),
         }
     }
 
@@ -65,7 +62,7 @@ impl<T: NodeIdentity> State<T> {
         self.state = Some(state.clone());
         self.prev_state = prev_state;
         let position = match state.clients.iter().position(|x| x.id == self.identity) {
-            Some(position) => position,
+            Some(position) => position as u64,
             None => {
                 if !self.showed_inclusion_message {
                     info!("Awaiting inclusion in round");
@@ -77,14 +74,14 @@ impl<T: NodeIdentity> State<T> {
         match state.run_state {
             RunState::WaitingForMembers => {}
             RunState::Warmup => self.warmup().await,
-            RunState::RoundStart => self.round_start(position).await?,
+            RunState::RoundTrain => self.round_start(position).await?,
+            RunState::RoundWitness => todo!(),
+            RunState::RoundApply => todo!(),
         }
         Ok(())
     }
 
-    pub async fn poll_next(
-        &mut self,
-    ) -> Result<Option<(OwnedCommitteeAndWitnessWithProof, Payload)>> {
+    pub async fn poll_next(&mut self) -> Result<Option<(IndexAndCommitteeProof, Payload)>> {
         if self.fetching_data.is_some() {
             let fetching_data = std::mem::take(&mut self.fetching_data).unwrap();
             let state = self
@@ -101,14 +98,18 @@ impl<T: NodeIdentity> State<T> {
             let training = std::mem::take(&mut self.training).unwrap();
             let output = training.await??;
             self.trainer = Some(output.trainer);
+            let (index, committee_proof, _, _) = self
+                .index_and_proofs
+                .as_ref()
+                .expect("Training complete but no self proofs");
             // TODO DISTRO
             return Ok(Some((
-                self.committee_proof
-                    .as_ref()
-                    .expect("No self committee proof after training")
-                    .clone(),
+                IndexAndCommitteeProof {
+                    index: *index,
+                    committee_proof: *committee_proof,
+                },
                 Payload {
-                    step: output.step as u32,
+                    step: output.step as u64,
                 },
             )));
         } else {
@@ -126,26 +127,19 @@ impl<T: NodeIdentity> State<T> {
             NetworkEvent::MessageReceived((public_key, message)) => {
                 // verify they are who they say they are
                 if let Some(state) = &self.state {
-                    if state.step == message.step {
-                        if let Some(round) = state.current_round() {
+                    if state.step == message.step as u32 {
+                        if let Some((_, _, _, committee_selection)) = self.index_and_proofs.as_ref()
+                        {
                             if let Some(client) =
                                 watcher.get_client_for_p2p_public_key(public_key.as_bytes())
                             {
-                                if let Some(root) = message.committee.committee_proof.get_root() {
-                                    if *root == self.committee_root {
-                                        let committee_node = tree_item(
-                                            COMMITTEE_SALT.as_bytes(),
-                                            round.random_seed,
-                                            client.as_ref(),
-                                            message.committee.committee_position,
-                                        );
-                                        if message
-                                            .committee
-                                            .committee_proof
-                                            .verify_item(&committee_node)
-                                        {
-                                            self.on_broadcast(client, message);
-                                        }
+                                let index = message.proof.index as usize;
+                                if index <= state.clients.len() && state.clients[index] == *client {
+                                    if committee_selection.verify_committee(
+                                        message.proof.index,
+                                        message.proof.committee_proof,
+                                    ) {
+                                        self.on_broadcast(client, message);
                                     }
                                 }
                             }
@@ -158,15 +152,19 @@ impl<T: NodeIdentity> State<T> {
         Ok(())
     }
 
-    fn on_broadcast(&mut self, _client: &psyche_coordinator::Client<T>, _message: BroadcastMessage) {
-        let committee_proof = self
-            .committee_proof
+    fn on_broadcast(
+        &mut self,
+        _client: &psyche_coordinator::Client<T>,
+        _message: BroadcastMessage,
+    ) {
+        let (_, committee_proof, witness_proof, _) = self
+            .index_and_proofs
             .as_ref()
-            .expect("Broadcast message processor has no self committee proof");
+            .expect("Broadcast message processor has no self proofs");
         if committee_proof.committee == Committee::Trainer {
             // TODO: start applying gradients
         }
-        if committee_proof.witness {}
+        if witness_proof.witness {}
     }
 
     async fn warmup(&mut self) {
@@ -193,9 +191,9 @@ impl<T: NodeIdentity> State<T> {
         }
     }
 
-    async fn round_start(&mut self, position: usize) -> Result<()> {
+    async fn round_start(&mut self, index: u64) -> Result<()> {
         let state = self.state.as_ref().expect("No state in round start");
-        assert_eq!(state.run_state, RunState::RoundStart);
+        assert_eq!(state.run_state, RunState::RoundTrain);
         if self.trainer.is_none() && self.training.is_none() && self.data_provider.is_none() {
             let data_and_model_load = std::mem::take(&mut self.data_and_model_load).ok_or(
                 Error::msg("Round started but no model load was running. Did we miss warmup?"),
@@ -222,7 +220,7 @@ impl<T: NodeIdentity> State<T> {
             .as_ref()
             .ok_or(Error::msg("First seen state was round state"))?
             .run_state
-            == RunState::RoundStart
+            == RunState::RoundTrain
         {
             return Ok(());
         }
@@ -239,7 +237,7 @@ impl<T: NodeIdentity> State<T> {
             round.tie_breaker_tasks as usize,
             state.witness_nodes as usize,
             state.verification_percent,
-            &state.clients,
+            state.clients.len(),
             round.random_seed,
         );
 
@@ -249,13 +247,9 @@ impl<T: NodeIdentity> State<T> {
             .flat_map(|(k, _)| (k.start as usize..k.end as usize + 1).collect::<Vec<_>>())
             .collect::<Vec<_>>();
 
-        let committee_proof: OwnedCommitteeAndWitnessWithProof = committee_selection
-            .get_selection_with_proof(&state.clients[position])
-            .expect("Committee missing client")
-            .into();
-        self.committee_proof = Some(committee_proof);
-        self.committee_root = *committee_selection.get_committee_tree_root();
-        self.witness_root = *committee_selection.get_witness_tree_root();
+        let committee_proof = committee_selection.get_committee(index);
+        let witness_proof = committee_selection.get_witness(index);
+        self.index_and_proofs = Some((index, committee_proof, witness_proof, committee_selection));
 
         if !data_ids.is_empty() {
             let data_provider = std::mem::take(&mut self.data_provider)
