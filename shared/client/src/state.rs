@@ -1,6 +1,6 @@
 use crate::{
     trainer::{TrainOutput, Trainer},
-    BroadcastMessage, Payload,
+    BroadcastMessage, Payload, NC,
 };
 use anyhow::{bail, Error, Result};
 use psyche_coordinator::{
@@ -14,6 +14,7 @@ use psyche_data_provider::{
 use psyche_modeling::LlamaForCausalLM;
 use psyche_network::NetworkEvent;
 use psyche_watcher::{Backend, BackendWatcher};
+use std::collections::HashMap;
 use tch::Kind;
 use tokio::{sync::Notify, task::JoinHandle};
 use tracing::{info, warn};
@@ -32,6 +33,7 @@ pub struct State<T: NodeIdentity> {
     committee_info: Option<(CommitteeProof, WitnessProof, CommitteeSelection)>,
     state: Option<Coordinator<T>>,
     prev_state: Option<Coordinator<T>>,
+    _payloads: HashMap<T, Payload>,
     notify: Notify,
 }
 
@@ -49,6 +51,7 @@ impl<T: NodeIdentity> State<T> {
             committee_info: None,
             state: None,
             prev_state: None,
+            _payloads: HashMap::new(),
             notify: Notify::new(),
         }
     }
@@ -121,6 +124,7 @@ impl<T: NodeIdentity> State<T> {
         &mut self,
         event: NetworkEvent<BroadcastMessage, Payload>,
         watcher: &BackendWatcher<T, B>,
+        p2p: &mut NC,
     ) -> Result<()> {
         match event {
             NetworkEvent::MessageReceived((public_key, message)) => {
@@ -136,7 +140,17 @@ impl<T: NodeIdentity> State<T> {
                                     &message.proof,
                                     &state.clients,
                                 ) {
-                                    self.on_broadcast(client, message);
+                                    let (committee_proof, _, _) = self
+                                        .committee_info
+                                        .as_ref()
+                                        .expect("Broadcast message processor has no self proofs");
+                                    if committee_proof.committee == Committee::Trainer {
+                                        // verified by process_network_event caller
+                                        if message.proof.committee == Committee::Trainer {
+                                            // start download
+                                            p2p.download(message.ticket).await?;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -148,26 +162,7 @@ impl<T: NodeIdentity> State<T> {
         Ok(())
     }
 
-    fn on_broadcast(
-        &mut self,
-        _client: &psyche_coordinator::Client<T>,
-        _message: BroadcastMessage,
-    ) {
-        let (committee_proof, witness_proof, _) = self
-            .committee_info
-            .as_ref()
-            .expect("Broadcast message processor has no self proofs");
-        if committee_proof.committee == Committee::Trainer {
-            // TODO: save gradients
-        }
-        if witness_proof.witness {
-            // TODO: build bloom
-            // TODO: check for early completion (assuming it here for one node)
-            self.send_witness();
-        }
-    }
-
-    fn send_witness(&mut self) {}
+    fn _handle_payload(&mut self, _payload: &Payload) {}
 
     async fn warmup(&mut self) {
         let state = self.state.as_ref().expect("No state in warmup");
@@ -251,6 +246,10 @@ impl<T: NodeIdentity> State<T> {
 
         let committee_proof = committee_selection.get_committee(index);
         let witness_proof = committee_selection.get_witness(index);
+        info!(
+            "Assignment for step {} (round {}/epoch {}): committee={} witness={}",
+            state.step, round.height, state.epoch, committee_proof.committee, witness_proof.witness
+        );
         self.committee_info = Some((committee_proof, witness_proof, committee_selection));
 
         if !data_ids.is_empty() {

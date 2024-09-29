@@ -169,6 +169,16 @@ impl CommitteeSelection {
     }
 }
 
+impl std::fmt::Display for Committee {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Committee::TieBreaker => write!(f, "Tie breaker"),
+            Committee::Verifier => write!(f, "Verifier"),
+            Committee::Trainer => write!(f, "Trainer"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

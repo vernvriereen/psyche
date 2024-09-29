@@ -1,5 +1,6 @@
 #![allow(unexpected_cfgs)]
 
+mod bloom;
 mod deterministic_shuffle;
 mod lcg;
 mod lr_scheduler;
@@ -11,6 +12,7 @@ mod sha256;
 mod similarity;
 mod swap_or_not;
 
+pub use bloom::Bloom;
 pub use deterministic_shuffle::deterministic_shuffle;
 pub use lcg::LCG;
 pub use lr_scheduler::*;

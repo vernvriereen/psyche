@@ -8,9 +8,15 @@ fast-math.workspace = true
 serde.workspace = true
 postcard.workspace = true
 anyhow.workspace = true
+bv = { version="0.11.1",  features = ["serde"] }
+fnv = "1.0.7"
+rand = { workspace = true, optional = true }
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
 sha2.workspace = true
 
 [target.'cfg(target_os = "solana")'.dependencies]
 anchor-lang.workspace = true
+
+[features]
+rand = ["dep:rand"]

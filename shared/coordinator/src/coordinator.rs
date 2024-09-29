@@ -1,5 +1,5 @@
 use crate::{model::Model, traits::Backend, CommitteeSelection, WitnessProof};
-use psyche_core::NodeIdentity;
+use psyche_core::{Bloom, NodeIdentity};
 use psyche_serde::derive_serialize;
 
 #[cfg(target_os = "solana")]
@@ -37,11 +37,13 @@ pub struct Round {
     pub random_seed: u64,
 }
 
-#[derive(Clone, Debug)]
 #[derive_serialize]
-pub struct Witness {
+#[derive(Clone, Debug)]
+pub struct Witness<T: NodeIdentity> {
     pub index: u64,
     pub proof: WitnessProof,
+    pub commit_bloom: Bloom<T>,
+    pub payload_bloom: Bloom<T>,
 }
 
 #[derive(Clone, Debug)]
@@ -157,7 +159,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     pub fn witness(
         &mut self,
         from: &Client<T>,
-        witness: Witness,
+        witness: Witness<T>,
         unix_timestamp: u64,
     ) -> Result<(), CoordinatorError> {
         if !CommitteeSelection::from_coordinator(&self)?.verify_witness_for_client(
@@ -170,7 +172,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         if self.run_state == RunState::RoundTrain {
             self.round_train_check_witness_time(unix_timestamp);
         }
-        if self.run_state != RunState::RoundTrain && self.run_state != RunState::RoundWitness {
+        if self.run_state != RunState::RoundWitness {
             return Err(CoordinatorError::InvalidRunState);
         }
         // TODO: record bloom filters

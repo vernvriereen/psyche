@@ -6,7 +6,7 @@ use tch::{
     nn::{self, OptimizerConfig},
     Tensor,
 };
-use tracing::info;
+use tracing::debug;
 
 enum Optimizer {
     AdamW {
@@ -84,7 +84,7 @@ impl Trainer {
                 optimizer.zero_grad();
             }
         }
-        info!("step: {step}, loss: {loss_value}");
+        debug!("step: {step}, loss: {loss_value}");
         Ok(TrainOutput {
             trainer: self,
             _loss: loss_value,

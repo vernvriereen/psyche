@@ -66,12 +66,13 @@ async fn main() -> Result<()> {
         interval_at(Instant::now() + duration, duration)
     };
 
-    let server_conn = TcpClient::<ClientId, ClientToServerMessage, ServerToClientMessage>::connect(
-        &args.server_addr,
-        secret_key.public().into(),
-        secret_key.clone(),
-    )
-    .await?;
+    let server_conn =
+        TcpClient::<ClientId, ClientToServerMessage<ClientId>, ServerToClientMessage>::connect(
+            &args.server_addr,
+            secret_key.public().into(),
+            secret_key.clone(),
+        )
+        .await?;
 
     App::new(
         cancel,

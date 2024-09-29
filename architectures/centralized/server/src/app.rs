@@ -39,7 +39,7 @@ pub(super) const TAB_NAMES: [&str; 5] = [
 type TabsData = <Tabs as CustomWidget>::Data;
 
 struct Backend {
-    net_server: TcpServer<ClientId, ClientToServerMessage, ServerToClientMessage>,
+    net_server: TcpServer<ClientId, ClientToServerMessage<ClientId>, ServerToClientMessage>,
     pending_clients: Vec<Client<ClientId>>,
 }
 
@@ -66,7 +66,7 @@ impl psyche_watcher::Backend<ClientId> for ChannelCoordinatorBackend {
         Ok(self.rx.recv().await.expect("channel closed? :("))
     }
 
-    async fn send_witness(&mut self, _witness: Witness) -> Result<()> {
+    async fn send_witness(&mut self, _witness: Witness<ClientId>) -> Result<()> {
         assert!(false, "Server does not send witnesses");
         Ok(())
     }
@@ -148,7 +148,7 @@ impl App {
         let update_tui_interval = interval(Duration::from_millis(150));
 
         let net_server =
-            TcpServer::<ClientId, ClientToServerMessage, ServerToClientMessage>::start(
+            TcpServer::<ClientId, ClientToServerMessage<ClientId>, ServerToClientMessage>::start(
                 SocketAddr::new(
                     std::net::IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
                     server_port.unwrap_or(0),
@@ -224,7 +224,7 @@ impl App {
         }
     }
 
-    async fn on_client_message(&mut self, from: ClientId, event: ClientToServerMessage) {
+    async fn on_client_message(&mut self, from: ClientId, event: ClientToServerMessage<ClientId>) {
         match event {
             ClientToServerMessage::Join { run_id } => {
                 // TODO: check whitelist

@@ -4952,8 +4952,11 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anyhow",
+ "bv",
  "fast-math",
+ "fnv",
  "postcard",
+ "rand 0.8.5",
  "serde",
  "sha2 0.10.8",
 ]

@@ -33,7 +33,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
             },
             res = self.p2p.poll_next() => match res {
                 Ok(Some(event)) => {
-                    self.state.process_network_event(event, &self.watcher).await?;
+                    self.state.process_network_event(event, &self.watcher, &mut self.p2p).await?;
                 },
                 Err(err) => { return Err(err); }
                 _ => {},
