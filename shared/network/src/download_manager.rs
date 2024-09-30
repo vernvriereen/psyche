@@ -11,7 +11,7 @@ use crate::util::convert_bytes;
 #[derive(Debug)]
 pub struct Download {
     from: PublicKey,
-    hash: String,
+    hash: iroh::blobs::Hash,
     download: DownloadProgressStream,
     last_offset: u64,
     total_size: u64,
@@ -21,7 +21,7 @@ impl Download {
     pub fn new(from: PublicKey, blob_ticket: BlobTicket, download: DownloadProgressStream) -> Self {
         Self {
             from,
-            hash: blob_ticket.hash().to_string(),
+            hash: blob_ticket.hash(),
             download,
             last_offset: 0,
             total_size: 0,
@@ -31,7 +31,7 @@ impl Download {
 
 #[derive(Clone, Debug)]
 pub struct DownloadUpdate {
-    pub hash: String,
+    pub hash: iroh::blobs::Hash,
     pub from: PublicKey,
     pub downloaded_size_delta: u64,
     pub downloaded_size: u64,

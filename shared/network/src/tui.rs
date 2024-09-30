@@ -236,7 +236,7 @@ where
                     .iter()
                     .map(|(key, dl)| {
                         (
-                            key.clone(),
+                            key.to_string(),
                             UIDownloadProgress {
                                 downloaded: dl.downloaded_size,
                                 total: dl.total_size,

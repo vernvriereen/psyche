@@ -29,6 +29,7 @@ mod util;
 
 pub use iroh::{
     base::ticket::BlobTicket,
+    blobs::Hash,
     net::{
         key::{PublicKey, SecretKey},
         relay::RelayMode,
@@ -208,7 +209,7 @@ where
                 }
             }
             Some(update) = self.download_manager.poll_next() => {
-                on_download_update(&mut self.state, update);
+                on_download_update::<BroadcastMessage, Download>(&mut self.node, &mut self.state, update).await?;
             }
               _ = self.update_stats_interval.tick() => {
                 on_update_stats(&self.node, &mut self.state).await?;
@@ -237,10 +238,18 @@ where
     D: Networkable,
 {
     MessageReceived((PublicKey, BM)),
-    DownloadComplete(D),
+    DownloadComplete((D, Hash)),
 }
 
-fn on_download_update(state: &mut State, update: DownloadUpdate) {
+async fn on_download_update<BM, D>(
+    node: &mut MemNode,
+    state: &mut State,
+    update: DownloadUpdate,
+) -> Result<Option<NetworkEvent<BM, D>>>
+where
+    BM: Networkable,
+    D: Networkable,
+{
     state
         .bandwidth_tracker
         .add_event(update.downloaded_size_delta);
@@ -249,8 +258,12 @@ fn on_download_update(state: &mut State, update: DownloadUpdate) {
     let is_done = update.downloaded_size == update.total_size;
     if is_done {
         state.download_progesses.remove(&update.hash);
+        let blob_bytes = node.blobs().read_to_bytes(update.hash).await?;
+        let blob = D::from_bytes(&(blob_bytes.slice(..)))?;
+        Ok(Some(NetworkEvent::DownloadComplete((blob, update.hash))))
     } else {
         state.download_progesses.insert(update.hash.clone(), update);
+        Ok(None)
     }
 }
 

@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use iroh::{base::ticket::BlobTicket, net::key::PublicKey};
+use iroh::{base::ticket::BlobTicket, blobs::Hash, net::key::PublicKey};
 
 use crate::{download_manager::DownloadUpdate, peer_list::PeerList};
 
@@ -14,7 +14,7 @@ pub struct State {
     pub last_seen: HashMap<PublicKey, Instant>,
     pub bandwidth_tracker: BandwidthTracker,
     pub bandwidth_history: VecDeque<f64>,
-    pub download_progesses: HashMap<String, DownloadUpdate>,
+    pub download_progesses: HashMap<Hash, DownloadUpdate>,
 
     pub currently_sharing_blobs: Vec<BlobTicket>,
 }
