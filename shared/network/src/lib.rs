@@ -1,5 +1,5 @@
 use anyhow::{Error, Result};
-use download_manager::{DownloadManager, DownloadUpdate};
+use download_manager::{DownloadComplete, DownloadManager, DownloadManagerEvent, DownloadUpdate};
 use futures_util::{future::join_all, Sink, SinkExt, Stream, StreamExt};
 use iroh::{
     gossip::net::{Command, Event, GossipEvent},
@@ -12,6 +12,7 @@ use std::{
     fmt::Debug,
     marker::PhantomData,
     ops::Sub,
+    sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::select;
@@ -46,11 +47,11 @@ where
     BroadcastMessage: Networkable,
     Download: Networkable,
 {
-    node: MemNode,
+    node: Arc<MemNode>,
     state: State,
     gossip_tx: Box<dyn Sink<Command, Error = Error> + Unpin>,
     gossip_rx: Box<dyn Stream<Item = std::result::Result<Event, Error>> + Unpin>,
-    download_manager: DownloadManager,
+    download_manager: DownloadManager<Download>,
     _broadcast_message: PhantomData<BroadcastMessage>,
     _download: PhantomData<Download>,
     update_stats_interval: Interval,
@@ -122,7 +123,7 @@ where
         let update_stats_interval = interval(Duration::from_secs(1));
 
         Ok(Self {
-            node,
+            node: node.into(),
             gossip_tx: Box::new(gossip_tx),
             gossip_rx: Box::new(gossip_rx),
             update_stats_interval,
@@ -208,15 +209,53 @@ where
                     return Ok(Some(NetworkEvent::MessageReceived(result)));
                 }
             }
-            Some(update) = self.download_manager.poll_next() => {
-                on_download_update::<BroadcastMessage, Download>(&mut self.node, &mut self.state, update).await?;
+            update = self.download_manager.poll_next() => {
+                let update = if let Some(update) = update? {
+                    update
+                } else {
+                    return Ok(None);
+                };
+                match update {
+                    DownloadManagerEvent::Complete(result) => {
+                        return Ok(Some(NetworkEvent::DownloadComplete(result)))
+                    }
+                    DownloadManagerEvent::Update(update) => {
+                        self.on_download_update(update);
+                    }
+                }
             }
-              _ = self.update_stats_interval.tick() => {
+            _ = self.update_stats_interval.tick() => {
                 on_update_stats(&self.node, &mut self.state).await?;
             }
-        }
+        };
 
         Ok(None)
+    }
+
+    fn on_download_update(&mut self, update: DownloadUpdate) {
+        self.state
+            .bandwidth_tracker
+            .add_event(update.downloaded_size_delta);
+        self.state.last_seen.insert(update.from, Instant::now());
+
+        let is_done = update.downloaded_size == update.total_size;
+        if is_done {
+            self.state.download_progesses.remove(&update.hash);
+
+            let node = self.node.clone();
+            self.download_manager.read(
+                update.from,
+                update.hash,
+                Box::pin(async move {
+                    let blob_bytes_future = node.blobs().read_to_bytes(update.hash);
+                    blob_bytes_future.await
+                }),
+            );
+        } else {
+            self.state
+                .download_progesses
+                .insert(update.hash.clone(), update);
+        }
     }
 }
 
@@ -238,33 +277,7 @@ where
     D: Networkable,
 {
     MessageReceived((PublicKey, BM)),
-    DownloadComplete((D, Hash)),
-}
-
-async fn on_download_update<BM, D>(
-    node: &mut MemNode,
-    state: &mut State,
-    update: DownloadUpdate,
-) -> Result<Option<NetworkEvent<BM, D>>>
-where
-    BM: Networkable,
-    D: Networkable,
-{
-    state
-        .bandwidth_tracker
-        .add_event(update.downloaded_size_delta);
-    state.last_seen.insert(update.from, Instant::now());
-
-    let is_done = update.downloaded_size == update.total_size;
-    if is_done {
-        state.download_progesses.remove(&update.hash);
-        let blob_bytes = node.blobs().read_to_bytes(update.hash).await?;
-        let blob = D::from_bytes(&(blob_bytes.slice(..)))?;
-        Ok(Some(NetworkEvent::DownloadComplete((blob, update.hash))))
-    } else {
-        state.download_progesses.insert(update.hash.clone(), update);
-        Ok(None)
-    }
+    DownloadComplete(DownloadComplete<D>),
 }
 
 async fn on_update_stats(node: &MemNode, stats: &mut State) -> Result<()> {

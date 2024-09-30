@@ -1,15 +1,15 @@
 use anyhow::{anyhow, bail, Result};
 use futures_util::{future::join_all, SinkExt, StreamExt};
+use psyche_core::{Networkable, NodeIdentity};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt::Debug, marker::PhantomData, net::SocketAddr, sync::Arc};
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use tracing::{error, info};
-use psyche_core::{Networkable, NodeIdentity};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{mpsc, Mutex},
 };
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
+use tracing::{error, info};
 
 const MAX_FRAME_LENGTH: usize = 64 * 1024 * 1024;
 

@@ -1,12 +1,17 @@
+use std::{fmt::Debug, future::Future, marker::PhantomData, pin::Pin};
+
+use crate::util::convert_bytes;
+use anyhow::Result;
+use bytes::Bytes;
 use futures_util::future::select_all;
 use iroh::base::ticket::BlobTicket;
 use iroh::blobs::get::db::DownloadProgress;
 use iroh::client::blobs::DownloadProgress as DownloadProgressStream;
 use iroh::net::key::PublicKey;
+use psyche_core::Networkable;
+use tokio::select;
 use tokio_stream::StreamExt;
 use tracing::{error, info, warn};
-
-use crate::util::convert_bytes;
 
 #[derive(Debug)]
 pub struct Download {
@@ -15,6 +20,22 @@ pub struct Download {
     download: DownloadProgressStream,
     last_offset: u64,
     total_size: u64,
+}
+
+pub struct ReadingFinishedDownload {
+    from: PublicKey,
+    hash: iroh::blobs::Hash,
+    download: Pin<Box<dyn Future<Output = Result<Bytes>>>>,
+}
+
+impl Debug for ReadingFinishedDownload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReadingFinishedDownload")
+            .field("from", &self.from)
+            .field("hash", &self.hash)
+            .field("reading", &"...")
+            .finish()
+    }
 }
 
 impl Download {
@@ -29,6 +50,20 @@ impl Download {
     }
 }
 
+impl ReadingFinishedDownload {
+    pub fn new(
+        from: PublicKey,
+        hash: iroh::blobs::Hash,
+        download: Pin<Box<dyn Future<Output = Result<Bytes>>>>,
+    ) -> Self {
+        Self {
+            download,
+            from,
+            hash,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct DownloadUpdate {
     pub hash: iroh::blobs::Hash,
@@ -38,13 +73,44 @@ pub struct DownloadUpdate {
     pub total_size: u64,
 }
 
-#[derive(Debug, Default)]
-pub struct DownloadManager {
+pub struct DownloadComplete<D: Networkable> {
+    pub hash: iroh::blobs::Hash,
+    pub from: PublicKey,
+    pub data: D,
+}
+
+pub enum DownloadManagerEvent<D: Networkable> {
+    Update(DownloadUpdate),
+    Complete(DownloadComplete<D>),
+}
+
+pub struct DownloadManager<D: Networkable> {
     downloads: Vec<Download>,
+    reading: Vec<ReadingFinishedDownload>,
+    _download_type: PhantomData<D>,
+}
+
+impl<D: Networkable> Debug for DownloadManager<D> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DownloadManager")
+            .field("downloads", &self.downloads)
+            .field("reading", &self.reading)
+            .finish()
+    }
+}
+
+impl<D: Networkable> Default for DownloadManager<D> {
+    fn default() -> Self {
+        Self {
+            downloads: Default::default(),
+            reading: Default::default(),
+            _download_type: Default::default(),
+        }
+    }
 }
 
 // TODO if it takes too long to get data from one peer, we should send a gossipsub message asking for anyone that has this info, and pick a random new person to download from.
-impl DownloadManager {
+impl<D: Networkable> DownloadManager<D> {
     pub fn add(
         &mut self,
         from: PublicKey,
@@ -55,40 +121,95 @@ impl DownloadManager {
             .push(Download::new(from, blob_ticket, progress));
     }
 
-    pub async fn poll_next(&mut self) -> Option<DownloadUpdate> {
-        if self.downloads.is_empty() {
-            return None;
+    pub fn read(
+        &mut self,
+        from: PublicKey,
+        hash: iroh::blobs::Hash,
+        download: Pin<Box<dyn Future<Output = Result<Bytes>>>>,
+    ) {
+        self.reading
+            .push(ReadingFinishedDownload::new(from, hash, download));
+    }
+
+    // TODO error handling for failed downloads - bad decode, etc.
+    pub async fn poll_next(&mut self) -> Result<Option<DownloadManagerEvent<D>>> {
+        if self.downloads.is_empty() && self.reading.is_empty() {
+            return Ok(None);
         }
 
-        let mut futures: Vec<_> = self
+        let mut download_futures: Vec<_> = self
             .downloads
             .iter_mut()
             .map(|download| Box::pin(download.download.next()))
             .collect();
 
-        let (result, index, _) = select_all(&mut futures).await;
+        let mut read_futures: Vec<_> = self
+            .reading
+            .iter_mut()
+            .map(|read| read.download.as_mut())
+            .collect();
 
-        match result {
-            Some(Ok(progress)) => {
-                let download = &mut self.downloads[index];
-                Self::handle_progress(download, progress)
+        if !download_futures.is_empty() && !read_futures.is_empty() {
+            select! {
+                (progress, index, _) = select_all(&mut download_futures) => {
+                    self.handle_download_result(progress, index)
+                }
+                (bytes, index, _) = select_all(&mut read_futures) => {
+                    self.handle_read_result(bytes, index)
+                }
             }
+        } else if !download_futures.is_empty() {
+            let (result, index, _) = select_all(&mut download_futures).await;
+            self.handle_download_result(result, index)
+        } else if !read_futures.is_empty() {
+            let (result, index, _) = select_all(&mut read_futures).await;
+            self.handle_read_result(result, index)
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn handle_download_result(
+        &mut self,
+        result: Option<Result<DownloadProgress>>,
+        index: usize,
+    ) -> Result<Option<DownloadManagerEvent<D>>> {
+        match result {
+            Some(Ok(progress)) => Ok(self
+                .handle_progress(index, progress)
+                .map(DownloadManagerEvent::Update)),
             Some(Err(e)) => {
                 error!("Download error: {}", e);
                 self.downloads.swap_remove(index);
-                None
+                Err(e.into())
             }
             None => {
                 self.downloads.swap_remove(index);
-                None
+                Ok(None)
             }
         }
     }
 
+    fn handle_read_result(
+        &mut self,
+        result: Result<Bytes>,
+        index: usize,
+    ) -> Result<Option<DownloadManagerEvent<D>>> {
+        let downloader = self.reading.swap_remove(index);
+        let decoded = D::from_bytes(result?.as_ref())?;
+        Ok(Some(DownloadManagerEvent::Complete(DownloadComplete {
+            data: decoded,
+            from: downloader.from,
+            hash: downloader.hash,
+        })))
+    }
+
     fn handle_progress(
-        download: &mut Download,
+        &mut self,
+        index: usize,
         progress: DownloadProgress,
     ) -> Option<DownloadUpdate> {
+        let download = &mut self.downloads[index];
         match progress {
             DownloadProgress::InitialState(_) => None,
             DownloadProgress::FoundLocal { size, .. } => Some(DownloadUpdate {

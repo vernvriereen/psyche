@@ -150,7 +150,9 @@ impl App {
                 info!("[{from}]: step {step} blob ticket {blob_ticket}");
                 self.network.download(blob_ticket).await.unwrap();
             }
-            NetworkEvent::DownloadComplete((file, hash)) => {
+            NetworkEvent::DownloadComplete(result) => {
+                let hash = result.hash;
+                let file = result.data;
                 info!(
                     "Download complete: {hash}! step {}: {} bytes downloaded.",
                     file.step,
