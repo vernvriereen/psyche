@@ -7,7 +7,7 @@ use std::{collections::HashMap, mem::replace};
 pub struct BackendWatcher<T, B>
 where
     T: NodeIdentity,
-    B: Backend<T> + 'static,
+    B: Backend<T> + Send + 'static,
 {
     backend: B,
     client_lookup: HashMap<[u8; 32], Client<T>>,
@@ -17,7 +17,7 @@ where
 impl<T, B> BackendWatcher<T, B>
 where
     T: NodeIdentity,
-    B: Backend<T> + 'static,
+    B: Backend<T> + Send + 'static,
 {
     pub fn new(backend: B) -> Self {
         Self {
@@ -27,6 +27,11 @@ where
         }
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe. If `poll_next` is used as the event in a
+    /// [`tokio::select!`](crate::select) statement and some other branch
+    /// completes first, it is guaranteed that no state changes are missed.
     pub async fn poll_next(&mut self) -> Result<(Option<Coordinator<T>>, &Coordinator<T>)> {
         let new_state = self.backend.wait_for_new_state().await?;
         if new_state.run_state == RunState::Warmup {

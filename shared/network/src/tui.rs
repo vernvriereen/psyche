@@ -194,13 +194,13 @@ impl psyche_tui::CustomWidget for NetworkTui {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct UIDownloadProgress {
     downloaded: u64,
     total: u64,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct NetworkTUIStateInner {
     pub join_ticket: PeerList,
     pub last_seen: HashMap<PublicKey, Instant>,
@@ -213,7 +213,7 @@ pub struct NetworkTUIStateInner {
     pub upload_hashes: Vec<String>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct NetworkTUIState {
     pub inner: Option<NetworkTUIStateInner>,
 }

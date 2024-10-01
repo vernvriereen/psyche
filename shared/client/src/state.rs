@@ -196,7 +196,7 @@ impl<T: NodeIdentity> State<T> {
                 .insert(identity.clone(), broadcast.clone());
             // check if this is our broadcast -- if so don't download it (assume caller then calls handle_payload with data)
             if *identity != self.identity {
-                return p2p.download(broadcast.ticket).await;
+                return p2p.start_download(broadcast.ticket).await;
             }
         }
 

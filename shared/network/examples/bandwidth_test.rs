@@ -148,7 +148,7 @@ impl App {
             }
             NetworkEvent::MessageReceived((from, Message::DistroResult { step, blob_ticket })) => {
                 info!("[{from}]: step {step} blob ticket {blob_ticket}");
-                self.network.download(blob_ticket).await.unwrap();
+                self.network.start_download(blob_ticket).await.unwrap();
             }
             NetworkEvent::DownloadComplete(result) => {
                 let hash = result.hash;

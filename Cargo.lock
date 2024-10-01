@@ -4932,6 +4932,7 @@ dependencies = [
  "serde",
  "tch",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 

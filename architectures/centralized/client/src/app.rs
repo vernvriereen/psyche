@@ -112,7 +112,7 @@ impl App {
                     self.on_tick().await;
                 }
                 _ = self.update_tui_interval.tick() => {
-                    self.update_tui(client.network_tui_state()).await?;
+                    self.update_tui(client.network_tui_state().await).await?;
                 }
                 res = client.process() => {
                     res?;

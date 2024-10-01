@@ -1,4 +1,4 @@
-use std::{fmt::Debug, future::Future, marker::PhantomData, pin::Pin};
+use std::{borrow::BorrowMut, fmt::Debug, future::Future, marker::PhantomData, pin::Pin};
 
 use crate::util::convert_bytes;
 use anyhow::Result;
@@ -6,18 +6,16 @@ use bytes::Bytes;
 use futures_util::future::select_all;
 use iroh::base::ticket::BlobTicket;
 use iroh::blobs::get::db::DownloadProgress;
-use iroh::client::blobs::DownloadProgress as DownloadProgressStream;
 use iroh::net::key::PublicKey;
 use psyche_core::Networkable;
-use tokio::select;
-use tokio_stream::StreamExt;
+use tokio::{sync::mpsc, sync::oneshot};
 use tracing::{error, info, warn};
 
 #[derive(Debug)]
 pub struct Download {
     from: PublicKey,
     hash: iroh::blobs::Hash,
-    download: DownloadProgressStream,
+    download: mpsc::Receiver<Result<DownloadProgress>>,
     last_offset: u64,
     total_size: u64,
 }
@@ -25,7 +23,7 @@ pub struct Download {
 pub struct ReadingFinishedDownload {
     from: PublicKey,
     hash: iroh::blobs::Hash,
-    download: Pin<Box<dyn Future<Output = Result<Bytes>>>>,
+    download: oneshot::Receiver<Bytes>,
 }
 
 impl Debug for ReadingFinishedDownload {
@@ -39,7 +37,11 @@ impl Debug for ReadingFinishedDownload {
 }
 
 impl Download {
-    pub fn new(from: PublicKey, blob_ticket: BlobTicket, download: DownloadProgressStream) -> Self {
+    pub fn new(
+        from: PublicKey,
+        blob_ticket: BlobTicket,
+        download: mpsc::Receiver<Result<DownloadProgress>>,
+    ) -> Self {
         Self {
             from,
             hash: blob_ticket.hash(),
@@ -54,7 +56,7 @@ impl ReadingFinishedDownload {
     pub fn new(
         from: PublicKey,
         hash: iroh::blobs::Hash,
-        download: Pin<Box<dyn Future<Output = Result<Bytes>>>>,
+        download: oneshot::Receiver<Bytes>,
     ) -> Self {
         Self {
             download,
@@ -115,7 +117,7 @@ impl<D: Networkable> DownloadManager<D> {
         &mut self,
         from: PublicKey,
         blob_ticket: BlobTicket,
-        progress: DownloadProgressStream,
+        progress: mpsc::Receiver<Result<DownloadProgress>>,
     ) {
         self.downloads
             .push(Download::new(from, blob_ticket, progress));
@@ -125,7 +127,7 @@ impl<D: Networkable> DownloadManager<D> {
         &mut self,
         from: PublicKey,
         hash: iroh::blobs::Hash,
-        download: Pin<Box<dyn Future<Output = Result<Bytes>>>>,
+        download: oneshot::Receiver<Bytes>,
     ) {
         self.reading
             .push(ReadingFinishedDownload::new(from, hash, download));
@@ -137,35 +139,29 @@ impl<D: Networkable> DownloadManager<D> {
             return Ok(None);
         }
 
-        let mut download_futures: Vec<_> = self
-            .downloads
-            .iter_mut()
-            .map(|download| Box::pin(download.download.next()))
-            .collect();
+        enum FutureResult {
+            Download(usize, Option<Result<DownloadProgress>>),
+            Read(usize, Result<Bytes>),
+        }
 
-        let mut read_futures: Vec<_> = self
-            .reading
-            .iter_mut()
-            .map(|read| read.download.as_mut())
-            .collect();
+        let download_futures = self.downloads.iter_mut().enumerate().map(|(i, download)| {
+            Box::pin(async move { FutureResult::Download(i, download.download.recv().await) })
+                as Pin<Box<dyn Future<Output = FutureResult> + Send>>
+        });
 
-        if !download_futures.is_empty() && !read_futures.is_empty() {
-            select! {
-                (progress, index, _) = select_all(&mut download_futures) => {
-                    self.handle_download_result(progress, index)
-                }
-                (bytes, index, _) = select_all(&mut read_futures) => {
-                    self.handle_read_result(bytes, index)
-                }
-            }
-        } else if !download_futures.is_empty() {
-            let (result, index, _) = select_all(&mut download_futures).await;
-            self.handle_download_result(result, index)
-        } else if !read_futures.is_empty() {
-            let (result, index, _) = select_all(&mut read_futures).await;
-            self.handle_read_result(result, index)
-        } else {
-            Ok(None)
+        let read_futures = self.reading.iter_mut().enumerate().map(|(i, read)| {
+            Box::pin(async move {
+                FutureResult::Read(i, read.download.borrow_mut().await.map_err(|e| e.into()))
+            }) as Pin<Box<dyn Future<Output = FutureResult> + Send>>
+        });
+
+        let all_futures: Vec<Pin<Box<dyn Future<Output = FutureResult> + Send>>> =
+            download_futures.chain(read_futures).collect();
+
+        let result = select_all(all_futures).await.0;
+        match result {
+            FutureResult::Download(index, result) => self.handle_download_result(result, index),
+            FutureResult::Read(index, result) => self.handle_read_result(result, index),
         }
     }
 
