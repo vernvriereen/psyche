@@ -4928,6 +4928,7 @@ dependencies = [
  "psyche-data-provider",
  "psyche-modeling",
  "psyche-network",
+ "psyche-tui",
  "psyche-watcher",
  "serde",
  "tch",

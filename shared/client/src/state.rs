@@ -1,5 +1,6 @@
 use crate::{
     trainer::{TrainOutput, Trainer},
+    tui::ClientTUIState,
     BroadcastMessage, Payload,
 };
 use anyhow::{bail, Error, Result};
@@ -43,6 +44,7 @@ pub struct State<T: NodeIdentity> {
     payloads: HashMap<psyche_network::Hash, PayloadState<T>>,
     blooms: Option<(Bloom<[u8; 32]>, Bloom<[u8; 32]>)>,
     notify: Notify,
+    losses: Vec<f32>,
 }
 
 impl<T: NodeIdentity> State<T> {
@@ -63,6 +65,7 @@ impl<T: NodeIdentity> State<T> {
             committments: HashMap::new(),
             payloads: HashMap::new(),
             notify: Notify::new(),
+            losses: Vec::new(),
         }
     }
 
@@ -433,5 +436,20 @@ impl<T: NodeIdentity> State<T> {
         };
         let (data, model) = tokio::join!(data_future, model_future);
         Ok((data?, model??))
+    }
+}
+
+impl<T: NodeIdentity> From<&State<T>> for ClientTUIState {
+    fn from(value: &State<T>) -> Self {
+        let coordinator = value.state.as_ref();
+        let round = coordinator.and_then(|x| x.current_round().ok());
+        let committee = value.committee_info.as_ref().map(|x| x.0.committee);
+        ClientTUIState {
+            step: coordinator.map(|x| x.step).unwrap_or_default(),
+            height: round.map(|x| x.height).unwrap_or_default(),
+            committee,
+            run_state: coordinator.map(|x| x.run_state).unwrap_or_default(),
+            loss: value.losses.clone(),
+        }
     }
 }

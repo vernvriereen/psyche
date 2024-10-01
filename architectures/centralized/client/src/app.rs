@@ -1,6 +1,6 @@
 use anyhow::{Error, Result};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
-use psyche_client::{Client, NC};
+use psyche_client::{Client, ClientTUI, ClientTUIState, NC};
 use psyche_coordinator::{Coordinator, Witness};
 use psyche_network::{NetworkTUIState, NetworkTui, SecretKey, TcpClient};
 use psyche_tui::logging::LoggerWidget;
@@ -11,8 +11,8 @@ use tokio::{select, sync::mpsc, time::Interval};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-pub(super) type Tabs = TabbedWidget<(CoordinatorTui, NetworkTui, LoggerWidget)>;
-pub(super) const TAB_NAMES: [&str; 3] = ["Coordinator", "Network", "Logger"];
+pub(super) type Tabs = TabbedWidget<(ClientTUI, CoordinatorTui, NetworkTui, LoggerWidget)>;
+pub(super) const TAB_NAMES: [&str; 4] = ["Client", "Coordinator", "Network", "Logger"];
 type TabsData = <Tabs as CustomWidget>::Data;
 
 struct Backend {
@@ -86,7 +86,7 @@ impl App {
                     break;
                 }
                 _ = self.update_tui_interval.tick() => {
-                    self.update_tui(NetworkTUIState::default()).await?;
+                    self.update_tui(Default::default(), Default::default()).await?;
                 }
             }
         }
@@ -112,7 +112,8 @@ impl App {
                     self.on_tick().await;
                 }
                 _ = self.update_tui_interval.tick() => {
-                    self.update_tui(client.network_tui_state().await).await?;
+                    let (client_tui_state, network_tui_state) = client.tui_states().await;
+                    self.update_tui(client_tui_state, network_tui_state).await?;
                 }
                 res = client.process() => {
                     res?;
@@ -125,9 +126,14 @@ impl App {
         Ok(())
     }
 
-    async fn update_tui(&mut self, network_tui_state: NetworkTUIState) -> Result<()> {
+    async fn update_tui(
+        &mut self,
+        client_tui_state: ClientTUIState,
+        network_tui_state: NetworkTUIState,
+    ) -> Result<()> {
         if let Some(tx_tui_state) = &self.tx_tui_state {
             let states = (
+                client_tui_state,
                 (&self.coordinator_state).into(),
                 network_tui_state,
                 Default::default(),

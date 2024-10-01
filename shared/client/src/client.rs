@@ -1,44 +1,58 @@
-use crate::{protocol::NE, state::State, BroadcastMessage, Payload, NC};
+use crate::{protocol::NE, state::State, BroadcastMessage, ClientTUIState, Payload, NC};
 use anyhow::Result;
 use psyche_coordinator::Coordinator;
 use psyche_core::NodeIdentity;
 use psyche_network::{BlobTicket, NetworkTUIState};
 use psyche_watcher::{Backend, BackendWatcher};
-use std::{borrow::BorrowMut, marker::PhantomData};
+use std::{borrow::BorrowMut, marker::PhantomData, sync::Arc};
 use tokio::{
     select,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::{
+        watch::{self, Receiver},
+        Notify,
+    },
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 
+pub type TUIStates = (ClientTUIState, NetworkTUIState);
+
 pub struct Client<T: NodeIdentity, B: Backend<T> + 'static> {
-    rx: Receiver<NetworkTUIState>,
-    req_network_state: Sender<()>,
+    rx: Receiver<TUIStates>,
+    req_tui_state: Arc<Notify>,
     cancel: CancellationToken,
     join: JoinHandle<Result<()>>,
     _t: PhantomData<(T, B)>,
-    tui_state: NetworkTUIState,
 }
 
 impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
     pub fn new(backend: B, mut p2p: NC, identity: T, private_key: T::PrivateKey) -> Self {
         let cancel = CancellationToken::new();
-        let (tx, rx) = mpsc::channel::<NetworkTUIState>(10);
-        let (req_network_state, mut got_req_network_state) = mpsc::channel(10);
+        let (tx, rx) = watch::channel::<TUIStates>(Default::default());
+        let req_tui_state = Arc::new(Notify::new());
 
         let join = tokio::spawn({
             let cancel = cancel.clone();
+            let req_tui_state = req_tui_state.clone();
             async move {
                 let mut watcher = BackendWatcher::new(backend);
                 let mut state = State::new(identity, private_key);
                 let mut prev_ticket: Option<BlobTicket> = None;
 
                 loop {
-                    let step_result = select! {
+                    let step_result: Option<
+                        std::result::Result<
+                            (Option<Coordinator<T>>, Coordinator<T>),
+                            anyhow::Error,
+                        >,
+                    > = select! {
                         _ = cancel.cancelled() => break,
-                        Some(()) = got_req_network_state.recv() => Self::handle_network_state_request(&p2p, &tx).await.map(|_| None ),
+                        _ = req_tui_state.notified() => {
+                            let network_tui_state = (&p2p).into();
+                            let client_tui_state = (&state).into();
+                            tx.send((client_tui_state, network_tui_state)).map_err(|e| e.into()).map(|_| None)
+                        },
                         res = watcher.borrow_mut().poll_next() => Ok(Some(res.map(|(c,cn)| (c, cn.clone())))),
                         res = p2p.poll_next() => Self::handle_p2p_poll(&mut state, &watcher, &mut p2p, res).await.map(|_| None),
                         res = state.poll_next() => Self::handle_state_poll(&mut state, &mut p2p, &mut prev_ticket, res).await.map(|_| None),
@@ -56,15 +70,10 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         Self {
             _t: Default::default(),
             cancel,
-            req_network_state,
+            req_tui_state,
             rx,
-            tui_state: Default::default(),
             join,
         }
-    }
-
-    async fn handle_network_state_request(p2p: &NC, tx: &Sender<NetworkTUIState>) -> Result<()> {
-        tx.send(p2p.into()).await.map_err(|e| e.into())
     }
 
     async fn handle_watcher_poll(
@@ -128,9 +137,6 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
 
     pub async fn process(&mut self) -> Result<()> {
         select! {
-            Some(tui_state) = self.rx.recv() => {
-                self.tui_state = tui_state;
-            },
             res = &mut self.join => if let Err(err) = res? {
                 error!("Client ending with error: {err}");
                 return Err(err);
@@ -143,8 +149,8 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         self.cancel.cancel();
     }
 
-    pub async fn network_tui_state(&self) -> NetworkTUIState {
-        let _ = self.req_network_state.send(()).await;
-        self.tui_state.clone()
+    pub async fn tui_states(&self) -> TUIStates {
+        let _ = self.req_tui_state.notify_one();
+        self.rx.borrow().clone()
     }
 }
