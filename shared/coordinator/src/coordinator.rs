@@ -38,6 +38,7 @@ pub struct Round {
     pub tie_breaker_tasks: u32,
     pub data_index: u64,
     pub random_seed: u64,
+    pub witnesses: Vec<Witness>,
 }
 
 #[derive_serialize]
@@ -54,6 +55,7 @@ pub enum CoordinatorError {
     NoActiveRound,
     InvalidWitness,
     InvalidRunState,
+    DuplicateWitness,
 }
 
 #[derive_serialize]
@@ -142,6 +144,7 @@ impl std::fmt::Display for CoordinatorError {
             CoordinatorError::NoActiveRound => write!(f, "No active round"),
             CoordinatorError::InvalidWitness => write!(f, "Invalid witness"),
             CoordinatorError::InvalidRunState => write!(f, "Invalid run state"),
+            CoordinatorError::DuplicateWitness => write!(f, "Duplicate witness"),
         }
     }
 }
@@ -178,17 +181,33 @@ impl<T: NodeIdentity> Coordinator<T> {
         if self.run_state != RunState::RoundWitness {
             return Err(CoordinatorError::InvalidRunState);
         }
-        // TODO: record bloom filters
-        // TODO: check for quorum of witnesses
-        self.change_state(unix_timestamp, RunState::RoundApply);
+
+        for witness in &self.current_round_unchecked().witnesses {
+            if self.clients[witness.index as usize] == *from {
+                return Err(CoordinatorError::DuplicateWitness);
+            }
+        }
+        let round = self.current_round_mut_unchecked();
+        round.witnesses.push(witness);
+        if round.witnesses.len() >= self.witness_nodes as usize {
+            self.change_state(unix_timestamp, RunState::RoundApply);
+        }
         Ok(())
     }
 
     pub fn current_round(&self) -> Result<&Round, CoordinatorError> {
         match self.active() {
-            true => Ok(&self.rounds[self.rounds_head as usize]),
+            true => Ok(self.current_round_unchecked()),
             false => Err(CoordinatorError::NoActiveRound),
         }
+    }
+
+    fn current_round_unchecked(&self) -> &Round {
+        &self.rounds[self.rounds_head as usize]
+    }
+
+    fn current_round_mut_unchecked(&mut self) -> &mut Round {
+        &mut self.rounds[self.rounds_head as usize]
     }
 
     pub fn previous_round(&self) -> Result<Option<&Round>, CoordinatorError> {
@@ -307,6 +326,7 @@ impl Round {
             tie_breaker_tasks: 0,
             data_index: 0,
             random_seed: 0,
+            witnesses: Vec::new(),
         }
     }
 }

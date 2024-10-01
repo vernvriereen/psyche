@@ -45,7 +45,7 @@ where
         &self.backend
     }
 
-    pub fn mut_backend(&mut self) -> &mut B {
+    pub fn backend_mut(&mut self) -> &mut B {
         &mut self.backend
     }
 

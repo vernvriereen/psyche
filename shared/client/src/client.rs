@@ -62,7 +62,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
             self.state.handle_payload(hash, payload)?;
         }
         if let Some(witness) = witness_send {
-            self.watcher.mut_backend().send_witness(witness).await?;
+            self.watcher.backend_mut().send_witness(witness).await?;
         }
         Ok(())
     }

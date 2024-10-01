@@ -351,14 +351,16 @@ impl<T: NodeIdentity> State<T> {
     async fn round_witness(&mut self, index: u64) -> Result<Option<Witness>> {
         if let Some((_, witness_proof, _)) = self.committee_info.as_ref() {
             if witness_proof.witness {
-                let (commit_bloom, payload_bloom) =
-                    std::mem::take(&mut self.blooms).expect("We are a witness but no blooms");
-                return Ok(Some(Witness {
-                    index,
-                    proof: witness_proof.clone(),
-                    commit_bloom,
-                    payload_bloom,
-                }));
+                let blooms = std::mem::take(&mut self.blooms);
+                if let Some((commit_bloom, payload_bloom)) = blooms {
+                    info!("Submitting witness blooms");
+                    return Ok(Some(Witness {
+                        index,
+                        proof: witness_proof.clone(),
+                        commit_bloom,
+                        payload_bloom,
+                    }));
+                }
             }
         }
         Ok(None)
