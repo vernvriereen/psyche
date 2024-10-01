@@ -45,6 +45,10 @@ where
         &self.backend
     }
 
+    pub fn mut_backend(&mut self) -> &mut B {
+        &mut self.backend
+    }
+
     pub fn get_client_for_p2p_public_key(&self, p2p_public_key: &[u8; 32]) -> Option<&Client<T>> {
         self.client_lookup.get(p2p_public_key)
     }

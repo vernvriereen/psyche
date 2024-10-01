@@ -9,6 +9,9 @@ mod traits;
 pub use committee_selection::{
     Committee, CommitteeProof, CommitteeSelection, WitnessProof, COMMITTEE_SALT, WITNESS_SALT,
 };
-pub use coordinator::{Client, Coordinator, CoordinatorError, Round, RunState, Witness};
+pub use coordinator::{
+    Client, Coordinator, CoordinatorError, Round, RunState, Witness, BLOOM_FALSE_RATE,
+    BLOOM_MAX_BITS,
+};
 pub use data_selection::select_data_for_state;
 pub use traits::Backend;

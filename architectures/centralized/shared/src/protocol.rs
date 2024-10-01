@@ -55,9 +55,9 @@ impl AsRef<[u8]> for ClientId {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum ClientToServerMessage<T: NodeIdentity> {
+pub enum ClientToServerMessage {
     Join { run_id: String },
-    Witness(Witness<T>),
+    Witness(Witness),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

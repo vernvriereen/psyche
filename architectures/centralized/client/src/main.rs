@@ -67,7 +67,7 @@ async fn main() -> Result<()> {
     };
 
     let server_conn =
-        TcpClient::<ClientId, ClientToServerMessage<ClientId>, ServerToClientMessage>::connect(
+        TcpClient::<ClientId, ClientToServerMessage, ServerToClientMessage>::connect(
             &args.server_addr,
             secret_key.public().into(),
             secret_key.clone(),

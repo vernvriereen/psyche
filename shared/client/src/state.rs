@@ -5,24 +5,24 @@ use crate::{
 use anyhow::{bail, Error, Result};
 use psyche_coordinator::{
     model, select_data_for_state, Committee, CommitteeProof, CommitteeSelection, Coordinator,
-    RunState, WitnessProof,
+    RunState, Witness, WitnessProof, BLOOM_FALSE_RATE, BLOOM_MAX_BITS,
 };
-use psyche_core::NodeIdentity;
+use psyche_core::{sha256, Bloom, NodeIdentity};
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpClient, TokenizedDataProvider,
 };
 use psyche_modeling::LlamaForCausalLM;
-use psyche_network::NetworkEvent;
+use psyche_network::{dummy_blob_ticket, NetworkEvent};
 use psyche_watcher::{Backend, BackendWatcher};
 use std::collections::HashMap;
 use tch::Kind;
 use tokio::{sync::Notify, task::JoinHandle};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 type TaskResult<T> = Option<JoinHandle<Result<T>>>;
 
 pub struct State<T: NodeIdentity> {
-    identity: T,
+    pub identity: T,
     private_key: T::PrivateKey,
     showed_inclusion_message: bool,
     data_and_model_load: TaskResult<(DataProviderTcpClient<T>, LlamaForCausalLM)>,
@@ -33,7 +33,9 @@ pub struct State<T: NodeIdentity> {
     committee_info: Option<(CommitteeProof, WitnessProof, CommitteeSelection)>,
     state: Option<Coordinator<T>>,
     prev_state: Option<Coordinator<T>>,
-    _payloads: HashMap<T, Payload>,
+    committments: HashMap<T, BroadcastMessage>,
+    payloads: HashMap<psyche_network::Hash, Payload>,
+    blooms: Option<(Bloom<[u8; 32]>, Bloom<[u8; 32]>)>,
     notify: Notify,
 }
 
@@ -51,7 +53,9 @@ impl<T: NodeIdentity> State<T> {
             committee_info: None,
             state: None,
             prev_state: None,
-            _payloads: HashMap::new(),
+            blooms: None,
+            committments: HashMap::new(),
+            payloads: HashMap::new(),
             notify: Notify::new(),
         }
     }
@@ -60,7 +64,7 @@ impl<T: NodeIdentity> State<T> {
         &mut self,
         state: &Coordinator<T>,
         prev_state: Option<Coordinator<T>>,
-    ) -> Result<()> {
+    ) -> Result<Option<Witness>> {
         self.state = Some(state.clone());
         self.prev_state = prev_state;
         let position = match state.clients.iter().position(|x| x.id == self.identity) {
@@ -70,20 +74,22 @@ impl<T: NodeIdentity> State<T> {
                     info!("Awaiting inclusion in round");
                     self.showed_inclusion_message = true;
                 }
-                return Ok(());
+                return Ok(None);
             }
         };
         match state.run_state {
             RunState::WaitingForMembers => {}
             RunState::Warmup => self.warmup().await,
-            RunState::RoundTrain => self.round_start(position).await?,
-            RunState::RoundWitness => {}
+            RunState::RoundTrain => self.round_train(position).await?,
+            RunState::RoundWitness => {
+                return self.round_witness(position).await;
+            }
             RunState::RoundApply => {}
         }
-        Ok(())
+        Ok(None)
     }
 
-    pub async fn poll_next(&mut self) -> Result<Option<(CommitteeProof, Payload)>> {
+    pub async fn poll_next(&mut self) -> Result<Option<(BroadcastMessage, Payload)>> {
         if let Some(fetching_data) = &mut self.fetching_data {
             let state = self
                 .state
@@ -108,12 +114,16 @@ impl<T: NodeIdentity> State<T> {
                 .as_ref()
                 .expect("Training complete but no self proofs");
             // TODO DISTRO
-            return Ok(Some((
-                *committee_proof,
-                Payload {
-                    step: output.step as u64,
-                },
-            )));
+            let committment = sha256(self.identity.as_ref());
+            let step = output.step as u64;
+            let broadcast = BroadcastMessage {
+                step,
+                committment,
+                ticket: dummy_blob_ticket(),
+                proof: *committee_proof,
+            };
+            let payload = Payload { step };
+            return Ok(Some((broadcast, payload)));
         } else {
             self.notify.notified().await;
         }
@@ -140,29 +150,82 @@ impl<T: NodeIdentity> State<T> {
                                     &message.proof,
                                     &state.clients,
                                 ) {
-                                    let (committee_proof, _, _) = self
-                                        .committee_info
-                                        .as_ref()
-                                        .expect("Broadcast message processor has no self proofs");
-                                    if committee_proof.committee == Committee::Trainer {
-                                        // verified by process_network_event caller
-                                        if message.proof.committee == Committee::Trainer {
-                                            // start download
-                                            p2p.download(message.ticket).await?;
-                                        }
-                                    }
+                                    return self.handle_broadcast(&client.id, message, p2p).await;
                                 }
                             }
                         }
                     }
                 }
             }
-            NetworkEvent::DownloadComplete(_) => todo!(),
+            NetworkEvent::DownloadComplete(downloaded) => {
+                if let Some(state) = &self.state {
+                    if state.step == downloaded.data.step as u32 {
+                        return self.handle_payload(downloaded.hash, downloaded.data);
+                    }
+                }
+            }
         }
         Ok(())
     }
 
-    fn _handle_payload(&mut self, _payload: &Payload) {}
+    pub(crate) async fn handle_broadcast(
+        &mut self,
+        identity: &T,
+        broadcast: BroadcastMessage,
+        p2p: &mut NC,
+    ) -> Result<()> {
+        let (_, witness_proof, _) = self
+            .committee_info
+            .as_ref()
+            .expect("Broadcast message processor has no self proofs");
+        // verified by process_network_event caller
+        if broadcast.proof.committee == Committee::Trainer {
+            if self.committments.contains_key(&identity) {
+                debug!("Got duplicated committment from {}", identity);
+                return Ok(());
+            }
+
+            if witness_proof.witness {
+                let (commit_bloom, _) = self
+                    .blooms
+                    .as_mut()
+                    .expect("We are a witness but no blooms");
+                commit_bloom.add(&broadcast.committment);
+            }
+            self.committments
+                .insert(identity.clone(), broadcast.clone());
+            // check if this is our broadcast -- if so don't download it (assume caller then calls handle_payload with data)
+            if *identity != self.identity {
+                return p2p.download(broadcast.ticket).await;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn handle_payload(
+        &mut self,
+        hash: psyche_network::Hash,
+        payload: Payload,
+    ) -> Result<()> {
+        if self.payloads.contains_key(&hash) {
+            debug!("Duplicate download of {}", hash);
+            return Ok(());
+        }
+        let (_, witness_proof, _) = self
+            .committee_info
+            .as_ref()
+            .expect("Payload message processor has no self proofs");
+        if witness_proof.witness {
+            let (_, payload_bloom) = self
+                .blooms
+                .as_mut()
+                .expect("We are a witness but no blooms");
+            payload_bloom.add(hash.as_bytes());
+        }
+        self.payloads.insert(hash, payload);
+        Ok(())
+    }
 
     async fn warmup(&mut self) {
         let state = self.state.as_ref().expect("No state in warmup");
@@ -188,9 +251,11 @@ impl<T: NodeIdentity> State<T> {
         }
     }
 
-    async fn round_start(&mut self, index: u64) -> Result<()> {
+    async fn round_train(&mut self, index: u64) -> Result<()> {
         let state = self.state.as_ref().expect("No state in round start");
         assert_eq!(state.run_state, RunState::RoundTrain);
+
+        // if all our states are empty (first execution), wait for the data provider and model load to finish
         if self.trainer.is_none() && self.training.is_none() && self.data_provider.is_none() {
             let data_and_model_load = std::mem::take(&mut self.data_and_model_load).ok_or(
                 Error::msg("Round started but no model load was running. Did we miss warmup?"),
@@ -212,6 +277,8 @@ impl<T: NodeIdentity> State<T> {
             let _llm = llm.clone();
             self.trainer = Some(Trainer::new(model, llm.lr_schedule.into(), llm.optimizer));
         }
+
+        // check if this is a state transition
         if self
             .prev_state
             .as_ref()
@@ -221,6 +288,9 @@ impl<T: NodeIdentity> State<T> {
         {
             return Ok(());
         }
+
+        // transition to RoundTrain -- round start time!
+
         if self.fetching_data.is_some() {
             bail!("Ready to train but previous data fetch still running");
         }
@@ -250,7 +320,19 @@ impl<T: NodeIdentity> State<T> {
             "Assignment for step {} (round {}/epoch {}): committee={} witness={}",
             state.step, round.height, state.epoch, committee_proof.committee, witness_proof.witness
         );
+        if witness_proof.witness {
+            let commit_bloom = Bloom::random(state.clients.len(), BLOOM_FALSE_RATE, BLOOM_MAX_BITS);
+            let payload_bloom =
+                Bloom::random(state.clients.len(), BLOOM_FALSE_RATE, BLOOM_MAX_BITS);
+            info!(
+                "Witness bloom size: {} bits, {} keys",
+                commit_bloom.bits.len(),
+                commit_bloom.keys.len()
+            );
+            self.blooms = Some((commit_bloom, payload_bloom));
+        }
         self.committee_info = Some((committee_proof, witness_proof, committee_selection));
+        self.payloads = HashMap::new();
 
         if !data_ids.is_empty() {
             let data_provider = std::mem::take(&mut self.data_provider)
@@ -264,6 +346,22 @@ impl<T: NodeIdentity> State<T> {
             );
         }
         Ok(())
+    }
+
+    async fn round_witness(&mut self, index: u64) -> Result<Option<Witness>> {
+        if let Some((_, witness_proof, _)) = self.committee_info.as_ref() {
+            if witness_proof.witness {
+                let (commit_bloom, payload_bloom) =
+                    std::mem::take(&mut self.blooms).expect("We are a witness but no blooms");
+                return Ok(Some(Witness {
+                    index,
+                    proof: witness_proof.clone(),
+                    commit_bloom,
+                    payload_bloom,
+                }));
+            }
+        }
+        Ok(None)
     }
 
     async fn fetch_data(

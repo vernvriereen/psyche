@@ -22,7 +22,7 @@ impl<T: NodeIdentity> WatcherBackend<T> for DummyBackend<T> {
         Ok(Coordinator::default())
     }
     
-    async fn send_witness(&mut self, _witness: Witness<T>) -> Result<()> {
+    async fn send_witness(&mut self, _witness: Witness) -> Result<()> {
         assert!(false, "Data provider does not send witnesses");
         Ok(())
     }

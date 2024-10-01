@@ -17,7 +17,7 @@ type TabsData = <Tabs as CustomWidget>::Data;
 
 struct Backend {
     rx: mpsc::Receiver<Coordinator<ClientId>>,
-    tx: mpsc::Sender<Witness<ClientId>>,
+    tx: mpsc::Sender<Witness>,
 }
 
 #[async_trait::async_trait]
@@ -29,7 +29,7 @@ impl WatcherBackend<ClientId> for Backend {
             .ok_or(Error::msg("watcher backend rx channel closed"))
     }
 
-    async fn send_witness(&mut self, witness: Witness<ClientId>) -> Result<()> {
+    async fn send_witness(&mut self, witness: Witness) -> Result<()> {
         self.tx.send(witness).await?;
         Ok(())
     }
@@ -42,7 +42,7 @@ pub struct App {
     tick_interval: Interval,
     update_tui_interval: Interval,
     coordinator_state: Coordinator<ClientId>,
-    server_conn: TcpClient<ClientId, ClientToServerMessage<ClientId>, ServerToClientMessage>,
+    server_conn: TcpClient<ClientId, ClientToServerMessage, ServerToClientMessage>,
     run_id: String,
 }
 
@@ -50,7 +50,7 @@ impl App {
     pub fn new(
         cancel: CancellationToken,
         secret_key: SecretKey,
-        server_conn: TcpClient<ClientId, ClientToServerMessage<ClientId>, ServerToClientMessage>,
+        server_conn: TcpClient<ClientId, ClientToServerMessage, ServerToClientMessage>,
         tx_tui_state: Option<Sender<TabsData>>,
         tick_interval: Interval,
         update_tui_interval: Interval,

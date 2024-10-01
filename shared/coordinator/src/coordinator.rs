@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 #[allow(dead_code)]
 const MAX_STRING_LEN: usize = 64;
 
+pub const BLOOM_FALSE_RATE: f64 = 0.01f64;
+pub const BLOOM_MAX_BITS: usize = 1024 * 8;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 #[derive_serialize]
 pub enum RunState {
@@ -39,11 +42,11 @@ pub struct Round {
 
 #[derive_serialize]
 #[derive(Clone, Debug)]
-pub struct Witness<T: NodeIdentity> {
+pub struct Witness {
     pub index: u64,
     pub proof: WitnessProof,
-    pub commit_bloom: Bloom<T>,
-    pub payload_bloom: Bloom<T>,
+    pub commit_bloom: Bloom<[u8; 32]>,
+    pub payload_bloom: Bloom<[u8; 32]>,
 }
 
 #[derive(Clone, Debug)]
@@ -159,7 +162,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     pub fn witness(
         &mut self,
         from: &Client<T>,
-        witness: Witness<T>,
+        witness: Witness,
         unix_timestamp: u64,
     ) -> Result<(), CoordinatorError> {
         if !CommitteeSelection::from_coordinator(&self)?.verify_witness_for_client(

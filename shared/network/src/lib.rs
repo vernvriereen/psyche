@@ -2,6 +2,7 @@ use anyhow::{Error, Result};
 use download_manager::{DownloadComplete, DownloadManager, DownloadManagerEvent, DownloadUpdate};
 use futures_util::{future::join_all, Sink, SinkExt, Stream, StreamExt};
 use iroh::{
+    blobs::BlobFormat,
     gossip::net::{Command, Event, GossipEvent},
     net::NodeAddr,
     node::{MemNode, Node},
@@ -312,4 +313,13 @@ async fn on_update_stats(node: &MemNode, stats: &mut State) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn dummy_blob_ticket() -> BlobTicket {
+    BlobTicket::new(
+        NodeAddr::new(PublicKey::from_bytes(&Default::default()).unwrap()),
+        Hash::EMPTY,
+        BlobFormat::Raw,
+    )
+    .unwrap()
 }
