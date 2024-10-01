@@ -135,7 +135,7 @@ impl<D: Networkable> DownloadManager<D> {
 
     // TODO error handling for failed downloads - bad decode, etc.
     pub async fn poll_next(&mut self) -> Result<Option<DownloadManagerEvent<D>>> {
-        if self.downloads.is_empty() && self.reading.is_empty() {
+        if self.is_empty() {
             return Ok(None);
         }
 
@@ -163,6 +163,10 @@ impl<D: Networkable> DownloadManager<D> {
             FutureResult::Download(index, result) => self.handle_download_result(result, index),
             FutureResult::Read(index, result) => self.handle_read_result(result, index),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.downloads.is_empty() && self.reading.is_empty()
     }
 
     fn handle_download_result(

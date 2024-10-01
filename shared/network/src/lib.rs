@@ -226,7 +226,7 @@ where
                     return Ok(Some(NetworkEvent::MessageReceived(result)));
                 }
             }
-            update = self.download_manager.poll_next() => {
+            update = self.download_manager.poll_next(), if !self.download_manager.is_empty() => {
                 let update = if let Some(update) = update? {
                     update
                 } else {

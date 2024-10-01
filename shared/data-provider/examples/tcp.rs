@@ -10,7 +10,7 @@ use psyche_watcher::Backend as WatcherBackend;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
-use tracing::info;
+use tracing::{info, Level};
 
 // Simulated backend for demonstration
 #[allow(dead_code)]
@@ -21,7 +21,7 @@ impl<T: NodeIdentity> WatcherBackend<T> for DummyBackend<T> {
     async fn wait_for_new_state(&mut self) -> Result<Coordinator<T>> {
         Ok(Coordinator::default())
     }
-    
+
     async fn send_witness(&mut self, _witness: Witness) -> Result<()> {
         assert!(false, "Data provider does not send witnesses");
         Ok(())
@@ -76,7 +76,7 @@ impl TokenizedDataProvider for DummyDataProvider {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init_logging(psyche_tui::LogOutput::Console);
+    init_logging(psyche_tui::LogOutput::Console, Level::INFO);
 
     let clients: Vec<_> = (0..4).map(DummyNodeIdentity).collect();
     let backend = DummyBackend(clients.clone());

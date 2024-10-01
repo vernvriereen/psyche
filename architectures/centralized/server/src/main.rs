@@ -3,7 +3,7 @@ use app::App;
 use clap::{ArgAction, Parser};
 use psyche_coordinator::Coordinator;
 use psyche_tui::LogOutput;
-use tracing::info;
+use tracing::{info, Level};
 
 mod app;
 mod dashboard;
@@ -41,11 +41,14 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    psyche_tui::init_logging(if args.tui {
-        LogOutput::TUI
-    } else {
-        LogOutput::Console
-    });
+    psyche_tui::init_logging(
+        if args.tui {
+            LogOutput::TUI
+        } else {
+            LogOutput::Console
+        },
+        Level::INFO,
+    );
 
     let coordinator = match args.state {
         Some(state_path) => toml::from_str(std::str::from_utf8(&std::fs::read(state_path)?)?)?,

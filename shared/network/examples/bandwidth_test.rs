@@ -27,7 +27,7 @@ use tokio::{
     time::{interval, interval_at, Interval},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{error, info, warn, Level};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -206,11 +206,14 @@ impl App {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    psyche_tui::init_logging(if args.tui {
-        LogOutput::TUI
-    } else {
-        LogOutput::Console
-    });
+    psyche_tui::init_logging(
+        if args.tui {
+            LogOutput::TUI
+        } else {
+            LogOutput::Console
+        },
+        Level::INFO,
+    );
 
     let PeerList(peers) = args
         .peer_list

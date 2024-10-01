@@ -16,13 +16,13 @@ pub enum LogOutput {
     // todo add a file logger ?
 }
 
-pub fn init_logging(output: LogOutput) {
+pub fn init_logging(output: LogOutput, level: Level) {
     match output {
         LogOutput::TUI => {
             let subscriber = tracing_subscriber::registry()
                 .with(
                     EnvFilter::builder()
-                        .with_default_directive(Level::INFO.into())
+                        .with_default_directive(level.into())
                         .from_env_lossy(),
                 )
                 .with(tui_logger::tracing_subscriber_layer());
@@ -34,7 +34,7 @@ pub fn init_logging(output: LogOutput) {
             let subscriber = tracing_subscriber::registry()
                 .with(
                     EnvFilter::builder()
-                        .with_default_directive(Level::INFO.into())
+                        .with_default_directive(level.into())
                         .from_env_lossy(),
                 )
                 .with(fmt::layer().with_writer(std::io::stdout));

@@ -1,5 +1,5 @@
 use crate::{protocol::NE, state::State, BroadcastMessage, Payload, NC};
-use anyhow::{Error, Result};
+use anyhow::Result;
 use psyche_coordinator::Coordinator;
 use psyche_core::NodeIdentity;
 use psyche_network::{BlobTicket, NetworkTUIState};
@@ -8,30 +8,27 @@ use std::{borrow::BorrowMut, marker::PhantomData};
 use tokio::{
     select,
     sync::mpsc::{self, Receiver, Sender},
+    task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 
 pub struct Client<T: NodeIdentity, B: Backend<T> + 'static> {
-    rx: Receiver<Message>,
+    rx: Receiver<NetworkTUIState>,
     req_network_state: Sender<()>,
     cancel: CancellationToken,
+    join: JoinHandle<Result<()>>,
     _t: PhantomData<(T, B)>,
     tui_state: NetworkTUIState,
-}
-
-enum Message {
-    Error(Error),
-    NetworkTUIState(NetworkTUIState),
 }
 
 impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
     pub fn new(backend: B, mut p2p: NC, identity: T, private_key: T::PrivateKey) -> Self {
         let cancel = CancellationToken::new();
-        let (tx, rx) = mpsc::channel::<Message>(10);
+        let (tx, rx) = mpsc::channel::<NetworkTUIState>(10);
         let (req_network_state, mut got_req_network_state) = mpsc::channel(10);
 
-        tokio::spawn({
+        let join = tokio::spawn({
             let cancel = cancel.clone();
             async move {
                 let mut watcher = BackendWatcher::new(backend);
@@ -45,29 +42,14 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                         res = watcher.borrow_mut().poll_next() => Ok(Some(res.map(|(c,cn)| (c, cn.clone())))),
                         res = p2p.poll_next() => Self::handle_p2p_poll(&mut state, &watcher, &mut p2p, res).await.map(|_| None),
                         res = state.poll_next() => Self::handle_state_poll(&mut state, &mut p2p, &mut prev_ticket, res).await.map(|_| None),
-                    };
+                    }?;
 
-                    let err_to_send = match step_result {
-                        Err(e) => Some(e),
-                        Ok(Some(watcher_res)) => {
-                            if let Err(e) =
-                                Self::handle_watcher_poll(&mut state, &mut watcher, watcher_res)
-                                    .await
-                            {
-                                Some(e)
-                            } else {
-                                None
-                            }
-                        }
-                        Ok(None) => None,
-                    };
-
-                    if let Some(err) = err_to_send {
-                        if let Err(e) = tx.send(Message::Error(err)).await {
-                            error!("Failed to send error: {e}");
-                        }
+                    if let Some(watcher_res) = step_result {
+                        Self::handle_watcher_poll(&mut state, &mut watcher, watcher_res).await?;
                     }
                 }
+
+                Ok(())
             }
         });
 
@@ -77,13 +59,12 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
             req_network_state,
             rx,
             tui_state: Default::default(),
+            join,
         }
     }
 
-    async fn handle_network_state_request(p2p: &NC, tx: &Sender<Message>) -> Result<()> {
-        tx.send(Message::NetworkTUIState(p2p.into()))
-            .await
-            .map_err(|e| e.into())
+    async fn handle_network_state_request(p2p: &NC, tx: &Sender<NetworkTUIState>) -> Result<()> {
+        tx.send(p2p.into()).await.map_err(|e| e.into())
     }
 
     async fn handle_watcher_poll(
@@ -107,7 +88,10 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         res: Result<Option<NE>>,
     ) -> Result<()> {
         match res {
-            Ok(Some(event)) => state.process_network_event(event, watcher, p2p).await,
+            Ok(Some(event)) => match state.process_network_event(event, watcher)? {
+                Some(download) => p2p.start_download(download).await,
+                None => Ok(()),
+            },
             Err(err) => Err(err),
             _ => Ok(()),
         }
@@ -134,7 +118,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
 
                 let identity = state.identity.clone();
                 let hash = broadcast.ticket.hash();
-                state.handle_broadcast(&identity, broadcast, p2p).await?;
+                state.handle_broadcast(&identity, broadcast)?;
                 state.handle_payload(hash, payload)
             }
             Ok(None) => Ok(()),
@@ -143,12 +127,13 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
     }
 
     pub async fn process(&mut self) -> Result<()> {
-        if let Some(msg) = self.rx.recv().await {
-            match msg {
-                Message::Error(e) => return Err(e),
-                Message::NetworkTUIState(t) => {
-                    self.tui_state = t;
-                }
+        select! {
+            Some(tui_state) = self.rx.recv() => {
+                self.tui_state = tui_state;
+            },
+            res = &mut self.join => if let Err(err) = res? {
+                error!("Client ending with error: {err}");
+                return Err(err);
             }
         }
         Ok(())
