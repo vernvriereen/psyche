@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-pub trait Networkable: Serialize + for<'a> Deserialize<'a> {
+pub trait Networkable: Serialize + for<'a> Deserialize<'a> + Send + Sync + 'static {
     fn from_bytes(bytes: &[u8]) -> Result<Self> {
         postcard::from_bytes(bytes).map_err(Into::into)
     }
@@ -10,4 +10,4 @@ pub trait Networkable: Serialize + for<'a> Deserialize<'a> {
     }
 }
 
-impl<T: Serialize + for<'a> Deserialize<'a>> Networkable for T {}
+impl<T: Serialize + for<'a> Deserialize<'a> + Send + Sync + 'static> Networkable for T {}

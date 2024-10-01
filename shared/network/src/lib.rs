@@ -132,7 +132,7 @@ where
             gossip_rx: Box::new(gossip_rx),
             update_stats_interval,
             state: State::new(15),
-            download_manager: Default::default(),
+            download_manager: DownloadManager::new()?,
             _broadcast_message: Default::default(),
             _download: Default::default(),
         })
@@ -226,19 +226,15 @@ where
                     return Ok(Some(NetworkEvent::MessageReceived(result)));
                 }
             }
-            update = self.download_manager.poll_next(), if !self.download_manager.is_empty() => {
-                let update = if let Some(update) = update? {
-                    update
-                } else {
-                    return Ok(None);
-                };
+            update = self.download_manager.poll_next() => {
                 match update {
-                    DownloadManagerEvent::Complete(result) => {
+                    Some(DownloadManagerEvent::Complete(result)) => {
                         return Ok(Some(NetworkEvent::DownloadComplete(result)))
                     }
-                    DownloadManagerEvent::Update(update) => {
-                        self.on_download_update(update);
-                    }
+                    Some(DownloadManagerEvent::Update(update)) => {
+                        self.on_download_update(update)?;
+                    },
+                    None => {}
                 }
             }
             _ = self.update_stats_interval.tick() => {
@@ -249,7 +245,7 @@ where
         Ok(None)
     }
 
-    fn on_download_update(&mut self, update: DownloadUpdate) {
+    fn on_download_update(&mut self, update: DownloadUpdate) -> Result<()> {
         self.state
             .bandwidth_tracker
             .add_event(update.downloaded_size_delta);
@@ -280,6 +276,7 @@ where
                 .download_progesses
                 .insert(update.hash.clone(), update);
         }
+        Ok(())
     }
 }
 
