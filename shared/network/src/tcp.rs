@@ -264,6 +264,11 @@ where
             .map_err(|e| e.into())
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe. If `receive` is used as the event in a
+    /// [`tokio::select!`](crate::select) statement and some other branch
+    /// completes first, it is guaranteed that no messages were received.
     pub async fn receive(&mut self) -> Result<ToClient> {
         match Self::receive_message(&mut self.framed).await? {
             ServerToClientMessage::Else(message) => Ok(message),

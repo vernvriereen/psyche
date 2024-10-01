@@ -16,9 +16,12 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::select;
-use tokio::time::{interval, Interval};
-use tracing::info;
+use tokio::{select, sync::oneshot};
+use tokio::{
+    sync::mpsc,
+    time::{interval, Interval},
+};
+use tracing::{error, info};
 use util::{fmt_relay_mode, gossip_topic};
 
 mod download_manager;
@@ -50,8 +53,8 @@ where
 {
     node: Arc<MemNode>,
     state: State,
-    gossip_tx: Box<dyn Sink<Command, Error = Error> + Unpin>,
-    gossip_rx: Box<dyn Stream<Item = std::result::Result<Event, Error>> + Unpin>,
+    gossip_tx: Box<dyn Sink<Command, Error = Error> + Unpin + Send + Sync>,
+    gossip_rx: Box<dyn Stream<Item = std::result::Result<Event, Error>> + Unpin + Send + Sync>,
     download_manager: DownloadManager<Download>,
     _broadcast_message: PhantomData<BroadcastMessage>,
     _download: PhantomData<Download>,
@@ -129,7 +132,7 @@ where
             gossip_rx: Box::new(gossip_rx),
             update_stats_interval,
             state: State::new(15),
-            download_manager: Default::default(),
+            download_manager: DownloadManager::new()?,
             _broadcast_message: Default::default(),
             _download: Default::default(),
         })
@@ -159,19 +162,32 @@ where
             .send(Command::Broadcast(encoded_message))
             .await
     }
-    /// should this really await the whole download..?
-    /// for now, you can get your result as a message from polling this connection.
-    pub async fn download(&mut self, ticket: BlobTicket) -> Result<()> {
-        let progress = self
+
+    pub async fn start_download(&mut self, ticket: BlobTicket) -> Result<()> {
+        let mut progress = self
             .node
             .blobs()
             .download(ticket.hash(), ticket.node_addr().clone())
             .await?;
 
-        self.download_manager
-            .add(ticket.node_addr().node_id, ticket, progress);
+        let (tx, rx) = mpsc::channel(10);
 
-        // TODO write a future impl that resolves when the download manager has downloaded this future..?
+        tokio::spawn(async move {
+            loop {
+                match progress.next().await {
+                    None => break,
+                    Some(val) => {
+                        if let Err(err) = tx.send(val).await {
+                            error!("Failed to send download progress: {err}");
+                        }
+                    }
+                }
+            }
+        });
+
+        self.download_manager
+            .add(ticket.node_addr().node_id, ticket, rx);
+
         Ok(())
     }
 
@@ -211,18 +227,14 @@ where
                 }
             }
             update = self.download_manager.poll_next() => {
-                let update = if let Some(update) = update? {
-                    update
-                } else {
-                    return Ok(None);
-                };
                 match update {
-                    DownloadManagerEvent::Complete(result) => {
+                    Some(DownloadManagerEvent::Complete(result)) => {
                         return Ok(Some(NetworkEvent::DownloadComplete(result)))
                     }
-                    DownloadManagerEvent::Update(update) => {
-                        self.on_download_update(update);
-                    }
+                    Some(DownloadManagerEvent::Update(update)) => {
+                        self.on_download_update(update)?;
+                    },
+                    None => {}
                 }
             }
             _ = self.update_stats_interval.tick() => {
@@ -233,7 +245,7 @@ where
         Ok(None)
     }
 
-    fn on_download_update(&mut self, update: DownloadUpdate) {
+    fn on_download_update(&mut self, update: DownloadUpdate) -> Result<()> {
         self.state
             .bandwidth_tracker
             .add_event(update.downloaded_size_delta);
@@ -244,19 +256,27 @@ where
             self.state.download_progesses.remove(&update.hash);
 
             let node = self.node.clone();
-            self.download_manager.read(
-                update.from,
-                update.hash,
-                Box::pin(async move {
-                    let blob_bytes_future = node.blobs().read_to_bytes(update.hash);
-                    blob_bytes_future.await
-                }),
-            );
+            let (send, recv) = oneshot::channel();
+            tokio::spawn(async move {
+                let blob_bytes = match node.blobs().read_to_bytes(update.hash).await {
+                    Ok(b) => b,
+                    Err(e) => {
+                        error!("failed to read bytes: {e}");
+                        return;
+                    }
+                };
+                let res = send.send(blob_bytes);
+                if let Err(_) = res {
+                    error!("failed to send read bytes result.");
+                }
+            });
+            self.download_manager.read(update.from, update.hash, recv);
         } else {
             self.state
                 .download_progesses
                 .insert(update.hash.clone(), update);
         }
+        Ok(())
     }
 }
 

@@ -1,5 +1,5 @@
-use crate::{model::Model, traits::Backend, CommitteeSelection, WitnessProof};
-use psyche_core::{Bloom, NodeIdentity};
+use crate::{model::Model, traits::Backend, CommitteeProof, CommitteeSelection, WitnessProof};
+use psyche_core::{sha256, Bloom, NodeIdentity};
 use psyche_serde::derive_serialize;
 
 #[cfg(target_os = "solana")]
@@ -56,6 +56,7 @@ pub enum CoordinatorError {
     InvalidWitness,
     InvalidRunState,
     DuplicateWitness,
+    InvalidHealthCheck,
 }
 
 #[derive_serialize]
@@ -145,6 +146,7 @@ impl std::fmt::Display for CoordinatorError {
             CoordinatorError::InvalidWitness => write!(f, "Invalid witness"),
             CoordinatorError::InvalidRunState => write!(f, "Invalid run state"),
             CoordinatorError::DuplicateWitness => write!(f, "Duplicate witness"),
+            CoordinatorError::InvalidHealthCheck => write!(f, "Invalid health check"),
         }
     }
 }
@@ -195,6 +197,72 @@ impl<T: NodeIdentity> Coordinator<T> {
         Ok(())
     }
 
+    pub fn health_check(
+        &mut self,
+        _from: &Client<T>,
+        checks: Vec<(u64, CommitteeProof)>,
+    ) -> Result<(), CoordinatorError> {
+        if self.run_state == RunState::RoundApply && !checks.is_empty() {
+            for (index, proof) in &checks {
+                if !self.healthy(*index, proof) {
+                    return Err(CoordinatorError::InvalidHealthCheck);
+                }
+            }
+        } else {
+            return Err(CoordinatorError::InvalidRunState);
+        }
+        // todo: reward from for health check
+        for (index, _) in &checks {
+            let index = *index as usize;
+            self.dropped_clients.push(self.clients.remove(index));
+        }
+        Ok(())
+    }
+
+    pub fn healthy(&self, index: u64, proof: &CommitteeProof) -> bool {
+        let round = match self.current_round() {
+            Ok(round) => round,
+            Err(_) => {
+                return false;
+            }
+        };
+        let index = index as usize;
+        if index < self.clients.len() {
+            let client = &self.clients[index];
+            let selection = match CommitteeSelection::from_coordinator(&self) {
+                Ok(selection) => selection,
+                Err(_) => {
+                    return false;
+                }
+            };
+            if !selection.verify_committee_for_client(client, proof, &self.clients) {
+                return false;
+            }
+            match proof.committee {
+                crate::Committee::TieBreaker => todo!(),
+                crate::Committee::Verifier => todo!(),
+                crate::Committee::Trainer => {
+                    let hash = sha256(client.id.as_ref());
+                    let mut found = false;
+                    for witness in &round.witnesses {
+                        if witness.commit_bloom.contains(&hash)
+                            && witness.payload_bloom.contains(&hash)
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if found {
+                        return false;
+                    }
+                }
+            }
+        } else {
+            return false;
+        }
+        true
+    }
+
     pub fn current_round(&self) -> Result<&Round, CoordinatorError> {
         match self.active() {
             true => Ok(self.current_round_unchecked()),
@@ -240,18 +308,18 @@ impl<T: NodeIdentity> Coordinator<T> {
 
     fn tick_warmup(&mut self, unix_timestamp: u64, random_seed: u64) {
         if (self.clients.len() as u32) < self.min_clients {
-            self.change_state(unix_timestamp, RunState::WaitingForMembers);
-        }
-        if unix_timestamp >= self.warmup_time + self.run_state_start_unix_timestamp {
+            self.start_waiting_for_members(unix_timestamp);
+        } else if unix_timestamp >= self.warmup_time + self.run_state_start_unix_timestamp {
             self.start_round_train(unix_timestamp, random_seed, 0);
         }
     }
 
     fn tick_round_train(&mut self, unix_timestamp: u64) {
         if (self.clients.len() as u32) < self.min_clients {
-            self.change_state(unix_timestamp, RunState::WaitingForMembers);
+            self.start_waiting_for_members(unix_timestamp);
+        } else {
+            self.round_train_check_witness_time(unix_timestamp);
         }
-        self.round_train_check_witness_time(unix_timestamp);
     }
 
     fn tick_round_witness(&mut self, unix_timestamp: u64) {
@@ -267,7 +335,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             if self.current_round().unwrap().height == self.max_rounds {
                 self.rounds = Default::default();
                 self.epoch += 1;
-                self.start_warmup(unix_timestamp);
+                self.start_waiting_for_members(unix_timestamp);
             } else {
                 self.start_round_train(unix_timestamp, random_seed, 0);
             }
@@ -310,6 +378,11 @@ impl<T: NodeIdentity> Coordinator<T> {
     fn start_warmup(&mut self, unix_timestamp: u64) {
         self.rounds.fill(Round::empty());
         self.change_state(unix_timestamp, RunState::Warmup);
+    }
+
+    fn start_waiting_for_members(&mut self, unix_timestamp: u64) {
+        self.dropped_clients.clear();
+        self.change_state(unix_timestamp, RunState::WaitingForMembers);
     }
 
     fn change_state(&mut self, unix_timestamp: u64, new_state: RunState) {

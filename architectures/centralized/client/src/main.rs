@@ -9,7 +9,7 @@ use psyche_network::{RelayMode, SecretKey, TcpClient};
 use psyche_tui::{maybe_start_render_loop, LogOutput};
 use std::time::Duration;
 use tokio::time::{interval, interval_at, Instant};
-use tracing::info;
+use tracing::{info, Level};
 
 mod app;
 
@@ -42,11 +42,14 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    psyche_tui::init_logging(if args.tui {
-        LogOutput::TUI
-    } else {
-        LogOutput::Console
-    });
+    psyche_tui::init_logging(
+        if args.tui {
+            LogOutput::TUI
+        } else {
+            LogOutput::Console
+        },
+        Level::INFO,
+    );
 
     info!("joining gossip room");
 
@@ -66,13 +69,12 @@ async fn main() -> Result<()> {
         interval_at(Instant::now() + duration, duration)
     };
 
-    let server_conn =
-        TcpClient::<ClientId, ClientToServerMessage, ServerToClientMessage>::connect(
-            &args.server_addr,
-            secret_key.public().into(),
-            secret_key.clone(),
-        )
-        .await?;
+    let server_conn = TcpClient::<ClientId, ClientToServerMessage, ServerToClientMessage>::connect(
+        &args.server_addr,
+        secret_key.public().into(),
+        secret_key.clone(),
+    )
+    .await?;
 
     App::new(
         cancel,

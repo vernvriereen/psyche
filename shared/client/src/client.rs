@@ -1,73 +1,156 @@
-use crate::{state::State, BroadcastMessage, Payload, NC};
+use crate::{protocol::NE, state::State, BroadcastMessage, ClientTUIState, Payload, NC};
 use anyhow::Result;
-use psyche_coordinator::Witness;
+use psyche_coordinator::Coordinator;
 use psyche_core::NodeIdentity;
 use psyche_network::{BlobTicket, NetworkTUIState};
 use psyche_watcher::{Backend, BackendWatcher};
-use tokio::select;
+use std::{borrow::BorrowMut, marker::PhantomData, sync::Arc};
+use tokio::{
+    select,
+    sync::{
+        watch::{self, Receiver},
+        Notify,
+    },
+    task::JoinHandle,
+};
+use tokio_util::sync::CancellationToken;
+use tracing::error;
+
+pub type TUIStates = (ClientTUIState, NetworkTUIState);
 
 pub struct Client<T: NodeIdentity, B: Backend<T> + 'static> {
-    watcher: BackendWatcher<T, B>,
-    p2p: NC,
-    state: State<T>,
-    sharing: Option<BlobTicket>,
+    rx: Receiver<TUIStates>,
+    req_tui_state: Arc<Notify>,
+    cancel: CancellationToken,
+    join: JoinHandle<Result<()>>,
+    _t: PhantomData<(T, B)>,
 }
 
 impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
-    pub fn new(backend: B, p2p: NC, identity: T, private_key: T::PrivateKey) -> Self {
+    pub fn new(backend: B, mut p2p: NC, identity: T, private_key: T::PrivateKey) -> Self {
+        let cancel = CancellationToken::new();
+        let (tx, rx) = watch::channel::<TUIStates>(Default::default());
+        let req_tui_state = Arc::new(Notify::new());
+
+        let join = tokio::spawn({
+            let cancel = cancel.clone();
+            let req_tui_state = req_tui_state.clone();
+            async move {
+                let mut watcher = BackendWatcher::new(backend);
+                let mut state = State::new(identity, private_key);
+                let mut prev_ticket: Option<BlobTicket> = None;
+
+                loop {
+                    let step_result: Option<
+                        std::result::Result<
+                            (Option<Coordinator<T>>, Coordinator<T>),
+                            anyhow::Error,
+                        >,
+                    > = select! {
+                        _ = cancel.cancelled() => break,
+                        _ = req_tui_state.notified() => {
+                            let network_tui_state = (&p2p).into();
+                            let client_tui_state = (&state).into();
+                            tx.send((client_tui_state, network_tui_state)).map_err(|e| e.into()).map(|_| None)
+                        },
+                        res = watcher.borrow_mut().poll_next() => Ok(Some(res.map(|(c,cn)| (c, cn.clone())))),
+                        res = p2p.poll_next() => Self::handle_p2p_poll(&mut state, &watcher, &mut p2p, res).await.map(|_| None),
+                        res = state.poll_next() => Self::handle_state_poll(&mut state, &mut p2p, &mut prev_ticket, res).await.map(|_| None),
+                    }?;
+
+                    if let Some(watcher_res) = step_result {
+                        Self::handle_watcher_poll(&mut state, &mut watcher, watcher_res).await?;
+                    }
+                }
+
+                Ok(())
+            }
+        });
+
         Self {
-            watcher: BackendWatcher::new(backend),
-            p2p,
-            state: State::new(identity, private_key),
-            sharing: None,
+            _t: Default::default(),
+            cancel,
+            req_tui_state,
+            rx,
+            join,
+        }
+    }
+
+    async fn handle_watcher_poll(
+        state: &mut State<T>,
+        watcher: &mut BackendWatcher<T, B>,
+        res: Result<(Option<Coordinator<T>>, Coordinator<T>)>,
+    ) -> Result<()> {
+        let (prev_state, new_state) = res?;
+        let witness_send = state.process_new_state(&new_state, prev_state).await?;
+        if let Some(witness) = witness_send {
+            watcher.backend_mut().send_witness(witness).await
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn handle_p2p_poll(
+        state: &mut State<T>,
+        watcher: &BackendWatcher<T, B>,
+        p2p: &mut NC,
+        res: Result<Option<NE>>,
+    ) -> Result<()> {
+        match res {
+            Ok(Some(event)) => match state.process_network_event(event, watcher)? {
+                Some(download) => p2p.start_download(download).await,
+                None => Ok(()),
+            },
+            Err(err) => Err(err),
+            _ => Ok(()),
+        }
+    }
+
+    async fn handle_state_poll(
+        state: &mut State<T>,
+        p2p: &mut NC,
+        prev_ticket: &mut Option<BlobTicket>,
+        res: Result<Option<(BroadcastMessage, Payload)>>,
+    ) -> Result<()> {
+        match res {
+            Ok(Some((broadcast, payload))) => {
+                if let Some(ticket) = prev_ticket.take() {
+                    p2p.remove_downloadable(ticket).await?;
+                }
+
+                let new_ticket = p2p.add_downloadable(payload.clone()).await?;
+                *prev_ticket = Some(new_ticket.clone());
+
+                let mut broadcast = broadcast;
+                broadcast.ticket = new_ticket;
+                p2p.broadcast(&broadcast).await?;
+
+                let identity = state.identity.clone();
+                let hash = broadcast.ticket.hash();
+                state.handle_broadcast(&identity, broadcast)?;
+                state.handle_payload(hash, payload)
+            }
+            Ok(None) => Ok(()),
+            Err(err) => Err(err),
         }
     }
 
     pub async fn process(&mut self) -> Result<()> {
-        let mut p2p_send: Option<(BroadcastMessage, Payload)> = None;
-        let mut witness_send: Option<Witness> = None;
         select! {
-            res = self.watcher.poll_next() => {
-                match res {
-                    Ok((prev_state, state)) => {
-                        witness_send = self.state.process_new_state(state, prev_state).await?;
-                    }
-                    Err(err) => { return Err(err); }
-                }
-            },
-            res = self.p2p.poll_next() => match res {
-                Ok(Some(event)) => {
-                    self.state.process_network_event(event, &self.watcher, &mut self.p2p).await?;
-                },
-                Err(err) => { return Err(err); }
-                _ => {},
-            },
-            res = self.state.poll_next() => {
-                p2p_send = res?;
-            },
-        }
-        if let Some((mut broadcast, payload)) = p2p_send {
-            let sharing = std::mem::take(&mut self.sharing);
-            if let Some(ticket) = sharing {
-                self.p2p.remove_downloadable(ticket).await?;
+            res = &mut self.join => if let Err(err) = res? {
+                error!("Client ending with error: {err}");
+                return Err(err);
             }
-            self.sharing = Some(self.p2p.add_downloadable(payload.clone()).await?);
-            broadcast.ticket = self.sharing.clone().unwrap();
-            self.p2p.broadcast(&broadcast).await?;
-            let identity = self.state.identity.clone();
-            let hash = broadcast.ticket.hash();
-            self.state
-                .handle_broadcast(&identity, broadcast, &mut self.p2p)
-                .await?;
-            self.state.handle_payload(hash, payload)?;
-        }
-        if let Some(witness) = witness_send {
-            self.watcher.backend_mut().send_witness(witness).await?;
         }
         Ok(())
     }
 
-    pub fn network_tui_state(&self) -> NetworkTUIState {
-        (&self.p2p).into()
+    pub fn shutdown(&self) {
+        self.cancel.cancel();
+    }
+
+    pub async fn tui_states(&self) -> TUIStates {
+        let _ = self.req_tui_state.notify_one();
+        self.rx.borrow().clone()
     }
 }
