@@ -335,7 +335,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     fn tick_round_apply(&mut self, unix_timestamp: u64, random_seed: u64) {
         if unix_timestamp >= self.round_apply_time + self.run_state_start_unix_timestamp {
             self.step += 1;
-            if self.current_round().unwrap().height == self.max_rounds {
+            if self.current_round().unwrap().height == self.max_rounds - 1 {
                 self.rounds = Default::default();
                 self.epoch += 1;
                 self.start_waiting_for_members(unix_timestamp);
@@ -352,23 +352,18 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     fn start_round_train(&mut self, unix_timestamp: u64, random_seed: u64, tie_breaker_tasks: u32) {
-        let (next_rounds_head, next_height, next_data_index) =
-            if self.first_round {
-                // very first round, don't increment -- just start here
-                self.first_round = false;
-                (0usize, 0u32, 0u64)
-            } else {
-                let current_round = &self.rounds[self.rounds_head as usize];
-                if current_round.height == self.max_rounds - 1 {
-                    return;
-                } else {
-                    (
-                        (self.rounds_head + 1) as usize % self.rounds.len(),
-                        current_round.height + 1,
-                        current_round.data_index + self.data_indicies_per_round as u64,
-                    )
-                }
-            };
+        let (next_rounds_head, next_height, next_data_index) = if self.first_round {
+            // very first round, don't increment -- just start here
+            self.first_round = false;
+            (0usize, 0u32, 0u64)
+        } else {
+            let current_round = &self.rounds[self.rounds_head as usize];
+            (
+                (self.rounds_head + 1) as usize % self.rounds.len(),
+                current_round.height + 1,
+                current_round.data_index + self.data_indicies_per_round as u64,
+            )
+        };
         let round = &mut self.rounds[next_rounds_head];
         self.rounds_head = next_rounds_head as u32;
         round.clients_len = self.clients.len() as u32;
