@@ -7,6 +7,7 @@ max_round_train_time = 10
 max_round_witness_time = 1
 round_apply_time = 1
 rounds_head = 0
+first_round = false
 min_clients = 1
 tick = 0
 last_tick_unix_timestamp = 0

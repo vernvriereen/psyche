@@ -17,7 +17,7 @@ enum Optimizer {
 
 pub struct TrainOutput {
     pub trainer: Trainer,
-    pub _loss: f32,
+    pub loss: f32,
     pub step: usize,
 }
 
@@ -87,7 +87,7 @@ impl Trainer {
         debug!("step: {step}, loss: {loss_value}");
         Ok(TrainOutput {
             trainer: self,
-            _loss: loss_value,
+            loss: loss_value,
             step,
         })
     }

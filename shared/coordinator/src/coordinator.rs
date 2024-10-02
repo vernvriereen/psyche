@@ -75,6 +75,7 @@ pub struct Coordinator<T: NodeIdentity> {
     pub round_apply_time: u64,
     pub rounds: [Round; 4],
     pub rounds_head: u32,
+    pub first_round: bool,
 
     pub min_clients: u32,
     pub clients: Vec<Client<T>>,
@@ -122,6 +123,7 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             round_apply_time: Default::default(),
             rounds: Default::default(),
             rounds_head: Default::default(),
+            first_round: Default::default(),
             min_clients: 1,
             clients: Vec::new(),
             dropped_clients: Vec::new(),
@@ -270,11 +272,11 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
     }
 
-    fn current_round_unchecked(&self) -> &Round {
+    pub fn current_round_unchecked(&self) -> &Round {
         &self.rounds[self.rounds_head as usize]
     }
 
-    fn current_round_mut_unchecked(&mut self) -> &mut Round {
+    pub fn current_round_mut_unchecked(&mut self) -> &mut Round {
         &mut self.rounds[self.rounds_head as usize]
     }
 
@@ -310,6 +312,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         if (self.clients.len() as u32) < self.min_clients {
             self.start_waiting_for_members(unix_timestamp);
         } else if unix_timestamp >= self.warmup_time + self.run_state_start_unix_timestamp {
+            self.first_round = true;
             self.start_round_train(unix_timestamp, random_seed, 0);
         }
     }
@@ -350,8 +353,9 @@ impl<T: NodeIdentity> Coordinator<T> {
 
     fn start_round_train(&mut self, unix_timestamp: u64, random_seed: u64, tie_breaker_tasks: u32) {
         let (next_rounds_head, next_height, next_data_index) =
-            if self.rounds_head == 0 && self.rounds[0].height == 0 {
+            if self.first_round {
                 // very first round, don't increment -- just start here
+                self.first_round = false;
                 (0usize, 0u32, 0u64)
             } else {
                 let current_round = &self.rounds[self.rounds_head as usize];

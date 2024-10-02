@@ -4872,6 +4872,7 @@ dependencies = [
  "psyche-tui",
  "psyche-watcher",
  "rand 0.8.5",
+ "tch",
  "tokio",
  "tokio-util",
  "tracing",

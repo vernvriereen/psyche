@@ -42,6 +42,26 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
+    #[cfg(target_os = "windows")]
+    {
+        // this is a gigantic hack to cover that called sdpa prints out
+        // "Torch was not compiled with flash attention." via TORCH_WARN
+        // on Windows, which screws with the TUI.
+        // it's done once (really TORCH_WARN_ONCE), so elicit that behavior
+        // before starting anything else
+        use tch::Tensor;
+        let device = tch::Device::Cuda(0);
+        let _ = Tensor::scaled_dot_product_attention::<Tensor>(
+            &Tensor::from_slice2(&[[0.]]).to(device),
+            &Tensor::from_slice2(&[[0.]]).to(device),
+            &Tensor::from_slice2(&[[0.]]).to(device),
+            None,
+            0.0,
+            false,
+            None,
+        );
+    }
+
     psyche_tui::init_logging(
         if args.tui {
             LogOutput::TUI

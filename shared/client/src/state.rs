@@ -118,11 +118,12 @@ impl<T: NodeIdentity> State<T> {
             let output = training.await??;
             self.training = None;
             self.trainer = Some(output.trainer);
+            self.losses.push(output.loss);
+            // TODO DISTRO
             let (committee_proof, _, _) = self
                 .committee_info
                 .as_ref()
                 .expect("Training complete but no self proofs");
-            // TODO DISTRO
             let committment = sha256(self.identity.as_ref());
             let step = output.step as u64;
             let broadcast = BroadcastMessage {
@@ -442,7 +443,7 @@ impl<T: NodeIdentity> State<T> {
 impl<T: NodeIdentity> From<&State<T>> for ClientTUIState {
     fn from(value: &State<T>) -> Self {
         let coordinator = value.state.as_ref();
-        let round = coordinator.and_then(|x| x.current_round().ok());
+        let round = coordinator.and_then(|x| Some(x.current_round_unchecked()));
         let committee = value.committee_info.as_ref().map(|x| x.0.committee);
         ClientTUIState {
             step: coordinator.map(|x| x.step).unwrap_or_default(),
