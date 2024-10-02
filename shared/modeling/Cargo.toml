@@ -17,7 +17,6 @@ tokenizers.workspace = true
 byteorder = "1.4.3"
 safetensors = "0.3.0"
 
-
 # for examples
 [dev-dependencies]
 clap = { workspace = true }

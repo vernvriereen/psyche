@@ -1,0 +1,779 @@
+use std::{collections::BTreeMap, f64::consts::PI};
+
+use tch::{
+    nn::{Optimizer, OptimizerConfig, Sgd, VarStore},
+    Kind, TchError, Tensor,
+};
+
+struct TransformDCT {
+    shape_dict: BTreeMap<i64, i64>,
+    f_dict: BTreeMap<i64, Tensor>,
+    b_dict: BTreeMap<i64, Tensor>,
+}
+
+impl TransformDCT {
+    fn new(variables: &[Tensor], target_chunk: i64) -> Self {
+        let _no_grad = tch::no_grad_guard();
+        let mut shape_dict = BTreeMap::new();
+        let mut f_dict = BTreeMap::new();
+        let mut b_dict = BTreeMap::new();
+
+        // Get all variants of model tensor sizes
+        // Generate all possible valid DCT sizes for model tensors
+        for variable in variables {
+            for s in variable.size() {
+                // Get the closest smallest divisor to the targeted DCT size
+                let sc = match shape_dict.get(&s) {
+                    Some(sc) => *sc,
+                    None => {
+                        let sc = Self::get_smaller_split(s, target_chunk);
+                        shape_dict.insert(s, sc);
+                        sc
+                    }
+                };
+
+                // Pregenerate DCT basis matrices
+                if !f_dict.contains_key(&sc) {
+                    let i = Tensor::eye(sc, (Kind::Float, variable.device()));
+                    f_dict.insert(
+                        sc,
+                        Self::dct(&i, true)
+                            .to_kind(variable.kind())
+                            .to(variable.device()),
+                    );
+                    b_dict.insert(
+                        sc,
+                        Self::idct(&i, true)
+                            .to_kind(variable.kind())
+                            .to(variable.device()),
+                    );
+                }
+            }
+        }
+        Self {
+            shape_dict,
+            f_dict,
+            b_dict,
+        }
+    }
+
+    fn get_prime_divisors(mut n: i64) -> Vec<i64> {
+        if n == 0 {
+            return Vec::new();
+        }
+        let mut divisors = Vec::new();
+        while n % 2 == 0 {
+            divisors.push(2);
+            n /= 2;
+        }
+        while n % 3 == 0 {
+            divisors.push(3);
+            n /= 3;
+        }
+        let mut i = 5;
+        while i * i <= n {
+            for k in [i, i + 2].iter() {
+                while n % k == 0 {
+                    divisors.push(*k);
+                    n /= k;
+                }
+            }
+            i += 6;
+        }
+        if n > 1 {
+            divisors.push(n);
+        }
+        divisors
+    }
+
+    fn get_divisors(n: i64) -> Vec<i64> {
+        let mut divisors = Vec::new();
+        if n == 1 {
+            divisors.push(1);
+        } else if n > 1 {
+            let prime_factors = Self::get_prime_divisors(n);
+            divisors = vec![1];
+            let mut last_prime = 0;
+            let mut factor = 0;
+            let mut slice_len = 0;
+            // Find all the products that are divisors of n
+            for prime in prime_factors {
+                if last_prime != prime {
+                    slice_len = divisors.len();
+                    factor = prime;
+                } else {
+                    factor *= prime;
+                }
+                for i in 0..slice_len {
+                    divisors.push(divisors[i] * factor);
+                }
+                last_prime = prime;
+            }
+            divisors.sort_unstable();
+        }
+        divisors
+    }
+
+    fn get_smaller_split(n: i64, close_to: i64) -> i64 {
+        let all_divisors = Self::get_divisors(n);
+        for (ix, &val) in all_divisors.iter().enumerate() {
+            if val == close_to {
+                return val;
+            }
+            if val > close_to {
+                if ix == 0 {
+                    return val;
+                }
+                return all_divisors[ix - 1];
+            }
+        }
+        n
+    }
+
+    fn dct_fft_impl(v: &Tensor) -> Tensor {
+        v.fft_fft(None, 1, "backward").view_as_real()
+    }
+
+    #[allow(unused)]
+    fn dct(x: &Tensor, ortho: bool) -> Tensor {
+        let x_shape = x.size();
+        let n = *x_shape.last().unwrap() as i64;
+        let x = x.contiguous().view([-1, n]);
+
+        let v = Tensor::cat(
+            &[x.slice(1, 0, None, 2), x.slice(1, 1, None, 2).flip(&[1])],
+            1,
+        );
+
+        let vc = Self::dct_fft_impl(&v);
+
+        let k = -Tensor::arange(n, (Kind::Float, x.device()))
+            .unsqueeze(0)
+            .g_mul_scalar(PI / (2.0 * n as f64));
+        let w_r = k.cos();
+        let w_i = k.sin();
+
+        let mut v = vc.select(2, 0) * &w_r - vc.select(2, 1) * &w_i;
+
+        if ortho {
+            v.select(1, 0).g_div_scalar_((n as f64).sqrt() * 2.0);
+            v.slice(1, 1, None, 1)
+                .g_div_scalar_((n as f64 / 2.0).sqrt() * 2.0);
+        }
+
+        v.g_mul_scalar_(2.0).view(x_shape.as_slice())
+    }
+
+    fn idct_irfft_impl(v: &Tensor) -> Tensor {
+        let complex_v = v.view_as_complex();
+        let n = v.size()[1];
+        complex_v.fft_irfft(Some(n as i64), 1, "backward")
+    }
+
+    #[allow(unused)]
+    fn idct(x: &Tensor, ortho: bool) -> Tensor {
+        let x_shape = x.size();
+        let n = *x_shape.last().unwrap() as i64;
+
+        let mut x_v = x.contiguous().view([-1, n]).f_div_scalar(2.0).unwrap();
+
+        if ortho {
+            x_v.slice(1, 0, 1, 1)
+                .f_mul_scalar_((n as f64).sqrt() * 2.0)
+                .unwrap();
+            x_v.slice(1, 1, n, 1)
+                .f_mul_scalar_((n as f64 / 2.0).sqrt() * 2.0)
+                .unwrap();
+        }
+
+        let k = Tensor::arange(n, (Kind::Float, x.device()))
+            .f_mul_scalar(PI / (2.0 * n as f64))
+            .unwrap()
+            .unsqueeze(0);
+
+        let w_r = k.cos();
+        let w_i = k.sin();
+
+        let v_t_r = &x_v;
+        let v_t_i = Tensor::cat(
+            &[
+                x_v.slice(1, 0, 1, 1).f_mul_scalar(0.0).unwrap(),
+                x_v.flip(&[1]).slice(1, 0, n - 1, 1).f_neg().unwrap(),
+            ],
+            1,
+        );
+
+        let v_r = v_t_r.f_mul(&w_r).unwrap() - v_t_i.f_mul(&w_i).unwrap();
+        let v_i = v_t_r.f_mul(&w_i).unwrap() + v_t_i.f_mul(&w_r).unwrap();
+
+        let v = Tensor::cat(&[v_r.unsqueeze(2), v_i.unsqueeze(2)], 2);
+
+        let v = Self::idct_irfft_impl(&v);
+
+        let mut x = Tensor::zeros(v.size(), (Kind::Float, v.device()));
+
+        x.slice(1, 0, n, 2)
+            .f_add_(&v.slice(1, 0, n - (n / 2), 1))
+            .unwrap();
+        x.slice(1, 1, n, 2)
+            .f_add_(&v.flip(&[1]).slice(1, 0, n / 2, 1))
+            .unwrap();
+
+        x.view(x_shape.as_slice())
+    }
+
+    fn einsum_2d(x: &Tensor, b: &Tensor, d: Option<&Tensor>) -> Tensor {
+        let _no_grad = tch::no_grad_guard();
+        match d {
+            None => Tensor::einsum("...ij, jb -> ...ib", &[x, b], None::<i64>),
+            Some(d_tensor) => {
+                // Note: b-c axis output is transposed to chunk DCT in 2D
+                Tensor::einsum("...ijkl, jb, ld -> ...ikbd", &[x, b, d_tensor], None::<i64>)
+            }
+        }
+    }
+
+    fn einsum_2d_t(x: &Tensor, b: &Tensor, d: Option<&Tensor>) -> Tensor {
+        let _no_grad = tch::no_grad_guard();
+        match d {
+            None => Tensor::einsum("...ij, jb -> ...ib", &[x, b], None::<i64>),
+            Some(d_tensor) => {
+                // Note: b-c axis output is transposed to chunk DCT in 2D
+                Tensor::einsum("...ijkl, kb, ld -> ...ibjd", &[x, b, d_tensor], None::<i64>)
+            }
+        }
+    }
+
+    fn encode(&mut self, x: &Tensor) -> Tensor {
+        let _no_grad = tch::no_grad_guard();
+        if x.size().len() > 1 {
+            // 2D weights
+            let n1 = *self.shape_dict.get(&x.size()[0]).unwrap();
+            let n2 = *self.shape_dict.get(&x.size()[1]).unwrap();
+            let n1w = self.f_dict.get(&n1).unwrap().to_device(x.device());
+            let n2w = self.f_dict.get(&n2).unwrap().to_device(x.device());
+            self.f_dict.insert(n1, n1w.copy());
+            self.f_dict.insert(n2, n2w.copy());
+
+            // Equivalent to rearrange(x, "(y h) (x w) -> y h x w", h=n1, w=n2)
+            let x = x.view([x.size()[0] / n1, n1, x.size()[1] / n2, n2]);
+            Self::einsum_2d(&x, &n1w, Some(&n2w))
+        } else {
+            // 1D weights
+            let n1 = *self.shape_dict.get(&x.size()[0]).unwrap();
+            let n1w = self.f_dict.get(&n1).unwrap().to_device(x.device());
+            self.f_dict.insert(n1, n1w.copy());
+
+            // Equivalent to rearrange(x, "(x w) -> x w", w=n1)
+            let x = x.view([-1, n1]);
+            Self::einsum_2d(&x, &n1w, None)
+        }
+    }
+
+    fn decode(&mut self, x: &Tensor) -> Tensor {
+        let _no_grad = tch::no_grad_guard();
+        let x_shape = x.size();
+
+        if x_shape.len() > 2 {
+            // 2D weights
+            let n1 = x_shape[2] as i64;
+            let n2 = x_shape[3] as i64;
+            let device = x.device();
+
+            let n1w = self.b_dict.get(&n1).unwrap().to_device(device);
+            let n2w = self.b_dict.get(&n2).unwrap().to_device(device);
+
+            self.b_dict.insert(n1, n1w.copy());
+            self.b_dict.insert(n2, n2w.copy());
+
+            let x = Self::einsum_2d_t(x, &n1w, Some(&n2w));
+            let x_shape = x.size();
+
+            // Equivalent to rearrange(x, "y h x w -> (y h) (x w)")
+            let (y, h, x_, w) = (x_shape[0], x_shape[1], x_shape[2], x_shape[3]);
+            x.reshape(&[y * h, x_ * w])
+        } else {
+            // 1D weights
+            let n1 = x_shape[1] as i64;
+            let device = x.device();
+
+            let n1w = self.b_dict.get(&n1).unwrap().to_device(device);
+            self.b_dict.insert(n1, n1w.copy());
+
+            let x = Self::einsum_2d_t(x, &n1w, None);
+            let x_shape = x.size();
+
+            // Equivalent to rearrange(x, "x w -> (x w)")
+            let (x_, w) = (x_shape[0], x_shape[1]);
+            x.reshape(&[x_ * w])
+        }
+    }
+}
+
+struct CompressDCT {}
+
+impl CompressDCT {
+    fn clamp_topk(x: &Tensor, topk: i64) -> i64 {
+        let last_dim = x.size()[x.dim() - 1];
+
+        let topk = if topk > last_dim {
+            last_dim
+        } else if topk < 1 {
+            1
+        } else {
+            topk
+        };
+
+        topk
+    }
+
+    fn compress(x: &Tensor, topk: i64) -> (Tensor, Tensor, Vec<i64>, i64) {
+        let _no_grad = tch::no_grad_guard();
+        let xshape = x.size();
+        let x = if xshape.len() > 2 {
+            // Equivalent to rearrange(x, "y x h w -> y x (h w)")
+            let y = xshape[0];
+            let x_dim = xshape[1];
+            let h = xshape[2];
+            let w = xshape[3];
+            x.view([y, x_dim, h * w])
+        } else {
+            x.shallow_clone()
+        };
+
+        let totalk = *x.size().last().unwrap();
+        let topk = Self::clamp_topk(&x, topk);
+
+        let idx = x.abs().topk(topk, -1, true, false).1;
+        let val = x.gather(-1, &idx, false);
+
+        (idx, val, xshape, totalk)
+    }
+
+    #[allow(unused)]
+    fn decompress(p: &Tensor, idx: &Tensor, val: &Tensor, xshape: &[i64]) -> Tensor {
+        let mut x = Tensor::zeros(xshape, (p.kind(), p.device()));
+
+        if xshape.len() > 2 {
+            // 2D weights
+            // Equivalent to rearrange(x, "y x h w -> y x (h w)")
+            let y = xshape[0];
+            let x_dim = xshape[1];
+            let h = xshape[2];
+            let w = xshape[3];
+            x = x.view([y, x_dim, h * w]);
+        }
+
+        x.internal_scatter_reduce_(-1, idx, val, "mean", false);
+
+        x = x.reshape(xshape);
+
+        if x.size().len() > 2 {
+            // 2D weights
+            // Equivalent to rearrange(x, "y x (h w) -> y x h w", h=xshape[2])
+            let y = xshape[0];
+            let x_dim = xshape[1];
+            let h = xshape[2];
+            let w = xshape[3];
+            x = x.view([y, x_dim, h, w]);
+        }
+
+        x
+    }
+
+    fn batch_decompress(p: &Tensor, idx: &[Tensor], val: &[Tensor], xshape: &[i64]) -> Tensor {
+        let device = p.device();
+        let idx_concat = Tensor::cat(idx, -1).to_device(device);
+        let val_concat = Tensor::cat(val, -1).to_device(device);
+        // Call the decompress method
+        Self::decompress(p, &idx_concat, &val_concat, xshape)
+    }
+}
+
+struct State {
+    delta: Tensor,
+}
+
+pub struct DistroResult {
+    pub sparse_idx: Tensor,
+    pub sparse_val: Tensor,
+    pub xshape: Vec<i64>,
+}
+
+pub struct Distro {
+    sgd: Optimizer,
+    compression_decay: f64,
+    compression_topk: i64,
+    weight_decay: f64,
+    state: Vec<State>,
+    transform: TransformDCT,
+}
+
+impl Distro {
+    pub fn new(
+        vs: &VarStore,
+        compression_decay: f64,
+        compression_chunk: i64,
+        compression_topk: i64,
+        weight_decay: f64,
+    ) -> Result<Self, TchError> {
+        let sgd: Optimizer = Sgd {
+            momentum: 0.0,
+            dampening: 0.0,
+            wd: 0.0,
+            nesterov: false,
+        }
+        .build(vs, 0.1)?;
+
+        let variables = sgd.trainable_variables();
+        let mut state = Vec::with_capacity(variables.len());
+
+        for variable in &variables {
+            state.push(State {
+                delta: variable.zeros_like(),
+            });
+        }
+
+        let transform = TransformDCT::new(&variables, compression_chunk);
+
+        Ok(Self {
+            sgd,
+            compression_decay,
+            compression_topk,
+            weight_decay,
+            state,
+            transform,
+        })
+    }
+
+    #[allow(unused)]
+    fn generate(&mut self, lr: f64) -> Vec<DistroResult> {
+        let variables = &mut self.sgd.trainable_variables();
+        let mut ret = Vec::with_capacity(variables.len());
+        for (index, variable) in variables.iter_mut().enumerate() {
+            // Step-Weight decay
+            if self.weight_decay != 0.0 {
+                variable.multiply_scalar_(1.0 - lr * self.weight_decay);
+            }
+
+            let delta = &mut self.state.get_mut(index).unwrap().delta;
+
+            // Decay delta
+            if self.compression_decay != 1.0 {
+                delta.multiply_scalar_(self.compression_decay);
+            }
+
+            // Add delta to new gradient
+            delta.g_add_(&variable.grad().multiply_scalar(lr));
+
+            // Compress delta
+            let (sparse_idx, sparse_val, xshape, _totalk) =
+                CompressDCT::compress(&self.transform.encode(&delta), self.compression_topk);
+
+            // Estimate transmitted delta
+            let transmit_grad = self.transform.decode(&CompressDCT::decompress(
+                &variable,
+                &sparse_idx,
+                &sparse_val,
+                &xshape,
+            ));
+
+            // Remove transmitted from delta
+            delta.g_sub_(&transmit_grad);
+
+            ret.push(DistroResult {
+                sparse_idx,
+                sparse_val,
+                xshape,
+            });
+        }
+        ret
+    }
+
+    #[allow(unused)]
+    fn apply(&mut self, results: Vec<Vec<DistroResult>>, lr: f64) {
+        for (variable, result_list) in self.sgd.trainable_variables().iter_mut().zip(results) {
+            if !result_list.is_empty() {
+                let mut indicies = Vec::with_capacity(result_list.len());
+                let mut values = Vec::with_capacity(result_list.len());
+                let x_shape = result_list[0].xshape.clone();
+                for result in result_list {
+                    indicies.push(result.sparse_idx);
+                    values.push(result.sparse_val);
+                }
+
+                // Decode grad from all nodes
+                let new_grad = self.transform.decode(&CompressDCT::batch_decompress(
+                    &variable, &indicies, &values, &x_shape,
+                ));
+
+                // Set grad to values
+                variable.grad().copy_(&new_grad);
+            } else {
+                variable.grad().zero_();
+            }
+
+            // Sign-SGD
+            variable.grad().sign_();
+        }
+
+        // SGD step
+        self.sgd.set_lr(lr);
+        self.sgd.step();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tch::Device;
+
+    use super::*;
+
+    #[test]
+    fn test_get_prime_divisors() {
+        assert_eq!(TransformDCT::get_prime_divisors(1), Vec::<i64>::new());
+        assert_eq!(TransformDCT::get_prime_divisors(2), vec![2]);
+        assert_eq!(TransformDCT::get_prime_divisors(12), vec![2, 2, 3]);
+        assert_eq!(TransformDCT::get_prime_divisors(15), vec![3, 5]);
+        assert_eq!(TransformDCT::get_prime_divisors(100), vec![2, 2, 5, 5]);
+        assert_eq!(TransformDCT::get_prime_divisors(2310), vec![2, 3, 5, 7, 11]);
+    }
+
+    #[test]
+    fn test_get_divisors() {
+        assert_eq!(TransformDCT::get_divisors(1), vec![1]);
+        assert_eq!(TransformDCT::get_divisors(2), vec![1, 2]);
+        assert_eq!(TransformDCT::get_divisors(12), vec![1, 2, 3, 4, 6, 12]);
+        assert_eq!(TransformDCT::get_divisors(15), vec![1, 3, 5, 15]);
+        assert_eq!(
+            TransformDCT::get_divisors(100),
+            vec![1, 2, 4, 5, 10, 20, 25, 50, 100]
+        );
+    }
+
+    #[test]
+    fn test_get_smaller_split() {
+        assert_eq!(TransformDCT::get_smaller_split(12, 3), 3);
+        assert_eq!(TransformDCT::get_smaller_split(12, 4), 4);
+        assert_eq!(TransformDCT::get_smaller_split(12, 5), 4);
+        assert_eq!(TransformDCT::get_smaller_split(100, 7), 5);
+        assert_eq!(TransformDCT::get_smaller_split(100, 26), 25);
+        assert_eq!(TransformDCT::get_smaller_split(100, 101), 100);
+        assert_eq!(TransformDCT::get_smaller_split(1, 1), 1);
+    }
+
+    #[test]
+    fn test_edge_cases() {
+        assert_eq!(TransformDCT::get_prime_divisors(0), Vec::<i64>::new());
+        assert_eq!(TransformDCT::get_divisors(0), Vec::<i64>::new());
+        assert_eq!(TransformDCT::get_smaller_split(0, 1), 0);
+    }
+
+    #[test]
+    fn test_large_numbers() {
+        assert_eq!(
+            TransformDCT::get_prime_divisors(1000000007),
+            vec![1000000007]
+        ); // Large prime
+        assert_eq!(TransformDCT::get_divisors(1000000007), vec![1, 1000000007]);
+        assert_eq!(TransformDCT::get_smaller_split(1000000007, 500000000), 1);
+    }
+
+    #[test]
+    fn test_dct() {
+        let eye = Tensor::eye(4, (Kind::Float, Device::Cpu));
+        let truth = _2d_float(&[
+            [0.5000, 0.6533, 0.5000, 0.2706],
+            [0.5000, 0.2706, -0.5000, -0.6533],
+            [0.5000, -0.2706, -0.5000, 0.6533],
+            [0.5000, -0.6533, 0.5000, -0.2706],
+        ]);
+        let result = TransformDCT::dct(&eye, true);
+        assert!(result.allclose(&truth, 1e-4, 1e-8, false));
+    }
+
+    fn _2d_float<T: AsRef<[f64]>>(x: &[T]) -> Tensor {
+        Tensor::from_slice2(x).to_kind(Kind::Float).to(Device::Cpu)
+    }
+
+    fn _2d_int<T: AsRef<[i64]>>(x: &[T]) -> Tensor {
+        Tensor::from_slice2(x).to_kind(Kind::Int64).to(Device::Cpu)
+    }
+
+    fn _1d_float(x: &[f64]) -> Tensor {
+        Tensor::from_slice(x).to_kind(Kind::Float).to(Device::Cpu)
+    }
+
+    fn _1d_int(x: &[i64]) -> Tensor {
+        Tensor::from_slice(x).to_kind(Kind::Int64).to(Device::Cpu)
+    }
+
+    #[test]
+    fn test_idct() {
+        let eye = Tensor::eye(4, (Kind::Float, Device::Cpu));
+        let truth = _2d_float(&[
+            [0.5000, 0.5000, 0.5000, 0.5000],
+            [0.6533, 0.2706, -0.2706, -0.6533],
+            [0.5000, -0.5000, -0.5000, 0.5000],
+            [0.2706, -0.6533, 0.6533, -0.2706],
+        ]);
+        let result = TransformDCT::idct(&eye, true);
+        assert!(result.allclose(&truth, 1e-4, 1e-8, false));
+    }
+
+    #[test]
+    fn test_compress_2d() {
+        let r = _2d_float(&[
+            [0.1911, 0.4076, 0.1649, 0.8059],
+            [0.2803, 0.9381, 0.9071, 0.2573],
+            [0.4070, 0.5765, 0.7226, 0.9486],
+            [0.0737, 0.7378, 0.1898, 0.2990],
+        ]);
+        let truth = (
+            _2d_int(&[[3, 1], [1, 2], [3, 2], [1, 3]]),
+            _2d_float(&[
+                [0.8059, 0.4076],
+                [0.9381, 0.9071],
+                [0.9486, 0.7226],
+                [0.7378, 0.2990],
+            ]),
+            vec![4i64, 4i64],
+            4i64,
+        );
+        let ret = CompressDCT::compress(&r, 2);
+        assert_eq!(truth.0, ret.0);
+        assert!(truth.1.allclose(&ret.1, 1e-4, 1e-8, false));
+        assert_eq!(truth.2, ret.2);
+        assert_eq!(truth.3, ret.3);
+    }
+
+    #[test]
+    fn test_compress_1d() {
+        let r = _1d_float(&[
+            0.5223, 0.9625, 0.5487, 0.2152, 0.2161, 0.0363, 0.4944, 0.0974,
+        ]);
+        let truth = (
+            _1d_int(&[1, 2]),
+            _1d_float(&[0.9625, 0.5487]),
+            vec![8i64],
+            8i64,
+        );
+        let ret = CompressDCT::compress(&r, 2);
+        assert_eq!(truth.0, ret.0);
+        assert!(truth.1.allclose(&ret.1, 1e-4, 1e-8, false));
+        assert_eq!(truth.2, ret.2);
+        assert_eq!(truth.3, ret.3);
+    }
+
+    #[test]
+    fn test_decompress_1d() {
+        let p = _1d_float(&[0.0]);
+        let idx = _1d_int(&[1, 2]);
+        let val = _1d_float(&[0.9625, 0.5487]);
+        let xshape = vec![8i64];
+        let truth = _1d_float(&[
+            0.0000, 0.9625, 0.5487, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+        ]);
+        let ret = CompressDCT::decompress(&p, &idx, &val, &xshape);
+        assert!(truth.allclose(&ret, 1e-4, 1e-8, false));
+    }
+
+    #[test]
+    fn test_decompress_2d() {
+        let p = _1d_float(&[0.0]);
+        let idx = _2d_int(&[[0, 2], [1, 2], [2, 3], [3, 1]]);
+        let val = _2d_float(&[
+            [0.8988, 0.5175],
+            [0.9882, 0.8945],
+            [0.8285, 0.8163],
+            [0.9093, 0.7600],
+        ]);
+        let xshape = vec![4i64, 4i64];
+        let truth = _2d_float(&[
+            [0.8988, 0.0000, 0.5175, 0.0000],
+            [0.0000, 0.9882, 0.8945, 0.0000],
+            [0.0000, 0.0000, 0.8285, 0.8163],
+            [0.0000, 0.7600, 0.0000, 0.9093],
+        ]);
+        let ret = CompressDCT::decompress(&p, &idx, &val, &xshape);
+        assert!(truth.allclose(&ret, 1e-4, 1e-8, false));
+    }
+
+    #[test]
+    fn test_encode_1d() {
+        let a = Tensor::arange(8, (Kind::Float, Device::Cpu));
+        let truth = _1d_float(&[
+            9.8995e+00,
+            -6.4423e+00,
+            -4.7684e-07,
+            -6.7345e-01,
+            2.3842e-07,
+            -2.0090e-01,
+            -1.1921e-07,
+            -5.0702e-02,
+        ]);
+        let ret = TransformDCT::new(&[a.copy()], 64).encode(&a).squeeze();
+        assert!(truth.allclose(&ret, 1e-4, 1e-8, false));
+    }
+
+    #[test]
+    fn test_encode_2d() {
+        let b = Tensor::eye(4, (Kind::Float, Device::Cpu));
+        let truth = _2d_float(&[
+            [1.0000e+00, 0.0000e+00, 0.0000e+00, 0.0000e+00],
+            [0.0000e+00, 1.0000e+00, 0.0000e+00, -5.9605e-08],
+            [0.0000e+00, 0.0000e+00, 1.0000e+00, 0.0000e+00],
+            [0.0000e+00, -5.9605e-08, 0.0000e+00, 1.0000e+00],
+        ]);
+        let ret = TransformDCT::new(&[b.copy()], 64).encode(&b).squeeze();
+        assert!(truth.allclose(&ret, 1e-4, 1e-8, false));
+    }
+
+    #[test]
+    fn test_decode_1d() {
+        let a = Tensor::arange(8, (Kind::Float, Device::Cpu));
+        let a_ = _2d_float(&[[
+            9.8995e+00,
+            -6.4423e+00,
+            -4.7684e-07,
+            -6.7345e-01,
+            2.3842e-07,
+            -2.0090e-01,
+            -1.1921e-07,
+            -5.0702e-02,
+        ]]);
+        let truth = _1d_float(&[
+            -2.2352e-07,
+            1.0000e+00,
+            2.0000e+00,
+            3.0000e+00,
+            4.0000e+00,
+            5.0000e+00,
+            6.0000e+00,
+            7.0000e+00,
+        ]);
+        let ret = TransformDCT::new(&[a], 64).decode(&a_);
+        assert!(truth.allclose(&ret, 1e-4, 1e-4, false));
+    }
+
+    #[test]
+    fn test_decode_2d() {
+        let b = Tensor::eye(4, (Kind::Float, Device::Cpu));
+        let b_ = _2d_float(&[
+            [1.0000e+00, 0.0000e+00, 0.0000e+00, 0.0000e+00],
+            [0.0000e+00, 1.0000e+00, 0.0000e+00, -5.9605e-08],
+            [0.0000e+00, 0.0000e+00, 1.0000e+00, 0.0000e+00],
+            [0.0000e+00, -5.9605e-08, 0.0000e+00, 1.0000e+00],
+        ])
+        .unsqueeze(0)
+        .unsqueeze(0);
+        let truth = _2d_float(&[
+            [1.0000e+00, 1.4901e-08, 4.4703e-08, 4.4703e-08],
+            [2.9802e-08, 1.0000e+00, -2.9802e-08, 4.4703e-08],
+            [4.4703e-08, -2.9802e-08, 1.0000e+00, 2.9802e-08],
+            [4.4703e-08, 4.4703e-08, 1.4901e-08, 1.0000e+00],
+        ]);
+        let ret = TransformDCT::new(&[b], 64).decode(&b_);
+        assert!(truth.allclose(&ret, 1e-4, 1e-4, false));
+    }
+}

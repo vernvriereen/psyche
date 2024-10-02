@@ -9,7 +9,7 @@ use tch::{Device, Kind, Tensor};
 
 const TOKEN_SIZE_IN_BYTES: TokenSize = TokenSize::TwoBytes;
 const MICRO_BATCH_SIZE: usize = 8;
-const TOTAL_BATCH_SIZE: usize = 512;
+const TOTAL_BATCH_SIZE: usize = 64;
 const GRAD_ACCUM_STEPS: usize = TOTAL_BATCH_SIZE / MICRO_BATCH_SIZE;
 const ADAMW: nn::AdamW = nn::AdamW {
     beta1: 0.9,
@@ -22,7 +22,7 @@ const PEAK_LEARNING_RATE: f64 = 4e-4;
 const WARMUP_STEPS: usize = 500;
 const TOTAL_STEPS: usize = 25000;
 const MAX_GRAD_NORM: f64 = 1.0;
-const REPO_ID: &str = "emozilla/llama2-20m-init";
+const REPO_ID: &str = "emozilla/llama2-150m-init";
 
 fn main() -> Result<()> {
     let repo_files = download_model_repo_sync(REPO_ID, None, None, None, false)?;

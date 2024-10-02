@@ -1,5 +1,6 @@
 mod auto_tokenizer;
 mod batcher;
+mod distro;
 mod llama;
 mod llama_for_causal_lm;
 mod safetensor_loader;
@@ -9,6 +10,7 @@ mod traits;
 
 pub use auto_tokenizer::auto_tokenizer;
 pub use batcher::Batcher;
+pub use distro::{Distro, DistroResult};
 pub use llama::{Llama, LlamaEosToks};
 pub use llama_for_causal_lm::LlamaForCausalLM;
 pub use sampling::{LogitsProcessor, Sampling};
