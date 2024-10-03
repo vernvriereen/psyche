@@ -7,3 +7,4 @@ mod protocol;
 pub use client::Client;
 pub use protocol::{NC, BroadcastMessage, Payload};
 pub use tui::{ClientTUI, ClientTUIState};
+pub use trainer::SerializedDistroResult;

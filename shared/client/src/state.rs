@@ -12,7 +12,7 @@ use psyche_core::{sha256, Bloom, NodeIdentity};
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpClient, TokenizedDataProvider,
 };
-use psyche_modeling::LlamaForCausalLM;
+use psyche_modeling::{DistroResult, LlamaForCausalLM};
 use psyche_network::{dummy_blob_ticket, BlobTicket, NetworkEvent};
 use psyche_watcher::{Backend, BackendWatcher};
 use std::collections::HashMap;
@@ -35,8 +35,10 @@ pub struct State<T: NodeIdentity> {
     data_and_model_load: TaskResult<(DataProviderTcpClient<T>, LlamaForCausalLM)>,
     data_provider: Option<DataProviderTcpClient<T>>,
     trainer: Option<Trainer>,
+    round_train_clients: Vec<psyche_coordinator::Client<T>>,
     training: TaskResult<TrainOutput>,
     fetching_data: TaskResult<(DataProviderTcpClient<T>, Vec<Vec<i32>>)>,
+    applying: TaskResult<Trainer>,
     committee_info: Option<(CommitteeProof, WitnessProof, CommitteeSelection)>,
     state: Option<Coordinator<T>>,
     prev_state: Option<Coordinator<T>>,
@@ -58,6 +60,7 @@ impl<T: NodeIdentity> State<T> {
             trainer: None,
             training: None,
             fetching_data: None,
+            applying: None,
             committee_info: None,
             state: None,
             prev_state: None,
@@ -66,6 +69,7 @@ impl<T: NodeIdentity> State<T> {
             payloads: HashMap::new(),
             notify: Notify::new(),
             losses: Vec::new(),
+            round_train_clients: Vec::new(),
         }
     }
 
@@ -87,15 +91,14 @@ impl<T: NodeIdentity> State<T> {
             }
         };
         match state.run_state {
-            RunState::WaitingForMembers => {}
-            RunState::Warmup => self.warmup(),
-            RunState::RoundTrain => self.round_train(position).await?,
+            RunState::WaitingForMembers => Ok(None),
+            RunState::Warmup => self.warmup().map(|_| None),
+            RunState::RoundTrain => self.round_train(position).await.map(|_| None),
             RunState::RoundWitness => {
                 return self.round_witness(position);
             }
-            RunState::RoundApply => {}
+            RunState::RoundApply => return self.round_apply().map(|_| None),
         }
-        Ok(None)
     }
 
     pub async fn poll_next(&mut self) -> Result<Option<(BroadcastMessage, Payload)>> {
@@ -108,8 +111,10 @@ impl<T: NodeIdentity> State<T> {
             self.fetching_data = None;
             self.data_provider = Some(data_provider);
 
-            let trainer: Trainer = std::mem::take(&mut self.trainer)
-                .ok_or(Error::msg("Round start but no trainer object"))?;
+            let trainer: Trainer = self
+                .trainer
+                .take()
+                .ok_or(Error::msg("Round start but no trainer object (didn't finish training previous round or applying it?)"))?;
             let step: usize = state.step as usize;
             self.training = Some(tokio::task::spawn_blocking(move || {
                 trainer.train(step as usize, data)
@@ -123,7 +128,7 @@ impl<T: NodeIdentity> State<T> {
             let (committee_proof, _, _) = self
                 .committee_info
                 .as_ref()
-                .expect("Training complete but no self proofs");
+                .ok_or(Error::msg("Training complete but no self proofs"))?;
             let committment = sha256(self.identity.as_ref());
             let step = output.step as u64;
             let broadcast = BroadcastMessage {
@@ -132,8 +137,15 @@ impl<T: NodeIdentity> State<T> {
                 ticket: dummy_blob_ticket(),
                 proof: *committee_proof,
             };
-            let payload = Payload { step };
+            let payload = Payload {
+                step,
+                distro_results: output.distro_results.iter().map(|x| x.into()).collect(),
+            };
             return Ok(Some((broadcast, payload)));
+        } else if let Some(applying) = &mut self.applying {
+            let trainer = applying.await??;
+            self.applying = None;
+            self.trainer = Some(trainer);
         } else {
             self.notify.notified().await;
         }
@@ -185,7 +197,7 @@ impl<T: NodeIdentity> State<T> {
         let (_, witness_proof, _) = self
             .committee_info
             .as_ref()
-            .expect("Broadcast message processor has no self proofs");
+            .ok_or(Error::msg("Broadcast message processor has no self proofs"))?;
         // verified by process_network_event caller
         if broadcast.proof.committee == Committee::Trainer {
             if self.committments.contains_key(&identity) {
@@ -197,8 +209,8 @@ impl<T: NodeIdentity> State<T> {
                 let (commit_bloom, _) = self
                     .blooms
                     .as_mut()
-                    .expect("We are a witness but no blooms");
-                commit_bloom.add(&sha256(identity.as_ref()));
+                    .ok_or(Error::msg("We are a witness but no blooms"))?;
+                commit_bloom.add(&sha256(&broadcast.committment));
             }
             self.committments
                 .insert(identity.clone(), broadcast.clone());
@@ -234,21 +246,26 @@ impl<T: NodeIdentity> State<T> {
         let (_, witness_proof, _) = self
             .committee_info
             .as_ref()
-            .expect("Payload message processor has no self proofs");
+            .ok_or(Error::msg("Payload message processor has no self proofs"))?;
         if witness_proof.witness {
-            let (_, payload_bloom) = self
+            let (_, participant_bloom) = self
                 .blooms
                 .as_mut()
-                .expect("We are a witness but no blooms");
-            payload_bloom.add(&sha256(from.as_ref()));
+                .ok_or(Error::msg("We are a witness but no blooms"))?;
+            participant_bloom.add(&sha256(from.as_ref()));
         }
+        // TODO: verify payload matches committment
+        // TODO: verify shape of distro_results
         self.payloads
             .insert(hash, PayloadState::Downloaded(payload));
         Ok(())
     }
 
-    fn warmup(&mut self) {
-        let state = self.state.as_ref().expect("No state in warmup");
+    fn warmup(&mut self) -> Result<()> {
+        let state = self
+            .state
+            .as_ref()
+            .ok_or(Error::msg("No state in warmup"))?;
         assert_eq!(state.run_state, RunState::Warmup);
         if self.prev_state.is_none()
             || self
@@ -269,17 +286,21 @@ impl<T: NodeIdentity> State<T> {
                 }
             }
         }
+        Ok(())
     }
 
     async fn round_train(&mut self, index: u64) -> Result<()> {
-        let state = self.state.as_ref().expect("No state in round start");
+        let state = self
+            .state
+            .as_ref()
+            .ok_or(Error::msg("No state in round train"))?;
         assert_eq!(state.run_state, RunState::RoundTrain);
 
         // if all our states are empty (first execution), wait for the data provider and model load to finish
         if self.trainer.is_none() && self.training.is_none() && self.data_provider.is_none() {
-            let data_and_model_load = std::mem::take(&mut self.data_and_model_load).ok_or(
-                Error::msg("Round started but no model load was running. Did we miss warmup?"),
-            )?;
+            let data_and_model_load = self.data_and_model_load.take().ok_or(Error::msg(
+                "Round started but no model load was running. Did we miss warmup?",
+            ))?;
             if !data_and_model_load.is_finished() {
                 bail!("Data and model load not finished when round started!")
             }
@@ -318,7 +339,7 @@ impl<T: NodeIdentity> State<T> {
             bail!("Ready to train but previous training batch still running");
         }
 
-        let round = state.current_round().expect("Round start has no round");
+        let round = state.current_round()?;
 
         let committee_selection = CommitteeSelection::new(
             round.tie_breaker_tasks as usize,
@@ -342,17 +363,18 @@ impl<T: NodeIdentity> State<T> {
         );
         if witness_proof.witness {
             let commit_bloom = Bloom::random(state.clients.len(), BLOOM_FALSE_RATE, BLOOM_MAX_BITS);
-            let payload_bloom =
+            let participant_bloom =
                 Bloom::random(state.clients.len(), BLOOM_FALSE_RATE, BLOOM_MAX_BITS);
             info!(
                 "Witness bloom size: {} bits, {} keys",
                 commit_bloom.bits.len(),
                 commit_bloom.keys.len()
             );
-            self.blooms = Some((commit_bloom, payload_bloom));
+            self.blooms = Some((commit_bloom, participant_bloom));
         }
         self.committee_info = Some((committee_proof, witness_proof, committee_selection));
         self.payloads = HashMap::new();
+        self.round_train_clients = state.clients.clone();
 
         if !data_ids.is_empty() {
             let data_provider = std::mem::take(&mut self.data_provider)
@@ -369,21 +391,119 @@ impl<T: NodeIdentity> State<T> {
     }
 
     fn round_witness(&mut self, index: u64) -> Result<Option<Witness>> {
+        let state = self
+            .state
+            .as_ref()
+            .ok_or(Error::msg("No state in round witness"))?;
+        assert_eq!(state.run_state, RunState::RoundWitness);
+
         if let Some((_, witness_proof, _)) = self.committee_info.as_ref() {
             if witness_proof.witness {
-                let blooms = std::mem::take(&mut self.blooms);
-                if let Some((commit_bloom, payload_bloom)) = blooms {
+                let blooms = self.blooms.take();
+                if let Some((commit_bloom, participant_bloom)) = blooms {
                     info!("Submitting witness blooms");
                     return Ok(Some(Witness {
                         index,
                         proof: witness_proof.clone(),
                         commit_bloom,
-                        payload_bloom,
+                        participant_bloom,
                     }));
                 }
             }
         }
         Ok(None)
+    }
+
+    fn round_apply(&mut self) -> Result<()> {
+        let state = self
+            .state
+            .as_ref()
+            .ok_or(Error::msg("No state in round apply"))?;
+        assert_eq!(state.run_state, RunState::RoundApply);
+
+        // check if this is a state transition
+        if self
+            .prev_state
+            .as_ref()
+            .ok_or(Error::msg("First seen state was witness"))?
+            .run_state
+            == RunState::RoundApply
+        {
+            return Ok(());
+        }
+
+        if !self.trainer.is_some() {
+            bail!("Apply round but trainer isn't ready");
+        }
+        let round = state.current_round()?;
+        let trainer = self.trainer.take().unwrap();
+        let mut payloads: HashMap<psyche_network::Hash, PayloadState<T>> =
+            self.payloads.drain().collect();
+        let witnesses = round.witnesses.clone();
+        // need to use clients at train time since health checks happening now and we could see a modified client list
+        let clients: Vec<psyche_coordinator::Client<T>> =
+            self.round_train_clients.drain(0..).collect();
+        let witness_quorum = state.witness_quorum;
+        let committee_selection = self
+            .committee_info
+            .as_ref()
+            .ok_or(Error::msg("No committee in round apply"))?
+            .2
+            .clone();
+        let committments: HashMap<T, BroadcastMessage> = self.committments.drain().collect();
+        let step = state.step as usize;
+
+        self.applying = Some(tokio::task::spawn_blocking(move || {
+            let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
+            for (index, client) in clients.iter().enumerate() {
+                if committee_selection.get_committee_from_position(index as u64)
+                    == Committee::Trainer
+                {
+                    if Coordinator::trainer_healthy_by_witnesses(client, &witnesses, witness_quorum)
+                    {
+                        match committments.get(&client.id) {
+                            Some(committment) => {
+                                match Coordinator::<T>::committment_exists_by_witnesses(
+                                    &committment.committment,
+                                    &witnesses,
+                                    witness_quorum,
+                                ) {
+                                    true => {
+                                        match payloads.remove(&committment.ticket.hash()) {
+                                            Some(PayloadState::Downloaded(payload)) => {
+                                                let maybe_results: Result<Vec<DistroResult>, _> = payload.distro_results.into_iter().map(|x| x.try_into()).collect();
+                                                match maybe_results {
+                                                    Ok(results) => {
+                                                        distro_results.push(results);
+                                                    }
+                                                    Err(err) => warn!("DESYNC: Got the following error when deserializing results for committment {:#?} from {}: {}", committment.committment, client.id, err),
+                                                }
+                                                
+                                            },
+                                            _ => warn!("DESYNC: Did not download payload for committment {:#?} from {}", committment.committment, client.id),
+                                        }
+                                    }
+                                    false => warn!(
+                                        "DESYNC: Committment {:#?} from {} not in consensus filter",
+                                        committment.committment, client.id
+                                    ),
+                                }
+                            }
+                            None => {
+                                warn!(
+                                    "DESYNC: Missing committment from healthy trainer {}",
+                                    client.id
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            trainer.apply_distro_results(step, distro_results)
+        }));
+
+        Ok(())
     }
 
     async fn fetch_data(

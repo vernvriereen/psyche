@@ -12,6 +12,7 @@ pub enum Committee {
     Trainer,
 }
 
+#[derive(Clone)]
 pub struct CommitteeSelection {
     tie_breaker_nodes: u64,
     verifier_nodes: u64,
@@ -94,7 +95,7 @@ impl CommitteeSelection {
         }
     }
 
-    fn get_committee_from_position(&self, committee_position: u64) -> Committee {
+    pub fn get_committee_from_position(&self, committee_position: u64) -> Committee {
         if committee_position < self.tie_breaker_nodes {
             Committee::TieBreaker
         } else if committee_position < self.tie_breaker_nodes + self.verifier_nodes {

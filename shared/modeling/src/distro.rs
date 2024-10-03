@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, f64::consts::PI};
 
 use tch::{
     nn::{Optimizer, OptimizerConfig, Sgd, VarStore},
-    Kind, TchError, Tensor,
+    Kind, Tensor,
 };
 
 struct TransformDCT {
@@ -416,14 +416,15 @@ impl Distro {
         compression_chunk: i64,
         compression_topk: i64,
         weight_decay: f64,
-    ) -> Result<Self, TchError> {
+    ) -> Self {
         let sgd: Optimizer = Sgd {
             momentum: 0.0,
             dampening: 0.0,
             wd: 0.0,
             nesterov: false,
         }
-        .build(vs, 0.1)?;
+        .build(vs, 0.1)
+        .unwrap();
 
         let variables = sgd.trainable_variables();
         let mut state = Vec::with_capacity(variables.len());
@@ -436,18 +437,18 @@ impl Distro {
 
         let transform = TransformDCT::new(&variables, compression_chunk);
 
-        Ok(Self {
+        Self {
             sgd,
             compression_decay,
             compression_topk,
             weight_decay,
             state,
             transform,
-        })
+        }
     }
 
     #[allow(unused)]
-    fn generate(&mut self, lr: f64) -> Vec<DistroResult> {
+    pub fn generate(&mut self, lr: f64) -> Vec<DistroResult> {
         let variables = &mut self.sgd.trainable_variables();
         let mut ret = Vec::with_capacity(variables.len());
         for (index, variable) in variables.iter_mut().enumerate() {
@@ -491,27 +492,24 @@ impl Distro {
     }
 
     #[allow(unused)]
-    fn apply(&mut self, results: Vec<Vec<DistroResult>>, lr: f64) {
-        for (variable, result_list) in self.sgd.trainable_variables().iter_mut().zip(results) {
-            if !result_list.is_empty() {
-                let mut indicies = Vec::with_capacity(result_list.len());
-                let mut values = Vec::with_capacity(result_list.len());
-                let x_shape = result_list[0].xshape.clone();
-                for result in result_list {
-                    indicies.push(result.sparse_idx);
-                    values.push(result.sparse_val);
-                }
+    pub fn apply(&mut self, results: Vec<Vec<DistroResult>>, lr: f64) {
+        for (index, variable) in self.sgd.trainable_variables().iter_mut().enumerate() {
+            let indicies = results
+                .iter()
+                .map(|x| x[index].sparse_idx.shallow_clone())
+                .collect::<Vec<_>>();
+            let values = results
+                .iter()
+                .map(|x| x[index].sparse_val.shallow_clone())
+                .collect::<Vec<_>>();
 
-                // Decode grad from all nodes
-                let new_grad = self.transform.decode(&CompressDCT::batch_decompress(
-                    &variable, &indicies, &values, &x_shape,
-                ));
+            // Decode grad from all nodes
+            let new_grad = self.transform.decode(&CompressDCT::batch_decompress(
+                &variable, &indicies, &values, &results[0][index].xshape,
+            ));
 
-                // Set grad to values
-                variable.grad().copy_(&new_grad);
-            } else {
-                variable.grad().zero_();
-            }
+            // Set grad to values
+            variable.grad().copy_(&new_grad);
 
             // Sign-SGD
             variable.grad().sign_();
@@ -520,6 +518,7 @@ impl Distro {
         // SGD step
         self.sgd.set_lr(lr);
         self.sgd.step();
+        self.sgd.zero_grad();
     }
 }
 

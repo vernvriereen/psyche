@@ -1,4 +1,4 @@
-use crate::{model::Model, traits::Backend, CommitteeProof, CommitteeSelection, WitnessProof};
+use crate::{model::Model, traits::Backend, Committee, CommitteeProof, CommitteeSelection, WitnessProof};
 use psyche_core::{sha256, Bloom, NodeIdentity};
 use psyche_serde::derive_serialize;
 
@@ -47,7 +47,7 @@ pub struct Witness {
     pub index: u64,
     pub proof: WitnessProof,
     pub commit_bloom: Bloom<[u8; 32]>,
-    pub payload_bloom: Bloom<[u8; 32]>,
+    pub participant_bloom: Bloom<[u8; 32]>,
 }
 
 #[derive(Clone, Debug)]
@@ -58,6 +58,8 @@ pub enum CoordinatorError {
     DuplicateWitness,
     InvalidHealthCheck,
 }
+
+pub type Committment = [u8; 32];
 
 #[derive_serialize]
 #[derive(Clone, Debug)]
@@ -88,6 +90,7 @@ pub struct Coordinator<T: NodeIdentity> {
     pub data_indicies_per_client: u32,
     pub verification_percent: u8,
     pub witness_nodes: u32,
+    pub witness_quorum: u32,
 
     pub epoch: u32,
     pub step: u32,
@@ -133,6 +136,7 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             data_indicies_per_client: Default::default(),
             verification_percent: Default::default(),
             witness_nodes: Default::default(),
+            witness_quorum: Default::default(),
             step: Default::default(),
             last_step_unix_timestamp: Default::default(),
             epoch: Default::default(),
@@ -152,6 +156,8 @@ impl std::fmt::Display for CoordinatorError {
         }
     }
 }
+
+impl std::error::Error for CoordinatorError {}
 
 impl<T: NodeIdentity> Coordinator<T> {
     pub fn tick(&mut self, backend: &dyn Backend<T>, unix_timestamp: u64, random_seed: u64) {
@@ -241,28 +247,35 @@ impl<T: NodeIdentity> Coordinator<T> {
                 return false;
             }
             match proof.committee {
-                crate::Committee::TieBreaker => todo!(),
-                crate::Committee::Verifier => todo!(),
-                crate::Committee::Trainer => {
-                    let hash = sha256(client.id.as_ref());
-                    let mut found = false;
-                    for witness in &round.witnesses {
-                        if witness.commit_bloom.contains(&hash)
-                            && witness.payload_bloom.contains(&hash)
-                        {
-                            found = true;
-                            break;
-                        }
-                    }
-                    if found {
-                        return false;
-                    }
-                }
+                Committee::TieBreaker => todo!(),
+                Committee::Verifier => todo!(),
+                Committee::Trainer => Self::trainer_healthy_by_witnesses(client, &round.witnesses, self.witness_quorum),
             }
         } else {
-            return false;
+            false
         }
-        true
+    }
+
+    pub fn trainer_healthy_by_witnesses(client: &Client<T>, witnesses: &[Witness], witness_quorum: u32) -> bool {
+        let hash = sha256(client.id.as_ref());
+        let mut score = 0u32;
+        for witness in witnesses {
+            if witness.participant_bloom.contains(&hash) {
+                score += 1;
+            }
+        }
+        score >= witness_quorum
+    }
+
+    pub fn committment_exists_by_witnesses(committment: &Committment, witnesses: &[Witness], witness_quorum: u32) -> bool {
+        let hash = sha256(committment);
+        let mut score = 0u32;
+        for witness in witnesses {
+            if witness.commit_bloom.contains(&hash) {
+                score += 1;
+            }
+        }
+        score >= witness_quorum
     }
 
     pub fn current_round(&self) -> Result<&Round, CoordinatorError> {
