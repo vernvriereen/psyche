@@ -56,15 +56,16 @@ impl psyche_tui::CustomWidget for ClientTUI {
         }
         {
             let hsplit =
-                Layout::horizontal(Constraint::from_fills([1, 1, 1, 1])).split(coord_split[1]);
+                Layout::horizontal(Constraint::from_fills([1, 1, 1, 1, 1])).split(coord_split[1]);
             Paragraph::new(format!("Step: {}", state.step)).render(hsplit[0], buf);
-            Paragraph::new(format!("Height: {}", state.height)).render(hsplit[1], buf);
-            Paragraph::new(format!("Run state: {:?}", state.run_state)).render(hsplit[2], buf);
             Paragraph::new(format!(
                 "Committee: {}",
                 state.committee.map(|x| x.to_string()).unwrap_or_default()
             ))
-            .render(hsplit[3], buf);
+            .render(hsplit[1], buf);
+            Paragraph::new(format!("State: {}", state.run_state)).render(hsplit[2], buf);
+            Paragraph::new(format!("Batches Left: {}", state.batches_left)).render(hsplit[3], buf);
+            Paragraph::new(format!("Loss: {:.3}", state.loss.last().unwrap_or(&0.0))).render(hsplit[4], buf);
         }
     }
 }
@@ -72,8 +73,8 @@ impl psyche_tui::CustomWidget for ClientTUI {
 #[derive(Default, Debug, Clone)]
 pub struct ClientTUIState {
     pub step: u32,
-    pub height: u32,
     pub committee: Option<Committee>,
     pub run_state: RunState,
+    pub batches_left: usize,
     pub loss: Vec<f32>,
 }

@@ -205,8 +205,16 @@ where
         Ok(blob_ticket)
     }
 
-    pub async fn remove_downloadable(&self, ticket: BlobTicket) -> Result<()> {
-        self.node.blobs().delete_blob(ticket.hash()).await
+    pub async fn remove_downloadable(&mut self, ticket: BlobTicket) -> Result<()> {
+        self.node.blobs().delete_blob(ticket.hash()).await?;
+        if let Some(index) = self.state.currently_sharing_blobs.iter().position(|x| x == &ticket) {
+            self.state.currently_sharing_blobs.remove(index);
+        }
+        Ok(())
+    }
+
+    pub fn currently_sharing_blobs(&self) -> &Vec<BlobTicket> {
+        &self.state.currently_sharing_blobs
     }
 
     pub async fn node_addr(&self) -> Result<NodeAddr> {

@@ -1,8 +1,12 @@
-use crate::{protocol::NE, state::State, BroadcastMessage, ClientTUIState, Payload, NC};
+use crate::{
+    protocol::NE,
+    state::{State, ToSend},
+    ClientTUIState, NC,
+};
 use anyhow::Result;
 use psyche_coordinator::Coordinator;
 use psyche_core::NodeIdentity;
-use psyche_network::{BlobTicket, NetworkTUIState};
+use psyche_network::NetworkTUIState;
 use psyche_watcher::{Backend, BackendWatcher};
 use std::{borrow::BorrowMut, marker::PhantomData, sync::Arc};
 use tokio::{
@@ -38,7 +42,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
             async move {
                 let mut watcher = BackendWatcher::new(backend);
                 let mut state = State::new(identity, private_key);
-                let mut prev_ticket: Option<BlobTicket> = None;
+                let clear_uploads = state.get_clear_downloads_notification();
 
                 loop {
                     let step_result: Option<
@@ -55,11 +59,12 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                         },
                         res = watcher.borrow_mut().poll_next() => Ok(Some(res.map(|(c,cn)| (c, cn.clone())))),
                         res = p2p.poll_next() => Self::handle_p2p_poll(&mut state, &watcher, &mut p2p, res).await.map(|_| None),
-                        res = state.poll_next() => Self::handle_state_poll(&mut state, &mut p2p, &mut prev_ticket, res).await.map(|_| None),
+                        res = state.poll_next() => Self::handle_state_poll(&mut state, &mut p2p, &mut watcher, res?).await.map(|_| None),
+                        _ = clear_uploads.notified() => Self::handle_clear_uploads(&mut p2p).await.map(|_| None),
                     }?;
 
                     if let Some(watcher_res) = step_result {
-                        Self::handle_watcher_poll(&mut state, &mut watcher, watcher_res).await?;
+                        Self::handle_watcher_poll(&mut state, &mut watcher, watcher_res?).await?;
                     }
                 }
 
@@ -79,14 +84,13 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
     async fn handle_watcher_poll(
         state: &mut State<T>,
         watcher: &mut BackendWatcher<T, B>,
-        res: Result<(Option<Coordinator<T>>, Coordinator<T>)>,
+        res: (Option<Coordinator<T>>, Coordinator<T>),
     ) -> Result<()> {
-        let (prev_state, new_state) = res?;
-        let witness_send = state.process_new_state(&new_state, prev_state).await?;
-        if let Some(witness) = witness_send {
-            watcher.backend_mut().send_witness(witness).await
-        } else {
-            Ok(())
+        let (prev_state, new_state) = res;
+        match state.process_new_state(&new_state, prev_state).await? {
+            Some(ToSend::Witness(witness)) => watcher.backend_mut().send_witness(witness).await,
+            None => Ok(()),
+            _ => todo!(),
         }
     }
 
@@ -109,17 +113,12 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
     async fn handle_state_poll(
         state: &mut State<T>,
         p2p: &mut NC,
-        prev_ticket: &mut Option<BlobTicket>,
-        res: Result<Option<(BroadcastMessage, Payload)>>,
+        watcher: &mut BackendWatcher<T, B>,
+        res: ToSend,
     ) -> Result<()> {
         match res {
-            Ok(Some((broadcast, payload))) => {
-                if let Some(ticket) = prev_ticket.take() {
-                    p2p.remove_downloadable(ticket).await?;
-                }
-
+            ToSend::Broadcast((broadcast, payload)) => {
                 let new_ticket = p2p.add_downloadable(payload.clone()).await?;
-                *prev_ticket = Some(new_ticket.clone());
 
                 let mut broadcast = broadcast;
                 broadcast.ticket = new_ticket;
@@ -130,9 +129,19 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                 state.handle_broadcast(&identity, broadcast)?;
                 state.handle_payload(hash, payload)
             }
-            Ok(None) => Ok(()),
-            Err(err) => Err(err),
+            ToSend::Witness(witness) => watcher.backend_mut().send_witness(witness).await,
+            ToSend::HealthCheck(health_checks) => {
+                watcher.backend_mut().send_health_check(health_checks).await
+            }
+            ToSend::Nothing => Ok(()),
         }
+    }
+
+    async fn handle_clear_uploads(p2p: &mut NC) -> Result<()> {
+        for blob in p2p.currently_sharing_blobs().clone() {
+            p2p.remove_downloadable(blob).await?;
+        }
+        Ok(())
     }
 
     pub async fn process(&mut self) -> Result<()> {

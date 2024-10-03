@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{BroadcastMessage, Payload, NC};
 use psyche_coordinator::model::{LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM};
-use psyche_coordinator::{Client, Coordinator, Witness};
+use psyche_coordinator::{Client, Coordinator, HealthChecks, Witness};
 use psyche_data_provider::{DataProviderTcpServer, DataServerTui, LocalDataProvider, TokenSize};
 use psyche_network::{NetworkEvent, NetworkTui, PeerList, RelayMode, TcpServer};
 use psyche_tui::logging::LoggerWidget;
@@ -68,6 +68,11 @@ impl psyche_watcher::Backend<ClientId> for ChannelCoordinatorBackend {
 
     async fn send_witness(&mut self, _witness: Witness) -> Result<()> {
         assert!(false, "Server does not send witnesses");
+        Ok(())
+    }
+
+    async fn send_health_check(&mut self, _health_checks: HealthChecks) -> Result<()> {
+        assert!(false, "Server does not send health checks");
         Ok(())
     }
 }
@@ -229,9 +234,10 @@ impl App {
             ClientToServerMessage::Join { run_id } => {
                 // TODO: check whitelist
                 if self.coordinator.run_id == run_id {
-                    self.backend
-                        .pending_clients
-                        .push(Client { id: from.clone() });
+                    self.backend.pending_clients.push(Client {
+                        id: from.clone(),
+                        dropping_at_end_of_round: false,
+                    });
                     let client_joined = self
                         .backend
                         .net_server
@@ -252,11 +258,26 @@ impl App {
                 }
             }
             ClientToServerMessage::Witness(witness) => {
-                if let Err(error) =
-                    self.coordinator
-                        .witness(&Client { id: from }, witness, Self::get_timestamp())
-                {
+                if let Err(error) = self.coordinator.witness(
+                    &Client {
+                        id: from,
+                        dropping_at_end_of_round: false,
+                    },
+                    witness,
+                    Self::get_timestamp(),
+                ) {
                     warn!("Error when processing witness: {error}");
+                }
+            }
+            ClientToServerMessage::HealthCheck(health_checks) => {
+                if let Err(error) = self.coordinator.health_check(
+                    &Client {
+                        id: from,
+                        dropping_at_end_of_round: false,
+                    },
+                    health_checks,
+                ) {
+                    warn!("Error when processing health check: {error}");
                 }
             }
         }

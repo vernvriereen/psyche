@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, f64::consts::PI};
+use std::{collections::HashMap, f64::consts::PI};
 
 use tch::{
     nn::{Optimizer, OptimizerConfig, Sgd, VarStore},
@@ -6,17 +6,17 @@ use tch::{
 };
 
 struct TransformDCT {
-    shape_dict: BTreeMap<i64, i64>,
-    f_dict: BTreeMap<i64, Tensor>,
-    b_dict: BTreeMap<i64, Tensor>,
+    shape_dict: HashMap<i64, i64>,
+    f_dict: HashMap<i64, Tensor>,
+    b_dict: HashMap<i64, Tensor>,
 }
 
 impl TransformDCT {
     fn new(variables: &[Tensor], target_chunk: i64) -> Self {
         let _no_grad = tch::no_grad_guard();
-        let mut shape_dict = BTreeMap::new();
-        let mut f_dict = BTreeMap::new();
-        let mut b_dict = BTreeMap::new();
+        let mut shape_dict = HashMap::new();
+        let mut f_dict = HashMap::new();
+        let mut b_dict = HashMap::new();
 
         // Get all variants of model tensor sizes
         // Generate all possible valid DCT sizes for model tensors

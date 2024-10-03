@@ -5,8 +5,8 @@ use crate::{
 };
 use anyhow::{bail, Error, Result};
 use psyche_coordinator::{
-    model, select_data_for_state, Committee, CommitteeProof, CommitteeSelection, Coordinator,
-    RunState, Witness, WitnessProof, BLOOM_FALSE_RATE, BLOOM_MAX_BITS,
+    get_batch_ids_for_state, model, Committee, CommitteeProof, CommitteeSelection, Coordinator,
+    HealthChecks, RunState, Witness, WitnessProof, BLOOM_FALSE_RATE, BLOOM_MAX_BITS,
 };
 use psyche_core::{sha256, Bloom, NodeIdentity};
 use psyche_data_provider::{
@@ -15,7 +15,11 @@ use psyche_data_provider::{
 use psyche_modeling::{DistroResult, LlamaForCausalLM};
 use psyche_network::{dummy_blob_ticket, BlobTicket, NetworkEvent};
 use psyche_watcher::{Backend, BackendWatcher};
-use std::collections::HashMap;
+use rand::Rng;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use tch::Kind;
 use tokio::{sync::Notify, task::JoinHandle};
 use tracing::{debug, info, warn};
@@ -23,9 +27,18 @@ use tracing::{debug, info, warn};
 type TaskResult<T> = Option<JoinHandle<Result<T>>>;
 
 enum PayloadState<T: NodeIdentity> {
-    Downloading(T),
+    Downloading((T, u64)),
     #[allow(dead_code)]
     Downloaded(Payload),
+}
+
+pub type BroadcastAndPayload = (BroadcastMessage, Payload);
+
+pub enum ToSend {
+    Nothing,
+    Broadcast(BroadcastAndPayload),
+    Witness(Witness),
+    HealthCheck(HealthChecks),
 }
 
 pub struct State<T: NodeIdentity> {
@@ -35,18 +48,21 @@ pub struct State<T: NodeIdentity> {
     data_and_model_load: TaskResult<(DataProviderTcpClient<T>, LlamaForCausalLM)>,
     data_provider: Option<DataProviderTcpClient<T>>,
     trainer: Option<Trainer>,
-    round_train_clients: Vec<psyche_coordinator::Client<T>>,
-    training: TaskResult<TrainOutput>,
-    fetching_data: TaskResult<(DataProviderTcpClient<T>, Vec<Vec<i32>>)>,
+    training: TaskResult<(TrainOutput, u64)>,
+    fetching_data: TaskResult<(DataProviderTcpClient<T>, Vec<Vec<i32>>, u64)>,
     applying: TaskResult<Trainer>,
+    health_checking: TaskResult<HealthChecks>,
     committee_info: Option<(CommitteeProof, WitnessProof, CommitteeSelection)>,
     state: Option<Coordinator<T>>,
     prev_state: Option<Coordinator<T>>,
-    committments: HashMap<T, BroadcastMessage>,
+    committments: HashMap<u64, Vec<(T, BroadcastMessage)>>,
+    committments_per_client: HashMap<T, u32>,
     payloads: HashMap<psyche_network::Hash, PayloadState<T>>,
-    blooms: Option<(Bloom<[u8; 32]>, Bloom<[u8; 32]>)>,
+    blooms: Option<(Bloom<[u8; 32]>, Bloom<[u8; 32]>, Bloom<[u8; 32]>)>,
     notify: Notify,
     losses: Vec<f32>,
+    remaining_batch_ids: HashSet<u64>,
+    clear_uploads: Arc<Notify>,
 }
 
 impl<T: NodeIdentity> State<T> {
@@ -61,15 +77,18 @@ impl<T: NodeIdentity> State<T> {
             training: None,
             fetching_data: None,
             applying: None,
+            health_checking: None,
             committee_info: None,
             state: None,
             prev_state: None,
             blooms: None,
             committments: HashMap::new(),
+            committments_per_client: HashMap::new(),
             payloads: HashMap::new(),
             notify: Notify::new(),
             losses: Vec::new(),
-            round_train_clients: Vec::new(),
+            remaining_batch_ids: HashSet::new(),
+            clear_uploads: Arc::new(Notify::new()),
         }
     }
 
@@ -77,7 +96,7 @@ impl<T: NodeIdentity> State<T> {
         &mut self,
         state: &Coordinator<T>,
         prev_state: Option<Coordinator<T>>,
-    ) -> Result<Option<Witness>> {
+    ) -> Result<Option<ToSend>> {
         self.state = Some(state.clone());
         self.prev_state = prev_state;
         let position = match state.clients.iter().position(|x| x.id == self.identity) {
@@ -95,19 +114,25 @@ impl<T: NodeIdentity> State<T> {
             RunState::Warmup => self.warmup().map(|_| None),
             RunState::RoundTrain => self.round_train(position).await.map(|_| None),
             RunState::RoundWitness => {
-                return self.round_witness(position);
+                return self
+                    .round_witness(position)
+                    .map(|x| x.map(|y| ToSend::Witness(y)))
             }
             RunState::RoundApply => return self.round_apply().map(|_| None),
         }
     }
 
-    pub async fn poll_next(&mut self) -> Result<Option<(BroadcastMessage, Payload)>> {
+    pub fn get_clear_downloads_notification(&self) -> Arc<Notify> {
+        self.clear_uploads.clone()
+    }
+
+    pub async fn poll_next(&mut self) -> Result<ToSend> {
         if let Some(fetching_data) = &mut self.fetching_data {
             let state = self
                 .state
                 .as_ref()
                 .ok_or(Error::msg("Data fetch running, but no state"))?;
-            let (data_provider, data) = fetching_data.await??;
+            let (data_provider, data, batch_id) = fetching_data.await??;
             self.fetching_data = None;
             self.data_provider = Some(data_provider);
 
@@ -117,14 +142,16 @@ impl<T: NodeIdentity> State<T> {
                 .ok_or(Error::msg("Round start but no trainer object (didn't finish training previous round or applying it?)"))?;
             let step: usize = state.step as usize;
             self.training = Some(tokio::task::spawn_blocking(move || {
-                trainer.train(step as usize, data)
+                Ok((trainer.train(step as usize, data)?, batch_id))
             }));
         } else if let Some(training) = &mut self.training {
-            let output = training.await??;
+            let (output, batch_id) = training.await??;
             self.training = None;
             self.trainer = Some(output.trainer);
             self.losses.push(output.loss);
-            // TODO DISTRO
+            if !self.is_run_state(RunState::RoundTrain) {
+                return Ok(ToSend::Nothing);
+            }
             let (committee_proof, _, _) = self
                 .committee_info
                 .as_ref()
@@ -133,6 +160,7 @@ impl<T: NodeIdentity> State<T> {
             let step = output.step as u64;
             let broadcast = BroadcastMessage {
                 step,
+                batch_id,
                 committment,
                 ticket: dummy_blob_ticket(),
                 proof: *committee_proof,
@@ -141,15 +169,57 @@ impl<T: NodeIdentity> State<T> {
                 step,
                 distro_results: output.distro_results.iter().map(|x| x.into()).collect(),
             };
-            return Ok(Some((broadcast, payload)));
+            return Ok(ToSend::Broadcast((broadcast, payload)));
         } else if let Some(applying) = &mut self.applying {
             let trainer = applying.await??;
             self.applying = None;
             self.trainer = Some(trainer);
+        } else if self.is_run_state(RunState::RoundTrain)
+            && self.trainer.is_some()
+            && self.data_provider.is_some()
+            && self.fetching_data.is_none()
+            && !self.remaining_batch_ids.is_empty()
+        {
+            let data_provider = self.data_provider.take().unwrap();
+            let batch_id = *self
+                .remaining_batch_ids
+                .iter()
+                .nth(rand::thread_rng().gen_range(0..self.remaining_batch_ids.len()))
+                .unwrap();
+            let data_indicies_per_batch =
+                self.state.as_ref().unwrap().data_indicies_per_batch as u64;
+            let start_data_id = (batch_id * data_indicies_per_batch) as usize;
+            let data_ids = (start_data_id..(start_data_id + data_indicies_per_batch as usize))
+                .collect::<Vec<_>>();
+            self.fetching_data = Some(tokio::spawn(async move {
+                let (data_provider, data) = Self::fetch_data(data_provider, data_ids).await?;
+                Ok((data_provider, data, batch_id))
+            }));
+        } else if let Some(health_checking) = &mut self.health_checking {
+            let health_checks = health_checking.await??;
+            self.health_checking = None;
+            if !health_checks.is_empty() {
+                info!(
+                    "Sending health check for following indicies: {:?}",
+                    health_checks
+                );
+                return Ok(ToSend::HealthCheck(health_checks));
+            }
+        } else if self.is_run_state(RunState::RoundTrain)
+            && self.committee_info.is_some()
+            && self.remaining_batch_ids.is_empty()
+        {
+            let (_, witness_proof, _) = self.committee_info.as_ref().unwrap();
+            if let Some(witness) = self.get_witness_to_send(witness_proof.index) {
+                // send opprotunistic witness
+                return Ok(ToSend::Witness(witness));
+            } else {
+                self.notify.notified().await;
+            }
         } else {
             self.notify.notified().await;
         }
-        Ok(None)
+        Ok(ToSend::Nothing)
     }
 
     pub fn process_network_event<B: Backend<T> + 'static>(
@@ -160,6 +230,10 @@ impl<T: NodeIdentity> State<T> {
         match event {
             NetworkEvent::MessageReceived((public_key, message)) => {
                 // verify they are who they say they are
+                debug!(
+                    "Committment {:#?} received from {}",
+                    message.committment, public_key
+                );
                 if let Some(state) = &self.state {
                     if state.step == message.step as u32 {
                         if let Some((_, _, committee_selection)) = self.committee_info.as_ref() {
@@ -175,13 +249,27 @@ impl<T: NodeIdentity> State<T> {
                                 }
                             }
                         }
+                    } else {
+                        info!(
+                            "Got broadcast for step {} from {} but current step is {}",
+                            message.step, public_key, state.step
+                        );
                     }
                 }
             }
             NetworkEvent::DownloadComplete(downloaded) => {
+                debug!(
+                    "Payload {:#?} received from {}",
+                    downloaded.hash, downloaded.from
+                );
                 if let Some(state) = &self.state {
                     if state.step == downloaded.data.step as u32 {
                         self.handle_payload(downloaded.hash, downloaded.data)?;
+                    } else {
+                        info!(
+                            "Got payload for step {} from {} but current step is {}",
+                            downloaded.data.step, downloaded.from, state.step
+                        );
                     }
                 }
             }
@@ -200,28 +288,46 @@ impl<T: NodeIdentity> State<T> {
             .ok_or(Error::msg("Broadcast message processor has no self proofs"))?;
         // verified by process_network_event caller
         if broadcast.proof.committee == Committee::Trainer {
-            if self.committments.contains_key(&identity) {
-                debug!("Got duplicated committment from {}", identity);
+            if *self.committments_per_client.get(identity).unwrap_or(&0)
+                >= self
+                    .state
+                    .as_ref()
+                    .map(|x| x.max_batches_per_client)
+                    .unwrap_or(0)
+            {
+                info!(
+                    "Maximum commitments received from {}, dropping {:#?}",
+                    identity, broadcast.committment
+                );
                 return Ok(None);
             }
 
             if witness_proof.witness {
-                let (commit_bloom, _) = self
+                let (commit_bloom, _, _) = self
                     .blooms
                     .as_mut()
                     .ok_or(Error::msg("We are a witness but no blooms"))?;
                 commit_bloom.add(&sha256(&broadcast.committment));
             }
+            if !self.committments.contains_key(&broadcast.batch_id) {
+                self.committments.insert(broadcast.batch_id, Vec::new());
+            }
+            let ticket = broadcast.ticket.clone();
+            let batch_id = broadcast.batch_id;
             self.committments
-                .insert(identity.clone(), broadcast.clone());
+                .get_mut(&broadcast.batch_id)
+                .unwrap()
+                .push((identity.clone(), broadcast));
             self.payloads.insert(
-                broadcast.ticket.hash(),
-                PayloadState::Downloading(identity.clone()),
+                ticket.hash(),
+                PayloadState::Downloading((identity.clone(), batch_id)),
             );
             // check if this is our broadcast -- if so don't download it (assume caller then calls handle_payload with data)
             if *identity != self.identity {
-                return Ok(Some(broadcast.ticket));
+                return Ok(Some(ticket));
             }
+        } else {
+            todo!();
         }
 
         Ok(None)
@@ -232,8 +338,8 @@ impl<T: NodeIdentity> State<T> {
         hash: psyche_network::Hash,
         payload: Payload,
     ) -> Result<()> {
-        let from = match self.payloads.get(&hash) {
-            Some(PayloadState::Downloading(from)) => from,
+        let (from, batch_id) = match self.payloads.get(&hash) {
+            Some(PayloadState::Downloading(x)) => x,
             Some(PayloadState::Downloaded(_)) => {
                 debug!("Duplicate download of {}", hash);
                 return Ok(());
@@ -243,21 +349,46 @@ impl<T: NodeIdentity> State<T> {
                 return Ok(());
             }
         };
+        let committments = match self.committments.get(batch_id) {
+            Some(committments) => committments,
+            None => {
+                info!("No committment for payload from {}", from);
+                return Ok(());
+            }
+        };
+        let committment = match committments
+            .iter()
+            .find(|x| x.0 == *from && x.1.ticket.hash() == hash)
+        {
+            Some(committment) => &committment.1,
+            None => {
+                info!("No committment for payload from {}", from);
+                return Ok(());
+            }
+        };
         let (_, witness_proof, _) = self
             .committee_info
             .as_ref()
             .ok_or(Error::msg("Payload message processor has no self proofs"))?;
         if witness_proof.witness {
-            let (_, participant_bloom) = self
+            let (_, participant_bloom, order_bloom) = self
                 .blooms
                 .as_mut()
                 .ok_or(Error::msg("We are a witness but no blooms"))?;
             participant_bloom.add(&sha256(from.as_ref()));
+            if self.remaining_batch_ids.contains(batch_id) {
+                // first received payload for this batch id, vote for it in consensus
+                order_bloom.add(&sha256(&committment.committment));
+            }
         }
         // TODO: verify payload matches committment
         // TODO: verify shape of distro_results
+        self.remaining_batch_ids.remove(batch_id);
         self.payloads
             .insert(hash, PayloadState::Downloaded(payload));
+        if self.remaining_batch_ids.is_empty() {
+            self.notify.notify_one(); // wake up poll_next() to send opprotunistic witness
+        }
         Ok(())
     }
 
@@ -349,44 +480,69 @@ impl<T: NodeIdentity> State<T> {
             round.random_seed,
         );
 
-        let data_ids = select_data_for_state(&state, &committee_selection)
-            .iter()
-            .filter(|(_, v)| **v == self.identity)
-            .flat_map(|(k, _)| (k.start as usize..k.end as usize + 1).collect::<Vec<_>>())
-            .collect::<Vec<_>>();
-
+        // let data_ids = assign_data_for_state(&state, &committee_selection)
+        //     .iter()
+        //     .filter(|(_, v)| **v == self.identity)
+        //     .flat_map(|(k, _)| (k.start as usize..k.end as usize + 1).collect::<Vec<_>>())
+        //     .collect::<Vec<_>>();
+        self.remaining_batch_ids = get_batch_ids_for_state(state).drain(0..).collect();
         let committee_proof = committee_selection.get_committee(index);
         let witness_proof = committee_selection.get_witness(index);
         info!(
             "Assignment for step {} (round {}/epoch {}): committee={} witness={}",
             state.step, round.height, state.epoch, committee_proof.committee, witness_proof.witness
         );
-        if witness_proof.witness {
-            let commit_bloom = Bloom::random(state.clients.len(), BLOOM_FALSE_RATE, BLOOM_MAX_BITS);
-            let participant_bloom =
-                Bloom::random(state.clients.len(), BLOOM_FALSE_RATE, BLOOM_MAX_BITS);
-            info!(
-                "Witness bloom size: {} bits, {} keys",
-                commit_bloom.bits.len(),
-                commit_bloom.keys.len()
-            );
-            self.blooms = Some((commit_bloom, participant_bloom));
-        }
+        self.blooms = match witness_proof.witness {
+            true => {
+                let commit_bloom = Bloom::random(
+                    self.remaining_batch_ids.len() * 2,
+                    BLOOM_FALSE_RATE,
+                    BLOOM_MAX_BITS,
+                );
+                let participant_bloom =
+                    Bloom::random(state.clients.len(), BLOOM_FALSE_RATE, BLOOM_MAX_BITS);
+                let order_bloom = Bloom::random(
+                    self.remaining_batch_ids.len(),
+                    BLOOM_FALSE_RATE,
+                    BLOOM_MAX_BITS,
+                );
+                debug!(
+                    "Commit bloom size: {} bits, {} keys",
+                    commit_bloom.bits.len(),
+                    commit_bloom.keys.len()
+                );
+                debug!(
+                    "Participant bloom size: {} bits, {} keys",
+                    participant_bloom.bits.len(),
+                    participant_bloom.keys.len()
+                );
+                debug!(
+                    "Order bloom size: {} bits, {} keys",
+                    order_bloom.bits.len(),
+                    order_bloom.keys.len()
+                );
+                Some((commit_bloom, participant_bloom, order_bloom))
+            }
+            false => None,
+        };
         self.committee_info = Some((committee_proof, witness_proof, committee_selection));
-        self.payloads = HashMap::new();
-        self.round_train_clients = state.clients.clone();
+        self.committments.clear();
+        self.committments_per_client.clear();
+        self.payloads.clear();
+        self.clear_uploads.notify_one(); // clear any served uploads we have
+        self.notify.notify_one(); // wake up poll_next() to start data download and training
 
-        if !data_ids.is_empty() {
-            let data_provider = std::mem::take(&mut self.data_provider)
-                .ok_or(Error::msg("Round start but no data provider object"))?;
-            self.fetching_data = Some(tokio::spawn(Self::fetch_data(data_provider, data_ids)));
-            self.notify.notify_one()
-        } else {
-            info!(
-                "No data assigned for round {} of run {}",
-                round.height, state.run_id
-            );
-        }
+        // if !data_ids.is_empty() {
+        //     let data_provider = std::mem::take(&mut self.data_provider)
+        //         .ok_or(Error::msg("Round start but no data provider object"))?;
+        //     self.fetching_data = Some(tokio::spawn(Self::fetch_data(data_provider, data_ids)));
+        //     self.notify.notify_one()
+        // } else {
+        //     info!(
+        //         "No data assigned for round {} of run {}",
+        //         round.height, state.run_id
+        //     );
+        // }
         Ok(())
     }
 
@@ -397,21 +553,7 @@ impl<T: NodeIdentity> State<T> {
             .ok_or(Error::msg("No state in round witness"))?;
         assert_eq!(state.run_state, RunState::RoundWitness);
 
-        if let Some((_, witness_proof, _)) = self.committee_info.as_ref() {
-            if witness_proof.witness {
-                let blooms = self.blooms.take();
-                if let Some((commit_bloom, participant_bloom)) = blooms {
-                    info!("Submitting witness blooms");
-                    return Ok(Some(Witness {
-                        index,
-                        proof: witness_proof.clone(),
-                        commit_bloom,
-                        participant_bloom,
-                    }));
-                }
-            }
-        }
-        Ok(None)
+        Ok(self.get_witness_to_send(index))
     }
 
     fn round_apply(&mut self) -> Result<()> {
@@ -440,68 +582,91 @@ impl<T: NodeIdentity> State<T> {
         let mut payloads: HashMap<psyche_network::Hash, PayloadState<T>> =
             self.payloads.drain().collect();
         let witnesses = round.witnesses.clone();
-        // need to use clients at train time since health checks happening now and we could see a modified client list
-        let clients: Vec<psyche_coordinator::Client<T>> =
-            self.round_train_clients.drain(0..).collect();
-        let witness_quorum = state.witness_quorum;
-        let committee_selection = self
-            .committee_info
-            .as_ref()
-            .ok_or(Error::msg("No committee in round apply"))?
-            .2
-            .clone();
-        let committments: HashMap<T, BroadcastMessage> = self.committments.drain().collect();
+        let committments: HashMap<u64, Vec<(T, BroadcastMessage)>> =
+            self.committments.drain().collect();
         let step = state.step as usize;
+        let batch_ids = get_batch_ids_for_state(state);
 
         self.applying = Some(tokio::task::spawn_blocking(move || {
             let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
-            for (index, client) in clients.iter().enumerate() {
-                if committee_selection.get_committee_from_position(index as u64)
-                    == Committee::Trainer
-                {
-                    if Coordinator::trainer_healthy_by_witnesses(client, &witnesses, witness_quorum)
-                    {
-                        match committments.get(&client.id) {
-                            Some(committment) => {
-                                match Coordinator::<T>::committment_exists_by_witnesses(
-                                    &committment.committment,
-                                    &witnesses,
-                                    witness_quorum,
-                                ) {
-                                    true => {
-                                        match payloads.remove(&committment.ticket.hash()) {
-                                            Some(PayloadState::Downloaded(payload)) => {
-                                                let maybe_results: Result<Vec<DistroResult>, _> = payload.distro_results.into_iter().map(|x| x.try_into()).collect();
-                                                match maybe_results {
-                                                    Ok(results) => {
-                                                        distro_results.push(results);
-                                                    }
-                                                    Err(err) => warn!("DESYNC: Got the following error when deserializing results for committment {:#?} from {}: {}", committment.committment, client.id, err),
-                                                }
-                                                
-                                            },
-                                            _ => warn!("DESYNC: Did not download payload for committment {:#?} from {}", committment.committment, client.id),
-                                        }
-                                    }
-                                    false => warn!(
-                                        "DESYNC: Committment {:#?} from {} not in consensus filter",
-                                        committment.committment, client.id
-                                    ),
-                                }
-                            }
-                            None => {
-                                warn!(
-                                    "DESYNC: Missing committment from healthy trainer {}",
-                                    client.id
-                                );
-                            }
-                        }
+
+            for batch_id in batch_ids {
+                let batch_committments = match committments.get(&batch_id) {
+                    Some(x) => x,
+                    None => {
+                        warn!("DESYNC: No committments for batch {}", batch_id);
+                        continue;
                     }
+                };
+                let consensus = match Coordinator::<T>::select_consensus_committment_by_witnesses(
+                    &batch_committments
+                        .iter()
+                        .map(|x| x.1.committment)
+                        .collect::<Vec<_>>(),
+                    &witnesses,
+                ) {
+                    Some(x) => x,
+                    None => {
+                        warn!(
+                            "DESYNC: Missing consensus committment for batch {}",
+                            batch_id
+                        );
+                        continue;
+                    }
+                };
+                let consensus = &batch_committments[consensus].1;
+                let payload = match payloads.remove(&consensus.ticket.hash()) {
+                    Some(PayloadState::Downloaded(x)) => x,
+                    _ => {
+                        warn!("DESYNC: Did not finish downloading payload for consensus committment {:#?} for batch {}", consensus.committment, batch_id);
+                        continue;
+                    }
+                };
+                let maybe_results: Result<Vec<DistroResult>, _> = payload
+                    .distro_results
+                    .into_iter()
+                    .map(|x| x.try_into())
+                    .collect();
+                match maybe_results {
+                    Ok(results) => {
+                        distro_results.push(results);
+                    }
+                    Err(err) => warn!("DESYNC: Got the following error when deserializing results for committment {:#?}: {}", consensus.committment, err),
                 }
             }
 
             trainer.apply_distro_results(step, distro_results)
         }));
+
+        let (_, witness_proof, committee_selection) = self
+            .committee_info
+            .take()
+            .ok_or(Error::msg("No committee info in apply"))?;
+
+        if witness_proof.witness {
+            let witnesses = round.witnesses.clone();
+            let witness_quorum = state.witness_quorum;
+            let clients = state.clients.clone();
+            self.health_checking = Some(tokio::task::spawn_blocking(move || {
+                let mut checks = HealthChecks::new();
+                for (index, client) in clients.into_iter().enumerate() {
+                    let proof = committee_selection.get_committee(index as u64);
+                    match proof.committee {
+                        Committee::Trainer => {
+                            if !Coordinator::trainer_healthy_by_witnesses(
+                                &client,
+                                &witnesses,
+                                witness_quorum,
+                            ) {
+                                checks.push(proof);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(checks)
+            }));
+        }
 
         Ok(())
     }
@@ -558,19 +723,43 @@ impl<T: NodeIdentity> State<T> {
         let (data, model) = tokio::join!(data_future, model_future);
         Ok((data?, model??))
     }
+
+    fn is_run_state(&self, run_state: RunState) -> bool {
+        self.state
+            .as_ref()
+            .is_some_and(|x| x.run_state == run_state)
+    }
+
+    fn get_witness_to_send(&mut self, index: u64) -> Option<Witness> {
+        if let Some((_, witness_proof, _)) = self.committee_info.as_ref() {
+            if witness_proof.witness {
+                let blooms = self.blooms.take();
+                if let Some((commit_bloom, participant_bloom, order_bloom)) = blooms {
+                    info!("Submitting witness blooms");
+                    return Some(Witness {
+                        index,
+                        proof: witness_proof.clone(),
+                        commit_bloom,
+                        participant_bloom,
+                        order_bloom,
+                    });
+                }
+            }
+        }
+        None
+    }
 }
 
 impl<T: NodeIdentity> From<&State<T>> for ClientTUIState {
     fn from(value: &State<T>) -> Self {
         let coordinator = value.state.as_ref();
-        let round = coordinator.and_then(|x| Some(x.current_round_unchecked()));
         let committee = value.committee_info.as_ref().map(|x| x.0.committee);
         ClientTUIState {
             step: coordinator.map(|x| x.step).unwrap_or_default(),
-            height: round.map(|x| x.height).unwrap_or_default(),
             committee,
             run_state: coordinator.map(|x| x.run_state).unwrap_or_default(),
             loss: value.losses.clone(),
+            batches_left: value.remaining_batch_ids.len(),
         }
     }
 }

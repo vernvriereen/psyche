@@ -1,7 +1,7 @@
 use anyhow::{Error, Result};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{Client, ClientTUI, ClientTUIState, NC};
-use psyche_coordinator::{Coordinator, Witness};
+use psyche_coordinator::{Coordinator, HealthChecks, Witness};
 use psyche_network::{NetworkTUIState, NetworkTui, SecretKey, TcpClient};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
@@ -15,9 +15,14 @@ pub(super) type Tabs = TabbedWidget<(ClientTUI, CoordinatorTui, NetworkTui, Logg
 pub(super) const TAB_NAMES: [&str; 4] = ["Client", "Coordinator", "Network", "Logger"];
 type TabsData = <Tabs as CustomWidget>::Data;
 
+enum ToSend {
+    Witness(Witness),
+    HealthCheck(HealthChecks),
+}
+
 struct Backend {
     rx: mpsc::Receiver<Coordinator<ClientId>>,
-    tx: mpsc::Sender<Witness>,
+    tx: mpsc::Sender<ToSend>,
 }
 
 #[async_trait::async_trait]
@@ -30,7 +35,12 @@ impl WatcherBackend<ClientId> for Backend {
     }
 
     async fn send_witness(&mut self, witness: Witness) -> Result<()> {
-        self.tx.send(witness).await?;
+        self.tx.send(ToSend::Witness(witness)).await?;
+        Ok(())
+    }
+
+    async fn send_health_check(&mut self, health_checks: HealthChecks) -> Result<()> {
+        self.tx.send(ToSend::HealthCheck(health_checks)).await?;
         Ok(())
     }
 }
@@ -118,8 +128,11 @@ impl App {
                 res = client.process() => {
                     res?;
                 }
-                Some(witness) = witness_rx.recv() => {
-                    self.server_conn.send(ClientToServerMessage::Witness(witness)).await?;
+                Some(to_send) = witness_rx.recv() => {
+                    match to_send {
+                        ToSend::Witness(witness) => self.server_conn.send(ClientToServerMessage::Witness(witness)).await?,
+                        ToSend::HealthCheck(health_checks) => self.server_conn.send(ClientToServerMessage::HealthCheck(health_checks)).await?,
+                    };
                 }
             }
         }

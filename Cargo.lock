@@ -4931,6 +4931,7 @@ dependencies = [
  "psyche-network",
  "psyche-tui",
  "psyche-watcher",
+ "rand 0.8.5",
  "serde",
  "tch",
  "tokio",

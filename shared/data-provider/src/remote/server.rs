@@ -1,9 +1,9 @@
 use anyhow::Result;
-use psyche_coordinator::{select_data_for_state, CommitteeSelection, Coordinator};
-use psyche_core::{IntervalTree, NodeIdentity};
+use psyche_coordinator::Coordinator;
+use psyche_core::NodeIdentity;
 use psyche_network::TcpServer;
 use psyche_watcher::Backend;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tracing::{info, warn};
 
 use crate::traits::TokenizedDataProvider;
@@ -20,8 +20,9 @@ where
     local_data_provider: D,
     backend: W,
     pub(crate) state: Coordinator<T>,
-    pub(crate) selected_data: IntervalTree<u64, T>,
-    pub(crate) provided_sequences: HashMap<usize, bool>,
+    // pub(crate) selected_data: IntervalTree<u64, T>,
+    pub(crate) in_round: HashSet<T>,
+    pub(crate) provided_sequences: HashMap<T, usize>,
 }
 
 impl<T, D, W> DataProviderTcpServer<T, D, W>
@@ -38,7 +39,8 @@ where
         Ok(DataProviderTcpServer {
             tcp_server,
             local_data_provider,
-            selected_data: IntervalTree::new(),
+            // selected_data: IntervalTree::new(),
+            in_round: HashSet::new(),
             provided_sequences: HashMap::new(),
             backend,
             state: Coordinator::default(),
@@ -62,9 +64,9 @@ where
                 let result = self.try_send_data(from.clone(), data_ids.clone()).await;
                 match result {
                     Ok(data) => {
-                        for data_id in &data_ids {
-                            self.provided_sequences.insert(*data_id, true);
-                        }
+                        let old_count = *self.provided_sequences.get(&from).unwrap_or(&0);
+                        self.provided_sequences
+                            .insert(from.clone(), old_count + data_ids.len());
                         match self
                             .tcp_server
                             .send_to(
@@ -111,20 +113,19 @@ where
         to: T,
         data_ids: Vec<usize>,
     ) -> Result<Vec<Vec<i32>>, RejectionReason> {
-        let in_round = self.state.clients.iter().any(|c| c.id == to);
-        if !in_round {
+        if !self.in_round.contains(&to) {
             return Err(RejectionReason::NotInThisRound);
         }
 
-        for data_id in &data_ids {
-            if self
-                .selected_data
-                .get(*data_id as u64)
-                .is_some_and(|x| *x != to)
-            {
-                return Err(RejectionReason::WrongDataIdForStep);
-            }
-        }
+        // for data_id in &data_ids {
+        //     if self
+        //         .selected_data
+        //         .get(*data_id as u64)
+        //         .is_some_and(|x| *x != to)
+        //     {
+        //         return Err(RejectionReason::WrongDataIdForStep);
+        //     }
+        // }
         let data = self
             .local_data_provider
             .get_samples(data_ids)
@@ -135,18 +136,19 @@ where
 
     fn handle_new_state(&mut self, state: Coordinator<T>) {
         self.state = state;
-        self.selected_data = match self.state.current_round() {
-            Ok(round) => {
-                let committee = CommitteeSelection::new(
-                    round.tie_breaker_tasks as usize,
-                    self.state.witness_nodes as usize,
-                    self.state.verification_percent,
-                    self.state.clients.len(),
-                    round.random_seed,
-                );
-                select_data_for_state(&self.state, &committee)
-            }
-            Err(_) => IntervalTree::new(),
-        };
+        self.in_round = self.state.clients.iter().map(|x| x.id.clone()).collect();
+        // self.selected_data = match self.state.current_round() {
+        //     Ok(round) => {
+        //         let committee = CommitteeSelection::new(
+        //             round.tie_breaker_tasks as usize,
+        //             self.state.witness_nodes as usize,
+        //             self.state.verification_percent,
+        //             self.state.clients.len(),
+        //             round.random_seed,
+        //         );
+        //         assign_data_for_state(&self.state, &committee)
+        //     }
+        //     Err(_) => IntervalTree::new(),
+        // };
     }
 }

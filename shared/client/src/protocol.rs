@@ -9,6 +9,7 @@ pub type NE = NetworkEvent<BroadcastMessage, Payload>;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BroadcastMessage {
     pub step: u64,
+    pub batch_id: u64,
     pub committment: Committment,
     pub ticket: BlobTicket,
     pub proof: CommitteeProof,

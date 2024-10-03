@@ -25,8 +25,9 @@ impl psyche_tui::CustomWidget for DataServerTui {
                     .clients
                     .iter()
                     .map(|c| {
-                        let status = if c.2 { "⏳" } else { "✅" };
-                        Line::from(format!("{status} [{}]: {:?}", c.0, c.1))
+                        // let status = if c.2 { "⏳" } else { "✅" };
+                        // Line::from(format!("{status} [{}]: {:?}", c.0, c.1))
+                        Line::from(format!("[{}]: {}", c.0, c.1))
                     })
                     .collect::<Vec<Line>>(),
             )
@@ -53,7 +54,8 @@ impl psyche_tui::CustomWidget for DataServerTui {
 #[derive(Default, Debug)]
 pub struct DataServerTuiState {
     pub height: u32,
-    pub clients: Vec<(String, [u64; 2], bool)>,
+    //pub clients: Vec<(String, [u64; 2], bool)>,
+    pub clients: Vec<(String, usize)>,
     pub tick: u64,
 }
 
@@ -67,19 +69,25 @@ where
         Self {
             height: v
                 .state
-                .current_round().map(|x| x.height)
+                .current_round()
+                .map(|x| x.height)
                 .unwrap_or_default(),
+            // clients: v
+            //     .selected_data
+            //     .iter()
+            //     .map(|(data_ids, client_id)| {
+            //         let id = format!("{}", client_id);
+            //         let data_ids = [data_ids.start, data_ids.end];
+            //         let has_fetched =
+            //             (data_ids[0]..data_ids[1] + 1)
+            //                 .all(|val| *v.provided_sequences.get(&(val as usize)).unwrap_or(&false));
+            //         (id, data_ids, has_fetched)
+            //     })
+            //     .collect(),
             clients: v
-                .selected_data
+                .provided_sequences
                 .iter()
-                .map(|(data_ids, client_id)| {
-                    let id = format!("{}", client_id);
-                    let data_ids = [data_ids.start, data_ids.end];
-                    let has_fetched =
-                        (data_ids[0]..data_ids[1] + 1)
-                            .all(|val| *v.provided_sequences.get(&(val as usize)).unwrap_or(&false));
-                    (id, data_ids, has_fetched)
-                })
+                .map(|(k, v)| (format!("{}", k), *v))
                 .collect(),
             tick: v.state.tick,
         }
