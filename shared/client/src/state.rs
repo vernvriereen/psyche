@@ -489,8 +489,8 @@ impl<T: NodeIdentity> State<T> {
         let committee_proof = committee_selection.get_committee(index);
         let witness_proof = committee_selection.get_witness(index);
         info!(
-            "Assignment for step {} (round {}/epoch {}): committee={} witness={}",
-            state.step, round.height, state.epoch, committee_proof.committee, witness_proof.witness
+            "Assignment for step {} (round {}/epoch {}): index={} committee position={} committee={} witness position={} witness={}",
+            state.step, round.height, state.epoch, index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness
         );
         self.blooms = match witness_proof.witness {
             true => {
