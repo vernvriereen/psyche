@@ -105,7 +105,7 @@ impl Trainer {
             }
             Optimizer::Distro(distro) => distro.generate(lr),
         };
-        debug!("step: {step}, loss: {loss_value}");
+        info!("Step: {step}, Loss: {loss_value}");
         Ok(TrainOutput {
             trainer: self,
             loss: loss_value,
@@ -127,7 +127,7 @@ impl Trainer {
                 bail!("Not DisTrO");
             }
             Optimizer::Distro(distro) => {
-                info!("Applying {} DisTrO gradients", results.len());
+                debug!("Applying {} DisTrO gradients", results.len());
                 distro.apply(results, self.lr_scheduler.get_lr(step));
             }
         }
