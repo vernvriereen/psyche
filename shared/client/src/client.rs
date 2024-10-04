@@ -45,11 +45,9 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                 let clear_uploads = state.get_clear_downloads_notification();
 
                 loop {
-                    let step_result: Option<
-                        std::result::Result<
-                            (Option<Coordinator<T>>, Coordinator<T>),
-                            anyhow::Error,
-                        >,
+                    let step_result: std::result::Result<
+                        Option<(Option<Coordinator<T>>, Coordinator<T>)>,
+                        anyhow::Error,
                     > = select! {
                         _ = cancel.cancelled() => break,
                         _ = req_tui_state.notified() => {
@@ -57,14 +55,14 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                             let client_tui_state = (&state).into();
                             tx.send((client_tui_state, network_tui_state)).map_err(|e| e.into()).map(|_| None)
                         },
-                        res = watcher.borrow_mut().poll_next() => Ok(Some(res.map(|(c,cn)| (c, cn.clone())))),
+                        res = watcher.borrow_mut().poll_next() => res.map(|(c,cn)| Some((c, cn.clone()))),
                         res = p2p.poll_next() => Self::handle_p2p_poll(&mut state, &watcher, &mut p2p, res).await.map(|_| None),
                         res = state.poll_next() => Self::handle_state_poll(&mut state, &mut p2p, &mut watcher, res?).await.map(|_| None),
                         _ = clear_uploads.notified() => Self::handle_clear_uploads(&mut p2p).await.map(|_| None),
-                    }?;
+                    };
 
-                    if let Some(watcher_res) = step_result {
-                        Self::handle_watcher_poll(&mut state, &mut watcher, watcher_res?).await?;
+                    if let Some(watcher_res) = step_result? {
+                        Self::handle_watcher_poll(&mut state, &mut watcher, watcher_res).await?;
                     }
                 }
 
