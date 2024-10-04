@@ -105,7 +105,7 @@ impl Trainer {
             }
             Optimizer::Distro(distro) => distro.generate(lr),
         };
-        info!("Step: {step}, Loss: {loss_value}");
+        debug!("Step: {step}, Loss: {loss_value}");
         Ok(TrainOutput {
             trainer: self,
             loss: loss_value,
