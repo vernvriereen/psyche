@@ -171,6 +171,7 @@ impl<T: NodeIdentity> State<T> {
             };
             let payload = Payload {
                 step,
+                batch_id,
                 distro_results: output.distro_results.iter().map(|x| x.into()).collect(),
             };
             return Ok(ToSend::Broadcast((broadcast, payload)));
@@ -231,13 +232,15 @@ impl<T: NodeIdentity> State<T> {
         event: NetworkEvent<BroadcastMessage, Payload>,
         watcher: &BackendWatcher<T, B>,
     ) -> Result<Option<BlobTicket>> {
-        debug!("got network event {event:?}");
+        debug!("Got network event {event:?}");
         match event {
             NetworkEvent::MessageReceived((public_key, message)) => {
                 // verify they are who they say they are
                 debug!(
-                    "commitment 0x{} received from {}",
+                    "Commitment 0x{} (step={},batch_id={}) received from {}",
                     hex::encode(message.commitment),
+                    message.step,
+                    message.batch_id,
                     public_key
                 );
                 if let Some(state) = &self.state {
@@ -383,14 +386,20 @@ impl<T: NodeIdentity> State<T> {
             .as_ref()
             .ok_or(Error::msg("Payload message processor has no self proofs"))?;
         if witness_proof.witness {
-            let (_, participant_bloom, order_bloom) = self
-                .blooms
-                .as_mut()
-                .ok_or(Error::msg("We are a witness but no blooms"))?;
-            participant_bloom.add(&sha256(from.as_ref()));
-            if self.remaining_batch_ids.contains(batch_id) {
-                // first received payload for this batch id, vote for it in consensus
-                order_bloom.add(&sha256(&commitment.commitment));
+            match self.blooms.as_mut() {
+                Some((_, participant_bloom, order_bloom)) => {
+                    participant_bloom.add(&sha256(from.as_ref()));
+                    if self.remaining_batch_ids.contains(batch_id) {
+                        // first received payload for this batch id, vote for it in consensus
+                        order_bloom.add(&sha256(&commitment.commitment));
+                    }
+                }
+                None => {
+                    debug!(
+                        "Already submitted witness, not adding {} to participant bloom",
+                        from
+                    );
+                }
             }
         }
         // TODO: verify payload matches commitment

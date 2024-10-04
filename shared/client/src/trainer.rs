@@ -9,7 +9,7 @@ use tch::{
     nn::{self, OptimizerConfig},
     Tensor,
 };
-use tracing::{debug, info};
+use tracing::debug;
 
 enum Optimizer {
     AdamW {
@@ -143,11 +143,8 @@ fn serialize_tensor(tensor: &Tensor) -> Vec<u8> {
 
 impl From<&DistroResult> for SerializedDistroResult {
     fn from(value: &DistroResult) -> Self {
-        let sparse_idx = serialize_tensor(&value.sparse_idx);
-        info!("sparse_idx: {}", value.sparse_idx);
-        info!("serialized sparse_idx: {} bytes", sparse_idx.len());
         Self {
-            sparse_idx,
+            sparse_idx: serialize_tensor(&value.sparse_idx),
             sparse_val: serialize_tensor(&value.sparse_val),
             xshape: value.xshape.iter().map(|x| *x as u16).collect(),
         }

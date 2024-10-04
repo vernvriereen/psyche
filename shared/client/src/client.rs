@@ -18,7 +18,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, debug};
 
 pub type TUIStates = (ClientTUIState, NetworkTUIState);
 
@@ -117,7 +117,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         match res {
             ToSend::Broadcast((broadcast, payload)) => {
                 let new_ticket = p2p.add_downloadable(payload.clone()).await?;
-                info!(
+                debug!(
                     "Broadcasting payload hash 0x{} for commitment 0x{}",
                     hex::encode(new_ticket.hash()),
                     hex::encode(broadcast.commitment)

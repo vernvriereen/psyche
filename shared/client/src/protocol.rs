@@ -18,5 +18,6 @@ pub struct BroadcastMessage {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Payload {
     pub step: u64,
+    pub batch_id: u64,
     pub distro_results: Vec<SerializedDistroResult>,
 }
