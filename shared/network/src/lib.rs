@@ -178,7 +178,7 @@ where
                     None => break,
                     Some(val) => {
                         if let Err(err) = tx.send(val).await {
-                            error!("Failed to send download progress: {err}");
+                            error!("Failed to send download progress: {err:?} {:?}", err.0);
                         }
                     }
                 }
@@ -207,7 +207,12 @@ where
 
     pub async fn remove_downloadable(&mut self, ticket: BlobTicket) -> Result<()> {
         self.node.blobs().delete_blob(ticket.hash()).await?;
-        if let Some(index) = self.state.currently_sharing_blobs.iter().position(|x| x == &ticket) {
+        if let Some(index) = self
+            .state
+            .currently_sharing_blobs
+            .iter()
+            .position(|x| x == &ticket)
+        {
             self.state.currently_sharing_blobs.remove(index);
         }
         Ok(())
