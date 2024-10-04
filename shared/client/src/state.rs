@@ -707,7 +707,7 @@ impl<T: NodeIdentity> State<T> {
                         )
                         .await?;
                         info!("Loading {}", hub_repo.repo_id);
-                        tokio::task::spawn_blocking(move || {
+                        let model = tokio::task::spawn_blocking(move || {
                             LlamaForCausalLM::from_pretrained(
                                 &repo_files,
                                 Some(Kind::BFloat16),
@@ -715,7 +715,9 @@ impl<T: NodeIdentity> State<T> {
                                 None,
                             )
                         })
-                        .await?
+                        .await?;
+                        info!("Loading complete {}", hub_repo.repo_id);
+                        model
                     })
                 }
             },
