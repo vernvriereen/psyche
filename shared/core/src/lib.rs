@@ -11,7 +11,6 @@ mod serde;
 mod sha256;
 mod similarity;
 mod swap_or_not;
-mod util;
 
 pub use bloom::Bloom;
 pub use deterministic_shuffle::deterministic_shuffle;
@@ -27,4 +26,3 @@ pub use similarity::{
 pub use swap_or_not::compute_shuffled_index;
 
 pub use node_identity::NodeIdentity;
-pub use util::bytes_to_hex_string;

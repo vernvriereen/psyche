@@ -63,7 +63,6 @@ pub fn assign_data_for_state<'a, T: NodeIdentity>(
 }
 
 pub fn get_batch_ids_for_state<T: NodeIdentity>(state: &Coordinator<T>) -> Vec<u64> {
-    assert_eq!(state.batches_per_round % state.data_indicies_per_batch, 0);
     let round = match state.current_round() {
         Ok(round) => round,
         Err(_) => {

@@ -63,7 +63,7 @@ pub enum CoordinatorError {
     InvalidHealthCheck,
 }
 
-pub type Committment = [u8; 32];
+pub type Commitment = [u8; 32];
 pub type HealthChecks = Vec<CommitteeProof>;
 
 #[derive_serialize]
@@ -292,12 +292,12 @@ impl<T: NodeIdentity> Coordinator<T> {
         score >= witness_quorum
     }
 
-    pub fn committment_exists_by_witnesses(
-        committment: &Committment,
+    pub fn commitment_exists_by_witnesses(
+        commitment: &Commitment,
         witnesses: &[Witness],
         witness_quorum: u32,
     ) -> bool {
-        let hash = sha256(committment);
+        let hash = sha256(commitment);
         let mut score = 0u32;
         for witness in witnesses {
             if witness.commit_bloom.contains(&hash) {
@@ -307,15 +307,15 @@ impl<T: NodeIdentity> Coordinator<T> {
         score >= witness_quorum
     }
 
-    pub fn select_consensus_committment_by_witnesses(
-        commitments: &[Committment],
+    pub fn select_consensus_commitment_by_witnesses(
+        commitments: &[Commitment],
         witnesses: &[Witness],
     ) -> Option<usize> {
         let mut scores = Vec::with_capacity(witnesses.len());
         scores.resize(commitments.len(), 0);
         for witness in witnesses {
-            for (index, committment) in commitments.iter().enumerate() {
-                if witness.order_bloom.contains(committment) {
+            for (index, commitment) in commitments.iter().enumerate() {
+                if witness.order_bloom.contains(commitment) {
                     scores[index] += 1;
                     break;
                 }

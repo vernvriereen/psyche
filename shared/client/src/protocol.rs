@@ -1,5 +1,5 @@
 use crate::SerializedDistroResult;
-use psyche_coordinator::{CommitteeProof, Committment};
+use psyche_coordinator::{CommitteeProof, Commitment};
 use psyche_network::{BlobTicket, NetworkConnection, NetworkEvent};
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +10,7 @@ pub type NE = NetworkEvent<BroadcastMessage, Payload>;
 pub struct BroadcastMessage {
     pub step: u64,
     pub batch_id: u64,
-    pub committment: Committment,
+    pub commitment: Commitment,
     pub ticket: BlobTicket,
     pub proof: CommitteeProof,
 }

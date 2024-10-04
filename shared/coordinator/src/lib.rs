@@ -10,7 +10,7 @@ pub use committee_selection::{
     Committee, CommitteeProof, CommitteeSelection, WitnessProof, COMMITTEE_SALT, WITNESS_SALT,
 };
 pub use coordinator::{
-    Client, Committment, Coordinator, CoordinatorError, HealthChecks, Round, RunState, Witness,
+    Client, Commitment, Coordinator, CoordinatorError, HealthChecks, Round, RunState, Witness,
     BLOOM_FALSE_RATE, BLOOM_MAX_BITS,
 };
 pub use data_selection::{assign_data_for_state, get_batch_ids_for_state};

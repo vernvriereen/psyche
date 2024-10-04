@@ -4,11 +4,12 @@ use crate::{
     BroadcastMessage, Payload,
 };
 use anyhow::{bail, Error, Result};
+use hex;
 use psyche_coordinator::{
     get_batch_ids_for_state, model, Committee, CommitteeProof, CommitteeSelection, Coordinator,
     HealthChecks, RunState, Witness, WitnessProof, BLOOM_FALSE_RATE, BLOOM_MAX_BITS,
 };
-use psyche_core::{bytes_to_hex_string, sha256, Bloom, NodeIdentity};
+use psyche_core::{sha256, Bloom, NodeIdentity};
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpClient, TokenizedDataProvider,
 };
@@ -55,8 +56,8 @@ pub struct State<T: NodeIdentity> {
     committee_info: Option<(CommitteeProof, WitnessProof, CommitteeSelection)>,
     state: Option<Coordinator<T>>,
     prev_state: Option<Coordinator<T>>,
-    committments: HashMap<u64, Vec<(T, BroadcastMessage)>>,
-    committments_per_client: HashMap<T, u32>,
+    commitments: HashMap<u64, Vec<(T, BroadcastMessage)>>,
+    commitments_per_client: HashMap<T, u32>,
     payloads: HashMap<psyche_network::Hash, PayloadState<T>>,
     blooms: Option<(Bloom<[u8; 32]>, Bloom<[u8; 32]>, Bloom<[u8; 32]>)>,
     notify: Notify,
@@ -82,8 +83,8 @@ impl<T: NodeIdentity> State<T> {
             state: None,
             prev_state: None,
             blooms: None,
-            committments: HashMap::new(),
-            committments_per_client: HashMap::new(),
+            commitments: HashMap::new(),
+            commitments_per_client: HashMap::new(),
             payloads: HashMap::new(),
             notify: Notify::new(),
             losses: Vec::new(),
@@ -156,12 +157,15 @@ impl<T: NodeIdentity> State<T> {
                 .committee_info
                 .as_ref()
                 .ok_or(Error::msg("Training complete but no self proofs"))?;
-            let committment = sha256(self.identity.as_ref());
+            let mut committment = Vec::with_capacity(40);
+            committment.extend_from_slice(self.identity.as_ref());
+            committment.extend_from_slice(&batch_id.to_be_bytes());
+            let commitment = sha256(&committment);
             let step = output.step as u64;
             let broadcast = BroadcastMessage {
                 step,
                 batch_id,
-                committment,
+                commitment,
                 ticket: dummy_blob_ticket(),
                 proof: *committee_proof,
             };
@@ -232,8 +236,9 @@ impl<T: NodeIdentity> State<T> {
             NetworkEvent::MessageReceived((public_key, message)) => {
                 // verify they are who they say they are
                 debug!(
-                    "Committment {:#?} received from {}",
-                    message.committment, public_key
+                    "commitment 0x{} received from {}",
+                    hex::encode(message.commitment),
+                    public_key
                 );
                 if let Some(state) = &self.state {
                     if state.step == message.step as u32 {
@@ -260,8 +265,9 @@ impl<T: NodeIdentity> State<T> {
             }
             NetworkEvent::DownloadComplete(downloaded) => {
                 debug!(
-                    "Payload {:#?} received from {}",
-                    downloaded.hash, downloaded.from
+                    "Payload 0x{} received from {}",
+                    hex::encode(downloaded.hash),
+                    downloaded.from
                 );
                 if let Some(state) = &self.state {
                     if state.step == downloaded.data.step as u32 {
@@ -289,7 +295,7 @@ impl<T: NodeIdentity> State<T> {
             .ok_or(Error::msg("Broadcast message processor has no self proofs"))?;
         // verified by process_network_event caller
         if broadcast.proof.committee == Committee::Trainer {
-            if *self.committments_per_client.get(identity).unwrap_or(&0)
+            if *self.commitments_per_client.get(identity).unwrap_or(&0)
                 >= self
                     .state
                     .as_ref()
@@ -297,25 +303,30 @@ impl<T: NodeIdentity> State<T> {
                     .unwrap_or(0)
             {
                 info!(
-                    "Maximum commitments received from {}, dropping {:#?}",
-                    identity, broadcast.committment
+                    "Maximum commitments received from {}, dropping {}",
+                    identity,
+                    hex::encode(broadcast.commitment)
                 );
                 return Ok(None);
             }
 
             if witness_proof.witness {
-                let (commit_bloom, _, _) = self
-                    .blooms
-                    .as_mut()
-                    .ok_or(Error::msg("We are a witness but no blooms"))?;
-                commit_bloom.add(&sha256(&broadcast.committment));
+                match self.blooms.as_mut() {
+                    Some((commit_bloom, _, _)) => commit_bloom.add(&sha256(&broadcast.commitment)),
+                    None => {
+                        debug!(
+                            "Already submitted witness, not adding commitment 0x{} to commit bloom",
+                            hex::encode(broadcast.commitment)
+                        );
+                    }
+                }
             }
-            if !self.committments.contains_key(&broadcast.batch_id) {
-                self.committments.insert(broadcast.batch_id, Vec::new());
+            if !self.commitments.contains_key(&broadcast.batch_id) {
+                self.commitments.insert(broadcast.batch_id, Vec::new());
             }
             let ticket = broadcast.ticket.clone();
             let batch_id = broadcast.batch_id;
-            self.committments
+            self.commitments
                 .get_mut(&broadcast.batch_id)
                 .unwrap()
                 .push((identity.clone(), broadcast));
@@ -350,20 +361,20 @@ impl<T: NodeIdentity> State<T> {
                 return Ok(());
             }
         };
-        let committments = match self.committments.get(batch_id) {
-            Some(committments) => committments,
+        let commitments = match self.commitments.get(batch_id) {
+            Some(commitments) => commitments,
             None => {
-                info!("No committment for payload from {}", from);
+                info!("No commitment for payload from {}", from);
                 return Ok(());
             }
         };
-        let committment = match committments
+        let commitment = match commitments
             .iter()
             .find(|x| x.0 == *from && x.1.ticket.hash() == hash)
         {
-            Some(committment) => &committment.1,
+            Some(commitment) => &commitment.1,
             None => {
-                info!("No committment for payload from {}", from);
+                info!("No commitment for payload from {}", from);
                 return Ok(());
             }
         };
@@ -379,10 +390,10 @@ impl<T: NodeIdentity> State<T> {
             participant_bloom.add(&sha256(from.as_ref()));
             if self.remaining_batch_ids.contains(batch_id) {
                 // first received payload for this batch id, vote for it in consensus
-                order_bloom.add(&sha256(&committment.committment));
+                order_bloom.add(&sha256(&commitment.commitment));
             }
         }
-        // TODO: verify payload matches committment
+        // TODO: verify payload matches commitment
         // TODO: verify shape of distro_results
         self.remaining_batch_ids.remove(batch_id);
         self.payloads
@@ -527,8 +538,8 @@ impl<T: NodeIdentity> State<T> {
             false => None,
         };
         self.committee_info = Some((committee_proof, witness_proof, committee_selection));
-        self.committments.clear();
-        self.committments_per_client.clear();
+        self.commitments.clear();
+        self.commitments_per_client.clear();
         self.payloads.clear();
         self.clear_uploads.notify_one(); // clear any served uploads we have
         self.notify.notify_one(); // wake up poll_next() to start data download and training
@@ -583,8 +594,8 @@ impl<T: NodeIdentity> State<T> {
         let mut payloads: HashMap<psyche_network::Hash, PayloadState<T>> =
             self.payloads.drain().collect();
         let witnesses = round.witnesses.clone();
-        let committments: HashMap<u64, Vec<(T, BroadcastMessage)>> =
-            self.committments.drain().collect();
+        let commitments: HashMap<u64, Vec<(T, BroadcastMessage)>> =
+            self.commitments.drain().collect();
         let step = state.step as usize;
         let batch_ids = get_batch_ids_for_state(state);
 
@@ -592,34 +603,34 @@ impl<T: NodeIdentity> State<T> {
             let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
 
             for batch_id in batch_ids {
-                let batch_committments = match committments.get(&batch_id) {
+                let batch_commitments = match commitments.get(&batch_id) {
                     Some(x) => x,
                     None => {
-                        warn!("DESYNC: No committments for batch {}", batch_id);
+                        warn!("DESYNC: No commitments for batch {}", batch_id);
                         continue;
                     }
                 };
-                let consensus = match Coordinator::<T>::select_consensus_committment_by_witnesses(
-                    &batch_committments
+                let consensus = match Coordinator::<T>::select_consensus_commitment_by_witnesses(
+                    &batch_commitments
                         .iter()
-                        .map(|x| x.1.committment)
+                        .map(|x| x.1.commitment)
                         .collect::<Vec<_>>(),
                     &witnesses,
                 ) {
                     Some(x) => x,
                     None => {
                         warn!(
-                            "DESYNC: Missing consensus committment for batch {}",
+                            "DESYNC: Missing consensus commitment for batch {}",
                             batch_id
                         );
                         continue;
                     }
                 };
-                let consensus = &batch_committments[consensus].1;
+                let consensus = &batch_commitments[consensus].1;
                 let payload = match payloads.remove(&consensus.ticket.hash()) {
                     Some(PayloadState::Downloaded(x)) => x,
                     _ => {
-                        warn!("DESYNC: Did not finish downloading payload for consensus committment {} for batch {}", bytes_to_hex_string(&consensus.committment), batch_id);
+                        warn!("DESYNC: Did not finish downloading payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
                         continue;
                     }
                 };
@@ -632,7 +643,7 @@ impl<T: NodeIdentity> State<T> {
                     Ok(results) => {
                         distro_results.push(results);
                     }
-                    Err(err) => warn!("DESYNC: Got the following error when deserializing results for committment {:}: {}", bytes_to_hex_string(&consensus.committment), err),
+                    Err(err) => warn!("DESYNC: Got the following error when deserializing results for commitment 0x{}: {}", hex::encode(consensus.commitment), err),
                 }
             }
 
