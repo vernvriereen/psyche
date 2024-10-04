@@ -72,6 +72,7 @@ pub struct DownloadUpdate {
     pub downloaded_size_delta: u64,
     pub downloaded_size: u64,
     pub total_size: u64,
+    pub all_done: bool,
 }
 
 pub struct DownloadComplete<D: Networkable> {
@@ -141,11 +142,9 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
         let task_handle = tokio::spawn(async move {
             loop {
                 if downloads.lock().await.is_empty() && reading.lock().await.is_empty() {
-                    warn!("Download manager waqiting for new item..");
                     if rx_new_item.recv().await.is_none() {
                         // channel is closed.
-                        warn!("Download manager channel closed!");
-                        break;
+                        panic!("Download manager channel closed!");
                     }
                 }
 
@@ -265,7 +264,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
         index: usize,
     ) -> Result<Option<DownloadManagerEvent<D>>> {
         let download = &mut downloads[index];
-        match result {
+        let r = match result {
             Ok(progress) => {
                 let update = match progress {
                     DownloadProgress::InitialState(_) => None,
@@ -275,6 +274,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                         downloaded_size_delta: 0,
                         downloaded_size: size.value(),
                         total_size: size.value(),
+                        all_done: false,
                     }),
                     DownloadProgress::Connected => None,
                     DownloadProgress::Found { size, .. } => {
@@ -285,6 +285,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                             downloaded_size_delta: 0,
                             downloaded_size: 0,
                             total_size: size,
+                            all_done: false,
                         })
                     }
                     DownloadProgress::FoundHashSeq { .. } => None,
@@ -297,17 +298,23 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                             downloaded_size_delta: delta,
                             downloaded_size: offset,
                             total_size: download.total_size,
+                            all_done: false,
                         })
                     }
                     DownloadProgress::Done { .. } => None,
                     DownloadProgress::AllDone(stats) => {
-                        info!("Downloaded {} ", convert_bytes(stats.bytes_read as f64));
+                        info!(
+                            "Downloaded ({index}) {}, {} ",
+                            download.hash.clone(),
+                            convert_bytes(stats.bytes_read as f64)
+                        );
                         Some(DownloadUpdate {
                             hash: download.hash.clone(),
                             from: download.from,
                             downloaded_size_delta: 0,
                             downloaded_size: download.total_size,
                             total_size: download.total_size,
+                            all_done: true,
                         })
                     }
                     DownloadProgress::Abort(err) => {
@@ -318,6 +325,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                             downloaded_size_delta: 0,
                             downloaded_size: 0,
                             total_size: 0,
+                            all_done: true,
                         })
                     }
                 };
@@ -328,7 +336,14 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                 downloads.swap_remove(index);
                 Err(e.into())
             }
+        };
+        if let Ok(Some(DownloadManagerEvent::Update(DownloadUpdate { all_done, .. }))) = &r {
+            if *all_done {
+                debug!("Since download is complete, removing it: {index};");
+                downloads.swap_remove(index);
+            }
         }
+        r
     }
 
     fn handle_read_result(

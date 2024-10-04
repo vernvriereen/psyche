@@ -178,7 +178,7 @@ where
                     None => break,
                     Some(val) => {
                         if let Err(err) = tx.send(val).await {
-                            error!("Failed to send download progress: {err:?} {:?}", err.0);
+                            panic!("Failed to send download progress: {err:?} {:?}", err.0);
                         }
                     }
                 }
