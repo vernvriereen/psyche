@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use rand::seq::SliceRandom;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -6,7 +6,7 @@ use std::fs;
 use tracing::info;
 
 use crate::token_size::TokenSize;
-use crate::traits::TokenizedDataProvider;
+use crate::traits::{LengthKnownDataProvider, TokenizedDataProvider};
 
 fn mmap_file(p: &std::path::PathBuf) -> Result<memmap2::Mmap> {
     let file = std::fs::File::open(p)?;
@@ -26,6 +26,11 @@ pub struct LocalDataProvider {
     token_size_in_bytes: TokenSize,
 }
 
+impl LengthKnownDataProvider for LocalDataProvider {
+    fn len(&self) -> usize {
+        self.sequences.len()
+    }
+}
 impl LocalDataProvider {
     pub fn new_from_directory(
         dir: impl AsRef<std::path::Path>,
@@ -33,9 +38,9 @@ impl LocalDataProvider {
         num_tokens_per_sequence: usize, // num tokens per sequence
         random_seed: <ChaCha8Rng as SeedableRng>::Seed,
     ) -> Result<Self> {
-        let dir = dir.as_ref();
+        let dir = std::fs::canonicalize(dir)?;
         let mut bin_files = vec![];
-        for file in std::fs::read_dir(dir)
+        for file in std::fs::read_dir(&dir)
             .map_err(|e| anyhow!("couldn't load training data from {}: {e}", dir.display()))?
             .flatten()
         {
@@ -50,6 +55,10 @@ impl LocalDataProvider {
             .iter()
             .map(mmap_file)
             .collect::<Result<Vec<_>>>()?;
+
+        if data_files.is_empty() {
+            bail!("No training data files in directory {:?}", dir);
+        }
 
         info!(
             "Loaded {} files ({}) of training data from directory {}",
@@ -89,13 +98,6 @@ impl LocalDataProvider {
             seq_len: num_tokens_per_sequence,
             token_size_in_bytes,
         })
-    }
-
-    pub fn len(&self) -> usize {
-        self.sequences.len()
-    }
-    pub fn is_empty(&self) -> bool {
-        self.sequences.is_empty()
     }
 
     fn internal_get_samples(&self, data_ids: &[usize]) -> Result<Vec<Vec<i32>>> {

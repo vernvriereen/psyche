@@ -6,18 +6,18 @@ use psyche_watcher::Backend;
 use std::collections::{HashMap, HashSet};
 use tracing::{info, warn};
 
-use crate::traits::TokenizedDataProvider;
+use crate::traits::{LengthKnownDataProvider, TokenizedDataProvider};
 
 use super::shared::{ClientToServerMessage, RejectionReason, ServerToClientMessage};
 
 pub struct DataProviderTcpServer<T, D, W>
 where
     T: NodeIdentity,
-    D: TokenizedDataProvider,
+    D: TokenizedDataProvider + LengthKnownDataProvider,
     W: Backend<T>,
 {
     tcp_server: TcpServer<T, ClientToServerMessage, ServerToClientMessage>,
-    local_data_provider: D,
+    pub(crate) local_data_provider: D,
     backend: W,
     pub(crate) state: Coordinator<T>,
     // pub(crate) selected_data: IntervalTree<u64, T>,
@@ -28,7 +28,7 @@ where
 impl<T, D, W> DataProviderTcpServer<T, D, W>
 where
     T: NodeIdentity + 'static,
-    D: TokenizedDataProvider + 'static,
+    D: TokenizedDataProvider + LengthKnownDataProvider + 'static,
     W: Backend<T> + 'static,
 {
     pub async fn start(local_data_provider: D, backend: W, port: u16) -> Result<Self> {

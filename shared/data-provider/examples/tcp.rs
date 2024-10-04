@@ -4,12 +4,14 @@ use futures::future::try_join_all;
 use parquet::data_type::AsBytes;
 use psyche_coordinator::{Coordinator, HealthChecks, Witness};
 use psyche_core::{Networkable, NodeIdentity};
-use psyche_data_provider::{DataProviderTcpClient, DataProviderTcpServer, TokenizedDataProvider};
+use psyche_data_provider::{
+    DataProviderTcpClient, DataProviderTcpServer, LengthKnownDataProvider, TokenizedDataProvider,
+};
 use psyche_tui::init_logging;
 use psyche_watcher::Backend as WatcherBackend;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
+use std::{fmt::Display, usize};
 use tracing::{info, Level};
 
 // Simulated backend for demonstration
@@ -76,6 +78,12 @@ impl TokenizedDataProvider for DummyDataProvider {
         let mut data: [i32; 1024] = [0; 1024];
         rand::thread_rng().fill(&mut data);
         Ok(vec![data.to_vec()])
+    }
+}
+
+impl LengthKnownDataProvider for DummyDataProvider {
+    fn len(&self) -> usize {
+        usize::MAX
     }
 }
 

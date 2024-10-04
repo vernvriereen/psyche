@@ -14,4 +14,4 @@ pub use local::LocalDataProvider;
 pub use parquet::record::{ListAccessor, RowAccessor};
 pub use remote::{DataProviderTcpClient, DataProviderTcpServer, DataServerTui};
 pub use token_size::TokenSize;
-pub use traits::TokenizedDataProvider;
+pub use traits::{LengthKnownDataProvider, TokenizedDataProvider};
