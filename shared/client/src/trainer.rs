@@ -9,7 +9,7 @@ use tch::{
     nn::{self, OptimizerConfig},
     Tensor,
 };
-use tracing::{debug, info};
+use tracing::debug;
 
 enum Optimizer {
     AdamW {
