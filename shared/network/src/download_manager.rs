@@ -12,7 +12,7 @@ use tokio::{
     sync::{mpsc, oneshot, Mutex},
     task::JoinHandle,
 };
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 #[derive(Debug)]
 struct Download {
