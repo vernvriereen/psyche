@@ -2,22 +2,23 @@
 
 mod bloom;
 mod deterministic_shuffle;
+mod interval_tree;
 mod lcg;
 mod lr_scheduler;
-mod interval_tree;
 mod merkle_tree;
 mod node_identity;
 mod serde;
 mod sha256;
 mod similarity;
 mod swap_or_not;
+mod util;
 
 pub use bloom::Bloom;
 pub use deterministic_shuffle::deterministic_shuffle;
+pub use interval_tree::{ClosedInterval, IntervalTree};
 pub use lcg::LCG;
 pub use lr_scheduler::*;
-pub use interval_tree::{ClosedInterval, IntervalTree};
-pub use merkle_tree::{MerkleTree, Proof, OwnedProof, Hash as RootType};
+pub use merkle_tree::{Hash as RootType, MerkleTree, OwnedProof, Proof};
 pub use serde::Networkable;
 pub use sha256::{sha256, sha256v};
 pub use similarity::{
@@ -26,3 +27,4 @@ pub use similarity::{
 pub use swap_or_not::compute_shuffled_index;
 
 pub use node_identity::NodeIdentity;
+pub use util::bytes_to_hex_string;

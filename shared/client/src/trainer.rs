@@ -19,7 +19,7 @@ enum Optimizer {
     Distro(Distro),
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SerializedDistroResult {
     pub sparse_idx: Vec<u8>,
     pub sparse_val: Vec<u8>,

@@ -15,7 +15,7 @@ pub struct BroadcastMessage {
     pub proof: CommitteeProof,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Payload {
     pub step: u64,
     pub distro_results: Vec<SerializedDistroResult>,

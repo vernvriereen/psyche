@@ -305,6 +305,7 @@ fn parse_gossip_event<BroadcastMessage: Networkable>(
     None
 }
 
+#[derive(Debug)]
 pub enum NetworkEvent<BM, D>
 where
     BM: Networkable,

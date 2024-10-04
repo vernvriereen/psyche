@@ -8,7 +8,7 @@ use psyche_coordinator::{
     get_batch_ids_for_state, model, Committee, CommitteeProof, CommitteeSelection, Coordinator,
     HealthChecks, RunState, Witness, WitnessProof, BLOOM_FALSE_RATE, BLOOM_MAX_BITS,
 };
-use psyche_core::{sha256, Bloom, NodeIdentity};
+use psyche_core::{bytes_to_hex_string, sha256, Bloom, NodeIdentity};
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpClient, TokenizedDataProvider,
 };
@@ -227,6 +227,7 @@ impl<T: NodeIdentity> State<T> {
         event: NetworkEvent<BroadcastMessage, Payload>,
         watcher: &BackendWatcher<T, B>,
     ) -> Result<Option<BlobTicket>> {
+        debug!("got network event {event:?}");
         match event {
             NetworkEvent::MessageReceived((public_key, message)) => {
                 // verify they are who they say they are
@@ -618,7 +619,7 @@ impl<T: NodeIdentity> State<T> {
                 let payload = match payloads.remove(&consensus.ticket.hash()) {
                     Some(PayloadState::Downloaded(x)) => x,
                     _ => {
-                        warn!("DESYNC: Did not finish downloading payload for consensus committment {:#?} for batch {}", consensus.committment, batch_id);
+                        warn!("DESYNC: Did not finish downloading payload for consensus committment {} for batch {}", bytes_to_hex_string(&consensus.committment), batch_id);
                         continue;
                     }
                 };
@@ -631,7 +632,7 @@ impl<T: NodeIdentity> State<T> {
                     Ok(results) => {
                         distro_results.push(results);
                     }
-                    Err(err) => warn!("DESYNC: Got the following error when deserializing results for committment {:#?}: {}", consensus.committment, err),
+                    Err(err) => warn!("DESYNC: Got the following error when deserializing results for committment {:}: {}", bytes_to_hex_string(&consensus.committment), err),
                 }
             }
 

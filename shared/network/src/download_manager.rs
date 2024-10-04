@@ -181,12 +181,13 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
         let downloads = self.downloads.clone();
         let sender = self.tx_new_item.clone();
         tokio::spawn(async move {
+            info!("adding new download: {}", blob_ticket.hash());
             downloads
                 .lock()
                 .await
                 .push(Download::new(from, blob_ticket, progress));
             if let Err(e) = sender.send(()).await {
-                warn!("{}", e);
+                error!("{}", e);
             }
         });
     }
@@ -205,7 +206,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                 .await
                 .push(ReadingFinishedDownload::new(from, hash, download));
             if let Err(e) = sender.send(()).await {
-                warn!("{}", e);
+                error!("{}", e);
             }
         });
     }
@@ -304,7 +305,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                     DownloadProgress::Done { .. } => None,
                     DownloadProgress::AllDone(stats) => {
                         info!(
-                            "Downloaded ({index}) {}, {} ",
+                            "Downloaded (index {index}) {}, {} ",
                             download.hash.clone(),
                             convert_bytes(stats.bytes_read as f64)
                         );
