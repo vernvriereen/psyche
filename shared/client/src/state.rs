@@ -62,6 +62,7 @@ pub struct State<T: NodeIdentity> {
     blooms: Option<(Bloom<[u8; 32]>, Bloom<[u8; 32]>, Bloom<[u8; 32]>)>,
     notify: Arc<Notify>,
     losses: Vec<f32>,
+    round_losses: Vec<f32>,
     remaining_batch_ids: HashSet<u64>,
     clear_uploads: Arc<Notify>,
     gpus: usize,
@@ -89,6 +90,7 @@ impl<T: NodeIdentity> State<T> {
             payloads: HashMap::new(),
             notify: Arc::new(Notify::new()),
             losses: Vec::new(),
+            round_losses: Vec::new(),
             remaining_batch_ids: HashSet::new(),
             clear_uploads: Arc::new(Notify::new()),
             gpus,
@@ -179,7 +181,7 @@ impl<T: NodeIdentity> State<T> {
             let (output, batch_id) = self.trainings.get_mut(finished).unwrap().await??;
             self.trainings.remove(finished);
             self.trainers.push(output.trainer);
-            self.losses.push(output.loss);
+            self.round_losses.push(output.loss);
             if !self.is_run_state(RunState::RoundTrain) {
                 return Ok(ToSend::Nothing);
             }
@@ -605,6 +607,15 @@ impl<T: NodeIdentity> State<T> {
             == RunState::RoundApply
         {
             return Ok(());
+        }
+
+        let mut sum = 0.0;
+        let count = self.round_losses.len();
+        if count > 0 {
+            for x in self.round_losses.drain(..) {
+                sum += x;
+            }
+            self.losses.push(sum / count as f32);
         }
 
         let gpus_still_running = self.gpus - self.trainers.len();
