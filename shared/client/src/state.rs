@@ -21,7 +21,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
-use tch::Kind;
+use tch::{Device, Kind};
 use tokio::{sync::Notify, task::JoinHandle};
 use tracing::{debug, info, warn};
 
@@ -46,12 +46,12 @@ pub struct State<T: NodeIdentity> {
     pub identity: T,
     private_key: T::PrivateKey,
     showed_inclusion_message: bool,
-    data_and_model_load: TaskResult<(DataProviderTcpClient<T>, LlamaForCausalLM)>,
+    data_and_model_load: TaskResult<(DataProviderTcpClient<T>, Vec<LlamaForCausalLM>)>,
     data_provider: Option<DataProviderTcpClient<T>>,
-    trainer: Option<Trainer>,
-    training: TaskResult<(TrainOutput, u64)>,
+    trainers: Vec<Trainer>,
+    trainings: Vec<JoinHandle<Result<(TrainOutput, u64)>>>,
     fetching_data: TaskResult<(DataProviderTcpClient<T>, Vec<Vec<i32>>, u64)>,
-    applying: TaskResult<Trainer>,
+    applying: TaskResult<Vec<Trainer>>,
     health_checking: TaskResult<HealthChecks>,
     committee_info: Option<(CommitteeProof, WitnessProof, CommitteeSelection)>,
     state: Option<Coordinator<T>>,
@@ -60,22 +60,23 @@ pub struct State<T: NodeIdentity> {
     commitments_per_client: HashMap<T, u32>,
     payloads: HashMap<psyche_network::Hash, PayloadState<T>>,
     blooms: Option<(Bloom<[u8; 32]>, Bloom<[u8; 32]>, Bloom<[u8; 32]>)>,
-    notify: Notify,
+    notify: Arc<Notify>,
     losses: Vec<f32>,
     remaining_batch_ids: HashSet<u64>,
     clear_uploads: Arc<Notify>,
+    gpus: usize,
 }
 
 impl<T: NodeIdentity> State<T> {
-    pub fn new(identity: T, private_key: T::PrivateKey) -> Self {
+    pub fn new(identity: T, private_key: T::PrivateKey, gpus: usize) -> Self {
         Self {
             identity,
             private_key,
             showed_inclusion_message: false,
             data_and_model_load: None,
             data_provider: None,
-            trainer: None,
-            training: None,
+            trainers: Vec::new(),
+            trainings: Vec::new(),
             fetching_data: None,
             applying: None,
             health_checking: None,
@@ -86,10 +87,11 @@ impl<T: NodeIdentity> State<T> {
             commitments: HashMap::new(),
             commitments_per_client: HashMap::new(),
             payloads: HashMap::new(),
-            notify: Notify::new(),
+            notify: Arc::new(Notify::new()),
             losses: Vec::new(),
             remaining_batch_ids: HashSet::new(),
             clear_uploads: Arc::new(Notify::new()),
+            gpus,
         }
     }
 
@@ -128,7 +130,32 @@ impl<T: NodeIdentity> State<T> {
     }
 
     pub async fn poll_next(&mut self) -> Result<ToSend> {
-        if let Some(fetching_data) = &mut self.fetching_data {
+        if let Some(applying) = &mut self.applying {
+            let trainers = applying.await??;
+            self.applying = None;
+            self.trainers = trainers;
+        } else if self.is_run_state(RunState::RoundTrain)
+            && !self.trainers.is_empty()
+            && self.data_provider.is_some()
+            && self.fetching_data.is_none()
+            && !self.remaining_batch_ids.is_empty()
+        {
+            let data_provider = self.data_provider.take().unwrap();
+            let batch_id = *self
+                .remaining_batch_ids
+                .iter()
+                .nth(rand::thread_rng().gen_range(0..self.remaining_batch_ids.len()))
+                .unwrap();
+            let data_indicies_per_batch =
+                self.state.as_ref().unwrap().data_indicies_per_batch as u64;
+            let start_data_id = (batch_id * data_indicies_per_batch) as usize;
+            let data_ids = (start_data_id..(start_data_id + data_indicies_per_batch as usize))
+                .collect::<Vec<_>>();
+            self.fetching_data = Some(tokio::spawn(async move {
+                let (data_provider, data) = Self::fetch_data(data_provider, data_ids).await?;
+                Ok((data_provider, data, batch_id))
+            }));
+        } else if let Some(fetching_data) = &mut self.fetching_data {
             let state = self
                 .state
                 .as_ref()
@@ -138,17 +165,20 @@ impl<T: NodeIdentity> State<T> {
             self.data_provider = Some(data_provider);
 
             let trainer: Trainer = self
-                .trainer
-                .take()
+                .trainers
+                .pop()
                 .ok_or(Error::msg("Round start but no trainer object (didn't finish training previous round or applying it?)"))?;
             let step: usize = state.step as usize;
-            self.training = Some(tokio::task::spawn_blocking(move || {
-                Ok((trainer.train(step as usize, data)?, batch_id))
+            let notify = self.notify.clone();
+            self.trainings.push(tokio::task::spawn_blocking(move || {
+                let output = trainer.train(step as usize, data)?;
+                notify.notify_one(); // wake up poll_next to process this
+                Ok((output, batch_id))
             }));
-        } else if let Some(training) = &mut self.training {
-            let (output, batch_id) = training.await??;
-            self.training = None;
-            self.trainer = Some(output.trainer);
+        } else if let Some(finished) = self.trainings.iter_mut().position(|x| x.is_finished()) {
+            let (output, batch_id) = self.trainings.get_mut(finished).unwrap().await??;
+            self.trainings.remove(finished);
+            self.trainers.push(output.trainer);
             self.losses.push(output.loss);
             if !self.is_run_state(RunState::RoundTrain) {
                 return Ok(ToSend::Nothing);
@@ -175,31 +205,6 @@ impl<T: NodeIdentity> State<T> {
                 distro_results: output.distro_results.iter().map(|x| x.into()).collect(),
             };
             return Ok(ToSend::Broadcast((broadcast, payload)));
-        } else if let Some(applying) = &mut self.applying {
-            let trainer = applying.await??;
-            self.applying = None;
-            self.trainer = Some(trainer);
-        } else if self.is_run_state(RunState::RoundTrain)
-            && self.trainer.is_some()
-            && self.data_provider.is_some()
-            && self.fetching_data.is_none()
-            && !self.remaining_batch_ids.is_empty()
-        {
-            let data_provider = self.data_provider.take().unwrap();
-            let batch_id = *self
-                .remaining_batch_ids
-                .iter()
-                .nth(rand::thread_rng().gen_range(0..self.remaining_batch_ids.len()))
-                .unwrap();
-            let data_indicies_per_batch =
-                self.state.as_ref().unwrap().data_indicies_per_batch as u64;
-            let start_data_id = (batch_id * data_indicies_per_batch) as usize;
-            let data_ids = (start_data_id..(start_data_id + data_indicies_per_batch as usize))
-                .collect::<Vec<_>>();
-            self.fetching_data = Some(tokio::spawn(async move {
-                let (data_provider, data) = Self::fetch_data(data_provider, data_ids).await?;
-                Ok((data_provider, data, batch_id))
-            }));
         } else if let Some(health_checking) = &mut self.health_checking {
             let health_checks = health_checking.await??;
             self.health_checking = None;
@@ -298,7 +303,8 @@ impl<T: NodeIdentity> State<T> {
             .ok_or(Error::msg("Broadcast message processor has no self proofs"))?;
         // verified by process_network_event caller
         if broadcast.proof.committee == Committee::Trainer {
-            if *self.commitments_per_client.get(identity).unwrap_or(&0)
+            let client_commitments = *self.commitments_per_client.get(identity).unwrap_or(&0);
+            if client_commitments
                 >= self
                     .state
                     .as_ref()
@@ -312,6 +318,8 @@ impl<T: NodeIdentity> State<T> {
                 );
                 return Ok(None);
             }
+            self.commitments_per_client
+                .insert(identity.clone(), client_commitments + 1);
 
             if witness_proof.witness {
                 match self.blooms.as_mut() {
@@ -431,6 +439,7 @@ impl<T: NodeIdentity> State<T> {
                         self.identity.clone(),
                         self.private_key.clone(),
                         model.clone(),
+                        self.gpus,
                     )))
                 }
                 None => {
@@ -449,14 +458,14 @@ impl<T: NodeIdentity> State<T> {
         assert_eq!(state.run_state, RunState::RoundTrain);
 
         // if all our states are empty (first execution), wait for the data provider and model load to finish
-        if self.trainer.is_none() && self.training.is_none() && self.data_provider.is_none() {
+        if self.trainers.is_empty() && self.trainings.is_empty() && self.data_provider.is_none() {
             let data_and_model_load = self.data_and_model_load.take().ok_or(Error::msg(
                 "Round started but no model load was running. Did we miss warmup?",
             ))?;
             if !data_and_model_load.is_finished() {
                 bail!("Data and model load not finished when round started!")
             }
-            let (data, model) = data_and_model_load.await??; // CANCEL SAFETY POINT
+            let (data, models) = data_and_model_load.await??; // CANCEL SAFETY POINT
             self.data_provider = Some(data);
 
             let config = match &state.model {
@@ -468,7 +477,10 @@ impl<T: NodeIdentity> State<T> {
             };
             let model::Model::LLM(llm) = config;
             let _llm = llm.clone();
-            self.trainer = Some(Trainer::new(model, llm.lr_schedule.into(), llm.optimizer));
+            self.trainers = models
+                .into_iter()
+                .map(|model| Trainer::new(model, llm.lr_schedule.into(), llm.optimizer))
+                .collect();
         }
 
         // check if this is a state transition
@@ -487,7 +499,7 @@ impl<T: NodeIdentity> State<T> {
         if self.fetching_data.is_some() {
             bail!("Ready to train but previous data fetch still running");
         }
-        if self.training.is_some() {
+        if !self.trainings.is_empty() {
             bail!("Ready to train but previous training batch still running");
         }
 
@@ -595,11 +607,12 @@ impl<T: NodeIdentity> State<T> {
             return Ok(());
         }
 
-        if !self.trainer.is_some() {
-            bail!("Apply round but trainer isn't ready");
+        let gpus_still_running = self.gpus - self.trainers.len();
+        if gpus_still_running > 0 {
+            bail!("Apply round but {gpus_still_running} gpus aren't finished");
         }
         let round = state.current_round()?;
-        let trainer = self.trainer.take().unwrap();
+        let trainers = self.trainers.drain(0..).collect::<Vec<_>>();
         let mut payloads: HashMap<psyche_network::Hash, PayloadState<T>> =
             self.payloads.drain().collect();
         let witnesses = round.witnesses.clone();
@@ -608,7 +621,7 @@ impl<T: NodeIdentity> State<T> {
         let step = state.step as usize;
         let batch_ids = get_batch_ids_for_state(state);
 
-        self.applying = Some(tokio::task::spawn_blocking(move || {
+        self.applying = Some(tokio::task::spawn(async move {
             let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
 
             for batch_id in batch_ids {
@@ -656,7 +669,34 @@ impl<T: NodeIdentity> State<T> {
                 }
             }
 
-            trainer.apply_distro_results(step, distro_results)
+            let futures: Vec<JoinHandle<Result<Trainer>>> = trainers
+                .into_iter()
+                .map(|trainer| {
+                    let distro_results = distro_results.clone();
+
+                    tokio::task::spawn_blocking(move || {
+                        let device = trainer.device();
+                        let distro_results: Vec<Vec<DistroResult>> = distro_results
+                            .into_iter()
+                            .map(|x| {
+                                x.into_iter()
+                                    .map(|y| DistroResult {
+                                        sparse_idx: y.sparse_idx.to_device(device),
+                                        sparse_val: y.sparse_val.to_device(device),
+                                        xshape: y.xshape,
+                                    })
+                                    .collect()
+                            })
+                            .collect();
+                        trainer.apply_distro_results(step, distro_results)
+                    })
+                })
+                .collect::<Vec<_>>();
+            let mut trainers = Vec::new();
+            for future in futures {
+                trainers.push(future.await??);
+            }
+            Ok(trainers)
         }));
 
         let (_, witness_proof, committee_selection) = self
@@ -704,7 +744,8 @@ impl<T: NodeIdentity> State<T> {
         identity: T,
         private_key: T::PrivateKey,
         model: model::Model,
-    ) -> Result<(DataProviderTcpClient<T>, LlamaForCausalLM)> {
+        gpus: usize,
+    ) -> Result<(DataProviderTcpClient<T>, Vec<LlamaForCausalLM>)> {
         let model::Model::LLM(llm) = model;
         let data_future = match &llm.data_location {
             model::LLMTrainingDataLocation::Server(data_server) => {
@@ -712,7 +753,7 @@ impl<T: NodeIdentity> State<T> {
             }
             model::LLMTrainingDataLocation::Local(_) => todo!(),
         };
-        let model_future = match &llm.architecture {
+        let model_future: JoinHandle<Result<Vec<LlamaForCausalLM>>> = match &llm.architecture {
             model::LLMArchitecture::HfLlama => match &llm.checkpoint {
                 model::Checkpoint::Hub(hub_repo) => {
                     let hub_repo = hub_repo.clone();
@@ -728,17 +769,26 @@ impl<T: NodeIdentity> State<T> {
                         )
                         .await?;
                         info!("Loading {}", hub_repo.repo_id);
-                        let model = tokio::task::spawn_blocking(move || {
-                            LlamaForCausalLM::from_pretrained(
-                                &repo_files,
-                                Some(Kind::BFloat16),
-                                None,
-                                None,
-                            )
-                        })
-                        .await?;
-                        info!("Loading complete {}", hub_repo.repo_id);
-                        model
+                        let futures = (0..gpus)
+                            .into_iter()
+                            .zip((0..gpus).into_iter().map(|_| repo_files.clone()))
+                            .map(|(i, repo_files)| {
+                                tokio::task::spawn_blocking(move || {
+                                    LlamaForCausalLM::from_pretrained(
+                                        &repo_files,
+                                        Some(Kind::BFloat16),
+                                        None,
+                                        Some(Device::Cuda(i)),
+                                    )
+                                })
+                            })
+                            .collect::<Vec<_>>();
+                        let mut models = Vec::new();
+                        for future in futures {
+                            models.push(future.await??);
+                        }
+                        info!("Loaded {} onto {} gpu(s)", hub_repo.repo_id, gpus);
+                        Ok(models)
                     })
                 }
             },

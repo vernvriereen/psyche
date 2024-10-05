@@ -6,8 +6,7 @@ use psyche_core::LearningRateScheduler;
 use psyche_modeling::{CausalLM, Distro, DistroResult, LlamaForCausalLM};
 use serde::{Deserialize, Serialize};
 use tch::{
-    nn::{self, OptimizerConfig},
-    Tensor,
+    nn::{self, OptimizerConfig}, Device, Tensor
 };
 use tracing::debug;
 
@@ -132,6 +131,10 @@ impl Trainer {
             }
         }
         Ok(self)
+    }
+
+    pub fn device(&self) -> Device {
+        self.model.device()
     }
 }
 

@@ -400,6 +400,16 @@ pub struct DistroResult {
     pub xshape: Vec<i64>,
 }
 
+impl Clone for DistroResult {
+    fn clone(&self) -> Self {
+        Self {
+            sparse_idx: self.sparse_idx.shallow_clone(),
+            sparse_val: self.sparse_val.shallow_clone(),
+            xshape: self.xshape.clone(),
+        }
+    }
+}
+
 pub struct Distro {
     sgd: Optimizer,
     compression_decay: f64,
@@ -505,7 +515,10 @@ impl Distro {
 
             // Decode grad from all nodes
             let new_grad = self.transform.decode(&CompressDCT::batch_decompress(
-                &variable, &indicies, &values, &results[0][index].xshape,
+                &variable,
+                &indicies,
+                &values,
+                &results[0][index].xshape,
             ));
 
             // Set grad to values

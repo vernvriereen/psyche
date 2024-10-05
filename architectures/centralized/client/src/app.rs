@@ -54,6 +54,7 @@ pub struct App {
     coordinator_state: Coordinator<ClientId>,
     server_conn: TcpClient<ClientId, ClientToServerMessage, ServerToClientMessage>,
     run_id: String,
+    gpus: usize,
 }
 
 impl App {
@@ -65,6 +66,7 @@ impl App {
         tick_interval: Interval,
         update_tui_interval: Interval,
         run_id: &str,
+        gpus: usize,
     ) -> Self {
         Self {
             cancel,
@@ -75,6 +77,7 @@ impl App {
             coordinator_state: Coordinator::default(),
             server_conn,
             run_id: run_id.into(),
+            gpus,
         }
     }
 
@@ -108,6 +111,7 @@ impl App {
             p2p,
             identity,
             self.secret_key.clone(),
+            self.gpus
         );
 
         loop {

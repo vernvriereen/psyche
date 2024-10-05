@@ -31,7 +31,7 @@ pub struct Client<T: NodeIdentity, B: Backend<T> + 'static> {
 }
 
 impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
-    pub fn new(backend: B, mut p2p: NC, identity: T, private_key: T::PrivateKey) -> Self {
+    pub fn new(backend: B, mut p2p: NC, identity: T, private_key: T::PrivateKey, gpus: usize) -> Self {
         let cancel = CancellationToken::new();
         let (tx, rx) = watch::channel::<TUIStates>(Default::default());
         let req_tui_state = Arc::new(Notify::new());
@@ -41,7 +41,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
             let req_tui_state = req_tui_state.clone();
             async move {
                 let mut watcher = BackendWatcher::new(backend);
-                let mut state = State::new(identity, private_key);
+                let mut state = State::new(identity, private_key, gpus);
                 let clear_uploads = state.get_clear_downloads_notification();
 
                 loop {

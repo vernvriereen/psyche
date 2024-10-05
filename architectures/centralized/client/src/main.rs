@@ -36,6 +36,9 @@ struct Args {
 
     #[clap(long)]
     server_addr: String,
+
+    #[clap(long, default_value_t=1)]
+    gpus: usize
 }
 
 #[tokio::main]
@@ -104,6 +107,7 @@ async fn main() -> Result<()> {
         tick_interval,
         interval(Duration::from_millis(150)),
         &args.run_id,
+        args.gpus,
     )
     .run(
         NC::init(
