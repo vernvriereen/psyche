@@ -65,7 +65,8 @@ impl psyche_tui::CustomWidget for ClientTUI {
             .render(hsplit[1], buf);
             Paragraph::new(format!("State: {}", state.run_state)).render(hsplit[2], buf);
             Paragraph::new(format!("Batches Left: {}", state.batches_left)).render(hsplit[3], buf);
-            Paragraph::new(format!("Loss: {:.3}", state.loss.last().unwrap_or(&0.0))).render(hsplit[4], buf);
+            Paragraph::new(format!("Loss: {:.3}", state.loss.last().unwrap_or(&0.0)))
+                .render(hsplit[4], buf);
         }
     }
 }

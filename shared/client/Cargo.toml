@@ -11,6 +11,7 @@ psyche-modeling.workspace = true
 psyche-network.workspace = true
 psyche-tui.workspace = true
 psyche-watcher.workspace = true
+postcard.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 tch.workspace = true

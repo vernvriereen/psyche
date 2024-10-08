@@ -7,7 +7,7 @@ use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientM
 use psyche_client::NC;
 use psyche_network::{RelayMode, SecretKey, TcpClient};
 use psyche_tui::{maybe_start_render_loop, LogOutput};
-use std::time::Duration;
+use std::{path::PathBuf, time::Duration};
 use tokio::time::{interval, interval_at, Instant};
 use tracing::{info, Level};
 
@@ -42,6 +42,9 @@ struct Args {
 
     #[clap(long, default_value_t = 1)]
     tensor_parallelism: usize,
+
+    /// If provided, every shared gradient this client sees will be written to this directory.
+    write_gradients_dir: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -112,6 +115,7 @@ async fn main() -> Result<()> {
         &args.run_id,
         args.data_parallelism,
         args.tensor_parallelism,
+        args.write_gradients_dir,
     )
     .run(
         NC::init(

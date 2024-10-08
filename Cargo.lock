@@ -4948,6 +4948,7 @@ dependencies = [
  "anyhow",
  "futures",
  "hex",
+ "postcard",
  "psyche-coordinator",
  "psyche-core",
  "psyche-data-provider",

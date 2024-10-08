@@ -270,19 +270,21 @@ impl Trainer {
     }
 }
 
-fn serialize_tensor(tensor: &Tensor) -> Vec<u8> {
+fn serialize_tensor(tensor: &Tensor) -> std::result::Result<Vec<u8>, tch::TchError> {
     let mut buffer = Vec::new();
-    tensor.save_to_stream(&mut buffer).unwrap();
-    buffer
+    tensor.save_to_stream(&mut buffer)?;
+    Ok(buffer)
 }
 
-impl From<&DistroResult> for SerializedDistroResult {
-    fn from(value: &DistroResult) -> Self {
-        Self {
-            sparse_idx: serialize_tensor(&value.sparse_idx),
-            sparse_val: serialize_tensor(&value.sparse_val),
+impl TryFrom<&DistroResult> for SerializedDistroResult {
+    type Error = tch::TchError;
+
+    fn try_from(value: &DistroResult) -> std::result::Result<Self, Self::Error> {
+        Ok(Self {
+            sparse_idx: serialize_tensor(&value.sparse_idx)?,
+            sparse_val: serialize_tensor(&value.sparse_val)?,
             xshape: value.xshape.iter().map(|x| *x as u16).collect(),
-        }
+        })
     }
 }
 

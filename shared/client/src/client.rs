@@ -8,7 +8,7 @@ use psyche_coordinator::Coordinator;
 use psyche_core::NodeIdentity;
 use psyche_network::NetworkTUIState;
 use psyche_watcher::{Backend, BackendWatcher};
-use std::{borrow::BorrowMut, marker::PhantomData, sync::Arc};
+use std::{borrow::BorrowMut, marker::PhantomData, path::PathBuf, sync::Arc};
 use tokio::{
     select,
     sync::{
@@ -38,6 +38,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         private_key: T::PrivateKey,
         data_parallelism: usize,
         tensor_parallelism: usize,
+        write_gradients_dir: Option<PathBuf>,
     ) -> Self {
         let cancel = CancellationToken::new();
         let (tx, rx) = watch::channel::<TUIStates>(Default::default());
@@ -48,8 +49,13 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
             let req_tui_state = req_tui_state.clone();
             async move {
                 let mut watcher = BackendWatcher::new(backend);
-                let mut state =
-                    State::new(identity, private_key, data_parallelism, tensor_parallelism);
+                let mut state = State::new(
+                    identity,
+                    private_key,
+                    data_parallelism,
+                    tensor_parallelism,
+                    write_gradients_dir,
+                );
                 let clear_uploads = state.get_clear_downloads_notification();
 
                 loop {

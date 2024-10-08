@@ -1,5 +1,5 @@
 use crate::SerializedDistroResult;
-use psyche_coordinator::{CommitteeProof, Commitment};
+use psyche_coordinator::{Commitment, CommitteeProof};
 use psyche_network::{BlobTicket, NetworkConnection, NetworkEvent};
 use serde::{Deserialize, Serialize};
 

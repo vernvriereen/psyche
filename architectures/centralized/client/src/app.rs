@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use anyhow::{Error, Result};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{Client, ClientTUI, ClientTUIState, NC};
@@ -56,6 +58,7 @@ pub struct App {
     run_id: String,
     data_parallelism: usize,
     tensor_parallelism: usize,
+    write_gradients_dir: Option<PathBuf>,
 }
 
 impl App {
@@ -69,6 +72,7 @@ impl App {
         run_id: &str,
         data_parallelism: usize,
         tensor_parallelism: usize,
+        write_gradients_dir: Option<PathBuf>,
     ) -> Self {
         Self {
             cancel,
@@ -81,6 +85,7 @@ impl App {
             run_id: run_id.into(),
             data_parallelism,
             tensor_parallelism,
+            write_gradients_dir,
         }
     }
 
@@ -116,6 +121,7 @@ impl App {
             self.secret_key.clone(),
             self.data_parallelism,
             self.tensor_parallelism,
+            self.write_gradients_dir.clone(),
         );
 
         loop {

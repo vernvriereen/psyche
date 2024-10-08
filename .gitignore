@@ -33,3 +33,6 @@ libtorch*
 
 ### Training Data ###
 data/
+
+# results
+distro-data/

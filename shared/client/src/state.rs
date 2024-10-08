@@ -2,7 +2,7 @@ use crate::{
     fetch_data::{fetch_data, Batch, BatchId},
     trainer::{ParallelModels, TrainOutput, Trainer},
     tui::ClientTUIState,
-    BroadcastMessage, Payload,
+    BroadcastMessage, Payload, SerializedDistroResult,
 };
 use anyhow::{bail, Error, Result};
 use hex;
@@ -17,6 +17,8 @@ use psyche_network::{dummy_blob_ticket, BlobTicket, NetworkEvent};
 use psyche_watcher::{Backend, BackendWatcher};
 use std::{
     collections::{HashMap, HashSet},
+    fs,
+    path::PathBuf,
     sync::Arc,
 };
 use tch::{Device, Kind};
@@ -24,7 +26,7 @@ use tokio::{
     sync::{mpsc, Mutex, Notify},
     task::JoinHandle,
 };
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 type TaskResult<T> = Option<JoinHandle<Result<T>>>;
 
@@ -69,6 +71,7 @@ pub struct State<T: NodeIdentity> {
     notify_poll_next: Arc<Notify>,
     notify_clear_uploads: Arc<Notify>,
     notify_new_batch: Arc<Notify>,
+    write_gradients_dir: Option<PathBuf>,
 }
 
 impl<T: NodeIdentity> State<T> {
@@ -77,6 +80,7 @@ impl<T: NodeIdentity> State<T> {
         private_key: T::PrivateKey,
         data_parallelism: usize,
         tensor_parallelism: usize,
+        write_gradients_dir: Option<PathBuf>,
     ) -> Self {
         Self {
             identity,
@@ -104,6 +108,7 @@ impl<T: NodeIdentity> State<T> {
             data_parallelism,
             tensor_parallelism,
             notify_new_batch: Arc::new(Notify::new()),
+            write_gradients_dir,
         }
     }
 
@@ -177,7 +182,7 @@ impl<T: NodeIdentity> State<T> {
             }));
         } else if let Some(finished) = self.trainings.iter_mut().position(|x| x.is_finished()) {
             let (output, batch_id) = self.trainings.get_mut(finished).unwrap().await??;
-            self.trainings.remove(finished);
+            self.trainings.swap_remove(finished);
             self.trainers.push(output.trainer);
             self.round_losses.push(output.loss);
             debug!("Batch {} loss: {}", batch_id, output.loss);
@@ -203,8 +208,15 @@ impl<T: NodeIdentity> State<T> {
             let payload = Payload {
                 step,
                 batch_id,
-                distro_results: output.distro_results.iter().map(|x| x.into()).collect(),
+                distro_results: output
+                    .distro_results
+                    .iter()
+                    .map(SerializedDistroResult::try_from)
+                    .collect::<std::result::Result<Vec<_>, tch::TchError>>()?,
             };
+
+            self.maybe_write_gradients(&payload);
+
             return Ok(ToSend::Broadcast((broadcast, payload)));
         } else if let Some(health_checking) = &mut self.health_checking {
             let health_checks = health_checking.await??;
@@ -352,7 +364,11 @@ impl<T: NodeIdentity> State<T> {
                 return Ok(Some(ticket));
             }
         } else {
-            todo!();
+            // TODO implement broadcast for train / tiebreak
+            error!(
+                "broadcast not implemented for committee member {}",
+                broadcast.proof.committee
+            );
         }
 
         Ok(None)
@@ -656,7 +672,6 @@ impl<T: NodeIdentity> State<T> {
             self.commitments.drain().collect();
         let step = state.step as usize;
         let batch_ids = get_batch_ids_for_state(state);
-
         self.applying = Some(tokio::task::spawn(async move {
             let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
 
@@ -874,6 +889,39 @@ impl<T: NodeIdentity> State<T> {
             }
         }
         None
+    }
+
+    fn maybe_write_gradients(&self, payload: &Payload) {
+        if let Some(write_gradients_dir) = &self.write_gradients_dir {
+            info!("trying to write distro result to disk...");
+            if let Err(e) = fs::create_dir_all(write_gradients_dir) {
+                warn!("Failed to create write_gradients_dir: {e}");
+                return;
+            };
+
+            let fname = format!(
+                "result-step{}-batch{}.vec-postcard",
+                payload.step, payload.batch_id
+            );
+            let fpath = write_gradients_dir.join(&fname);
+            let serialized = match postcard::to_stdvec(&payload.distro_results) {
+                Err(e) => {
+                    error!("Failed to serialize distro result data {fname} to bytes {e}");
+                    return;
+                }
+                Ok(bin) => bin,
+            };
+            tokio::task::spawn({
+                async move {
+                    match tokio::fs::write(fpath, serialized).await {
+                        Ok(()) => info!("Wrote distro result {fname}."),
+                        Err(e) => {
+                            error!("Failed to write serialized distro result data {fname}: {e}");
+                        }
+                    }
+                }
+            });
+        }
     }
 }
 
