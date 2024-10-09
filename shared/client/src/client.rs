@@ -99,7 +99,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         res: Result<Option<NE>>,
     ) -> Result<()> {
         match res {
-            Ok(Some(event)) => match state.process_network_event(event, watcher)? {
+            Ok(Some(event)) => match state.process_network_event(event, watcher).await? {
                 Some(download) => p2p.start_download(download).await,
                 None => Ok(()),
             },
@@ -130,7 +130,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                 let identity = state.identity.clone();
                 let hash = broadcast.ticket.hash();
                 state.handle_broadcast(&identity, broadcast)?;
-                state.handle_payload(hash, payload)
+                state.handle_payload(hash, payload).await
             }
             ToSend::Witness(witness) => watcher.backend_mut().send_witness(witness).await,
             ToSend::HealthCheck(health_checks) => {

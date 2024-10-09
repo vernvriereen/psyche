@@ -1,4 +1,5 @@
 mod client;
+mod fetch_data;
 mod state;
 mod trainer;
 mod tui;

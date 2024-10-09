@@ -1,4 +1,5 @@
 use crate::{
+    fetch_data::{fetch_data, Batch, BatchId},
     trainer::{TrainOutput, Trainer},
     tui::ClientTUIState,
     BroadcastMessage, Payload,
@@ -10,19 +11,19 @@ use psyche_coordinator::{
     HealthChecks, RunState, Witness, WitnessProof, BLOOM_FALSE_RATE, BLOOM_MAX_BITS,
 };
 use psyche_core::{sha256, Bloom, NodeIdentity};
-use psyche_data_provider::{
-    download_model_repo_async, DataProviderTcpClient, TokenizedDataProvider,
-};
+use psyche_data_provider::{download_model_repo_async, DataProviderTcpClient};
 use psyche_modeling::{DistroResult, LlamaForCausalLM};
 use psyche_network::{dummy_blob_ticket, BlobTicket, NetworkEvent};
 use psyche_watcher::{Backend, BackendWatcher};
-use rand::Rng;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
 use tch::{Device, Kind};
-use tokio::{sync::Notify, task::JoinHandle};
+use tokio::{
+    sync::{mpsc, Mutex, Notify},
+    task::JoinHandle,
+};
 use tracing::{debug, info, warn};
 
 type TaskResult<T> = Option<JoinHandle<Result<T>>>;
@@ -47,10 +48,9 @@ pub struct State<T: NodeIdentity> {
     private_key: T::PrivateKey,
     showed_inclusion_message: bool,
     data_and_model_load: TaskResult<(DataProviderTcpClient<T>, Vec<LlamaForCausalLM>)>,
-    data_provider: Option<DataProviderTcpClient<T>>,
+    data_receiver: Option<mpsc::Receiver<(BatchId, Batch)>>,
     trainers: Vec<Trainer>,
     trainings: Vec<JoinHandle<Result<(TrainOutput, u64)>>>,
-    fetching_data: TaskResult<(DataProviderTcpClient<T>, Vec<Vec<i32>>, u64)>,
     applying: TaskResult<Vec<Trainer>>,
     health_checking: TaskResult<HealthChecks>,
     committee_info: Option<(CommitteeProof, WitnessProof, CommitteeSelection)>,
@@ -60,12 +60,14 @@ pub struct State<T: NodeIdentity> {
     commitments_per_client: HashMap<T, u32>,
     payloads: HashMap<psyche_network::Hash, PayloadState<T>>,
     blooms: Option<(Bloom<[u8; 32]>, Bloom<[u8; 32]>, Bloom<[u8; 32]>)>,
-    notify: Arc<Notify>,
     losses: Vec<f32>,
     round_losses: Vec<f32>,
-    remaining_batch_ids: HashSet<u64>,
-    clear_uploads: Arc<Notify>,
+    remaining_batch_ids: Arc<Mutex<HashSet<u64>>>,
+    num_remaining_batch_ids: usize,
     data_parallelism: usize,
+    notify_poll_next: Arc<Notify>,
+    notify_clear_uploads: Arc<Notify>,
+    notify_new_batch: Arc<Notify>,
 }
 
 impl<T: NodeIdentity> State<T> {
@@ -75,10 +77,9 @@ impl<T: NodeIdentity> State<T> {
             private_key,
             showed_inclusion_message: false,
             data_and_model_load: None,
-            data_provider: None,
+            data_receiver: None,
             trainers: Vec::new(),
             trainings: Vec::new(),
-            fetching_data: None,
             applying: None,
             health_checking: None,
             committee_info: None,
@@ -88,12 +89,14 @@ impl<T: NodeIdentity> State<T> {
             commitments: HashMap::new(),
             commitments_per_client: HashMap::new(),
             payloads: HashMap::new(),
-            notify: Arc::new(Notify::new()),
+            notify_poll_next: Arc::new(Notify::new()),
             losses: Vec::new(),
             round_losses: Vec::new(),
-            remaining_batch_ids: HashSet::new(),
-            clear_uploads: Arc::new(Notify::new()),
+            remaining_batch_ids: Arc::new(Mutex::new(HashSet::new())),
+            num_remaining_batch_ids: 0,
+            notify_clear_uploads: Arc::new(Notify::new()),
             data_parallelism,
+            notify_new_batch: Arc::new(Notify::new()),
         }
     }
 
@@ -128,7 +131,7 @@ impl<T: NodeIdentity> State<T> {
     }
 
     pub fn get_clear_downloads_notification(&self) -> Arc<Notify> {
-        self.clear_uploads.clone()
+        self.notify_clear_uploads.clone()
     }
 
     pub async fn poll_next(&mut self) -> Result<ToSend> {
@@ -138,42 +141,30 @@ impl<T: NodeIdentity> State<T> {
             self.trainers = trainers;
         } else if self.is_run_state(RunState::RoundTrain)
             && !self.trainers.is_empty()
-            && self.data_provider.is_some()
-            && self.fetching_data.is_none()
-            && !self.remaining_batch_ids.is_empty()
+            && self.data_receiver.is_some()
+            && self.num_remaining_batch_ids != 0
         {
-            let data_provider = self.data_provider.take().unwrap();
-            let batch_id = *self
-                .remaining_batch_ids
-                .iter()
-                .nth(rand::thread_rng().gen_range(0..self.remaining_batch_ids.len()))
-                .unwrap();
-            let data_indicies_per_batch =
-                self.state.as_ref().unwrap().data_indicies_per_batch as u64;
-            let start_data_id = (batch_id * data_indicies_per_batch) as usize;
-            let data_ids = (start_data_id..(start_data_id + data_indicies_per_batch as usize))
-                .collect::<Vec<_>>();
-            self.fetching_data = Some(tokio::spawn(async move {
-                let (data_provider, data) = Self::fetch_data(data_provider, data_ids).await?;
-                Ok((data_provider, data, batch_id))
-            }));
-        } else if let Some(fetching_data) = &mut self.fetching_data {
+            let (batch_id, batch) = self
+                .data_receiver
+                .as_mut()
+                .unwrap()
+                .recv()
+                .await
+                .ok_or(Error::msg("Data fetcher exited"))?;
+
             let state = self
                 .state
                 .as_ref()
-                .ok_or(Error::msg("Data fetch running, but no state"))?;
-            let (data_provider, data, batch_id) = fetching_data.await??;
-            self.fetching_data = None;
-            self.data_provider = Some(data_provider);
+                .ok_or(Error::msg("Data fetch finished, but no state"))?;
 
             let trainer: Trainer = self
                 .trainers
                 .pop()
                 .ok_or(Error::msg("Round start but no trainer object (didn't finish training previous round or applying it?)"))?;
             let step: usize = state.step as usize;
-            let notify = self.notify.clone();
+            let notify = self.notify_poll_next.clone();
             self.trainings.push(tokio::task::spawn_blocking(move || {
-                let output = trainer.train(step as usize, data)?;
+                let output = trainer.train(step as usize, batch)?;
                 notify.notify_one(); // wake up poll_next to process this
                 Ok((output, batch_id))
             }));
@@ -219,22 +210,22 @@ impl<T: NodeIdentity> State<T> {
             }
         } else if self.is_run_state(RunState::RoundTrain)
             && self.committee_info.is_some()
-            && self.remaining_batch_ids.is_empty()
+            && self.num_remaining_batch_ids == 0
         {
             let (_, witness_proof, _) = self.committee_info.as_ref().unwrap();
             if let Some(witness) = self.get_witness_to_send(witness_proof.index) {
                 // send opprotunistic witness
                 return Ok(ToSend::Witness(witness));
             } else {
-                self.notify.notified().await;
+                self.notify_poll_next.notified().await;
             }
         } else {
-            self.notify.notified().await;
+            self.notify_poll_next.notified().await;
         }
         Ok(ToSend::Nothing)
     }
 
-    pub fn process_network_event<B: Backend<T> + 'static>(
+    pub async fn process_network_event<B: Backend<T> + 'static>(
         &mut self,
         event: NetworkEvent<BroadcastMessage, Payload>,
         watcher: &BackendWatcher<T, B>,
@@ -281,7 +272,8 @@ impl<T: NodeIdentity> State<T> {
                 );
                 if let Some(state) = &self.state {
                     if state.step == downloaded.data.step as u32 {
-                        self.handle_payload(downloaded.hash, downloaded.data)?;
+                        self.handle_payload(downloaded.hash, downloaded.data)
+                            .await?;
                     } else {
                         info!(
                             "Got payload for step {} from {} but current step is {}",
@@ -358,7 +350,7 @@ impl<T: NodeIdentity> State<T> {
         Ok(None)
     }
 
-    pub(crate) fn handle_payload(
+    pub(crate) async fn handle_payload(
         &mut self,
         hash: psyche_network::Hash,
         payload: Payload,
@@ -395,11 +387,15 @@ impl<T: NodeIdentity> State<T> {
             .committee_info
             .as_ref()
             .ok_or(Error::msg("Payload message processor has no self proofs"))?;
+        // TODO: verify payload matches commitment
+        // TODO: verify shape of distro_results
+
+        let mut remaining_batch_ids = self.remaining_batch_ids.lock().await;
         if witness_proof.witness {
             match self.blooms.as_mut() {
                 Some((_, participant_bloom, order_bloom)) => {
                     participant_bloom.add(&sha256(from.as_ref()));
-                    if self.remaining_batch_ids.contains(batch_id) {
+                    if remaining_batch_ids.contains(batch_id) {
                         // first received payload for this batch id, vote for it in consensus
                         order_bloom.add(&sha256(&commitment.commitment));
                     }
@@ -412,13 +408,13 @@ impl<T: NodeIdentity> State<T> {
                 }
             }
         }
-        // TODO: verify payload matches commitment
-        // TODO: verify shape of distro_results
-        self.remaining_batch_ids.remove(batch_id);
+        if remaining_batch_ids.remove(batch_id) {
+            self.num_remaining_batch_ids -= 1;
+        }
         self.payloads
             .insert(hash, PayloadState::Downloaded(payload));
-        if self.remaining_batch_ids.is_empty() {
-            self.notify.notify_one(); // wake up poll_next() to send opprotunistic witness
+        if self.num_remaining_batch_ids == 0 {
+            self.notify_poll_next.notify_one(); // wake up poll_next() to send opprotunistic witness
         }
         Ok(())
     }
@@ -460,15 +456,21 @@ impl<T: NodeIdentity> State<T> {
         assert_eq!(state.run_state, RunState::RoundTrain);
 
         // if all our states are empty (first execution), wait for the data provider and model load to finish
-        if self.trainers.is_empty() && self.trainings.is_empty() && self.data_provider.is_none() {
+        if self.trainers.is_empty() && self.trainings.is_empty() && self.data_receiver.is_none() {
             let data_and_model_load = self.data_and_model_load.take().ok_or(Error::msg(
                 "Round started but no model load was running. Did we miss warmup?",
             ))?;
             if !data_and_model_load.is_finished() {
                 bail!("Data and model load not finished when round started!")
             }
-            let (data, models) = data_and_model_load.await??; // CANCEL SAFETY POINT
-            self.data_provider = Some(data);
+            let (data_provider, models) = data_and_model_load.await??; // CANCEL SAFETY POINT
+            self.data_receiver = Some(fetch_data(
+                data_provider,
+                self.notify_new_batch.clone(),
+                state.data_indicies_per_batch,
+                self.remaining_batch_ids.clone(),
+                self.data_parallelism * 2,
+            ));
 
             let config = match &state.model {
                 Some(model) => model,
@@ -497,10 +499,6 @@ impl<T: NodeIdentity> State<T> {
         }
 
         // transition to RoundTrain -- round start time!
-
-        if self.fetching_data.is_some() {
-            bail!("Ready to train but previous data fetch still running");
-        }
         if !self.trainings.is_empty() {
             bail!("Ready to train but previous training batch still running");
         }
@@ -520,7 +518,24 @@ impl<T: NodeIdentity> State<T> {
         //     .filter(|(_, v)| **v == self.identity)
         //     .flat_map(|(k, _)| (k.start as usize..k.end as usize + 1).collect::<Vec<_>>())
         //     .collect::<Vec<_>>();
-        self.remaining_batch_ids = get_batch_ids_for_state(state).drain(0..).collect();
+        {
+            let mut remaining_batch_ids = self.remaining_batch_ids.lock().await;
+            if let Some(data_receiver) = self.data_receiver.as_mut() {
+                // drain any pending batches -- this will not loop forever since we are holding the
+                // remaining_batch_ids lock, so fetch_data can't push anything new in
+                loop {
+                    match data_receiver.try_recv() {
+                        Ok(_) => {}
+                        Err(_) => {
+                            break;
+                        }
+                    }
+                }
+                let mut batch_ids = get_batch_ids_for_state(state);
+                self.num_remaining_batch_ids = batch_ids.len();
+                *remaining_batch_ids = batch_ids.drain(0..).collect();
+            }
+        }
         let committee_proof = committee_selection.get_committee(index);
         let witness_proof = committee_selection.get_witness(index);
         info!(
@@ -530,14 +545,14 @@ impl<T: NodeIdentity> State<T> {
         self.blooms = match witness_proof.witness {
             true => {
                 let commit_bloom = Bloom::random(
-                    self.remaining_batch_ids.len() * 2,
+                    self.num_remaining_batch_ids * 2,
                     BLOOM_FALSE_RATE,
                     BLOOM_MAX_BITS,
                 );
                 let participant_bloom =
                     Bloom::random(state.clients.len(), BLOOM_FALSE_RATE, BLOOM_MAX_BITS);
                 let order_bloom = Bloom::random(
-                    self.remaining_batch_ids.len(),
+                    self.num_remaining_batch_ids,
                     BLOOM_FALSE_RATE,
                     BLOOM_MAX_BITS,
                 );
@@ -564,8 +579,9 @@ impl<T: NodeIdentity> State<T> {
         self.commitments.clear();
         self.commitments_per_client.clear();
         self.payloads.clear();
-        self.clear_uploads.notify_one(); // clear any served uploads we have
-        self.notify.notify_one(); // wake up poll_next() to start data download and training
+        self.notify_clear_uploads.notify_one(); // clear any served uploads we have
+        self.notify_poll_next.notify_one(); // wake up poll_next() to start data download and training
+        self.notify_new_batch.notify_one();
 
         // if !data_ids.is_empty() {
         //     let data_provider = std::mem::take(&mut self.data_provider)
@@ -743,14 +759,6 @@ impl<T: NodeIdentity> State<T> {
         Ok(())
     }
 
-    async fn fetch_data(
-        mut data_provider: DataProviderTcpClient<T>,
-        data_ids: Vec<usize>,
-    ) -> Result<(DataProviderTcpClient<T>, Vec<Vec<i32>>)> {
-        let data = data_provider.get_samples(data_ids).await?;
-        Ok((data_provider, data))
-    }
-
     async fn load_data_and_model(
         identity: T,
         private_key: T::PrivateKey,
@@ -782,7 +790,11 @@ impl<T: NodeIdentity> State<T> {
                         info!("Loading {}", hub_repo.repo_id);
                         let futures = (0..data_parallelism)
                             .into_iter()
-                            .zip((0..data_parallelism).into_iter().map(|_| repo_files.clone()))
+                            .zip(
+                                (0..data_parallelism)
+                                    .into_iter()
+                                    .map(|_| repo_files.clone()),
+                            )
                             .map(|(i, repo_files)| {
                                 tokio::task::spawn_blocking(move || {
                                     LlamaForCausalLM::from_pretrained(
@@ -790,7 +802,7 @@ impl<T: NodeIdentity> State<T> {
                                         Some(Kind::BFloat16),
                                         None,
                                         Some(Device::Cuda(i)),
-                                        None
+                                        None,
                                     )
                                 })
                             })
@@ -799,7 +811,10 @@ impl<T: NodeIdentity> State<T> {
                         for future in futures {
                             models.push(future.await??);
                         }
-                        info!("Loaded {} onto {} gpu(s)", hub_repo.repo_id, data_parallelism);
+                        info!(
+                            "Loaded {} onto {} gpu(s)",
+                            hub_repo.repo_id, data_parallelism
+                        );
                         Ok(models)
                     })
                 }
@@ -844,7 +859,7 @@ impl<T: NodeIdentity> From<&State<T>> for ClientTUIState {
             committee,
             run_state: coordinator.map(|x| x.run_state).unwrap_or_default(),
             loss: value.losses.clone(),
-            batches_left: value.remaining_batch_ids.len(),
+            batches_left: value.num_remaining_batch_ids,
         }
     }
 }

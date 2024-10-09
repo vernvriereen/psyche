@@ -10,6 +10,8 @@ use tch::{
 };
 use tracing::debug;
 
+use crate::fetch_data::Batch;
+
 enum Optimizer {
     AdamW {
         optimizer: nn::Optimizer,
@@ -81,7 +83,7 @@ impl Trainer {
         }
     }
 
-    pub fn train(mut self, step: usize, data: Vec<Vec<i32>>) -> Result<TrainOutput> {
+    pub fn train(mut self, step: usize, data: Batch) -> Result<TrainOutput> {
         let inputs = Tensor::from_slice2(&data).to(self.model.device());
         let targets = inputs.copy();
         let (_, loss) = self.model.forward(&inputs, Some(&targets), None);
