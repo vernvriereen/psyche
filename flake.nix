@@ -81,7 +81,10 @@
         devShells.default = pkgs.mkShell {
           inputsFrom = [bin];
           inherit env;
-          buildInputs = with pkgs; [tmux];
+          buildInputs = with pkgs; [
+            tmux
+            nvtopPackages.full
+          ];
         };
       };
     };

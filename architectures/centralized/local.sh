@@ -1,3 +1,4 @@
+
 #!/usr/bin/env bash
 
 set -euo pipefail
@@ -29,8 +30,9 @@ if [ -z "$run_id" ]; then
     exit 1
 fi
 
-# Pre-build the server, so it can start first without delay.
+# Pre-build the packages
 cargo build -p psyche-centralized-server
+cargo build -p psyche-centralized-client
 
 # Create a new tmux session
 tmux new-session -d -s psyche
@@ -38,7 +40,12 @@ tmux new-session -d -s psyche
 # Split the first pane horizontally for the server
 tmux split-window -h
 
+# Split the server pane vertically for nvtop
+tmux select-pane -t 0
+tmux split-window -v
+
 # Split the remaining panes vertically for clients
+tmux select-pane -t 2
 for ((i=1; i<NUM_CLIENTS; i++)); do
     tmux split-window -v
 done
@@ -48,12 +55,19 @@ tmux select-pane -t 0
 
 # Send the server command to the first pane
 tmux send-keys "cargo run -p psyche-centralized-server -- --state $STATE_PATH --data-config $DATA_PATH --server-port $SERVER_PORT" C-m
-
 # Wait a sec for startup..
-sleep 5
+echo "Starting server & waiting 10 seconds for server startup..."
+sleep 10
+
+# Select the second pane (nvtop pane)
+tmux select-pane -t 1
+
+# Send the nvtop command to the second pane
+tmux send-keys "nvtop" C-m
+
 
 # Send client commands to the rest of the panes
-for ((i=1; i<=NUM_CLIENTS; i++)); do
+for ((i=2; i<=(NUM_CLIENTS+1); i++)); do
     tmux select-pane -t $i
     if [ "$WRITE_DISTRO_DATA" != "false" ]; then
         tmux send-keys "cargo run -p psyche-centralized-client -- --run-id $run_id --server-addr localhost:$SERVER_PORT --write-gradients-dir $WRITE_DISTRO_DATA" C-m
