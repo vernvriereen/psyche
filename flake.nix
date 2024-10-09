@@ -46,6 +46,7 @@
         });
 
         env = {
+          CUDA_ROOT = pkgs.cudaPackages.cudatoolkit.out;
           LIBTORCH = torch.out;
           LIBTORCH_INCLUDE = torch.dev;
           LIBTORCH_LIB = torch.out;
@@ -63,7 +64,7 @@
           ];
 
           # runtime env
-          buildInputs = [torch pkgs.openssl];
+          buildInputs = [torch] ++ (with pkgs; [openssl]) ++ (with pkgs.cudaPackages; [cudatoolkit cuda_cudart nccl]);
         };
 
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
