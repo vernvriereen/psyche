@@ -21,12 +21,7 @@
         "aarch64-linux"
       ];
 
-      perSystem = {
-        config,
-        pkgs,
-        system,
-        ...
-      }: let
+      perSystem = {system, ...}: let
         pkgs = import inputs.nixpkgs {
           inherit system;
           overlays = [(import inputs.rust-overlay)];
@@ -85,6 +80,7 @@
         devShells.default = pkgs.mkShell {
           inputsFrom = [bin];
           inherit env;
+          buildInputs = with pkgs; [tmux];
         };
       };
     };
