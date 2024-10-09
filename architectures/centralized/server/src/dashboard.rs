@@ -42,7 +42,7 @@ impl CustomWidget for DashboardTui {
                 .constraints(Constraint::from_fills([1, 1]))
                 .split(vertical[1]);
 
-            Paragraph::new(format!("{:?}", state.coordinator_state.run_state))
+            Paragraph::new(format!("{}", state.coordinator_state.run_state))
                 .block(Block::bordered().title("Run state"))
                 .render(coord_split[0], buf);
 

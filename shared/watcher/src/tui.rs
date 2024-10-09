@@ -1,3 +1,8 @@
+use std::{
+    fmt::{Display, Formatter},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+
 use psyche_coordinator::{model::Model, Coordinator, RunState};
 use psyche_core::NodeIdentity;
 use psyche_tui::ratatui::{
@@ -18,7 +23,7 @@ impl psyche_tui::CustomWidget for CoordinatorTui {
         {
             let vsplit = Layout::vertical(Constraint::from_fills([1, 1])).split(coord_split[0]);
             {
-                Paragraph::new(format!("{:?}", state.run_state))
+                Paragraph::new(format!("{}", state.run_state))
                     .block(Block::bordered().title("Run state"))
                     .render(vsplit[0], buf);
             }
@@ -65,9 +70,64 @@ impl psyche_tui::CustomWidget for CoordinatorTui {
 }
 
 #[derive(Default, Debug)]
+pub enum TuiRunState {
+    #[default]
+    Unknown,
+    WaitingForMembers {
+        need: u32,
+    },
+    Warmup {
+        end_time: Instant,
+    },
+    RoundTrain,
+    RoundWitness,
+    RoundApply,
+}
+
+impl Display for TuiRunState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TuiRunState::Unknown => write!(f, "Unknown"),
+            TuiRunState::WaitingForMembers { need } => write!(f, "Waiting for {} members", need),
+            TuiRunState::Warmup { end_time } => {
+                let remaining = end_time.duration_since(Instant::now());
+                write!(f, "Warmup ({}s remaining)", remaining.as_secs())
+            }
+            TuiRunState::RoundTrain => write!(f, "Training Round"),
+            TuiRunState::RoundWitness => write!(f, "Witnessing Round"),
+            TuiRunState::RoundApply => write!(f, "Applying Round"),
+        }
+    }
+}
+
+impl<T: NodeIdentity> From<&Coordinator<T>> for TuiRunState {
+    fn from(c: &Coordinator<T>) -> Self {
+        match c.run_state {
+            RunState::WaitingForMembers => TuiRunState::WaitingForMembers {
+                need: c.min_clients,
+            },
+            RunState::Warmup => {
+                let time_since_epoch = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or(Duration::ZERO);
+
+                TuiRunState::Warmup {
+                    end_time: Instant::now()
+                        + Duration::from_secs(c.warmup_time + c.run_state_start_unix_timestamp)
+                        - time_since_epoch,
+                }
+            }
+            RunState::RoundTrain => TuiRunState::RoundTrain,
+            RunState::RoundApply => TuiRunState::RoundApply,
+            RunState::RoundWitness => TuiRunState::RoundWitness,
+        }
+    }
+}
+
+#[derive(Default, Debug)]
 pub struct CoordinatorTuiState {
     pub run_id: String,
-    pub run_state: RunState,
+    pub run_state: TuiRunState,
     pub height: u32,
     pub clients: Vec<String>,
     pub tick: u64,
@@ -78,7 +138,7 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
     fn from(value: &Coordinator<T>) -> Self {
         Self {
             run_id: value.run_id.clone(),
-            run_state: value.run_state,
+            run_state: value.into(),
             height: value.rounds[value.rounds_head as usize].height,
             clients: value
                 .clients
