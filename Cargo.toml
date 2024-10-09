@@ -1,5 +1,5 @@
 [workspace]
-members = ["architectures/*/*", "shared/*"]
+members = ["architectures/*/*", "shared/*", "tools/rust-tools/*"]
 resolver = "2"
 
 [workspace.dependencies]

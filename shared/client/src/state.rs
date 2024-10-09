@@ -709,7 +709,7 @@ impl<T: NodeIdentity> State<T> {
                 };
                 let maybe_results: Result<Vec<DistroResult>, _> = payload
                     .distro_results
-                    .into_iter()
+                    .iter()
                     .map(|x| x.try_into())
                     .collect();
                 match maybe_results {

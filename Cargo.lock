@@ -2001,6 +2001,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "expand-distro"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "postcard",
+ "psyche-client",
+ "psyche-modeling",
+ "tch",
+ "toml 0.8.19",
+]
+
+[[package]]
 name = "fallible-iterator"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

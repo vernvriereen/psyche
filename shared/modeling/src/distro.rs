@@ -418,6 +418,7 @@ struct State {
     delta: Tensor,
 }
 
+#[derive(Debug)]
 pub struct DistroResult {
     pub sparse_idx: Tensor,
     pub sparse_val: Tensor,

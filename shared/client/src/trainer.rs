@@ -288,13 +288,13 @@ impl TryFrom<&DistroResult> for SerializedDistroResult {
     }
 }
 
-impl TryFrom<SerializedDistroResult> for DistroResult {
+impl TryFrom<&SerializedDistroResult> for DistroResult {
     type Error = tch::TchError;
 
-    fn try_from(value: SerializedDistroResult) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: &SerializedDistroResult) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
-            sparse_idx: Tensor::load_from_stream(Cursor::new(value.sparse_idx))?,
-            sparse_val: Tensor::load_from_stream(Cursor::new(value.sparse_val))?,
+            sparse_idx: Tensor::load_from_stream(Cursor::new(&value.sparse_idx))?,
+            sparse_val: Tensor::load_from_stream(Cursor::new(&value.sparse_val))?,
             xshape: value.xshape.iter().map(|x| *x as i64).collect(),
         })
     }
