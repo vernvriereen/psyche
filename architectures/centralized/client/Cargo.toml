@@ -20,3 +20,6 @@ tokio-util.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 tch.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+psyche-client = { workspace = true, features = ["parallelism"] }

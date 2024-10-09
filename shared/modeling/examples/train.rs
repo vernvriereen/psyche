@@ -145,7 +145,7 @@ fn main() -> Result<()> {
         Some(0) | Some(1) | None => train(repo_files, None, args, seed)?,
         #[cfg(feature = "parallelism")]
         Some(world_size) => {
-            let id = nccl::Id::new().unwrap();
+            let id = CommunicatorId::new().unwrap();
             let threads = (0..world_size)
                 .map(|rank| {
                     let repo_files = repo_files.clone();

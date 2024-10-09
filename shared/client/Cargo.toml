@@ -20,3 +20,6 @@ tracing.workspace = true
 rand.workspace = true
 futures.workspace = true
 hex = "0.4.3"
+
+[features]
+parallelism = ["psyche-modeling/parallelism"]
