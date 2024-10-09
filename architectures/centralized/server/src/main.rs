@@ -1,5 +1,7 @@
+use std::path::Path;
+
 use anyhow::Result;
-use app::App;
+use app::{App, DataServerInfo};
 use clap::{ArgAction, Parser};
 use psyche_coordinator::Coordinator;
 use psyche_tui::LogOutput;
@@ -58,9 +60,17 @@ async fn main() -> Result<()> {
     info!("joining gossip room");
 
     let data_server_config = match args.data_config {
-        Some(config_path) => Some(toml::from_str(std::str::from_utf8(&std::fs::read(
-            config_path,
-        )?)?)?),
+        Some(config_path) => {
+            let mut data_config: DataServerInfo =
+                toml::from_str(std::str::from_utf8(&std::fs::read(&config_path)?)?)?;
+
+            // data dir, if relative, should be relative to the config's path.
+            if !data_config.dir.is_absolute() {
+                let config_dir = Path::new(&config_path).parent().unwrap_or(Path::new(""));
+                data_config.dir = config_dir.join(data_config.dir);
+            }
+            Some(data_config)
+        }
         None => None,
     };
 
