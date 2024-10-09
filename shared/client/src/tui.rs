@@ -3,6 +3,7 @@ use psyche_tui::ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
     style::{Style, Stylize},
+    symbols,
     widgets::{Axis, Chart, Dataset, GraphType, Paragraph, Widget},
 };
 
@@ -39,6 +40,7 @@ impl psyche_tui::CustomWidget for ClientTUI {
                 + 0.1f64;
             let dataset = Dataset::default()
                 .name("Loss")
+                .marker(symbols::Marker::Braille)
                 .graph_type(GraphType::Line)
                 .style(Style::default().cyan())
                 .data(&data);
