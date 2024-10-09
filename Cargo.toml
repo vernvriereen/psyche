@@ -46,10 +46,10 @@ indicatif = "0.17.5"
 tokenizers = { version = "0.20.0", default-features = false, features = [
     "onig",
 ] }
-# tch = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "63a52e7e1ad99e1521ccc420e2a3eda1871490ae" }
-# torch-sys = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "63a52e7e1ad99e1521ccc420e2a3eda1871490ae" }
-tch = { path = "../tch-rs" }
-torch-sys = { path = "../tch-rs/torch-sys" }
+tch = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "a5645c8f64674bacc1719764a9cee9acc769fa4a" }
+torch-sys = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "a5645c8f64674bacc1719764a9cee9acc769fa4a" }
+# tch = { path = "../tch-rs" }
+# torch-sys = { path = "../tch-rs/torch-sys" }
 
 
 # solana-program uses curve25519-dalek v3.2.1, which pins zeroize <1.4 for MSRV cares.
