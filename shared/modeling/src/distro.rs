@@ -323,7 +323,7 @@ impl TransformDCT {
     }
 }
 
-struct CompressDCT {}
+pub struct CompressDCT;
 
 impl CompressDCT {
     fn clamp_topk(x: &Tensor, topk: i64) -> i64 {
@@ -340,7 +340,7 @@ impl CompressDCT {
         topk
     }
 
-    fn compress(x: &Tensor, topk: i64) -> (Tensor, Tensor, Vec<i64>, i64) {
+    pub fn compress(x: &Tensor, topk: i64) -> (Tensor, Tensor, Vec<i64>, i64) {
         let _no_grad = tch::no_grad_guard();
         let xshape = x.size();
         let x = if xshape.len() > 2 {
@@ -364,7 +364,7 @@ impl CompressDCT {
     }
 
     #[allow(unused)]
-    fn decompress(
+    pub fn decompress(
         idx: &Tensor,
         val: &Tensor,
         xshape: &[i64],
@@ -400,7 +400,7 @@ impl CompressDCT {
         x
     }
 
-    fn batch_decompress(
+    pub fn batch_decompress(
         idx: &[Tensor],
         val: &[Tensor],
         xshape: &[i64],
