@@ -1,4 +1,4 @@
-use crate::widget::CustomWidget;
+use crate::{terminal::TerminalWrapper, widget::CustomWidget};
 use crossterm::event::{Event, EventStream, KeyCode, KeyModifiers};
 use futures::StreamExt;
 use ratatui::{backend::Backend, Terminal};
@@ -21,6 +21,7 @@ pub struct App<W: CustomWidget> {
     custom_widget: W,
     custom_widget_data_state: W::Data,
 }
+
 // TODO implement sending shutdown signal + graceful shutdown somehow..
 
 impl<W: CustomWidget> App<W> {
@@ -34,7 +35,7 @@ impl<W: CustomWidget> App<W> {
     pub async fn start(
         mut self,
         shutdown_token: CancellationToken,
-        mut terminal: Terminal<impl Backend>,
+        mut terminal: TerminalWrapper<impl Backend>,
         mut state_rx: Receiver<W::Data>,
     ) -> anyhow::Result<()> {
         let (tx, mut rx) = mpsc::channel(10);
@@ -114,7 +115,7 @@ impl<W: CustomWidget> App<W> {
                             // just render!
                         }
                     }
-                    self.draw(&mut terminal)?;
+                    self.draw(&mut terminal.0)?;
                 }
             }
         }

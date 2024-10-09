@@ -6,7 +6,7 @@ mod terminal;
 mod widget;
 
 use anyhow::Result;
-use terminal::{init_terminal, restore_terminal};
+use terminal::init_terminal;
 use tokio::{
     signal,
     sync::mpsc::{self, Sender},
@@ -27,13 +27,9 @@ pub fn start_render_loop<T: CustomWidget>(
     tokio::spawn({
         let cancel = cancel.clone();
         async move {
-            let mut terminal = init_terminal().unwrap();
-            terminal.clear().unwrap();
-            terminal.hide_cursor().unwrap();
+            let terminal = init_terminal().unwrap();
             let start_result = App::new(widget).start(cancel, terminal, rx).await;
-            let restore_result = restore_terminal();
             start_result.unwrap();
-            restore_result.unwrap();
         }
     });
     Ok((cancel, tx))
