@@ -1,14 +1,10 @@
-use crate::app::App;
+use crate::app::{AppBuilder, AppParams, Tabs, TAB_NAMES};
 
 use anyhow::Result;
-use app::{Tabs, TAB_NAMES};
 use clap::{ArgAction, Parser};
-use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
-use psyche_client::NC;
-use psyche_network::{RelayMode, SecretKey, TcpClient};
+use psyche_network::SecretKey;
 use psyche_tui::{maybe_start_render_loop, LogOutput};
-use std::{path::PathBuf, time::Duration};
-use tokio::time::{interval, interval_at, Instant};
+use std::path::PathBuf;
 use tracing::{info, Level};
 
 mod app;
@@ -19,7 +15,7 @@ struct Args {
     secret_key: Option<String>,
 
     #[clap(short, long)]
-    bind_port: Option<u16>,
+    bind_p2p_port: Option<u16>,
 
     #[clap(
         long,
@@ -44,6 +40,7 @@ struct Args {
     tensor_parallelism: usize,
 
     /// If provided, every shared gradient this client sees will be written to this directory.
+    #[clap(long)]
     write_gradients_dir: Option<PathBuf>,
 }
 
@@ -92,42 +89,17 @@ async fn main() -> Result<()> {
     let (cancel, tx_tui_state) =
         maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;
 
-    // tick every second
-    let tick_interval = {
-        let duration = Duration::from_secs(1);
-        interval_at(Instant::now() + duration, duration)
-    };
-
-    let server_conn = TcpClient::<ClientId, ClientToServerMessage, ServerToClientMessage>::connect(
-        &args.server_addr,
-        secret_key.public().into(),
-        secret_key.clone(),
-    )
-    .await?;
-
-    App::new(
+    AppBuilder::new(AppParams {
         cancel,
-        secret_key.clone(),
-        server_conn,
+        secret_key,
+        server_addr: args.server_addr,
         tx_tui_state,
-        tick_interval,
-        interval(Duration::from_millis(150)),
-        &args.run_id,
-        args.data_parallelism,
-        args.tensor_parallelism,
-        args.write_gradients_dir,
-    )
-    .run(
-        NC::init(
-            &args.run_id,
-            args.bind_port,
-            RelayMode::Default,
-            vec![],
-            Some(secret_key),
-        )
-        .await?,
-    )
-    .await?;
-
-    Ok(())
+        run_id: args.run_id,
+        p2p_port: args.bind_p2p_port,
+        data_parallelism: args.data_parallelism,
+        tensor_parallelism: args.tensor_parallelism,
+        write_gradients_dir: args.write_gradients_dir,
+    })
+    .run()
+    .await
 }

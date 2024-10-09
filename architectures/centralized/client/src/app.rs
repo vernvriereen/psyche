@@ -1,14 +1,16 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use anyhow::{Error, Result};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{Client, ClientTUI, ClientTUIState, NC};
 use psyche_coordinator::{Coordinator, HealthChecks, Witness};
-use psyche_network::{NetworkTUIState, NetworkTui, SecretKey, TcpClient};
+use psyche_network::{NetworkTUIState, NetworkTui, RelayMode, SecretKey, TcpClient};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
 use psyche_watcher::{Backend as WatcherBackend, CoordinatorTui};
 use tokio::sync::mpsc::Sender;
+use tokio::time::interval;
 use tokio::{select, sync::mpsc, time::Interval};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -51,7 +53,6 @@ pub struct App {
     cancel: CancellationToken,
     secret_key: SecretKey,
     tx_tui_state: Option<Sender<TabsData>>,
-    tick_interval: Interval,
     update_tui_interval: Interval,
     coordinator_state: Coordinator<ClientId>,
     server_conn: TcpClient<ClientId, ClientToServerMessage, ServerToClientMessage>,
@@ -61,34 +62,61 @@ pub struct App {
     write_gradients_dir: Option<PathBuf>,
 }
 
-impl App {
-    pub fn new(
-        cancel: CancellationToken,
-        secret_key: SecretKey,
-        server_conn: TcpClient<ClientId, ClientToServerMessage, ServerToClientMessage>,
-        tx_tui_state: Option<Sender<TabsData>>,
-        tick_interval: Interval,
-        update_tui_interval: Interval,
-        run_id: &str,
-        data_parallelism: usize,
-        tensor_parallelism: usize,
-        write_gradients_dir: Option<PathBuf>,
-    ) -> Self {
-        Self {
-            cancel,
-            secret_key,
-            tx_tui_state,
-            tick_interval,
-            update_tui_interval,
-            coordinator_state: Coordinator::default(),
-            server_conn,
-            run_id: run_id.into(),
-            data_parallelism,
-            tensor_parallelism,
-            write_gradients_dir,
-        }
+pub struct AppBuilder(AppParams);
+
+pub struct AppParams {
+    pub cancel: CancellationToken,
+    pub secret_key: SecretKey,
+    pub server_addr: String,
+    pub tx_tui_state: Option<Sender<TabsData>>,
+    pub run_id: String,
+    pub data_parallelism: usize,
+    pub tensor_parallelism: usize,
+    pub write_gradients_dir: Option<PathBuf>,
+    pub p2p_port: Option<u16>,
+}
+
+impl AppBuilder {
+    pub fn new(params: AppParams) -> Self {
+        Self(params)
     }
 
+    pub async fn run(self) -> Result<()> {
+        let p = self.0;
+        let server_conn =
+            TcpClient::<ClientId, ClientToServerMessage, ServerToClientMessage>::connect(
+                &p.server_addr,
+                p.secret_key.public().into(),
+                p.secret_key.clone(),
+            )
+            .await?;
+
+        let p2p = NC::init(
+            &p.run_id,
+            p.p2p_port,
+            RelayMode::Default,
+            vec![],
+            Some(p.secret_key.clone()),
+        )
+        .await?;
+
+        let mut app = App {
+            cancel: p.cancel,
+            secret_key: p.secret_key,
+            tx_tui_state: p.tx_tui_state,
+            update_tui_interval: interval(Duration::from_millis(150)),
+            coordinator_state: Coordinator::default(),
+            server_conn,
+            run_id: p.run_id,
+            data_parallelism: p.data_parallelism,
+            tensor_parallelism: p.tensor_parallelism,
+            write_gradients_dir: p.write_gradients_dir,
+        };
+        app.run(p2p).await
+    }
+}
+
+impl App {
     pub async fn run(&mut self, mut p2p: NC) -> Result<()> {
         self.server_conn
             .send(ClientToServerMessage::Join {
@@ -131,9 +159,6 @@ impl App {
                 }
                 message = self.server_conn.receive() => {
                     self.on_server_message(message?, &tx).await;
-                }
-                _ = self.tick_interval.tick() => {
-                    self.on_tick().await;
                 }
                 _ = self.update_tui_interval.tick() => {
                     let (client_tui_state, network_tui_state) = client.tui_states().await;
@@ -184,9 +209,5 @@ impl App {
                 let _ = tx.send(state).await;
             }
         }
-    }
-
-    async fn on_tick(&mut self) {
-        // read coordinator state maybe? maybe no need.
     }
 }
