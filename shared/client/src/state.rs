@@ -65,11 +65,11 @@ pub struct State<T: NodeIdentity> {
     round_losses: Vec<f32>,
     remaining_batch_ids: HashSet<u64>,
     clear_uploads: Arc<Notify>,
-    gpus: usize,
+    data_parallelism: usize,
 }
 
 impl<T: NodeIdentity> State<T> {
-    pub fn new(identity: T, private_key: T::PrivateKey, gpus: usize) -> Self {
+    pub fn new(identity: T, private_key: T::PrivateKey, data_parallelism: usize) -> Self {
         Self {
             identity,
             private_key,
@@ -93,7 +93,7 @@ impl<T: NodeIdentity> State<T> {
             round_losses: Vec::new(),
             remaining_batch_ids: HashSet::new(),
             clear_uploads: Arc::new(Notify::new()),
-            gpus,
+            data_parallelism,
         }
     }
 
@@ -441,7 +441,7 @@ impl<T: NodeIdentity> State<T> {
                         self.identity.clone(),
                         self.private_key.clone(),
                         model.clone(),
-                        self.gpus,
+                        self.data_parallelism,
                     )))
                 }
                 None => {
@@ -618,7 +618,7 @@ impl<T: NodeIdentity> State<T> {
             self.losses.push(sum / count as f32);
         }
 
-        let gpus_still_running = self.gpus - self.trainers.len();
+        let gpus_still_running = self.data_parallelism - self.trainers.len();
         if gpus_still_running > 0 {
             bail!("Apply round but {gpus_still_running} gpus aren't finished");
         }
@@ -755,7 +755,7 @@ impl<T: NodeIdentity> State<T> {
         identity: T,
         private_key: T::PrivateKey,
         model: model::Model,
-        gpus: usize,
+        data_parallelism: usize,
     ) -> Result<(DataProviderTcpClient<T>, Vec<LlamaForCausalLM>)> {
         let model::Model::LLM(llm) = model;
         let data_future = match &llm.data_location {
@@ -780,9 +780,9 @@ impl<T: NodeIdentity> State<T> {
                         )
                         .await?;
                         info!("Loading {}", hub_repo.repo_id);
-                        let futures = (0..gpus)
+                        let futures = (0..data_parallelism)
                             .into_iter()
-                            .zip((0..gpus).into_iter().map(|_| repo_files.clone()))
+                            .zip((0..data_parallelism).into_iter().map(|_| repo_files.clone()))
                             .map(|(i, repo_files)| {
                                 tokio::task::spawn_blocking(move || {
                                     LlamaForCausalLM::from_pretrained(
@@ -799,7 +799,7 @@ impl<T: NodeIdentity> State<T> {
                         for future in futures {
                             models.push(future.await??);
                         }
-                        info!("Loaded {} onto {} gpu(s)", hub_repo.repo_id, gpus);
+                        info!("Loaded {} onto {} gpu(s)", hub_repo.repo_id, data_parallelism);
                         Ok(models)
                     })
                 }
