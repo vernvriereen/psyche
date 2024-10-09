@@ -459,9 +459,9 @@ impl Distro {
 
     #[allow(unused)]
     pub fn generate(&mut self, lr: f64) -> Vec<DistroResult> {
-        let variables = &mut self.sgd.trainable_variables();
+        let variables = &mut self.sgd.trainable_variables_with_sharding();
         let mut ret = Vec::with_capacity(variables.len());
-        for (index, variable) in variables.iter_mut().enumerate() {
+        for (index, (variable, shard)) in variables.iter_mut().enumerate() {
             // Step-Weight decay
             if self.weight_decay != 0.0 {
                 variable.multiply_scalar_(1.0 - lr * self.weight_decay);

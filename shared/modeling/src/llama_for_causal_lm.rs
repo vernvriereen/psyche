@@ -1,20 +1,18 @@
-use std::{path::PathBuf, rc::Rc};
-
 use crate::{
     llama::{Cache, Config, Llama, Llama3RopeConfig, LlamaEosToks},
     safetensor_loader::load_safetensors_into_variables,
-    tensor_parallelism::AllReduce,
-    CausalLM,
+    tensor_parallelism::{AllReduce, Communicator, ReduceType},
+    CausalLM, CommunicatorId,
 };
 use anyhow::{bail, Error, Result};
-use cudarc::{
-    driver::CudaDevice,
-    nccl::{Comm, Id, ReduceOp},
-};
+use std::{path::PathBuf, rc::Rc};
 use tch::{
     nn::{self, Module, VarStore},
     Device, Kind, Tensor,
 };
+
+#[cfg(feature = "parallelism")]
+use cudarc::{driver::CudaDevice, nccl::Comm};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct LlamaConfig {
@@ -78,6 +76,7 @@ pub struct LlamaForCausalLM {
     pub device: Device,
     lm_head: nn::Linear,
     cache: Cache,
+    comm: Option<Rc<Communicator>>,
 }
 
 impl LlamaForCausalLM {
@@ -86,7 +85,7 @@ impl LlamaForCausalLM {
         kind: Option<Kind>,
         attn_implementation: Option<AttentionImplementation>,
         device: Option<Device>,
-        tensor_parallelism_world: Option<(Id, usize)>,
+        tensor_parallelism_world: Option<(CommunicatorId, usize)>,
     ) -> Result<Self> {
         let llama_config: LlamaConfig = serde_json::from_str(&String::from_utf8(std::fs::read(
             repo_files
@@ -101,7 +100,8 @@ impl LlamaForCausalLM {
             AttentionImplementation::FlashAttention2 => { bail!("Directly setting attention implementation to FlashAttention-2 unsupported for now"); }
         });
         let device = device.unwrap_or(Device::Cuda(0));
-        let comm: Option<Rc<Comm>> = match tensor_parallelism_world {
+        #[cfg(feature = "parallelism")]
+        let comm: Option<Rc<Communicator>> = match tensor_parallelism_world {
             Some((master_id, world_size)) => {
                 let rank = match device {
                     Device::Cuda(rank) => rank,
@@ -120,13 +120,20 @@ impl LlamaForCausalLM {
             }
             None => None,
         };
+        #[cfg(not(feature = "parallelism"))]
+        let comm = match tensor_parallelism_world {
+            Some(_) => {
+                bail!("Parallelism feature not enabled")
+            }
+            None => None,
+        };
         let mut variables: nn::VarStore = nn::VarStore::new(device);
         if let Some(kind) = kind {
             variables.set_kind(kind);
         }
         let (model, lm_head) = {
             let _no_grad = tch::no_grad_guard();
-            let model = Llama::new(variables.root(), &config, comm);
+            let model = Llama::new(variables.root(), &config, comm.clone());
             let c = nn::LinearConfig {
                 bias: false,
                 ..Default::default()
@@ -148,6 +155,7 @@ impl LlamaForCausalLM {
             device,
             lm_head,
             cache,
+            comm,
         })
     }
 }
@@ -159,7 +167,11 @@ impl CausalLM for LlamaForCausalLM {
         labels: Option<&Tensor>,
         num_logits_to_keep: Option<i64>,
     ) -> (Tensor, Option<Tensor>) {
-        let world_size = self.model.comm.as_ref().map(|c| c.world_size() as f64).unwrap_or(1.0);
+        let world_size = self
+            .comm
+            .as_ref()
+            .map(|c| c.world_size() as f64)
+            .unwrap_or(1.0);
         let (_, t) = x.size2().unwrap();
         let mut x = self.model.forward(x, 0, &mut self.cache);
         if let Some(num_logits_to_keep) = num_logits_to_keep {
@@ -169,8 +181,8 @@ impl CausalLM for LlamaForCausalLM {
         let logits = self.lm_head.forward(&x);
 
         let logits_max = logits.max_dim(-1, true).0;
-        let logits_max = logits_max.all_reduce(&self.model.comm, ReduceOp::Max);
-        let mut logits = (logits - logits_max).all_reduce(&self.model.comm, ReduceOp::Sum) / world_size;
+        let logits_max = logits_max.all_reduce(&self.comm, ReduceType::Max);
+        let mut logits = (logits - logits_max).all_reduce(&self.comm, ReduceType::Sum) / world_size;
 
         let loss = match labels {
             Some(labels) => {
@@ -197,3 +209,6 @@ impl CausalLM for LlamaForCausalLM {
         self.device
     }
 }
+
+// this is absolutely unsafe, if you use it across threads with NCCL you will have a bad day
+unsafe impl Send for LlamaForCausalLM {}

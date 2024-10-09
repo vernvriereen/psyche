@@ -15,6 +15,6 @@ pub use distro::{Distro, DistroResult};
 pub use llama::{Llama, LlamaEosToks};
 pub use llama_for_causal_lm::LlamaForCausalLM;
 pub use sampling::{LogitsProcessor, Sampling};
-pub use tensor_parallelism::TensorParallelRowLinear;
+pub use tensor_parallelism::{TensorParallelRowLinear, Communicator, CommunicatorId};
 pub use token_output_stream::TokenOutputStream;
 pub use traits::CausalLM;

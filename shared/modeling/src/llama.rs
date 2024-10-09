@@ -1,9 +1,9 @@
-use crate::TensorParallelRowLinear;
-use cudarc::nccl::Comm;
 use std::f32::consts::PI;
 use std::rc::Rc;
 use tch::nn::{self, Module, Shard};
 use tch::{Device, Kind, Tensor};
+
+use crate::{Communicator, TensorParallelRowLinear};
 
 #[derive(Debug, Clone, serde::Deserialize, Default)]
 pub enum Llama3RopeType {
@@ -161,7 +161,7 @@ struct Mlp {
 }
 
 impl Mlp {
-    fn new(vs: nn::Path, n_embd: i64, n_hidden: i64, comm: Option<Rc<Comm>>) -> Self {
+    fn new(vs: nn::Path, n_embd: i64, n_hidden: i64, comm: Option<Rc<Communicator>>) -> Self {
         let c = nn::LinearConfig {
             bias: false,
             shard: comm.as_ref().map(|comm| Shard {
@@ -229,7 +229,7 @@ impl CausalSelfAttention {
         n_embd: i64,
         n_max_seq_len: i64,
         use_sdpa: bool,
-        comm: Option<Rc<Comm>>,
+        comm: Option<Rc<Communicator>>,
     ) -> Self {
         let c = nn::LinearConfig {
             bias: false,
@@ -341,7 +341,7 @@ struct Block {
 }
 
 impl Block {
-    fn new(vs: nn::Path, config: &Config, comm: Option<Rc<Comm>>) -> Self {
+    fn new(vs: nn::Path, config: &Config, comm: Option<Rc<Communicator>>) -> Self {
         let rms_1 = RmsNorm::new(
             &vs / "input_layernorm",
             config.hidden_size as i64,
@@ -386,11 +386,10 @@ pub struct Llama {
     wte: nn::Embedding,
     blocks: Vec<Block>,
     ln_f: RmsNorm,
-    pub(crate) comm: Option<Rc<Comm>>,
 }
 
 impl Llama {
-    pub fn new(vs: nn::Path, config: &Config, comm: Option<Rc<Comm>>) -> Self {
+    pub fn new(vs: nn::Path, config: &Config, comm: Option<Rc<Communicator>>) -> Self {
         let wte = nn::embedding(
             &vs / "model" / "embed_tokens",
             config.vocab_size as i64,
@@ -409,7 +408,6 @@ impl Llama {
             wte,
             blocks,
             ln_f,
-            comm,
         }
     }
 
@@ -422,4 +420,3 @@ impl Llama {
     }
 }
 
-unsafe impl Send for Llama {}

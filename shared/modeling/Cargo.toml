@@ -16,9 +16,12 @@ memmap2.workspace = true
 tokenizers.workspace = true
 byteorder = "1.4.3"
 safetensors = "0.3.0"
-half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"] }
-cudarc = { version = "0.12.1", features = ["std", "f16", "cuda-12040", "dynamic-linking", "nccl"], default-features=false }
+half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"], optional=true }
+cudarc = { version = "0.12.1", features = ["std", "f16", "cuda-12040", "dynamic-linking", "nccl"], default-features=false, optional=true }
 
 # for examples
 [dev-dependencies]
 clap = { workspace = true }
+
+[features]
+parallelism = ["cudarc", "half"]

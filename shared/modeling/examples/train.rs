@@ -1,9 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
-use cudarc::nccl;
 use psyche_core::{CosineLR, LearningRateScheduler};
 use psyche_data_provider::{download_model_repo_sync, LocalDataProvider};
-use psyche_modeling::{Batcher, CausalLM, LlamaForCausalLM};
+use psyche_modeling::{Batcher, CausalLM, CommunicatorId, LlamaForCausalLM};
 use rand::Rng;
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -62,7 +61,7 @@ struct Args {
 
 fn train(
     repo_files: Vec<PathBuf>,
-    tensor_parallelism: Option<(nccl::Id, usize, usize)>,
+    tensor_parallelism: Option<(CommunicatorId, usize, usize)>,
     args: Args,
     seed: [u8; 32],
 ) -> Result<()> {
@@ -144,6 +143,7 @@ fn main() -> Result<()> {
     let seed: [u8; 32] = rand::thread_rng().gen();
     match args.tensor_parallelism {
         Some(0) | Some(1) | None => train(repo_files, None, args, seed)?,
+        #[cfg(feature = "parallelism")]
         Some(world_size) => {
             let id = nccl::Id::new().unwrap();
             let threads = (0..world_size)
@@ -159,6 +159,10 @@ fn main() -> Result<()> {
             for thread in threads {
                 thread.join().unwrap()?;
             }
+        }
+        #[cfg(not(feature = "parallelism"))]
+        _ => {
+            anyhow::bail!("Parallelism feature not enabled")
         }
     }
     Ok(())

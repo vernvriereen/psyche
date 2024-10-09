@@ -1,10 +1,9 @@
 use anyhow::{Error, Result};
 use clap::Parser;
-use cudarc::nccl;
 use psyche_data_provider::download_model_repo_sync;
 use psyche_modeling::{
-    auto_tokenizer, CausalLM, LlamaEosToks, LlamaForCausalLM, LogitsProcessor, Sampling,
-    TokenOutputStream,
+    auto_tokenizer, CausalLM, CommunicatorId, LlamaEosToks, LlamaForCausalLM, LogitsProcessor,
+    Sampling, TokenOutputStream,
 };
 use std::{io::Write, path::PathBuf};
 use tch::{Device, Kind, Tensor};
@@ -91,7 +90,7 @@ struct Args {
 
 fn inference(
     repo_files: Vec<PathBuf>,
-    tensor_parallelism: Option<(nccl::Id, usize, usize)>,
+    tensor_parallelism: Option<(CommunicatorId, usize, usize)>,
     args: Args,
     seed: u64,
     mut tokens: Vec<i64>,
@@ -175,8 +174,9 @@ fn main() -> Result<()> {
     let seed = args.seed.unwrap_or(rand::random());
     match args.tensor_parallelism {
         Some(0) | Some(1) | None => inference(repo_files, None, args, seed, tokens, tokenizer)?,
+        #[cfg(feature = "parallelism")]
         Some(world_size) => {
-            let id = nccl::Id::new().unwrap();
+            let id = CommunicatorId::new().unwrap();
             let threads = (0..world_size)
                 .map(|rank| {
                     let repo_files = repo_files.clone();
@@ -198,6 +198,10 @@ fn main() -> Result<()> {
             for thread in threads {
                 thread.join().unwrap()?;
             }
+        }
+        #[cfg(not(feature = "parallelism"))]
+        _ => {
+            anyhow::bail!("Parallelism feature not enabled");
         }
     }
     Ok(())
