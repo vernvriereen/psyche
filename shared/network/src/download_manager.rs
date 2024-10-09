@@ -144,7 +144,8 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                 if downloads.lock().await.is_empty() && reading.lock().await.is_empty() {
                     if rx_new_item.recv().await.is_none() {
                         // channel is closed.
-                        panic!("Download manager channel closed!");
+                        info!("Download manager channel closed - shutting down.");
+                        return;
                     }
                 }
 
