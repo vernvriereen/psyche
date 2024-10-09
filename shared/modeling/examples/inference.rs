@@ -1,13 +1,14 @@
-use std::io::Write;
-
 use anyhow::{Error, Result};
 use clap::Parser;
+use cudarc::nccl;
 use psyche_data_provider::download_model_repo_sync;
 use psyche_modeling::{
     auto_tokenizer, CausalLM, LlamaEosToks, LlamaForCausalLM, LogitsProcessor, Sampling,
     TokenOutputStream,
 };
-use tch::{Kind, Tensor};
+use std::{io::Write, path::PathBuf};
+use tch::{Device, Kind, Tensor};
+use tokenizers::Tokenizer;
 
 const EOS_TOKEN: &str = "</s>";
 const DEFAULT_PROMPT: &str = r"
@@ -62,10 +63,10 @@ Whate'er it bodes, henceforward will I bear
 Upon my target three fair-shining suns.
 ";
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 struct Args {
     #[arg(long, default_value = "NousResearch/Llama-2-7b-hf")]
-    model: Option<String>,
+    model: String,
 
     #[arg(long, default_value_t = 0.6)]
     temperature: f64,
@@ -82,31 +83,33 @@ struct Args {
     #[arg(long)]
     seed: Option<u64>,
 
+    #[arg(long)]
+    tensor_parallelism: Option<usize>,
+
     prompt: Option<String>,
 }
 
-fn main() -> Result<()> {
-    let _no_grad = tch::no_grad_guard();
-    let args = Args::parse();
-    let repo_files = download_model_repo_sync(&args.model.unwrap(), None, None, None, true)?;
-    let mut model =
-        LlamaForCausalLM::from_pretrained(&repo_files, Some(Kind::BFloat16), None, None)?;
-    let tokenizer = auto_tokenizer(&repo_files)?;
+fn inference(
+    repo_files: Vec<PathBuf>,
+    tensor_parallelism: Option<(nccl::Id, usize, usize)>,
+    args: Args,
+    seed: u64,
+    mut tokens: Vec<i64>,
+    tokenizer: Tokenizer,
+) -> Result<()> {
+    let rank = tensor_parallelism.map(|(_, rank, _)| rank).unwrap_or(0);
+    let mut model = LlamaForCausalLM::from_pretrained(
+        &repo_files,
+        Some(Kind::BFloat16),
+        None,
+        tensor_parallelism.map(|_| Device::Cuda(rank)),
+        tensor_parallelism.map(|(master_id, _, world_size)| (master_id, world_size)),
+    )?;
     let eos_token_id = model
         .config
         .eos_token_id
         .clone()
         .or_else(|| tokenizer.token_to_id(EOS_TOKEN).map(LlamaEosToks::Single));
-    let prompt = args.prompt.as_ref().map_or(DEFAULT_PROMPT, |p| p.as_str());
-    let mut tokens = tokenizer
-        .encode(prompt, true)
-        .map_err(Error::msg)?
-        .get_ids()
-        .iter()
-        .map(|x| *x as i64)
-        .collect::<Vec<_>>();
-    let mut tokenizer = TokenOutputStream::new(tokenizer);
-    print!("{prompt}");
     let mut logits_processor = {
         let temperature = args.temperature;
         let sampling = if temperature <= 0. {
@@ -119,8 +122,9 @@ fn main() -> Result<()> {
                 (Some(k), Some(p)) => Sampling::TopKThenTopP { k, p, temperature },
             }
         };
-        LogitsProcessor::from_sampling(args.seed.unwrap_or(rand::random()), sampling)
+        LogitsProcessor::from_sampling(seed, sampling)
     };
+    let mut tokenizer = TokenOutputStream::new(tokenizer);
     let mut token_generated = 0;
     loop {
         if let Some(max_tokens) = args.max_tokens {
@@ -145,8 +149,55 @@ fn main() -> Result<()> {
             _ => (),
         }
         if let Some(t) = tokenizer.next_token(next_token)? {
-            print!("{t}");
-            std::io::stdout().flush()?;
+            if rank == 0 {
+                print!("{t}");
+                std::io::stdout().flush()?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    let _no_grad = tch::no_grad_guard();
+    let args = Args::parse();
+    let repo_files = download_model_repo_sync(&args.model.clone(), None, None, None, true)?;
+    let tokenizer = auto_tokenizer(&repo_files)?;
+
+    let prompt = args.prompt.as_ref().map_or(DEFAULT_PROMPT, |p| p.as_str());
+    let tokens = tokenizer
+        .encode(prompt, true)
+        .map_err(Error::msg)?
+        .get_ids()
+        .iter()
+        .map(|x| *x as i64)
+        .collect::<Vec<_>>();
+    let seed = args.seed.unwrap_or(rand::random());
+    match args.tensor_parallelism {
+        Some(0) | Some(1) | None => inference(repo_files, None, args, seed, tokens, tokenizer)?,
+        Some(world_size) => {
+            let id = nccl::Id::new().unwrap();
+            let threads = (0..world_size)
+                .map(|rank| {
+                    let repo_files = repo_files.clone();
+                    let args = args.clone();
+                    let tokens = tokens.clone();
+                    let tokenizer = tokenizer.clone();
+                    std::thread::spawn(move || {
+                        inference(
+                            repo_files,
+                            Some((id, rank, world_size)),
+                            args,
+                            seed,
+                            tokens,
+                            tokenizer,
+                        )
+                    })
+                })
+                .collect::<Vec<_>>();
+            for thread in threads {
+                thread.join().unwrap()?;
+            }
         }
     }
     Ok(())

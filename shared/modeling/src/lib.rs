@@ -5,6 +5,7 @@ mod llama;
 mod llama_for_causal_lm;
 mod safetensor_loader;
 mod sampling;
+mod tensor_parallelism;
 mod token_output_stream;
 mod traits;
 
@@ -14,5 +15,6 @@ pub use distro::{Distro, DistroResult};
 pub use llama::{Llama, LlamaEosToks};
 pub use llama_for_causal_lm::LlamaForCausalLM;
 pub use sampling::{LogitsProcessor, Sampling};
+pub use tensor_parallelism::TensorParallelRowLinear;
 pub use token_output_stream::TokenOutputStream;
 pub use traits::CausalLM;

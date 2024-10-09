@@ -29,7 +29,7 @@ perf.data
 perf.data.*
 .vscode/
 .venv/
-libtorch/
+libtorch*
 
 ### Training Data ###
 data/

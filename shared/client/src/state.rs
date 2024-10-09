@@ -790,6 +790,7 @@ impl<T: NodeIdentity> State<T> {
                                         Some(Kind::BFloat16),
                                         None,
                                         Some(Device::Cuda(i)),
+                                        None
                                     )
                                 })
                             })

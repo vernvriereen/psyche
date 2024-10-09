@@ -1,5 +1,8 @@
+use crate::TensorParallelRowLinear;
+use cudarc::nccl::Comm;
 use std::f32::consts::PI;
-use tch::nn::{self, Module};
+use std::rc::Rc;
+use tch::nn::{self, Module, Shard};
 use tch::{Device, Kind, Tensor};
 
 #[derive(Debug, Clone, serde::Deserialize, Default)]
@@ -152,20 +155,40 @@ impl Module for RmsNorm {
 
 #[derive(Debug)]
 struct Mlp {
-    c_fc1: nn::Linear,
-    c_fc2: nn::Linear,
-    c_proj: nn::Linear,
+    pub(crate) c_fc1: nn::Linear,
+    pub(crate) c_fc2: nn::Linear,
+    pub(crate) c_proj: TensorParallelRowLinear,
 }
 
 impl Mlp {
-    fn new(vs: nn::Path, n_embd: i64, n_hidden: i64) -> Self {
+    fn new(vs: nn::Path, n_embd: i64, n_hidden: i64, comm: Option<Rc<Comm>>) -> Self {
         let c = nn::LinearConfig {
             bias: false,
+            shard: comm.as_ref().map(|comm| Shard {
+                dim: 0,
+                rank: comm.rank(),
+                world_size: comm.world_size(),
+            }),
             ..Default::default()
         };
         let c_fc1 = nn::linear(&vs / "gate_proj", n_embd, n_hidden, c);
         let c_fc2 = nn::linear(&vs / "up_proj", n_embd, n_hidden, c);
-        let c_proj = nn::linear(&vs / "down_proj", n_hidden, n_embd, c);
+        let c_proj = TensorParallelRowLinear::new(
+            nn::linear(
+                &vs / "down_proj",
+                n_hidden,
+                n_embd,
+                nn::LinearConfig {
+                    shard: comm.as_ref().map(|comm| Shard {
+                        dim: 1,
+                        rank: comm.rank(),
+                        world_size: comm.world_size(),
+                    }),
+                    ..c
+                },
+            ),
+            comm,
+        );
         Self {
             c_fc1,
             c_fc2,
@@ -187,7 +210,7 @@ struct CausalSelfAttention {
     q_proj: nn::Linear,
     k_proj: nn::Linear,
     v_proj: nn::Linear,
-    o_proj: nn::Linear,
+    o_proj: TensorParallelRowLinear,
     n_head: i64,
     n_kvhead: i64,
     n_embd: i64,
@@ -195,6 +218,7 @@ struct CausalSelfAttention {
     head_dim: i64,
     device: Device,
     use_sdpa: bool,
+    tp_size: i64,
 }
 
 impl CausalSelfAttention {
@@ -205,18 +229,40 @@ impl CausalSelfAttention {
         n_embd: i64,
         n_max_seq_len: i64,
         use_sdpa: bool,
+        comm: Option<Rc<Comm>>,
     ) -> Self {
         let c = nn::LinearConfig {
             bias: false,
+            shard: comm.as_ref().map(|comm| Shard {
+                dim: 0,
+                rank: comm.rank(),
+                world_size: comm.world_size(),
+            }),
             ..Default::default()
         };
+        let tp_size = comm.as_ref().map(|x| x.world_size() as i64).unwrap_or(1);
         let head_dim = n_embd / n_head;
         let size_q = head_dim * n_head;
         let size_kv = head_dim * n_kvheads;
         let q_proj = nn::linear(&vs / "q_proj", n_embd, size_q, c);
         let k_proj = nn::linear(&vs / "k_proj", n_embd, size_kv, c);
         let v_proj = nn::linear(&vs / "v_proj", n_embd, size_kv, c);
-        let o_proj = nn::linear(&vs / "o_proj", size_q, n_embd, c);
+        let o_proj = TensorParallelRowLinear::new(
+            nn::linear(
+                &vs / "o_proj",
+                size_q,
+                n_embd,
+                nn::LinearConfig {
+                    shard: comm.as_ref().map(|comm| Shard {
+                        dim: 1,
+                        rank: comm.rank(),
+                        world_size: comm.world_size(),
+                    }),
+                    ..c
+                },
+            ),
+            comm,
+        );
         Self {
             q_proj,
             k_proj,
@@ -229,6 +275,7 @@ impl CausalSelfAttention {
             n_max_seq_len,
             device: vs.device(),
             use_sdpa,
+            tp_size,
         }
     }
 
@@ -251,23 +298,25 @@ impl CausalSelfAttention {
         let q = self.q_proj.forward(x);
         let k = self.k_proj.forward(x);
         let v = self.v_proj.forward(x);
+        let local_n_head = self.n_head / self.tp_size;
+        let local_n_kvhead = self.n_kvhead / self.tp_size;
         let q = q
-            .reshape([b, t, self.n_head, self.head_dim])
+            .reshape([b, t, local_n_head, self.head_dim])
             .transpose(1, 2);
         let k = k
-            .reshape([b, t, self.n_kvhead, self.head_dim])
+            .reshape([b, t, local_n_kvhead, self.head_dim])
             .transpose(1, 2);
         let v = v
-            .reshape([b, t, self.n_kvhead, self.head_dim])
+            .reshape([b, t, local_n_kvhead, self.head_dim])
             .transpose(1, 2);
         let q = self.apply_rotary_emb(&q, index_pos, cache).to_kind(kind);
         let k = self.apply_rotary_emb(&k, index_pos, cache).to_kind(kind);
-        let k = repeat_kv(k, self.n_head / self.n_kvhead);
-        let v = repeat_kv(v, self.n_head / self.n_kvhead);
+        let k = repeat_kv(k, local_n_head / local_n_kvhead);
+        let v = repeat_kv(v, local_n_head / local_n_kvhead);
         let y = if self.use_sdpa {
             let att =
                 Tensor::scaled_dot_product_attention::<Tensor>(&q, &k, &v, None, 0.0, t > 1, None);
-            att.transpose(1, 2).reshape([b, t, c])
+            att.transpose(1, 2).reshape([b, t, c / self.tp_size])
         } else {
             let k_shape = k.size();
             let att: Tensor =
@@ -277,7 +326,7 @@ impl CausalSelfAttention {
                 .reshape([1, 1, t, t]);
             let att = att.masked_fill(&mask.eq(0.), f64::NEG_INFINITY);
             let y = att.softmax(-1, kind).matmul(&v);
-            y.transpose(1, 2).reshape([b, t, c])
+            y.transpose(1, 2).reshape([b, t, c / self.tp_size])
         };
         self.o_proj.forward(&y)
     }
@@ -292,7 +341,7 @@ struct Block {
 }
 
 impl Block {
-    fn new(vs: nn::Path, config: &Config) -> Self {
+    fn new(vs: nn::Path, config: &Config, comm: Option<Rc<Comm>>) -> Self {
         let rms_1 = RmsNorm::new(
             &vs / "input_layernorm",
             config.hidden_size as i64,
@@ -305,6 +354,7 @@ impl Block {
             config.hidden_size as i64,
             (config.max_position_embeddings + 1) as i64,
             config.use_sdpa,
+            comm.clone(),
         );
         let rms_2 = RmsNorm::new(
             &vs / "post_attention_layernorm",
@@ -315,6 +365,7 @@ impl Block {
             &vs / "mlp",
             config.hidden_size as i64,
             config.intermediate_size as i64,
+            comm,
         );
         Self {
             rms_1,
@@ -335,10 +386,11 @@ pub struct Llama {
     wte: nn::Embedding,
     blocks: Vec<Block>,
     ln_f: RmsNorm,
+    pub(crate) comm: Option<Rc<Comm>>,
 }
 
 impl Llama {
-    pub fn new(vs: nn::Path, config: &Config) -> Self {
+    pub fn new(vs: nn::Path, config: &Config, comm: Option<Rc<Comm>>) -> Self {
         let wte = nn::embedding(
             &vs / "model" / "embed_tokens",
             config.vocab_size as i64,
@@ -351,9 +403,14 @@ impl Llama {
             config.rms_norm_eps,
         );
         let blocks = (0..config.num_hidden_layers)
-            .map(|i| Block::new(&vs / "model" / "layers" / i, config))
+            .map(|i| Block::new(&vs / "model" / "layers" / i, config, comm.clone()))
             .collect::<Vec<_>>();
-        Self { wte, blocks, ln_f }
+        Self {
+            wte,
+            blocks,
+            ln_f,
+            comm,
+        }
     }
 
     pub fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut Cache) -> Tensor {
@@ -364,3 +421,5 @@ impl Llama {
         self.ln_f.forward(&x)
     }
 }
+
+unsafe impl Send for Llama {}
