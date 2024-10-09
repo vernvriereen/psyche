@@ -38,7 +38,8 @@ impl LocalDataProvider {
         num_tokens_per_sequence: usize, // num tokens per sequence
         random_seed: <ChaCha8Rng as SeedableRng>::Seed,
     ) -> Result<Self> {
-        let dir = std::fs::canonicalize(dir)?;
+        let dir = std::fs::canonicalize(&dir)
+            .map_err(|e| anyhow!("Failed to open data directory {:?}: {e}", dir.as_ref()))?;
         let mut bin_files = vec![];
         for file in std::fs::read_dir(&dir)
             .map_err(|e| anyhow!("couldn't load training data from {}: {e}", dir.display()))?
