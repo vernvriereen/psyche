@@ -1,5 +1,5 @@
 use crate::{
-    tensor_parallelism::{tensor_shard, unshard_tensor, unsharded_tensor_size},
+    tensor_parallelism::{tensor_shard, unsharded_tensor_size},
     Communicator,
 };
 use std::{collections::HashMap, f64::consts::PI, rc::Rc};
@@ -12,7 +12,7 @@ use tch::{
 use cudarc::nccl::{group_end, group_start};
 
 #[cfg(feature = "parallelism")]
-use crate::tensor_parallelism::{ReceiveTensor, SendTensor};
+use crate::tensor_parallelism::{unshard_tensor, ReceiveTensor, SendTensor};
 
 struct TransformDCT {
     shape_dict: HashMap<i64, i64>,
@@ -442,6 +442,7 @@ pub struct Distro {
     state: Vec<State>,
     transform: TransformDCT,
     shard_index: usize,
+    #[allow(unused)]
     comm: Option<Rc<Communicator>>,
 }
 
@@ -608,7 +609,12 @@ impl Distro {
 
     #[allow(unused)]
     pub fn apply(&mut self, results: Vec<Vec<DistroResult>>, lr: f64) {
-        for (index, (variable, shard)) in self.sgd.trainable_variables_with_sharding().iter_mut().enumerate() {
+        for (index, (variable, shard)) in self
+            .sgd
+            .trainable_variables_with_sharding()
+            .iter_mut()
+            .enumerate()
+        {
             let device = variable.device();
             let indicies = results
                 .iter()
@@ -625,7 +631,7 @@ impl Distro {
                 &values,
                 &results[0][index].xshape,
                 variable.kind(),
-                device
+                device,
             ));
 
             // Set grad to values

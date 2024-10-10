@@ -41,7 +41,7 @@ impl Communicator {
 
 #[cfg(not(feature = "parallelism"))]
 impl CommunicatorId {
-    fn new() -> Option<Self> {
+    pub fn new() -> Option<Self> {
         unimplemented!()
     }
 }
@@ -271,6 +271,7 @@ impl ReceiveTensor for Tensor {
     }
 }
 
+#[allow(unused)]
 pub fn unshard_tensor(sharded_tensors: Vec<Tensor>, shard: &Shard) -> Tensor {
     let Shard {
         dim, world_size, ..
@@ -296,6 +297,7 @@ pub fn unshard_tensor(sharded_tensors: Vec<Tensor>, shard: &Shard) -> Tensor {
     full_tensor
 }
 
+#[allow(unused)]
 pub fn tensor_shard(full_tensor: &Tensor, shard: &Shard, n: usize) -> Tensor {
     let Shard {
         dim, world_size, ..
@@ -311,6 +313,7 @@ pub fn tensor_shard(full_tensor: &Tensor, shard: &Shard, n: usize) -> Tensor {
     full_tensor.slice(dim as i64, start, Some(end), 1)
 }
 
+#[allow(unused)]
 pub fn unsharded_tensor_size(reference_shape: &[i64], shard: &Shard) -> Vec<i64> {
     let Shard {
         dim, world_size, ..
