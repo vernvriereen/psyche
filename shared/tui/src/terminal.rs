@@ -1,4 +1,7 @@
-use std::io;
+use std::{
+    io::{self, Write},
+    panic,
+};
 
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
@@ -21,17 +24,31 @@ pub fn init_terminal() -> io::Result<TerminalWrapper<impl Backend>> {
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
     terminal.hide_cursor()?;
+
+    // panic messages are getting printed to the alt screen, which is cleared. cringe.
+    let default_panic = std::panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+        restore_terminal();
+        io::stdout().flush().unwrap();
+        default_panic(info);
+        io::stdout().flush().unwrap();
+    }));
+
     Ok(TerminalWrapper(terminal))
 }
 
 impl<T: Backend> Drop for TerminalWrapper<T> {
     fn drop(&mut self) {
-        trace!(target:"crossterm", "Restoring terminal");
-        if let Err(e) = disable_raw_mode() {
-            error!("failed to disable terminal raw mode: {e}");
-        }
-        if let Err(e) = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture) {
-            error!("failed to leave alternate screen & disable mouse capture: {e}");
-        }
+        restore_terminal();
+    }
+}
+
+fn restore_terminal() {
+    trace!(target:"crossterm", "Restoring terminal");
+    if let Err(e) = disable_raw_mode() {
+        error!("failed to disable terminal raw mode: {e}");
+    }
+    if let Err(e) = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture) {
+        error!("failed to leave alternate screen & disable mouse capture: {e}");
     }
 }
