@@ -1,4 +1,5 @@
 use crate::{
+    disto_results_to_bytes,
     fetch_data::{fetch_data, Batch, BatchId},
     trainer::{ParallelModels, TrainOutput, Trainer},
     tui::ClientTUIState,
@@ -904,7 +905,7 @@ impl<T: NodeIdentity> State<T> {
                 payload.step, payload.batch_id
             );
             let fpath = write_gradients_dir.join(&fname);
-            let serialized = match postcard::to_stdvec(&payload.distro_results) {
+            let serialized = match disto_results_to_bytes(&payload.distro_results) {
                 Err(e) => {
                     error!("Failed to serialize distro result data {fname} to bytes {e}");
                     return;
