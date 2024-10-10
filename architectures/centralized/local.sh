@@ -70,9 +70,9 @@ tmux send-keys "nvtop" C-m
 for ((i=2; i<=(NUM_CLIENTS+1); i++)); do
     tmux select-pane -t $i
     if [ "$WRITE_DISTRO_DATA" != "false" ]; then
-        tmux send-keys "cargo run -p psyche-centralized-client -- --run-id $run_id --server-addr localhost:$SERVER_PORT --write-gradients-dir $WRITE_DISTRO_DATA" C-m
+        tmux send-keys "RUST_BACKTRACE=1 cargo run -p psyche-centralized-client -- --run-id $run_id --server-addr localhost:$SERVER_PORT --write-gradients-dir $WRITE_DISTRO_DATA" C-m
     else
-        tmux send-keys "cargo run -p psyche-centralized-client -- --run-id $run_id --server-addr localhost:$SERVER_PORT" C-m
+        tmux send-keys "RUST_BACKTRACE=1 cargo run -p psyche-centralized-client -- --run-id $run_id --server-addr localhost:$SERVER_PORT" C-m
     fi
 done
 
