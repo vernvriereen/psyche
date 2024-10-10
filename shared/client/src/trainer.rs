@@ -3,8 +3,7 @@ use anyhow::{bail, Error, Result};
 use psyche_coordinator::model;
 use psyche_core::LearningRateScheduler;
 use psyche_modeling::{CausalLM, Distro, DistroResult, LlamaForCausalLM};
-use serde::{Deserialize, Serialize};
-use std::{io::Cursor, sync::mpsc};
+use std::sync::mpsc;
 use tch::{
     nn::{self, OptimizerConfig},
     Tensor,
@@ -19,13 +18,6 @@ enum Optimizer {
         clip_grad_norm: Option<f32>,
     },
     Distro(Distro),
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct SerializedDistroResult {
-    pub sparse_idx: Vec<u8>,
-    pub sparse_val: Vec<u8>,
-    pub xshape: Vec<u16>,
 }
 
 pub type DistroResults = Vec<DistroResult>;
@@ -267,35 +259,5 @@ impl Trainer {
                 }
             }
         }
-    }
-}
-
-fn serialize_tensor(tensor: &Tensor) -> std::result::Result<Vec<u8>, tch::TchError> {
-    let mut buffer = Vec::new();
-    tensor.save_to_stream(&mut buffer)?;
-    Ok(buffer)
-}
-
-impl TryFrom<&DistroResult> for SerializedDistroResult {
-    type Error = tch::TchError;
-
-    fn try_from(value: &DistroResult) -> std::result::Result<Self, Self::Error> {
-        Ok(Self {
-            sparse_idx: serialize_tensor(&value.sparse_idx)?,
-            sparse_val: serialize_tensor(&value.sparse_val)?,
-            xshape: value.xshape.iter().map(|x| *x as u16).collect(),
-        })
-    }
-}
-
-impl TryFrom<&SerializedDistroResult> for DistroResult {
-    type Error = tch::TchError;
-
-    fn try_from(value: &SerializedDistroResult) -> std::result::Result<Self, Self::Error> {
-        Ok(Self {
-            sparse_idx: Tensor::load_from_stream(Cursor::new(&value.sparse_idx))?,
-            sparse_val: Tensor::load_from_stream(Cursor::new(&value.sparse_val))?,
-            xshape: value.xshape.iter().map(|x| *x as i64).collect(),
-        })
     }
 }
