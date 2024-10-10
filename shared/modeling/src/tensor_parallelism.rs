@@ -95,10 +95,12 @@ pub trait AllReduce {
     fn all_reduce(self, comm: &Option<Rc<Communicator>>, op: ReduceType) -> Tensor;
 }
 
+#[cfg(feature = "parallelism")]
 pub trait SendTensor {
     fn send(self, comm: &Rc<Communicator>, peer: i32) -> Tensor;
 }
 
+#[cfg(feature = "parallelism")]
 pub trait ReceiveTensor {
     fn receive(self, comm: &Rc<Communicator>, peer: i32) -> Tensor;
 }
@@ -233,6 +235,7 @@ impl AllReduce for Tensor {
     }
 }
 
+#[cfg(feature = "parallelism")]
 impl SendTensor for Tensor {
     fn send(self, comm: &Rc<Communicator>, peer: i32) -> Tensor {
         let kind = self.kind();
@@ -250,6 +253,7 @@ impl SendTensor for Tensor {
     }
 }
 
+#[cfg(feature = "parallelism")]
 impl ReceiveTensor for Tensor {
     fn receive(self, comm: &Rc<Communicator>, peer: i32) -> Tensor {
         let kind = self.kind();
