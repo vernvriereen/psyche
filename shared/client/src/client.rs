@@ -18,7 +18,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error, debug};
+use tracing::{debug, error};
 
 pub type TUIStates = (ClientTUIState, NetworkTUIState);
 
@@ -31,7 +31,14 @@ pub struct Client<T: NodeIdentity, B: Backend<T> + 'static> {
 }
 
 impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
-    pub fn new(backend: B, mut p2p: NC, identity: T, private_key: T::PrivateKey, data_parallelism: usize) -> Self {
+    pub fn new(
+        backend: B,
+        mut p2p: NC,
+        identity: T,
+        private_key: T::PrivateKey,
+        data_parallelism: usize,
+        tensor_parallelism: usize,
+    ) -> Self {
         let cancel = CancellationToken::new();
         let (tx, rx) = watch::channel::<TUIStates>(Default::default());
         let req_tui_state = Arc::new(Notify::new());
@@ -41,7 +48,8 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
             let req_tui_state = req_tui_state.clone();
             async move {
                 let mut watcher = BackendWatcher::new(backend);
-                let mut state = State::new(identity, private_key, data_parallelism);
+                let mut state =
+                    State::new(identity, private_key, data_parallelism, tensor_parallelism);
                 let clear_uploads = state.get_clear_downloads_notification();
 
                 loop {

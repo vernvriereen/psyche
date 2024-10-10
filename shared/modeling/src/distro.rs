@@ -1,9 +1,18 @@
-use std::{collections::HashMap, f64::consts::PI};
-
-use tch::{
-    nn::{Optimizer, OptimizerConfig, Sgd, VarStore},
-    Kind, Tensor,
+use crate::{
+    tensor_parallelism::{tensor_shard, unshard_tensor, unsharded_tensor_size},
+    Communicator,
 };
+use std::{collections::HashMap, f64::consts::PI, rc::Rc};
+use tch::{
+    nn::{Optimizer, OptimizerConfig, Sgd, Shard, VarStore},
+    Device, Kind, Tensor,
+};
+
+#[cfg(feature = "parallelism")]
+use cudarc::nccl::{group_end, group_start};
+
+#[cfg(feature = "parallelism")]
+use crate::tensor_parallelism::{ReceiveTensor, SendTensor};
 
 struct TransformDCT {
     shape_dict: HashMap<i64, i64>,
@@ -12,7 +21,7 @@ struct TransformDCT {
 }
 
 impl TransformDCT {
-    fn new(variables: &[Tensor], target_chunk: i64) -> Self {
+    fn new(variables: &[(Tensor, Option<Shard>)], target_chunk: i64) -> Self {
         let _no_grad = tch::no_grad_guard();
         let mut shape_dict = HashMap::new();
         let mut f_dict = HashMap::new();
@@ -20,8 +29,12 @@ impl TransformDCT {
 
         // Get all variants of model tensor sizes
         // Generate all possible valid DCT sizes for model tensors
-        for variable in variables {
-            for s in variable.size() {
+        for (variable, shard) in variables {
+            let size = match shard {
+                Some(shard) => unsharded_tensor_size(&variable.size(), shard),
+                None => variable.size(),
+            };
+            for s in size {
                 // Get the closest smallest divisor to the targeted DCT size
                 let sc = match shape_dict.get(&s) {
                     Some(sc) => *sc,
@@ -351,8 +364,14 @@ impl CompressDCT {
     }
 
     #[allow(unused)]
-    fn decompress(p: &Tensor, idx: &Tensor, val: &Tensor, xshape: &[i64]) -> Tensor {
-        let mut x = Tensor::zeros(xshape, (p.kind(), p.device()));
+    fn decompress(
+        idx: &Tensor,
+        val: &Tensor,
+        xshape: &[i64],
+        kind: Kind,
+        device: Device,
+    ) -> Tensor {
+        let mut x = Tensor::zeros(xshape, (kind, device));
 
         if xshape.len() > 2 {
             // 2D weights
@@ -381,12 +400,17 @@ impl CompressDCT {
         x
     }
 
-    fn batch_decompress(p: &Tensor, idx: &[Tensor], val: &[Tensor], xshape: &[i64]) -> Tensor {
-        let device = p.device();
+    fn batch_decompress(
+        idx: &[Tensor],
+        val: &[Tensor],
+        xshape: &[i64],
+        kind: Kind,
+        device: Device,
+    ) -> Tensor {
         let idx_concat = Tensor::cat(idx, -1).to_device(device);
         let val_concat = Tensor::cat(val, -1).to_device(device);
         // Call the decompress method
-        Self::decompress(p, &idx_concat, &val_concat, xshape)
+        Self::decompress(&idx_concat, &val_concat, xshape, kind, device)
     }
 }
 
@@ -417,6 +441,8 @@ pub struct Distro {
     weight_decay: f64,
     state: Vec<State>,
     transform: TransformDCT,
+    shard_index: usize,
+    comm: Option<Rc<Communicator>>,
 }
 
 impl Distro {
@@ -426,6 +452,8 @@ impl Distro {
         compression_chunk: i64,
         compression_topk: i64,
         weight_decay: f64,
+        shard_index: usize,
+        comm: Option<Rc<Communicator>>,
     ) -> Self {
         let sgd: Optimizer = Sgd {
             momentum: 0.0,
@@ -436,10 +464,10 @@ impl Distro {
         .build(vs, 0.1)
         .unwrap();
 
-        let variables = sgd.trainable_variables();
+        let variables = sgd.trainable_variables_with_sharding();
         let mut state = Vec::with_capacity(variables.len());
 
-        for variable in &variables {
+        for (variable, _) in &variables {
             state.push(State {
                 delta: variable.zeros_like(),
             });
@@ -454,6 +482,8 @@ impl Distro {
             weight_decay,
             state,
             transform,
+            shard_index,
+            comm,
         }
     }
 
@@ -477,52 +507,132 @@ impl Distro {
             // Add delta to new gradient
             delta.g_add_(&variable.grad().multiply_scalar(lr));
 
-            // Compress delta
-            let (sparse_idx, sparse_val, xshape, _totalk) =
-                CompressDCT::compress(&self.transform.encode(&delta), self.compression_topk);
+            match shard {
+                #[cfg(feature = "parallelism")]
+                Some(shard) => {
+                    // this is a gpu p2p speed optimization. since we're doing tensor parallelism, the generation would be the same
+                    // for non-sharded tensors on all gpus. for sharded tensors, we need to gather the full tensor on a single gpu
+                    // and do distro on that. so the first gpu is the only one that actually calculates the results, the other gpus
+                    // just send their sharded delta back to the first gpu, then await the estimated transmitted delta
 
-            // Estimate transmitted delta
-            let transmit_grad = self.transform.decode(&CompressDCT::decompress(
-                &variable,
-                &sparse_idx,
-                &sparse_val,
-                &xshape,
-            ));
+                    let comm = self.comm.as_ref().unwrap();
+                    let rank = comm.rank() as i64;
+                    let world_size = comm.world_size();
+                    let kind = delta.kind();
 
-            // Remove transmitted from delta
-            delta.g_sub_(&transmit_grad);
+                    // gather delta
+                    let mut shards = Vec::with_capacity(world_size);
+                    group_start().unwrap();
+                    if self.shard_index == 0 {
+                        for i in 0..world_size {
+                            shards.push(delta.empty_like().receive(comm, i as i32));
+                        }
+                    }
+                    delta.contiguous().send(comm, 0);
+                    group_end().unwrap();
+                    tch::Cuda::synchronize(rank);
 
-            ret.push(DistroResult {
-                sparse_idx,
-                sparse_val,
-                xshape,
-            });
+                    // scatter transmit_grad
+                    if self.shard_index == 0 {
+                        let gathered_delta = unshard_tensor(shards, shard);
+                        // Compress delta
+                        let (sparse_idx, sparse_val, xshape, _totalk) = CompressDCT::compress(
+                            &self.transform.encode(&gathered_delta),
+                            self.compression_topk,
+                        );
+
+                        // Estimate transmitted delta
+                        let transmit_grad = self.transform.decode(&CompressDCT::decompress(
+                            &sparse_idx,
+                            &sparse_val,
+                            &xshape,
+                            variable.kind(),
+                            variable.device(),
+                        ));
+
+                        ret.push(DistroResult {
+                            sparse_idx,
+                            sparse_val,
+                            xshape,
+                        });
+
+                        group_start().unwrap();
+                        for i in 0..world_size {
+                            tensor_shard(&transmit_grad, shard, i)
+                                .contiguous()
+                                .send(comm, i as i32);
+                        }
+                    } else {
+                        group_start().unwrap();
+                    }
+                    let transmit_grad = delta.empty_like().receive(comm, 0);
+                    group_end().unwrap();
+                    tch::Cuda::synchronize(rank);
+
+                    // Remove transmitted from delta
+                    delta.g_sub_(&transmit_grad);
+                }
+                #[cfg(not(feature = "parallelism"))]
+                Some(shard) => panic!("Sharded tensor without parallelism feature?"),
+                None => {
+                    if self.shard_index == 0 {
+                        // Compress delta
+                        let (sparse_idx, sparse_val, xshape, _totalk) = CompressDCT::compress(
+                            &self.transform.encode(&delta),
+                            self.compression_topk,
+                        );
+
+                        // Estimate transmitted delta
+                        let transmit_grad = self.transform.decode(&CompressDCT::decompress(
+                            &sparse_idx,
+                            &sparse_val,
+                            &xshape,
+                            variable.kind(),
+                            variable.device(),
+                        ));
+
+                        // Remove transmitted from delta
+                        delta.g_sub_(&transmit_grad);
+
+                        ret.push(DistroResult {
+                            sparse_idx,
+                            sparse_val,
+                            xshape,
+                        });
+                    }
+                }
+            }
         }
         ret
     }
 
     #[allow(unused)]
     pub fn apply(&mut self, results: Vec<Vec<DistroResult>>, lr: f64) {
-        for (index, variable) in self.sgd.trainable_variables().iter_mut().enumerate() {
+        for (index, (variable, shard)) in self.sgd.trainable_variables_with_sharding().iter_mut().enumerate() {
+            let device = variable.device();
             let indicies = results
                 .iter()
-                .map(|x| x[index].sparse_idx.shallow_clone())
+                .map(|x| x[index].sparse_idx.to_device(device))
                 .collect::<Vec<_>>();
             let values = results
                 .iter()
-                .map(|x| x[index].sparse_val.shallow_clone())
+                .map(|x| x[index].sparse_val.to_device(device))
                 .collect::<Vec<_>>();
 
             // Decode grad from all nodes
             let new_grad = self.transform.decode(&CompressDCT::batch_decompress(
-                &variable,
                 &indicies,
                 &values,
                 &results[0][index].xshape,
+                variable.kind(),
+                device
             ));
 
             // Set grad to values
-            variable.grad().copy_(&new_grad);
+            variable.grad().copy_(&match shard {
+                Some(shard) => tensor_shard(&new_grad, shard, self.shard_index),
+                None => new_grad,
+            });
 
             // Sign-SGD
             variable.grad().sign_();
@@ -534,6 +644,8 @@ impl Distro {
         self.sgd.zero_grad();
     }
 }
+
+unsafe impl Send for Distro {}
 
 #[cfg(test)]
 mod tests {
@@ -686,7 +798,7 @@ mod tests {
         let truth = _1d_float(&[
             0.0000, 0.9625, 0.5487, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
         ]);
-        let ret = CompressDCT::decompress(&p, &idx, &val, &xshape);
+        let ret = CompressDCT::decompress(&idx, &val, &xshape, p.kind(), p.device());
         assert!(truth.allclose(&ret, 1e-4, 1e-8, false));
     }
 
@@ -707,7 +819,7 @@ mod tests {
             [0.0000, 0.0000, 0.8285, 0.8163],
             [0.0000, 0.7600, 0.0000, 0.9093],
         ]);
-        let ret = CompressDCT::decompress(&p, &idx, &val, &xshape);
+        let ret = CompressDCT::decompress(&idx, &val, &xshape, p.kind(), p.device());
         assert!(truth.allclose(&ret, 1e-4, 1e-8, false));
     }
 
@@ -724,7 +836,9 @@ mod tests {
             -1.1921e-07,
             -5.0702e-02,
         ]);
-        let ret = TransformDCT::new(&[a.copy()], 64).encode(&a).squeeze();
+        let ret = TransformDCT::new(&[(a.copy(), None)], 64)
+            .encode(&a)
+            .squeeze();
         assert!(truth.allclose(&ret, 1e-4, 1e-8, false));
     }
 
@@ -737,7 +851,9 @@ mod tests {
             [0.0000e+00, 0.0000e+00, 1.0000e+00, 0.0000e+00],
             [0.0000e+00, -5.9605e-08, 0.0000e+00, 1.0000e+00],
         ]);
-        let ret = TransformDCT::new(&[b.copy()], 64).encode(&b).squeeze();
+        let ret = TransformDCT::new(&[(b.copy(), None)], 64)
+            .encode(&b)
+            .squeeze();
         assert!(truth.allclose(&ret, 1e-4, 1e-8, false));
     }
 
@@ -764,7 +880,7 @@ mod tests {
             6.0000e+00,
             7.0000e+00,
         ]);
-        let ret = TransformDCT::new(&[a], 64).decode(&a_);
+        let ret = TransformDCT::new(&[(a, None)], 64).decode(&a_);
         assert!(truth.allclose(&ret, 1e-4, 1e-4, false));
     }
 
@@ -785,7 +901,7 @@ mod tests {
             [4.4703e-08, -2.9802e-08, 1.0000e+00, 2.9802e-08],
             [4.4703e-08, 4.4703e-08, 1.4901e-08, 1.0000e+00],
         ]);
-        let ret = TransformDCT::new(&[b], 64).decode(&b_);
+        let ret = TransformDCT::new(&[(b, None)], 64).decode(&b_);
         assert!(truth.allclose(&ret, 1e-4, 1e-4, false));
     }
 }

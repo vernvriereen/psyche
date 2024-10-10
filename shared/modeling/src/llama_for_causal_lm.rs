@@ -74,9 +74,9 @@ pub struct LlamaForCausalLM {
     pub config: Config,
     pub variables: VarStore,
     pub device: Device,
-    lm_head: nn::Linear,
-    cache: Cache,
-    comm: Option<Rc<Communicator>>,
+    pub lm_head: nn::Linear,
+    pub cache: Cache,
+    pub comm: Option<Rc<Communicator>>,
 }
 
 impl LlamaForCausalLM {
@@ -85,7 +85,7 @@ impl LlamaForCausalLM {
         kind: Option<Kind>,
         attn_implementation: Option<AttentionImplementation>,
         device: Option<Device>,
-        tensor_parallelism_world: Option<(CommunicatorId, usize)>,
+        tensor_parallelism_world: Option<(CommunicatorId, usize, usize)>,
     ) -> Result<Self> {
         let llama_config: LlamaConfig = serde_json::from_str(&String::from_utf8(std::fs::read(
             repo_files
@@ -102,14 +102,14 @@ impl LlamaForCausalLM {
         let device = device.unwrap_or(Device::Cuda(0));
         #[cfg(feature = "parallelism")]
         let comm: Option<Rc<Communicator>> = match tensor_parallelism_world {
-            Some((master_id, world_size)) => {
-                let rank = match device {
-                    Device::Cuda(rank) => rank,
+            Some((master_id, rank, world_size)) => {
+                let cuda_device = match device {
+                    Device::Cuda(device_rank) => CudaDevice::new(device_rank)?,
                     _ => {
                         bail!("TP requires CUDA");
                     }
                 };
-                let cuda_device = CudaDevice::new(rank)?;
+
                 let comm = match Comm::from_rank(cuda_device, rank, world_size, master_id) {
                     Ok(comm) => Rc::new(comm),
                     Err(err) => {

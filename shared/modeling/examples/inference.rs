@@ -102,7 +102,7 @@ fn inference(
         Some(Kind::BFloat16),
         None,
         tensor_parallelism.map(|_| Device::Cuda(rank)),
-        tensor_parallelism.map(|(master_id, _, world_size)| (master_id, world_size)),
+        tensor_parallelism,
     )?;
     let eos_token_id = model
         .config
@@ -174,7 +174,6 @@ fn main() -> Result<()> {
     let seed = args.seed.unwrap_or(rand::random());
     match args.tensor_parallelism {
         Some(0) | Some(1) | None => inference(repo_files, None, args, seed, tokens, tokenizer)?,
-        #[cfg(feature = "parallelism")]
         Some(world_size) => {
             let id = CommunicatorId::new().unwrap();
             let threads = (0..world_size)
@@ -198,10 +197,6 @@ fn main() -> Result<()> {
             for thread in threads {
                 thread.join().unwrap()?;
             }
-        }
-        #[cfg(not(feature = "parallelism"))]
-        _ => {
-            anyhow::bail!("Parallelism feature not enabled");
         }
     }
     Ok(())

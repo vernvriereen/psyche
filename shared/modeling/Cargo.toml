@@ -14,6 +14,7 @@ serde.workspace = true
 serde_json.workspace = true
 memmap2.workspace = true
 tokenizers.workspace = true
+tracing.workspace = true
 byteorder = "1.4.3"
 safetensors = "0.3.0"
 half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"], optional=true }

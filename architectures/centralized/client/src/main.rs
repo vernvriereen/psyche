@@ -37,8 +37,11 @@ struct Args {
     #[clap(long)]
     server_addr: String,
 
-    #[clap(long, default_value_t=1)]
-    data_parallelism: usize
+    #[clap(long, default_value_t = 1)]
+    data_parallelism: usize,
+
+    #[clap(long, default_value_t = 1)]
+    tensor_parallelism: usize,
 }
 
 #[tokio::main]
@@ -108,6 +111,7 @@ async fn main() -> Result<()> {
         interval(Duration::from_millis(150)),
         &args.run_id,
         args.data_parallelism,
+        args.tensor_parallelism,
     )
     .run(
         NC::init(

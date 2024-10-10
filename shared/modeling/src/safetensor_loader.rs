@@ -1,7 +1,10 @@
 use anyhow::{bail, Result};
 use safetensors::slice::TensorIndexer;
 use std::{collections::HashSet, ops::Bound, path::PathBuf};
-use tch::{nn::{Shard, VarStore}, Device, Kind, Tensor};
+use tch::{
+    nn::{Shard, VarStore},
+    Device, Kind, Tensor,
+};
 
 pub fn load_safetensors_into_variables(vs: &mut VarStore, repo_files: &[PathBuf]) -> Result<()> {
     let mut unmatched = vs.variables().keys().cloned().collect::<HashSet<_>>();
@@ -19,7 +22,12 @@ pub fn load_safetensors_into_variables(vs: &mut VarStore, repo_files: &[PathBuf]
                 let mut size: Vec<i64> = view.shape().iter().map(|&x| x as i64).collect();
                 let kind: Kind = view.dtype().try_into()?;
 
-                if let Some(Shard { dim, rank, world_size }) = shards.get(name) {
+                if let Some(Shard {
+                    dim,
+                    rank,
+                    world_size,
+                }) = shards.get(name)
+                {
                     let (dim, rank, world_size) = (*dim, *rank, *world_size);
                     let total_size = size[dim];
                     if total_size % (world_size as i64) != 0 {
@@ -55,9 +63,8 @@ pub fn load_safetensors_into_variables(vs: &mut VarStore, repo_files: &[PathBuf]
                     };
                     let data: Vec<u8> = data_iterator.flatten().cloned().collect();
                     size[dim] = block_size;
-                    let src_tensor = unsafe {
-                        Tensor::from_blob(data.as_ptr(), &size, &[], kind, Device::Cpu)
-                    };
+                    let src_tensor =
+                        unsafe { Tensor::from_blob(data.as_ptr(), &size, &[], kind, Device::Cpu) };
                     var.f_copy_(&src_tensor)?;
                 } else {
                     let src_tensor = unsafe {

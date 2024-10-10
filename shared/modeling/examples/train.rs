@@ -71,15 +71,15 @@ fn train(
         args.sequence_length,
         seed,
     )?;
-    let (rank, world_size) = tensor_parallelism
-        .map(|(_, rank, world_size)| (rank, world_size))
-        .unwrap_or((0, 1));
+    let rank = tensor_parallelism
+        .map(|(_, rank, _)| rank)
+        .unwrap_or_default();
     let mut model = LlamaForCausalLM::from_pretrained(
         &repo_files,
         Some(Kind::BFloat16),
         None,
         tensor_parallelism.map(|_| Device::Cuda(rank)),
-        tensor_parallelism.map(|(master_id, _, _)| (master_id, world_size)),
+        tensor_parallelism,
     )?;
     let device = model.device();
     let iter = dataset.into_iter().map(|tokens| {
@@ -143,7 +143,6 @@ fn main() -> Result<()> {
     let seed: [u8; 32] = rand::thread_rng().gen();
     match args.tensor_parallelism {
         Some(0) | Some(1) | None => train(repo_files, None, args, seed)?,
-        #[cfg(feature = "parallelism")]
         Some(world_size) => {
             let id = CommunicatorId::new().unwrap();
             let threads = (0..world_size)
@@ -159,10 +158,6 @@ fn main() -> Result<()> {
             for thread in threads {
                 thread.join().unwrap()?;
             }
-        }
-        #[cfg(not(feature = "parallelism"))]
-        _ => {
-            anyhow::bail!("Parallelism feature not enabled")
         }
     }
     Ok(())

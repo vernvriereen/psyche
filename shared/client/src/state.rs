@@ -1,6 +1,6 @@
 use crate::{
     fetch_data::{fetch_data, Batch, BatchId},
-    trainer::{TrainOutput, Trainer},
+    trainer::{ParallelModels, TrainOutput, Trainer},
     tui::ClientTUIState,
     BroadcastMessage, Payload,
 };
@@ -12,7 +12,7 @@ use psyche_coordinator::{
 };
 use psyche_core::{sha256, Bloom, NodeIdentity};
 use psyche_data_provider::{download_model_repo_async, DataProviderTcpClient};
-use psyche_modeling::{DistroResult, LlamaForCausalLM};
+use psyche_modeling::{CommunicatorId, DistroResult, LlamaForCausalLM};
 use psyche_network::{dummy_blob_ticket, BlobTicket, NetworkEvent};
 use psyche_watcher::{Backend, BackendWatcher};
 use std::{
@@ -47,7 +47,7 @@ pub struct State<T: NodeIdentity> {
     pub identity: T,
     private_key: T::PrivateKey,
     showed_inclusion_message: bool,
-    data_and_model_load: TaskResult<(DataProviderTcpClient<T>, Vec<LlamaForCausalLM>)>,
+    data_and_model_load: TaskResult<(DataProviderTcpClient<T>, Vec<ParallelModels>)>,
     data_receiver: Option<mpsc::Receiver<(BatchId, Batch)>>,
     trainers: Vec<Trainer>,
     trainings: Vec<JoinHandle<Result<(TrainOutput, u64)>>>,
@@ -65,13 +65,19 @@ pub struct State<T: NodeIdentity> {
     remaining_batch_ids: Arc<Mutex<HashSet<u64>>>,
     num_remaining_batch_ids: usize,
     data_parallelism: usize,
+    tensor_parallelism: usize,
     notify_poll_next: Arc<Notify>,
     notify_clear_uploads: Arc<Notify>,
     notify_new_batch: Arc<Notify>,
 }
 
 impl<T: NodeIdentity> State<T> {
-    pub fn new(identity: T, private_key: T::PrivateKey, data_parallelism: usize) -> Self {
+    pub fn new(
+        identity: T,
+        private_key: T::PrivateKey,
+        data_parallelism: usize,
+        tensor_parallelism: usize,
+    ) -> Self {
         Self {
             identity,
             private_key,
@@ -96,6 +102,7 @@ impl<T: NodeIdentity> State<T> {
             num_remaining_batch_ids: 0,
             notify_clear_uploads: Arc::new(Notify::new()),
             data_parallelism,
+            tensor_parallelism,
             notify_new_batch: Arc::new(Notify::new()),
         }
     }
@@ -173,6 +180,7 @@ impl<T: NodeIdentity> State<T> {
             self.trainings.remove(finished);
             self.trainers.push(output.trainer);
             self.round_losses.push(output.loss);
+            debug!("Batch {} loss: {}", batch_id, output.loss);
             if !self.is_run_state(RunState::RoundTrain) {
                 return Ok(ToSend::Nothing);
             }
@@ -438,6 +446,7 @@ impl<T: NodeIdentity> State<T> {
                         self.private_key.clone(),
                         model.clone(),
                         self.data_parallelism,
+                        self.tensor_parallelism,
                     )))
                 }
                 None => {
@@ -702,14 +711,13 @@ impl<T: NodeIdentity> State<T> {
                     let distro_results = distro_results.clone();
 
                     tokio::task::spawn_blocking(move || {
-                        let device = trainer.device();
                         let distro_results: Vec<Vec<DistroResult>> = distro_results
                             .into_iter()
                             .map(|x| {
                                 x.into_iter()
                                     .map(|y| DistroResult {
-                                        sparse_idx: y.sparse_idx.to_device(device),
-                                        sparse_val: y.sparse_val.to_device(device),
+                                        sparse_idx: y.sparse_idx,
+                                        sparse_val: y.sparse_val,
                                         xshape: y.xshape,
                                     })
                                     .collect()
@@ -764,7 +772,8 @@ impl<T: NodeIdentity> State<T> {
         private_key: T::PrivateKey,
         model: model::Model,
         data_parallelism: usize,
-    ) -> Result<(DataProviderTcpClient<T>, Vec<LlamaForCausalLM>)> {
+        tensor_parallelism: usize,
+    ) -> Result<(DataProviderTcpClient<T>, Vec<ParallelModels>)> {
         let model::Model::LLM(llm) = model;
         let data_future = match &llm.data_location {
             model::LLMTrainingDataLocation::Server(data_server) => {
@@ -788,40 +797,58 @@ impl<T: NodeIdentity> State<T> {
                         )
                         .await?;
                         info!("Loading {}", hub_repo.repo_id);
-                        let futures = (0..data_parallelism)
-                            .into_iter()
-                            .zip(
-                                (0..data_parallelism)
-                                    .into_iter()
-                                    .map(|_| repo_files.clone()),
-                            )
-                            .map(|(i, repo_files)| {
-                                tokio::task::spawn_blocking(move || {
+                        let mut futures = Vec::with_capacity(data_parallelism * tensor_parallelism);
+                        for dp in 0..data_parallelism {
+                            let communicator_id = CommunicatorId::new().unwrap();
+                            for tp in 0..tensor_parallelism {
+                                let tensor_parallelism_world = match tensor_parallelism {
+                                    1 => None,
+                                    tensor_parallelism => {
+                                        Some((communicator_id, tp, tensor_parallelism))
+                                    }
+                                };
+                                let repo_files = repo_files.clone();
+                                futures.push(tokio::task::spawn_blocking(move || {
                                     LlamaForCausalLM::from_pretrained(
                                         &repo_files,
                                         Some(Kind::BFloat16),
                                         None,
-                                        Some(Device::Cuda(i)),
-                                        None,
+                                        Some(Device::Cuda(dp * tensor_parallelism + tp)),
+                                        tensor_parallelism_world,
                                     )
-                                })
-                            })
-                            .collect::<Vec<_>>();
+                                }));
+                            }
+                        }
                         let mut models = Vec::new();
                         for future in futures {
                             models.push(future.await??);
                         }
                         info!(
-                            "Loaded {} onto {} gpu(s)",
-                            hub_repo.repo_id, data_parallelism
+                            "Loaded {} onto {} gpu(s) (dp={},tp={})",
+                            hub_repo.repo_id,
+                            data_parallelism * tensor_parallelism,
+                            data_parallelism,
+                            tensor_parallelism
                         );
                         Ok(models)
                     })
                 }
             },
         };
-        let (data, model) = tokio::join!(data_future, model_future);
-        Ok((data?, model??))
+        let (data, models) = tokio::join!(data_future, model_future);
+        let data = data?;
+        let mut tp_models = Vec::new();
+        for model in models?? {
+            if tp_models
+                .last()
+                .map(|x: &ParallelModels| x.len() == tensor_parallelism)
+                .unwrap_or(true)
+            {
+                tp_models.push(Vec::with_capacity(tensor_parallelism));
+            }
+            tp_models.last_mut().unwrap().push(model);
+        }
+        Ok((data, tp_models))
     }
 
     fn is_run_state(&self, run_state: RunState) -> bool {

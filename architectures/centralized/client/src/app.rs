@@ -55,6 +55,7 @@ pub struct App {
     server_conn: TcpClient<ClientId, ClientToServerMessage, ServerToClientMessage>,
     run_id: String,
     data_parallelism: usize,
+    tensor_parallelism: usize,
 }
 
 impl App {
@@ -67,6 +68,7 @@ impl App {
         update_tui_interval: Interval,
         run_id: &str,
         data_parallelism: usize,
+        tensor_parallelism: usize,
     ) -> Self {
         Self {
             cancel,
@@ -78,6 +80,7 @@ impl App {
             server_conn,
             run_id: run_id.into(),
             data_parallelism,
+            tensor_parallelism,
         }
     }
 
@@ -111,7 +114,8 @@ impl App {
             p2p,
             identity,
             self.secret_key.clone(),
-            self.data_parallelism
+            self.data_parallelism,
+            self.tensor_parallelism,
         );
 
         loop {
