@@ -1,4 +1,4 @@
-use psyche_coordinator::{Committee, RunState};
+use psyche_coordinator::Committee;
 use psyche_tui::ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
@@ -6,6 +6,7 @@ use psyche_tui::ratatui::{
     symbols,
     widgets::{Axis, Chart, Dataset, GraphType, Paragraph, Widget},
 };
+use psyche_watcher::TuiRunState;
 
 #[derive(Default, Debug)]
 pub struct ClientTUI;
@@ -77,7 +78,7 @@ impl psyche_tui::CustomWidget for ClientTUI {
 pub struct ClientTUIState {
     pub step: u32,
     pub committee: Option<Committee>,
-    pub run_state: RunState,
+    pub run_state: TuiRunState,
     pub batches_left: usize,
     pub loss: Vec<f32>,
 }

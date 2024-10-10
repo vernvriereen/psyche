@@ -968,7 +968,7 @@ impl<T: NodeIdentity> From<&State<T>> for ClientTUIState {
         ClientTUIState {
             step: coordinator.map(|x| x.step).unwrap_or_default(),
             committee,
-            run_state: coordinator.map(|x| x.run_state).unwrap_or_default(),
+            run_state: coordinator.map(|x| x.into()).unwrap_or_default(),
             loss: value.losses.clone(),
             batches_left: value.num_remaining_batch_ids,
         }

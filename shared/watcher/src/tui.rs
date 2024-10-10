@@ -69,7 +69,7 @@ impl psyche_tui::CustomWidget for CoordinatorTui {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub enum TuiRunState {
     #[default]
     Unknown,
