@@ -1,18 +1,19 @@
 use std::f64::consts::PI;
 
 pub trait LearningRateScheduler: Send + Sync {
-    fn get_lr(&self, step: usize) -> f64;
+    fn get_lr(&self, step: u32) -> f64;
 }
 
+#[derive(Clone)]
 pub struct ConstantLR {
     base_lr: f64,
-    warmup_steps: usize,
+    warmup_steps: u32,
     warmup_init_lr: f64,
 }
 
 impl ConstantLR {
     #[allow(dead_code)]
-    pub fn new(base_lr: f64, warmup_steps: usize, warmup_init_lr: f64) -> Self {
+    pub fn new(base_lr: f64, warmup_steps: u32, warmup_init_lr: f64) -> Self {
         ConstantLR {
             base_lr,
             warmup_steps,
@@ -22,7 +23,7 @@ impl ConstantLR {
 }
 
 impl LearningRateScheduler for ConstantLR {
-    fn get_lr(&self, step: usize) -> f64 {
+    fn get_lr(&self, step: u32) -> f64 {
         if step < self.warmup_steps {
             self.warmup_init_lr
                 + (self.base_lr - self.warmup_init_lr) * (step as f64 / self.warmup_steps as f64)
@@ -32,11 +33,12 @@ impl LearningRateScheduler for ConstantLR {
     }
 }
 
+#[derive(Clone)]
 pub struct LinearLR {
     base_lr: f64,
-    warmup_steps: usize,
+    warmup_steps: u32,
     warmup_init_lr: f64,
-    total_steps: usize,
+    total_steps: u32,
     final_lr: f64,
 }
 
@@ -44,9 +46,9 @@ impl LinearLR {
     #[allow(dead_code)]
     pub fn new(
         base_lr: f64,
-        warmup_steps: usize,
+        warmup_steps: u32,
         warmup_init_lr: f64,
-        total_steps: usize,
+        total_steps: u32,
         final_lr: f64,
     ) -> Self {
         LinearLR {
@@ -60,7 +62,7 @@ impl LinearLR {
 }
 
 impl LearningRateScheduler for LinearLR {
-    fn get_lr(&self, step: usize) -> f64 {
+    fn get_lr(&self, step: u32) -> f64 {
         if step < self.warmup_steps {
             self.warmup_init_lr
                 + (self.base_lr - self.warmup_init_lr) * (step as f64 / self.warmup_steps as f64)
@@ -73,20 +75,21 @@ impl LearningRateScheduler for LinearLR {
     }
 }
 
+#[derive(Clone)]
 pub struct CosineLR {
     base_lr: f64,
-    warmup_steps: usize,
+    warmup_steps: u32,
     warmup_init_lr: f64,
-    total_steps: usize,
+    total_steps: u32,
     final_lr: f64,
 }
 
 impl CosineLR {
     pub fn new(
         base_lr: f64,
-        warmup_steps: usize,
+        warmup_steps: u32,
         warmup_init_lr: f64,
-        total_steps: usize,
+        total_steps: u32,
         final_lr: f64,
     ) -> Self {
         CosineLR {
@@ -100,7 +103,7 @@ impl CosineLR {
 }
 
 impl LearningRateScheduler for CosineLR {
-    fn get_lr(&self, step: usize) -> f64 {
+    fn get_lr(&self, step: u32) -> f64 {
         if step < self.warmup_steps {
             self.warmup_init_lr
                 + (self.base_lr - self.warmup_init_lr) * (step as f64 / self.warmup_steps as f64)

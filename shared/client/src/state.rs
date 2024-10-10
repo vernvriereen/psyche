@@ -1,7 +1,7 @@
 use crate::{
     disto_results_to_bytes,
-    fetch_data::{fetch_data, Batch, BatchId},
-    trainer::{ParallelModels, TrainOutput, Trainer},
+    fetch_data::{fetch_data, Batch, BatchId, BatchIdSet, BatchStep},
+    trainer::{DistroResults, ParallelModels, TrainOutput, Trainer},
     tui::ClientTUIState,
     BroadcastMessage, Payload, SerializedDistroResult,
 };
@@ -10,8 +10,9 @@ use hex;
 use psyche_coordinator::{
     get_batch_ids_for_state, model, Committee, CommitteeProof, CommitteeSelection, Coordinator,
     HealthChecks, RunState, Witness, WitnessProof, BLOOM_FALSE_RATE, BLOOM_MAX_BITS,
+    NUM_STORED_ROUNDS,
 };
-use psyche_core::{sha256, Bloom, NodeIdentity};
+use psyche_core::{sha256, Bloom, BoundedQueue, NodeIdentity};
 use psyche_data_provider::{download_model_repo_async, DataProviderTcpClient};
 use psyche_modeling::{CommunicatorId, DistroResult, LlamaForCausalLM};
 use psyche_network::{dummy_blob_ticket, BlobTicket, NetworkEvent};
@@ -19,6 +20,7 @@ use psyche_watcher::{Backend, BackendWatcher};
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    ops::Deref,
     path::PathBuf,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -28,6 +30,7 @@ use std::{
 };
 use tch::{Device, Kind};
 use tokio::{
+    runtime::Handle,
     sync::{mpsc, Mutex, Notify},
     task::JoinHandle,
     time::sleep,
@@ -56,7 +59,7 @@ pub struct State<T: NodeIdentity> {
     private_key: T::PrivateKey,
     showed_inclusion_message: bool,
     data_and_model_load: TaskResult<(DataProviderTcpClient<T>, Vec<ParallelModels>)>,
-    data_receiver: Option<mpsc::Receiver<(BatchId, Batch)>>,
+    data_receiver: Option<mpsc::Receiver<(BatchId, Batch, BatchStep)>>,
     trainers: Vec<Trainer>,
     trainings: Vec<JoinHandle<Result<(TrainOutput, u64)>>>,
     applying: TaskResult<Vec<Trainer>>,
@@ -70,7 +73,7 @@ pub struct State<T: NodeIdentity> {
     blooms: Option<(Bloom<[u8; 32]>, Bloom<[u8; 32]>, Bloom<[u8; 32]>)>,
     losses: Vec<f32>,
     round_losses: Vec<f32>,
-    remaining_batch_ids: Arc<Mutex<HashSet<u64>>>,
+    remaining_batch_ids: Arc<Mutex<BatchIdSet>>,
     num_remaining_batch_ids: usize,
     data_parallelism: usize,
     tensor_parallelism: usize,
@@ -80,6 +83,7 @@ pub struct State<T: NodeIdentity> {
     micro_batch_size: Option<usize>,
     write_gradients_dir: Option<PathBuf>,
     atomic_run_state: Arc<AtomicUsize>,
+    round_rollbacks: Arc<Mutex<BoundedQueue<(BatchStep, Vec<DistroResults>)>>>,
 }
 
 impl<T: NodeIdentity> State<T> {
@@ -120,6 +124,7 @@ impl<T: NodeIdentity> State<T> {
             micro_batch_size,
             write_gradients_dir,
             atomic_run_state: Arc::new(AtomicUsize::new(0)),
+            round_rollbacks: Mutex::new(BoundedQueue::new(NUM_STORED_ROUNDS)).into(),
         }
     }
 
@@ -169,7 +174,7 @@ impl<T: NodeIdentity> State<T> {
             && self.data_receiver.is_some()
             && self.num_remaining_batch_ids != 0
         {
-            let (batch_id, batch) = self
+            let (batch_id, batch, batch_step) = self
                 .data_receiver
                 .as_mut()
                 .unwrap()
@@ -177,19 +182,28 @@ impl<T: NodeIdentity> State<T> {
                 .await
                 .ok_or(Error::msg("Data fetcher exited"))?;
 
-            let state = self
-                .state
-                .as_ref()
-                .ok_or(Error::msg("Data fetch finished, but no state"))?;
-
             let trainer: Trainer = self
                 .trainers
                 .pop()
                 .ok_or(Error::msg("Round start but no trainer object (didn't finish training previous round or applying it?)"))?;
-            let step: usize = state.step as usize;
             let notify = self.notify_poll_next.clone();
+            let round_rollbacks = self.round_rollbacks.clone();
+            let handle = Handle::current();
             self.trainings.push(tokio::task::spawn_blocking(move || {
-                let output = trainer.train(step as usize, batch)?;
+                let rollback = handle.block_on(async {
+                    round_rollbacks
+                        .lock()
+                        .await
+                        .deref()
+                        .iter()
+                        // we only want to roll back if our state is ahead,
+                        // so if we get data for e.g. step 6, but we have rollback data for steps 6, 7, 8,
+                        // this will roll back steps 6, 7, 8.
+                        .filter(|(from_round, _)| *from_round >= batch_step)
+                        .cloned()
+                        .collect()
+                });
+                let output = trainer.train(batch_step, batch, rollback)?;
                 notify.notify_one(); // wake up poll_next to process this
                 Ok((output, batch_id))
             }));
@@ -210,7 +224,7 @@ impl<T: NodeIdentity> State<T> {
             committment.extend_from_slice(self.identity.as_ref());
             committment.extend_from_slice(&batch_id.to_be_bytes());
             let commitment = sha256(&committment);
-            let step = output.step as u64;
+            let step = output.step;
             let broadcast = BroadcastMessage {
                 step,
                 batch_id,
@@ -432,7 +446,7 @@ impl<T: NodeIdentity> State<T> {
             match self.blooms.as_mut() {
                 Some((_, participant_bloom, order_bloom)) => {
                     participant_bloom.add(&sha256(from.as_ref()));
-                    if remaining_batch_ids.contains(batch_id) {
+                    if remaining_batch_ids.contains(&(payload.step, *batch_id)) {
                         // first received payload for this batch id, vote for it in consensus
                         order_bloom.add(&sha256(&commitment.commitment));
                     }
@@ -445,7 +459,7 @@ impl<T: NodeIdentity> State<T> {
                 }
             }
         }
-        if remaining_batch_ids.remove(batch_id) {
+        if remaining_batch_ids.remove(&(payload.step, *batch_id)) {
             self.num_remaining_batch_ids -= 1;
         }
         self.payloads
@@ -502,6 +516,8 @@ impl<T: NodeIdentity> State<T> {
                 bail!("Data and model load not finished when round started!")
             }
             let (data_provider, models) = data_and_model_load.await??; // CANCEL SAFETY POINT
+
+            // TODO add data fetching for verifying, too...
             self.data_receiver = Some(fetch_data(
                 data_provider,
                 self.notify_new_batch.clone(),
@@ -580,7 +596,7 @@ impl<T: NodeIdentity> State<T> {
                 }
                 let mut batch_ids = get_batch_ids_for_state(state);
                 self.num_remaining_batch_ids = batch_ids.len();
-                *remaining_batch_ids = batch_ids.drain(0..).collect();
+                *remaining_batch_ids = batch_ids.drain(..).map(|id| (state.step, id)).collect();
             }
         }
         let committee_proof = committee_selection.get_committee(index);
@@ -696,8 +712,9 @@ impl<T: NodeIdentity> State<T> {
         let witnesses = round.witnesses.clone();
         let commitments: HashMap<u64, Vec<(T, BroadcastMessage)>> =
             self.commitments.drain().collect();
-        let step = state.step as usize;
+        let step = state.step;
         let batch_ids = get_batch_ids_for_state(state);
+        let round_rollbacks = self.round_rollbacks.clone();
         self.applying = Some(tokio::task::spawn(async move {
             let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
 
@@ -746,25 +763,17 @@ impl<T: NodeIdentity> State<T> {
                 }
             }
 
+            round_rollbacks
+                .lock()
+                .await
+                .push((step, distro_results.clone()));
+
             let futures: Vec<JoinHandle<Result<Trainer>>> = trainers
                 .into_iter()
                 .map(|trainer| {
                     let distro_results = distro_results.clone();
 
                     tokio::task::spawn_blocking(move || {
-                        let distro_results: Vec<Vec<DistroResult>> = distro_results
-                            .into_iter()
-                            .map(|x| {
-                                x.into_iter()
-                                    .map(|y| DistroResult {
-                                        sparse_idx: y.sparse_idx,
-                                        sparse_val: y.sparse_val,
-                                        xshape: y.xshape,
-                                        totalk: y.totalk,
-                                    })
-                                    .collect()
-                            })
-                            .collect();
                         trainer.apply_distro_results(step, distro_results)
                     })
                 })

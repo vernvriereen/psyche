@@ -1,8 +1,9 @@
 use crate::fetch_data::Batch;
 use anyhow::{bail, Error, Result};
-use psyche_coordinator::{model, RunState};
-use psyche_core::LearningRateScheduler;
+use psyche_coordinator::model::{self, AnyLearningRateScheduler};
+use psyche_coordinator::RunState;
 use psyche_modeling::{CausalLM, Distro, DistroResult, LlamaForCausalLM};
+use std::ops::ControlFlow;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     mpsc, Arc,
@@ -28,7 +29,7 @@ pub type DistroResults = Vec<DistroResult>;
 pub struct TrainOutput {
     pub trainer: Trainer,
     pub loss: f32,
-    pub step: usize,
+    pub step: u32,
     pub distro_results: DistroResults,
     pub cancelled: bool,
 }
@@ -36,21 +37,22 @@ pub struct TrainOutput {
 enum ParallelAssignment {
     Train {
         data: Batch,
-        lr: f64,
+        step: u32,
+        rollback: Vec<(u32, Vec<DistroResults>)>,
     },
     Optimize {
         distro_results: Option<Vec<DistroResults>>,
-        lr: f64,
+        step: u32,
     },
 }
 
 enum ParallelResult {
     Train {
         loss: f32,
-        distro_results: Option<Vec<DistroResult>>,
         cancelled: bool,
+        distro_results: Option<DistroResults>,
     },
-    Optimize {},
+    Optimize,
 }
 
 pub struct Trainer {
@@ -58,13 +60,12 @@ pub struct Trainer {
         mpsc::Sender<ParallelAssignment>,
         mpsc::Receiver<ParallelResult>,
     )>,
-    lr_scheduler: Box<dyn LearningRateScheduler>,
 }
 
 impl Trainer {
     pub fn new(
         models: ParallelModels,
-        lr_scheduler: Box<dyn LearningRateScheduler>,
+        lr_scheduler: AnyLearningRateScheduler,
         optimizer: model::Optimizer,
         micro_batch_size: usize,
         run_state: Arc<AtomicUsize>,
@@ -109,6 +110,7 @@ impl Trainer {
             };
 
             let run_state = run_state.clone();
+            let lr_scheduler = lr_scheduler.clone();
             std::thread::spawn(move || {
                 Self::model_thread(
                     model,
@@ -118,13 +120,11 @@ impl Trainer {
                     index,
                     micro_batch_size,
                     run_state,
+                    lr_scheduler,
                 )
             });
         }
-        Self {
-            models: ret,
-            lr_scheduler,
-        }
+        Self { models: ret }
     }
 
     fn forward_backward(model: &mut LlamaForCausalLM, data: &[Vec<i32>]) -> Result<f32> {
@@ -136,12 +136,22 @@ impl Trainer {
         Ok(loss.try_into()?)
     }
 
-    pub fn train(self, step: usize, data: Batch) -> Result<TrainOutput> {
-        let lr: f64 = self.lr_scheduler.get_lr(step);
+    pub fn train(
+        self,
+        step: u32,
+        data: Batch,
+        rollback: Vec<(u32, Vec<DistroResults>)>,
+    ) -> Result<TrainOutput> {
+        if !rollback.is_empty() {
+            error!(
+                "we have not implemented getting data from previous rounds. this should be impossible to hit.. this step is {step}, rollback passed is {:?}",
+                rollback.iter().map(|(step, _)| step).collect::<Vec<_>>());
+        }
         for (tx, _) in &self.models {
             tx.send(ParallelAssignment::Train {
                 data: data.clone(),
-                lr: lr,
+                step,
+                rollback: rollback.clone(),
             })
             .map_err(|err| Error::msg(format!("Error sending batch to trainer thread: {err}")))?;
         }
@@ -174,16 +184,11 @@ impl Trainer {
         })
     }
 
-    pub fn apply_distro_results(
-        self,
-        step: usize,
-        results: Vec<Vec<DistroResult>>,
-    ) -> Result<Self> {
-        let lr: f64 = self.lr_scheduler.get_lr(step);
+    pub fn apply_distro_results(self, step: u32, results: Vec<DistroResults>) -> Result<Self> {
         for (tx, _) in &self.models {
             tx.send(ParallelAssignment::Optimize {
                 distro_results: Some(results.clone()),
-                lr,
+                step,
             })
             .map_err(|err| {
                 Error::msg(format!(
@@ -212,10 +217,24 @@ impl Trainer {
         index: usize,
         micro_batch_size: usize,
         run_state: Arc<AtomicUsize>,
+        lr_scheduler: AnyLearningRateScheduler,
     ) {
         loop {
             match assignment.recv() {
-                Ok(ParallelAssignment::Train { data, lr }) => {
+                Ok(ParallelAssignment::Train {
+                    data,
+                    step,
+                    rollback,
+                }) => {
+                    for (step, result) in rollback.iter().rev() {
+                        // TODO freeze the optimizer and prevent this from modifying its internal state, methinks, right? or maybe save it and restore it later?
+                        // we just want to have the same optimizer state wyhen we exit, save for the main operation (if not frozen. hmm)
+                        let lr = lr_scheduler.get_lr(*step);
+                        if optimize_step(lr, &mut optimizer, Some(result)).is_break() {
+                            panic!("Failed to roll back.")
+                        };
+                    }
+
                     if micro_batch_size > 0 && data.len() % micro_batch_size != 0 {
                         error!("Micro batch size doesn't evenly divide batch size");
                         return;
@@ -249,6 +268,7 @@ impl Trainer {
                                 clip_grad_norm: _,
                             } => None,
                             Optimizer::Distro(distro) => {
+                                let lr = lr_scheduler.get_lr(step);
                                 let ret = distro.generate(lr);
                                 // this is a gpu p2p optimization -- only the first gpu really produces results,
                                 // the other gpus merely feed their tp tensors to the first rank
@@ -270,32 +290,25 @@ impl Trainer {
                     {
                         return;
                     }
+
+                    for (step, result) in rollback.iter() {
+                        // TODO freeze the optimizer and prevent this from modifying its internal state, methinks, right? or maybe save it and restore it later?
+                        // we just want to have the same optimizer state wyhen we exit, save for the main operation (if not frozen. hmm)
+                        let lr = lr_scheduler.get_lr(*step);
+                        if optimize_step(lr, &mut optimizer, Some(result)).is_break() {
+                            panic!("Failed to roll forwards.")
+                        };
+                    }
                 }
-                Ok(ParallelAssignment::Optimize { distro_results, lr }) => {
-                    match &mut optimizer {
-                        Optimizer::AdamW {
-                            optimizer,
-                            clip_grad_norm,
-                        } => {
-                            optimizer.set_lr(lr);
-                            if let Some(clip_grad_norm) = clip_grad_norm {
-                                optimizer.clip_grad_norm(*clip_grad_norm as f64);
-                            }
-                            optimizer.step();
-                            optimizer.zero_grad();
-                        }
-                        Optimizer::Distro(distro) => match distro_results {
-                            Some(results) => {
-                                debug!("Applying {} DisTrO gradients", results.len());
-                                distro.apply(results, lr);
-                            }
-                            None => {
-                                error!("Got DisTrO optimizer assignment, but no results");
-                                return;
-                            }
-                        },
-                    };
-                    if submission.send(ParallelResult::Optimize {}).is_err() {
+                Ok(ParallelAssignment::Optimize {
+                    distro_results,
+                    step,
+                }) => {
+                    let lr = lr_scheduler.get_lr(step);
+                    if optimize_step(lr, &mut optimizer, distro_results.as_ref()).is_break() {
+                        return;
+                    }
+                    if submission.send(ParallelResult::Optimize).is_err() {
                         return;
                     }
                 }
@@ -305,4 +318,37 @@ impl Trainer {
             }
         }
     }
+}
+
+// TODO impl freezing? :)
+#[must_use]
+fn optimize_step(
+    lr: f64,
+    optimizer: &mut Optimizer,
+    distro_results: Option<&Vec<Vec<DistroResult>>>,
+) -> ControlFlow<()> {
+    match optimizer {
+        Optimizer::AdamW {
+            optimizer,
+            clip_grad_norm,
+        } => {
+            optimizer.set_lr(lr);
+            if let Some(clip_grad_norm) = clip_grad_norm {
+                optimizer.clip_grad_norm(*clip_grad_norm as f64);
+            }
+            optimizer.step();
+            optimizer.zero_grad();
+        }
+        Optimizer::Distro(distro) => match distro_results {
+            Some(results) => {
+                debug!("Applying {} DisTrO gradients", results.len());
+                distro.apply(results, lr);
+            }
+            None => {
+                error!("Got DisTrO optimizer assignment, but no results");
+                return ControlFlow::Break(());
+            }
+        },
+    };
+    ControlFlow::Continue(())
 }

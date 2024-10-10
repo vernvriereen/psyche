@@ -1,6 +1,7 @@
 #![allow(unexpected_cfgs)]
 
 mod bloom;
+mod bounded_queue;
 mod deterministic_shuffle;
 mod interval_tree;
 mod lcg;
@@ -26,3 +27,5 @@ pub use similarity::{
 pub use swap_or_not::compute_shuffled_index;
 
 pub use node_identity::NodeIdentity;
+
+pub use bounded_queue::BoundedQueue;

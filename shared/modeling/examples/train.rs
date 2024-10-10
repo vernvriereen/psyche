@@ -45,10 +45,10 @@ struct Args {
     learning_rate: f64,
 
     #[arg(long, default_value_t = 500)]
-    warmup_steps: usize,
+    warmup_steps: u32,
 
     #[arg(long, default_value_t = 25000)]
-    total_steps: usize,
+    total_steps: u32,
 
     #[arg(long, default_value_t = 1.0)]
     max_grad_norm: f64,

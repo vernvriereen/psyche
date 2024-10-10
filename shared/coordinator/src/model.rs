@@ -113,7 +113,7 @@ impl From<ConstantLR> for psyche_core::ConstantLR {
     fn from(value: ConstantLR) -> Self {
         psyche_core::ConstantLR::new(
             value.base_lr as f64,
-            value.warmup_steps as usize,
+            value.warmup_steps,
             value.warmup_init_lr as f64,
         )
     }
@@ -123,9 +123,9 @@ impl From<LinearLR> for psyche_core::LinearLR {
     fn from(value: LinearLR) -> Self {
         psyche_core::LinearLR::new(
             value.base_lr as f64,
-            value.warmup_steps as usize,
+            value.warmup_steps,
             value.warmup_init_lr as f64,
-            value.total_steps as usize,
+            value.total_steps,
             value.final_lr as f64,
         )
     }
@@ -135,26 +135,37 @@ impl From<CosineLR> for psyche_core::CosineLR {
     fn from(value: CosineLR) -> Self {
         psyche_core::CosineLR::new(
             value.base_lr as f64,
-            value.warmup_steps as usize,
+            value.warmup_steps,
             value.warmup_init_lr as f64,
-            value.total_steps as usize,
+            value.total_steps,
             value.final_lr as f64,
         )
     }
 }
 
-impl From<LearningRateSchedule> for Box<dyn LearningRateScheduler> {
+// TODO why not unify the values here and in core?
+#[derive(Clone)]
+pub enum AnyLearningRateScheduler {
+    Constant(psyche_core::ConstantLR),
+    Linear(psyche_core::LinearLR),
+    Cosine(psyche_core::CosineLR),
+}
+impl AnyLearningRateScheduler {
+    pub fn get_lr(&self, step: u32) -> f64 {
+        match self {
+            Self::Constant(l) => l.get_lr(step),
+            Self::Linear(l) => l.get_lr(step),
+            Self::Cosine(l) => l.get_lr(step),
+        }
+    }
+}
+
+impl From<LearningRateSchedule> for AnyLearningRateScheduler {
     fn from(value: LearningRateSchedule) -> Self {
         match value {
-            LearningRateSchedule::Constant(constant_lr) => {
-                Box::new(psyche_core::ConstantLR::from(constant_lr))
-            }
-            LearningRateSchedule::Linear(linear_lr) => {
-                Box::new(psyche_core::LinearLR::from(linear_lr))
-            }
-            LearningRateSchedule::Cosine(cosine_lr) => {
-                Box::new(psyche_core::CosineLR::from(cosine_lr))
-            }
+            LearningRateSchedule::Constant(c) => Self::Constant(c.into()),
+            LearningRateSchedule::Linear(c) => Self::Linear(c.into()),
+            LearningRateSchedule::Cosine(c) => Self::Cosine(c.into()),
         }
     }
 }

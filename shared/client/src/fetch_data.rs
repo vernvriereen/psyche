@@ -3,11 +3,12 @@ use psyche_data_provider::{DataProviderTcpClient, TokenizedDataProvider};
 use rand::Rng;
 use std::{collections::HashSet, sync::Arc};
 use tokio::sync::{mpsc, Mutex, Notify};
-use tracing::{error, debug};
+use tracing::{debug, error};
 
 pub type Batch = Vec<Vec<i32>>;
 pub type BatchId = u64;
-pub type BatchIdSet = HashSet<BatchId>;
+pub type BatchStep = u32;
+pub type BatchIdSet = HashSet<(BatchStep, BatchId)>;
 
 pub fn fetch_data<T: NodeIdentity>(
     mut data_provider: DataProviderTcpClient<T>,
@@ -15,13 +16,13 @@ pub fn fetch_data<T: NodeIdentity>(
     data_indicies_per_batch: u32,
     remaining_batch_ids: std::sync::Arc<Mutex<BatchIdSet>>,
     buffer_size: usize,
-) -> mpsc::Receiver<(BatchId, Batch)> {
+) -> mpsc::Receiver<(BatchId, Batch, BatchStep)> {
     let (tx, rx) = mpsc::channel(buffer_size);
     tokio::spawn(async move {
         loop {
             notify_new_batch.notified().await;
             loop {
-                let batch_id = {
+                let (batch_step, batch_id) = {
                     let remaining_batch_ids = remaining_batch_ids.lock().await;
                     match remaining_batch_ids.len() {
                         0 => {
@@ -41,7 +42,7 @@ pub fn fetch_data<T: NodeIdentity>(
 
                 match data_provider.get_samples(data_ids).await {
                     Ok(batch) => {
-                        if tx.send((batch_id, batch)).await.is_err() {
+                        if tx.send((batch_id, batch, batch_step)).await.is_err() {
                             debug!("Data loop finished");
                             return;
                         }

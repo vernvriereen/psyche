@@ -656,7 +656,7 @@ impl Distro {
     }
 
     #[allow(unused)]
-    pub fn apply(&mut self, results: Vec<Vec<DistroResult>>, lr: f64) {
+    pub fn apply(&mut self, results: &Vec<Vec<DistroResult>>, lr: f64) {
         for (index, (variable, shard)) in self
             .sgd
             .trainable_variables_with_sharding()

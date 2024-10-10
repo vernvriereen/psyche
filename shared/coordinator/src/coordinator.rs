@@ -66,6 +66,8 @@ pub enum CoordinatorError {
 pub type Commitment = [u8; 32];
 pub type HealthChecks = Vec<CommitteeProof>;
 
+pub const NUM_STORED_ROUNDS: usize = 4;
+
 #[derive_serialize]
 #[derive(Clone, Debug)]
 pub struct Coordinator<T: NodeIdentity> {
@@ -80,7 +82,7 @@ pub struct Coordinator<T: NodeIdentity> {
     pub max_round_train_time: u64,
     pub round_witness_time: u64,
     pub round_apply_time: u64,
-    pub rounds: [Round; 4],
+    pub rounds: [Round; NUM_STORED_ROUNDS],
     pub rounds_head: u32,
     pub first_round: bool,
 
@@ -115,7 +117,7 @@ impl TryFrom<usize> for RunState {
             2 => Ok(RunState::RoundTrain),
             3 => Ok(RunState::RoundWitness),
             4 => Ok(RunState::RoundApply),
-            _ => Err(CoordinatorError::InvalidRunState)
+            _ => Err(CoordinatorError::InvalidRunState),
         }
     }
 }

@@ -22,11 +22,11 @@ pub type CommunicatorId = Id;
 
 #[cfg(not(feature = "parallelism"))]
 #[derive(Debug)]
-pub struct Communicator {}
+pub struct Communicator;
 
 #[cfg(not(feature = "parallelism"))]
 #[derive(Debug, Copy, Clone)]
-pub struct CommunicatorId {}
+pub struct CommunicatorId;
 
 #[cfg(not(feature = "parallelism"))]
 impl Communicator {
