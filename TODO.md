@@ -4,10 +4,7 @@
 - [ ] Stress-test over bad network connections
 - [ ] Allow any node that has a public IP +port to operate as a relay
 - [ ] Replace iroh builtin relay with random relay selection
-- [ ] Make the graph work
-- [ ] Fix channel crash on quit
-- [ ] simple data server taht takes code from training, auths people when they connect as if they're part of the run.
-- [ ] data server should be parameterized by coordinator state
+- [ ] data server should auth people when they connect as if they're part of the run.
 - [ ] p2p / centralized coordinator backend.
 - [ ] add a version byte to network messsages :)
 
@@ -22,6 +19,3 @@ centralized/
   server/
   client/
 ```
-
-# todo centralized:
-- [ ] how is a data id computed from coordinator state

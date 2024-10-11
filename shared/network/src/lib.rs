@@ -96,7 +96,6 @@ where
 
         info!("using relay servers: {}", fmt_relay_mode(&relay_mode));
 
-        // TODO write a peer discovery service, and parameterize this impl based on it.
         // TODO add an allowlist of public keys, don't let any connections from people with keys not in that list.
         let node = Node::memory()
             .secret_key(secret_key)
