@@ -1,6 +1,6 @@
 use crate::{
     disto_results_to_bytes,
-    fetch_data::{fetch_data, Batch, BatchId, BatchIdSet, BatchStep},
+    fetch_data::{BatchStep, DataFetcher, TrainingDataForStep},
     trainer::{DistroResults, ParallelModels, TrainOutput, Trainer},
     tui::ClientTUIState,
     BroadcastMessage, Payload, SerializedDistroResult,
@@ -18,7 +18,7 @@ use psyche_modeling::{CommunicatorId, DistroResult, LlamaForCausalLM};
 use psyche_network::{dummy_blob_ticket, BlobTicket, NetworkEvent};
 use psyche_watcher::{Backend, BackendWatcher};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs,
     ops::Deref,
     path::PathBuf,
@@ -31,7 +31,7 @@ use std::{
 use tch::{Device, Kind};
 use tokio::{
     runtime::Handle,
-    sync::{mpsc, Mutex, Notify},
+    sync::{Mutex, Notify},
     task::JoinHandle,
     time::sleep,
 };
@@ -59,8 +59,7 @@ pub struct State<T: NodeIdentity> {
     private_key: T::PrivateKey,
     showed_inclusion_message: bool,
     data_and_model_load: TaskResult<(DataProviderTcpClient<T>, Vec<ParallelModels>)>,
-    data_receiver: Option<mpsc::Receiver<(BatchId, Batch, BatchStep)>>,
-    trainers: Vec<Trainer>,
+    available_trainers: Vec<Trainer>,
     trainings: Vec<JoinHandle<Result<(TrainOutput, u64)>>>,
     applying: TaskResult<Vec<Trainer>>,
     health_checking: TaskResult<HealthChecks>,
@@ -73,8 +72,6 @@ pub struct State<T: NodeIdentity> {
     blooms: Option<(Bloom<[u8; 32]>, Bloom<[u8; 32]>, Bloom<[u8; 32]>)>,
     losses: Vec<f32>,
     round_losses: Vec<f32>,
-    remaining_batch_ids: Arc<Mutex<BatchIdSet>>,
-    num_remaining_batch_ids: usize,
     data_parallelism: usize,
     tensor_parallelism: usize,
     notify_poll_next: Arc<Notify>,
@@ -84,6 +81,10 @@ pub struct State<T: NodeIdentity> {
     write_gradients_dir: Option<PathBuf>,
     atomic_run_state: Arc<AtomicUsize>,
     round_rollbacks: Arc<Mutex<BoundedQueue<(BatchStep, Vec<DistroResults>)>>>,
+    training_data: Option<TrainingDataForStep>,
+    data_fetcher: Option<DataFetcher<T>>,
+    /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
+    _last_observed_num_batches_remaining: usize,
 }
 
 impl<T: NodeIdentity> State<T> {
@@ -100,8 +101,8 @@ impl<T: NodeIdentity> State<T> {
             private_key,
             showed_inclusion_message: false,
             data_and_model_load: None,
-            data_receiver: None,
-            trainers: Vec::new(),
+            training_data: None,
+            available_trainers: Vec::new(),
             trainings: Vec::new(),
             applying: None,
             health_checking: None,
@@ -115,8 +116,6 @@ impl<T: NodeIdentity> State<T> {
             notify_poll_next: Arc::new(Notify::new()),
             losses: Vec::new(),
             round_losses: Vec::new(),
-            remaining_batch_ids: Arc::new(Mutex::new(HashSet::new())),
-            num_remaining_batch_ids: 0,
             notify_clear_uploads: Arc::new(Notify::new()),
             data_parallelism,
             tensor_parallelism,
@@ -125,6 +124,8 @@ impl<T: NodeIdentity> State<T> {
             write_gradients_dir,
             atomic_run_state: Arc::new(AtomicUsize::new(0)),
             round_rollbacks: Mutex::new(BoundedQueue::new(NUM_STORED_ROUNDS)).into(),
+            data_fetcher: None,
+            _last_observed_num_batches_remaining: 0,
         }
     }
 
@@ -168,26 +169,28 @@ impl<T: NodeIdentity> State<T> {
         if let Some(applying) = &mut self.applying {
             let trainers = applying.await??;
             self.applying = None;
-            self.trainers = trainers;
+            self.available_trainers = trainers;
         } else if self.is_run_state(RunState::RoundTrain)
-            && !self.trainers.is_empty()
-            && self.data_receiver.is_some()
-            && self.num_remaining_batch_ids != 0
+            && !self.available_trainers.is_empty()
+            && self.training_data.is_some()
         {
-            let (batch_id, batch, batch_step) = self
-                .data_receiver
-                .as_mut()
-                .unwrap()
-                .recv()
-                .await
-                .ok_or(Error::msg("Data fetcher exited"))?;
+            let (batch_id, batch, batch_step) = {
+                let training_data = self.training_data.as_mut().unwrap();
+                let sample = training_data
+                    .next_sample
+                    .recv()
+                    .await
+                    .ok_or(Error::msg("Data fetcher exited"))?;
+                (sample.0, sample.1, training_data.step)
+            };
 
             debug!("got data step {batch_step} id: {batch_id}");
 
             let trainer: Trainer = self
-                .trainers
+                .available_trainers
                 .pop()
                 .ok_or(Error::msg("Round start but no trainer object (didn't finish training previous round or applying it?)"))?;
+
             let notify = self.notify_poll_next.clone();
             let round_rollbacks = self.round_rollbacks.clone();
             let handle = Handle::current();
@@ -214,7 +217,13 @@ impl<T: NodeIdentity> State<T> {
         } else if let Some(finished) = self.trainings.iter_mut().position(|x| x.is_finished()) {
             let (output, batch_id) = self.trainings.get_mut(finished).unwrap().await??;
             self.trainings.swap_remove(finished);
-            self.trainers.push(output.trainer);
+            self.available_trainers.push(output.trainer);
+
+            debug!(
+                "Batch {} loss: {} cancelled: {}",
+                batch_id, output.loss, output.cancelled
+            );
+
             if output.cancelled || !self.is_run_state(RunState::RoundTrain) {
                 return Ok(ToSend::Nothing);
             }
@@ -261,7 +270,7 @@ impl<T: NodeIdentity> State<T> {
             }
         } else if self.is_run_state(RunState::RoundTrain)
             && self.committee_info.is_some()
-            && self.num_remaining_batch_ids == 0
+            && self.training_data.is_none()
         {
             let (_, witness_proof, _) = self.committee_info.as_ref().unwrap();
             if let Some(witness) = self.get_witness_to_send(witness_proof.index) {
@@ -445,32 +454,52 @@ impl<T: NodeIdentity> State<T> {
         // TODO: verify payload matches commitment
         // TODO: verify shape of distro_results
 
-        let mut remaining_batch_ids = self.remaining_batch_ids.lock().await;
-        if witness_proof.witness {
-            match self.blooms.as_mut() {
-                Some((_, participant_bloom, order_bloom)) => {
-                    participant_bloom.add(&sha256(from.as_ref()));
-                    if remaining_batch_ids.contains(&(payload.step, *batch_id)) {
-                        // first received payload for this batch id, vote for it in consensus
-                        order_bloom.add(&sha256(&commitment.commitment));
+        // we only care to add this to consensus & track it in batch IDs if we have any batch IDs that haven't yet been voted for.
+        let (just_consumed_last_batch_id, num_left) = if let Some(TrainingDataForStep {
+            batch_ids_not_yet_trained_on,
+            ..
+        }) = &mut self.training_data
+        {
+            // TODO: how do we do witnessing for verifiers that might be training on data that's not in the normal remaining batch IDs?
+            // TODO: also we want ALL those from everyone, right?
+            let mut remaining_batch_ids = batch_ids_not_yet_trained_on.lock().await;
+            if witness_proof.witness {
+                match self.blooms.as_mut() {
+                    Some((_, participant_bloom, order_bloom)) => {
+                        participant_bloom.add(&sha256(from.as_ref()));
+                        if remaining_batch_ids.contains(batch_id) {
+                            // first received payload for this batch id, vote for it in consensus
+                            order_bloom.add(&sha256(&commitment.commitment));
+                        }
+                    }
+                    None => {
+                        debug!(
+                            "Already submitted witness, not adding {} to participant bloom",
+                            from
+                        );
                     }
                 }
-                None => {
-                    debug!(
-                        "Already submitted witness, not adding {} to participant bloom",
-                        from
-                    );
-                }
             }
+
+            remaining_batch_ids.remove(batch_id);
+            (remaining_batch_ids.is_empty(), remaining_batch_ids.len())
+        } else {
+            // it was already empty, so we didn't just consume the last value.
+            (false, 0)
+        };
+        self._last_observed_num_batches_remaining = num_left;
+
+        if just_consumed_last_batch_id {
+            self.training_data = None;
         }
-        if remaining_batch_ids.remove(&(payload.step, *batch_id)) {
-            self.num_remaining_batch_ids -= 1;
+        if just_consumed_last_batch_id {
+            self.notify_poll_next.notify_one(); // wake up poll_next() to send opportunistic witness
         }
+
+        // we unconditionally store every seen payload, since we're not yet sure what consensus will be on whether it's included.
         self.payloads
             .insert(hash, PayloadState::Downloaded(payload));
-        if self.num_remaining_batch_ids == 0 {
-            self.notify_poll_next.notify_one(); // wake up poll_next() to send opprotunistic witness
-        }
+
         Ok(())
     }
 
@@ -512,7 +541,7 @@ impl<T: NodeIdentity> State<T> {
         assert_eq!(state.run_state, RunState::RoundTrain);
 
         // if all our states are empty (first execution), wait for the data provider and model load to finish
-        if self.trainers.is_empty() && self.trainings.is_empty() && self.data_receiver.is_none() {
+        if self.available_trainers.is_empty() && self.training_data.is_none() {
             let data_and_model_load = self.data_and_model_load.take().ok_or(Error::msg(
                 "Round started but no model load was running. Did we miss warmup?",
             ))?;
@@ -521,14 +550,8 @@ impl<T: NodeIdentity> State<T> {
             }
             let (data_provider, models) = data_and_model_load.await??; // CANCEL SAFETY POINT
 
-            // TODO add data fetching for verifying, too...
-            self.data_receiver = Some(fetch_data(
-                data_provider,
-                self.notify_new_batch.clone(),
-                state.data_indicies_per_batch,
-                self.remaining_batch_ids.clone(),
-                self.data_parallelism * 2,
-            ));
+            // TODO add data fetching for verifying, too..
+            self.data_fetcher = Some(DataFetcher::new(data_provider, self.data_parallelism * 2));
 
             let config = match &state.model {
                 Some(model) => model,
@@ -539,7 +562,7 @@ impl<T: NodeIdentity> State<T> {
             };
             let model::Model::LLM(llm) = config;
             let _llm = llm.clone();
-            self.trainers = models
+            self.available_trainers = models
                 .into_iter()
                 .map(|model| {
                     Trainer::new(
@@ -585,24 +608,23 @@ impl<T: NodeIdentity> State<T> {
         //     .filter(|(_, v)| **v == self.identity)
         //     .flat_map(|(k, _)| (k.start as usize..k.end as usize + 1).collect::<Vec<_>>())
         //     .collect::<Vec<_>>();
-        {
-            let mut remaining_batch_ids = self.remaining_batch_ids.lock().await;
-            if let Some(data_receiver) = self.data_receiver.as_mut() {
-                // drain any pending batches -- this will not loop forever since we are holding the
-                // remaining_batch_ids lock, so fetch_data can't push anything new in
-                loop {
-                    match data_receiver.try_recv() {
-                        Ok(_) => {}
-                        Err(_) => {
-                            break;
-                        }
-                    }
-                }
-                let mut batch_ids = get_batch_ids_for_state(state);
-                self.num_remaining_batch_ids = batch_ids.len();
-                *remaining_batch_ids = batch_ids.drain(..).map(|id| (state.step, id)).collect();
-            }
+
+        /*
+         * TODO DATA
+         * - destroy old data fetch task
+         * - get the batch IDs list for the new state
+         * - get the number of batch IDs we're going to train on
+         * -
+         */
+
+        if self.data_fetcher.is_none() {
+            bail!("Ready to train but no data fetcher! Did we miss warmup??");
         }
+
+        let (num_batch_ids_for_this_round, training_data) =
+            self.data_fetcher.as_mut().unwrap().fetch_data(&state);
+        self.training_data = Some(training_data);
+
         let committee_proof = committee_selection.get_committee(index);
         let witness_proof = committee_selection.get_witness(index);
         info!(
@@ -612,14 +634,14 @@ impl<T: NodeIdentity> State<T> {
         self.blooms = match witness_proof.witness {
             true => {
                 let commit_bloom = Bloom::random(
-                    self.num_remaining_batch_ids * 2,
+                    num_batch_ids_for_this_round * 2,
                     BLOOM_FALSE_RATE,
                     BLOOM_MAX_BITS,
                 );
                 let participant_bloom =
                     Bloom::random(state.clients.len(), BLOOM_FALSE_RATE, BLOOM_MAX_BITS);
                 let order_bloom = Bloom::random(
-                    self.num_remaining_batch_ids,
+                    num_batch_ids_for_this_round,
                     BLOOM_FALSE_RATE,
                     BLOOM_MAX_BITS,
                 );
@@ -681,7 +703,7 @@ impl<T: NodeIdentity> State<T> {
             .ok_or(Error::msg("No state in round apply"))?;
         assert_eq!(state.run_state, RunState::RoundApply);
 
-        let gpus_still_running = self.data_parallelism - self.trainers.len();
+        let gpus_still_running = self.data_parallelism - self.available_trainers.len();
         if gpus_still_running > 0 {
             debug!("Apply round but {gpus_still_running} gpus aren't finished, waiting 1s");
             sleep(Duration::from_secs(1)).await; // CANCEL SAFETY
@@ -710,7 +732,7 @@ impl<T: NodeIdentity> State<T> {
         }
 
         let round = state.current_round()?;
-        let trainers = self.trainers.drain(0..).collect::<Vec<_>>();
+        let trainers = self.available_trainers.drain(0..).collect::<Vec<_>>();
         let mut payloads: HashMap<psyche_network::Hash, PayloadState<T>> =
             self.payloads.drain().collect();
         let witnesses = round.witnesses.clone();
@@ -974,7 +996,7 @@ impl<T: NodeIdentity> From<&State<T>> for ClientTUIState {
             committee,
             run_state: coordinator.map(|x| x.into()).unwrap_or_default(),
             loss: value.losses.clone(),
-            batches_left: value.num_remaining_batch_ids,
+            batches_left: value._last_observed_num_batches_remaining,
         }
     }
 }
