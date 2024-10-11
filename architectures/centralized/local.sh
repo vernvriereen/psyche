@@ -5,7 +5,7 @@ set -euo pipefail
 
 # Check if the required arguments are provided
 if [ $# -lt 3 ]; then
-    echo "Usage: $0 <NUM_CLIENTS> <CONFIG_PATH> <WRITE_DISTRO_DATA> [SERVER_PORT]"
+    echo "Usage: $0 <NUM_CLIENTS> <CONFIG_PATH> <WRITE_DISTRO_DATA> [SERVER_PORT] [TUI]"
     exit 1
 fi
 
@@ -15,6 +15,7 @@ STATE_PATH="${2%/}/state.toml"
 DATA_PATH="${2%/}/data.toml"
 WRITE_DISTRO_DATA=$3
 SERVER_PORT=${4:-20000}  # Default to 20000 if not provided
+TUI=${5:-true}  # Default to true if not provided
 
 # Check if NUM_CLIENTS is a positive integer
 if ! [[ "$NUM_CLIENTS" =~ ^[1-9][0-9]*$ ]]; then
@@ -70,9 +71,9 @@ tmux send-keys "nvtop" C-m
 for ((i=2; i<=(NUM_CLIENTS+1); i++)); do
     tmux select-pane -t $i
     if [ "$WRITE_DISTRO_DATA" != "false" ]; then
-        tmux send-keys "RUST_BACKTRACE=1 cargo run -p psyche-centralized-client -- --run-id $run_id --server-addr localhost:$SERVER_PORT --write-gradients-dir $WRITE_DISTRO_DATA" C-m
+        tmux send-keys "RUST_BACKTRACE=1 cargo run -p psyche-centralized-client -- --run-id $run_id --server-addr localhost:$SERVER_PORT --tui $TUI --write-gradients-dir $WRITE_DISTRO_DATA" C-m
     else
-        tmux send-keys "RUST_BACKTRACE=1 cargo run -p psyche-centralized-client -- --run-id $run_id --server-addr localhost:$SERVER_PORT" C-m
+        tmux send-keys "RUST_BACKTRACE=1 cargo run -p psyche-centralized-client -- --run-id $run_id --server-addr localhost:$SERVER_PORT --tui $TUI" C-m
     fi
 done
 
