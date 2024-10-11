@@ -39,6 +39,9 @@ struct Args {
     #[clap(long, default_value_t = 1)]
     tensor_parallelism: usize,
 
+    #[clap(long)]
+    micro_batch_size: Option<usize>,
+
     /// If provided, every shared gradient this client sees will be written to this directory.
     #[clap(long)]
     write_gradients_dir: Option<PathBuf>,
@@ -98,6 +101,7 @@ async fn main() -> Result<()> {
         p2p_port: args.bind_p2p_port,
         data_parallelism: args.data_parallelism,
         tensor_parallelism: args.tensor_parallelism,
+        micro_batch_size: args.micro_batch_size,
         write_gradients_dir: args.write_gradients_dir,
     })
     .run()

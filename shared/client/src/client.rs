@@ -38,6 +38,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         private_key: T::PrivateKey,
         data_parallelism: usize,
         tensor_parallelism: usize,
+        micro_batch_size: Option<usize>,
         write_gradients_dir: Option<PathBuf>,
     ) -> Self {
         let cancel = CancellationToken::new();
@@ -54,6 +55,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                     private_key,
                     data_parallelism,
                     tensor_parallelism,
+                    micro_batch_size,
                     write_gradients_dir,
                 );
                 let clear_uploads = state.get_clear_downloads_notification();

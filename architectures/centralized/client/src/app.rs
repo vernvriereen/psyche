@@ -59,6 +59,7 @@ pub struct App {
     run_id: String,
     data_parallelism: usize,
     tensor_parallelism: usize,
+    micro_batch_size: Option<usize>,
     write_gradients_dir: Option<PathBuf>,
 }
 
@@ -72,6 +73,7 @@ pub struct AppParams {
     pub run_id: String,
     pub data_parallelism: usize,
     pub tensor_parallelism: usize,
+    pub micro_batch_size: Option<usize>,
     pub write_gradients_dir: Option<PathBuf>,
     pub p2p_port: Option<u16>,
 }
@@ -110,6 +112,7 @@ impl AppBuilder {
             run_id: p.run_id,
             data_parallelism: p.data_parallelism,
             tensor_parallelism: p.tensor_parallelism,
+            micro_batch_size: p.micro_batch_size,
             write_gradients_dir: p.write_gradients_dir,
         };
         app.run(p2p).await
@@ -149,6 +152,7 @@ impl App {
             self.secret_key.clone(),
             self.data_parallelism,
             self.tensor_parallelism,
+            self.micro_batch_size,
             self.write_gradients_dir.clone(),
         );
 

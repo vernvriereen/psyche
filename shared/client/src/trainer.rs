@@ -1,9 +1,12 @@
 use crate::fetch_data::Batch;
 use anyhow::{bail, Error, Result};
-use psyche_coordinator::model;
+use psyche_coordinator::{model, RunState};
 use psyche_core::LearningRateScheduler;
 use psyche_modeling::{CausalLM, Distro, DistroResult, LlamaForCausalLM};
-use std::sync::mpsc;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    mpsc, Arc,
+};
 use tch::{
     nn::{self, OptimizerConfig},
     Tensor,
@@ -27,6 +30,7 @@ pub struct TrainOutput {
     pub loss: f32,
     pub step: usize,
     pub distro_results: DistroResults,
+    pub cancelled: bool,
 }
 
 enum ParallelAssignment {
@@ -44,6 +48,7 @@ enum ParallelResult {
     Train {
         loss: f32,
         distro_results: Option<Vec<DistroResult>>,
+        cancelled: bool,
     },
     Optimize {},
 }
@@ -61,6 +66,8 @@ impl Trainer {
         models: ParallelModels,
         lr_scheduler: Box<dyn LearningRateScheduler>,
         optimizer: model::Optimizer,
+        micro_batch_size: usize,
+        run_state: Arc<AtomicUsize>,
     ) -> Self {
         let mut ret = Vec::with_capacity(models.len());
         for (index, model) in models.into_iter().enumerate() {
@@ -101,8 +108,17 @@ impl Trainer {
                 )),
             };
 
+            let run_state = run_state.clone();
             std::thread::spawn(move || {
-                Self::model_thread(model, assignment_rx, result_tx, optimizer, index)
+                Self::model_thread(
+                    model,
+                    assignment_rx,
+                    result_tx,
+                    optimizer,
+                    index,
+                    micro_batch_size,
+                    run_state,
+                )
             });
         }
         Self {
@@ -111,7 +127,7 @@ impl Trainer {
         }
     }
 
-    fn forward_backward(model: &mut LlamaForCausalLM, data: &Batch) -> Result<f32> {
+    fn forward_backward(model: &mut LlamaForCausalLM, data: &[Vec<i32>]) -> Result<f32> {
         let inputs = Tensor::from_slice2(data).to(model.device());
         let targets = inputs.copy();
         let (_, loss) = model.forward(&inputs, Some(&targets), None);
@@ -131,15 +147,18 @@ impl Trainer {
         }
         let mut final_loss = 0.0;
         let mut final_distro_results = None;
+        let mut final_cancelled = false;
         for (_, rx) in &self.models {
             match rx.recv()? {
                 ParallelResult::Train {
                     loss,
                     distro_results,
+                    cancelled,
                 } => {
                     if final_distro_results.is_none() {
                         final_distro_results = distro_results;
                     }
+                    final_cancelled = cancelled;
                     final_loss += loss;
                 }
                 ParallelResult::Optimize {} => bail!("Got unexpected optimizer result"),
@@ -151,6 +170,7 @@ impl Trainer {
             loss: final_loss,
             step,
             distro_results: final_distro_results.unwrap_or_default(),
+            cancelled: final_cancelled,
         })
     }
 
@@ -176,6 +196,7 @@ impl Trainer {
                 ParallelResult::Train {
                     loss: _,
                     distro_results: _,
+                    cancelled: _,
                 } => bail!("Got unexpected trainer result"),
                 ParallelResult::Optimize {} => {}
             }
@@ -189,41 +210,65 @@ impl Trainer {
         submission: mpsc::Sender<ParallelResult>,
         mut optimizer: Optimizer,
         index: usize,
+        micro_batch_size: usize,
+        run_state: Arc<AtomicUsize>,
     ) {
         loop {
             match assignment.recv() {
                 Ok(ParallelAssignment::Train { data, lr }) => {
-                    match Self::forward_backward(&mut model, &data) {
-                        Ok(loss) => {
-                            let distro_results = match &mut optimizer {
-                                Optimizer::AdamW {
-                                    optimizer: _,
-                                    clip_grad_norm: _,
-                                } => None,
-                                Optimizer::Distro(distro) => {
-                                    let ret = distro.generate(lr);
-                                    // this is a gpu p2p optimization -- only the first gpu really produces results,
-                                    // the other gpus merely feed their tp tensors to the first rank
-                                    match index == 0 {
-                                        true => Some(ret),
-                                        false => None,
-                                    }
-                                }
-                            };
-                            if submission
-                                .send(ParallelResult::Train {
-                                    loss,
-                                    distro_results,
-                                })
-                                .is_err()
-                            {
+                    if micro_batch_size > 0 && data.len() % micro_batch_size != 0 {
+                        error!("Micro batch size doesn't evenly divide batch size");
+                        return;
+                    }
+                    let grad_accum_steps = data.len() / micro_batch_size;
+                    let grad_accum_divisor = grad_accum_steps as f32;
+                    let micro_batches = data.chunks_exact(micro_batch_size);
+                    assert_eq!(micro_batches.len(), grad_accum_steps);
+                    let mut loss = 0f32;
+                    let mut cancelled = false;
+                    for micro_batch in micro_batches {
+                        if RunState::try_from(run_state.load(Ordering::Relaxed)).unwrap()
+                            != RunState::RoundTrain
+                        {
+                            cancelled = true;
+                            break;
+                        }
+                        match Self::forward_backward(&mut model, micro_batch) {
+                            Ok(batch_loss) => loss += batch_loss,
+                            Err(err) => {
+                                error!("Train error: {err}");
                                 return;
                             }
                         }
-                        Err(err) => {
-                            error!("Train error: {err}");
-                            return;
-                        }
+                    }
+                    loss /= grad_accum_divisor;
+                    let distro_results = match cancelled {
+                        false => match &mut optimizer {
+                            Optimizer::AdamW {
+                                optimizer: _,
+                                clip_grad_norm: _,
+                            } => None,
+                            Optimizer::Distro(distro) => {
+                                let ret = distro.generate(lr);
+                                // this is a gpu p2p optimization -- only the first gpu really produces results,
+                                // the other gpus merely feed their tp tensors to the first rank
+                                match index == 0 {
+                                    true => Some(ret),
+                                    false => None,
+                                }
+                            }
+                        },
+                        true => None,
+                    };
+                    if submission
+                        .send(ParallelResult::Train {
+                            loss,
+                            distro_results,
+                            cancelled,
+                        })
+                        .is_err()
+                    {
+                        return;
                     }
                 }
                 Ok(ParallelAssignment::Optimize { distro_results, lr }) => {

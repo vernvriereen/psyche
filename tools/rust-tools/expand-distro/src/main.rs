@@ -26,6 +26,7 @@ fn main() -> anyhow::Result<()> {
             &result.sparse_idx,
             &result.sparse_val,
             &result.xshape,
+            result.totalk,
             target_type,
             target_device,
         );

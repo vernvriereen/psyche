@@ -78,7 +78,7 @@ pub struct Coordinator<T: NodeIdentity> {
 
     pub max_rounds: u32,
     pub max_round_train_time: u64,
-    pub max_round_witness_time: u64,
+    pub round_witness_time: u64,
     pub round_apply_time: u64,
     pub rounds: [Round; 4],
     pub rounds_head: u32,
@@ -105,6 +105,33 @@ pub struct Coordinator<T: NodeIdentity> {
     pub model: Option<Model>,
 }
 
+impl TryFrom<usize> for RunState {
+    type Error = CoordinatorError;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(RunState::WaitingForMembers),
+            1 => Ok(RunState::Warmup),
+            2 => Ok(RunState::RoundTrain),
+            3 => Ok(RunState::RoundWitness),
+            4 => Ok(RunState::RoundApply),
+            _ => Err(CoordinatorError::InvalidRunState)
+        }
+    }
+}
+
+impl Into<usize> for RunState {
+    fn into(self) -> usize {
+        match self {
+            RunState::WaitingForMembers => 0,
+            RunState::Warmup => 1,
+            RunState::RoundTrain => 2,
+            RunState::RoundWitness => 3,
+            RunState::RoundApply => 4,
+        }
+    }
+}
+
 impl<T: NodeIdentity> AsRef<[u8]> for Client<T> {
     fn as_ref(&self) -> &[u8] {
         self.id.as_ref()
@@ -128,7 +155,7 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             warmup_time: Default::default(),
             max_rounds: Default::default(),
             max_round_train_time: Default::default(),
-            max_round_witness_time: Default::default(),
+            round_witness_time: Default::default(),
             round_apply_time: Default::default(),
             rounds: Default::default(),
             rounds_head: Default::default(),
@@ -390,7 +417,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     fn tick_round_witness(&mut self, unix_timestamp: u64) {
-        if unix_timestamp >= self.max_round_witness_time + self.run_state_start_unix_timestamp {
+        if unix_timestamp >= self.round_witness_time + self.run_state_start_unix_timestamp {
             // TODO: Punish idle witnesses
             self.change_state(unix_timestamp, RunState::RoundApply);
         }

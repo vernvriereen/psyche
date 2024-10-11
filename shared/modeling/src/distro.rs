@@ -340,7 +340,7 @@ impl CompressDCT {
         topk
     }
 
-    pub fn compress(x: &Tensor, topk: i64) -> (Tensor, Tensor, Vec<i64>, i64) {
+    pub fn compress(x: &Tensor, topk: i64, quantization: bool) -> (Tensor, Tensor, Vec<i64>, i64) {
         let _no_grad = tch::no_grad_guard();
         let xshape = x.size();
         let x = if xshape.len() > 2 {
@@ -354,11 +354,29 @@ impl CompressDCT {
             x.shallow_clone()
         };
 
-        let totalk = *x.size().last().unwrap();
+        let mut totalk = *x.size().last().unwrap();
         let topk = Self::clamp_topk(&x, topk);
 
-        let idx = x.abs().topk(topk, -1, true, false).1;
-        let val = x.gather(-1, &idx, false);
+        let mut idx = x.abs().topk(topk, -1, true, false).1;
+        let mut val = x.gather(-1, &idx, false);
+
+        if quantization {
+            if totalk <= 256 {
+                idx = idx.to_kind(Kind::Uint8);
+            } else if totalk <= 65536 {
+                idx = idx.to_kind(Kind::UInt16).view_dtype(Kind::Uint8);
+            } else if totalk <= 4294967296 {
+                idx = idx.to_kind(Kind::UInt32).view_dtype(Kind::Uint8);
+            }
+
+            val = val
+                .g_mul_scalar_(1e4)
+                .clamp_(-100., 100.)
+                .to_kind(Kind::Float8e4m3fn)
+                .view_dtype(Kind::Uint8);
+        } else {
+            totalk = 0;
+        }
 
         (idx, val, xshape, totalk)
     }
@@ -368,10 +386,30 @@ impl CompressDCT {
         idx: &Tensor,
         val: &Tensor,
         xshape: &[i64],
+        totalk: i64,
         kind: Kind,
         device: Device,
     ) -> Tensor {
-        let mut x = Tensor::zeros(xshape, (kind, device));
+        let idx = if totalk <= 256 {
+            idx.shallow_clone()
+        } else if totalk <= 65536 {
+            idx.view_dtype(Kind::UInt16)
+        } else if totalk <= 4294967296 {
+            idx.view_dtype(Kind::UInt32)
+        } else {
+            unimplemented!()
+        }
+        .to_kind(Kind::Int64);
+
+        let val = if totalk > 0 {
+            val.view_dtype(Kind::Float8e4m3fn)
+                .to_kind(kind)
+                .g_mul_scalar_(1e-4)
+        } else {
+            val.shallow_clone()
+        };
+
+        let mut x: Tensor = Tensor::zeros(xshape, (kind, device));
 
         if xshape.len() > 2 {
             // 2D weights
@@ -383,7 +421,7 @@ impl CompressDCT {
             x = x.view([y, x_dim, h * w]);
         }
 
-        x.internal_scatter_reduce_(-1, idx, val, "mean", false);
+        x.internal_scatter_reduce_(-1, &idx, &val, "mean", false);
 
         x = x.reshape(xshape);
 
@@ -404,13 +442,14 @@ impl CompressDCT {
         idx: &[Tensor],
         val: &[Tensor],
         xshape: &[i64],
+        totalk: i64,
         kind: Kind,
         device: Device,
     ) -> Tensor {
         let idx_concat = Tensor::cat(idx, -1).to_device(device);
         let val_concat = Tensor::cat(val, -1).to_device(device);
         // Call the decompress method
-        Self::decompress(&idx_concat, &val_concat, xshape, kind, device)
+        Self::decompress(&idx_concat, &val_concat, xshape, totalk, kind, device)
     }
 }
 
@@ -423,6 +462,7 @@ pub struct DistroResult {
     pub sparse_idx: Tensor,
     pub sparse_val: Tensor,
     pub xshape: Vec<i64>,
+    pub totalk: i64,
 }
 
 impl Clone for DistroResult {
@@ -431,6 +471,7 @@ impl Clone for DistroResult {
             sparse_idx: self.sparse_idx.shallow_clone(),
             sparse_val: self.sparse_val.shallow_clone(),
             xshape: self.xshape.clone(),
+            totalk: self.totalk,
         }
     }
 }
@@ -494,19 +535,19 @@ impl Distro {
         let variables = &mut self.sgd.trainable_variables_with_sharding();
         let mut ret = Vec::with_capacity(variables.len());
         for (index, (variable, shard)) in variables.iter_mut().enumerate() {
-            // Step-Weight decay
+            // step-Weight decay
             if self.weight_decay != 0.0 {
                 variable.multiply_scalar_(1.0 - lr * self.weight_decay);
             }
 
             let delta = &mut self.state.get_mut(index).unwrap().delta;
 
-            // Decay delta
+            // decay delta
             if self.compression_decay != 1.0 {
                 delta.multiply_scalar_(self.compression_decay);
             }
 
-            // Add delta to new gradient
+            // add delta to new gradient
             delta.g_add_(&variable.grad().multiply_scalar(lr));
 
             match shard {
@@ -538,9 +579,10 @@ impl Distro {
                     if self.shard_index == 0 {
                         let gathered_delta = unshard_tensor(shards, shard);
                         // Compress delta
-                        let (sparse_idx, sparse_val, xshape, _totalk) = CompressDCT::compress(
+                        let (sparse_idx, sparse_val, xshape, totalk) = CompressDCT::compress(
                             &self.transform.encode(&gathered_delta),
                             self.compression_topk,
+                            true,
                         );
 
                         // Estimate transmitted delta
@@ -548,6 +590,7 @@ impl Distro {
                             &sparse_idx,
                             &sparse_val,
                             &xshape,
+                            totalk,
                             variable.kind(),
                             variable.device(),
                         ));
@@ -556,6 +599,7 @@ impl Distro {
                             sparse_idx,
                             sparse_val,
                             xshape,
+                            totalk,
                         });
 
                         group_start().unwrap();
@@ -579,9 +623,10 @@ impl Distro {
                 None => {
                     if self.shard_index == 0 {
                         // Compress delta
-                        let (sparse_idx, sparse_val, xshape, _totalk) = CompressDCT::compress(
+                        let (sparse_idx, sparse_val, xshape, totalk) = CompressDCT::compress(
                             &self.transform.encode(&delta),
                             self.compression_topk,
+                            true,
                         );
 
                         // Estimate transmitted delta
@@ -589,6 +634,7 @@ impl Distro {
                             &sparse_idx,
                             &sparse_val,
                             &xshape,
+                            totalk,
                             variable.kind(),
                             variable.device(),
                         ));
@@ -600,6 +646,7 @@ impl Distro {
                             sparse_idx,
                             sparse_val,
                             xshape,
+                            totalk,
                         });
                     }
                 }
@@ -631,6 +678,7 @@ impl Distro {
                 &indicies,
                 &values,
                 &results[0][index].xshape,
+                results[0][index].totalk,
                 variable.kind(),
                 device,
             ));
@@ -771,11 +819,11 @@ mod tests {
             vec![4i64, 4i64],
             4i64,
         );
-        let ret = CompressDCT::compress(&r, 2);
+        let ret = CompressDCT::compress(&r, 2, false);
         assert_eq!(truth.0, ret.0);
         assert!(truth.1.allclose(&ret.1, 1e-4, 1e-8, false));
         assert_eq!(truth.2, ret.2);
-        assert_eq!(truth.3, ret.3);
+        assert_eq!(0, ret.3); // totalk changed to 0 when quantization is false
     }
 
     #[test]
@@ -789,11 +837,11 @@ mod tests {
             vec![8i64],
             8i64,
         );
-        let ret = CompressDCT::compress(&r, 2);
+        let ret = CompressDCT::compress(&r, 2, false);
         assert_eq!(truth.0, ret.0);
         assert!(truth.1.allclose(&ret.1, 1e-4, 1e-8, false));
         assert_eq!(truth.2, ret.2);
-        assert_eq!(truth.3, ret.3);
+        assert_eq!(0, ret.3); // totalk changed to 0 when quantization is false
     }
 
     #[test]
@@ -805,7 +853,7 @@ mod tests {
         let truth = _1d_float(&[
             0.0000, 0.9625, 0.5487, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
         ]);
-        let ret = CompressDCT::decompress(&idx, &val, &xshape, p.kind(), p.device());
+        let ret = CompressDCT::decompress(&idx, &val, &xshape, 0, p.kind(), p.device());
         assert!(truth.allclose(&ret, 1e-4, 1e-8, false));
     }
 
@@ -826,7 +874,7 @@ mod tests {
             [0.0000, 0.0000, 0.8285, 0.8163],
             [0.0000, 0.7600, 0.0000, 0.9093],
         ]);
-        let ret = CompressDCT::decompress(&idx, &val, &xshape, p.kind(), p.device());
+        let ret = CompressDCT::decompress(&idx, &val, &xshape, 0, p.kind(), p.device());
         assert!(truth.allclose(&ret, 1e-4, 1e-8, false));
     }
 

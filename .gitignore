@@ -30,6 +30,7 @@ perf.data.*
 .vscode/
 .venv/
 libtorch*
+slurm*
 
 ### Training Data ###
 data/

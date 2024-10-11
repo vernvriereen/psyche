@@ -20,12 +20,17 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     path::PathBuf,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Duration,
 };
 use tch::{Device, Kind};
 use tokio::{
     sync::{mpsc, Mutex, Notify},
     task::JoinHandle,
+    time::sleep,
 };
 use tracing::{debug, error, info, warn};
 
@@ -72,7 +77,9 @@ pub struct State<T: NodeIdentity> {
     notify_poll_next: Arc<Notify>,
     notify_clear_uploads: Arc<Notify>,
     notify_new_batch: Arc<Notify>,
+    micro_batch_size: Option<usize>,
     write_gradients_dir: Option<PathBuf>,
+    atomic_run_state: Arc<AtomicUsize>,
 }
 
 impl<T: NodeIdentity> State<T> {
@@ -81,6 +88,7 @@ impl<T: NodeIdentity> State<T> {
         private_key: T::PrivateKey,
         data_parallelism: usize,
         tensor_parallelism: usize,
+        micro_batch_size: Option<usize>,
         write_gradients_dir: Option<PathBuf>,
     ) -> Self {
         Self {
@@ -109,7 +117,9 @@ impl<T: NodeIdentity> State<T> {
             data_parallelism,
             tensor_parallelism,
             notify_new_batch: Arc::new(Notify::new()),
+            micro_batch_size,
             write_gradients_dir,
+            atomic_run_state: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -130,6 +140,8 @@ impl<T: NodeIdentity> State<T> {
                 return Ok(None);
             }
         };
+        self.atomic_run_state
+            .store(state.run_state.into(), Ordering::Relaxed);
         match state.run_state {
             RunState::WaitingForMembers => Ok(None),
             RunState::Warmup => self.warmup().map(|_| None),
@@ -139,7 +151,7 @@ impl<T: NodeIdentity> State<T> {
                     .round_witness(position)
                     .map(|x| x.map(|y| ToSend::Witness(y)))
             }
-            RunState::RoundApply => return self.round_apply().map(|_| None),
+            RunState::RoundApply => return self.round_apply().await.map(|_| None),
         }
     }
 
@@ -185,11 +197,11 @@ impl<T: NodeIdentity> State<T> {
             let (output, batch_id) = self.trainings.get_mut(finished).unwrap().await??;
             self.trainings.swap_remove(finished);
             self.trainers.push(output.trainer);
-            self.round_losses.push(output.loss);
-            debug!("Batch {} loss: {}", batch_id, output.loss);
-            if !self.is_run_state(RunState::RoundTrain) {
+            if output.cancelled || !self.is_run_state(RunState::RoundTrain) {
                 return Ok(ToSend::Nothing);
             }
+            self.round_losses.push(output.loss);
+            debug!("Batch {} loss: {}", batch_id, output.loss);
             let (committee_proof, _, _) = self
                 .committee_info
                 .as_ref()
@@ -509,7 +521,16 @@ impl<T: NodeIdentity> State<T> {
             let _llm = llm.clone();
             self.trainers = models
                 .into_iter()
-                .map(|model| Trainer::new(model, llm.lr_schedule.into(), llm.optimizer))
+                .map(|model| {
+                    Trainer::new(
+                        model,
+                        llm.lr_schedule.into(),
+                        llm.optimizer,
+                        self.micro_batch_size
+                            .unwrap_or(state.data_indicies_per_batch as usize),
+                        self.atomic_run_state.clone(),
+                    )
+                })
                 .collect();
         }
 
@@ -633,12 +654,18 @@ impl<T: NodeIdentity> State<T> {
         Ok(self.get_witness_to_send(index))
     }
 
-    fn round_apply(&mut self) -> Result<()> {
+    async fn round_apply(&mut self) -> Result<()> {
         let state = self
             .state
             .as_ref()
             .ok_or(Error::msg("No state in round apply"))?;
         assert_eq!(state.run_state, RunState::RoundApply);
+
+        let gpus_still_running = self.data_parallelism - self.trainers.len();
+        if gpus_still_running > 0 {
+            debug!("Apply round but {gpus_still_running} gpus aren't finished, waiting 1s");
+            sleep(Duration::from_secs(1)).await; // CANCEL SAFETY
+        }
 
         // check if this is a state transition
         if self
@@ -657,13 +684,11 @@ impl<T: NodeIdentity> State<T> {
             for x in self.round_losses.drain(..) {
                 sum += x;
             }
-            self.losses.push(sum / count as f32);
+            let loss = sum / count as f32;
+            info!("Step {} loss: {}", state.step, loss);
+            self.losses.push(loss);
         }
 
-        let gpus_still_running = self.data_parallelism - self.trainers.len();
-        if gpus_still_running > 0 {
-            bail!("Apply round but {gpus_still_running} gpus aren't finished");
-        }
         let round = state.current_round()?;
         let trainers = self.trainers.drain(0..).collect::<Vec<_>>();
         let mut payloads: HashMap<psyche_network::Hash, PayloadState<T>> =
@@ -735,6 +760,7 @@ impl<T: NodeIdentity> State<T> {
                                         sparse_idx: y.sparse_idx,
                                         sparse_val: y.sparse_val,
                                         xshape: y.xshape,
+                                        totalk: y.totalk,
                                     })
                                     .collect()
                             })
