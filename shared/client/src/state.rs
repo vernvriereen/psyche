@@ -182,6 +182,8 @@ impl<T: NodeIdentity> State<T> {
                 .await
                 .ok_or(Error::msg("Data fetcher exited"))?;
 
+            debug!("got data step {batch_step} id: {batch_id}");
+
             let trainer: Trainer = self
                 .trainers
                 .pop()
@@ -190,7 +192,7 @@ impl<T: NodeIdentity> State<T> {
             let round_rollbacks = self.round_rollbacks.clone();
             let handle = Handle::current();
             self.trainings.push(tokio::task::spawn_blocking(move || {
-                let rollback = handle.block_on(async {
+                let rollback: Vec<_> = handle.block_on(async {
                     round_rollbacks
                         .lock()
                         .await
@@ -203,6 +205,8 @@ impl<T: NodeIdentity> State<T> {
                         .cloned()
                         .collect()
                 });
+                debug!("computed rollback - we are training on data for step {batch_step}, so we should roll back steps {}", rollback.iter().map(|f| f.0.to_string()).collect::<Vec<_>>().join(","));
+
                 let output = trainer.train(batch_step, batch, rollback)?;
                 notify.notify_one(); // wake up poll_next to process this
                 Ok((output, batch_id))

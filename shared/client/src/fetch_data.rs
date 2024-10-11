@@ -3,7 +3,7 @@ use psyche_data_provider::{DataProviderTcpClient, TokenizedDataProvider};
 use rand::Rng;
 use std::{collections::HashSet, sync::Arc};
 use tokio::sync::{mpsc, Mutex, Notify};
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 pub type Batch = Vec<Vec<i32>>;
 pub type BatchId = u64;
@@ -21,6 +21,7 @@ pub fn fetch_data<T: NodeIdentity>(
     tokio::spawn(async move {
         loop {
             notify_new_batch.notified().await;
+            info!("New batch! Beginning fetch data loop");
             loop {
                 let (batch_step, batch_id) = {
                     let remaining_batch_ids = remaining_batch_ids.lock().await;
@@ -35,6 +36,7 @@ pub fn fetch_data<T: NodeIdentity>(
                             .unwrap(),
                     }
                 };
+                debug!("next batch ids: step: {batch_step} id: {batch_id}",);
                 let data_indicies_per_batch = data_indicies_per_batch as u64;
                 let start_data_id = (batch_id * data_indicies_per_batch) as usize;
                 let data_ids = (start_data_id..(start_data_id + data_indicies_per_batch as usize))
@@ -42,6 +44,7 @@ pub fn fetch_data<T: NodeIdentity>(
 
                 match data_provider.get_samples(data_ids).await {
                     Ok(batch) => {
+                        debug!("Sending step {batch_step} id {batch_id}");
                         if tx.send((batch_id, batch, batch_step)).await.is_err() {
                             debug!("Data loop finished");
                             return;
