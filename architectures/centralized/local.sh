@@ -4,7 +4,7 @@
 set -euo pipefail
 
 # Check if the required arguments are provided
-if [ $# -lt 3 ]; then
+if [ $# -lt 3 ] || [ $# -gt 5 ]; then
     echo "Usage: $0 <NUM_CLIENTS> <CONFIG_PATH> <WRITE_DISTRO_DATA> [SERVER_PORT] [TUI]"
     exit 1
 fi
