@@ -9,8 +9,6 @@ use std::time::SystemTime;
 use tch::nn::{self, OptimizerConfig};
 use tch::{Device, Kind, Tensor};
 
-//const GRAD_ACCUM_STEPS: usize = TOTAL_BATCH_SIZE / MICRO_BATCH_SIZE;
-
 #[derive(Parser, Debug, Clone)]
 struct Args {
     #[arg(long, default_value = "emozilla/llama2-150m-init")]
@@ -105,8 +103,7 @@ fn train(
     };
     let mut opt = adamw.build(&model.variables, args.learning_rate)?;
     let grad_accum_steps = args.total_batch / args.micro_batch;
-    let grad_accum_divisor: Tensor = (grad_accum_steps as f32).into();
-    let grad_accum_divisor = grad_accum_divisor.to(device);
+    let grad_accum_divisor = grad_accum_steps as f32;
     for step in 0..args.total_steps {
         let start_time = SystemTime::now();
         let lr = schedule.get_lr(step);
@@ -115,11 +112,12 @@ fn train(
         for _ in 0..grad_accum_steps {
             let (inputs, targets) = batch_iter.next().unwrap()?;
             let (_, loss) = model.forward(&inputs, Some(&targets), None);
-            let loss = loss.unwrap() / grad_accum_divisor.copy();
+            let loss = loss.unwrap();
             loss.backward();
             let loss_value: f32 = loss.try_into()?;
             avg_loss += loss_value;
         }
+        avg_loss /= grad_accum_divisor;
         opt.clip_grad_norm(args.max_grad_norm);
         opt.step();
         opt.zero_grad();
