@@ -26,14 +26,13 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tch::{Device, Kind};
 use tokio::{
     runtime::Handle,
     sync::{Mutex, Notify},
     task::JoinHandle,
-    time::sleep,
 };
 use tracing::{debug, error, info, warn};
 
@@ -83,6 +82,8 @@ pub struct State<T: NodeIdentity> {
     round_rollbacks: Arc<Mutex<BoundedQueue<(BatchStep, Vec<DistroResults>)>>>,
     training_data: Option<TrainingDataForStep>,
     data_fetcher: Option<DataFetcher<T>>,
+    round_start: Option<Instant>,
+    round_durations: BoundedQueue<Duration>,
     /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
     _last_observed_num_batches_remaining: usize,
 }
@@ -125,6 +126,8 @@ impl<T: NodeIdentity> State<T> {
             atomic_run_state: Arc::new(AtomicUsize::new(0)),
             round_rollbacks: Mutex::new(BoundedQueue::new(NUM_STORED_ROUNDS)).into(),
             data_fetcher: None,
+            round_start: None,
+            round_durations: BoundedQueue::new(16),
             _last_observed_num_batches_remaining: 0,
         }
     }
@@ -595,6 +598,12 @@ impl<T: NodeIdentity> State<T> {
 
         let round = state.current_round()?;
 
+        let now = Instant::now();
+        if let Some(last_round_start) = self.round_start {
+            self.round_durations.push(now - last_round_start);
+        }
+        self.round_start = Some(Instant::now());
+
         let committee_selection = CommitteeSelection::new(
             round.tie_breaker_tasks as usize,
             state.witness_nodes as usize,
@@ -702,12 +711,6 @@ impl<T: NodeIdentity> State<T> {
             .as_ref()
             .ok_or(Error::msg("No state in round apply"))?;
         assert_eq!(state.run_state, RunState::RoundApply);
-
-        let gpus_still_running = self.data_parallelism - self.available_trainers.len();
-        if gpus_still_running > 0 {
-            debug!("Apply round but {gpus_still_running} gpus aren't finished, waiting 1s");
-            sleep(Duration::from_secs(1)).await; // CANCEL SAFETY
-        }
 
         // check if this is a state transition
         if self
@@ -991,12 +994,35 @@ impl<T: NodeIdentity> From<&State<T>> for ClientTUIState {
     fn from(value: &State<T>) -> Self {
         let coordinator = value.state.as_ref();
         let committee = value.committee_info.as_ref().map(|x| x.0.committee);
+        let global_tokens_per_second = match value.round_durations.is_empty() {
+            true => 0.,
+            false => match coordinator {
+                Some(coordinator) => match &coordinator.model {
+                    Some(model::Model::LLM(llm)) => match llm.data_type {
+                        model::LLMTrainingDataType::Pretraining => {
+                            let tokens = coordinator.batches_per_round
+                                * coordinator.data_indicies_per_batch
+                                * llm.max_seq_len;
+                            let seconds = value
+                                .round_durations
+                                .iter()
+                                .fold(0f32, |acc, ele| acc + ele.as_secs_f32());
+                            tokens as f32 / (seconds / value.round_durations.len() as f32)
+                        }
+                        model::LLMTrainingDataType::Finetuning => todo!(),
+                    },
+                    None => 0.,
+                },
+                None => 0.,
+            },
+        };
         ClientTUIState {
             step: coordinator.map(|x| x.step).unwrap_or_default(),
             committee,
             run_state: coordinator.map(|x| x.into()).unwrap_or_default(),
             loss: value.losses.clone(),
             batches_left: value._last_observed_num_batches_remaining,
+            global_tokens_per_second,
         }
     }
 }

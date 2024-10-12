@@ -11,6 +11,24 @@ use psyche_watcher::TuiRunState;
 #[derive(Default, Debug)]
 pub struct ClientTUI;
 
+fn convert_tokens_per_sec(tokens_per_sec: f32) -> String {
+    const KB: f32 = 1024.0;
+    const MB: f32 = KB * 1024.0;
+    const GB: f32 = MB * 1024.0;
+
+    if tokens_per_sec == 0. {
+        String::new()
+    } else if tokens_per_sec < KB {
+        format!("{} tok/s", tokens_per_sec)
+    } else if tokens_per_sec < MB {
+        format!("{:.1}K tok/s", tokens_per_sec / KB)
+    } else if tokens_per_sec < GB {
+        format!("{:.1}M tok/s", tokens_per_sec / MB)
+    } else {
+        format!("{:.1}B tok/s", tokens_per_sec / GB)
+    }
+}
+
 impl psyche_tui::CustomWidget for ClientTUI {
     type Data = ClientTUIState;
 
@@ -18,7 +36,7 @@ impl psyche_tui::CustomWidget for ClientTUI {
         let coord_split =
             Layout::vertical(vec![Constraint::Fill(1), Constraint::Length(2)]).split(area);
         {
-            let x_max = (state.step + 1) as f64;
+            let x_max = state.step as f64;
             let x_min = x_max - (state.loss.len() as f64);
             let data = state
                 .loss
@@ -47,6 +65,7 @@ impl psyche_tui::CustomWidget for ClientTUI {
                 .data(&data);
             let x_axis = Axis::default()
                 .bounds([x_min, x_max])
+                .labels([0.to_string(), x_max.to_string()])
                 .style(Style::default().white());
             let y_axis = Axis::default()
                 .bounds([y_min, y_max])
@@ -59,17 +78,16 @@ impl psyche_tui::CustomWidget for ClientTUI {
         }
         {
             let hsplit =
-                Layout::horizontal(Constraint::from_fills([1, 1, 1, 1, 1])).split(coord_split[1]);
-            Paragraph::new(format!("Step: {}", state.step)).render(hsplit[0], buf);
+                Layout::horizontal(Constraint::from_fills([1, 1, 1, 1])).split(coord_split[1]);
+            Paragraph::new(format!("State: {}", state.run_state)).render(hsplit[0], buf);
             Paragraph::new(format!(
-                "Committee: {}",
-                state.committee.map(|x| x.to_string()).unwrap_or_default()
+                "Global Speed: {}",
+                convert_tokens_per_sec(state.global_tokens_per_second)
             ))
             .render(hsplit[1], buf);
-            Paragraph::new(format!("State: {}", state.run_state)).render(hsplit[2], buf);
-            Paragraph::new(format!("Batches Left: {}", state.batches_left)).render(hsplit[3], buf);
+            Paragraph::new(format!("Batches Left: {}", state.batches_left)).render(hsplit[2], buf);
             Paragraph::new(format!("Loss: {:.3}", state.loss.last().unwrap_or(&0.0)))
-                .render(hsplit[4], buf);
+                .render(hsplit[3], buf);
         }
     }
 }
@@ -81,4 +99,5 @@ pub struct ClientTUIState {
     pub run_state: TuiRunState,
     pub batches_left: usize,
     pub loss: Vec<f32>,
+    pub global_tokens_per_second: f32,
 }
