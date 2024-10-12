@@ -28,7 +28,14 @@ impl TryFrom<&DistroResult> for SerializedDistroResult {
         Ok(Self {
             sparse_idx: serialize_tensor(&value.sparse_idx)?,
             sparse_val: serialize_tensor(&value.sparse_val)?,
-            xshape: value.xshape.iter().map(|x| *x as u16).collect(),
+            xshape: value
+                .xshape
+                .iter()
+                .map(|x| {
+                    assert(*x < u16::MAX as i64);
+                    *x as u16
+                })
+                .collect(),
             totalk: value.totalk,
         })
     }
