@@ -32,7 +32,7 @@ impl TryFrom<&DistroResult> for SerializedDistroResult {
                 .xshape
                 .iter()
                 .map(|x| {
-                    assert(*x < u16::MAX as i64);
+                    assert!(*x < u16::MAX as i64);
                     *x as u16
                 })
                 .collect(),
