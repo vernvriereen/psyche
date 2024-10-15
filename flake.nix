@@ -76,6 +76,10 @@
               cargoExtraArgs = "--bin ${name}";
               doCheck = false; # tests are run with nextest in `nix flake check`
             });
+
+          buildWholeWorkspace = craneLib.buildPackage(commonArgs // {
+            inherit cargoArtifacts;
+          });
       in {
         packages = {
           psyche-centralized-client = buildPackage "psyche-centralized-client";
@@ -84,7 +88,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          inputsFrom = [commonArgs];
+          inputsFrom = [buildWholeWorkspace];
           inherit env;
           buildInputs = with pkgs; [
             tmux
