@@ -128,7 +128,7 @@ where
         // }
         let data = self
             .local_data_provider
-            .get_samples(data_ids)
+            .get_samples(&data_ids)
             .await
             .expect("data failed to fetch...");
         Ok(data)

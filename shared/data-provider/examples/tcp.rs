@@ -74,7 +74,7 @@ impl AsRef<[u8]> for DummyNodeIdentity {
 
 struct DummyDataProvider;
 impl TokenizedDataProvider for DummyDataProvider {
-    async fn get_samples(&mut self, _data_ids: Vec<usize>) -> Result<Vec<Vec<i32>>> {
+    async fn get_samples(&mut self, _data_ids: &[usize]) -> Result<Vec<Vec<i32>>> {
         let mut data: [i32; 1024] = [0; 1024];
         rand::thread_rng().fill(&mut data);
         Ok(vec![data.to_vec()])
@@ -113,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("clients initialized successfully");
     loop {
         for (i, c) in clients.iter_mut().enumerate() {
-            c.get_samples(vec![0]).await?;
+            c.get_samples(&[0]).await?;
             info!("client {} got data! ", i);
         }
     }
