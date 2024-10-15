@@ -118,7 +118,7 @@ where
                 .collect(),
             tick: v.state.tick,
             total_samples: v.local_data_provider.len(),
-            given_samples: v.provided_sequences.len(),
+            given_samples: v.provided_sequences.values().fold(0, |acc, ele| acc + *ele),
         }
     }
 }

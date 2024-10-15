@@ -9,7 +9,7 @@ pub fn assign_data_for_state<'a, T: NodeIdentity>(
     let round = state.current_round().unwrap();
     let mut ret = IntervalTree::new();
     let mut sum = round.data_index;
-    let mut remaining = state.batches_per_round as u64;
+    let mut remaining = (state.batches_per_round * state.data_indicies_per_batch) as u64;
     let mut client_shuffle = (0..state.clients.len())
         .map(|i| {
             (
@@ -50,10 +50,12 @@ pub fn assign_data_for_state<'a, T: NodeIdentity>(
                 }
                 Committee::Trainer => {
                     let num = data_indicies_per_client.min(remaining);
-                    ret.insert(ClosedInterval::new(sum, sum + num - 1), client.id.clone())
-                        .unwrap();
-                    sum += num;
-                    remaining -= num;
+                    if num > 0 {
+                        ret.insert(ClosedInterval::new(sum, sum + num - 1), client.id.clone())
+                            .unwrap();
+                        sum += num;
+                        remaining -= num;
+                    }
                 }
             }
         }

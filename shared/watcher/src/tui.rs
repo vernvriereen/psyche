@@ -132,6 +132,7 @@ pub struct CoordinatorTuiState {
     pub clients: Vec<String>,
     pub tick: u64,
     pub data_source: String,
+    pub dropped_clients: usize,
 }
 
 impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
@@ -155,6 +156,7 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
                     _ => None,
                 })
                 .unwrap_or("no llm data source...".to_owned()),
+            dropped_clients: value.dropped_clients.len(),
         }
     }
 }

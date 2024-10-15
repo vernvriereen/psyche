@@ -33,6 +33,7 @@ use tokio::{
     runtime::Handle,
     sync::{Mutex, Notify},
     task::JoinHandle,
+    time::sleep,
 };
 use tracing::{debug, error, info, warn};
 
@@ -40,8 +41,7 @@ type TaskResult<T> = Option<JoinHandle<Result<T>>>;
 
 enum PayloadState<T: NodeIdentity> {
     Downloading((T, u64)),
-    #[allow(dead_code)]
-    Downloaded(Payload),
+    Deserializing(JoinHandle<Result<Vec<DistroResult>>>),
 }
 
 pub type BroadcastAndPayload = (BroadcastMessage, Payload);
@@ -86,6 +86,7 @@ pub struct State<T: NodeIdentity> {
     round_durations: BoundedQueue<Duration>,
     /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
     _last_observed_num_batches_remaining: usize,
+    apply_start: Option<Instant>,
 }
 
 impl<T: NodeIdentity> State<T> {
@@ -129,6 +130,7 @@ impl<T: NodeIdentity> State<T> {
             round_start: None,
             round_durations: BoundedQueue::new(16),
             _last_observed_num_batches_remaining: 0,
+            apply_start: None,
         }
     }
 
@@ -173,6 +175,13 @@ impl<T: NodeIdentity> State<T> {
             let trainers = applying.await??;
             self.applying = None;
             self.available_trainers = trainers;
+            if let Some(apply_start) = self.apply_start.take() {
+                debug!(
+                    "Apply time: {:.1}s, {} gpus ready",
+                    (Instant::now() - apply_start).as_secs_f32(),
+                    self.available_trainers.len()
+                );
+            }
         } else if self.is_run_state(RunState::RoundTrain)
             && !self.available_trainers.is_empty()
             && self.training_data.is_some()
@@ -424,7 +433,7 @@ impl<T: NodeIdentity> State<T> {
     ) -> Result<()> {
         let (from, batch_id) = match self.payloads.get(&hash) {
             Some(PayloadState::Downloading(x)) => x,
-            Some(PayloadState::Downloaded(_)) => {
+            Some(PayloadState::Deserializing(_)) => {
                 debug!("Duplicate download of {}", hash);
                 return Ok(());
             }
@@ -465,7 +474,7 @@ impl<T: NodeIdentity> State<T> {
         {
             // TODO: how do we do witnessing for verifiers that might be training on data that's not in the normal remaining batch IDs?
             // TODO: also we want ALL those from everyone, right?
-            let mut remaining_batch_ids = batch_ids_not_yet_trained_on.lock().await;
+            let mut remaining_batch_ids = batch_ids_not_yet_trained_on.lock().await; // CANCEL SAFETY
             if witness_proof.witness {
                 match self.blooms.as_mut() {
                     Some((_, participant_bloom, order_bloom)) => {
@@ -500,8 +509,16 @@ impl<T: NodeIdentity> State<T> {
         }
 
         // we unconditionally store every seen payload, since we're not yet sure what consensus will be on whether it's included.
+        let deserializing = tokio::task::spawn_blocking(move || {
+            let maybe_results: Result<Vec<DistroResult>, _> = payload
+                .distro_results
+                .iter()
+                .map(|x| x.try_into())
+                .collect();
+            maybe_results.map_err(|err| Error::msg(format!("Error deserializing: {}", err)))
+        });
         self.payloads
-            .insert(hash, PayloadState::Downloaded(payload));
+            .insert(hash, PayloadState::Deserializing(deserializing));
 
         Ok(())
     }
@@ -544,7 +561,10 @@ impl<T: NodeIdentity> State<T> {
         assert_eq!(state.run_state, RunState::RoundTrain);
 
         // if all our states are empty (first execution), wait for the data provider and model load to finish
-        if self.available_trainers.is_empty() && self.training_data.is_none() {
+        if self.available_trainers.is_empty()
+            && self.data_fetcher.is_none()
+            && self.training_data.is_none()
+        {
             let data_and_model_load = self.data_and_model_load.take().ok_or(Error::msg(
                 "Round started but no model load was running. Did we miss warmup?",
             ))?;
@@ -630,8 +650,11 @@ impl<T: NodeIdentity> State<T> {
             bail!("Ready to train but no data fetcher! Did we miss warmup??");
         }
 
-        let (num_batch_ids_for_this_round, training_data) =
-            self.data_fetcher.as_mut().unwrap().fetch_data(&state);
+        let (num_batch_ids_for_this_round, training_data) = self
+            .data_fetcher
+            .as_mut()
+            .unwrap()
+            .fetch_data(&state, &committee_selection, &self.identity);
         self.training_data = Some(training_data);
 
         let committee_proof = committee_selection.get_committee(index);
@@ -723,6 +746,21 @@ impl<T: NodeIdentity> State<T> {
             return Ok(());
         }
 
+        let gpus_still_running = self.data_parallelism - self.available_trainers.len();
+        if gpus_still_running > 0 {
+            warn!("Apply round but {gpus_still_running} gpu(s) aren't finished, waiting");
+            sleep(Duration::from_secs_f32(0.1)).await; // CANCEL SAFETY
+            self.notify_poll_next.notify_one();
+        } else {
+            debug!(
+                "Apply start ({} commitments, {} payloads)",
+                self.commitments
+                    .values()
+                    .fold(0, |acc, ele| acc + ele.len()),
+                self.payloads.len()
+            );
+        }
+
         let mut sum = 0.0;
         let count = self.round_losses.len();
         if count > 0 {
@@ -733,9 +771,10 @@ impl<T: NodeIdentity> State<T> {
             info!("Step {} loss: {}", state.step, loss);
             self.losses.push(loss);
         }
+        self.apply_start = Some(Instant::now());
 
         let round = state.current_round()?;
-        let trainers = self.available_trainers.drain(0..).collect::<Vec<_>>();
+        let trainers = self.available_trainers.drain(..).collect::<Vec<_>>();
         let mut payloads: HashMap<psyche_network::Hash, PayloadState<T>> =
             self.payloads.drain().collect();
         let witnesses = round.witnesses.clone();
@@ -744,6 +783,7 @@ impl<T: NodeIdentity> State<T> {
         let step = state.step;
         let batch_ids = get_batch_ids_for_state(state);
         let round_rollbacks = self.round_rollbacks.clone();
+        let notify_poll_next = self.notify_poll_next.clone();
         self.applying = Some(tokio::task::spawn(async move {
             let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
 
@@ -772,18 +812,20 @@ impl<T: NodeIdentity> State<T> {
                     }
                 };
                 let consensus = &batch_commitments[consensus].1;
-                let payload = match payloads.remove(&consensus.ticket.hash()) {
-                    Some(PayloadState::Downloaded(x)) => x,
+                let maybe_results = match payloads.remove(&consensus.ticket.hash()) {
+                    Some(PayloadState::Deserializing(x)) => match x.is_finished() {
+                        true => x.await.unwrap(),
+                        false => {
+                            warn!("DESYNC: Did not finish downloading payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
+                            continue;
+                        }
+                    },
                     _ => {
-                        warn!("DESYNC: Did not finish downloading payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
+                        warn!("DESYNC: Did not begin downloading payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
                         continue;
                     }
                 };
-                let maybe_results: Result<Vec<DistroResult>, _> = payload
-                    .distro_results
-                    .iter()
-                    .map(|x| x.try_into())
-                    .collect();
+
                 match maybe_results {
                     Ok(results) => {
                         distro_results.push(results);
@@ -811,6 +853,7 @@ impl<T: NodeIdentity> State<T> {
             for future in futures {
                 trainers.push(future.await??);
             }
+            notify_poll_next.notify_one();
             Ok(trainers)
         }));
 

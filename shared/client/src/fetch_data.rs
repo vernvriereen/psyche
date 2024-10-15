@@ -1,4 +1,6 @@
-use psyche_coordinator::{get_batch_ids_for_state, Coordinator};
+use psyche_coordinator::{
+    assign_data_for_state, get_batch_ids_for_state, CommitteeSelection, Coordinator,
+};
 use psyche_core::NodeIdentity;
 use psyche_data_provider::{DataProviderTcpClient, TokenizedDataProvider};
 use rand::Rng;
@@ -29,11 +31,30 @@ impl<T: NodeIdentity> DataFetcher<T> {
         }
     }
 
-    pub fn fetch_data(&mut self, state: &Coordinator<T>) -> (usize, TrainingDataForStep) {
+    pub fn fetch_data(
+        &mut self,
+        state: &Coordinator<T>,
+        committee_selection: &CommitteeSelection,
+        identity: &T,
+    ) -> (usize, TrainingDataForStep) {
         let step = state.step;
         let data_indicies_per_batch = state.data_indicies_per_batch;
 
-        // TODO: replace `get_batch_ids_for_state` with a version that's aware of training/verify/tiebreak.
+        // everyone tries to not overlap (just a hopeful guess though, not part of consensus, everyone is free to train on whatever)
+        let mut assigned_batch_ids: Vec<u64> = assign_data_for_state(&state, &committee_selection)
+            .iter()
+            .filter_map(|(key, value)| match value == identity {
+                true => {
+                    let batch_interval = (key.start / state.data_indicies_per_batch as u64)
+                        ..=(key.end / state.data_indicies_per_batch as u64);
+                    Some(batch_interval)
+                }
+                false => None,
+            })
+            .flatten()
+            .collect();
+
+        // TODO: replace `get_batch_ids_for_state` with a version that's aware of training/verify/tiebreak (or use assigned_batch_ids).
         let all_batch_ids = get_batch_ids_for_state(state);
         let num_all_batch_ids = all_batch_ids.len();
         debug!("got new batch IDs for step {step} - there are {num_all_batch_ids}");
@@ -56,16 +77,22 @@ impl<T: NodeIdentity> DataFetcher<T> {
                 async move {
                     loop {
                         let batch_id = {
-                            let remaining_batch_ids = batch_ids_not_yet_trained_on.lock().await;
-                            match remaining_batch_ids.len() {
-                                0 => {
-                                    break;
+                            match assigned_batch_ids.pop() {
+                                Some(assigned) => assigned,
+                                None => {
+                                    let remaining_batch_ids =
+                                        batch_ids_not_yet_trained_on.lock().await;
+                                    match remaining_batch_ids.len() {
+                                        0 => {
+                                            break;
+                                        }
+                                        len => remaining_batch_ids
+                                            .iter()
+                                            .nth(rand::thread_rng().gen_range(0..len))
+                                            .map(|x| *x)
+                                            .unwrap(),
+                                    }
                                 }
-                                len => remaining_batch_ids
-                                    .iter()
-                                    .nth(rand::thread_rng().gen_range(0..len))
-                                    .map(|x| *x)
-                                    .unwrap(),
                             }
                         };
                         debug!("fetching data for batch: step: {step} id: {batch_id}");

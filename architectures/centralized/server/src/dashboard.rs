@@ -48,9 +48,13 @@ impl CustomWidget for DashboardTui {
 
             Paragraph::new(
                 [
-                    format!("Clients: {:?}", state.coordinator_state.clients.len()),
-                    format!("Height: {:?}", state.coordinator_state.height),
-                    format!("Tick: {:?}", state.coordinator_state.tick),
+                    format!(
+                        "Clients: {} ({} dropped)",
+                        state.coordinator_state.clients.len(),
+                        state.coordinator_state.dropped_clients
+                    ),
+                    format!("Height: {}", state.coordinator_state.height),
+                    format!("Tick: {}", state.coordinator_state.tick),
                 ]
                 .into_iter()
                 .map(Line::from)

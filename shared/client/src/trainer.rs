@@ -8,6 +8,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     mpsc, Arc,
 };
+use std::time::Instant;
 use tch::{
     nn::{self, OptimizerConfig},
     Tensor,
@@ -196,6 +197,7 @@ impl Trainer {
                 ))
             })?;
         }
+        let start = Instant::now();
         for (_, rx) in &self.models {
             match rx.recv()? {
                 ParallelResult::Train {
@@ -203,7 +205,12 @@ impl Trainer {
                     distro_results: _,
                     cancelled: _,
                 } => bail!("Got unexpected trainer result"),
-                ParallelResult::Optimize {} => {}
+                ParallelResult::Optimize {} => {
+                    debug!(
+                        "ParallelResult::Optimize received in {}s",
+                        (Instant::now() - start).as_secs_f32()
+                    );
+                }
             }
         }
         Ok(self)
@@ -250,6 +257,7 @@ impl Trainer {
                             != RunState::RoundTrain
                         {
                             cancelled = true;
+                            debug!("Aborting training, run state changed");
                             break;
                         }
                         match Self::forward_backward(&mut model, micro_batch) {
@@ -269,11 +277,19 @@ impl Trainer {
                             } => None,
                             Optimizer::Distro(distro) => {
                                 let lr = lr_scheduler.get_lr(step);
-                                let ret = distro.generate(lr);
+                                let ret = distro.generate(
+                                    lr,
+                                    run_state.clone(),
+                                    RunState::RoundTrain.into(),
+                                );
+                                if ret.is_none() {
+                                    cancelled = true;
+                                    debug!("Aborting DisTrO generation, run state changed");
+                                }
                                 // this is a gpu p2p optimization -- only the first gpu really produces results,
                                 // the other gpus merely feed their tp tensors to the first rank
                                 match index == 0 {
-                                    true => Some(ret),
+                                    true => ret,
                                     false => None,
                                 }
                             }

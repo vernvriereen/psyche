@@ -103,6 +103,7 @@ pub struct Coordinator<T: NodeIdentity> {
     pub epoch: u32,
     pub step: u32,
     pub last_step_unix_timestamp: u64,
+    pub epoch_start_data_index: u64,
 
     pub model: Option<Model>,
 }
@@ -177,6 +178,7 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             last_step_unix_timestamp: Default::default(),
             epoch: Default::default(),
             model: Default::default(),
+            epoch_start_data_index: Default::default(),
         }
     }
 }
@@ -254,23 +256,26 @@ impl<T: NodeIdentity> Coordinator<T> {
         &mut self,
         _from: &Client<T>,
         checks: HealthChecks,
-    ) -> Result<(), CoordinatorError> {
+    ) -> Result<u32, CoordinatorError> {
         if self.run_state == RunState::RoundApply && !checks.is_empty() {
             for proof in &checks {
-                if !self.healthy(proof) {
+                if self.healthy(proof) {
                     return Err(CoordinatorError::InvalidHealthCheck);
                 }
             }
         } else {
             return Err(CoordinatorError::InvalidRunState);
         }
-        // todo: reward from for health check
+        let mut dropped = 0;
         for proof in &checks {
             let index = proof.index as usize;
-            self.clients[index].dropping_at_end_of_round = true;
-            self.dropped_clients.push(self.clients[index].clone());
+            if !self.clients[index].dropping_at_end_of_round {
+                self.clients[index].dropping_at_end_of_round = true;
+                dropped += 1;
+            }
         }
-        Ok(())
+        // todo: reward `from` for `dropped` health checks
+        Ok(dropped)
     }
 
     pub fn healthy(&self, proof: &CommitteeProof) -> bool {
@@ -311,6 +316,10 @@ impl<T: NodeIdentity> Coordinator<T> {
         witnesses: &[Witness],
         witness_quorum: u32,
     ) -> bool {
+        Self::trainer_healthy_score_by_witnesses(client, witnesses) >= witness_quorum
+    }
+
+    pub fn trainer_healthy_score_by_witnesses(client: &Client<T>, witnesses: &[Witness]) -> u32 {
         let hash = sha256(client.id.as_ref());
         let mut score = 0u32;
         for witness in witnesses {
@@ -318,7 +327,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 score += 1;
             }
         }
-        score >= witness_quorum
+        score
     }
 
     pub fn commitment_exists_by_witnesses(
@@ -326,6 +335,13 @@ impl<T: NodeIdentity> Coordinator<T> {
         witnesses: &[Witness],
         witness_quorum: u32,
     ) -> bool {
+        Self::commitment_exists_score_by_witnesses(commitment, witnesses) >= witness_quorum
+    }
+
+    pub fn commitment_exists_score_by_witnesses(
+        commitment: &Commitment,
+        witnesses: &[Witness],
+    ) -> u32 {
         let hash = sha256(commitment);
         let mut score = 0u32;
         for witness in witnesses {
@@ -333,7 +349,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 score += 1;
             }
         }
-        score >= witness_quorum
+        score
     }
 
     pub fn select_consensus_commitment_by_witnesses(
@@ -410,11 +426,9 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     fn tick_round_train(&mut self, unix_timestamp: u64) {
-        if (self.clients.len() as u32) < self.min_clients {
+        if unix_timestamp >= self.max_round_train_time + self.run_state_start_unix_timestamp {
+            // if we take longer than our max round train time, abandon the epoch and start over (assume too many people left)
             self.start_waiting_for_members(unix_timestamp);
-        } else if unix_timestamp >= self.max_round_train_time + self.run_state_start_unix_timestamp
-        {
-            self.change_state(unix_timestamp, RunState::RoundWitness);
         }
     }
 
@@ -428,13 +442,29 @@ impl<T: NodeIdentity> Coordinator<T> {
     fn tick_round_apply(&mut self, unix_timestamp: u64, random_seed: u64) {
         if unix_timestamp >= self.round_apply_time + self.run_state_start_unix_timestamp {
             self.step += 1;
-            if self.current_round().unwrap().height == self.max_rounds - 1 {
+            let (height, data_index) = self
+                .current_round()
+                .map(|x| (x.height, x.data_index))
+                .unwrap();
+            if height == self.max_rounds - 1 {
                 self.rounds = Default::default();
                 self.epoch += 1;
+                self.epoch_start_data_index = Self::get_next_round_data_index(
+                    data_index,
+                    self.batches_per_round,
+                    self.data_indicies_per_batch,
+                );
                 self.start_waiting_for_members(unix_timestamp);
             } else {
                 // WARNING: O(n) on number of clients, need to refactor
-                self.clients.retain(|x| !x.dropping_at_end_of_round);
+                self.clients.retain(|x| {
+                    if x.dropping_at_end_of_round {
+                        self.dropped_clients.push(x.clone());
+                        false
+                    } else {
+                        true
+                    }
+                });
                 self.start_round_train(unix_timestamp, random_seed, 0);
             }
         }
@@ -444,13 +474,17 @@ impl<T: NodeIdentity> Coordinator<T> {
         let (next_rounds_head, next_height, next_data_index) = if self.first_round {
             // very first round, don't increment -- just start here
             self.first_round = false;
-            (0usize, 0u32, 0u64)
+            (0usize, 0u32, self.epoch_start_data_index)
         } else {
             let current_round = &self.rounds[self.rounds_head as usize];
             (
                 (self.rounds_head + 1) as usize % self.rounds.len(),
                 current_round.height + 1,
-                current_round.data_index + self.batches_per_round as u64,
+                Self::get_next_round_data_index(
+                    current_round.data_index,
+                    self.batches_per_round,
+                    self.data_indicies_per_batch,
+                ),
             )
         };
         let round = &mut self.rounds[next_rounds_head];
@@ -460,6 +494,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         round.data_index = next_data_index;
         round.tie_breaker_tasks = tie_breaker_tasks;
         round.random_seed = random_seed;
+        round.witnesses.clear();
         self.change_state(unix_timestamp, RunState::RoundTrain);
     }
 
@@ -476,6 +511,14 @@ impl<T: NodeIdentity> Coordinator<T> {
     fn change_state(&mut self, unix_timestamp: u64, new_state: RunState) {
         self.run_state_start_unix_timestamp = unix_timestamp;
         self.run_state = new_state;
+    }
+
+    fn get_next_round_data_index(
+        data_index: u64,
+        batches_per_round: u32,
+        data_indicies_per_batch: u32,
+    ) -> u64 {
+        data_index + (batches_per_round * data_indicies_per_batch) as u64
     }
 }
 

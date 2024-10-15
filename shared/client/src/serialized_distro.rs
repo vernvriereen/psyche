@@ -5,7 +5,7 @@ use std::{
     fmt,
     io::{BufReader, Cursor, Read},
 };
-use tch::Tensor;
+use tch::{Device, Tensor};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SerializedDistroResult {
@@ -46,8 +46,14 @@ impl TryFrom<&SerializedDistroResult> for DistroResult {
 
     fn try_from(value: &SerializedDistroResult) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
-            sparse_idx: Tensor::load_from_stream(Cursor::new(&value.sparse_idx))?,
-            sparse_val: Tensor::load_from_stream(Cursor::new(&value.sparse_val))?,
+            sparse_idx: Tensor::load_from_stream_with_device(
+                Cursor::new(&value.sparse_idx),
+                Device::Cpu,
+            )?,
+            sparse_val: Tensor::load_from_stream_with_device(
+                Cursor::new(&value.sparse_val),
+                Device::Cpu,
+            )?,
             xshape: value.xshape.iter().map(|x| *x as i64).collect(),
             totalk: value.totalk,
         })

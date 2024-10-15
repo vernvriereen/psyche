@@ -12,6 +12,7 @@ use state::State;
 use std::{
     fmt::Debug,
     marker::PhantomData,
+    net::{Ipv4Addr, SocketAddrV4},
     ops::Sub,
     sync::Arc,
     time::{Duration, Instant},
@@ -100,7 +101,10 @@ where
         let node = Node::memory()
             .secret_key(secret_key)
             .relay_mode(relay_mode)
-            .bind_port(port.unwrap_or(0))
+            .bind_addr_v4(SocketAddrV4::new(
+                Ipv4Addr::new(0, 0, 0, 0),
+                port.unwrap_or(0),
+            ))
             .spawn()
             .await?;
 

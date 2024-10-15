@@ -2,7 +2,15 @@ use crate::{
     tensor_parallelism::{tensor_shard, unsharded_tensor_size},
     Communicator,
 };
-use std::{collections::HashMap, f64::consts::PI, rc::Rc};
+use std::{
+    collections::HashMap,
+    f64::consts::PI,
+    rc::Rc,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 use tch::{
     nn::{Optimizer, OptimizerConfig, Sgd, Shard, VarStore},
     Device, Kind, Tensor,
@@ -498,7 +506,8 @@ impl Distro {
         shard_index: usize,
         comm: Option<Rc<Communicator>>,
     ) -> Self {
-        let sgd: Optimizer = Sgd {
+        let _no_grad = tch::no_grad_guard();
+        let mut sgd: Optimizer = Sgd {
             momentum: 0.0,
             dampening: 0.0,
             wd: 0.0,
@@ -506,6 +515,7 @@ impl Distro {
         }
         .build(vs, 0.1)
         .unwrap();
+        sgd.zero_grad_with_set_to_none(false);
 
         let variables = sgd.trainable_variables_with_sharding();
         let mut state = Vec::with_capacity(variables.len());
@@ -531,10 +541,19 @@ impl Distro {
     }
 
     #[allow(unused)]
-    pub fn generate(&mut self, lr: f64) -> Vec<DistroResult> {
+    pub fn generate(
+        &mut self,
+        lr: f64,
+        cancel_sentry: Arc<AtomicUsize>,
+        sentry_requirement: usize,
+    ) -> Option<Vec<DistroResult>> {
+        let _no_grad = tch::no_grad_guard();
         let variables = &mut self.sgd.trainable_variables_with_sharding();
         let mut ret = Vec::with_capacity(variables.len());
         for (index, (variable, shard)) in variables.iter_mut().enumerate() {
+            if cancel_sentry.load(Ordering::Relaxed) != sentry_requirement {
+                return None;
+            }
             // step-Weight decay
             if self.weight_decay != 0.0 {
                 variable.multiply_scalar_(1.0 - lr * self.weight_decay);
@@ -652,11 +671,12 @@ impl Distro {
                 }
             }
         }
-        ret
+        Some(ret)
     }
 
     #[allow(unused)]
     pub fn apply(&mut self, results: &Vec<Vec<DistroResult>>, lr: f64) {
+        let _no_grad = tch::no_grad_guard();
         for (index, (variable, shard)) in self
             .sgd
             .trainable_variables_with_sharding()
@@ -664,6 +684,7 @@ impl Distro {
             .enumerate()
         {
             let device = variable.device();
+
             let indicies = results
                 .iter()
                 .map(|x| x[index].sparse_idx.to_device(device))
@@ -674,14 +695,16 @@ impl Distro {
                 .collect::<Vec<_>>();
 
             // Decode grad from all nodes
-            let new_grad = self.transform.decode(&CompressDCT::batch_decompress(
+            let decompressed = CompressDCT::batch_decompress(
                 &indicies,
                 &values,
                 &results[0][index].xshape,
                 results[0][index].totalk,
                 variable.kind(),
                 device,
-            ));
+            );
+
+            let new_grad = self.transform.decode(&decompressed);
 
             // Set grad to values
             variable.grad().copy_(&match shard {
@@ -696,7 +719,7 @@ impl Distro {
         // SGD step
         self.sgd.set_lr(lr);
         self.sgd.step();
-        self.sgd.zero_grad();
+        self.sgd.zero_grad_with_set_to_none(false);
     }
 }
 

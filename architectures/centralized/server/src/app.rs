@@ -270,14 +270,15 @@ impl App {
                 }
             }
             ClientToServerMessage::HealthCheck(health_checks) => {
-                if let Err(error) = self.coordinator.health_check(
+                match self.coordinator.health_check(
                     &Client {
                         id: from,
                         dropping_at_end_of_round: false,
                     },
                     health_checks,
                 ) {
-                    warn!("Error when processing health check: {error}");
+                    Ok(dropped) => info!("Dropped {} clients from health check", dropped),
+                    Err(error) => warn!("Error when processing health check: {error}"),
                 }
             }
         }
