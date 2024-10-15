@@ -22,6 +22,8 @@ step = 1
 last_step_unix_timestamp = 0
 clients = []
 dropped_clients = []
+epoch_start_data_index = 0
+
 [[rounds]]
 height = 0
 clients_len = 0
