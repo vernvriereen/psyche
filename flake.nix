@@ -143,9 +143,14 @@
           inputsFrom = [buildWholeWorkspace];
           inherit env;
           buildInputs = with pkgs; [
+            # for the ./local.sh script
             tmux
             nvtopPackages.full
             just
+
+            # frontend
+            bun
+            biome
           ];
         };
 

@@ -840,7 +840,9 @@ impl<T: NodeIdentity> State<T> {
                                     self.data_parallelism,
                                     self.tensor_parallelism,
                                     self.hub_read_token.clone(),
-                                    self.wandb_info.clone(),
+                                    self.wandb_info
+                                        .as_ref()
+                                        .map(|info| (state.clone(), info.clone())),
                                 )))
                         } else {
                             bail!("Warmup but still applying");
@@ -1362,7 +1364,7 @@ impl<T: NodeIdentity> State<T> {
         data_parallelism: usize,
         tensor_parallelism: usize,
         hub_token: Option<String>,
-        wandb_info: Option<WandBInfo>,
+        wandb_info: Option<(Coordinator<T>, WandBInfo)>,
     ) -> Result<LoadedModelAndData<T>> {
         let model::Model::LLM(llm) = model;
         let data_future = match &llm.data_location {
@@ -1465,9 +1467,16 @@ impl<T: NodeIdentity> State<T> {
         };
         let wandb_future: JoinHandle<Result<Option<wandb::Run>>> = tokio::spawn(async move {
             match wandb_info {
-                Some(wandb_info) => {
+                Some((warmup_state, wandb_info)) => {
                     let wandb = wandb::WandB::new(wandb::BackendOptions::new(wandb_info.api_key));
-                    let mut run_info = wandb::RunInfo::new(wandb_info.project).name(wandb_info.run);
+                    let mut run_info = wandb::RunInfo::new(wandb_info.project)
+                        .name(wandb_info.run)
+                        .config((
+                            ("batches_per_round", warmup_state.batches_per_round),
+                            ("total_steps", warmup_state.total_steps),
+                            ("rounds_per_epoch", warmup_state.rounds_per_epoch),
+                            ("run_id", warmup_state.run_id),
+                        ));
                     if let Some(entity) = wandb_info.entity {
                         run_info = run_info.entity(entity);
                     }
