@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-psyche-core = { path = "../core" }
-psyche-tui = { path = "../tui" }
+psyche-core.workspace = true
+psyche-tui.workspace = true
 iroh.workspace = true
 tokio-util.workspace = true
 tokio.workspace = true

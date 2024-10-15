@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-psyche-core = { path = "../core" }
-psyche-serde = { path = "../serde" }
+psyche-core.workspace = true
+psyche-serde.workspace = true
 async-trait.workspace = true
 
 [target.'cfg(target_os = "solana")'.dependencies]

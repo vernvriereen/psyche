@@ -57,6 +57,6 @@ impl<T: NodeIdentity> DataProviderTcpClient<T> {
 impl<T: NodeIdentity> TokenizedDataProvider for DataProviderTcpClient<T> {
     async fn get_samples(&mut self, data_ids: &[usize]) -> Result<Vec<Vec<i32>>> {
         debug!("[{:?}] get samples..", self.tcp_client.get_identity());
-        self.receive_training_data(&data_ids).await
+        self.receive_training_data(data_ids).await
     }
 }

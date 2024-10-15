@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-psyche-core = { path = "../core" }
-psyche-data-provider = { path = "../data-provider" }
+psyche-core.workspace = true
+psyche-data-provider.workspace = true
 tch.workspace = true
 torch-sys.workspace = true
 rand.workspace = true
@@ -17,8 +17,19 @@ tokenizers.workspace = true
 tracing.workspace = true
 byteorder = "1.4.3"
 safetensors = "0.3.0"
-half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"], optional=true }
-cudarc = { version = "0.12.1", features = ["std", "f16", "cuda-12040", "dynamic-linking", "nccl", "driver"], default-features=false, optional=true }
+half = { version = "2.3.1", features = [
+    "num-traits",
+    "use-intrinsics",
+    "rand_distr",
+], optional = true }
+cudarc = { version = "0.12.1", features = [
+    "std",
+    "f16",
+    "cuda-12040",
+    "dynamic-linking",
+    "nccl",
+    "driver",
+], default-features = false, optional = true }
 
 # for examples
 [dev-dependencies]
