@@ -1,6 +1,6 @@
 use crate::{
     disto_results_to_bytes,
-    fetch_data::{BatchStep, DataFetcher, TrainingDataForStep},
+    fetch_data::{Batch, BatchId, BatchStep, DataFetcher, TrainingDataForStep},
     trainer::{DistroResults, ParallelModels, TrainOutput, Trainer},
     tui::ClientTUIState,
     BroadcastMessage, Payload, SerializedDistroResult,
@@ -31,6 +31,7 @@ use std::{
 use tch::{Device, Kind};
 use tokio::{
     runtime::Handle,
+    select,
     sync::{Mutex, Notify},
     task::JoinHandle,
     time::sleep,
@@ -170,43 +171,35 @@ impl<T: NodeIdentity> State<T> {
         self.notify_clear_uploads.clone()
     }
 
-    pub async fn poll_next(&mut self) -> Result<ToSend> {
-        if let Some(applying) = &mut self.applying {
-            let trainers = applying.await??;
-            self.applying = None;
-            self.available_trainers = trainers;
-            if let Some(apply_start) = self.apply_start.take() {
-                debug!(
-                    "Apply time: {:.1}s, {} gpus ready",
-                    (Instant::now() - apply_start).as_secs_f32(),
-                    self.available_trainers.len()
-                );
-            }
-        } else if self.is_run_state(RunState::RoundTrain)
-            && !self.available_trainers.is_empty()
-            && self.training_data.is_some()
-        {
-            let (batch_id, batch, batch_step) = {
-                let training_data = self.training_data.as_mut().unwrap();
-                let sample = training_data
-                    .next_sample
-                    .recv()
-                    .await
-                    .ok_or(Error::msg("Data fetcher exited"))?;
-                (sample.0, sample.1, training_data.step)
-            };
+    fn handle_poll_next_applying(&mut self, trainers: Vec<Trainer>) -> Result<ToSend> {
+        self.available_trainers = trainers;
+        if let Some(apply_start) = self.apply_start.take() {
+            debug!(
+                "Apply time: {:.1}s, {} gpus ready",
+                (Instant::now() - apply_start).as_secs_f32(),
+                self.available_trainers.len()
+            );
+        }
+        Ok(ToSend::Nothing)
+    }
 
-            debug!("got data step {batch_step} id: {batch_id}");
+    fn handle_poll_training_data(
+        &mut self,
+        batch_id: BatchId,
+        batch: Batch,
+        batch_step: u32,
+    ) -> Result<ToSend> {
+        debug!("got data step {batch_step} id: {batch_id}");
 
-            let trainer: Trainer = self
+        let trainer: Trainer = self
                 .available_trainers
                 .pop()
                 .ok_or(Error::msg("Round start but no trainer object (didn't finish training previous round or applying it?)"))?;
 
-            let notify = self.notify_poll_next.clone();
-            let round_rollbacks = self.round_rollbacks.clone();
-            let handle = Handle::current();
-            self.trainings.push(tokio::task::spawn_blocking(move || {
+        let notify = self.notify_poll_next.clone();
+        let round_rollbacks = self.round_rollbacks.clone();
+        let handle = Handle::current();
+        self.trainings.push(tokio::task::spawn_blocking(move || {
                 let rollback: Vec<_> = handle.block_on(async {
                     round_rollbacks
                         .lock()
@@ -226,61 +219,76 @@ impl<T: NodeIdentity> State<T> {
                 notify.notify_one(); // wake up poll_next to process this
                 Ok((output, batch_id))
             }));
-        } else if let Some(finished) = self.trainings.iter_mut().position(|x| x.is_finished()) {
-            let (output, batch_id) = self.trainings.get_mut(finished).unwrap().await??;
-            self.trainings.swap_remove(finished);
-            self.available_trainers.push(output.trainer);
+        Ok(ToSend::Nothing)
+    }
 
-            debug!(
-                "Batch {} loss: {} cancelled: {}",
-                batch_id, output.loss, output.cancelled
-            );
+    fn handle_poll_next_trainings(
+        &mut self,
+        output: TrainOutput,
+        batch_id: BatchId,
+    ) -> Result<ToSend> {
+        self.available_trainers.push(output.trainer);
 
-            if output.cancelled || !self.is_run_state(RunState::RoundTrain) {
-                return Ok(ToSend::Nothing);
-            }
-            self.round_losses.push(output.loss);
-            debug!("Batch {} loss: {}", batch_id, output.loss);
-            let (committee_proof, _, _) = self
-                .committee_info
-                .as_ref()
-                .ok_or(Error::msg("Training complete but no self proofs"))?;
-            let mut committment = Vec::with_capacity(40);
-            committment.extend_from_slice(self.identity.as_ref());
-            committment.extend_from_slice(&batch_id.to_be_bytes());
-            let commitment = sha256(&committment);
-            let step = output.step;
-            let broadcast = BroadcastMessage {
-                step,
-                batch_id,
-                commitment,
-                ticket: dummy_blob_ticket(),
-                proof: *committee_proof,
-            };
-            let payload = Payload {
-                step,
-                batch_id,
-                distro_results: output
-                    .distro_results
-                    .iter()
-                    .map(SerializedDistroResult::try_from)
-                    .collect::<std::result::Result<Vec<_>, tch::TchError>>()?,
-            };
+        debug!(
+            "Batch {} loss: {} cancelled: {}",
+            batch_id, output.loss, output.cancelled
+        );
 
-            self.maybe_write_gradients(&payload);
+        if output.cancelled || !self.is_run_state(RunState::RoundTrain) {
+            return Ok(ToSend::Nothing);
+        }
+        self.round_losses.push(output.loss);
+        debug!("Batch {} loss: {}", batch_id, output.loss);
+        let (committee_proof, _, _) = self
+            .committee_info
+            .as_ref()
+            .ok_or(Error::msg("Training complete but no self proofs"))?;
+        let mut committment = Vec::with_capacity(40);
+        committment.extend_from_slice(self.identity.as_ref());
+        committment.extend_from_slice(&batch_id.to_be_bytes());
+        let commitment = sha256(&committment);
+        let step = output.step;
+        let broadcast = BroadcastMessage {
+            step,
+            batch_id,
+            commitment,
+            ticket: dummy_blob_ticket(),
+            proof: *committee_proof,
+        };
+        let payload = Payload {
+            step,
+            batch_id,
+            distro_results: output
+                .distro_results
+                .iter()
+                .map(SerializedDistroResult::try_from)
+                .collect::<std::result::Result<Vec<_>, tch::TchError>>()?,
+        };
 
-            return Ok(ToSend::Broadcast((broadcast, payload)));
-        } else if let Some(health_checking) = &mut self.health_checking {
-            let health_checks = health_checking.await??;
-            self.health_checking = None;
-            if !health_checks.is_empty() {
+        self.maybe_write_gradients(&payload);
+
+        return Ok(ToSend::Broadcast((broadcast, payload)));
+    }
+
+    fn handle_poll_health_checking(
+        &mut self,
+        health_checks: Vec<CommitteeProof>,
+    ) -> Result<ToSend> {
+        match health_checks.is_empty() {
+            true => Ok(ToSend::Nothing),
+            false => {
                 info!(
                     "Sending health check for following indicies: {:?}",
                     health_checks
                 );
-                return Ok(ToSend::HealthCheck(health_checks));
+                Ok(ToSend::HealthCheck(health_checks))
             }
-        } else if self.is_run_state(RunState::RoundTrain)
+        }
+    }
+
+    pub async fn poll_next(&mut self) -> Result<ToSend> {
+        let trainings_finished_position = self.trainings.iter_mut().position(|x| x.is_finished());
+        if self.is_run_state(RunState::RoundTrain)
             && self.committee_info.is_some()
             && self.training_data.is_none()
         {
@@ -288,13 +296,33 @@ impl<T: NodeIdentity> State<T> {
             if let Some(witness) = self.get_witness_to_send(witness_proof.index) {
                 // send opprotunistic witness
                 return Ok(ToSend::Witness(witness));
-            } else {
-                self.notify_poll_next.notified().await;
             }
-        } else {
-            self.notify_poll_next.notified().await;
         }
-        Ok(ToSend::Nothing)
+        select! {
+            applying = async {self.applying.as_mut().unwrap().await}, if self.applying.is_some() => {
+                self.applying = None;
+                self.handle_poll_next_applying(applying??)
+            },
+            sample = async {self.training_data.as_mut().unwrap().next_sample.recv().await}, if self.is_run_state(RunState::RoundTrain)
+            && !self.available_trainers.is_empty()
+            && self.training_data.is_some() => {
+                let sample = sample.ok_or(Error::msg("Data fetcher exited"))?;
+                self.handle_poll_training_data(sample.0, sample.1, self.training_data.as_ref().unwrap().step)
+            },
+            finished = async {self.trainings.get_mut(*trainings_finished_position.as_ref().unwrap()).unwrap().await}, if trainings_finished_position.is_some() => {
+                let finished = finished??;
+                self.trainings.swap_remove(trainings_finished_position.unwrap());
+                self.handle_poll_next_trainings(finished.0, finished.1)
+            }
+            health_checking = async {self.health_checking.as_mut().unwrap().await}, if self.health_checking.is_some() => {
+                self.health_checking = None;
+                self.handle_poll_health_checking(health_checking??)
+            }
+            _ = self.notify_poll_next.notified() => {
+                // still need this?
+                Ok(ToSend::Nothing)
+            }
+        }
     }
 
     pub async fn process_network_event<B: Backend<T> + 'static>(
