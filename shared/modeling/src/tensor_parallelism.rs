@@ -1,22 +1,23 @@
-use std::{rc::Rc, sync::Arc};
+use std::rc::Rc;
 use tch::{
     nn::{self, Module, Shard},
     Tensor,
 };
 
 #[cfg(feature = "parallelism")]
-use cudarc::{
-    driver::{
-        result::ctx::{get_current, set_current},
-        sys::{CUcontext, CUdeviceptr},
-        CudaDevice, DevicePtr, DevicePtrMut, DeviceSlice,
+use ::{
+    cudarc::{
+        driver::{
+            result::ctx::{get_current, set_current},
+            sys::{CUcontext, CUdeviceptr},
+            CudaDevice, DevicePtr, DevicePtrMut, DeviceSlice,
+        },
+        nccl::safe::{Comm, Id, ReduceOp},
     },
-    nccl::safe::{Comm, Id, ReduceOp},
+    half::bf16,
+    std::sync::Arc,
+    tch::{Device, Kind},
 };
-#[cfg(feature = "parallelism")]
-use half::bf16;
-#[cfg(feature = "parallelism")]
-use tch::{Device, Kind};
 
 #[cfg(feature = "parallelism")]
 pub type Communicator = Comm;
