@@ -5,11 +5,7 @@ use crate::{
 use std::{
     collections::HashMap,
     f64::consts::PI,
-    rc::Rc,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+    rc::Rc
 };
 use tch::{
     nn::{Optimizer, OptimizerConfig, Sgd, Shard, VarStore},
@@ -543,17 +539,13 @@ impl Distro {
     #[allow(unused)]
     pub fn generate(
         &mut self,
-        lr: f64,
-        cancel_sentry: Arc<AtomicUsize>,
-        sentry_requirement: usize,
-    ) -> Option<Vec<DistroResult>> {
+        lr: f64
+    ) -> Vec<DistroResult> {
+        // return Vec::new();
         let _no_grad = tch::no_grad_guard();
         let variables = &mut self.sgd.trainable_variables_with_sharding();
         let mut ret = Vec::with_capacity(variables.len());
         for (index, (variable, shard)) in variables.iter_mut().enumerate() {
-            if cancel_sentry.load(Ordering::Relaxed) != sentry_requirement {
-                return None;
-            }
             // step-Weight decay
             if self.weight_decay != 0.0 {
                 variable.multiply_scalar_(1.0 - lr * self.weight_decay);
@@ -671,11 +663,12 @@ impl Distro {
                 }
             }
         }
-        Some(ret)
+        ret
     }
 
     #[allow(unused)]
     pub fn apply(&mut self, results: &Vec<Vec<DistroResult>>, lr: f64) {
+        // return;
         let _no_grad = tch::no_grad_guard();
         for (index, (variable, shard)) in self
             .sgd

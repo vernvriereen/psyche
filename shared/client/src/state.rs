@@ -74,7 +74,6 @@ pub struct State<T: NodeIdentity> {
     round_losses: Vec<f32>,
     data_parallelism: usize,
     tensor_parallelism: usize,
-    notify_poll_next: Arc<Notify>,
     notify_clear_uploads: Arc<Notify>,
     notify_new_batch: Arc<Notify>,
     micro_batch_size: Option<usize>,
@@ -116,7 +115,6 @@ impl<T: NodeIdentity> State<T> {
             commitments: HashMap::new(),
             commitments_per_client: HashMap::new(),
             payloads: HashMap::new(),
-            notify_poll_next: Arc::new(Notify::new()),
             losses: Vec::new(),
             round_losses: Vec::new(),
             notify_clear_uploads: Arc::new(Notify::new()),
@@ -163,7 +161,7 @@ impl<T: NodeIdentity> State<T> {
                     .round_witness(position)
                     .map(|x| x.map(|y| ToSend::Witness(y)))
             }
-            RunState::RoundApply => return self.round_apply().await.map(|_| None),
+            RunState::RoundApply => return self.round_apply().map(|_| None),
         }
     }
 
@@ -196,7 +194,6 @@ impl<T: NodeIdentity> State<T> {
                 .pop()
                 .ok_or(Error::msg("Round start but no trainer object (didn't finish training previous round or applying it?)"))?;
 
-        let notify = self.notify_poll_next.clone();
         let round_rollbacks = self.round_rollbacks.clone();
         let handle = Handle::current();
         self.trainings.push(tokio::task::spawn_blocking(move || {
@@ -216,7 +213,6 @@ impl<T: NodeIdentity> State<T> {
                 debug!("computed rollback - we are training on data for step {batch_step}, so we should roll back steps {}", rollback.iter().map(|f| f.0.to_string()).collect::<Vec<_>>().join(","));
 
                 let output = trainer.train(batch_step, batch, rollback)?;
-                notify.notify_one(); // wake up poll_next to process this
                 Ok((output, batch_id))
             }));
         Ok(ToSend::Nothing)
@@ -318,7 +314,7 @@ impl<T: NodeIdentity> State<T> {
                 self.health_checking = None;
                 self.handle_poll_health_checking(health_checking??)
             }
-            _ = self.notify_poll_next.notified() => {
+            _ = sleep(Duration::from_secs_f32(0.1)) => {
                 // still need this?
                 Ok(ToSend::Nothing)
             }
@@ -532,9 +528,6 @@ impl<T: NodeIdentity> State<T> {
         if just_consumed_last_batch_id {
             self.training_data = None;
         }
-        if just_consumed_last_batch_id {
-            self.notify_poll_next.notify_one(); // wake up poll_next() to send opportunistic witness
-        }
 
         // we unconditionally store every seen payload, since we're not yet sure what consensus will be on whether it's included.
         let deserializing = tokio::task::spawn_blocking(move || {
@@ -729,7 +722,6 @@ impl<T: NodeIdentity> State<T> {
         self.commitments_per_client.clear();
         self.payloads.clear();
         self.notify_clear_uploads.notify_one(); // clear any served uploads we have
-        self.notify_poll_next.notify_one(); // wake up poll_next() to start data download and training
         self.notify_new_batch.notify_one();
 
         // if !data_ids.is_empty() {
@@ -756,7 +748,7 @@ impl<T: NodeIdentity> State<T> {
         Ok(self.get_witness_to_send(index))
     }
 
-    async fn round_apply(&mut self) -> Result<()> {
+    fn round_apply(&mut self) -> Result<()> {
         let state = self
             .state
             .as_ref()
@@ -774,11 +766,9 @@ impl<T: NodeIdentity> State<T> {
             return Ok(());
         }
 
-        let gpus_still_running = self.data_parallelism - self.available_trainers.len();
-        if gpus_still_running > 0 {
-            warn!("Apply round but {gpus_still_running} gpu(s) aren't finished, waiting");
-            sleep(Duration::from_secs_f32(0.1)).await; // CANCEL SAFETY
-            self.notify_poll_next.notify_one();
+        let trainers_still_running = self.data_parallelism - self.available_trainers.len();
+        if trainers_still_running > 0 {
+            bail!("Apply round but {trainers_still_running} trainer(s) aren't finished");
         } else {
             debug!(
                 "Apply start ({} commitments, {} payloads)",
@@ -811,7 +801,6 @@ impl<T: NodeIdentity> State<T> {
         let step = state.step;
         let batch_ids = get_batch_ids_for_state(state);
         let round_rollbacks = self.round_rollbacks.clone();
-        let notify_poll_next = self.notify_poll_next.clone();
         self.applying = Some(tokio::task::spawn(async move {
             let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
 
@@ -881,7 +870,6 @@ impl<T: NodeIdentity> State<T> {
             for future in futures {
                 trainers.push(future.await??);
             }
-            notify_poll_next.notify_one();
             Ok(trainers)
         }));
 

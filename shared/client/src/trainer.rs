@@ -277,19 +277,11 @@ impl Trainer {
                             } => None,
                             Optimizer::Distro(distro) => {
                                 let lr = lr_scheduler.get_lr(step);
-                                let ret = distro.generate(
-                                    lr,
-                                    run_state.clone(),
-                                    RunState::RoundTrain.into(),
-                                );
-                                if ret.is_none() {
-                                    cancelled = true;
-                                    debug!("Aborting DisTrO generation, run state changed");
-                                }
+                                let ret = distro.generate(lr);
                                 // this is a gpu p2p optimization -- only the first gpu really produces results,
                                 // the other gpus merely feed their tp tensors to the first rank
                                 match index == 0 {
-                                    true => ret,
+                                    true => Some(ret),
                                     false => None,
                                 }
                             }

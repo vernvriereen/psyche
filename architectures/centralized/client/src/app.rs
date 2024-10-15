@@ -142,8 +142,8 @@ impl App {
                 }
             }
         }
-        let (tx, rx) = mpsc::channel(10);
-        let (witness_tx, mut witness_rx) = mpsc::channel(10);
+        let (tx, rx) = mpsc::channel(128);
+        let (witness_tx, mut witness_rx) = mpsc::channel(128);
         let identity = ClientId::from(p2p.node_addr().await?.node_id);
         let mut client = Client::new(
             Backend { rx, tx: witness_tx },

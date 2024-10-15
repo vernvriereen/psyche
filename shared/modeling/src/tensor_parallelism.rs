@@ -1,4 +1,9 @@
-use std::rc::Rc;
+use cudarc::driver::{
+    result::ctx::{get_current, set_current},
+    sys::CUcontext,
+    CudaDevice,
+};
+use std::{rc::Rc, sync::Arc};
 use tch::{
     nn::{self, Module, Shard},
     Tensor,
@@ -186,6 +191,33 @@ impl CUDATensor {
     }
 }
 
+#[cfg(feature = "parallelism")]
+struct CUDARcSynchronize {
+    device: Arc<CudaDevice>,
+    context: Option<CUcontext>,
+}
+
+#[cfg(feature = "parallelism")]
+impl CUDARcSynchronize {
+    pub fn synchronize(device: Arc<CudaDevice>) -> CUDARcSynchronize {
+        let context = get_current().unwrap();
+        device.synchronize().unwrap();
+        CUDARcSynchronize { context, device }
+    }
+}
+
+#[cfg(feature = "parallelism")]
+impl Drop for CUDARcSynchronize {
+    fn drop(&mut self) {
+        self.device.synchronize().unwrap();
+        if let Some(context) = self.context {
+            unsafe {
+                set_current(context).unwrap();
+            }
+        }
+    }
+}
+
 impl AllReduce for Tensor {
     #[cfg(feature = "parallelism")]
     fn all_reduce(self, comm: &Option<Rc<Communicator>>, op: ReduceType) -> Tensor {
@@ -197,28 +229,31 @@ impl AllReduce for Tensor {
                 };
 
                 let reduced_output = self.zeros_like();
+
+                tch::Cuda::synchronize(rank);
                 let output = CUDATensor::from(self.detach());
                 let mut reduced_output = CUDATensor::from(reduced_output);
+                {
+                    let _sync = CUDARcSynchronize::synchronize(comm.device().clone());
 
-                if self.kind() == Kind::BFloat16 {
-                    comm.all_reduce::<CUDATensor, CUDATensor, bf16>(
-                        &output,
-                        &mut reduced_output,
-                        &op.into(),
-                    )
-                    .map_err(|x| format!("nccl error: {:?}", x.0))
-                    .unwrap();
-                } else {
-                    comm.all_reduce::<CUDATensor, CUDATensor, f32>(
-                        &output,
-                        &mut reduced_output,
-                        &op.into(),
-                    )
-                    .map_err(|x| format!("nccl error: {:?}", x.0))
-                    .unwrap();
-                }
-
-                // without this you get all sort of weird hangs
+                    if self.kind() == Kind::BFloat16 {
+                        comm.all_reduce::<CUDATensor, CUDATensor, bf16>(
+                            &output,
+                            &mut reduced_output,
+                            &op.into(),
+                        )
+                        .map_err(|x| format!("nccl error: {:?}", x.0))
+                        .unwrap();
+                    } else {
+                        comm.all_reduce::<CUDATensor, CUDATensor, f32>(
+                            &output,
+                            &mut reduced_output,
+                            &op.into(),
+                        )
+                        .map_err(|x| format!("nccl error: {:?}", x.0))
+                        .unwrap();
+                    }
+                };
                 tch::Cuda::synchronize(rank);
 
                 // this an STE-like trick to pass the gradients through the all-reduce without a custom backwards
@@ -239,16 +274,28 @@ impl AllReduce for Tensor {
 impl SendTensor for Tensor {
     fn send(self, comm: &Rc<Communicator>, peer: i32) -> Tensor {
         let kind = self.kind();
+        let rank = match self.device() {
+            Device::Cuda(rank) => rank as i64,
+            _ => unimplemented!(),
+        };
+
+        tch::Cuda::synchronize(rank);
         let cuda_tensor = CUDATensor::from(self);
-        if kind == Kind::BFloat16 {
-            comm.send::<CUDATensor, bf16>(&cuda_tensor, peer)
-                .map_err(|x| format!("nccl error: {:?}", x.0))
-                .unwrap();
-        } else {
-            comm.send::<CUDATensor, f32>(&cuda_tensor, peer)
-                .map_err(|x| format!("nccl error: {:?}", x.0))
-                .unwrap();
-        }
+        {
+            let _sync = CUDARcSynchronize::synchronize(comm.device().clone());
+
+            if kind == Kind::BFloat16 {
+                comm.send::<CUDATensor, bf16>(&cuda_tensor, peer)
+                    .map_err(|x| format!("nccl error: {:?}", x.0))
+                    .unwrap();
+            } else {
+                comm.send::<CUDATensor, f32>(&cuda_tensor, peer)
+                    .map_err(|x| format!("nccl error: {:?}", x.0))
+                    .unwrap();
+            }
+        };
+        tch::Cuda::synchronize(rank);
+
         cuda_tensor.unwrap()
     }
 }
@@ -257,16 +304,28 @@ impl SendTensor for Tensor {
 impl ReceiveTensor for Tensor {
     fn receive(self, comm: &Rc<Communicator>, peer: i32) -> Tensor {
         let kind = self.kind();
+        let rank = match self.device() {
+            Device::Cuda(rank) => rank as i64,
+            _ => unimplemented!(),
+        };
+
+        tch::Cuda::synchronize(rank);
         let mut cuda_tensor = CUDATensor::from(self);
-        if kind == Kind::BFloat16 {
-            comm.recv::<CUDATensor, bf16>(&mut cuda_tensor, peer)
-                .map_err(|x| format!("nccl error: {:?}", x.0))
-                .unwrap();
-        } else {
-            comm.recv::<CUDATensor, f32>(&mut cuda_tensor, peer)
-                .map_err(|x| format!("nccl error: {:?}", x.0))
-                .unwrap();
-        }
+        {
+            let _sync = CUDARcSynchronize::synchronize(comm.device().clone());
+
+            if kind == Kind::BFloat16 {
+                comm.recv::<CUDATensor, bf16>(&mut cuda_tensor, peer)
+                    .map_err(|x| format!("nccl error: {:?}", x.0))
+                    .unwrap();
+            } else {
+                comm.recv::<CUDATensor, f32>(&mut cuda_tensor, peer)
+                    .map_err(|x| format!("nccl error: {:?}", x.0))
+                    .unwrap();
+            }
+        };
+        tch::Cuda::synchronize(rank);
+
         cuda_tensor.unwrap()
     }
 }
