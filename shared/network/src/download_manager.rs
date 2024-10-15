@@ -141,12 +141,13 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
 
         let task_handle = tokio::spawn(async move {
             loop {
-                if downloads.lock().await.is_empty() && reading.lock().await.is_empty() {
-                    if rx_new_item.recv().await.is_none() {
-                        // channel is closed.
-                        info!("Download manager channel closed - shutting down.");
-                        return;
-                    }
+                if downloads.lock().await.is_empty()
+                    && reading.lock().await.is_empty()
+                    && rx_new_item.recv().await.is_none()
+                {
+                    // channel is closed.
+                    info!("Download manager channel closed - shutting down.");
+                    return;
                 }
 
                 match Self::poll_next_inner(
@@ -271,7 +272,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                 let update = match progress {
                     DownloadProgress::InitialState(_) => None,
                     DownloadProgress::FoundLocal { size, .. } => Some(DownloadUpdate {
-                        hash: download.hash.clone(),
+                        hash: download.hash,
                         from: download.from,
                         downloaded_size_delta: 0,
                         downloaded_size: size.value(),
@@ -282,7 +283,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                     DownloadProgress::Found { size, .. } => {
                         download.total_size = size;
                         Some(DownloadUpdate {
-                            hash: download.hash.clone(),
+                            hash: download.hash,
                             from: download.from,
                             downloaded_size_delta: 0,
                             downloaded_size: 0,
@@ -295,7 +296,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                         let delta = offset - download.last_offset;
                         download.last_offset = offset;
                         Some(DownloadUpdate {
-                            hash: download.hash.clone(),
+                            hash: download.hash,
                             from: download.from,
                             downloaded_size_delta: delta,
                             downloaded_size: offset,
@@ -311,7 +312,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                             convert_bytes(stats.bytes_read as f64)
                         );
                         Some(DownloadUpdate {
-                            hash: download.hash.clone(),
+                            hash: download.hash,
                             from: download.from,
                             downloaded_size_delta: 0,
                             downloaded_size: download.total_size,
@@ -322,7 +323,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                     DownloadProgress::Abort(err) => {
                         warn!("Download aborted: {:?}", err);
                         Some(DownloadUpdate {
-                            hash: download.hash.clone(),
+                            hash: download.hash,
                             from: download.from,
                             downloaded_size_delta: 0,
                             downloaded_size: 0,
@@ -336,7 +337,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
             Err(e) => {
                 error!("Download error: {}", e);
                 downloads.swap_remove(index);
-                Err(e.into())
+                Err(e)
             }
         };
         if let Ok(Some(DownloadManagerEvent::Update(DownloadUpdate { all_done, .. }))) = &r {
@@ -366,7 +367,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
             }
             Err(e) => {
                 error!("Read error: {}", e);
-                Err(e.into())
+                Err(e)
             }
         }
     }

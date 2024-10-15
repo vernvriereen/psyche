@@ -64,5 +64,5 @@ pub enum ClientToServerMessage {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ServerToClientMessage {
     P2PConnect(PeerList),
-    Coordinator(Coordinator<ClientId>),
+    Coordinator(Box<Coordinator<ClientId>>),
 }

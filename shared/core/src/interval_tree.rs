@@ -108,7 +108,7 @@ mod tests {
         let interval1 = ClosedInterval::new(1, 5);
         let interval2 = ClosedInterval::new(3, 7);
         let interval3 = ClosedInterval::new(6, 8);
-        
+
         assert!(interval1.overlaps(&interval2));
         assert!(interval2.overlaps(&interval1));
         assert!(interval2.overlaps(&interval3));

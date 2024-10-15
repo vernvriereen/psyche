@@ -378,11 +378,11 @@ pub fn unsharded_tensor_size(reference_shape: &[i64], shard: &Shard) -> Vec<i64>
         dim, world_size, ..
     } = *shard;
 
-    let shard_size = reference_shape[dim as usize];
+    let shard_size = reference_shape[dim];
     let total_size = shard_size * (world_size as i64);
 
     let mut unsharded_shape = reference_shape.to_vec();
-    unsharded_shape[dim as usize] = total_size;
+    unsharded_shape[dim] = total_size;
 
     unsharded_shape
 }

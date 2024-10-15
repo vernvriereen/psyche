@@ -216,6 +216,8 @@ impl Trainer {
         Ok(self)
     }
 
+    // todo: refactor args into a struct
+    #[allow(clippy::too_many_arguments)]
     fn model_thread(
         mut model: LlamaForCausalLM,
         assignment: mpsc::Receiver<ParallelAssignment>,

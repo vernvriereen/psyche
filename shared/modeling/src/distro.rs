@@ -2,11 +2,7 @@ use crate::{
     tensor_parallelism::{tensor_shard, unsharded_tensor_size},
     Communicator,
 };
-use std::{
-    collections::HashMap,
-    f64::consts::PI,
-    rc::Rc
-};
+use std::{cmp::Ordering, collections::HashMap, f64::consts::PI, rc::Rc};
 use tch::{
     nn::{Optimizer, OptimizerConfig, Sgd, Shard, VarStore},
     Device, Kind, Tensor,
@@ -50,10 +46,9 @@ impl TransformDCT {
                 };
 
                 // Pregenerate DCT basis matrices
-                if !f_dict.contains_key(&sc) {
+                if let std::collections::hash_map::Entry::Vacant(e) = f_dict.entry(sc) {
                     let i = Tensor::eye(sc, (Kind::Float, variable.device()));
-                    f_dict.insert(
-                        sc,
+                    e.insert(
                         Self::dct(&i, true)
                             .to_kind(variable.kind())
                             .to(variable.device()),
@@ -105,28 +100,32 @@ impl TransformDCT {
 
     fn get_divisors(n: i64) -> Vec<i64> {
         let mut divisors = Vec::new();
-        if n == 1 {
-            divisors.push(1);
-        } else if n > 1 {
-            let prime_factors = Self::get_prime_divisors(n);
-            divisors = vec![1];
-            let mut last_prime = 0;
-            let mut factor = 0;
-            let mut slice_len = 0;
-            // Find all the products that are divisors of n
-            for prime in prime_factors {
-                if last_prime != prime {
-                    slice_len = divisors.len();
-                    factor = prime;
-                } else {
-                    factor *= prime;
-                }
-                for i in 0..slice_len {
-                    divisors.push(divisors[i] * factor);
-                }
-                last_prime = prime;
+        match n.cmp(&1) {
+            Ordering::Equal => {
+                divisors.push(1);
             }
-            divisors.sort_unstable();
+            Ordering::Greater => {
+                let prime_factors = Self::get_prime_divisors(n);
+                divisors = vec![1];
+                let mut last_prime = 0;
+                let mut factor = 0;
+                let mut slice_len = 0;
+                // Find all the products that are divisors of n
+                for prime in prime_factors {
+                    if last_prime != prime {
+                        slice_len = divisors.len();
+                        factor = prime;
+                    } else {
+                        factor *= prime;
+                    }
+                    for i in 0..slice_len {
+                        divisors.push(divisors[i] * factor);
+                    }
+                    last_prime = prime;
+                }
+                divisors.sort_unstable();
+            }
+            Ordering::Less => {}
         }
         divisors
     }
@@ -154,11 +153,11 @@ impl TransformDCT {
     #[allow(unused)]
     fn dct(x: &Tensor, ortho: bool) -> Tensor {
         let x_shape = x.size();
-        let n = *x_shape.last().unwrap() as i64;
+        let n = { *x_shape.last().unwrap() };
         let x = x.contiguous().view([-1, n]);
 
         let v = Tensor::cat(
-            &[x.slice(1, 0, None, 2), x.slice(1, 1, None, 2).flip(&[1])],
+            &[x.slice(1, 0, None, 2), x.slice(1, 1, None, 2).flip([1])],
             1,
         );
 
@@ -184,13 +183,13 @@ impl TransformDCT {
     fn idct_irfft_impl(v: &Tensor) -> Tensor {
         let complex_v = v.view_as_complex();
         let n = v.size()[1];
-        complex_v.fft_irfft(Some(n as i64), 1, "backward")
+        complex_v.fft_irfft(Some(n), 1, "backward")
     }
 
     #[allow(unused)]
     fn idct(x: &Tensor, ortho: bool) -> Tensor {
         let x_shape = x.size();
-        let n = *x_shape.last().unwrap() as i64;
+        let n = { *x_shape.last().unwrap() };
 
         let mut x_v = x.contiguous().view([-1, n]).f_div_scalar(2.0).unwrap();
 
@@ -215,7 +214,7 @@ impl TransformDCT {
         let v_t_i = Tensor::cat(
             &[
                 x_v.slice(1, 0, 1, 1).f_mul_scalar(0.0).unwrap(),
-                x_v.flip(&[1]).slice(1, 0, n - 1, 1).f_neg().unwrap(),
+                x_v.flip([1]).slice(1, 0, n - 1, 1).f_neg().unwrap(),
             ],
             1,
         );
@@ -233,7 +232,7 @@ impl TransformDCT {
             .f_add_(&v.slice(1, 0, n - (n / 2), 1))
             .unwrap();
         x.slice(1, 1, n, 2)
-            .f_add_(&v.flip(&[1]).slice(1, 0, n / 2, 1))
+            .f_add_(&v.flip([1]).slice(1, 0, n / 2, 1))
             .unwrap();
 
         x.view(x_shape.as_slice())
@@ -293,8 +292,8 @@ impl TransformDCT {
 
         if x_shape.len() > 2 {
             // 2D weights
-            let n1 = x_shape[2] as i64;
-            let n2 = x_shape[3] as i64;
+            let n1 = x_shape[2];
+            let n2 = x_shape[3];
             let device = x.device();
 
             let n1w = self.b_dict.get(&n1).unwrap().to_device(device);
@@ -308,10 +307,10 @@ impl TransformDCT {
 
             // Equivalent to rearrange(x, "y h x w -> (y h) (x w)")
             let (y, h, x_, w) = (x_shape[0], x_shape[1], x_shape[2], x_shape[3]);
-            x.reshape(&[y * h, x_ * w])
+            x.reshape([y * h, x_ * w])
         } else {
             // 1D weights
-            let n1 = x_shape[1] as i64;
+            let n1 = x_shape[1];
             let device = x.device();
 
             let n1w = self.b_dict.get(&n1).unwrap().to_device(device);
@@ -322,7 +321,7 @@ impl TransformDCT {
 
             // Equivalent to rearrange(x, "x w -> (x w)")
             let (x_, w) = (x_shape[0], x_shape[1]);
-            x.reshape(&[x_ * w])
+            x.reshape([x_ * w])
         }
     }
 }
@@ -333,15 +332,13 @@ impl CompressDCT {
     fn clamp_topk(x: &Tensor, topk: i64) -> i64 {
         let last_dim = x.size()[x.dim() - 1];
 
-        let topk = if topk > last_dim {
+        if topk > last_dim {
             last_dim
         } else if topk < 1 {
             1
         } else {
             topk
-        };
-
-        topk
+        }
     }
 
     pub fn compress(x: &Tensor, topk: i64, quantization: bool) -> (Tensor, Tensor, Vec<i64>, i64) {
@@ -537,10 +534,7 @@ impl Distro {
     }
 
     #[allow(unused)]
-    pub fn generate(
-        &mut self,
-        lr: f64
-    ) -> Vec<DistroResult> {
+    pub fn generate(&mut self, lr: f64) -> Vec<DistroResult> {
         // return Vec::new();
         let _no_grad = tch::no_grad_guard();
         let variables = &mut self.sgd.trainable_variables_with_sharding();
@@ -635,7 +629,7 @@ impl Distro {
                     if self.shard_index == 0 {
                         // Compress delta
                         let (sparse_idx, sparse_val, xshape, totalk) = CompressDCT::compress(
-                            &self.transform.encode(&delta),
+                            &self.transform.encode(delta),
                             self.compression_topk,
                             true,
                         );
@@ -667,7 +661,7 @@ impl Distro {
     }
 
     #[allow(unused)]
-    pub fn apply(&mut self, results: &Vec<Vec<DistroResult>>, lr: f64) {
+    pub fn apply(&mut self, results: &[Vec<DistroResult>], lr: f64) {
         // return;
         let _no_grad = tch::no_grad_guard();
         for (index, (variable, shard)) in self

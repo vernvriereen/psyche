@@ -12,13 +12,13 @@ impl LCG {
         LCG { state: seed }
     }
 
-    pub fn next(&mut self) -> u64 {
+    pub fn next_u64(&mut self) -> u64 {
         self.state = self.state.wrapping_mul(LCG_A).wrapping_add(LCG_C);
         self.state
     }
 
     pub fn next_range(&mut self, max: usize) -> usize {
-        (self.next() % max as u64) as usize
+        (self.next_u64() % max as u64) as usize
     }
 }
 
@@ -35,15 +35,15 @@ mod tests {
     #[test]
     fn test_lcg_next() {
         let mut lcg = LCG::new(12345);
-        let first = lcg.next();
-        let second = lcg.next();
+        let first = lcg.next_u64();
+        let second = lcg.next_u64();
         assert_ne!(first, second);
     }
 
     #[test]
     fn test_lcg_sequence() {
         let mut lcg = LCG::new(12345);
-        let sequence: Vec<u64> = (0..5).map(|_| lcg.next()).collect();
+        let sequence: Vec<u64> = (0..5).map(|_| lcg.next_u64()).collect();
         assert_eq!(sequence.len(), 5);
         assert!(sequence.windows(2).all(|w| w[0] != w[1]));
     }
@@ -53,7 +53,7 @@ mod tests {
         let mut lcg1 = LCG::new(12345);
         let mut lcg2 = LCG::new(12345);
         for _ in 0..100 {
-            assert_eq!(lcg1.next(), lcg2.next());
+            assert_eq!(lcg1.next_u64(), lcg2.next_u64());
         }
     }
 

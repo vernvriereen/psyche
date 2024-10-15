@@ -6,7 +6,6 @@ use crate::{
     BroadcastMessage, Payload, SerializedDistroResult,
 };
 use anyhow::{bail, Error, Result};
-use hex;
 use psyche_coordinator::{
     get_batch_ids_for_state, model, Committee, CommitteeProof, CommitteeSelection, Coordinator,
     HealthChecks, RunState, Witness, WitnessProof, BLOOM_FALSE_RATE, BLOOM_MAX_BITS,
@@ -54,6 +53,10 @@ pub enum ToSend {
     HealthCheck(HealthChecks),
 }
 
+type Bloom32 = Bloom<[u8; 32]>;
+
+type Rollbacks = BoundedQueue<(BatchStep, Vec<DistroResults>)>;
+
 pub struct State<T: NodeIdentity> {
     pub identity: T,
     private_key: T::PrivateKey,
@@ -69,7 +72,7 @@ pub struct State<T: NodeIdentity> {
     commitments: HashMap<u64, Vec<(T, BroadcastMessage)>>,
     commitments_per_client: HashMap<T, u32>,
     payloads: HashMap<psyche_network::Hash, PayloadState<T>>,
-    blooms: Option<(Bloom<[u8; 32]>, Bloom<[u8; 32]>, Bloom<[u8; 32]>)>,
+    blooms: Option<(Bloom32, Bloom32, Bloom32)>,
     losses: Vec<f32>,
     round_losses: Vec<f32>,
     data_parallelism: usize,
@@ -79,7 +82,7 @@ pub struct State<T: NodeIdentity> {
     micro_batch_size: Option<usize>,
     write_gradients_dir: Option<PathBuf>,
     atomic_run_state: Arc<AtomicUsize>,
-    round_rollbacks: Arc<Mutex<BoundedQueue<(BatchStep, Vec<DistroResults>)>>>,
+    round_rollbacks: Arc<Mutex<Rollbacks>>,
     training_data: Option<TrainingDataForStep>,
     data_fetcher: Option<DataFetcher<T>>,
     round_start: Option<Instant>,
@@ -156,12 +159,8 @@ impl<T: NodeIdentity> State<T> {
             RunState::WaitingForMembers => Ok(None),
             RunState::Warmup => self.warmup().map(|_| None),
             RunState::RoundTrain => self.round_train(position).await.map(|_| None),
-            RunState::RoundWitness => {
-                return self
-                    .round_witness(position)
-                    .map(|x| x.map(|y| ToSend::Witness(y)))
-            }
-            RunState::RoundApply => return self.round_apply().map(|_| None),
+            RunState::RoundWitness => self.round_witness(position).map(|x| x.map(ToSend::Witness)),
+            RunState::RoundApply => self.round_apply().map(|_| None),
         }
     }
 
@@ -263,7 +262,7 @@ impl<T: NodeIdentity> State<T> {
 
         self.maybe_write_gradients(&payload);
 
-        return Ok(ToSend::Broadcast((broadcast, payload)));
+        Ok(ToSend::Broadcast((broadcast, payload)))
     }
 
     fn handle_poll_health_checking(
@@ -338,7 +337,7 @@ impl<T: NodeIdentity> State<T> {
                     public_key
                 );
                 if let Some(state) = &self.state {
-                    if state.step == message.step as u32 {
+                    if state.step == message.step {
                         if let Some((_, _, committee_selection)) = self.committee_info.as_ref() {
                             if let Some(client) =
                                 watcher.get_client_for_p2p_public_key(public_key.as_bytes())
@@ -367,7 +366,7 @@ impl<T: NodeIdentity> State<T> {
                     downloaded.from
                 );
                 if let Some(state) = &self.state {
-                    if state.step == downloaded.data.step as u32 {
+                    if state.step == downloaded.data.step {
                         self.handle_payload(downloaded.hash, downloaded.data)
                             .await?;
                     } else {
@@ -422,9 +421,7 @@ impl<T: NodeIdentity> State<T> {
                     }
                 }
             }
-            if !self.commitments.contains_key(&broadcast.batch_id) {
-                self.commitments.insert(broadcast.batch_id, Vec::new());
-            }
+            self.commitments.entry(broadcast.batch_id).or_default();
             let ticket = broadcast.ticket.clone();
             let batch_id = broadcast.batch_id;
             self.commitments
@@ -675,7 +672,7 @@ impl<T: NodeIdentity> State<T> {
             .data_fetcher
             .as_mut()
             .unwrap()
-            .fetch_data(&state, &committee_selection, &self.identity);
+            .fetch_data(state, &committee_selection, &self.identity);
         self.training_data = Some(training_data);
 
         let committee_proof = committee_selection.get_committee(index);
@@ -886,17 +883,14 @@ impl<T: NodeIdentity> State<T> {
                 let mut checks = HealthChecks::new();
                 for (index, client) in clients.into_iter().enumerate() {
                     let proof = committee_selection.get_committee(index as u64);
-                    match proof.committee {
-                        Committee::Trainer => {
-                            if !Coordinator::trainer_healthy_by_witnesses(
-                                &client,
-                                &witnesses,
-                                witness_quorum,
-                            ) {
-                                checks.push(proof);
-                            }
-                        }
-                        _ => {}
+                    if proof.committee == Committee::Trainer
+                        && !Coordinator::trainer_healthy_by_witnesses(
+                            &client,
+                            &witnesses,
+                            witness_quorum,
+                        )
+                    {
+                        checks.push(proof);
                     }
                 }
                 Ok(checks)
@@ -1004,7 +998,7 @@ impl<T: NodeIdentity> State<T> {
                     info!("Submitting witness blooms");
                     return Some(Witness {
                         index,
-                        proof: witness_proof.clone(),
+                        proof: *witness_proof,
                         commit_bloom,
                         participant_bloom,
                         order_bloom,

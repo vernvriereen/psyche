@@ -30,7 +30,11 @@ pub struct Client<T: NodeIdentity, B: Backend<T> + 'static> {
     _t: PhantomData<(T, B)>,
 }
 
+type CoordinatorUpdate<T> = (Option<Coordinator<T>>, Coordinator<T>);
+
 impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
+    // todo: refactor into a struct
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         backend: B,
         mut p2p: NC,
@@ -62,7 +66,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
 
                 loop {
                     let step_result: std::result::Result<
-                        Option<(Option<Coordinator<T>>, Coordinator<T>)>,
+                        Option<CoordinatorUpdate<T>>,
                         anyhow::Error,
                     > = select! {
                         _ = cancel.cancelled() => break,
@@ -178,7 +182,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
     }
 
     pub async fn tui_states(&self) -> TUIStates {
-        let _ = self.req_tui_state.notify_one();
+        self.req_tui_state.notify_one();
         self.rx.borrow().clone()
     }
 }

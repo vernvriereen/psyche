@@ -41,7 +41,7 @@ impl<T: NodeIdentity> DataFetcher<T> {
         let data_indicies_per_batch = state.data_indicies_per_batch;
 
         // everyone tries to not overlap (just a hopeful guess though, not part of consensus, everyone is free to train on whatever)
-        let mut assigned_batch_ids: Vec<u64> = assign_data_for_state(&state, &committee_selection)
+        let mut assigned_batch_ids: Vec<u64> = assign_data_for_state(state, committee_selection)
             .iter()
             .filter_map(|(key, value)| match value == identity {
                 true => {
@@ -89,7 +89,7 @@ impl<T: NodeIdentity> DataFetcher<T> {
                                         len => remaining_batch_ids
                                             .iter()
                                             .nth(rand::thread_rng().gen_range(0..len))
-                                            .map(|x| *x)
+                                            .copied()
                                             .unwrap(),
                                     }
                                 }

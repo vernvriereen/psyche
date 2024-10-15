@@ -40,7 +40,10 @@ mod tests {
 
         for i in 0..index_count {
             let result = compute_shuffled_index(i, index_count, &seed);
-            assert!(result < index_count, "Shuffled index should be within bounds");
+            assert!(
+                result < index_count,
+                "Shuffled index should be within bounds"
+            );
         }
     }
 
@@ -52,7 +55,10 @@ mod tests {
         for i in 0..index_count {
             let result1 = compute_shuffled_index(i, index_count, &seed);
             let result2 = compute_shuffled_index(i, index_count, &seed);
-            assert_eq!(result1, result2, "Results should be deterministic for the same input");
+            assert_eq!(
+                result1, result2,
+                "Results should be deterministic for the same input"
+            );
         }
     }
 
@@ -65,7 +71,10 @@ mod tests {
 
         let result1 = compute_shuffled_index(index, index_count, &seed1);
         let result2 = compute_shuffled_index(index, index_count, &seed2);
-        assert_ne!(result1, result2, "Different seeds should produce different results");
+        assert_ne!(
+            result1, result2,
+            "Different seeds should produce different results"
+        );
     }
 
     #[test]

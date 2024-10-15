@@ -209,8 +209,8 @@ impl App {
                 info!("Got peer list from server, but already connected");
             }
             ServerToClientMessage::Coordinator(state) => {
-                self.coordinator_state = state.clone();
-                let _ = tx.send(state).await;
+                self.coordinator_state = (*state).clone();
+                let _ = tx.send(*state).await;
             }
         }
     }

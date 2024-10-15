@@ -20,12 +20,17 @@ impl<T: NodeIdentity> DataProviderTcpClient<T> {
             private_key,
         )
         .await?;
-        Ok(Self { tcp_client, address: addr.to_owned() })
+        Ok(Self {
+            tcp_client,
+            address: addr.to_owned(),
+        })
     }
 
     async fn receive_training_data(&mut self, data_ids: &[usize]) -> Result<Vec<Vec<i32>>> {
         self.tcp_client
-            .send(ClientToServerMessage::RequestTrainingData { data_ids: data_ids.into() })
+            .send(ClientToServerMessage::RequestTrainingData {
+                data_ids: data_ids.into(),
+            })
             .await?;
 
         let message = self.tcp_client.receive().await?;

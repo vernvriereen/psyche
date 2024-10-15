@@ -11,7 +11,7 @@ use psyche_tui::init_logging;
 use psyche_watcher::Backend as WatcherBackend;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, usize};
+use std::fmt::Display;
 use tracing::{info, Level};
 
 // Simulated backend for demonstration

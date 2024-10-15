@@ -282,15 +282,13 @@ where
                     }
                 };
                 let res = send.send(blob_bytes);
-                if let Err(_) = res {
+                if res.is_err() {
                     error!("failed to send read bytes result.");
                 }
             });
             self.download_manager.read(update.from, update.hash, recv);
         } else {
-            self.state
-                .download_progesses
-                .insert(update.hash.clone(), update);
+            self.state.download_progesses.insert(update.hash, update);
         }
         Ok(())
     }

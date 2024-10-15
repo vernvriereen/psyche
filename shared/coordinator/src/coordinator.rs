@@ -123,9 +123,9 @@ impl TryFrom<usize> for RunState {
     }
 }
 
-impl Into<usize> for RunState {
-    fn into(self) -> usize {
-        match self {
+impl From<RunState> for usize {
+    fn from(val: RunState) -> Self {
+        match val {
             RunState::WaitingForMembers => 0,
             RunState::Warmup => 1,
             RunState::RoundTrain => 2,
@@ -228,7 +228,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         witness: Witness,
         unix_timestamp: u64,
     ) -> Result<(), CoordinatorError> {
-        if !CommitteeSelection::from_coordinator(&self)?.verify_witness_for_client(
+        if !CommitteeSelection::from_coordinator(self)?.verify_witness_for_client(
             from,
             &witness.proof,
             &self.clients,
@@ -288,7 +288,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         let index = proof.index as usize;
         if index < self.clients.len() {
             let client = &self.clients[index];
-            let selection = match CommitteeSelection::from_coordinator(&self) {
+            let selection = match CommitteeSelection::from_coordinator(self) {
                 Ok(selection) => selection,
                 Err(_) => {
                     return false;

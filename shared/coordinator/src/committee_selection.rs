@@ -150,7 +150,7 @@ impl CommitteeSelection {
         let mut seed = [0u8; 32];
         seed.copy_from_slice(&sha256v(&[&self.seed, salt.as_bytes()]));
 
-        compute_shuffled_index(index, self.total_nodes as u64, &seed)
+        compute_shuffled_index(index, self.total_nodes, &seed)
     }
 
     pub fn get_seed(&self) -> [u8; 32] {

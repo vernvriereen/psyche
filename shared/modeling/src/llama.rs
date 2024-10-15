@@ -404,11 +404,7 @@ impl Llama {
         let blocks = (0..config.num_hidden_layers)
             .map(|i| Block::new(&vs / "model" / "layers" / i, config, comm.clone()))
             .collect::<Vec<_>>();
-        Self {
-            wte,
-            blocks,
-            ln_f,
-        }
+        Self { wte, blocks, ln_f }
     }
 
     pub fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut Cache) -> Tensor {
@@ -419,4 +415,3 @@ impl Llama {
         self.ln_f.forward(&x)
     }
 }
-

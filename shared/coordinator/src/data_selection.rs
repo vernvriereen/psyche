@@ -1,7 +1,7 @@
 use crate::{Committee, CommitteeSelection, Coordinator};
 use psyche_core::{deterministic_shuffle, ClosedInterval, IntervalTree, NodeIdentity};
 
-pub fn assign_data_for_state<'a, T: NodeIdentity>(
+pub fn assign_data_for_state<T: NodeIdentity>(
     state: &Coordinator<T>,
     committee_selection: &CommitteeSelection,
 ) -> IntervalTree<u64, T> {
@@ -30,21 +30,18 @@ pub fn assign_data_for_state<'a, T: NodeIdentity>(
                 Committee::TieBreaker => assert_eq!(round.tie_breaker_tasks, 0), // TODO
                 Committee::Verifier => {
                     if first_pass {
-                        match state.previous_round() {
-                            Ok(Some(previous_round)) => {
-                                let selected = verifier_shuffle.pop().unwrap();
-                                let start = previous_round.data_index as u64
-                                    + (selected * state.data_indicies_per_batch as u64);
-                                ret.insert(
-                                    ClosedInterval::new(
-                                        start,
-                                        start + state.data_indicies_per_batch as u64 - 1,
-                                    ),
-                                    client.id.clone(),
-                                )
-                                .unwrap();
-                            }
-                            _ => {}
+                        if let Ok(Some(previous_round)) = state.previous_round() {
+                            let selected = verifier_shuffle.pop().unwrap();
+                            let start = previous_round.data_index
+                                + (selected * state.data_indicies_per_batch as u64);
+                            ret.insert(
+                                ClosedInterval::new(
+                                    start,
+                                    start + state.data_indicies_per_batch as u64 - 1,
+                                ),
+                                client.id.clone(),
+                            )
+                            .unwrap();
                         }
                     }
                 }

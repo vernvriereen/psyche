@@ -77,6 +77,8 @@ impl psyche_watcher::Backend<ClientId> for ChannelCoordinatorBackend {
     }
 }
 
+type DataServer = DataProviderTcpServer<ClientId, LocalDataProvider, ChannelCoordinatorBackend>;
+
 pub struct App {
     cancel: CancellationToken,
     p2p: NC,
@@ -85,10 +87,7 @@ pub struct App {
     update_tui_interval: Interval,
     coordinator: Coordinator<ClientId>,
     backend: Backend,
-    training_data_server: Option<(
-        Sender<Coordinator<ClientId>>,
-        DataProviderTcpServer<ClientId, LocalDataProvider, ChannelCoordinatorBackend>,
-    )>,
+    training_data_server: Option<(Sender<Coordinator<ClientId>>, DataServer)>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -293,7 +292,9 @@ impl App {
         if let Err(err) = self
             .backend
             .net_server
-            .broadcast(ServerToClientMessage::Coordinator(self.coordinator.clone()))
+            .broadcast(ServerToClientMessage::Coordinator(Box::new(
+                self.coordinator.clone(),
+            )))
             .await
         {
             warn!("error in tick: {err}");
