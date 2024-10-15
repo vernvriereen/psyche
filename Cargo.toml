@@ -56,7 +56,7 @@ tch = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "92edb2a9e82d9a3
 torch-sys = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "92edb2a9e82d9a3b8cbf6c547c7dbaabf0e7aadf" }
 # tch = { path = "../tch-rs" }
 # torch-sys = { path = "../tch-rs/torch-sys" }
-
+pretty_assertions = "1.4.1"
 
 # solana-program uses curve25519-dalek v3.2.1, which pins zeroize <1.4 for MSRV cares.
 # we don't care about that MSRV guarantee, so we override zeroize dep to be simply "=1"

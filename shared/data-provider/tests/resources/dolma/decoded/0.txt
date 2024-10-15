@@ -1,0 +1,60 @@
+\section{Introduction}
+
+
+Our main result is the following.
+
+\begin{theorem}\label{thm:general_three_col}
+For any planar convex body $C$ there is a positive integer $m=m(C)$ such that any finite point set $P$ in the plane can be three-colored in a way that there is no translate of $C$ containing at least $m$ points of $P$, all of the same color.
+\end{theorem}
+
+This result closes a long line of research about coloring points with respect to planar range spaces that consist of translates of a fixed set, a problem that was proposed by Pach over forty years ago \cite{Pach80}.
+In general, a pair $(P, \Sc)$, where $P$ is a set of points in the plane and $\Sc$ is a family of subsets of the plane, called the \emph{range space}, defines a \emph{primal} hypergraph $\Hc(P,\Sc)$ whose vertex set is $P$, and for each $S\in\Sc$ we add the edge $S\cap P$ to the hypergraph.
+Given any hypergraph $\Hc$, a planar realization of $\Hc$ is defined as a pair $(P, \Sc)$ for which $\Hc(P,\Sc)$ is isomorphic to $\Hc$.
+If $\Hc$ can be realized with some pair $(P, \Sc)$ where $\Sc$ is from some family $\Fc$, then we say that $\Hc$ is realizable with $\Fc$.
+The dual of the hypergraph $\Hc(P,\Sc)$, where the elements of the range space $\Sc$ are the vertices and the points $P$ define the edges, is known as the \emph{dual} hypergraph and is denoted by $\Hc(\Sc,P)$.
+If $\Hc=\Hc(\Sc,P)$ where $\Sc$ is from some family $\Fc$, then we say that $\Hc$ has a dual realization with $\Fc$.
+Pach observed \cite{Pach80,surveycd} that if $\Fc$ is the family of translates of some set, then $\Hc$ has a dual realization with $\Fc$ if and only if $\Hc$ has a (primal) realization with $\Fc$.
+
+Pach proposed to study the chromatic number of hypergraphs realizable with different geometric families $\Fc$.
+It is important to distinguish between two types of hypergraph colorings that we will use, the \emph{proper} coloring and the \emph{polychromatic} coloring. 
+
+\begin{definition}
+A hypergraph is \emph{properly $k$-colorable} if its vertices can be colored with $k$ colors such that each edge contains points from at least two color classes. Such a coloring is called a \emph{proper $k$-coloring}.
+If a hypergraph has a proper $k$-coloring but not a proper $(k-1)$-coloring, then it is called \emph{$k$-chromatic}.
+
+A hypergraph is \emph{polychromatic $k$-colorable} if its vertices can be colored with $k$ colors such that each edge contains points from each color class. Such a coloring is called a \emph{polychromatic $k$-coloring}.
+\end{definition}
+
+Note that for a polychromatic $k$-coloring to exist, it is necessary that each edge of the underlying hypergraph has at least $k$ vertices.
+More generally, we say that a hypergraph is \emph{$m$-heavy} if each of its edges has at least $m$ vertices.
+
+The main question that Pach raised can be rephrased as follows.
+
+\begin{question}
+    For which planar families $\Fc$ is there an $m_k=m(\Fc,k)$ such that any $m_k$-heavy hypergraph realizable with $\Fc$ has a proper/polychromatic $k$-coloring? 
+\end{question}
+
+Initially, this question has been mainly studied for polychromatic $k$-colorings (known in case of a dual range space as \emph{cover-decomposition} problem), and it was shown that such an $m_k$ exists if $\Fc$ is the family of translates of some convex polygon \cite{Pach86,TT07,PT10}, or the family of all halfplanes \cite{wcf2,MR2844088}, or the homothetic\footnote{A \emph{homothetic copy}, or \emph{homothet}, is a scaled and translated (but non-rotated) copy of a set. We always require the scaling factor to be positive. Note that this is sometimes called a positive homothet.} copies of a triangle \cite{octants} or of a square \cite{homotsquare}, while it was also shown that not even $m_2$ exists if $\Fc$ is the family of translates of some appropriate concave polygon \cite{MR2364757,MR2679054} or any body\footnote{By \emph{body}, we always mean a compact subset of the plane with a non-empty interior, though our results (and most of the results mentioned) also hold for sets that are unbounded, or that contain an arbitrary part of their boundary, and are thus neither open, nor closed. This is because a realization of a hypergraph can be perturbed slightly to move the points off from the boundaries of the sets realizing the respective edges of the hypergraph.} with a smooth boundary \cite{unsplittable}.
+It was also shown that there is no $m_k$ for proper $k$-colorings if $\Fc$ is the family of all lines \cite{MR2364757} or all axis-parallel rectangles \cite{Chen}; for these families, the same holds in case of dual realizations \cite{MR2364757,PT08}.
+For homothets of convex polygons other than triangles, it is known that there is no $m_2$ for dual realizations \cite{kovacs}, unlike for primal realizations.
+Higher dimensional variants \cite{octants,CKMU13} and improved bounds for $m_k$ have been also studied \cite{Alou,MR2812512,MR3151767,MR3216669,MR3126347,CKMPUV20}.
+For other results, see also the decade old survey \cite{surveycd}, or the up-to-date website \url{https://coge.elte.hu/cogezoo.html}.
+
+If $\Fc$ is the translates or homothets of some planar convex body, it is an easy consequence of the properties of generalized Delaunay-triangulations and the
+Four Color Theorem that any hypergraph realizable with $\Fc$ is proper 4-colorable if every edge
+contains at least two vertices.
+We have recently shown that this cannot be improved for homothets.
+
+\begin{theorem}[Dam\'asdi, Pálvölgyi \cite{fourchromatic}]
+ Let $C$ be any convex body in the plane that has two parallel supporting lines such that $C$ is strictly convex in some neighborhood of the two points of tangencies. For any positive integer $m$, there exists a 4-chromatic $m$-uniform hypergraph that is realizable with homothets of $C$.
+\end{theorem}
+
+For translates, we recall the following result.
+ 
+\begin{theorem}[Pach, Pálvölgyi \cite{unsplittable}]\label{thm:unsplittable}
+ Let $C$ be any convex body in the plane that has two parallel supporting lines such that $C$ is strictly convex in some neighborhood of the two points of tangencies.\footnote{This condition can be relaxed to require only one smooth neighborhood on the boundary. Since this is not the main topic of our paper, we just give a sketch of the construction in Appendix \ref{sec:halfdisk}.} For any positive integer $m$, there exists a 3-chromatic $m$-uniform hypergraph that is realizable with translates of $C$.
+\end{theorem}
+
+This left only the following question open: Is there for any planar convex body $C$ a positive integer $m$ such that that no 4-chromatic $m$-uniform hypergraph is realizable with translates of $C$?
+Our Theorem \ref{thm:general_three_col} answers this question affirmatively for all $C$ by showing that all realizable $m$-heavy hypergraphs are three-colorable for some $m$.
+This has been hitherto known to hold only when $C$ is a polygon (in which case 2 colors suffice \cite{PT10}, and 3 colors are known to be enough

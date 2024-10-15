@@ -24,3 +24,5 @@ serde.workspace = true
 
 [dev-dependencies]
 psyche-tui.workspace = true
+tokenizers.workspace = true
+pretty_assertions.workspace = true

@@ -33,7 +33,7 @@ libtorch*
 slurm*
 
 ### Training Data ###
-data/
+/data
 
 # results
 distro-data/

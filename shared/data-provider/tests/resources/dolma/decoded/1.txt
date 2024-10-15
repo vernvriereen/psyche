@@ -1,0 +1,77 @@
+enough even for homothets \cite{3propercol}) and pseudodisk families that intersect in a common point \cite{MR4012917} (which generalizes the case when $C$ is unbounded, in which case 2 colors suffice \cite{unsplittable}).
+
+Note that the extended abstract of our first proof attempt appeared recently in the proceedings of EuroComb 2021 \cite{threechromaticdisk}.
+That proof, however, only worked when $C$ was a disk, and while the generalization to other convex bodies with a smooth boundary seemed feasible, we saw no way to extend it to arbitrary convex bodies.
+The proof of Theorem \ref{thm:general_three_col} relies on a surprising connection to two other famous results, the solution of the two dimensional case of the Illumination conjecture \cite{MR76368}, and a recent solution of the Erdős-Sands-Sauer-Woodrow conjecture by Bousquet, Lochet and Thomassé~\cite{esswproof}. 
+In fact, we need a generalization of the latter result, which we prove with the addition of one more trick to their method; this can be of independent interest.\\
+
+The rest of the paper is organized as follows.\\
+In Section \ref{sec:tools} we present the three main ingredients of our proof:
+\begin{itemize}
+    \item the Union Lemma (Section \ref{sec:unionlemma}),
+    \item the Erdős-Sands-Sauer-Woodrow conjecture (Section \ref{sec:essw})---the proof of our generalization of the Bousquet-Lochet-Thomassé theorem can be found in Appendix \ref{app:essw},
+    \item the Illumination conjecture (Section \ref{sec:illum}), which is a theorem of Levi in the plane.
+\end{itemize}
+In Section \ref{sec:proof} we give the detailed proof of Theorem \ref{thm:general_three_col}.\\
+In Section \ref{sec:overview} we give a general overview of the steps of the algorithm requiring computation to show that we can find a three-coloring in randomized polynomial time.\\
+Finally, in Section \ref{sec:open}, we pose some problems left open.
+
+
+
+\section{Tools}\label{sec:tools}
+\subsection{Union Lemma}\label{sec:unionlemma}
+
+Polychromatic colorability is a much stronger property than proper colorability. Any polychromatic $k$-colorable hypergraph is proper $2$-colorable. We generalize this trivial observation to the following statement about unions of polychromatic $k$-colorable hypergraphs.    
+ 
+\begin{lemma}[Union Lemma]\label{lem:combine} Let $\Hc_1=(V,E_1),\dots, \Hc_{k-1}=(V,E_{k-1})$ be hypergraphs on a common vertex set $V$.  If $\Hc_1,\dots, \Hc_{k-1}$ are polychromatic $k$-colorable, then the hypergraph $\bigcup\limits_{i=1}^{k-1} \Hc_i=(V,\bigcup\limits_{i=1}^{k-1} E_i)$ is proper $k$-colorable.
+\end{lemma}
+
+
+\begin{proof}
+ Let $c_i:V\rightarrow \{1,\ldots,k\}$ be a polychromatic $k$-coloring of $\Hc_i$.
+ Choose $c(v)\in \{1,\ldots,k\}$ such that it differs from each $c_i(v)$.
+
+
+ We claim that $c$ is a proper $k$-coloring of $\bigcup\limits_{i=1}^{k-1} \Hc_i$.
+ To prove this, it is enough to show that for every edge $H\in\Hc_i$ and for every color $j\in\{1,\ldots,k-1\}$, there is a $v\in H$ such that $c(v)\ne j$. 
+ We can pick $v\in H$ for which $c_i(v)=j$.
+ This finishes the proof.
+\end{proof}
+  
+Lemma \ref{lem:combine} is sharp in the sense that for every $k$ there are $k-1$ hypergraphs such that each is polychromatic $k$-colorable but their union is not properly $(k-1)$-colorable.\\
+
+We will apply the Union Lemma combined with the theorem below.
+A \emph{pseudoline arrangement} is a collection of simple curves, each of which splits $\mathbb R^2$ into two unbounded parts, such that any two curves intersect at most once.
+A \emph{pseudohalfplane} is the region on one side of a pseudoline in such an arrangement.
+For hypergraphs realizible by pseudohalfplanes the following was proved, generalizing a result of Smorodinsky and Yuditsky \cite{MR2844088} about halfplanes. 
+
+\begin{theorem}[Keszegh-P\'alv\"olgyi \cite{abafree}]\label{thm:pseudohalfplane}
+ Any $(2k-1)$-heavy hypergraph realizable by pseudohalfplanes is polychromatic $k$-colorable, i.e., given a finite set of points and a pseudohalfplane arrangement in the plane, the points can be $k$-colored such that every pseudohalfplane that contains at least $2k-1$ points contains all $k$ colors.
+\end{theorem}
+
+Combining Theorem \ref{thm:pseudohalfplane} with Lemma \ref{lem:combine} for $k=3$, we obtain the following.
+
+\begin{corollary}\label{cor:pseudohalfplane}
+ Any $5$-heavy hypergraph realizable by two pseudohalfplane families is proper $3$-colorable, i.e., given a finite set of points and two different pseudohalfplane arrangements in the plane, the points can be $3$-colored such that every pseudohalfplane that contains at least $5$ points contains two differently colored points.
+\end{corollary}
+
+
+
+
+
+
+
+\subsection{Erdős-Sands-Sauer-Woodrow conjecture}\label{sec:essw}
+Given a quasi order\footnote{A quasi order $\prec$ is a reflexive and transitive relation, but it is not required to be antisymmetric, so $p\prec q\prec p$ is allowed, unlike for partial orders.} $\prec$ on a set $V$, we interpret it as a digraph $D=(V,A)$, where the vertex set is $V$ and a pair $(x,y)$ defines an arc in $A$ if $x \prec y$.
+The \emph{closed in-neighborhood} of a vertex $x\in V$ is $N^-(x)=\{x\}\cup \{y|(y,x)\in A \}$. Similarly the \emph{closed out-neighborhood} of a vertex $x$ is $N^+(x)=\{x\}\cup \{y|(x,y)\in A \}$. We extend this to subsets $S\subset V$ as $N^-(S) = \bigcup\limits_{ x\in S } N^-(x)$ and  $N^+(S) = \bigcup\limits_{ x\in S } N^+(x)$.
+A set of vertices $S$ such that $N^+(S) = V$ is said to be \emph{dominating}.
+For $A,B\subset V$ we will also say that \emph{$A$ dominates $B$ } if $B\subset N^+(A)$.
+
+
+A \emph{complete multidigraph} is a digraph where parallel edges are allowed and in which there is at least one arc between each pair of distinct vertices. Let
+$D$ be a complete multidigraph whose arcs are the disjoint union of $k$ quasi orders $\prec_1, \dots , \prec_k$ (parallel arcs are allowed). Define $N^-_i(x)$ (resp.\ $N^+_i(x)$) as the closed in-neighborhood (resp.\ out-neighborhood) of the digraph induced by $\prec_i$. 
+
+Proving a conjecture of Erdős, and of Sands, Sauer and Woodrow \cite{sandssauer}, Bousquet, Lochet and Thomassé recently showed the following. 
+
+\begin{theorem}[Bousquet, Lochet, Thomassé~\cite{esswproof}]\label{thm:multi_essw_old}
+For every $k$, there exists an integer $f(k)$ such that if $D$ is a complete multidigraph whose ar
