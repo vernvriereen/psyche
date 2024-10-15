@@ -47,7 +47,7 @@ impl LocalDataProvider {
         {
             let file = file.path();
             if let Some(extension) = file.extension() {
-                if extension == "bin" || extension == "npy" {
+                if extension == "bin" || extension == "npy" || extension == "ds" {
                     bin_files.push(file)
                 }
             }
