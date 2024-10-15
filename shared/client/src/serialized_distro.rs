@@ -4,6 +4,7 @@ use std::{
     error::Error,
     fmt,
     io::{BufReader, Cursor, Read},
+    num::TryFromIntError,
 };
 use tch::{Device, Tensor};
 
@@ -21,8 +22,46 @@ fn serialize_tensor(tensor: &Tensor) -> std::result::Result<Vec<u8>, tch::TchErr
     Ok(buffer)
 }
 
+#[derive(Debug)]
+pub enum DeserializeDistroResultError {
+    Tch(tch::TchError),
+    ShapeInt(TryFromIntError),
+}
+
+impl fmt::Display for DeserializeDistroResultError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DeserializeDistroResultError::Tch(err) => write!(f, "Torch error: {}", err),
+            DeserializeDistroResultError::ShapeInt(err) => {
+                write!(f, "Shape had invalid u16: {}", err)
+            }
+        }
+    }
+}
+
+impl Error for DeserializeDistroResultError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            DeserializeDistroResultError::Tch(err) => Some(err),
+            DeserializeDistroResultError::ShapeInt(err) => Some(err),
+        }
+    }
+}
+
+impl From<tch::TchError> for DeserializeDistroResultError {
+    fn from(err: tch::TchError) -> Self {
+        DeserializeDistroResultError::Tch(err)
+    }
+}
+
+impl From<TryFromIntError> for DeserializeDistroResultError {
+    fn from(err: TryFromIntError) -> Self {
+        DeserializeDistroResultError::ShapeInt(err)
+    }
+}
+
 impl TryFrom<&DistroResult> for SerializedDistroResult {
-    type Error = tch::TchError;
+    type Error = DeserializeDistroResultError;
 
     fn try_from(value: &DistroResult) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
@@ -31,11 +70,8 @@ impl TryFrom<&DistroResult> for SerializedDistroResult {
             xshape: value
                 .xshape
                 .iter()
-                .map(|x| {
-                    assert!(*x < u16::MAX as i64);
-                    *x as u16
-                })
-                .collect(),
+                .map(|&x| u16::try_from(x))
+                .collect::<Result<Vec<u16>, _>>()?,
             totalk: value.totalk,
         })
     }

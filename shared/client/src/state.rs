@@ -258,7 +258,7 @@ impl<T: NodeIdentity> State<T> {
                 .distro_results
                 .iter()
                 .map(SerializedDistroResult::try_from)
-                .collect::<std::result::Result<Vec<_>, tch::TchError>>()?,
+                .collect::<std::result::Result<Vec<_>, _>>()?,
         };
 
         self.maybe_write_gradients(&payload);
