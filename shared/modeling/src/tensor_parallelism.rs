@@ -1,8 +1,3 @@
-use cudarc::driver::{
-    result::ctx::{get_current, set_current},
-    sys::CUcontext,
-    CudaDevice,
-};
 use std::{rc::Rc, sync::Arc};
 use tch::{
     nn::{self, Module, Shard},
@@ -11,7 +6,11 @@ use tch::{
 
 #[cfg(feature = "parallelism")]
 use cudarc::{
-    driver::{sys::CUdeviceptr, DevicePtr, DevicePtrMut, DeviceSlice},
+    driver::{
+        result::ctx::{get_current, set_current},
+        sys::{CUcontext, CUdeviceptr},
+        CudaDevice, DevicePtr, DevicePtrMut, DeviceSlice,
+    },
     nccl::safe::{Comm, Id, ReduceOp},
 };
 #[cfg(feature = "parallelism")]
