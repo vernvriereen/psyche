@@ -56,35 +56,59 @@
           inherit env src;
           strictDeps = true;
 
-          # build env only
+          # only kept in build environment
           nativeBuildInputs = with pkgs; [
             pkg-config
-
-            alejandra # nix fmtter
+            alejandra
           ];
 
-          # runtime env
+          # dynamicly linked, used at runtime
           buildInputs = [torch] ++ (with pkgs; [openssl]) ++ (with pkgs.cudaPackages; [cudatoolkit cuda_cudart nccl]);
         };
 
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
-        bin = craneLib.buildPackage (commonArgs
-          // {
-            inherit cargoArtifacts;
-          });
+        buildPackage = name:
+          craneLib.buildPackage (commonArgs
+            // {
+              inherit cargoArtifacts;
+              pname = name;
+              cargoExtraArgs = "--bin ${name}";
+              doCheck = false; # tests are run with nextest in `nix flake check`
+            });
       in {
         packages = {
-          inherit bin;
-          default = bin;
+          psyche-centralized-client = buildPackage "psyche-centralized-client";
+          psyche-centralized-server = buildPackage "psyche-centralized-server";
+          expand-distro = buildPackage "expand-distro";
         };
+
         devShells.default = pkgs.mkShell {
-          inputsFrom = [bin];
+          inputsFrom = [commonArgs];
           inherit env;
           buildInputs = with pkgs; [
             tmux
             nvtopPackages.full
           ];
+        };
+
+        checks = {
+          workspace-format = craneLib.cargoFmt {
+            inherit src;
+          };
+
+          workspace-clippy = craneLib.cargoClippy (commonArgs
+            // {
+              inherit cargoArtifacts;
+              cargoClippyExtraArgs = "--workspace -- --deny warnings";
+            });
+
+          workspace-test = craneLib.cargoNextest (commonArgs
+            // {
+              inherit cargoArtifacts;
+              partitions = 1;
+              partitionType = "count";
+            });
         };
       };
     };

@@ -2,6 +2,12 @@
 members = ["architectures/*/*", "shared/*", "tools/rust-tools/*"]
 resolver = "2"
 
+[workspace.metadata.crane]
+name = "psyche-workspace"
+
+[workspace.package]
+version = "0.0.1"
+
 [workspace.dependencies]
 
 psyche-coordinator = { path = "./shared/coordinator" }
