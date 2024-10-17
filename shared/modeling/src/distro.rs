@@ -5,15 +5,12 @@ use crate::{
 use std::{
     collections::HashMap,
     f64::consts::PI,
-    rc::Rc
+    sync::Arc
 };
 use tch::{
     nn::{Optimizer, OptimizerConfig, Sgd, Shard, VarStore},
     Device, Kind, Tensor,
 };
-
-#[cfg(feature = "parallelism")]
-use cudarc::nccl::{group_end, group_start};
 
 #[cfg(feature = "parallelism")]
 use crate::tensor_parallelism::{unshard_tensor, ReceiveTensor, SendTensor};
@@ -489,7 +486,7 @@ pub struct Distro {
     transform: TransformDCT,
     shard_index: usize,
     #[allow(unused)]
-    comm: Option<Rc<Communicator>>,
+    comm: Option<Arc<Communicator>>,
 }
 
 impl Distro {
@@ -500,7 +497,7 @@ impl Distro {
         compression_topk: i64,
         weight_decay: f64,
         shard_index: usize,
-        comm: Option<Rc<Communicator>>,
+        comm: Option<Arc<Communicator>>,
     ) -> Self {
         let _no_grad = tch::no_grad_guard();
         let mut sgd: Optimizer = Sgd {
@@ -541,7 +538,7 @@ impl Distro {
         &mut self,
         lr: f64
     ) -> Vec<DistroResult> {
-        // return Vec::new();
+        return Vec::new();
         let _no_grad = tch::no_grad_guard();
         let variables = &mut self.sgd.trainable_variables_with_sharding();
         let mut ret = Vec::with_capacity(variables.len());
@@ -570,21 +567,20 @@ impl Distro {
                     // just send their sharded delta back to the first gpu, then await the estimated transmitted delta
 
                     let comm = self.comm.as_ref().unwrap();
-                    let rank = comm.rank() as i64;
-                    let world_size = comm.world_size();
+                    let rank = comm.rank();
+                    let world_size = comm.size() as usize;
                     let kind = delta.kind();
 
                     // gather delta
                     let mut shards = Vec::with_capacity(world_size);
-                    group_start().unwrap();
+                    //group_start().unwrap();
                     if self.shard_index == 0 {
                         for i in 0..world_size {
                             shards.push(delta.empty_like().receive(comm, i as i32));
                         }
                     }
                     delta.contiguous().send(comm, 0);
-                    group_end().unwrap();
-                    tch::Cuda::synchronize(rank);
+                    //group_end().unwrap();
 
                     // scatter transmit_grad
                     if self.shard_index == 0 {
@@ -613,18 +609,17 @@ impl Distro {
                             totalk,
                         });
 
-                        group_start().unwrap();
+                        //group_start().unwrap();
                         for i in 0..world_size {
                             tensor_shard(&transmit_grad, shard, i)
                                 .contiguous()
                                 .send(comm, i as i32);
                         }
                     } else {
-                        group_start().unwrap();
+                        //group_start().unwrap();
                     }
                     let transmit_grad = delta.empty_like().receive(comm, 0);
-                    group_end().unwrap();
-                    tch::Cuda::synchronize(rank);
+                    //group_end().unwrap();
 
                     // Remove transmitted from delta
                     delta.g_sub_(&transmit_grad);
@@ -668,7 +663,7 @@ impl Distro {
 
     #[allow(unused)]
     pub fn apply(&mut self, results: &Vec<Vec<DistroResult>>, lr: f64) {
-        // return;
+        return;
         let _no_grad = tch::no_grad_guard();
         for (index, (variable, shard)) in self
             .sgd

@@ -5,7 +5,7 @@ use psyche_modeling::{
     auto_tokenizer, CausalLM, CommunicatorId, LlamaEosToks, LlamaForCausalLM, LogitsProcessor,
     Sampling, TokenOutputStream,
 };
-use std::{io::Write, path::PathBuf};
+use std::{io::Write, path::PathBuf, sync::{Arc, Barrier}};
 use tch::{Device, Kind, Tensor};
 use tokenizers::Tokenizer;
 
@@ -90,19 +90,24 @@ struct Args {
 
 fn inference(
     repo_files: Vec<PathBuf>,
-    tensor_parallelism: Option<(CommunicatorId, usize, usize)>,
+    tensor_parallelism: Option<(Arc<CommunicatorId>, usize, usize, Arc<Barrier>)>,
     args: Args,
     seed: u64,
     mut tokens: Vec<i64>,
     tokenizer: Tokenizer,
 ) -> Result<()> {
-    let rank = tensor_parallelism.map(|(_, rank, _)| rank).unwrap_or(0);
-    let mut model = LlamaForCausalLM::from_pretrained(
+    let rank = tensor_parallelism
+        .as_ref()
+        .map(|(_, rank, _, _)| *rank)
+        .unwrap_or(0);
+    let mut model: LlamaForCausalLM = LlamaForCausalLM::from_pretrained(
         &repo_files,
         Some(Kind::BFloat16),
         None,
-        tensor_parallelism.map(|_| Device::Cuda(rank)),
-        tensor_parallelism,
+        tensor_parallelism.as_ref().map(|_| Device::Cuda(rank)),
+        tensor_parallelism
+            .as_ref()
+            .map(|(id, rank, size, _)| (id.clone(), *rank, *size)),
     )?;
     let eos_token_id = model
         .config
@@ -132,7 +137,13 @@ fn inference(
             }
         }
         let input = Tensor::from_slice(&tokens).to(model.device).unsqueeze(0);
+        // if let Some((_, _, _, barrier)) = tensor_parallelism.as_ref() {
+        //     barrier.wait();
+        // }
         let (logits, _) = model.forward(&input, None, Some(1));
+        // if let Some((_, _, _, barrier)) = tensor_parallelism.as_ref() {
+        //     barrier.wait();
+        // }
         let logits = logits.squeeze();
         let next_token = logits_processor.sample(&logits)?;
         token_generated += 1;
@@ -175,17 +186,20 @@ fn main() -> Result<()> {
     match args.tensor_parallelism {
         Some(0) | Some(1) | None => inference(repo_files, None, args, seed, tokens, tokenizer)?,
         Some(world_size) => {
-            let id = CommunicatorId::new().unwrap();
+            let barrier = Arc::new(Barrier::new(world_size));
+            let id = Arc::new(CommunicatorId::new());
             let threads = (0..world_size)
                 .map(|rank| {
                     let repo_files = repo_files.clone();
                     let args = args.clone();
                     let tokens = tokens.clone();
                     let tokenizer = tokenizer.clone();
+                    let id = id.clone();
+                    let barrier = barrier.clone();
                     std::thread::spawn(move || {
                         inference(
                             repo_files,
-                            Some((id, rank, world_size)),
+                            Some((id, rank, world_size, barrier)),
                             args,
                             seed,
                             tokens,

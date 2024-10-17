@@ -4,6 +4,7 @@ use psyche_coordinator::model::{self, AnyLearningRateScheduler};
 use psyche_coordinator::RunState;
 use psyche_modeling::{CausalLM, Distro, DistroResult, LlamaForCausalLM};
 use std::ops::ControlFlow;
+use std::sync::Barrier;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     mpsc, Arc,
@@ -72,6 +73,7 @@ impl Trainer {
         run_state: Arc<AtomicUsize>,
     ) -> Self {
         let mut ret = Vec::with_capacity(models.len());
+        let barrier = Arc::new(Barrier::new(models.len()));
         for (index, model) in models.into_iter().enumerate() {
             let (assignment_tx, assignment_rx) = mpsc::channel();
             let (result_tx, result_rx) = mpsc::channel();
@@ -112,6 +114,7 @@ impl Trainer {
 
             let run_state = run_state.clone();
             let lr_scheduler = lr_scheduler.clone();
+            let barrier = barrier.clone();
             std::thread::spawn(move || {
                 Self::model_thread(
                     model,
@@ -122,18 +125,26 @@ impl Trainer {
                     micro_batch_size,
                     run_state,
                     lr_scheduler,
+                    barrier,
                 )
             });
         }
         Self { models: ret }
     }
 
-    fn forward_backward(model: &mut LlamaForCausalLM, data: &[Vec<i32>]) -> Result<f32> {
+    fn forward_backward(
+        model: &mut LlamaForCausalLM,
+        data: &[Vec<i32>],
+        barrier: &Arc<Barrier>,
+    ) -> Result<f32> {
         let inputs = Tensor::from_slice2(data).to(model.device());
         let targets = inputs.copy();
+        //barrier.wait();
         let (_, loss) = model.forward(&inputs, Some(&targets), None);
         let loss = loss.ok_or(Error::msg("No loss"))?;
+        //barrier.wait();
         loss.backward();
+        //barrier.wait();
         Ok(loss.try_into()?)
     }
 
@@ -225,6 +236,7 @@ impl Trainer {
         micro_batch_size: usize,
         run_state: Arc<AtomicUsize>,
         lr_scheduler: AnyLearningRateScheduler,
+        barrier: Arc<Barrier>,
     ) {
         loop {
             match assignment.recv() {
@@ -260,7 +272,7 @@ impl Trainer {
                             debug!("Aborting training, run state changed");
                             break;
                         }
-                        match Self::forward_backward(&mut model, micro_batch) {
+                        match Self::forward_backward(&mut model, micro_batch, &barrier) {
                             Ok(batch_loss) => loss += batch_loss,
                             Err(err) => {
                                 error!("Train error: {err}");
