@@ -139,12 +139,12 @@ impl Trainer {
     ) -> Result<f32> {
         let inputs = Tensor::from_slice2(data).to(model.device());
         let targets = inputs.copy();
-        //barrier.wait();
+        barrier.wait();
         let (_, loss) = model.forward(&inputs, Some(&targets), None);
         let loss = loss.ok_or(Error::msg("No loss"))?;
-        //barrier.wait();
+        barrier.wait();
         loss.backward();
-        //barrier.wait();
+        barrier.wait();
         Ok(loss.try_into()?)
     }
 

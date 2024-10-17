@@ -72,7 +72,7 @@ impl Module for TensorParallelRowLinear {
     #[cfg(feature = "parallelism")]
     fn forward(&self, x: &Tensor) -> Tensor {
         let mut x = self.linear.forward(x).contiguous();
-        // x.differentiable_all_reduce_sum_(&self.comm);
+        x.differentiable_all_reduce_sum_(&self.comm);
         x
     }
 
@@ -124,13 +124,13 @@ impl DifferentiableAllReduceSum for Tensor {
     #[cfg(feature = "parallelism")]
     fn differentiable_all_reduce_sum_(&mut self, comm: &Option<Arc<Communicator>>) {
         if let Some(comm) = comm {
-            let device_index = match self.device() {
-                Device::Cuda(device_index) => device_index as i64,
-                _ => unimplemented!(),
-            };
-            tch::Cuda::synchronize(device_index);
+            // let device_index = match self.device() {
+            //     Device::Cuda(device_index) => device_index as i64,
+            //     _ => unimplemented!(),
+            // };
+            // tch::Cuda::synchronize(device_index);
             comm.differentiable_all_reduce_sum(&self).unwrap();
-            tch::Cuda::synchronize(device_index);
+            //tch::Cuda::synchronize(device_index);
         }
     }
 
