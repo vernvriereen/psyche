@@ -101,6 +101,10 @@ pub trait ReceiveTensor {
     fn receive(self, comm: &Arc<Communicator>, peer: i32) -> Tensor;
 }
 
+pub trait CudaSynchronize {
+    fn cuda_synchronize(&self);
+}
+
 impl AllReduce for Tensor {
     #[cfg(feature = "parallelism")]
     fn all_reduce_(&mut self, comm: &Option<Arc<Communicator>>, op: ReduceType) {
@@ -124,13 +128,8 @@ impl DifferentiableAllReduceSum for Tensor {
     #[cfg(feature = "parallelism")]
     fn differentiable_all_reduce_sum_(&mut self, comm: &Option<Arc<Communicator>>) {
         if let Some(comm) = comm {
-            // let device_index = match self.device() {
-            //     Device::Cuda(device_index) => device_index as i64,
-            //     _ => unimplemented!(),
-            // };
-            // tch::Cuda::synchronize(device_index);
             comm.differentiable_all_reduce_sum(&self).unwrap();
-            //tch::Cuda::synchronize(device_index);
+            self.device().cuda_synchronize();
         }
     }
 
@@ -199,6 +198,15 @@ impl ReceiveTensor for Tensor {
         // tch::Cuda::synchronize(rank);
 
         // cuda_tensor.unwrap()
+    }
+}
+
+impl CudaSynchronize for Device {
+    fn cuda_synchronize(&self) {
+        match &self {
+            Device::Cuda(rank) => tch::Cuda::synchronize(*rank as i64),
+            _ => panic!("Cannot CUDA synchronize non-CUDA device"),
+        }
     }
 }
 

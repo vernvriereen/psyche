@@ -2,7 +2,7 @@ use crate::fetch_data::Batch;
 use anyhow::{bail, Error, Result};
 use psyche_coordinator::model::{self, AnyLearningRateScheduler};
 use psyche_coordinator::RunState;
-use psyche_modeling::{CausalLM, Distro, DistroResult, LlamaForCausalLM};
+use psyche_modeling::{CausalLM, CudaSynchronize, Distro, DistroResult, LlamaForCausalLM};
 use std::ops::ControlFlow;
 use std::sync::Barrier;
 use std::sync::{
@@ -137,13 +137,19 @@ impl Trainer {
         data: &[Vec<i32>],
         barrier: &Arc<Barrier>,
     ) -> Result<f32> {
-        let inputs = Tensor::from_slice2(data).to(model.device());
+        let device = model.device();
+        let inputs = Tensor::from_slice2(data).to(device);
         let targets = inputs.copy();
+        if device.is_cuda() {
+            device.cuda_synchronize();
+        }
         barrier.wait();
         let (_, loss) = model.forward(&inputs, Some(&targets), None);
         let loss = loss.ok_or(Error::msg("No loss"))?;
-        barrier.wait();
         loss.backward();
+        if device.is_cuda() {
+            device.cuda_synchronize();
+        }
         barrier.wait();
         Ok(loss.try_into()?)
     }

@@ -2,10 +2,14 @@ use anyhow::{Error, Result};
 use clap::Parser;
 use psyche_data_provider::download_model_repo_sync;
 use psyche_modeling::{
-    auto_tokenizer, CausalLM, CommunicatorId, LlamaEosToks, LlamaForCausalLM, LogitsProcessor,
-    Sampling, TokenOutputStream,
+    auto_tokenizer, CausalLM, CommunicatorId, CudaSynchronize, LlamaEosToks, LlamaForCausalLM,
+    LogitsProcessor, Sampling, TokenOutputStream,
 };
-use std::{io::Write, path::PathBuf, sync::{Arc, Barrier}};
+use std::{
+    io::Write,
+    path::PathBuf,
+    sync::{Arc, Barrier},
+};
 use tch::{Device, Kind, Tensor};
 use tokenizers::Tokenizer;
 
@@ -137,13 +141,15 @@ fn inference(
             }
         }
         let input = Tensor::from_slice(&tokens).to(model.device).unsqueeze(0);
-        // if let Some((_, _, _, barrier)) = tensor_parallelism.as_ref() {
-        //     barrier.wait();
-        // }
+        if let Some((_, _, _, barrier)) = tensor_parallelism.as_ref() {
+            model.device.cuda_synchronize();
+            barrier.wait();
+        }
         let (logits, _) = model.forward(&input, None, Some(1));
-        // if let Some((_, _, _, barrier)) = tensor_parallelism.as_ref() {
-        //     barrier.wait();
-        // }
+        if let Some((_, _, _, barrier)) = tensor_parallelism.as_ref() {
+            model.device.cuda_synchronize();
+            barrier.wait();
+        }
         let logits = logits.squeeze();
         let next_token = logits_processor.sample(&logits)?;
         token_generated += 1;
