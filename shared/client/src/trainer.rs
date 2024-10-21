@@ -251,6 +251,10 @@ impl Trainer {
         lr_scheduler: AnyLearningRateScheduler,
         barrier: Arc<CancellableBarrier>,
     ) {
+        if let Err(err) = Self::forward_backward(&mut model, &vec![vec![0i32]], &barrier) {
+            error!("Test forward/backward gave error {err}");
+            return;
+        }
         loop {
             match assignment.recv() {
                 Ok(ParallelAssignment::Train {
