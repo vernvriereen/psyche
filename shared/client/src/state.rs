@@ -766,8 +766,9 @@ impl<T: NodeIdentity> State<T> {
             return Ok(());
         }
 
-        let trainers_still_running = self.data_parallelism - self.available_trainers.len();
+        let mut trainers_still_running = self.data_parallelism - self.available_trainers.len();
         if trainers_still_running > 0 {
+            trainers_still_running += 1;
             bail!("Apply round but {trainers_still_running} trainer(s) aren't finished");
         } else {
             debug!(

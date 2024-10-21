@@ -2,6 +2,7 @@
 
 mod bloom;
 mod bounded_queue;
+mod cancellable_barrier;
 mod deterministic_shuffle;
 mod interval_tree;
 mod lcg;
@@ -14,6 +15,7 @@ mod similarity;
 mod swap_or_not;
 
 pub use bloom::Bloom;
+pub use cancellable_barrier::{CancellableBarrier, CancelledBarrier};
 pub use deterministic_shuffle::deterministic_shuffle;
 pub use interval_tree::{ClosedInterval, IntervalTree};
 pub use lcg::LCG;

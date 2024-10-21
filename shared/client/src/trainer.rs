@@ -1,15 +1,19 @@
 use crate::fetch_data::Batch;
 use anyhow::{bail, Error, Result};
-use psyche_coordinator::model::{self, AnyLearningRateScheduler};
-use psyche_coordinator::RunState;
-use psyche_modeling::{CausalLM, CudaSynchronize, Distro, DistroResult, LlamaForCausalLM};
-use std::ops::ControlFlow;
-use std::sync::Barrier;
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    mpsc, Arc,
+use psyche_coordinator::{
+    model::{self, AnyLearningRateScheduler},
+    RunState,
 };
-use std::time::Instant;
+use psyche_core::CancellableBarrier;
+use psyche_modeling::{CausalLM, Distro, DistroResult, LlamaForCausalLM};
+use std::{
+    ops::ControlFlow,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc, Arc,
+    },
+    time::Instant,
+};
 use tch::{
     nn::{self, OptimizerConfig},
     Tensor,
@@ -61,6 +65,7 @@ pub struct Trainer {
     models: Vec<(
         mpsc::Sender<ParallelAssignment>,
         mpsc::Receiver<ParallelResult>,
+        Arc<CancellableBarrier>,
     )>,
 }
 
@@ -73,11 +78,11 @@ impl Trainer {
         run_state: Arc<AtomicUsize>,
     ) -> Self {
         let mut ret = Vec::with_capacity(models.len());
-        let barrier = Arc::new(Barrier::new(models.len()));
+        let barrier = CancellableBarrier::new(models.len());
         for (index, model) in models.into_iter().enumerate() {
             let (assignment_tx, assignment_rx) = mpsc::channel();
             let (result_tx, result_rx) = mpsc::channel();
-            ret.push((assignment_tx, result_rx));
+            ret.push((assignment_tx, result_rx, barrier.clone()));
 
             let optimizer = match optimizer {
                 model::Optimizer::AdamW {
@@ -135,23 +140,21 @@ impl Trainer {
     fn forward_backward(
         model: &mut LlamaForCausalLM,
         data: &[Vec<i32>],
-        barrier: &Arc<Barrier>,
-    ) -> Result<f32> {
+        barrier: &Arc<CancellableBarrier>,
+    ) -> Result<Option<f32>> {
         let device = model.device();
         let inputs = Tensor::from_slice2(data).to(device);
         let targets = inputs.copy();
-        if device.is_cuda() {
-            device.cuda_synchronize();
+        if let Err(_) = barrier.wait() {
+            return Ok(None);
         }
-        barrier.wait();
         let (_, loss) = model.forward(&inputs, Some(&targets), None);
         let loss = loss.ok_or(Error::msg("No loss"))?;
         loss.backward();
-        if device.is_cuda() {
-            device.cuda_synchronize();
+        if let Err(_) = barrier.wait() {
+            return Ok(None);
         }
-        barrier.wait();
-        Ok(loss.try_into()?)
+        Ok(Some(loss.try_into()?))
     }
 
     pub fn train(
@@ -165,7 +168,8 @@ impl Trainer {
                 "we have not implemented getting data from previous rounds. this should be impossible to hit.. this step is {step}, rollback passed is {:?}",
                 rollback.iter().map(|(step, _)| step).collect::<Vec<_>>());
         }
-        for (tx, _) in &self.models {
+        for (tx, _, barrier) in &self.models {
+            barrier.reset();
             tx.send(ParallelAssignment::Train {
                 data: data.clone(),
                 step,
@@ -176,7 +180,7 @@ impl Trainer {
         let mut final_loss = 0.0;
         let mut final_distro_results = None;
         let mut final_cancelled = false;
-        for (_, rx) in &self.models {
+        for (_, rx, _) in &self.models {
             match rx.recv()? {
                 ParallelResult::Train {
                     loss,
@@ -203,7 +207,8 @@ impl Trainer {
     }
 
     pub fn apply_distro_results(self, step: u32, results: Vec<DistroResults>) -> Result<Self> {
-        for (tx, _) in &self.models {
+        for (tx, _, barrier) in &self.models {
+            barrier.reset();
             tx.send(ParallelAssignment::Optimize {
                 distro_results: Some(results.clone()),
                 step,
@@ -215,7 +220,7 @@ impl Trainer {
             })?;
         }
         let start = Instant::now();
-        for (_, rx) in &self.models {
+        for (_, rx, _) in &self.models {
             match rx.recv()? {
                 ParallelResult::Train {
                     loss: _,
@@ -242,7 +247,7 @@ impl Trainer {
         micro_batch_size: usize,
         run_state: Arc<AtomicUsize>,
         lr_scheduler: AnyLearningRateScheduler,
-        barrier: Arc<Barrier>,
+        barrier: Arc<CancellableBarrier>,
     ) {
         loop {
             match assignment.recv() {
@@ -255,7 +260,7 @@ impl Trainer {
                         // TODO freeze the optimizer and prevent this from modifying its internal state, methinks, right? or maybe save it and restore it later?
                         // we just want to have the same optimizer state wyhen we exit, save for the main operation (if not frozen. hmm)
                         let lr = lr_scheduler.get_lr(*step);
-                        if optimize_step(lr, &mut optimizer, Some(result)).is_break() {
+                        if optimize_step(lr, &mut optimizer, Some(result), &barrier).is_break() {
                             panic!("Failed to roll back.")
                         };
                     }
@@ -275,11 +280,18 @@ impl Trainer {
                             != RunState::RoundTrain
                         {
                             cancelled = true;
+                            barrier.cancel();
                             debug!("Aborting training, run state changed");
                             break;
                         }
                         match Self::forward_backward(&mut model, micro_batch, &barrier) {
-                            Ok(batch_loss) => loss += batch_loss,
+                            Ok(Some(batch_loss)) => loss += batch_loss,
+                            Ok(None) => {
+                                // cancelled barrier catching race to on run_state
+                                cancelled = true;
+                                debug!("Aborting training, run state changed");
+                                break;
+                            }
                             Err(err) => {
                                 error!("Train error: {err}");
                                 return;
@@ -296,8 +308,7 @@ impl Trainer {
                             Optimizer::Distro(distro) => {
                                 let lr = lr_scheduler.get_lr(step);
                                 let ret = distro.generate(lr);
-                                // this is a gpu p2p optimization -- only the first gpu really produces results,
-                                // the other gpus merely feed their tp tensors to the first rank
+                                // just need results from one of the ranks
                                 match index == 0 {
                                     true => Some(ret),
                                     false => None,
@@ -321,7 +332,7 @@ impl Trainer {
                         // TODO freeze the optimizer and prevent this from modifying its internal state, methinks, right? or maybe save it and restore it later?
                         // we just want to have the same optimizer state wyhen we exit, save for the main operation (if not frozen. hmm)
                         let lr = lr_scheduler.get_lr(*step);
-                        if optimize_step(lr, &mut optimizer, Some(result)).is_break() {
+                        if optimize_step(lr, &mut optimizer, Some(result), &barrier).is_break() {
                             panic!("Failed to roll forwards.")
                         };
                     }
@@ -331,7 +342,9 @@ impl Trainer {
                     step,
                 }) => {
                     let lr = lr_scheduler.get_lr(step);
-                    if optimize_step(lr, &mut optimizer, distro_results.as_ref()).is_break() {
+                    if optimize_step(lr, &mut optimizer, distro_results.as_ref(), &barrier)
+                        .is_break()
+                    {
                         return;
                     }
                     if submission.send(ParallelResult::Optimize).is_err() {
@@ -352,6 +365,7 @@ fn optimize_step(
     lr: f64,
     optimizer: &mut Optimizer,
     distro_results: Option<&Vec<Vec<DistroResult>>>,
+    barrier: &Arc<CancellableBarrier>,
 ) -> ControlFlow<()> {
     match optimizer {
         Optimizer::AdamW {
@@ -368,7 +382,13 @@ fn optimize_step(
         Optimizer::Distro(distro) => match distro_results {
             Some(results) => {
                 debug!("Applying {} DisTrO gradients", results.len());
+                if let Err(_) = barrier.wait() {
+                    return ControlFlow::Break(());
+                }
                 distro.apply(results, lr);
+                if let Err(_) = barrier.wait() {
+                    return ControlFlow::Break(());
+                }
             }
             None => {
                 error!("Got DisTrO optimizer assignment, but no results");

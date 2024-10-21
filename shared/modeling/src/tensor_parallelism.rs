@@ -91,16 +91,6 @@ pub trait DifferentiableAllReduceSum {
     fn differentiable_all_reduce_sum_(&mut self, comm: &Option<Arc<Communicator>>);
 }
 
-#[cfg(feature = "parallelism")]
-pub trait SendTensor {
-    fn send(self, comm: &Arc<Communicator>, peer: i32) -> Tensor;
-}
-
-#[cfg(feature = "parallelism")]
-pub trait ReceiveTensor {
-    fn receive(self, comm: &Arc<Communicator>, peer: i32) -> Tensor;
-}
-
 pub trait CudaSynchronize {
     fn cuda_synchronize(&self);
 }
@@ -109,12 +99,9 @@ impl AllReduce for Tensor {
     #[cfg(feature = "parallelism")]
     fn all_reduce_(&mut self, comm: &Option<Arc<Communicator>>, op: ReduceType) {
         if let Some(comm) = comm {
-            let device_index = match self.device() {
-                Device::Cuda(device_index) => device_index as i64,
-                _ => unimplemented!(),
-            };
+            let device = self.device();
             comm.all_reduce(&[self], op.into()).unwrap();
-            tch::Cuda::synchronize(device_index);
+            device.cuda_synchronize();
         }
     }
 
@@ -136,68 +123,6 @@ impl DifferentiableAllReduceSum for Tensor {
     #[cfg(not(feature = "parallelism"))]
     fn all_reduce_(&mut self, comm: &Option<Arc<Communicator>>, _op: ReduceType) {
         assert!(comm.is_none());
-    }
-}
-
-#[cfg(feature = "parallelism")]
-impl SendTensor for Tensor {
-    fn send(self, comm: &Arc<Communicator>, peer: i32) -> Tensor {
-        todo!()
-        // let kind = self.kind();
-        // let rank = match self.device() {
-        //     Device::Cuda(rank) => rank as i64,
-        //     _ => unimplemented!(),
-        // };
-
-        // tch::Cuda::synchronize(rank);
-        // let cuda_tensor = CUDATensor::from(self);
-        // {
-        //     comm.device().synchronize().unwrap();
-        //     if kind == Kind::BFloat16 {
-        //         comm.send::<CUDATensor, bf16>(&cuda_tensor, peer)
-        //             .map_err(|x| format!("nccl error: {:?}", x.0))
-        //             .unwrap();
-        //     } else {
-        //         comm.send::<CUDATensor, f32>(&cuda_tensor, peer)
-        //             .map_err(|x| format!("nccl error: {:?}", x.0))
-        //             .unwrap();
-        //     }
-        //     comm.device().synchronize().unwrap();
-        // };
-        // tch::Cuda::synchronize(rank);
-
-        // cuda_tensor.unwrap()
-    }
-}
-
-#[cfg(feature = "parallelism")]
-impl ReceiveTensor for Tensor {
-    fn receive(self, comm: &Arc<Communicator>, peer: i32) -> Tensor {
-        todo!()
-        // let kind = self.kind();
-        // let rank = match self.device() {
-        //     Device::Cuda(rank) => rank as i64,
-        //     _ => unimplemented!(),
-        // };
-
-        // tch::Cuda::synchronize(rank);
-        // let mut cuda_tensor = CUDATensor::from(self);
-        // {
-        //     comm.device().synchronize().unwrap();
-        //     if kind == Kind::BFloat16 {
-        //         comm.recv::<CUDATensor, bf16>(&mut cuda_tensor, peer)
-        //             .map_err(|x| format!("nccl error: {:?}", x.0))
-        //             .unwrap();
-        //     } else {
-        //         comm.recv::<CUDATensor, f32>(&mut cuda_tensor, peer)
-        //             .map_err(|x| format!("nccl error: {:?}", x.0))
-        //             .unwrap();
-        //     }
-        //     comm.device().synchronize().unwrap();
-        // };
-        // tch::Cuda::synchronize(rank);
-
-        // cuda_tensor.unwrap()
     }
 }
 

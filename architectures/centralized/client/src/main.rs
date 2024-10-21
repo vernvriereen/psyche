@@ -5,6 +5,7 @@ use clap::{ArgAction, Parser};
 use psyche_network::SecretKey;
 use psyche_tui::{maybe_start_render_loop, LogOutput};
 use std::path::PathBuf;
+use tokio::runtime::Builder;
 use tracing::{info, Level};
 
 mod app;
@@ -47,8 +48,7 @@ struct Args {
     write_gradients_dir: Option<PathBuf>,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+async fn async_main() -> Result<()> {
     let args = Args::parse();
 
     #[cfg(target_os = "windows")]
@@ -106,4 +106,14 @@ async fn main() -> Result<()> {
     })
     .run()
     .await
+}
+
+fn main() -> Result<()> {
+    let runtime = Builder::new_multi_thread()
+        .enable_io()
+        .enable_time()
+        .max_blocking_threads(8192)
+        .build()
+        .unwrap();
+    runtime.block_on(async_main())
 }
