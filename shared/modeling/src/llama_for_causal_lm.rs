@@ -1,18 +1,18 @@
 use crate::{
     llama::{Cache, Config, Llama, Llama3RopeConfig, LlamaEosToks},
     safetensor_loader::load_safetensors_into_variables,
-    tensor_parallelism::{AllReduce, Communicator, ReduceType},
+    tensor_parallelism::Communicator,
     CausalLM, CommunicatorId,
 };
 use anyhow::{bail, Error, Result};
-use std::{path::PathBuf, rc::Rc};
+use std::{path::PathBuf, sync::Arc};
 use tch::{
     nn::{self, Module, VarStore},
     Device, Kind, Tensor,
 };
 
 #[cfg(feature = "parallelism")]
-use cudarc::{driver::CudaDevice, nccl::Comm};
+use tch::CNCCL;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct LlamaConfig {
@@ -76,7 +76,7 @@ pub struct LlamaForCausalLM {
     pub device: Device,
     pub lm_head: nn::Linear,
     pub cache: Cache,
-    pub comm: Option<Rc<Communicator>>,
+    pub comm: Option<Arc<Communicator>>,
 }
 
 impl LlamaForCausalLM {
@@ -85,7 +85,7 @@ impl LlamaForCausalLM {
         kind: Option<Kind>,
         attn_implementation: Option<AttentionImplementation>,
         device: Option<Device>,
-        tensor_parallelism_world: Option<(CommunicatorId, usize, usize)>,
+        tensor_parallelism_world: Option<(Arc<CommunicatorId>, usize, usize)>,
     ) -> Result<Self> {
         let llama_config: LlamaConfig = serde_json::from_str(&String::from_utf8(std::fs::read(
             repo_files
@@ -101,23 +101,13 @@ impl LlamaForCausalLM {
         });
         let device = device.unwrap_or(Device::Cuda(0));
         #[cfg(feature = "parallelism")]
-        let comm: Option<Rc<Communicator>> = match tensor_parallelism_world {
-            Some((master_id, rank, world_size)) => {
-                let cuda_device = match device {
-                    Device::Cuda(device_rank) => CudaDevice::new(device_rank)?,
-                    _ => {
-                        bail!("TP requires CUDA");
-                    }
-                };
-
-                let comm = match Comm::from_rank(cuda_device, rank, world_size, master_id) {
-                    Ok(comm) => Rc::new(comm),
-                    Err(err) => {
-                        bail!("nccl error: {:?}", err.0);
-                    }
-                };
-                Some(comm)
-            }
+        let comm = match tensor_parallelism_world {
+            Some((id, rank, world_size)) => Some(Arc::new(CNCCL::new(
+                id,
+                rank as i64,
+                world_size as i64,
+                device,
+            )?)),
             None => None,
         };
         #[cfg(not(feature = "parallelism"))]
@@ -167,23 +157,13 @@ impl CausalLM for LlamaForCausalLM {
         labels: Option<&Tensor>,
         num_logits_to_keep: Option<i64>,
     ) -> (Tensor, Option<Tensor>) {
-        let world_size = self
-            .comm
-            .as_ref()
-            .map(|c| c.world_size() as f64)
-            .unwrap_or(1.0);
         let (_, t) = x.size2().unwrap();
         let mut x = self.model.forward(x, 0, &mut self.cache);
         if let Some(num_logits_to_keep) = num_logits_to_keep {
             // Only compute necessary logits, and do not upcast them to float if we are not computing the loss
             x = x.slice(1, t - num_logits_to_keep, t, 1);
         }
-        let logits = self.lm_head.forward(&x);
-
-        let logits_max = logits.max_dim(-1, true).0;
-        let logits_max = logits_max.all_reduce(&self.comm, ReduceType::Max);
-        let mut logits = (logits - logits_max).all_reduce(&self.comm, ReduceType::Sum) / world_size;
-
+        let mut logits = self.lm_head.forward(&x);
         let loss = match labels {
             Some(labels) => {
                 // Upcast to float if we need to compute the loss to avoid potential precision issues

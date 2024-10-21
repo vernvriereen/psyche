@@ -1,5 +1,4 @@
-use std::f32::consts::PI;
-use std::rc::Rc;
+use std::{sync::Arc, f32::consts::PI};
 use tch::nn::{self, Module, Shard};
 use tch::{Device, Kind, Tensor};
 
@@ -161,13 +160,13 @@ struct Mlp {
 }
 
 impl Mlp {
-    fn new(vs: nn::Path, n_embd: i64, n_hidden: i64, comm: Option<Rc<Communicator>>) -> Self {
+    fn new(vs: nn::Path, n_embd: i64, n_hidden: i64, comm: Option<Arc<Communicator>>) -> Self {
         let c = nn::LinearConfig {
             bias: false,
             shard: comm.as_ref().map(|comm| Shard {
                 dim: 0,
-                rank: comm.rank(),
-                world_size: comm.world_size(),
+                rank: comm.rank() as usize,
+                world_size: comm.size() as usize,
             }),
             ..Default::default()
         };
@@ -181,8 +180,8 @@ impl Mlp {
                 nn::LinearConfig {
                     shard: comm.as_ref().map(|comm| Shard {
                         dim: 1,
-                        rank: comm.rank(),
-                        world_size: comm.world_size(),
+                        rank: comm.rank() as usize,
+                        world_size: comm.size() as usize,
                     }),
                     ..c
                 },
@@ -229,18 +228,18 @@ impl CausalSelfAttention {
         n_embd: i64,
         n_max_seq_len: i64,
         use_sdpa: bool,
-        comm: Option<Rc<Communicator>>,
+        comm: Option<Arc<Communicator>>,
     ) -> Self {
         let c = nn::LinearConfig {
             bias: false,
             shard: comm.as_ref().map(|comm| Shard {
                 dim: 0,
-                rank: comm.rank(),
-                world_size: comm.world_size(),
+                rank: comm.rank() as usize,
+                world_size: comm.size() as usize,
             }),
             ..Default::default()
         };
-        let tp_size = comm.as_ref().map(|x| x.world_size() as i64).unwrap_or(1);
+        let tp_size = comm.as_ref().map(|x| x.size()).unwrap_or(1);
         let head_dim = n_embd / n_head;
         let size_q = head_dim * n_head;
         let size_kv = head_dim * n_kvheads;
@@ -255,8 +254,8 @@ impl CausalSelfAttention {
                 nn::LinearConfig {
                     shard: comm.as_ref().map(|comm| Shard {
                         dim: 1,
-                        rank: comm.rank(),
-                        world_size: comm.world_size(),
+                        rank: comm.rank() as usize,
+                        world_size: comm.size() as usize,
                     }),
                     ..c
                 },
@@ -341,7 +340,7 @@ struct Block {
 }
 
 impl Block {
-    fn new(vs: nn::Path, config: &Config, comm: Option<Rc<Communicator>>) -> Self {
+    fn new(vs: nn::Path, config: &Config, comm: Option<Arc<Communicator>>) -> Self {
         let rms_1 = RmsNorm::new(
             &vs / "input_layernorm",
             config.hidden_size as i64,
@@ -389,7 +388,7 @@ pub struct Llama {
 }
 
 impl Llama {
-    pub fn new(vs: nn::Path, config: &Config, comm: Option<Rc<Communicator>>) -> Self {
+    pub fn new(vs: nn::Path, config: &Config, comm: Option<Arc<Communicator>>) -> Self {
         let wte = nn::embedding(
             &vs / "model" / "embed_tokens",
             config.vocab_size as i64,

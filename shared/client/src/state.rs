@@ -763,8 +763,9 @@ impl<T: NodeIdentity> State<T> {
             return Ok(());
         }
 
-        let trainers_still_running = self.data_parallelism - self.available_trainers.len();
+        let mut trainers_still_running = self.data_parallelism - self.available_trainers.len();
         if trainers_still_running > 0 {
+            trainers_still_running += 1;
             bail!("Apply round but {trainers_still_running} trainer(s) aren't finished");
         } else {
             debug!(
@@ -932,12 +933,12 @@ impl<T: NodeIdentity> State<T> {
                         info!("Loading {}", hub_repo.repo_id);
                         let mut futures = Vec::with_capacity(data_parallelism * tensor_parallelism);
                         for dp in 0..data_parallelism {
-                            let communicator_id = CommunicatorId::new().unwrap();
+                            let communicator_id = Arc::new(CommunicatorId::new());
                             for tp in 0..tensor_parallelism {
                                 let tensor_parallelism_world = match tensor_parallelism {
                                     1 => None,
                                     tensor_parallelism => {
-                                        Some((communicator_id, tp, tensor_parallelism))
+                                        Some((communicator_id.clone(), tp, tensor_parallelism))
                                     }
                                 };
                                 let repo_files = repo_files.clone();

@@ -35,7 +35,8 @@ def initialize_weights(model: LlamaModel, n_layer: int, n_embd: int) -> None:
 def main(args):
     config = LlamaConfig.from_pretrained(args.config)
     torch.set_default_dtype(args.dtype)
-    torch.set_default_device("cuda")
+    if args.device:
+        torch.set_default_device(args.device)
     print("Initializing random model...")
     model = LlamaForCausalLM(config)
     print("GPT-NeoX initialization...")
@@ -60,5 +61,6 @@ args.add_argument("--repo", type=str, help="destination repo")
 args.add_argument("--private", action="store_true", help="push as a private repo")
 args.add_argument("--dtype", type=int, default=torch.bfloat16, help="torch dtype")
 args.add_argument("--dry-run", action="store_true", help="don't actually push")
+args.add_argument("--device", type=str, help="device to init on")
 
 main(args.parse_args())

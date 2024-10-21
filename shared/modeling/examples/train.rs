@@ -5,6 +5,7 @@ use psyche_data_provider::{download_model_repo_sync, LocalDataProvider};
 use psyche_modeling::{Batcher, CausalLM, CommunicatorId, LlamaForCausalLM};
 use rand::Rng;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::SystemTime;
 use tch::nn::{self, OptimizerConfig};
 use tch::{Device, Kind, Tensor};
@@ -59,7 +60,7 @@ struct Args {
 
 fn train(
     repo_files: Vec<PathBuf>,
-    tensor_parallelism: Option<(CommunicatorId, usize, usize)>,
+    tensor_parallelism: Option<(Arc<CommunicatorId>, usize, usize)>,
     args: Args,
     seed: [u8; 32],
 ) -> Result<()> {
@@ -70,13 +71,14 @@ fn train(
         seed,
     )?;
     let rank = tensor_parallelism
-        .map(|(_, rank, _)| rank)
+        .as_ref()
+        .map(|(_, rank, _)| *rank)
         .unwrap_or_default();
     let mut model = LlamaForCausalLM::from_pretrained(
         &repo_files,
         Some(Kind::BFloat16),
         None,
-        tensor_parallelism.map(|_| Device::Cuda(rank)),
+        tensor_parallelism.as_ref().map(|_| Device::Cuda(rank)),
         tensor_parallelism,
     )?;
     let device = model.device();
@@ -142,11 +144,13 @@ fn main() -> Result<()> {
     match args.tensor_parallelism {
         Some(0) | Some(1) | None => train(repo_files, None, args, seed)?,
         Some(world_size) => {
-            let id = CommunicatorId::new().unwrap();
+            let id = Arc::new(CommunicatorId::new());
             let threads = (0..world_size)
                 .map(|rank| {
                     let repo_files = repo_files.clone();
                     let args = args.clone();
+                    let seed = seed.clone();
+                    let id = id.clone();
                     std::thread::spawn(move || {
                         train(repo_files, Some((id, rank, world_size)), args, seed)
                     })
