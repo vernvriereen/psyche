@@ -60,6 +60,7 @@ impl<T: NodeIdentity> DataFetcher<T> {
         debug!("got new batch IDs for step {step} - there are {num_all_batch_ids}");
         let batch_ids_not_yet_trained_on: std::sync::Arc<Mutex<BatchIdSet>> =
             Arc::new(Mutex::new(all_batch_ids.into_iter().collect()));
+        let greedy = state.is_greedy_data();
 
         let (tx_next_sample, next_sample) = mpsc::channel(self.buffer_size);
 
@@ -80,17 +81,21 @@ impl<T: NodeIdentity> DataFetcher<T> {
                             match assigned_batch_ids.pop() {
                                 Some(assigned) => assigned,
                                 None => {
-                                    let remaining_batch_ids =
-                                        batch_ids_not_yet_trained_on.lock().await;
-                                    match remaining_batch_ids.len() {
-                                        0 => {
-                                            break;
+                                    if greedy {
+                                        let remaining_batch_ids =
+                                            batch_ids_not_yet_trained_on.lock().await;
+                                        match remaining_batch_ids.len() {
+                                            0 => {
+                                                return;
+                                            }
+                                            len => remaining_batch_ids
+                                                .iter()
+                                                .nth(rand::thread_rng().gen_range(0..len))
+                                                .copied()
+                                                .unwrap(),
                                         }
-                                        len => remaining_batch_ids
-                                            .iter()
-                                            .nth(rand::thread_rng().gen_range(0..len))
-                                            .copied()
-                                            .unwrap(),
+                                    } else {
+                                        return;
                                     }
                                 }
                             }

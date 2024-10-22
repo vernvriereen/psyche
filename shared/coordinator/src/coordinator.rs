@@ -408,6 +408,10 @@ impl<T: NodeIdentity> Coordinator<T> {
         )
     }
 
+    pub fn is_greedy_data(&self) -> bool {
+        self.max_batches_per_client != 0
+    }
+
     fn tick_waiting_for_members(&mut self, backend: &dyn Backend<T>, unix_timestamp: u64) {
         let clients = backend.select_new_clients();
         if clients.len() as u32 >= self.min_clients {

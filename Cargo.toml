@@ -62,3 +62,6 @@ pretty_assertions = "1.4.1"
 # we don't care about that MSRV guarantee, so we override zeroize dep to be simply "=1"
 [patch.crates-io]
 curve25519-dalek = { git = "https://github.com/NousResearch/curve25519-dalek.git", rev = "20f6f1540c8ce7fcd54c33470e06032946b2a143" }
+
+[profile.release]
+debug = false

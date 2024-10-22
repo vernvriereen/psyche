@@ -301,8 +301,10 @@ impl<T: NodeIdentity> State<T> {
             sample = async {self.training_data.as_mut().unwrap().next_sample.recv().await}, if self.is_run_state(RunState::RoundTrain)
             && !self.available_trainers.is_empty()
             && self.training_data.is_some() => {
-                let sample = sample.ok_or(Error::msg("Data fetcher exited"))?;
-                self.handle_poll_training_data(sample.0, sample.1, self.training_data.as_ref().unwrap().step)
+                match sample {
+                    Some(sample) => self.handle_poll_training_data(sample.0, sample.1, self.training_data.as_ref().unwrap().step),
+                    None => Ok(ToSend::Nothing),
+                }
             },
             finished = async {self.trainings.get_mut(*trainings_finished_position.as_ref().unwrap()).unwrap().await}, if trainings_finished_position.is_some() => {
                 let finished = finished??;
@@ -386,29 +388,34 @@ impl<T: NodeIdentity> State<T> {
         identity: &T,
         broadcast: BroadcastMessage,
     ) -> Result<Option<BlobTicket>> {
+        let state = match self.state.as_ref() {
+            Some(state) => state,
+            None => {
+                warn!("Got broadcast but have no state, ignoring");
+                return Ok(None);
+            }
+        };
         let (_, witness_proof, _) = self
             .committee_info
             .as_ref()
             .ok_or(Error::msg("Broadcast message processor has no self proofs"))?;
         // verified by process_network_event caller
         if broadcast.proof.committee == Committee::Trainer {
-            let client_commitments = *self.commitments_per_client.get(identity).unwrap_or(&0);
-            if client_commitments
-                >= self
-                    .state
-                    .as_ref()
-                    .map(|x| x.max_batches_per_client)
-                    .unwrap_or(0)
-            {
-                info!(
-                    "Maximum commitments received from {}, dropping {}",
-                    identity,
-                    hex::encode(broadcast.commitment)
-                );
-                return Ok(None);
+            if state.is_greedy_data() {
+                let client_commitments = *self.commitments_per_client.get(identity).unwrap_or(&0);
+                if client_commitments >= state.max_batches_per_client {
+                    info!(
+                        "Maximum commitments received from {}, dropping {}",
+                        identity,
+                        hex::encode(broadcast.commitment)
+                    );
+                    return Ok(None);
+                }
+                self.commitments_per_client
+                    .insert(identity.clone(), client_commitments + 1);
+            } else {
+                // MT
             }
-            self.commitments_per_client
-                .insert(identity.clone(), client_commitments + 1);
 
             if witness_proof.witness {
                 match self.blooms.as_mut() {
