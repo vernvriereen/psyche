@@ -86,7 +86,7 @@
           // {
             inherit cargoArtifacts;
           });
-      in {
+      in rec {
         packages = {
           psyche-centralized-client = buildPackage "psyche-centralized-client";
           psyche-centralized-server = buildPackage "psyche-centralized-server";
@@ -102,24 +102,26 @@
           ];
         };
 
-        checks = {
-          workspace-format = craneLib.cargoFmt {
-            inherit src;
+        checks =
+          packages
+          // {
+            workspace-format = craneLib.cargoFmt {
+              inherit src;
+            };
+
+            workspace-clippy = craneLib.cargoClippy (commonArgs
+              // {
+                inherit cargoArtifacts;
+                cargoClippyExtraArgs = "--workspace -- --deny warnings";
+              });
+
+            workspace-test = craneLib.cargoNextest (commonArgs
+              // {
+                inherit cargoArtifacts;
+                partitions = 1;
+                partitionType = "count";
+              });
           };
-
-          workspace-clippy = craneLib.cargoClippy (commonArgs
-            // {
-              inherit cargoArtifacts;
-              cargoClippyExtraArgs = "--workspace -- --deny warnings";
-            });
-
-          workspace-test = craneLib.cargoNextest (commonArgs
-            // {
-              inherit cargoArtifacts;
-              partitions = 1;
-              partitionType = "count";
-            });
-        };
       };
     };
 }

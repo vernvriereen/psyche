@@ -3,42 +3,6 @@ on:
   pull_request:
   push:
 jobs:
-  build-centralized-client:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/workflows/prep
-      - uses: cachix/cachix-action@v14
-        with:
-          name: psyche
-          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
-
-      - run: nix build -L .#psyche-centralized-client
-
-  build-centralized-server:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/workflows/prep
-      - uses: cachix/cachix-action@v14
-        with:
-          name: psyche
-          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
-
-      - run: nix build -L .#psyche-centralized-server
-
-  build-expand-distro:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/workflows/prep
-      - uses: cachix/cachix-action@v14
-        with:
-          name: psyche
-          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
-
-      - run: nix build -L .#expand-distro
-
   check:
     runs-on: ubuntu-latest
     steps:
