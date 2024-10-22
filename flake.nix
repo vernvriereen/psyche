@@ -34,7 +34,12 @@
           extensions = ["rust-src"];
         };
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
-        src = craneLib.cleanCargoSource ./.;
+
+        testResourcesFilter = path: _type: builtins.match ".*tests/resources/.*$" path != null;
+        src = pkgs.lib.cleanSourceWith {
+          src = ./.;
+          filter = path: type: (testResourcesFilter path type) || (craneLib.filterCargoSources path type);
+        };
 
         torch = pkgs.libtorch-bin.dev.overrideAttrs (old: {
           version = "2.4.0";
@@ -77,7 +82,8 @@
               doCheck = false; # tests are run with nextest in `nix flake check`
             });
 
-          buildWholeWorkspace = craneLib.buildPackage(commonArgs // {
+        buildWholeWorkspace = craneLib.buildPackage (commonArgs
+          // {
             inherit cargoArtifacts;
           });
       in {
