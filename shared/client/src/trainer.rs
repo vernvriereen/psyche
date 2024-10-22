@@ -145,13 +145,13 @@ impl Trainer {
         let device = model.device();
         let inputs = Tensor::from_slice2(data).to(device);
         let targets = inputs.copy();
-        if let Err(_) = barrier.wait() {
+        if barrier.wait().is_err() {
             return Ok(None);
         }
         let (_, loss) = model.forward(&inputs, Some(&targets), None);
         let loss = loss.ok_or(Error::msg("No loss"))?;
         loss.backward();
-        if let Err(_) = barrier.wait() {
+        if barrier.wait().is_err() {
             return Ok(None);
         }
         Ok(Some(loss.try_into()?))
@@ -251,7 +251,7 @@ impl Trainer {
         lr_scheduler: AnyLearningRateScheduler,
         barrier: Arc<CancellableBarrier>,
     ) {
-        if let Err(err) = Self::forward_backward(&mut model, &vec![vec![0i32]], &barrier) {
+        if let Err(err) = Self::forward_backward(&mut model, &[vec![0i32]], &barrier) {
             error!("Test forward/backward gave error {err}");
             return;
         }
@@ -388,11 +388,11 @@ fn optimize_step(
         Optimizer::Distro(distro) => match distro_results {
             Some(results) => {
                 debug!("Applying {} DisTrO gradients", results.len());
-                if let Err(_) = barrier.wait() {
+                if barrier.wait().is_err() {
                     return ControlFlow::Break(());
                 }
                 distro.apply(results, lr);
-                if let Err(_) = barrier.wait() {
+                if barrier.wait().is_err() {
                     return ControlFlow::Break(());
                 }
             }

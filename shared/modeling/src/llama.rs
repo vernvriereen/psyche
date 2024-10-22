@@ -1,4 +1,4 @@
-use std::{sync::Arc, f32::consts::PI};
+use std::{f32::consts::PI, sync::Arc};
 use tch::nn::{self, Module, Shard};
 use tch::{Device, Kind, Tensor};
 

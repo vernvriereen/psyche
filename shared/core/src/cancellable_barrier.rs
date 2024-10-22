@@ -1,6 +1,6 @@
 use std::fmt::Display;
-use std::sync::{Arc, Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
 
 pub struct CancellableBarrier {
     mutex: Mutex<()>,
@@ -11,7 +11,7 @@ pub struct CancellableBarrier {
     cancelled: AtomicBool,
 }
 
-pub struct CancelledBarrier {}
+pub struct CancelledBarrier;
 
 impl Display for CancelledBarrier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -36,7 +36,7 @@ impl CancellableBarrier {
         let local_gen = self.generation.load(Ordering::Acquire);
 
         if self.cancelled.load(Ordering::Acquire) {
-            return Err(CancelledBarrier{});
+            return Err(CancelledBarrier);
         }
 
         let count = self.count.fetch_add(1, Ordering::Acquire) + 1;
@@ -44,7 +44,7 @@ impl CancellableBarrier {
             loop {
                 guard = self.cvar.wait(guard).unwrap();
                 if self.cancelled.load(Ordering::Acquire) {
-                    return Err(CancelledBarrier{});
+                    return Err(CancelledBarrier {});
                 }
                 if local_gen != self.generation.load(Ordering::Acquire) {
                     return Ok(());

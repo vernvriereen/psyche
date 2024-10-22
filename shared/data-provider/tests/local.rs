@@ -33,7 +33,7 @@ async fn loads_dolma_subset() {
 
         let expected = read_to_string(&decoded_path)
             .await
-            .expect(&format!("no decoded file at {decoded_path:?}"));
+            .unwrap_or_else(|_| panic!("no decoded file at {decoded_path:?}"));
 
         let decoded = tokenizer
             .decode(
@@ -63,7 +63,7 @@ async fn loads_fineweb_subset() {
 
         let expected = read_to_string(&decoded_path)
             .await
-            .expect(&format!("no decoded file at {decoded_path:?}"));
+            .unwrap_or_else(|_| panic!("no decoded file at {decoded_path:?}"));
 
         let decoded = tokenizer
             .decode(

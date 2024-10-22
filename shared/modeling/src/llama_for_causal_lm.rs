@@ -102,6 +102,10 @@ impl LlamaForCausalLM {
         let device = device.unwrap_or(Device::Cuda(0));
         #[cfg(feature = "parallelism")]
         let comm = match tensor_parallelism_world {
+            // TODO: CNCCL is not Sync, though it is Send.
+            // since we can't safely use it on two threads at once,
+            // we should either wrap it in a Mutex, or just switch to Rc if we don't need mutability.
+            #[allow(clippy::arc_with_non_send_sync)]
             Some((id, rank, world_size)) => Some(Arc::new(CNCCL::new(
                 id,
                 rank as i64,

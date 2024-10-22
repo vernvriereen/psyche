@@ -149,7 +149,6 @@ fn main() -> Result<()> {
                 .map(|rank| {
                     let repo_files = repo_files.clone();
                     let args = args.clone();
-                    let seed = seed.clone();
                     let id = id.clone();
                     std::thread::spawn(move || {
                         train(repo_files, Some((id, rank, world_size)), args, seed)

@@ -115,7 +115,7 @@ impl DifferentiableAllReduceSum for Tensor {
     #[cfg(feature = "parallelism")]
     fn differentiable_all_reduce_sum_(&mut self, comm: &Option<Arc<Communicator>>) {
         if let Some(comm) = comm {
-            comm.differentiable_all_reduce_sum(&self).unwrap();
+            comm.differentiable_all_reduce_sum(self).unwrap();
             self.device().cuda_synchronize();
         }
     }

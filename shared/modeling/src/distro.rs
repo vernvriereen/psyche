@@ -564,7 +564,7 @@ impl Distro {
                     let mut shards = (0..world_size)
                         .map(|_| delta.empty_like())
                         .collect::<Vec<_>>();
-                    comm.all_gather(&shards, &delta).unwrap();
+                    comm.all_gather(&shards, delta).unwrap();
                     let gathered_delta = unshard_tensor(shards, shard);
 
                     // Compress delta
@@ -600,7 +600,7 @@ impl Distro {
                 None => {
                     // Compress delta
                     let (sparse_idx, sparse_val, xshape, totalk) = CompressDCT::compress(
-                        &self.transform.encode(&delta),
+                        &self.transform.encode(delta),
                         self.compression_topk,
                         true,
                     );
@@ -631,7 +631,7 @@ impl Distro {
     }
 
     #[allow(unused)]
-    pub fn apply(&mut self, results: &Vec<Vec<DistroResult>>, lr: f64) {
+    pub fn apply(&mut self, results: &[Vec<DistroResult>], lr: f64) {
         let _no_grad = tch::no_grad_guard();
         for (index, (variable, shard)) in self
             .sgd
