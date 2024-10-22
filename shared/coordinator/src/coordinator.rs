@@ -235,10 +235,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         ) {
             return Err(CoordinatorError::InvalidWitness);
         }
-        if self.run_state == RunState::RoundTrain {
-            self.change_state(unix_timestamp, RunState::RoundWitness);
-        }
-        if self.run_state != RunState::RoundWitness {
+        if self.run_state != RunState::RoundWitness && self.run_state != RunState::RoundTrain {
             return Err(CoordinatorError::InvalidRunState);
         }
 
@@ -249,6 +246,11 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
         let round = self.current_round_mut_unchecked();
         round.witnesses.push(witness);
+
+        if round.witnesses.len() == self.witness_quorum as usize {
+            // enough witnesses have early voted, go to witness state
+            self.change_state(unix_timestamp, RunState::RoundWitness);
+        }
         Ok(())
     }
 
@@ -431,8 +433,12 @@ impl<T: NodeIdentity> Coordinator<T> {
 
     fn tick_round_train(&mut self, unix_timestamp: u64) {
         if unix_timestamp >= self.max_round_train_time + self.run_state_start_unix_timestamp {
-            // if we take longer than our max round train time, abandon the epoch and start over (assume too many people left)
-            self.start_waiting_for_members(unix_timestamp);
+            if self.is_greedy_data() {
+                // if we take longer than our max round train time, abandon the epoch and start over (assume too many people left)
+                self.start_waiting_for_members(unix_timestamp);
+            } else {
+                self.change_state(unix_timestamp, RunState::RoundWitness);
+            }
         }
     }
 

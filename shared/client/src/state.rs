@@ -7,11 +7,11 @@ use crate::{
 };
 use anyhow::{bail, Error, Result};
 use psyche_coordinator::{
-    get_batch_ids_for_state, model, Committee, CommitteeProof, CommitteeSelection, Coordinator,
-    HealthChecks, RunState, Witness, WitnessProof, BLOOM_FALSE_RATE, BLOOM_MAX_BITS,
-    NUM_STORED_ROUNDS,
+    assign_data_for_state, get_batch_ids_for_state, model, Committee, CommitteeProof,
+    CommitteeSelection, Coordinator, HealthChecks, RunState, Witness, WitnessProof,
+    BLOOM_FALSE_RATE, BLOOM_MAX_BITS, NUM_STORED_ROUNDS,
 };
-use psyche_core::{sha256, Bloom, BoundedQueue, NodeIdentity};
+use psyche_core::{sha256, Bloom, BoundedQueue, IntervalTree, NodeIdentity};
 use psyche_data_provider::{download_model_repo_async, DataProviderTcpClient};
 use psyche_modeling::{CommunicatorId, DistroResult, LlamaForCausalLM};
 use psyche_network::{dummy_blob_ticket, BlobTicket, NetworkEvent};
@@ -87,6 +87,7 @@ pub struct State<T: NodeIdentity> {
     data_fetcher: Option<DataFetcher<T>>,
     round_start: Option<Instant>,
     round_durations: BoundedQueue<Duration>,
+    data_assignments: IntervalTree<u64, T>,
     /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
     _last_observed_num_batches_remaining: usize,
     apply_start: Option<Instant>,
@@ -131,6 +132,7 @@ impl<T: NodeIdentity> State<T> {
             data_fetcher: None,
             round_start: None,
             round_durations: BoundedQueue::new(16),
+            data_assignments: IntervalTree::new(),
             _last_observed_num_batches_remaining: 0,
             apply_start: None,
         }
@@ -404,8 +406,8 @@ impl<T: NodeIdentity> State<T> {
             if state.is_greedy_data() {
                 let client_commitments = *self.commitments_per_client.get(identity).unwrap_or(&0);
                 if client_commitments >= state.max_batches_per_client {
-                    info!(
-                        "Maximum commitments received from {}, dropping {}",
+                    debug!(
+                        "Maximum commitments received from {}, dropping 0x{}",
                         identity,
                         hex::encode(broadcast.commitment)
                     );
@@ -414,7 +416,20 @@ impl<T: NodeIdentity> State<T> {
                 self.commitments_per_client
                     .insert(identity.clone(), client_commitments + 1);
             } else {
-                // MT
+                let first_data_id = broadcast.batch_id * state.data_indicies_per_batch as u64;
+                let correct_assignee = match self.data_assignments.get(first_data_id) {
+                    Some(assignee) => identity == assignee,
+                    None => false,
+                };
+                if !correct_assignee {
+                    debug!(
+                        "Got batch {} from {} but was not assignee, dropping 0x{}",
+                        broadcast.batch_id,
+                        identity,
+                        hex::encode(broadcast.commitment)
+                    );
+                    return Ok(None);
+                }
             }
 
             if witness_proof.witness {
@@ -656,20 +671,7 @@ impl<T: NodeIdentity> State<T> {
             state.clients.len(),
             round.random_seed,
         );
-
-        // let data_ids = assign_data_for_state(&state, &committee_selection)
-        //     .iter()
-        //     .filter(|(_, v)| **v == self.identity)
-        //     .flat_map(|(k, _)| (k.start as usize..k.end as usize + 1).collect::<Vec<_>>())
-        //     .collect::<Vec<_>>();
-
-        /*
-         * TODO DATA
-         * - destroy old data fetch task
-         * - get the batch IDs list for the new state
-         * - get the number of batch IDs we're going to train on
-         * -
-         */
+        self.data_assignments = assign_data_for_state(state, &committee_selection);
 
         if self.data_fetcher.is_none() {
             bail!("Ready to train but no data fetcher! Did we miss warmup??");
@@ -679,7 +681,7 @@ impl<T: NodeIdentity> State<T> {
             .data_fetcher
             .as_mut()
             .unwrap()
-            .fetch_data(state, &committee_selection, &self.identity);
+            .fetch_data(state, &self.data_assignments, &self.identity);
         self.training_data = Some(training_data);
 
         let committee_proof = committee_selection.get_committee(index);

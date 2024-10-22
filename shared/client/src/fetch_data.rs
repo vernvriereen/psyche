@@ -1,7 +1,5 @@
-use psyche_coordinator::{
-    assign_data_for_state, get_batch_ids_for_state, CommitteeSelection, Coordinator,
-};
-use psyche_core::NodeIdentity;
+use psyche_coordinator::{get_batch_ids_for_state, Coordinator};
+use psyche_core::{IntervalTree, NodeIdentity};
 use psyche_data_provider::{DataProviderTcpClient, TokenizedDataProvider};
 use rand::Rng;
 use std::{collections::HashSet, sync::Arc};
@@ -34,14 +32,14 @@ impl<T: NodeIdentity> DataFetcher<T> {
     pub fn fetch_data(
         &mut self,
         state: &Coordinator<T>,
-        committee_selection: &CommitteeSelection,
+        data_assignments: &IntervalTree<u64, T>,
         identity: &T,
     ) -> (usize, TrainingDataForStep) {
         let step = state.step;
         let data_indicies_per_batch = state.data_indicies_per_batch;
 
         // everyone tries to not overlap (just a hopeful guess though, not part of consensus, everyone is free to train on whatever)
-        let mut assigned_batch_ids: Vec<u64> = assign_data_for_state(state, committee_selection)
+        let mut assigned_batch_ids: Vec<u64> = data_assignments
             .iter()
             .filter_map(|(key, value)| match value == identity {
                 true => {
