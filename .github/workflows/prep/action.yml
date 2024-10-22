@@ -1,0 +1,7 @@
+name: "Prep"
+description: "Prep for builds"
+runs:
+  using: "composite"
+  steps:
+    - uses: ./.github/workflows/free-space
+    - uses: ./.github/workflows/prep-nix
