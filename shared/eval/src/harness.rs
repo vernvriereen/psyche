@@ -3,13 +3,19 @@ use indicatif::{ProgressBar, ProgressStyle};
 use psyche_modeling::CausalLM;
 use rand::{seq::SliceRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::HashMap,
+    fmt::Display,
+    sync::{Arc, RwLock},
+};
 use tch::{Kind, Tensor};
 use tokenizers::Tokenizer;
 
 pub enum TaskType {
     LogLikelihood(Box<dyn LogLikelihoodTask>),
 }
+
+pub type LiveResults = Option<Arc<RwLock<HashMap<String, f32>>>>;
 
 pub struct Task {
     task_type: TaskType,
@@ -149,7 +155,12 @@ impl Task {
 }
 
 impl PreparedTask {
-    pub fn run<M: CausalLM>(&self, model: &mut M, quiet: bool) -> HashMap<String, f32> {
+    pub fn run<M: CausalLM>(
+        &self,
+        model: &mut M,
+        quiet: bool,
+        live_results: LiveResults,
+    ) -> HashMap<String, f32> {
         let pbar = match quiet {
             true => None,
             false => {
@@ -167,7 +178,7 @@ impl PreparedTask {
             PreparedTaskType::LogLikelihood {
                 docs,
                 tokenized_fewshot,
-            } => Self::run_log_likelihood(model, docs, tokenized_fewshot, pbar),
+            } => Self::run_log_likelihood(model, docs, tokenized_fewshot, pbar, live_results),
         }
     }
 
@@ -176,6 +187,7 @@ impl PreparedTask {
         docs: &[TokenizedLLHDocument],
         tokenized_fewshot: &[i64],
         pbar: Option<ProgressBar>,
+        live_results: LiveResults,
     ) -> HashMap<String, f32> {
         let mut acc_num = 0f32;
         let mut acc_norm_num = 0f32;
@@ -245,6 +257,11 @@ impl PreparedTask {
             if let Some(pbar) = &pbar {
                 pbar.set_message(format!("acc_norm: {:.3}", acc_norm_num / acc_denom));
                 pbar.inc(1);
+            }
+            if let Some(live_results) = live_results.as_ref() {
+                let mut live_results = live_results.write().unwrap();
+                live_results.insert("acc".to_owned(), acc_num / acc_denom);
+                live_results.insert("acc_norm".to_owned(), acc_norm_num / acc_denom);
             }
         }
         HashMap::from([

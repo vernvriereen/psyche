@@ -22,7 +22,7 @@ fn main() -> Result<()> {
         let name = format!("{task}");
         let scores = task
             .prepare(&tokenizer, model.bos_token_id(), false, None)
-            .run(&mut model, false);
+            .run(&mut model, false, None);
         println!("{name}: {scores:?}");
     }
     Ok(())
