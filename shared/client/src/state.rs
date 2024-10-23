@@ -78,7 +78,6 @@ pub struct State<T: NodeIdentity> {
     data_parallelism: usize,
     tensor_parallelism: usize,
     notify_clear_uploads: Arc<Notify>,
-    notify_new_batch: Arc<Notify>,
     micro_batch_size: Option<usize>,
     write_gradients_dir: Option<PathBuf>,
     atomic_run_state: Arc<AtomicUsize>,
@@ -124,7 +123,6 @@ impl<T: NodeIdentity> State<T> {
             notify_clear_uploads: Arc::new(Notify::new()),
             data_parallelism,
             tensor_parallelism,
-            notify_new_batch: Arc::new(Notify::new()),
             micro_batch_size,
             write_gradients_dir,
             atomic_run_state: Arc::new(AtomicUsize::new(0)),
@@ -235,7 +233,6 @@ impl<T: NodeIdentity> State<T> {
             return Ok(ToSend::Nothing);
         }
         self.round_losses.push(output.loss);
-        debug!("Batch {} loss: {}", batch_id, output.loss);
         let (committee_proof, _, _) = self
             .committee_info
             .as_ref()
@@ -403,8 +400,8 @@ impl<T: NodeIdentity> State<T> {
             .ok_or(Error::msg("Broadcast message processor has no self proofs"))?;
         // verified by process_network_event caller
         if broadcast.proof.committee == Committee::Trainer {
+            let client_commitments = *self.commitments_per_client.get(identity).unwrap_or(&0);
             if state.is_greedy_data() {
-                let client_commitments = *self.commitments_per_client.get(identity).unwrap_or(&0);
                 if client_commitments >= state.max_batches_per_client {
                     debug!(
                         "Maximum commitments received from {}, dropping 0x{}",
@@ -413,8 +410,6 @@ impl<T: NodeIdentity> State<T> {
                     );
                     return Ok(None);
                 }
-                self.commitments_per_client
-                    .insert(identity.clone(), client_commitments + 1);
             } else {
                 let first_data_id = broadcast.batch_id * state.data_indicies_per_batch as u64;
                 let correct_assignee = match self.data_assignments.get(first_data_id) {
@@ -431,6 +426,16 @@ impl<T: NodeIdentity> State<T> {
                     return Ok(None);
                 }
             }
+            self.commitments_per_client
+                .insert(identity.clone(), client_commitments + 1);
+            let total_commitments = self
+                .commitments_per_client
+                .values()
+                .fold(0, |acc, ele| acc + *ele);
+            debug!(
+                "Total commitments for step {}: {}",
+                state.step, total_commitments
+            );
 
             if witness_proof.witness {
                 match self.blooms.as_mut() {
@@ -537,6 +542,11 @@ impl<T: NodeIdentity> State<T> {
             }
 
             remaining_batch_ids.remove(batch_id);
+            debug!(
+                "Remaining batches to download for step {}: {}",
+                payload.step,
+                remaining_batch_ids.len()
+            );
             (remaining_batch_ids.is_empty(), remaining_batch_ids.len())
         } else {
             // it was already empty, so we didn't just consume the last value.
@@ -728,7 +738,6 @@ impl<T: NodeIdentity> State<T> {
         self.commitments_per_client.clear();
         self.payloads.clear();
         self.notify_clear_uploads.notify_one(); // clear any served uploads we have
-        self.notify_new_batch.notify_one();
 
         // if !data_ids.is_empty() {
         //     let data_provider = std::mem::take(&mut self.data_provider)
@@ -808,6 +817,7 @@ impl<T: NodeIdentity> State<T> {
         let step = state.step;
         let batch_ids = get_batch_ids_for_state(state);
         let round_rollbacks = self.round_rollbacks.clone();
+        let witness_quorum = state.witness_quorum;
         self.applying = Some(tokio::task::spawn(async move {
             let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
 
@@ -825,13 +835,11 @@ impl<T: NodeIdentity> State<T> {
                         .map(|x| x.1.commitment)
                         .collect::<Vec<_>>(),
                     &witnesses,
+                    witness_quorum,
                 ) {
                     Some(x) => x,
                     None => {
-                        warn!(
-                            "DESYNC: Missing consensus commitment for batch {}",
-                            batch_id
-                        );
+                        warn!("DESYNC: No consensus commitment for batch {}", batch_id);
                         continue;
                     }
                 };
@@ -840,13 +848,11 @@ impl<T: NodeIdentity> State<T> {
                     Some(PayloadState::Deserializing(x)) => match x.is_finished() {
                         true => x.await.unwrap(),
                         false => {
-                            warn!("DESYNC: Did not finish downloading payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
-                            continue;
+                            bail!("DESYNC: Did not finish downloading payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
                         }
                     },
                     _ => {
-                        warn!("DESYNC: Did not begin downloading payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
-                        continue;
+                        bail!("DESYNC: Did not begin downloading payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
                     }
                 };
 

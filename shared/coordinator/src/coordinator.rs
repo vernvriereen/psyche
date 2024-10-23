@@ -247,7 +247,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         let round = self.current_round_mut_unchecked();
         round.witnesses.push(witness);
 
-        if round.witnesses.len() == self.witness_quorum as usize {
+        if round.witnesses.len() == self.witness_nodes as usize {
             // enough witnesses have early voted, go to witness state
             self.change_state(unix_timestamp, RunState::RoundWitness);
         }
@@ -357,12 +357,13 @@ impl<T: NodeIdentity> Coordinator<T> {
     pub fn select_consensus_commitment_by_witnesses(
         commitments: &[Commitment],
         witnesses: &[Witness],
+        witness_quorum: u32,
     ) -> Option<usize> {
-        let mut scores = Vec::with_capacity(witnesses.len());
+        let mut scores = Vec::with_capacity(commitments.len());
         scores.resize(commitments.len(), 0);
         for witness in witnesses {
             for (index, commitment) in commitments.iter().enumerate() {
-                if witness.order_bloom.contains(commitment) {
+                if witness.order_bloom.contains(&sha256(commitment)) {
                     scores[index] += 1;
                     break;
                 }
@@ -371,8 +372,9 @@ impl<T: NodeIdentity> Coordinator<T> {
         scores
             .into_iter()
             .enumerate()
-            .max_by_key(|(_, x)| *x)
-            .map(|(x, _)| x)
+            .filter(|(_, score)| *score >= witness_quorum)
+            .max_by_key(|(_, score)| *score)
+            .map(|(index, _)| index)
     }
 
     pub fn current_round(&self) -> Result<&Round, CoordinatorError> {
