@@ -1,11 +1,11 @@
 use std::sync::Arc;
 use tch::{
     nn::{self, Module, Shard},
-    Tensor,
+    Device, Tensor,
 };
 
 #[cfg(feature = "parallelism")]
-use tch::{CStore, Device, ReduceOpType, CNCCL};
+use tch::{CStore, ReduceOpType, CNCCL};
 
 #[cfg(feature = "parallelism")]
 pub type Communicator = CNCCL;
@@ -34,7 +34,7 @@ impl Communicator {
 
 #[cfg(not(feature = "parallelism"))]
 impl CommunicatorId {
-    pub fn new() -> Option<Self> {
+    pub fn new() -> Self {
         unimplemented!()
     }
 }
@@ -121,7 +121,7 @@ impl DifferentiableAllReduceSum for Tensor {
     }
 
     #[cfg(not(feature = "parallelism"))]
-    fn all_reduce_(&mut self, comm: &Option<Arc<Communicator>>, _op: ReduceType) {
+    fn differentiable_all_reduce_sum_(&mut self, comm: &Option<Arc<Communicator>>) {
         assert!(comm.is_none());
     }
 }
