@@ -51,12 +51,7 @@ impl psyche_tui::CustomWidget for ClientTUI {
                     .1
                     - 0.1f64,
             );
-            let y_max = data
-                .iter()
-                .max_by(|x, y| x.1.partial_cmp(&y.1).unwrap())
-                .unwrap_or(&(0., 0.))
-                .1
-                + 0.1f64;
+            let y_max = y_min + 1.0;
             let dataset = Dataset::default()
                 .name("Loss")
                 .marker(symbols::Marker::Braille)
