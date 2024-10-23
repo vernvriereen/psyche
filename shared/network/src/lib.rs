@@ -172,6 +172,7 @@ where
             .blobs()
             .download(ticket.hash(), ticket.node_addr().clone())
             .await?;
+        self.state.currently_sharing_blobs.push(ticket.hash());
 
         let (tx, rx) = mpsc::channel(10);
 
@@ -203,25 +204,25 @@ where
             .share(blob_res.hash, blob_res.format, Default::default())
             .await?;
 
-        self.state.currently_sharing_blobs.push(blob_ticket.clone());
+        self.state.currently_sharing_blobs.push(blob_ticket.hash());
 
         Ok(blob_ticket)
     }
 
-    pub async fn remove_downloadable(&mut self, ticket: BlobTicket) -> Result<()> {
-        self.node.blobs().delete_blob(ticket.hash()).await?;
+    pub async fn remove_downloadable(&mut self, hash: Hash) -> Result<()> {
+        self.node.blobs().delete_blob(hash).await?;
         if let Some(index) = self
             .state
             .currently_sharing_blobs
             .iter()
-            .position(|x| x == &ticket)
+            .position(|x| x == &hash)
         {
             self.state.currently_sharing_blobs.remove(index);
         }
         Ok(())
     }
 
-    pub fn currently_sharing_blobs(&self) -> &Vec<BlobTicket> {
+    pub fn currently_sharing_blobs(&self) -> &Vec<Hash> {
         &self.state.currently_sharing_blobs
     }
 

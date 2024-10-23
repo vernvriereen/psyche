@@ -248,7 +248,7 @@ where
                     .currently_sharing_blobs
                     .iter()
                     .rev()
-                    .map(|blob| blob.hash().to_string())
+                    .map(|blob| blob.to_string())
                     .collect(),
             }),
         }
