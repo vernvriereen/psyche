@@ -359,8 +359,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         witnesses: &[Witness],
         witness_quorum: u32,
     ) -> Option<usize> {
-        let mut scores = Vec::with_capacity(commitments.len());
-        scores.resize(commitments.len(), 0);
+        let mut scores = vec![0; commitments.len()];
         for witness in witnesses {
             for (index, commitment) in commitments.iter().enumerate() {
                 if witness.order_bloom.contains(&sha256(commitment)) {
