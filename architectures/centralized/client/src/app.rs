@@ -97,6 +97,7 @@ impl AppBuilder {
                 let result: Result<Vec<psyche_eval::Task>> = eval_tasks
                     .split(",")
                     .map(|eval_task| {
+                        info!("Downloading {eval_task} data");
                         match eval_task.to_lowercase().as_str() {
                             "hellaswag" => Hellaswag::load(),
                             "mmlu_pro" => MMLUPro::load(),

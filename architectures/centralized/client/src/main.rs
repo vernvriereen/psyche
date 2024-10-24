@@ -83,7 +83,7 @@ async fn async_main() -> Result<()> {
         Level::INFO,
     );
 
-    info!("joining gossip room");
+    info!("Joining gossip room");
 
     let secret_key: SecretKey = args
         .secret_key
