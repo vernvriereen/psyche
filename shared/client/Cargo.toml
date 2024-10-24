@@ -7,6 +7,7 @@ edition = "2021"
 psyche-core = { workspace = true, features = ["rand"] }
 psyche-coordinator.workspace = true
 psyche-data-provider.workspace = true
+psyche-eval.workspace = true
 psyche-modeling.workspace = true
 psyche-network.workspace = true
 psyche-tui.workspace = true
@@ -15,12 +16,14 @@ postcard.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 tch.workspace = true
+tokenizers.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
 rand.workspace = true
 futures.workspace = true
 hex = "0.4.3"
+lazy_static = "1.5.0"
 
 [features]
 parallelism = ["psyche-modeling/parallelism"]

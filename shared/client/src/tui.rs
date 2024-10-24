@@ -1,12 +1,19 @@
+use std::collections::HashMap;
+
 use psyche_coordinator::Committee;
 use psyche_tui::ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
     style::{Style, Stylize},
     symbols,
-    widgets::{Axis, Chart, Dataset, GraphType, Paragraph, Widget},
+    text::Line,
+    widgets::{Axis, Chart, Dataset, GraphType, LegendPosition, Paragraph, Widget},
 };
 use psyche_watcher::TuiRunState;
+
+lazy_static::lazy_static! {
+    static ref GRAPH_COLORS: [Style; 3] = [Style::default().red(), Style::default().magenta(), Style::default().green()];
+}
 
 #[derive(Default, Debug)]
 pub struct ClientTUI;
@@ -33,9 +40,26 @@ impl psyche_tui::CustomWidget for ClientTUI {
     type Data = ClientTUIState;
 
     fn render(&mut self, area: Rect, buf: &mut Buffer, state: &Self::Data) {
-        let coord_split =
-            Layout::vertical(vec![Constraint::Fill(1), Constraint::Length(2)]).split(area);
+        let right_size = state
+            .evals
+            .iter()
+            .map(|(key, _)| key.len())
+            .max_by(|x, y| x.cmp(y))
+            .unwrap_or(6) as u16;
+        let coord_split = Layout::vertical(match state.evals.is_empty() {
+            true => vec![Constraint::Fill(1), Constraint::Length(2)],
+            false => vec![
+                Constraint::Fill(1),
+                Constraint::Length(2),
+                Constraint::Fill(1),
+            ],
+        })
+        .split(area);
         {
+            let plot_split =
+                Layout::horizontal([Constraint::Fill(1), Constraint::Length(right_size)])
+                    .split(coord_split[0]);
+
             let x_max = state.step as f64;
             let x_min = x_max - (state.loss.len() as f64);
             let data = state
@@ -51,7 +75,7 @@ impl psyche_tui::CustomWidget for ClientTUI {
                     .1
                     - 0.1f64,
             );
-            let y_max = y_min + 1.0;
+            let y_max = y_min + 2.0;
             let dataset = Dataset::default()
                 .name("Loss")
                 .marker(symbols::Marker::Braille)
@@ -69,11 +93,28 @@ impl psyche_tui::CustomWidget for ClientTUI {
             Chart::new(vec![dataset])
                 .x_axis(x_axis)
                 .y_axis(y_axis)
-                .render(coord_split[0], buf);
+                .legend_position(Some(LegendPosition::TopRight))
+                .render(plot_split[0], buf);
+
+            let vsplit = Layout::vertical([
+                Constraint::Fill(1),
+                Constraint::Length(2),
+                Constraint::Fill(1),
+            ])
+            .split(plot_split[1]);
+            Paragraph::new(vec![
+                Line::from("Loss"),
+                Line::from(format!("{:.3}", state.loss.last().unwrap_or(&0.0))),
+            ])
+            .centered()
+            .render(vsplit[1], buf);
         }
         {
-            let hsplit =
-                Layout::horizontal(Constraint::from_fills([1, 1, 1, 1])).split(coord_split[1]);
+            let plot_split =
+                Layout::horizontal([Constraint::Fill(1), Constraint::Length(right_size)])
+                    .split(coord_split[1]);
+
+            let hsplit = Layout::horizontal(Constraint::from_fills([1, 1, 1])).split(plot_split[0]);
             Paragraph::new(format!("State: {}", state.run_state)).render(hsplit[0], buf);
             Paragraph::new(format!(
                 "Global Speed: {}",
@@ -81,8 +122,68 @@ impl psyche_tui::CustomWidget for ClientTUI {
             ))
             .render(hsplit[1], buf);
             Paragraph::new(format!("Batches Left: {}", state.batches_left)).render(hsplit[2], buf);
-            Paragraph::new(format!("Loss: {:.3}", state.loss.last().unwrap_or(&0.0)))
-                .render(hsplit[3], buf);
+        }
+        if !state.evals.is_empty() {
+            let plot_split =
+                Layout::horizontal([Constraint::Fill(1), Constraint::Length(right_size)])
+                    .split(coord_split[2]);
+
+            let x_max = state.step as f64;
+            let x_min = x_max - (state.evals.values().map(|x| x.len()).max().unwrap()) as f64;
+            let y_min = 0.;
+            let y_max = 1.;
+            let plot_data: Vec<_> = state
+                .evals
+                .iter()
+                .map(|(_, values)| {
+                    values
+                        .iter()
+                        .enumerate()
+                        .map(|(i, val)| (i as f64 + x_min, *val))
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+            let datasets: Vec<_> = state
+                .evals
+                .iter()
+                .zip(plot_data.iter())
+                .enumerate()
+                .map(|(index, ((name, _), data))| {
+                    Dataset::default()
+                        .name(name.to_owned())
+                        .marker(symbols::Marker::Braille)
+                        .graph_type(GraphType::Line)
+                        .style(GRAPH_COLORS[index % GRAPH_COLORS.len()])
+                        .data(data)
+                })
+                .collect();
+            let x_axis = Axis::default()
+                .bounds([x_min, x_max])
+                .labels([0.to_string(), x_max.to_string()])
+                .style(Style::default().white());
+            let y_axis = Axis::default()
+                .bounds([y_min, y_max])
+                .labels([format!("{y_min:.1}"), format!("{y_max:.1}")])
+                .style(Style::default().white());
+            Chart::new(datasets)
+                .x_axis(x_axis)
+                .y_axis(y_axis)
+                .legend_position(Some(LegendPosition::BottomRight))
+                .render(plot_split[0], buf);
+
+            let mut constraints = Vec::new();
+            constraints.resize(state.evals.len(), Constraint::Length(4));
+            constraints.insert(0, Constraint::Fill(1));
+            constraints.push(Constraint::Fill(1));
+            let vsplit = Layout::vertical(constraints).split(plot_split[1]);
+            for (index, (name, value)) in state.evals.iter().enumerate() {
+                Paragraph::new(vec![
+                    Line::from(name.to_string()),
+                    Line::from(format!("{:.3}", value.last().unwrap_or(&0.0))),
+                ])
+                .centered()
+                .render(vsplit[index + 1], buf);
+            }
         }
     }
 }
@@ -94,5 +195,6 @@ pub struct ClientTUIState {
     pub run_state: TuiRunState,
     pub batches_left: usize,
     pub loss: Vec<f32>,
+    pub evals: HashMap<String, Vec<f64>>,
     pub global_tokens_per_second: f32,
 }

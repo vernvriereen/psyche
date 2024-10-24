@@ -15,8 +15,7 @@ use std::{
     time::Instant,
 };
 use tch::{
-    nn::{self, OptimizerConfig},
-    Tensor,
+    nn::{self, OptimizerConfig}, Device, Tensor
 };
 use tracing::{debug, error};
 
@@ -50,6 +49,11 @@ enum ParallelAssignment {
         distro_results: Option<Vec<DistroResults>>,
         step: u32,
     },
+    Forward {
+        data: Tensor,
+        labels: Option<Tensor>,
+        num_logits_to_keep: Option<i64>,
+    },
 }
 
 enum ParallelResult {
@@ -59,6 +63,9 @@ enum ParallelResult {
         distro_results: Option<DistroResults>,
     },
     Optimize,
+    Forward {
+        logits_and_loss: (Tensor, Option<Tensor>),
+    },
 }
 
 pub struct Trainer {
@@ -67,6 +74,7 @@ pub struct Trainer {
         mpsc::Receiver<ParallelResult>,
         Arc<CancellableBarrier>,
     )>,
+    first_model_device: Device,
 }
 
 impl Trainer {
@@ -77,6 +85,8 @@ impl Trainer {
         micro_batch_size: usize,
         run_state: Arc<AtomicUsize>,
     ) -> Self {
+        assert!(!models.is_empty());
+        let first_model_device = models[0].device();
         let mut ret = Vec::with_capacity(models.len());
         let barrier = CancellableBarrier::new(models.len());
         for (index, model) in models.into_iter().enumerate() {
@@ -134,7 +144,7 @@ impl Trainer {
                 )
             });
         }
-        Self { models: ret }
+        Self { models: ret, first_model_device }
     }
 
     fn forward_backward(
@@ -155,6 +165,27 @@ impl Trainer {
             return Ok(None);
         }
         Ok(Some(loss.try_into()?))
+    }
+
+    fn forward(
+        model: &mut LlamaForCausalLM,
+        data: &Tensor,
+        labels: Option<&Tensor>,
+        barrier: &Arc<CancellableBarrier>,
+        num_logits_to_keeep: Option<i64>,
+    ) -> Result<Option<(Tensor, Option<Tensor>)>> {
+        let _guard = tch::no_grad_guard();
+        let device = model.device();
+        let inputs = data.to(device);
+        let labels = labels.map(|x| x.to(device));
+        if barrier.wait().is_err() {
+            return Ok(None);
+        }
+        let (logits, loss) = model.forward(&inputs, labels.as_ref(), num_logits_to_keeep);
+        if barrier.wait().is_err() {
+            return Ok(None);
+        }
+        Ok(Some((logits, loss)))
     }
 
     pub fn train(
@@ -193,7 +224,7 @@ impl Trainer {
                     final_cancelled = cancelled;
                     final_loss += loss;
                 }
-                ParallelResult::Optimize {} => bail!("Got unexpected optimizer result"),
+                _ => bail!("Got unexpected optimizer result"),
             }
         }
         final_loss /= self.models.len() as f32;
@@ -222,17 +253,13 @@ impl Trainer {
         let start = Instant::now();
         for (_, rx, _) in &self.models {
             match rx.recv()? {
-                ParallelResult::Train {
-                    loss: _,
-                    distro_results: _,
-                    cancelled: _,
-                } => bail!("Got unexpected trainer result"),
                 ParallelResult::Optimize {} => {
                     debug!(
                         "ParallelResult::Optimize received in {}s",
                         (Instant::now() - start).as_secs_f32()
                     );
                 }
+                _ => bail!("Got unexpected trainer result"),
             }
         }
         Ok(self)
@@ -357,6 +384,34 @@ impl Trainer {
                         return;
                     }
                 }
+                Ok(ParallelAssignment::Forward {
+                    data,
+                    labels,
+                    num_logits_to_keep,
+                }) => match Self::forward(
+                    &mut model,
+                    &data,
+                    labels.as_ref(),
+                    &barrier,
+                    num_logits_to_keep,
+                ) {
+                    Ok(Some(logits_and_loss)) => {
+                        if submission
+                            .send(ParallelResult::Forward { logits_and_loss })
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    Ok(None) => {
+                        error!("Unexpected cancel in forward");
+                        return;
+                    }
+                    Err(err) => {
+                        error!("Unexpected error in forward: {err}");
+                        return;
+                    }
+                },
                 Err(_) => {
                     return;
                 }
@@ -365,8 +420,45 @@ impl Trainer {
     }
 }
 
-// TODO impl freezing? :)
-#[must_use]
+impl CausalLM for Trainer {
+    fn forward(
+        &mut self,
+        x: &Tensor,
+        labels: Option<&Tensor>,
+        num_logits_to_keep: Option<i64>,
+    ) -> (Tensor, Option<Tensor>) {
+        for (tx, _, barrier) in &self.models {
+            barrier.reset();
+            tx.send(ParallelAssignment::Forward {
+                data: x.shallow_clone(),
+                labels: labels.map(|y| y.shallow_clone()),
+                num_logits_to_keep,
+            })
+            .expect("Error getting result from forward");
+        }
+        let mut final_logits_and_loss = None;
+        for (_, rx, _) in &self.models {
+            match rx.recv() {
+                Ok(ParallelResult::Forward { logits_and_loss }) => {
+                    if final_logits_and_loss.is_none() {
+                        final_logits_and_loss = Some(logits_and_loss);
+                    }
+                }
+                _ => panic!("Got unexpected forward result"),
+            }
+        }
+        final_logits_and_loss.expect("No forward logits and loss")
+    }
+
+    fn bos_token_id(&self) -> Option<i64> {
+        None
+    }
+
+    fn device(&self) -> tch::Device {
+        self.first_model_device
+    }
+}
+
 fn optimize_step(
     lr: f64,
     optimizer: &mut Optimizer,

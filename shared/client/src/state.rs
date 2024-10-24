@@ -11,30 +11,26 @@ use psyche_coordinator::{
     CommitteeSelection, Coordinator, HealthChecks, RunState, Witness, WitnessProof,
     BLOOM_FALSE_RATE, BLOOM_MAX_BITS, NUM_STORED_ROUNDS,
 };
-use psyche_core::{sha256, Bloom, BoundedQueue, IntervalTree, NodeIdentity};
+use psyche_core::{sha256, Bloom, BoundedQueue, IntervalTree, NodeIdentity, RunningAverage};
 use psyche_data_provider::{download_model_repo_async, DataProviderTcpClient};
-use psyche_modeling::{CommunicatorId, DistroResult, LlamaForCausalLM};
+use psyche_modeling::{auto_tokenizer, CommunicatorId, DistroResult, LlamaForCausalLM};
 use psyche_network::{dummy_blob_ticket, BlobTicket, NetworkEvent};
 use psyche_watcher::{Backend, BackendWatcher};
+use rand::{seq::SliceRandom, thread_rng};
 use std::{
     collections::HashMap,
     fs,
     ops::Deref,
     path::PathBuf,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
     time::{Duration, Instant},
 };
 use tch::{Device, Kind};
-use tokio::{
-    runtime::Handle,
-    select,
-    sync::{Mutex, Notify},
-    task::JoinHandle,
-    time::sleep,
-};
+use tokenizers::Tokenizer;
+use tokio::{runtime::Handle, select, sync::Notify, task::JoinHandle, time::sleep};
 use tracing::{debug, error, info, warn};
 
 type TaskResult<T> = Option<JoinHandle<Result<T>>>;
@@ -57,11 +53,17 @@ type Bloom32 = Bloom<[u8; 32]>;
 
 type Rollbacks = BoundedQueue<(BatchStep, Vec<DistroResults>)>;
 
+struct EvalTask {
+    task: psyche_eval::PreparedTask,
+    results: Arc<RunningAverage>,
+    next_index: Arc<std::sync::Mutex<usize>>,
+}
+
 pub struct State<T: NodeIdentity> {
     pub identity: T,
     private_key: T::PrivateKey,
     showed_inclusion_message: bool,
-    data_and_model_load: TaskResult<(DataProviderTcpClient<T>, Vec<ParallelModels>)>,
+    data_and_model_load: TaskResult<(DataProviderTcpClient<T>, Vec<ParallelModels>, Tokenizer)>,
     available_trainers: Vec<Trainer>,
     trainings: Vec<JoinHandle<Result<(TrainOutput, u64)>>>,
     applying: TaskResult<Vec<Trainer>>,
@@ -81,15 +83,22 @@ pub struct State<T: NodeIdentity> {
     micro_batch_size: Option<usize>,
     write_gradients_dir: Option<PathBuf>,
     atomic_run_state: Arc<AtomicUsize>,
-    round_rollbacks: Arc<Mutex<Rollbacks>>,
+    round_rollbacks: Arc<tokio::sync::Mutex<Rollbacks>>,
     training_data: Option<TrainingDataForStep>,
     data_fetcher: Option<DataFetcher<T>>,
     round_start: Option<Instant>,
     round_durations: BoundedQueue<Duration>,
     data_assignments: IntervalTree<u64, T>,
+    eval_cancel: Arc<AtomicBool>,
+    eval_tasks: Vec<psyche_eval::Task>,
+    prepared_eval_tasks: Vec<Arc<EvalTask>>,
+    preparing_eval_tasks: TaskResult<Vec<psyche_eval::PreparedTask>>,
+    evals: Vec<JoinHandle<Result<Trainer>>>,
+    tokenizer: Option<Arc<Tokenizer>>,
+    apply_start: Option<Instant>,
     /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
     _last_observed_num_batches_remaining: usize,
-    apply_start: Option<Instant>,
+    _eval_results: HashMap<String, Vec<f64>>,
 }
 
 impl<T: NodeIdentity> State<T> {
@@ -98,6 +107,7 @@ impl<T: NodeIdentity> State<T> {
         private_key: T::PrivateKey,
         data_parallelism: usize,
         tensor_parallelism: usize,
+        eval_tasks: Vec<psyche_eval::Task>,
         micro_batch_size: Option<usize>,
         write_gradients_dir: Option<PathBuf>,
     ) -> Self {
@@ -126,13 +136,23 @@ impl<T: NodeIdentity> State<T> {
             micro_batch_size,
             write_gradients_dir,
             atomic_run_state: Arc::new(AtomicUsize::new(0)),
-            round_rollbacks: Mutex::new(BoundedQueue::new(NUM_STORED_ROUNDS)).into(),
+            round_rollbacks: tokio::sync::Mutex::new(BoundedQueue::new(NUM_STORED_ROUNDS)).into(),
             data_fetcher: None,
             round_start: None,
             round_durations: BoundedQueue::new(16),
             data_assignments: IntervalTree::new(),
-            _last_observed_num_batches_remaining: 0,
+            eval_cancel: Arc::new(AtomicBool::new(false)),
+            _eval_results: eval_tasks
+                .iter()
+                .map(|task| (task.to_string(), Vec::new()))
+                .collect(),
+            eval_tasks,
+            evals: Vec::new(),
+            prepared_eval_tasks: Vec::new(),
+            preparing_eval_tasks: None,
+            tokenizer: None,
             apply_start: None,
+            _last_observed_num_batches_remaining: 0,
         }
     }
 
@@ -160,7 +180,7 @@ impl<T: NodeIdentity> State<T> {
             RunState::Warmup => self.warmup().map(|_| None),
             RunState::RoundTrain => self.round_train(position).await.map(|_| None),
             RunState::RoundWitness => self.round_witness(position).map(|x| x.map(ToSend::Witness)),
-            RunState::RoundApply => self.round_apply().map(|_| None),
+            RunState::RoundApply => self.round_apply().await.map(|_| None),
         }
     }
 
@@ -180,7 +200,7 @@ impl<T: NodeIdentity> State<T> {
         Ok(ToSend::Nothing)
     }
 
-    fn handle_poll_training_data(
+    fn handle_poll_next_training_data(
         &mut self,
         batch_id: BatchId,
         batch: Batch,
@@ -280,6 +300,40 @@ impl<T: NodeIdentity> State<T> {
         }
     }
 
+    fn handle_poll_next_preparing_eval_tasks(
+        &mut self,
+        prepared_tasks: Vec<psyche_eval::PreparedTask>,
+    ) -> Result<ToSend> {
+        self.prepared_eval_tasks = prepared_tasks
+            .into_iter()
+            .map(|task| {
+                Arc::new(EvalTask {
+                    task,
+                    results: Arc::new(RunningAverage::new()),
+                    next_index: Arc::new(std::sync::Mutex::new(0)),
+                })
+            })
+            .collect();
+        info!("Finished tokenizing eval tasks");
+        Ok(ToSend::Nothing)
+    }
+
+    // fn handle_poll_next_evals(&mut self, trainer: Trainer) -> Result<ToSend> {
+    //     self.available_trainers.push(trainer);
+    //     if self.evals.is_empty() {
+    //         for eval_task in &self.prepared_eval_tasks {
+    //             let metric_name: &str = eval_task.task.main_metric_name();
+    //             match eval_task.results.sample(&metric_name) {
+    //                 Some(metric) => {
+    //                     info!("{} {}: {:.3}", eval_task.task.name(), metric_name, metric)
+    //                 }
+    //                 None => warn!("{} missing metric {}", eval_task.task.name(), metric_name),
+    //             }
+    //         }
+    //     }
+    //     Ok(ToSend::Nothing)
+    // }
+
     pub async fn poll_next(&mut self) -> Result<ToSend> {
         let trainings_finished_position = self.trainings.iter_mut().position(|x| x.is_finished());
         if self.is_run_state(RunState::RoundTrain)
@@ -292,6 +346,20 @@ impl<T: NodeIdentity> State<T> {
                 return Ok(ToSend::Witness(witness));
             }
         }
+        // } else if self.is_run_state(RunState::Warmup) {
+        //     let state = self.state.as_ref().unwrap();
+        //     let timestamp = SystemTime::now()
+        //         .duration_since(UNIX_EPOCH)
+        //         .unwrap()
+        //         .as_secs();
+        //     if timestamp
+        //         >= state.run_state_start_unix_timestamp + state.warmup_time - EVAL_CANCEL_TIME_SECS
+        //     {
+        //         if !self.eval_cancel.swap(true, Ordering::SeqCst) {
+        //             debug!("Cancelling evals");
+        //         }
+        //     }
+        // }
         select! {
             applying = async {self.applying.as_mut().unwrap().await}, if self.applying.is_some() => {
                 self.applying = None;
@@ -301,7 +369,7 @@ impl<T: NodeIdentity> State<T> {
             && !self.available_trainers.is_empty()
             && self.training_data.is_some() => {
                 match sample {
-                    Some(sample) => self.handle_poll_training_data(sample.0, sample.1, self.training_data.as_ref().unwrap().step),
+                    Some(sample) => self.handle_poll_next_training_data(sample.0, sample.1, self.training_data.as_ref().unwrap().step),
                     None => Ok(ToSend::Nothing),
                 }
             },
@@ -314,6 +382,15 @@ impl<T: NodeIdentity> State<T> {
                 self.health_checking = None;
                 self.handle_poll_health_checking(health_checking??)
             }
+            preparing_eval_tasks = async {self.preparing_eval_tasks.as_mut().unwrap().await}, if self.preparing_eval_tasks.is_some() => {
+                self.preparing_eval_tasks = None;
+                self.handle_poll_next_preparing_eval_tasks(preparing_eval_tasks??)
+            }
+            // evals = async {self.evals.get_mut(*evals_finished_position.as_ref().unwrap()).unwrap().await}, if evals_finished_position.is_some() => {
+            //     let evals = evals??;
+            //     self.evals.swap_remove(evals_finished_position.unwrap());
+            //     self.handle_poll_next_evals(evals)
+            // }
             _ = sleep(Duration::from_secs_f32(0.1)) => {
                 // still need this?
                 Ok(ToSend::Nothing)
@@ -585,15 +662,25 @@ impl<T: NodeIdentity> State<T> {
                 .as_ref()
                 .is_some_and(|x| x.run_state != state.run_state)
         {
+            info!("Warming up epoch {}", state.epoch);
             match &state.model {
                 Some(model) => {
-                    self.data_and_model_load = Some(tokio::spawn(State::load_data_and_model(
-                        self.identity.clone(),
-                        self.private_key.clone(),
-                        model.clone(),
-                        self.data_parallelism,
-                        self.tensor_parallelism,
-                    )))
+                    if self.available_trainers.is_empty() {
+                        if self.applying.is_none() {
+                            self.data_and_model_load =
+                                Some(tokio::spawn(State::load_data_and_model(
+                                    self.identity.clone(),
+                                    self.private_key.clone(),
+                                    model.clone(),
+                                    self.data_parallelism,
+                                    self.tensor_parallelism,
+                                )))
+                        } else {
+                            bail!("Warmup but still applying");
+                        }
+                    } else {
+                        self.start_evals();
+                    }
                 }
                 None => {
                     warn!("Run has no model");
@@ -604,6 +691,8 @@ impl<T: NodeIdentity> State<T> {
     }
 
     async fn round_train(&mut self, index: u64) -> Result<()> {
+        self.cancel_evals().await?; // CANCEL SAFETY
+
         let state = self
             .state
             .as_ref()
@@ -621,7 +710,7 @@ impl<T: NodeIdentity> State<T> {
             if !data_and_model_load.is_finished() {
                 bail!("Data and model load not finished when round started!")
             }
-            let (data_provider, models) = data_and_model_load.await??; // CANCEL SAFETY POINT
+            let (data_provider, models, tokenizer) = data_and_model_load.await??; // not a cancel safety point, this should return immediately
 
             // TODO add data fetching for verifying, too..
             self.data_fetcher = Some(DataFetcher::new(data_provider, self.data_parallelism * 2));
@@ -648,6 +737,25 @@ impl<T: NodeIdentity> State<T> {
                     )
                 })
                 .collect();
+            self.tokenizer = Some(Arc::new(tokenizer));
+
+            if !self.eval_tasks.is_empty() {
+                // start preparing eval tasks in background
+                let eval_tasks = self.eval_tasks.drain(..).collect::<Vec<_>>();
+                let tokenizer = self.tokenizer.clone();
+                self.preparing_eval_tasks = Some(tokio::task::spawn_blocking(move || {
+                    match tokenizer {
+                        Some(tokenizer) => Ok(eval_tasks
+                            .into_iter()
+                            .map(|task| task.prepare(&tokenizer, None, true, None))
+                            .collect()),
+                        None => {
+                            bail!("No tokenizer");
+                        }
+                    }
+                    // TODO: deal with bos tokenizers?
+                }));
+            }
         }
 
         // check if this is a state transition
@@ -662,8 +770,18 @@ impl<T: NodeIdentity> State<T> {
         }
 
         // transition to RoundTrain -- round start time!
-        if !self.trainings.is_empty() {
-            bail!("Ready to train but previous training batch still running");
+        if self.applying.is_some() {
+            bail!("Ready to train but previous applying still running");
+        }
+        if self.evals.len() > 0 {
+            bail!("Ready to train but evals still running");
+        }
+        if self.available_trainers.len() != self.data_parallelism {
+            bail!(
+                "Missing trainers at training start, expected {} but have {}",
+                self.data_parallelism,
+                self.available_trainers.len()
+            );
         }
 
         let round = state.current_round()?;
@@ -738,18 +856,6 @@ impl<T: NodeIdentity> State<T> {
         self.commitments_per_client.clear();
         self.payloads.clear();
         self.notify_clear_uploads.notify_one(); // clear any served uploads we have
-
-        // if !data_ids.is_empty() {
-        //     let data_provider = std::mem::take(&mut self.data_provider)
-        //         .ok_or(Error::msg("Round start but no data provider object"))?;
-        //     self.fetching_data = Some(tokio::spawn(Self::fetch_data(data_provider, data_ids)));
-        //     self.notify.notify_one()
-        // } else {
-        //     info!(
-        //         "No data assigned for round {} of run {}",
-        //         round.height, state.run_id
-        //     );
-        // }
         Ok(())
     }
 
@@ -760,10 +866,23 @@ impl<T: NodeIdentity> State<T> {
             .ok_or(Error::msg("No state in round witness"))?;
         assert_eq!(state.run_state, RunState::RoundWitness);
 
+        // check if this is a state transition
+        if self
+            .prev_state
+            .as_ref()
+            .ok_or(Error::msg("First seen state was witness"))?
+            .run_state
+            != RunState::RoundWitness
+        {
+            self.start_evals();
+        }
+
         Ok(self.get_witness_to_send(index))
     }
 
-    fn round_apply(&mut self) -> Result<()> {
+    async fn round_apply(&mut self) -> Result<()> {
+        self.cancel_evals().await?; // CANCEL SAFETY
+
         let state = self
             .state
             .as_ref()
@@ -774,7 +893,7 @@ impl<T: NodeIdentity> State<T> {
         if self
             .prev_state
             .as_ref()
-            .ok_or(Error::msg("First seen state was witness"))?
+            .ok_or(Error::msg("First seen state was apply"))?
             .run_state
             == RunState::RoundApply
         {
@@ -922,7 +1041,7 @@ impl<T: NodeIdentity> State<T> {
         model: model::Model,
         data_parallelism: usize,
         tensor_parallelism: usize,
-    ) -> Result<(DataProviderTcpClient<T>, Vec<ParallelModels>)> {
+    ) -> Result<(DataProviderTcpClient<T>, Vec<ParallelModels>, Tokenizer)> {
         let model::Model::LLM(llm) = model;
         let data_future = match &llm.data_location {
             model::LLMTrainingDataLocation::Server(data_server) => {
@@ -930,7 +1049,9 @@ impl<T: NodeIdentity> State<T> {
             }
             model::LLMTrainingDataLocation::Local(_) => todo!(),
         };
-        let model_future: JoinHandle<Result<Vec<LlamaForCausalLM>>> = match &llm.architecture {
+        let model_future: JoinHandle<Result<(Vec<LlamaForCausalLM>, Tokenizer)>> = match &llm
+            .architecture
+        {
             model::LLMArchitecture::HfLlama => match &llm.checkpoint {
                 model::Checkpoint::Hub(hub_repo) => {
                     let hub_repo = hub_repo.clone();
@@ -968,6 +1089,7 @@ impl<T: NodeIdentity> State<T> {
                                 }));
                             }
                         }
+                        let tokenizer = auto_tokenizer(&repo_files)?;
                         let mut models = Vec::new();
                         for future in futures {
                             models.push(future.await??);
@@ -979,15 +1101,16 @@ impl<T: NodeIdentity> State<T> {
                             data_parallelism,
                             tensor_parallelism
                         );
-                        Ok(models)
+                        Ok((models, tokenizer))
                     })
                 }
             },
         };
         let (data, models) = tokio::join!(data_future, model_future);
+        let (models, tokenizer) = models??;
         let data = data?;
         let mut tp_models = Vec::new();
-        for model in models?? {
+        for model in models {
             if tp_models
                 .last()
                 .map(|x: &ParallelModels| x.len() == tensor_parallelism)
@@ -997,7 +1120,7 @@ impl<T: NodeIdentity> State<T> {
             }
             tp_models.last_mut().unwrap().push(model);
         }
-        Ok((data, tp_models))
+        Ok((data, tp_models, tokenizer))
     }
 
     fn is_run_state(&self, run_state: RunState) -> bool {
@@ -1023,6 +1146,101 @@ impl<T: NodeIdentity> State<T> {
             }
         }
         None
+    }
+
+    fn start_evals(&mut self) {
+        if !self.prepared_eval_tasks.is_empty() {
+            self.eval_cancel.store(false, Ordering::SeqCst);
+            debug!(
+                "Starting evals {:?}",
+                self.prepared_eval_tasks
+                    .iter()
+                    .map(|x| x.task.name())
+                    .collect::<Vec<_>>()
+            );
+            self.evals = self
+                .available_trainers
+                .drain(..)
+                .enumerate()
+                .map(|(dp_index, mut trainer)| {
+                    let data_parallelism = self.data_parallelism;
+                    let eval_cancel = self.eval_cancel.clone();
+                    let prepared_eval_tasks = self.prepared_eval_tasks.clone();
+                    tokio::task::spawn_blocking(move || {
+                        let mut stop = false;
+                        while !stop {
+                            let mut iter = prepared_eval_tasks
+                                .iter()
+                                .zip(
+                                    prepared_eval_tasks
+                                        .iter()
+                                        .map(|x| *x.next_index.lock().unwrap())
+                                        .collect::<Vec<_>>(),
+                                )
+                                .collect::<Vec<_>>();
+                            iter.shuffle(&mut thread_rng());
+                            for (eval_task, next_index) in iter {
+                                if eval_cancel.load(Ordering::SeqCst) {
+                                    stop = true;
+                                    break;
+                                }
+                                debug!("Running {} on dp {}", eval_task.task.name(), dp_index);
+                                let (_, next_index) = eval_task.task.run(
+                                    &mut trainer,
+                                    true,
+                                    Some((next_index + dp_index, data_parallelism)),
+                                    Some(eval_task.results.clone()),
+                                    Some(eval_cancel.clone()),
+                                    Some(5),
+                                    true,
+                                );
+                                let mut next_index_lock = eval_task.next_index.lock().unwrap();
+                                *next_index_lock = next_index.max(*next_index_lock);
+                            }
+                        }
+                        Ok(trainer)
+                    })
+                })
+                .collect();
+        }
+    }
+
+    // cancel safe
+    async fn cancel_evals(&mut self) -> Result<()> {
+        if !self.eval_cancel.swap(true, Ordering::SeqCst) {
+            debug!("Cancelling evals");
+        }
+        while !self.evals.is_empty() {
+            if let Some(finished) = self.evals.iter_mut().position(|x| x.is_finished()) {
+                let trainer = self.evals.get_mut(finished).unwrap().await??;
+                self.evals.swap_remove(finished);
+                self.available_trainers.push(trainer);
+                if self.evals.is_empty() {
+                    let mut last_eval_results = HashMap::new();
+                    for eval_task in &self.prepared_eval_tasks {
+                        let metric_name: &str = eval_task.task.main_metric_name();
+                        let task_name = eval_task.task.name();
+                        match eval_task.results.sample(&metric_name) {
+                            Some(metric) => {
+                                last_eval_results.insert(task_name.to_owned(), metric);
+                                info!("{} {}: {:.3}", task_name, metric_name, metric)
+                            }
+                            None => {
+                                warn!("{} missing metric {}", task_name, metric_name)
+                            }
+                        }
+                    }
+                    for (key, value) in last_eval_results {
+                        if !self._eval_results.contains_key(&key) {
+                            self._eval_results.insert(key, vec![value]);
+                        } else {
+                            self._eval_results.get_mut(&key).unwrap().push(value);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     fn maybe_write_gradients(&self, payload: &Payload) {
@@ -1092,6 +1310,7 @@ impl<T: NodeIdentity> From<&State<T>> for ClientTUIState {
             loss: value.losses.clone(),
             batches_left: value._last_observed_num_batches_remaining,
             global_tokens_per_second,
+            evals: value._eval_results.clone(),
         }
     }
 }

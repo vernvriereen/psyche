@@ -14,6 +14,7 @@ psyche-coordinator = { path = "./shared/coordinator" }
 psyche-core = { path = "./shared/core" }
 psyche-client = { path = "./shared/client" }
 psyche-data-provider = { path = "./shared/data-provider" }
+psyche-eval = { path = "./shared/eval" }
 psyche-network = { path = "./shared/network" }
 psyche-serde = { path = "./shared/serde" }
 psyche-modeling = { path = "./shared/modeling" }

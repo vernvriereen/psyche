@@ -46,6 +46,9 @@ struct Args {
     /// If provided, every shared gradient this client sees will be written to this directory.
     #[clap(long)]
     write_gradients_dir: Option<PathBuf>,
+
+    #[clap(long)]
+    eval_tasks: Option<String>,
 }
 
 async fn async_main() -> Result<()> {
@@ -103,6 +106,7 @@ async fn async_main() -> Result<()> {
         tensor_parallelism: args.tensor_parallelism,
         micro_batch_size: args.micro_batch_size,
         write_gradients_dir: args.write_gradients_dir,
+        eval_tasks: args.eval_tasks,
     })
     .run()
     .await

@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::{Error, Result};
+use anyhow::{bail, Error, Result};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{Client, ClientTUI, ClientTUIState, NC};
 use psyche_coordinator::{Coordinator, HealthChecks, Witness};
+use psyche_eval::{Hellaswag, MMLUPro};
 use psyche_network::{NetworkTUIState, NetworkTui, RelayMode, SecretKey, TcpClient};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
@@ -59,6 +60,7 @@ pub struct App {
     run_id: String,
     data_parallelism: usize,
     tensor_parallelism: usize,
+    eval_tasks: Vec<psyche_eval::Task>,
     micro_batch_size: Option<usize>,
     write_gradients_dir: Option<PathBuf>,
 }
@@ -76,7 +78,11 @@ pub struct AppParams {
     pub micro_batch_size: Option<usize>,
     pub write_gradients_dir: Option<PathBuf>,
     pub p2p_port: Option<u16>,
+    pub eval_tasks: Option<String>,
 }
+
+const EVAL_NUM_FEWSHOT: usize = 0;
+const EVAL_SEED: u64 = 42;
 
 impl AppBuilder {
     pub fn new(params: AppParams) -> Self {
@@ -85,6 +91,29 @@ impl AppBuilder {
 
     pub async fn run(self) -> Result<()> {
         let p = self.0;
+
+        let eval_tasks = match p.eval_tasks {
+            Some(eval_tasks) => {
+                let result: Result<Vec<psyche_eval::Task>> = eval_tasks
+                    .split(",")
+                    .map(|eval_task| {
+                        match eval_task.to_lowercase().as_str() {
+                            "hellaswag" => Hellaswag::load(),
+                            "mmlu_pro" => MMLUPro::load(),
+                            task => {
+                                bail!("Unknown eval task {task}");
+                            }
+                        }
+                        .map(|task_type| {
+                            psyche_eval::Task::new(task_type, EVAL_NUM_FEWSHOT, EVAL_SEED)
+                        })
+                    })
+                    .collect();
+                result?
+            }
+            None => Vec::new(),
+        };
+
         let server_conn =
             TcpClient::<ClientId, ClientToServerMessage, ServerToClientMessage>::connect(
                 &p.server_addr,
@@ -114,6 +143,7 @@ impl AppBuilder {
             tensor_parallelism: p.tensor_parallelism,
             micro_batch_size: p.micro_batch_size,
             write_gradients_dir: p.write_gradients_dir,
+            eval_tasks,
         };
         app.run(p2p).await
     }
@@ -142,6 +172,7 @@ impl App {
                 }
             }
         }
+        let eval_tasks = self.eval_tasks.drain(..).collect::<Vec<_>>();
         let (tx, rx) = mpsc::channel(128);
         let (witness_tx, mut witness_rx) = mpsc::channel(128);
         let identity = ClientId::from(p2p.node_addr().await?.node_id);
@@ -152,6 +183,7 @@ impl App {
             self.secret_key.clone(),
             self.data_parallelism,
             self.tensor_parallelism,
+            eval_tasks,
             self.micro_batch_size,
             self.write_gradients_dir.clone(),
         );

@@ -1,12 +1,16 @@
 use crate::traits::{Document, LogLikelihoodTask};
 use indicatif::{ProgressBar, ProgressStyle};
+use psyche_core::RunningAverage;
 use psyche_modeling::CausalLM;
 use rand::{seq::SliceRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::{
     collections::HashMap,
     fmt::Display,
-    sync::{Arc, RwLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
 use tch::{Kind, Tensor};
 use tokenizers::Tokenizer;
@@ -14,8 +18,6 @@ use tokenizers::Tokenizer;
 pub enum TaskType {
     LogLikelihood(Box<dyn LogLikelihoodTask>),
 }
-
-pub type LiveResults = Option<Arc<RwLock<HashMap<String, f32>>>>;
 
 pub struct Task {
     task_type: TaskType,
@@ -159,8 +161,12 @@ impl PreparedTask {
         &self,
         model: &mut M,
         quiet: bool,
-        live_results: LiveResults,
-    ) -> HashMap<String, f32> {
+        skip_and_step_by: Option<(usize, usize)>,
+        live_results: Option<Arc<RunningAverage>>,
+        cancel: Option<Arc<AtomicBool>>,
+        limit: Option<usize>,
+        infinite: bool,
+    ) -> (HashMap<String, f64>, usize) {
         let pbar = match quiet {
             true => None,
             false => {
@@ -178,21 +184,55 @@ impl PreparedTask {
             PreparedTaskType::LogLikelihood {
                 docs,
                 tokenized_fewshot,
-            } => Self::run_log_likelihood(model, docs, tokenized_fewshot, pbar, live_results),
+            } => Self::run_log_likelihood(
+                model,
+                docs,
+                skip_and_step_by,
+                tokenized_fewshot,
+                pbar,
+                live_results,
+                cancel,
+                limit,
+                infinite,
+            ),
         }
     }
 
     fn run_log_likelihood<M: CausalLM>(
         model: &mut M,
         docs: &[TokenizedLLHDocument],
+        skip_and_step_by: Option<(usize, usize)>,
         tokenized_fewshot: &[i64],
         pbar: Option<ProgressBar>,
-        live_results: LiveResults,
-    ) -> HashMap<String, f32> {
-        let mut acc_num = 0f32;
-        let mut acc_norm_num = 0f32;
-        let mut acc_denom = 0f32;
-        for doc in docs {
+        live_results: Option<Arc<RunningAverage>>,
+        cancel: Option<Arc<AtomicBool>>,
+        mut limit: Option<usize>,
+        infinite: bool,
+    ) -> (HashMap<String, f64>, usize) {
+        let results = live_results.unwrap_or_default();
+        let (mut skip, step_by) = skip_and_step_by.unwrap_or((0, 1));
+        results.add_entry_if_needed("acc", docs.len());
+        results.add_entry_if_needed("acc_norm", docs.len());
+        let mut next_index = skip;
+        let fast_forward = (skip / docs.len()) * docs.len();
+        skip -= fast_forward;
+        for (doc_index, doc) in docs.iter().cycle().enumerate().skip(skip).step_by(step_by) {
+            next_index = doc_index;
+            if let Some(cancel) = cancel.as_ref() {
+                if cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+            }
+            if !infinite && doc_index >= docs.len() {
+                break;
+            }
+            if let Some(limit_) = limit.as_ref() {
+                if *limit_ == 0 {
+                    break;
+                } else {
+                    limit = Some(limit_ - 1);
+                }
+            }
             let mut context = tokenized_fewshot.to_vec();
             context.extend_from_slice(&doc.text);
             let mut scores: Vec<(f32, bool)> = Vec::new();
@@ -246,27 +286,49 @@ impl PreparedTask {
             .try_into()
             .unwrap();
 
-            if selected as usize == doc.answer {
-                acc_num += 1.;
-            }
-            if selected_norm as usize == doc.answer {
-                acc_norm_num += 1.;
-            }
-            acc_denom += 1.;
+            results.push(
+                "acc",
+                match selected as usize == doc.answer {
+                    true => 1.,
+                    false => 0.,
+                },
+            );
+            results.push(
+                "acc_norm",
+                match selected_norm as usize == doc.answer {
+                    true => 1.,
+                    false => 0.,
+                },
+            );
 
             if let Some(pbar) = &pbar {
-                pbar.set_message(format!("acc_norm: {:.3}", acc_norm_num / acc_denom));
+                pbar.set_message(format!(
+                    "acc_norm: {:.3}",
+                    results.sample("acc_norm").unwrap()
+                ));
                 pbar.inc(1);
-            }
-            if let Some(live_results) = live_results.as_ref() {
-                let mut live_results = live_results.write().unwrap();
-                live_results.insert("acc".to_owned(), acc_num / acc_denom);
-                live_results.insert("acc_norm".to_owned(), acc_norm_num / acc_denom);
-            }
+            };
         }
-        HashMap::from([
-            ("acc".to_owned(), acc_num / acc_denom),
-            ("acc_norm".to_owned(), acc_norm_num / acc_denom),
-        ])
+        (
+            results
+                .get_all_averages()
+                .into_iter()
+                .map(|(key, value)| (key, value.unwrap_or_default()))
+                .collect(),
+            next_index + fast_forward,
+        )
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn main_metric_name(&self) -> &str {
+        match &self.prepared_task_type {
+            PreparedTaskType::LogLikelihood {
+                docs: _,
+                tokenized_fewshot: _,
+            } => "acc_norm",
+        }
     }
 }

@@ -42,6 +42,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         private_key: T::PrivateKey,
         data_parallelism: usize,
         tensor_parallelism: usize,
+        eval_tasks: Vec<psyche_eval::Task>,
         micro_batch_size: Option<usize>,
         write_gradients_dir: Option<PathBuf>,
     ) -> Self {
@@ -59,6 +60,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                     private_key,
                     data_parallelism,
                     tensor_parallelism,
+                    eval_tasks,
                     micro_batch_size,
                     write_gradients_dir,
                 );

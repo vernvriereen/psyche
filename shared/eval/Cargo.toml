@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+psyche-core.workspace = true
 psyche-data-provider.workspace = true
 psyche-modeling.workspace = true
 anyhow.workspace = true
