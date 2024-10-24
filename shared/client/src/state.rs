@@ -286,8 +286,11 @@ impl<T: NodeIdentity> State<T> {
             if let Some(state) = &self.state {
                 if !state.is_greedy_data() {
                     let start = if let Some(training_data) = &self.training_data {
+                        // all data has been pushed, we've consumed it all, and all trainers have finished
                         training_data.assigned_ids_done.load(Ordering::SeqCst)
+                            && training_data.next_sample.is_empty()
                     } else {
+                        // we've already downloaded committments for all batch ids (stronger than just finished our assignments)
                         true
                     };
                     if start {
