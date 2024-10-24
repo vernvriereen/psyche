@@ -2,7 +2,13 @@ use psyche_coordinator::{get_batch_ids_for_state, Coordinator};
 use psyche_core::{IntervalTree, NodeIdentity};
 use psyche_data_provider::{DataProviderTcpClient, TokenizedDataProvider};
 use rand::Rng;
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::HashSet,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 use tokio::{
     sync::{mpsc, Mutex},
     task::JoinHandle,
@@ -55,7 +61,8 @@ impl<T: NodeIdentity> DataFetcher<T> {
         // TODO: replace `get_batch_ids_for_state` with a version that's aware of training/verify/tiebreak (or use assigned_batch_ids).
         let all_batch_ids = get_batch_ids_for_state(state);
         let num_all_batch_ids = all_batch_ids.len();
-        debug!("got new batch IDs for step {step} - there are {num_all_batch_ids}");
+        debug!("Got new batch IDs for step {step} - there are {num_all_batch_ids}");
+        let assigned_ids_done = Arc::new(AtomicBool::new(assigned_batch_ids.is_empty()));
         let batch_ids_not_yet_trained_on: std::sync::Arc<Mutex<BatchIdSet>> =
             Arc::new(Mutex::new(all_batch_ids.into_iter().collect()));
         let greedy = state.is_greedy_data();
@@ -63,22 +70,25 @@ impl<T: NodeIdentity> DataFetcher<T> {
         let (tx_next_sample, next_sample) = mpsc::channel(self.buffer_size);
 
         if let Some((last_step, task)) = self.active_fetch_task.take() {
-            debug!("killing previous fetch task from step {last_step}.");
+            debug!("Killing previous fetch task from step {last_step}.");
             task.abort(); // we don't need it anymore :)
         }
 
         self.active_fetch_task = Some((
             step,
             tokio::spawn({
-                debug!("new fetch task for step {step} has been spawned");
+                debug!("New fetch task for step {step} has been spawned");
                 let data_provider = self.data_provider.clone(); // only one of these tasks will acquire the lock at once. once one dies, the lock is released for sure.
-                let batch_ids_not_yet_trained_on = batch_ids_not_yet_trained_on.clone();
+                let batch_ids_not_yet_trained_on: Arc<Mutex<HashSet<u64>>> =
+                    batch_ids_not_yet_trained_on.clone();
+                let assigned_ids_done = assigned_ids_done.clone();
                 async move {
                     loop {
                         let batch_id = {
                             match assigned_batch_ids.pop() {
                                 Some(assigned) => assigned,
                                 None => {
+                                    assigned_ids_done.store(true, Ordering::SeqCst);
                                     if greedy {
                                         let remaining_batch_ids =
                                             batch_ids_not_yet_trained_on.lock().await;
@@ -98,7 +108,7 @@ impl<T: NodeIdentity> DataFetcher<T> {
                                 }
                             }
                         };
-                        debug!("fetching data for batch: step: {step} id: {batch_id}");
+                        debug!("Fetching data for batch: step: {step} id: {batch_id}");
                         let data_indicies_per_batch = data_indicies_per_batch as u64;
                         let start_data_id = (batch_id * data_indicies_per_batch) as usize;
                         let data_ids = (start_data_id
@@ -129,6 +139,7 @@ impl<T: NodeIdentity> DataFetcher<T> {
                 step,
                 next_sample,
                 batch_ids_not_yet_trained_on,
+                assigned_ids_done,
             },
         )
     }
@@ -138,4 +149,5 @@ pub struct TrainingDataForStep {
     pub step: u32,
     pub next_sample: mpsc::Receiver<(BatchId, Batch)>,
     pub batch_ids_not_yet_trained_on: Arc<Mutex<BatchIdSet>>,
+    pub assigned_ids_done: Arc<AtomicBool>,
 }

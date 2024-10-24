@@ -1,7 +1,8 @@
 use crate::app::{AppBuilder, AppParams, Tabs, TAB_NAMES};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::{ArgAction, Parser};
+use psyche_eval::{Hellaswag, MMLUPro};
 use psyche_network::SecretKey;
 use psyche_tui::{maybe_start_render_loop, LogOutput};
 use std::path::PathBuf;
@@ -49,6 +50,12 @@ struct Args {
 
     #[clap(long)]
     eval_tasks: Option<String>,
+
+    #[clap(long, default_value_t = 0)]
+    eval_fewshot: usize,
+
+    #[clap(long, default_value_t = 42)]
+    eval_seed: u64,
 }
 
 async fn async_main() -> Result<()> {
@@ -73,6 +80,28 @@ async fn async_main() -> Result<()> {
             None,
         );
     }
+
+    let eval_tasks = match args.eval_tasks {
+        Some(eval_tasks) => {
+            let result: Result<Vec<psyche_eval::Task>> = eval_tasks
+                .split(",")
+                .map(|eval_task| {
+                    match eval_task.to_lowercase().as_str() {
+                        "hellaswag" => Hellaswag::load(),
+                        "mmlu_pro" => MMLUPro::load(),
+                        task => {
+                            bail!("Unknown eval task {task}");
+                        }
+                    }
+                    .map(|task_type| {
+                        psyche_eval::Task::new(task_type, args.eval_fewshot, args.eval_seed)
+                    })
+                })
+                .collect();
+            result?
+        }
+        None => Vec::new(),
+    };
 
     psyche_tui::init_logging(
         if args.tui {
@@ -106,7 +135,7 @@ async fn async_main() -> Result<()> {
         tensor_parallelism: args.tensor_parallelism,
         micro_batch_size: args.micro_batch_size,
         write_gradients_dir: args.write_gradients_dir,
-        eval_tasks: args.eval_tasks,
+        eval_tasks,
     })
     .run()
     .await

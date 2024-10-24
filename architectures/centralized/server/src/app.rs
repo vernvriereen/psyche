@@ -2,9 +2,13 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{BroadcastMessage, Payload, NC};
-use psyche_coordinator::model::{LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM};
+use psyche_coordinator::model::{
+    Checkpoint, LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM,
+};
 use psyche_coordinator::{Client, Coordinator, HealthChecks, Witness};
-use psyche_data_provider::{DataProviderTcpServer, DataServerTui, LocalDataProvider, TokenSize};
+use psyche_data_provider::{
+    download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider, TokenSize,
+};
 use psyche_network::{NetworkEvent, NetworkTui, PeerList, RelayMode, TcpServer};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{maybe_start_render_loop, CustomWidget, MaybeTui, TabbedWidget};
@@ -118,12 +122,25 @@ impl App {
         let training_data_server = if let Some(Model::LLM(LLM {
             data_location: LLMTrainingDataLocation::Server(url),
             data_type,
+            checkpoint,
             ..
         })) = &coordinator.model
         {
             if let LLMTrainingDataType::Finetuning = data_type {
                 panic!("Finetuning is not supported yet.")
             }
+
+            let Checkpoint::Hub(hub_repo) = checkpoint;
+            download_model_repo_async(
+                hub_repo.repo_id.clone(),
+                hub_repo.revision.clone(),
+                None,
+                None,
+                None,
+                true,
+            )
+            .await?;
+
             let server_addr: SocketAddr = url
                 .parse()
                 .map_err(|e| anyhow!("Failed to parse training data server URL {url}: {e}"))?;

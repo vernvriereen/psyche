@@ -96,6 +96,7 @@ pub struct State<T: NodeIdentity> {
     evals: Vec<JoinHandle<Result<Trainer>>>,
     tokenizer: Option<Arc<Tokenizer>>,
     apply_start: Option<Instant>,
+    started_early_evals: bool,
     /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
     _last_observed_num_batches_remaining: usize,
     _eval_results: HashMap<String, Vec<f64>>,
@@ -152,6 +153,7 @@ impl<T: NodeIdentity> State<T> {
             preparing_eval_tasks: None,
             tokenizer: None,
             apply_start: None,
+            started_early_evals: false,
             _last_observed_num_batches_remaining: 0,
         }
     }
@@ -279,6 +281,23 @@ impl<T: NodeIdentity> State<T> {
                 .collect::<std::result::Result<Vec<_>, _>>()?,
         };
 
+        // in non-greedy mode we can start evals right when we're done with our work
+        if self.available_trainers.len() == self.data_parallelism {
+            if let Some(state) = &self.state {
+                if !state.is_greedy_data() {
+                    let start = if let Some(training_data) = &self.training_data {
+                        training_data.assigned_ids_done.load(Ordering::SeqCst)
+                    } else {
+                        true
+                    };
+                    if start {
+                        self.started_early_evals = true;
+                        self.start_evals();
+                    }
+                }
+            }
+        }
+
         self.maybe_write_gradients(&payload);
 
         Ok(ToSend::Broadcast((broadcast, payload)))
@@ -318,22 +337,6 @@ impl<T: NodeIdentity> State<T> {
         Ok(ToSend::Nothing)
     }
 
-    // fn handle_poll_next_evals(&mut self, trainer: Trainer) -> Result<ToSend> {
-    //     self.available_trainers.push(trainer);
-    //     if self.evals.is_empty() {
-    //         for eval_task in &self.prepared_eval_tasks {
-    //             let metric_name: &str = eval_task.task.main_metric_name();
-    //             match eval_task.results.sample(&metric_name) {
-    //                 Some(metric) => {
-    //                     info!("{} {}: {:.3}", eval_task.task.name(), metric_name, metric)
-    //                 }
-    //                 None => warn!("{} missing metric {}", eval_task.task.name(), metric_name),
-    //             }
-    //         }
-    //     }
-    //     Ok(ToSend::Nothing)
-    // }
-
     pub async fn poll_next(&mut self) -> Result<ToSend> {
         let trainings_finished_position = self.trainings.iter_mut().position(|x| x.is_finished());
         if self.is_run_state(RunState::RoundTrain)
@@ -346,20 +349,6 @@ impl<T: NodeIdentity> State<T> {
                 return Ok(ToSend::Witness(witness));
             }
         }
-        // } else if self.is_run_state(RunState::Warmup) {
-        //     let state = self.state.as_ref().unwrap();
-        //     let timestamp = SystemTime::now()
-        //         .duration_since(UNIX_EPOCH)
-        //         .unwrap()
-        //         .as_secs();
-        //     if timestamp
-        //         >= state.run_state_start_unix_timestamp + state.warmup_time - EVAL_CANCEL_TIME_SECS
-        //     {
-        //         if !self.eval_cancel.swap(true, Ordering::SeqCst) {
-        //             debug!("Cancelling evals");
-        //         }
-        //     }
-        // }
         select! {
             applying = async {self.applying.as_mut().unwrap().await}, if self.applying.is_some() => {
                 self.applying = None;
@@ -386,11 +375,6 @@ impl<T: NodeIdentity> State<T> {
                 self.preparing_eval_tasks = None;
                 self.handle_poll_next_preparing_eval_tasks(preparing_eval_tasks??)
             }
-            // evals = async {self.evals.get_mut(*evals_finished_position.as_ref().unwrap()).unwrap().await}, if evals_finished_position.is_some() => {
-            //     let evals = evals??;
-            //     self.evals.swap_remove(evals_finished_position.unwrap());
-            //     self.handle_poll_next_evals(evals)
-            // }
             _ = sleep(Duration::from_secs_f32(0.1)) => {
                 // still need this?
                 Ok(ToSend::Nothing)
@@ -691,7 +675,9 @@ impl<T: NodeIdentity> State<T> {
     }
 
     async fn round_train(&mut self, index: u64) -> Result<()> {
-        self.cancel_evals().await?; // CANCEL SAFETY
+        if !self.started_early_evals {
+            self.cancel_evals().await?; // CANCEL SAFETY
+        }
 
         let state = self
             .state
@@ -874,6 +860,7 @@ impl<T: NodeIdentity> State<T> {
             .run_state
             != RunState::RoundWitness
         {
+            self.started_early_evals = false;
             self.start_evals();
         }
 
@@ -1149,7 +1136,7 @@ impl<T: NodeIdentity> State<T> {
     }
 
     fn start_evals(&mut self) {
-        if !self.prepared_eval_tasks.is_empty() {
+        if !self.prepared_eval_tasks.is_empty() && !self.available_trainers.is_empty() {
             self.eval_cancel.store(false, Ordering::SeqCst);
             debug!(
                 "Starting evals {:?}",
