@@ -1108,6 +1108,7 @@ impl<T: NodeIdentity> State<T> {
                                         None,
                                         Some(Device::Cuda(dp * tensor_parallelism + tp)),
                                         tensor_parallelism_world,
+                                        Some(llm.max_seq_len as usize),
                                     )
                                 }));
                             }
@@ -1174,7 +1175,7 @@ impl<T: NodeIdentity> State<T> {
     fn start_evals(&mut self) {
         if !self.prepared_eval_tasks.is_empty() && !self.available_trainers.is_empty() {
             self.eval_cancel.store(false, Ordering::SeqCst);
-            info!(
+            debug!(
                 "Starting evals {:?}",
                 self.prepared_eval_tasks
                     .iter()
@@ -1268,7 +1269,7 @@ impl<T: NodeIdentity> State<T> {
 
     fn maybe_write_gradients(&self, payload: &Payload) {
         if let Some(write_gradients_dir) = &self.write_gradients_dir {
-            info!("trying to write distro result to disk...");
+            info!("Trying to write distro result to disk...");
             if let Err(e) = fs::create_dir_all(write_gradients_dir) {
                 warn!("Failed to create write_gradients_dir: {e}");
                 return;

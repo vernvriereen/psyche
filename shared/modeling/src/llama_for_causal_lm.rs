@@ -86,6 +86,7 @@ impl LlamaForCausalLM {
         attn_implementation: Option<AttentionImplementation>,
         device: Option<Device>,
         tensor_parallelism_world: Option<(Arc<CommunicatorId>, usize, usize)>,
+        override_max_position_embeddings: Option<usize>,
     ) -> Result<Self> {
         let llama_config: LlamaConfig = serde_json::from_str(&String::from_utf8(std::fs::read(
             repo_files
@@ -94,11 +95,14 @@ impl LlamaForCausalLM {
                 .ok_or(Error::msg("missing config.json"))?
                 .as_path(),
         )?)?)?;
-        let config: Config = llama_config.into_config(match attn_implementation.unwrap_or(AttentionImplementation::Sdpa) {
+        let mut config: Config = llama_config.into_config(match attn_implementation.unwrap_or(AttentionImplementation::Sdpa) {
             AttentionImplementation::Eager => false,
             AttentionImplementation::Sdpa => true,
             AttentionImplementation::FlashAttention2 => { bail!("Directly setting attention implementation to FlashAttention-2 unsupported for now"); }
         });
+        if let Some(override_max_position_embeddings) = override_max_position_embeddings {
+            config.max_position_embeddings = override_max_position_embeddings;
+        }
         let device = device.unwrap_or(Device::Cuda(0));
         #[cfg(feature = "parallelism")]
         let comm = match tensor_parallelism_world {

@@ -80,6 +80,7 @@ fn train(
         None,
         tensor_parallelism.as_ref().map(|_| Device::Cuda(rank)),
         tensor_parallelism,
+        None,
     )?;
     let device = model.device();
     let iter = dataset.into_iter().map(|tokens| {

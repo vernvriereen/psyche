@@ -16,6 +16,7 @@ fn main() -> Result<()> {
         None,
         Some(Device::Cuda(0)),
         None,
+        None,
     )?;
     let tokenizer = auto_tokenizer(&repo)?;
     for task in tasks {

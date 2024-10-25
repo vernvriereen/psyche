@@ -112,6 +112,7 @@ fn inference(
         tensor_parallelism
             .as_ref()
             .map(|(id, rank, size, _)| (id.clone(), *rank, *size)),
+        None
     )?;
     let eos_token_id = model
         .config
