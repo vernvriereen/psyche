@@ -56,7 +56,7 @@ type Rollbacks = BoundedQueue<(BatchStep, Vec<DistroResults>)>;
 struct EvalTask {
     task: psyche_eval::PreparedTask,
     results: Arc<RunningAverage>,
-    next_index: Arc<std::sync::Mutex<usize>>,
+    next_index: Arc<AtomicUsize>,
 }
 
 pub struct State<T: NodeIdentity> {
@@ -231,7 +231,9 @@ impl<T: NodeIdentity> State<T> {
                         .cloned()
                         .collect()
                 });
-                debug!("computed rollback - we are training on data for step {batch_step}, so we should roll back steps {}", rollback.iter().map(|f| f.0.to_string()).collect::<Vec<_>>().join(","));
+                if !rollback.is_empty() {
+                    debug!("Computed rollback - we are training on data for step {batch_step}, so we should roll back steps {}", rollback.iter().map(|f| f.0.to_string()).collect::<Vec<_>>().join(","));
+                }
 
                 let output = trainer.train(batch_step, batch, rollback)?;
                 Ok((output, batch_id))
@@ -282,7 +284,7 @@ impl<T: NodeIdentity> State<T> {
         };
 
         // in non-greedy mode we can start evals right when we're done with our work
-        if self.available_trainers.len() == self.data_parallelism {
+        if !self.started_early_evals && self.available_trainers.len() == self.data_parallelism {
             if let Some(state) = &self.state {
                 if !state.is_greedy_data() {
                     let start = if let Some(training_data) = &self.training_data {
@@ -332,7 +334,7 @@ impl<T: NodeIdentity> State<T> {
                 Arc::new(EvalTask {
                     task,
                     results: Arc::new(RunningAverage::new()),
-                    next_index: Arc::new(std::sync::Mutex::new(0)),
+                    next_index: Arc::new(AtomicUsize::new(0)),
                 })
             })
             .collect();
@@ -1141,7 +1143,7 @@ impl<T: NodeIdentity> State<T> {
     fn start_evals(&mut self) {
         if !self.prepared_eval_tasks.is_empty() && !self.available_trainers.is_empty() {
             self.eval_cancel.store(false, Ordering::SeqCst);
-            debug!(
+            info!(
                 "Starting evals {:?}",
                 self.prepared_eval_tasks
                     .iter()
@@ -1164,7 +1166,7 @@ impl<T: NodeIdentity> State<T> {
                                 .zip(
                                     prepared_eval_tasks
                                         .iter()
-                                        .map(|x| *x.next_index.lock().unwrap())
+                                        .map(|x| x.next_index.load(Ordering::SeqCst))
                                         .collect::<Vec<_>>(),
                                 )
                                 .collect::<Vec<_>>();
@@ -1174,18 +1176,18 @@ impl<T: NodeIdentity> State<T> {
                                     stop = true;
                                     break;
                                 }
-                                debug!("Running {} on dp {}", eval_task.task.name(), dp_index);
-                                let (_, next_index) = eval_task.task.run(
+                                let result = eval_task.task.run(
                                     &mut trainer,
                                     true,
                                     Some((next_index + dp_index, data_parallelism)),
                                     Some(eval_task.results.clone()),
                                     Some(eval_cancel.clone()),
-                                    Some(5),
+                                    Some(10),
                                     true,
                                 );
-                                let mut next_index_lock = eval_task.next_index.lock().unwrap();
-                                *next_index_lock = next_index.max(*next_index_lock);
+                                eval_task
+                                    .next_index
+                                    .fetch_max(result.next_index, Ordering::SeqCst);
                             }
                         }
                         Ok(trainer)
@@ -1198,7 +1200,7 @@ impl<T: NodeIdentity> State<T> {
     // cancel safe
     async fn cancel_evals(&mut self) -> Result<()> {
         if !self.eval_cancel.swap(true, Ordering::SeqCst) {
-            debug!("Cancelling evals");
+            info!("Cancelling evals");
         }
         while !self.evals.is_empty() {
             if let Some(finished) = self.evals.iter_mut().position(|x| x.is_finished()) {

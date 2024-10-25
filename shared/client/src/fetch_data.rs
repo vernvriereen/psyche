@@ -117,7 +117,6 @@ impl<T: NodeIdentity> DataFetcher<T> {
 
                         match data_provider.lock().await.get_samples(&data_ids).await {
                             Ok(batch) => {
-                                debug!("Sending step {step} id {batch_id}");
                                 if tx_next_sample.send((batch_id, batch)).await.is_err() {
                                     debug!("Data loop finished");
                                     return;

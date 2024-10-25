@@ -20,10 +20,10 @@ fn main() -> Result<()> {
     let tokenizer = auto_tokenizer(&repo)?;
     for task in tasks {
         let name = format!("{task}");
-        let (scores, _) = task
+        let result = task
             .prepare(&tokenizer, model.bos_token_id(), false, None)
             .run(&mut model, false, None, None, None, None, false);
-        println!("{name}: {scores:?}");
+        println!("{}: {:?}", name, result.scores);
     }
     Ok(())
 }

@@ -58,6 +58,12 @@ pub struct PreparedTask {
     num: usize,
 }
 
+pub struct PreparedTaskResult {
+    pub scores: HashMap<String, f64>,
+    pub next_index: usize,
+    pub cancelled: bool,
+}
+
 struct TokenizedLLHDocument {
     text: Vec<i64>,
     choices: Vec<Vec<i64>>,
@@ -166,7 +172,7 @@ impl PreparedTask {
         cancel: Option<Arc<AtomicBool>>,
         limit: Option<usize>,
         infinite: bool,
-    ) -> (HashMap<String, f64>, usize) {
+    ) -> PreparedTaskResult {
         let pbar = match quiet {
             true => None,
             false => {
@@ -208,7 +214,7 @@ impl PreparedTask {
         cancel: Option<Arc<AtomicBool>>,
         mut limit: Option<usize>,
         infinite: bool,
-    ) -> (HashMap<String, f64>, usize) {
+    ) -> PreparedTaskResult {
         let results = live_results.unwrap_or_default();
         let (mut skip, step_by) = skip_and_step_by.unwrap_or((0, 1));
         results.add_entry_if_needed("acc", docs.len());
@@ -216,10 +222,12 @@ impl PreparedTask {
         let mut next_index = skip;
         let fast_forward = (skip / docs.len()) * docs.len();
         skip -= fast_forward;
+        let mut cancelled = false;
         for (doc_index, doc) in docs.iter().cycle().enumerate().skip(skip).step_by(step_by) {
             next_index = doc_index;
             if let Some(cancel) = cancel.as_ref() {
-                if cancel.load(Ordering::Relaxed) {
+                if cancel.load(Ordering::SeqCst) {
+                    cancelled = true;
                     break;
                 }
             }
@@ -309,14 +317,15 @@ impl PreparedTask {
                 pbar.inc(1);
             };
         }
-        (
-            results
+        PreparedTaskResult {
+            scores: results
                 .get_all_averages()
                 .into_iter()
                 .map(|(key, value)| (key, value.unwrap_or_default()))
                 .collect(),
-            next_index + fast_forward,
-        )
+            next_index: next_index + fast_forward,
+            cancelled,
+        }
     }
 
     pub fn name(&self) -> &str {
