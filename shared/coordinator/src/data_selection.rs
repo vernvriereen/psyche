@@ -1,4 +1,4 @@
-use crate::{Committee, CommitteeSelection, Coordinator};
+use crate::{Committee, CommitteeSelection, Coordinator, Round};
 use psyche_core::{deterministic_shuffle, ClosedInterval, IntervalTree, NodeIdentity};
 
 pub fn assign_data_for_state<T: NodeIdentity>(
@@ -61,13 +61,7 @@ pub fn assign_data_for_state<T: NodeIdentity>(
     ret
 }
 
-pub fn get_batch_ids_for_state<T: NodeIdentity>(state: &Coordinator<T>) -> Vec<u64> {
-    let round = match state.current_round() {
-        Ok(round) => round,
-        Err(_) => {
-            return vec![];
-        }
-    };
+pub fn get_batch_ids_for_round<T: NodeIdentity>(round: &Round, state: &Coordinator<T>) -> Vec<u64> {
     let batch_index = round.data_index / state.data_indicies_per_batch as u64;
     (batch_index..(batch_index + state.batches_per_round as u64)).collect::<Vec<_>>()
 }

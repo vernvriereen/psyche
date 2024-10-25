@@ -1,4 +1,4 @@
-use psyche_coordinator::{get_batch_ids_for_state, Coordinator};
+use psyche_coordinator::{get_batch_ids_for_round, Coordinator};
 use psyche_core::{IntervalTree, NodeIdentity};
 use psyche_data_provider::{DataProviderTcpClient, TokenizedDataProvider};
 use rand::Rng;
@@ -59,7 +59,7 @@ impl<T: NodeIdentity> DataFetcher<T> {
             .collect();
 
         // TODO: replace `get_batch_ids_for_state` with a version that's aware of training/verify/tiebreak (or use assigned_batch_ids).
-        let all_batch_ids = get_batch_ids_for_state(state);
+        let all_batch_ids = get_batch_ids_for_round(state.current_round().unwrap(), state);
         let num_all_batch_ids = all_batch_ids.len();
         debug!("Got new batch IDs for step {step} - there are {num_all_batch_ids}");
         let assigned_ids_done = Arc::new(AtomicBool::new(assigned_batch_ids.is_empty()));

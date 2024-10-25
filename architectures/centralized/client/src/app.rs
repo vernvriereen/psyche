@@ -60,6 +60,7 @@ pub struct App {
     data_parallelism: usize,
     tensor_parallelism: usize,
     eval_tasks: Vec<psyche_eval::Task>,
+    eval_task_docs: usize,
     micro_batch_size: Option<usize>,
     write_gradients_dir: Option<PathBuf>,
 }
@@ -78,6 +79,7 @@ pub struct AppParams {
     pub write_gradients_dir: Option<PathBuf>,
     pub p2p_port: Option<u16>,
     pub eval_tasks: Vec<psyche_eval::Task>,
+    pub eval_task_docs: usize,
 }
 
 impl AppBuilder {
@@ -118,6 +120,7 @@ impl AppBuilder {
             micro_batch_size: p.micro_batch_size,
             write_gradients_dir: p.write_gradients_dir,
             eval_tasks: p.eval_tasks,
+            eval_task_docs: p.eval_task_docs,
         };
         app.run(p2p).await
     }
@@ -158,6 +161,7 @@ impl App {
             self.data_parallelism,
             self.tensor_parallelism,
             eval_tasks,
+            self.eval_task_docs,
             self.micro_batch_size,
             self.write_gradients_dir.clone(),
         );

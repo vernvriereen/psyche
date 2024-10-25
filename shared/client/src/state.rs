@@ -7,7 +7,7 @@ use crate::{
 };
 use anyhow::{bail, Error, Result};
 use psyche_coordinator::{
-    assign_data_for_state, get_batch_ids_for_state, model, Committee, CommitteeProof,
+    assign_data_for_state, get_batch_ids_for_round, model, Committee, CommitteeProof,
     CommitteeSelection, Coordinator, HealthChecks, RunState, Witness, WitnessProof,
     BLOOM_FALSE_RATE, BLOOM_MAX_BITS, NUM_STORED_ROUNDS,
 };
@@ -72,8 +72,10 @@ pub struct State<T: NodeIdentity> {
     state: Option<Coordinator<T>>,
     prev_state: Option<Coordinator<T>>,
     commitments: HashMap<u64, Vec<(T, BroadcastMessage)>>,
+    prev_commitments: HashMap<u64, Vec<(T, BroadcastMessage)>>,
     commitments_per_client: HashMap<T, u32>,
     payloads: HashMap<psyche_network::Hash, PayloadState<T>>,
+    prev_payloads: HashMap<psyche_network::Hash, PayloadState<T>>,
     blooms: Option<(Bloom32, Bloom32, Bloom32)>,
     losses: Vec<f32>,
     round_losses: Vec<f32>,
@@ -91,6 +93,7 @@ pub struct State<T: NodeIdentity> {
     data_assignments: IntervalTree<u64, T>,
     eval_cancel: Arc<AtomicBool>,
     eval_tasks: Vec<psyche_eval::Task>,
+    eval_task_docs: usize,
     prepared_eval_tasks: Vec<Arc<EvalTask>>,
     preparing_eval_tasks: TaskResult<Vec<psyche_eval::PreparedTask>>,
     evals: Vec<JoinHandle<Result<Trainer>>>,
@@ -109,6 +112,7 @@ impl<T: NodeIdentity> State<T> {
         data_parallelism: usize,
         tensor_parallelism: usize,
         eval_tasks: Vec<psyche_eval::Task>,
+        eval_task_docs: usize,
         micro_batch_size: Option<usize>,
         write_gradients_dir: Option<PathBuf>,
     ) -> Self {
@@ -127,8 +131,10 @@ impl<T: NodeIdentity> State<T> {
             prev_state: None,
             blooms: None,
             commitments: HashMap::new(),
+            prev_commitments: HashMap::new(),
             commitments_per_client: HashMap::new(),
             payloads: HashMap::new(),
+            prev_payloads: HashMap::new(),
             losses: Vec::new(),
             round_losses: Vec::new(),
             notify_clear_uploads: Arc::new(Notify::new()),
@@ -148,6 +154,7 @@ impl<T: NodeIdentity> State<T> {
                 .map(|task| (task.to_string(), Vec::new()))
                 .collect(),
             eval_tasks,
+            eval_task_docs,
             evals: Vec::new(),
             prepared_eval_tasks: Vec::new(),
             preparing_eval_tasks: None,
@@ -733,12 +740,13 @@ impl<T: NodeIdentity> State<T> {
             if !self.eval_tasks.is_empty() {
                 // start preparing eval tasks in background
                 let eval_tasks = self.eval_tasks.drain(..).collect::<Vec<_>>();
+                let eval_task_docs = self.eval_task_docs;
                 let tokenizer = self.tokenizer.clone();
                 self.preparing_eval_tasks = Some(tokio::task::spawn_blocking(move || {
                     match tokenizer {
                         Some(tokenizer) => Ok(eval_tasks
                             .into_iter()
-                            .map(|task| task.prepare(&tokenizer, None, true, None))
+                            .map(|task| task.prepare(&tokenizer, None, true, Some(eval_task_docs)))
                             .collect()),
                         None => {
                             bail!("No tokenizer");
@@ -843,9 +851,9 @@ impl<T: NodeIdentity> State<T> {
             false => None,
         };
         self.committee_info = Some((committee_proof, witness_proof, committee_selection));
-        self.commitments.clear();
+        self.prev_commitments = self.commitments.drain().collect();
         self.commitments_per_client.clear();
-        self.payloads.clear();
+        self.prev_payloads = self.payloads.drain().collect();
         self.notify_clear_uploads.notify_one(); // clear any served uploads we have
         Ok(())
     }
@@ -918,84 +926,107 @@ impl<T: NodeIdentity> State<T> {
         }
         self.apply_start = Some(Instant::now());
 
-        let round = state.current_round()?;
         let trainers = self.available_trainers.drain(..).collect::<Vec<_>>();
-        let mut payloads: HashMap<psyche_network::Hash, PayloadState<T>> =
-            self.payloads.drain().collect();
-        let witnesses = round.witnesses.clone();
-        let commitments: HashMap<u64, Vec<(T, BroadcastMessage)>> =
-            self.commitments.drain().collect();
-        let step = state.step;
-        let batch_ids = get_batch_ids_for_state(state);
         let round_rollbacks = self.round_rollbacks.clone();
+        let step = state.step;
         let witness_quorum = state.witness_quorum;
-        self.applying = Some(tokio::task::spawn(async move {
-            let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
 
-            for batch_id in batch_ids {
-                let batch_commitments = match commitments.get(&batch_id) {
-                    Some(x) => x,
-                    None => {
-                        warn!("DESYNC: No commitments for batch {}", batch_id);
-                        continue;
-                    }
-                };
-                let consensus = match Coordinator::<T>::select_consensus_commitment_by_witnesses(
-                    &batch_commitments
-                        .iter()
-                        .map(|x| x.1.commitment)
-                        .collect::<Vec<_>>(),
-                    &witnesses,
-                    witness_quorum,
-                ) {
-                    Some(x) => x,
-                    None => {
-                        warn!("DESYNC: No consensus commitment for batch {}", batch_id);
-                        continue;
-                    }
-                };
-                let consensus = &batch_commitments[consensus].1;
-                let maybe_results = match payloads.remove(&consensus.ticket.hash()) {
-                    Some(PayloadState::Deserializing(x)) => match x.is_finished() {
-                        true => x.await.unwrap(),
-                        false => {
-                            bail!("DESYNC: Did not finish downloading payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
+        let mut payloads: HashMap<psyche_network::Hash, PayloadState<T>> = match state.overlapped {
+            true => self.prev_payloads.drain().collect(),
+            false => self.payloads.drain().collect(),
+        };
+        let commitments: HashMap<u64, Vec<(T, BroadcastMessage)>> = match state.overlapped {
+            true => self.prev_commitments.drain().collect(),
+            false => self.commitments.drain().collect(),
+        };
+
+        if state.overlapped && state.first_round {
+            // in overlapped mode the first training step of each epoch has no apply phase.
+            // this is so that on the trainer we can we overlap the uploading
+            // of the last step's results while concurrently computing the next
+            // step. this skip "primes" the pump
+            info!("First round of epoch in overlap mode, skipping apply");
+            self.applying = Some(tokio::task::spawn(async move {
+                round_rollbacks.lock().await.push((step, Vec::new()));
+                Ok(trainers)
+            }));
+        } else {
+            assert!(!payloads.is_empty());
+            assert!(!commitments.is_empty());
+            let round = match state.overlapped {
+                true => state.prev_round()?,
+                false => state.current_round()?,
+            };
+            let witnesses = round.witnesses.clone();
+            let batch_ids = get_batch_ids_for_round(round, state);
+            self.applying = Some(tokio::task::spawn(async move {
+                let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
+
+                for batch_id in batch_ids {
+                    let batch_commitments = match commitments.get(&batch_id) {
+                        Some(x) => x,
+                        None => {
+                            warn!("DESYNC: No commitments for batch {}", batch_id);
+                            continue;
                         }
-                    },
-                    _ => {
-                        bail!("DESYNC: Did not begin downloading payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
-                    }
-                };
+                    };
+                    let consensus = match Coordinator::<T>::select_consensus_commitment_by_witnesses(
+                        &batch_commitments
+                            .iter()
+                            .map(|x| x.1.commitment)
+                            .collect::<Vec<_>>(),
+                        &witnesses,
+                        witness_quorum,
+                    ) {
+                        Some(x) => x,
+                        None => {
+                            warn!("DESYNC: No consensus commitment for batch {}", batch_id);
+                            continue;
+                        }
+                    };
+                    let consensus = &batch_commitments[consensus].1;
+                    let maybe_results = match payloads.remove(&consensus.ticket.hash()) {
+                        Some(PayloadState::Deserializing(x)) => match x.is_finished() {
+                            true => x.await.unwrap(),
+                            false => {
+                                bail!("DESYNC: Did not finish downloading payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
+                            }
+                        },
+                        _ => {
+                            bail!("DESYNC: Did not begin downloading payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
+                        }
+                    };
 
-                match maybe_results {
-                    Ok(results) => {
-                        distro_results.push(results);
+                    match maybe_results {
+                        Ok(results) => {
+                            distro_results.push(results);
+                        }
+                        Err(err) => warn!("DESYNC: Got the following error when deserializing results for commitment 0x{}: {}", hex::encode(consensus.commitment), err),
                     }
-                    Err(err) => warn!("DESYNC: Got the following error when deserializing results for commitment 0x{}: {}", hex::encode(consensus.commitment), err),
                 }
-            }
 
-            round_rollbacks
-                .lock()
-                .await
-                .push((step, distro_results.clone()));
+                round_rollbacks
+                    .lock()
+                    .await
+                    .push((step, distro_results.clone()));
 
-            let futures: Vec<JoinHandle<Result<Trainer>>> = trainers
-                .into_iter()
-                .map(|trainer| {
-                    let distro_results = distro_results.clone();
+                let futures: Vec<JoinHandle<Result<Trainer>>> = trainers
+                    .into_iter()
+                    .map(|trainer| {
+                        let distro_results = distro_results.clone();
 
-                    tokio::task::spawn_blocking(move || {
-                        trainer.apply_distro_results(step, distro_results)
+                        tokio::task::spawn_blocking(move || {
+                            trainer.apply_distro_results(step, distro_results)
+                        })
                     })
-                })
-                .collect::<Vec<_>>();
-            let mut trainers = Vec::new();
-            for future in futures {
-                trainers.push(future.await??);
-            }
-            Ok(trainers)
-        }));
+                    .collect::<Vec<_>>();
+                let mut trainers = Vec::new();
+                for future in futures {
+                    trainers.push(future.await??);
+                }
+                Ok(trainers)
+            }));
+        }
 
         let (_, witness_proof, committee_selection) = self
             .committee_info
@@ -1003,7 +1034,7 @@ impl<T: NodeIdentity> State<T> {
             .ok_or(Error::msg("No committee info in apply"))?;
 
         if witness_proof.witness {
-            let witnesses = round.witnesses.clone();
+            let witnesses = state.current_round()?.witnesses.clone();
             let witness_quorum = state.witness_quorum;
             let clients = state.clients.clone();
             self.health_checking = Some(tokio::task::spawn_blocking(move || {
@@ -1200,7 +1231,7 @@ impl<T: NodeIdentity> State<T> {
     // cancel safe
     async fn cancel_evals(&mut self) -> Result<()> {
         if !self.eval_cancel.swap(true, Ordering::SeqCst) {
-            info!("Cancelling evals");
+            debug!("Cancelling evals");
         }
         while !self.evals.is_empty() {
             if let Some(finished) = self.evals.iter_mut().position(|x| x.is_finished()) {

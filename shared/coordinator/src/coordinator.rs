@@ -96,6 +96,7 @@ pub struct Coordinator<T: NodeIdentity> {
     pub batches_per_round: u32,
     pub data_indicies_per_batch: u32,
     pub max_batches_per_client: u32,
+
     pub verification_percent: u8,
     pub witness_nodes: u32,
     pub witness_quorum: u32,
@@ -104,6 +105,8 @@ pub struct Coordinator<T: NodeIdentity> {
     pub step: u32,
     pub last_step_unix_timestamp: u64,
     pub epoch_start_data_index: u64,
+
+    pub overlapped: bool,
 
     pub model: Option<Model>,
 }
@@ -179,6 +182,7 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             epoch: Default::default(),
             model: Default::default(),
             epoch_start_data_index: Default::default(),
+            overlapped: Default::default(),
         }
     }
 }
@@ -383,8 +387,22 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
     }
 
+    pub fn prev_round(&self) -> Result<&Round, CoordinatorError> {
+        match self.active() && !self.first_round {
+            true => Ok(self.prev_round_unchecked()),
+            false => Err(CoordinatorError::NoActiveRound),
+        }
+    }
+
     pub fn current_round_unchecked(&self) -> &Round {
         &self.rounds[self.rounds_head as usize]
+    }
+
+    pub fn prev_round_unchecked(&self) -> &Round {
+        &self.rounds[match self.rounds_head as usize {
+            0 => NUM_STORED_ROUNDS - 1,
+            x => x - 1
+        }]
     }
 
     pub fn current_round_mut_unchecked(&mut self) -> &mut Round {
@@ -452,6 +470,7 @@ impl<T: NodeIdentity> Coordinator<T> {
 
     fn tick_round_apply(&mut self, unix_timestamp: u64, random_seed: u64) {
         if unix_timestamp >= self.round_apply_time + self.run_state_start_unix_timestamp {
+            self.first_round = false;
             self.step += 1;
             let (height, data_index) = self
                 .current_round()
@@ -484,7 +503,6 @@ impl<T: NodeIdentity> Coordinator<T> {
     fn start_round_train(&mut self, unix_timestamp: u64, random_seed: u64, tie_breaker_tasks: u32) {
         let (next_rounds_head, next_height, next_data_index) = if self.first_round {
             // very first round, don't increment -- just start here
-            self.first_round = false;
             (0usize, 0u32, self.epoch_start_data_index)
         } else {
             let current_round = &self.rounds[self.rounds_head as usize];
