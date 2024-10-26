@@ -93,13 +93,14 @@ pub struct State<T: NodeIdentity> {
     data_assignments: IntervalTree<u64, T>,
     eval_cancel: Arc<AtomicBool>,
     eval_tasks: Vec<psyche_eval::Task>,
-    eval_task_docs: usize,
+    eval_task_max_docs: Option<usize>,
     prepared_eval_tasks: Vec<Arc<EvalTask>>,
     preparing_eval_tasks: TaskResult<Vec<psyche_eval::PreparedTask>>,
     evals: Vec<JoinHandle<Result<Trainer>>>,
     tokenizer: Option<Arc<Tokenizer>>,
     apply_start: Option<Instant>,
     started_early_evals: bool,
+    checkpoint_dir: Option<PathBuf>,
     /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
     _last_observed_num_batches_remaining: usize,
     _eval_results: HashMap<String, Vec<f64>>,
@@ -112,9 +113,10 @@ impl<T: NodeIdentity> State<T> {
         data_parallelism: usize,
         tensor_parallelism: usize,
         eval_tasks: Vec<psyche_eval::Task>,
-        eval_task_docs: usize,
+        eval_task_max_docs: Option<usize>,
         micro_batch_size: Option<usize>,
         write_gradients_dir: Option<PathBuf>,
+        checkpoint_dir: Option<PathBuf>,
     ) -> Self {
         Self {
             identity,
@@ -154,13 +156,14 @@ impl<T: NodeIdentity> State<T> {
                 .map(|task| (task.to_string(), Vec::new()))
                 .collect(),
             eval_tasks,
-            eval_task_docs,
+            eval_task_max_docs,
             evals: Vec::new(),
             prepared_eval_tasks: Vec::new(),
             preparing_eval_tasks: None,
             tokenizer: None,
             apply_start: None,
             started_early_evals: false,
+            checkpoint_dir,
             _last_observed_num_batches_remaining: 0,
         }
     }
@@ -740,13 +743,13 @@ impl<T: NodeIdentity> State<T> {
             if !self.eval_tasks.is_empty() {
                 // start preparing eval tasks in background
                 let eval_tasks = self.eval_tasks.drain(..).collect::<Vec<_>>();
-                let eval_task_docs = self.eval_task_docs;
+                let eval_task_max_docs = self.eval_task_max_docs;
                 let tokenizer = self.tokenizer.clone();
                 self.preparing_eval_tasks = Some(tokio::task::spawn_blocking(move || {
                     match tokenizer {
                         Some(tokenizer) => Ok(eval_tasks
                             .into_iter()
-                            .map(|task| task.prepare(&tokenizer, None, true, Some(eval_task_docs)))
+                            .map(|task| task.prepare(&tokenizer, None, true, eval_task_max_docs))
                             .collect()),
                         None => {
                             bail!("No tokenizer");

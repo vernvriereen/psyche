@@ -1,6 +1,6 @@
 use crate::{
     llama::{Cache, Config, Llama, Llama3RopeConfig, LlamaEosToks},
-    safetensor_loader::load_safetensors_into_variables,
+    safetensor_utils::load_safetensors_into_variables,
     tensor_parallelism::Communicator,
     CausalLM, CommunicatorId,
 };
@@ -14,7 +14,7 @@ use tch::{
 #[cfg(feature = "parallelism")]
 use tch::CNCCL;
 
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct LlamaConfig {
     pub hidden_size: usize,
     pub intermediate_size: usize,
@@ -61,6 +61,25 @@ impl LlamaConfig {
             rope_scaling: self.rope_scaling,
             max_position_embeddings: self.max_position_embeddings,
             use_sdpa,
+        }
+    }
+}
+
+impl From<Config> for LlamaConfig {
+    fn from(value: Config) -> Self {
+        Self {
+            hidden_size: value.hidden_size,
+            intermediate_size: value.intermediate_size,
+            vocab_size: value.vocab_size,
+            num_hidden_layers: value.num_hidden_layers,
+            num_attention_heads: value.num_attention_heads,
+            num_key_value_heads: Some(value.num_key_value_heads),
+            rms_norm_eps: value.rms_norm_eps,
+            rope_theta: value.rope_theta,
+            bos_token_id: value.bos_token_id,
+            eos_token_id: value.eos_token_id,
+            rope_scaling: value.rope_scaling,
+            max_position_embeddings: value.max_position_embeddings,
         }
     }
 }

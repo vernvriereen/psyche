@@ -5,8 +5,9 @@ use psyche_coordinator::{
     RunState,
 };
 use psyche_core::CancellableBarrier;
-use psyche_modeling::{CausalLM, Distro, DistroResult, LlamaForCausalLM};
+use psyche_modeling::{unsharded_cpu_variables, CausalLM, Distro, DistroResult, LlamaForCausalLM};
 use std::{
+    collections::HashMap,
     ops::ControlFlow,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -55,6 +56,7 @@ enum ParallelAssignment {
         labels: Option<Tensor>,
         num_logits_to_keep: Option<i64>,
     },
+    Extract {},
 }
 
 enum ParallelResult {
@@ -66,6 +68,9 @@ enum ParallelResult {
     Optimize,
     Forward {
         logits_and_loss: Option<(Tensor, Option<Tensor>)>,
+    },
+    Extract {
+        variables: HashMap<String, Tensor>,
     },
 }
 
@@ -229,7 +234,7 @@ impl Trainer {
                     final_cancelled = cancelled;
                     final_loss += loss;
                 }
-                _ => bail!("Got unexpected optimizer result"),
+                _ => bail!("Got unexpected ParallelResult in train()"),
             }
         }
         final_loss /= self.models.len() as f32;
@@ -264,10 +269,31 @@ impl Trainer {
                         (Instant::now() - start).as_secs_f32()
                     );
                 }
-                _ => bail!("Got unexpected trainer result"),
+                _ => bail!("Got unexpected ParallelResult in apply_distro_results()"),
             }
         }
         Ok(self)
+    }
+
+    pub fn extract(self) -> Result<(HashMap<String, Tensor>, Self)> {
+        self.barrier.reset();
+        for (tx, _) in &self.models {
+            tx.send(ParallelAssignment::Extract {}).map_err(|err| {
+                Error::msg(format!("Error sending extraction to trainer thread: {err}"))
+            })?;
+        }
+        let mut extracted = HashMap::new();
+        for (_, rx) in &self.models {
+            match rx.recv()? {
+                ParallelResult::Extract { variables } => {
+                    if extracted.is_empty() && !variables.is_empty() {
+                        extracted = variables;
+                    }
+                }
+                _ => bail!("Got unexpected ParallelResult in extract()"),
+            }
+        }
+        Ok((extracted, self))
     }
 
     // todo: refactor args into a struct
@@ -413,6 +439,22 @@ impl Trainer {
                         .is_err()
                     {
                         return;
+                    }
+                }
+                Ok(ParallelAssignment::Extract {}) => {
+                    match unsharded_cpu_variables(&model.variables, model.comm.clone()) {
+                        Ok(variables) => {
+                            if submission
+                                .send(ParallelResult::Extract { variables })
+                                .is_err()
+                            {
+                                return;
+                            }
+                        }
+                        Err(err) => {
+                            error!("Unexpected error in extract: {err}");
+                            return;
+                        }
                     }
                 }
                 Err(_) => {

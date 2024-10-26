@@ -57,8 +57,11 @@ struct Args {
     #[clap(long, default_value_t = 42)]
     eval_seed: u64,
 
-    #[clap(long, default_value_t = 100)]
-    eval_task_docs: usize
+    #[clap(long)]
+    eval_task_max_docs: Option<usize>,
+
+    #[clap(long)]
+    checkpoint_dir: Option<PathBuf>,
 }
 
 async fn async_main() -> Result<()> {
@@ -138,8 +141,9 @@ async fn async_main() -> Result<()> {
         tensor_parallelism: args.tensor_parallelism,
         micro_batch_size: args.micro_batch_size,
         write_gradients_dir: args.write_gradients_dir,
-        eval_task_docs: args.eval_task_docs,
+        eval_task_max_docs: args.eval_task_max_docs,
         eval_tasks,
+        checkpoint_dir: args.checkpoint_dir,
     })
     .run()
     .await

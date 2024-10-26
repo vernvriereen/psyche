@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use anyhow::{bail, Result};
+use std::{collections::HashMap, sync::Arc};
 use tch::{
-    nn::{self, Module, Shard},
+    nn::{self, Module, Shard, VarStore},
     Device, Tensor,
 };
 
@@ -190,4 +191,39 @@ pub fn unsharded_tensor_size(reference_shape: &[i64], shard: &Shard) -> Vec<i64>
     unsharded_shape[dim] = total_size;
 
     unsharded_shape
+}
+
+// we only actually build the model on rank 0, all other ranks return an empty map (but perform tp)
+pub fn unsharded_cpu_variables(
+    vs: &VarStore,
+    comm: Option<Arc<Communicator>>,
+) -> Result<HashMap<String, Tensor>> {
+    let _no_grad = tch::no_grad_guard();
+    let mut ret = match comm.as_ref().map(|x| x.rank() == 0).unwrap_or(true) {
+        true => Some(HashMap::new()),
+        false => None,
+    };
+    let variables = vs.variables_.lock().unwrap();
+    let shards = variables.shards.clone();
+    for (name, var) in variables.named_variables.iter() {
+        let var = match shards.get(name) {
+            Some(shard) => {
+                let shards = (0..shard.world_size)
+                    .map(|_| var.empty_like())
+                    .collect::<Vec<_>>();
+                match &comm {
+                    Some(comm) => comm.all_gather(&shards, var)?,
+                    None => {
+                        bail!("Found sharded tensor {} but no communicator", name);
+                    }
+                };
+                unshard_tensor(shards, shard)
+            }
+            None => var.shallow_clone(),
+        };
+        if let Some(ret) = ret.as_mut() {
+            ret.insert(name.to_owned(), var.to(Device::Cpu));
+        }
+    }
+    Ok(ret.unwrap_or_default())
 }

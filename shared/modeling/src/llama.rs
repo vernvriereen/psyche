@@ -4,7 +4,7 @@ use tch::{Device, Kind, Tensor};
 
 use crate::{Communicator, TensorParallelRowLinear};
 
-#[derive(Debug, Clone, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
 pub enum Llama3RopeType {
     #[serde(rename = "llama3")]
     Llama3,
@@ -13,7 +13,7 @@ pub enum Llama3RopeType {
     Default,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
 pub struct Llama3RopeConfig {
     pub factor: f32,
     pub low_freq_factor: f32,
@@ -22,7 +22,7 @@ pub struct Llama3RopeConfig {
     pub rope_type: Llama3RopeType,
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(untagged)]
 pub enum LlamaEosToks {
     Single(u32),

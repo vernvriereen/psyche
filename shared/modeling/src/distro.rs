@@ -561,7 +561,7 @@ impl Distro {
                     let kind = delta.kind();
 
                     // gather delta
-                    let mut shards = (0..world_size)
+                    let shards = (0..world_size)
                         .map(|_| delta.empty_like())
                         .collect::<Vec<_>>();
                     comm.all_gather(&shards, delta).unwrap();

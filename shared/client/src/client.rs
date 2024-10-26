@@ -43,9 +43,10 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         data_parallelism: usize,
         tensor_parallelism: usize,
         eval_tasks: Vec<psyche_eval::Task>,
-        eval_task_docs: usize,
+        eval_task_max_docs: Option<usize>,
         micro_batch_size: Option<usize>,
         write_gradients_dir: Option<PathBuf>,
+        checkpoint_dir: Option<PathBuf>,
     ) -> Self {
         let cancel = CancellationToken::new();
         let (tx, rx) = watch::channel::<TUIStates>(Default::default());
@@ -62,9 +63,10 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                     data_parallelism,
                     tensor_parallelism,
                     eval_tasks,
-                    eval_task_docs,
+                    eval_task_max_docs,
                     micro_batch_size,
                     write_gradients_dir,
+                    checkpoint_dir,
                 );
                 let clear_uploads = state.get_clear_downloads_notification();
 

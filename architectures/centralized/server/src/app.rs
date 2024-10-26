@@ -301,11 +301,13 @@ impl App {
     }
 
     async fn on_tick(&mut self) {
-        self.coordinator.tick(
+        if let Err(err) = self.coordinator.tick(
             &self.backend,
             Self::get_timestamp(),
             rand::thread_rng().next_u64(),
-        );
+        ) {
+            warn!("Coordinator tick error: {err}");
+        }
         if let Err(err) = self
             .backend
             .net_server
@@ -314,7 +316,7 @@ impl App {
             )))
             .await
         {
-            warn!("error in tick: {err}");
+            warn!("Error in on_tick: {err}");
         }
         if let Some((ref sender, _)) = self.training_data_server {
             sender.send(self.coordinator.clone()).await.unwrap();

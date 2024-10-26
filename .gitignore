@@ -32,8 +32,7 @@ perf.data.*
 libtorch*
 slurm*
 
-### Training Data ###
+### Data folders ###
 /data
-
-# results
-distro-data/
+/distro-data
+/checkpoints

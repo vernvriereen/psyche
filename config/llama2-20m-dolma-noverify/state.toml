@@ -2,7 +2,7 @@ run_id = "llama2-20m-dolma"
 run_state = "WaitingForMembers"
 run_state_start_unix_timestamp = 0
 warmup_time = 30
-max_rounds = 10000
+rounds_per_epoch = 10000
 max_round_train_time = 300
 round_witness_time = 2
 round_apply_time = 4
@@ -23,6 +23,8 @@ last_step_unix_timestamp = 0
 clients = []
 dropped_clients = []
 epoch_start_data_index = 0
+total_steps = 25000
+overlapepd = false
 
 [[rounds]]
 height = 0

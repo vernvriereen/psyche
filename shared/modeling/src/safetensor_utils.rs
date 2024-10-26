@@ -1,12 +1,20 @@
 use anyhow::{bail, Result};
-use safetensors::slice::TensorIndexer;
-use std::{collections::HashSet, ops::Bound, path::PathBuf};
+use safetensors::{slice::TensorIndexer, SafeTensors};
+use serde_json::json;
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Bound,
+    path::PathBuf,
+};
 use tch::{
     nn::{Shard, VarStore},
     Device, Kind, Tensor,
 };
 
+const MAX_SAFETENSOR_PART_SIZE: usize = 1024 * 1024 * 1024 * 5;
+
 pub fn load_safetensors_into_variables(vs: &mut VarStore, repo_files: &[PathBuf]) -> Result<()> {
+    let _no_grad = tch::no_grad_guard();
     let mut unmatched = vs.variables().keys().cloned().collect::<HashSet<_>>();
     for path in repo_files.iter().filter(|x| {
         x.extension()
@@ -14,7 +22,7 @@ pub fn load_safetensors_into_variables(vs: &mut VarStore, repo_files: &[PathBuf]
     }) {
         let file = std::fs::File::open(path)?;
         let content = unsafe { memmap2::MmapOptions::new().map(&file)? };
-        let safetensors = safetensors::SafeTensors::deserialize(&content)?;
+        let safetensors = SafeTensors::deserialize(&content)?;
         let mut variables = vs.variables_.lock().unwrap();
         let shards = variables.shards.clone();
         for (name, var) in variables.named_variables.iter_mut() {
@@ -83,4 +91,71 @@ pub fn load_safetensors_into_variables(vs: &mut VarStore, repo_files: &[PathBuf]
         );
     }
     Ok(())
+}
+
+#[derive(Default)]
+struct FilePart {
+    tensors: Vec<(String, Tensor)>,
+    size: usize,
+}
+
+pub fn save_tensors_into_safetensors(
+    tensors: HashMap<String, Tensor>,
+    dir: PathBuf,
+) -> Result<Vec<PathBuf>> {
+    if tensors.is_empty() {
+        bail!("No tensors to save");
+    }
+    std::fs::create_dir_all(dir.clone())?;
+    let mut file_parts = vec![FilePart::default()];
+    for (name, tensor) in tensors {
+        let size = tensor.numel() * tensor.kind().elt_size_in_bytes();
+        if size > MAX_SAFETENSOR_PART_SIZE {
+            bail!("Tensor {name} too big to save to file -- it's {size} bytes while we have a max of {MAX_SAFETENSOR_PART_SIZE} bytes");
+        }
+        if size + file_parts.last().unwrap().size > MAX_SAFETENSOR_PART_SIZE {
+            file_parts.push(FilePart::default());
+        }
+        let last_part = file_parts.last_mut().unwrap();
+        last_part.tensors.push((name, tensor));
+        last_part.size += size;
+    }
+    if file_parts.len() == 1 {
+        let path = dir.join("model.safetensors");
+        Tensor::write_safetensors(&file_parts[0].tensors, path.clone())?;
+        Ok(vec![path])
+    } else {
+        let len = file_parts.len();
+        let mut safetensors_index = json!({
+            "metadata": {
+                "total_size": file_parts.iter().fold(0, |acc, ele| acc + ele.size)
+            },
+            "weight_map": serde_json::Map::new(),
+        });
+        let paths: Result<Vec<PathBuf>, _> = file_parts
+            .into_iter()
+            .enumerate()
+            .map(|(index, part)| {
+                let filename = format!("model-{:05}-of-{:05}.safetensors", index + 1, len);
+                let path = dir.join(filename.clone());
+                safetensors_index
+                    .get_mut("weight_map")
+                    .unwrap()
+                    .as_object_mut()
+                    .unwrap()
+                    .append(&mut serde_json::Map::from_iter(part.tensors.iter().map(
+                        |(name, _)| (name.clone(), serde_json::Value::String(filename.clone())),
+                    )));
+                std::thread::spawn(move || {
+                    Tensor::write_safetensors(&part.tensors, path.clone()).and(Ok(path))
+                })
+            })
+            .map(|future| future.join().unwrap())
+            .collect();
+        let mut paths = paths?;
+        let safetensors_index_path = dir.join("model.safetensors.index.json");
+        paths.push(safetensors_index_path.clone());
+        std::fs::write(safetensors_index_path, safetensors_index.to_string())?;
+        Ok(paths)
+    }
 }
