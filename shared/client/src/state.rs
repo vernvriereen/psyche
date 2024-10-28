@@ -14,7 +14,9 @@ use psyche_coordinator::{
 };
 use psyche_core::{sha256, Bloom, BoundedQueue, IntervalTree, NodeIdentity, RunningAverage};
 use psyche_data_provider::{download_model_repo_async, DataProviderTcpClient};
-use psyche_modeling::{auto_tokenizer, CommunicatorId, DistroResult, LlamaForCausalLM};
+use psyche_modeling::{
+    auto_tokenizer, save_tensors_into_safetensors, CommunicatorId, DistroResult, LlamaForCausalLM,
+};
 use psyche_network::{dummy_blob_ticket, BlobTicket, NetworkEvent};
 use psyche_watcher::{Backend, BackendWatcher};
 use rand::{seq::SliceRandom, thread_rng};
@@ -66,7 +68,12 @@ pub struct State<T: NodeIdentity> {
     pub identity: T,
     private_key: T::PrivateKey,
     showed_inclusion_message: bool,
-    data_and_model_load: TaskResult<(DataProviderTcpClient<T>, Vec<ParallelModels>, Tokenizer)>,
+    data_and_model_load: TaskResult<(
+        DataProviderTcpClient<T>,
+        Vec<ParallelModels>,
+        Tokenizer,
+        Vec<PathBuf>,
+    )>,
     available_trainers: Vec<Trainer>,
     trainings: Vec<JoinHandle<Result<(TrainOutput, u64)>>>,
     applying: TaskResult<Vec<Trainer>>,
@@ -104,6 +111,9 @@ pub struct State<T: NodeIdentity> {
     apply_start: Option<Instant>,
     started_early_evals: bool,
     checkpoint_dir: Option<PathBuf>,
+    checkpoint_extra_files: Vec<PathBuf>,
+    checkpointing: TaskResult<Trainer>,
+    did_checkpoint: bool,
     last_warmup_peer_announcement: Option<Instant>,
     /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
     _last_observed_num_batches_remaining: usize,
@@ -122,6 +132,10 @@ impl<T: NodeIdentity> State<T> {
         write_gradients_dir: Option<PathBuf>,
         checkpoint_dir: Option<PathBuf>,
     ) -> Self {
+        assert!(data_parallelism > 0);
+        assert!(tensor_parallelism > 0);
+        assert!(tensor_parallelism <= data_parallelism);
+        assert!(micro_batch_size.map(|x| x > 0).unwrap_or(true));
         Self {
             identity,
             private_key,
@@ -169,6 +183,9 @@ impl<T: NodeIdentity> State<T> {
             started_early_evals: false,
             last_warmup_peer_announcement: None,
             checkpoint_dir,
+            checkpoint_extra_files: Vec::new(),
+            checkpointing: None,
+            did_checkpoint: false,
             _last_observed_num_batches_remaining: 0,
         }
     }
@@ -194,7 +211,7 @@ impl<T: NodeIdentity> State<T> {
             .store(state.run_state.into(), Ordering::Relaxed);
         match state.run_state {
             RunState::WaitingForMembers => Ok(None),
-            RunState::Warmup => self.warmup().map(|_| None),
+            RunState::Warmup => self.warmup().await.map(|_| None),
             RunState::RoundTrain => self.round_train(position).await.map(|_| None),
             RunState::RoundWitness => self.round_witness(position).map(|x| x.map(ToSend::Witness)),
             RunState::RoundApply => self.round_apply().await.map(|_| None),
@@ -209,7 +226,7 @@ impl<T: NodeIdentity> State<T> {
         self.available_trainers = trainers;
         if let Some(apply_start) = self.apply_start.take() {
             debug!(
-                "Apply time: {:.1}s, {} gpus ready",
+                "Apply time: {:.1}s, {} trainers ready",
                 (Instant::now() - apply_start).as_secs_f32(),
                 self.available_trainers.len()
             );
@@ -357,6 +374,14 @@ impl<T: NodeIdentity> State<T> {
         Ok(ToSend::Nothing)
     }
 
+    fn handle_poll_next_checkpointing(&mut self, trainer: Trainer) -> Result<ToSend> {
+        self.available_trainers.push(trainer);
+        if self.is_run_state(RunState::Warmup) {
+            self.start_evals();
+        }
+        Ok(ToSend::Nothing)
+    }
+
     pub async fn poll_next(&mut self) -> Result<ToSend> {
         let trainings_finished_position = self.trainings.iter_mut().position(|x| x.is_finished());
         if self.is_run_state(RunState::RoundTrain)
@@ -408,6 +433,10 @@ impl<T: NodeIdentity> State<T> {
             preparing_eval_tasks = async {self.preparing_eval_tasks.as_mut().unwrap().await}, if self.preparing_eval_tasks.is_some() => {
                 self.preparing_eval_tasks = None;
                 self.handle_poll_next_preparing_eval_tasks(preparing_eval_tasks??)
+            }
+            checkpointing = async {self.checkpointing.as_mut().unwrap().await}, if self.checkpointing.is_some() => {
+                self.checkpointing = None;
+                self.handle_poll_next_checkpointing(checkpointing??)
             }
             _ = sleep(Duration::from_secs_f32(0.1)) => {
                 // still need this?
@@ -693,12 +722,13 @@ impl<T: NodeIdentity> State<T> {
                 self.payloads
                     .insert(hash, PayloadState::Deserializing(deserializing));
             }
-            Payload::Empty {} => {},
+            Payload::Empty {} => {}
         }
         Ok(())
     }
 
-    fn warmup(&mut self) -> Result<()> {
+    async fn warmup(&mut self) -> Result<()> {
+        self.cancel_evals().await?;
         let state = self
             .state
             .as_ref()
@@ -726,8 +756,42 @@ impl<T: NodeIdentity> State<T> {
                         } else {
                             bail!("Warmup but still applying");
                         }
-                    } else {
-                        self.start_evals();
+                    } else if !self.did_checkpoint {
+                        let step = state.step - 1;
+                        let run_id = state.run_id.clone();
+                        self.did_checkpoint = true;
+                        match self.available_trainers.pop() {
+                            Some(trainer) => {
+                                let checkpoint_dir = self.checkpoint_dir.clone();
+                                let checkpoint_extra_files = self.checkpoint_extra_files.clone();
+                                self.checkpointing =
+                                    Some(tokio::task::spawn_blocking(
+                                        move || match checkpoint_dir {
+                                            Some(checkpoint_dir) => {
+                                                let (variables, trainer) = trainer.extract()?;
+                                                let path = checkpoint_dir
+                                                    .join(format!("{run_id}-step{step}"));
+                                                info!("Saving to {}", path.display());
+                                                save_tensors_into_safetensors(
+                                                    variables,
+                                                    path.clone(),
+                                                )?;
+                                                for extra in checkpoint_extra_files {
+                                                    std::fs::copy(
+                                                        extra.clone(),
+                                                        path.join(extra.file_name().unwrap()),
+                                                    )?;
+                                                }
+                                                Ok(trainer)
+                                            }
+                                            None => Ok(trainer),
+                                        },
+                                    ));
+                            }
+                            None => {
+                                bail!("No available trainers for checkpointing");
+                            }
+                        }
                     }
                 }
                 None => {
@@ -753,6 +817,7 @@ impl<T: NodeIdentity> State<T> {
         if self.available_trainers.is_empty()
             && self.data_fetcher.is_none()
             && self.training_data.is_none()
+            && self.tokenizer.is_none()
         {
             let data_and_model_load = self.data_and_model_load.take().ok_or(Error::msg(
                 "Round started but no model load was running. Did we miss warmup?",
@@ -760,7 +825,9 @@ impl<T: NodeIdentity> State<T> {
             if !data_and_model_load.is_finished() {
                 bail!("Data and model load not finished when round started!")
             }
-            let (data_provider, models, tokenizer) = data_and_model_load.await??; // not a cancel safety point, this should return immediately
+            let (data_provider, models, tokenizer, checkpoint_extra_files) =
+                data_and_model_load.await??; // not a cancel safety point, this should return immediately
+            self.checkpoint_extra_files = checkpoint_extra_files;
 
             // TODO add data fetching for verifying, too..
             self.data_fetcher = Some(DataFetcher::new(data_provider, self.data_parallelism * 2));
@@ -826,6 +893,11 @@ impl<T: NodeIdentity> State<T> {
         }
         if self.evals.len() > 0 {
             bail!("Ready to train but evals still running");
+        }
+        if self.checkpointing.is_some() {
+            bail!("Ready to train but still checkpointing");
+        } else {
+            self.did_checkpoint = false;
         }
         if self.available_trainers.len() != self.data_parallelism {
             bail!(
@@ -1116,7 +1188,12 @@ impl<T: NodeIdentity> State<T> {
         model: model::Model,
         data_parallelism: usize,
         tensor_parallelism: usize,
-    ) -> Result<(DataProviderTcpClient<T>, Vec<ParallelModels>, Tokenizer)> {
+    ) -> Result<(
+        DataProviderTcpClient<T>,
+        Vec<ParallelModels>,
+        Tokenizer,
+        Vec<PathBuf>,
+    )> {
         let model::Model::LLM(llm) = model;
         let data_future = match &llm.data_location {
             model::LLMTrainingDataLocation::Server(data_server) => {
@@ -1124,66 +1201,77 @@ impl<T: NodeIdentity> State<T> {
             }
             model::LLMTrainingDataLocation::Local(_) => todo!(),
         };
-        let model_future: JoinHandle<Result<(Vec<LlamaForCausalLM>, Tokenizer)>> = match &llm
-            .architecture
-        {
-            model::LLMArchitecture::HfLlama => match &llm.checkpoint {
-                model::Checkpoint::Hub(hub_repo) => {
-                    let hub_repo = hub_repo.clone();
-                    tokio::spawn(async move {
-                        info!("Downloading {}", hub_repo.repo_id);
-                        let repo_files = download_model_repo_async(
-                            hub_repo.repo_id.clone(),
-                            hub_repo.revision,
-                            None,
-                            None,
-                            None,
-                            false,
-                        )
-                        .await?;
-                        info!("Loading {}", hub_repo.repo_id);
-                        let mut futures = Vec::with_capacity(data_parallelism * tensor_parallelism);
-                        for dp in 0..data_parallelism {
-                            let communicator_id = Arc::new(CommunicatorId::new());
-                            for tp in 0..tensor_parallelism {
-                                let tensor_parallelism_world = match tensor_parallelism {
-                                    1 => None,
-                                    tensor_parallelism => {
-                                        Some((communicator_id.clone(), tp, tensor_parallelism))
-                                    }
-                                };
-                                let repo_files = repo_files.clone();
-                                futures.push(tokio::task::spawn_blocking(move || {
-                                    LlamaForCausalLM::from_pretrained(
-                                        &repo_files,
-                                        Some(Kind::BFloat16),
-                                        None,
-                                        Some(Device::Cuda(dp * tensor_parallelism + tp)),
-                                        tensor_parallelism_world,
-                                        Some(llm.max_seq_len as usize),
-                                    )
-                                }));
+        let model_future: JoinHandle<Result<(Vec<LlamaForCausalLM>, Tokenizer, Vec<PathBuf>)>> =
+            match &llm.architecture {
+                model::LLMArchitecture::HfLlama => match &llm.checkpoint {
+                    model::Checkpoint::Hub(hub_repo) => {
+                        let hub_repo = hub_repo.clone();
+                        tokio::spawn(async move {
+                            info!("Downloading {}", hub_repo.repo_id);
+                            let repo_files = download_model_repo_async(
+                                hub_repo.repo_id.clone(),
+                                hub_repo.revision,
+                                None,
+                                None,
+                                None,
+                                false,
+                            )
+                            .await?;
+                            let checkpoint_extra_files = repo_files
+                                .iter()
+                                .filter(|file| {
+                                    file.ends_with("config.json")
+                                        || file.ends_with("tokenizer.json")
+                                        || file.ends_with("tokenizer_config.json")
+                                        || file.ends_with("special_tokens_map.json")
+                                        || file.ends_with("generation_config.json")
+                                })
+                                .map(|x| x.clone())
+                                .collect();
+                            info!("Loading {}", hub_repo.repo_id);
+                            let mut futures =
+                                Vec::with_capacity(data_parallelism * tensor_parallelism);
+                            for dp in 0..data_parallelism {
+                                let communicator_id = Arc::new(CommunicatorId::new());
+                                for tp in 0..tensor_parallelism {
+                                    let tensor_parallelism_world = match tensor_parallelism {
+                                        1 => None,
+                                        tensor_parallelism => {
+                                            Some((communicator_id.clone(), tp, tensor_parallelism))
+                                        }
+                                    };
+                                    let repo_files = repo_files.clone();
+                                    futures.push(tokio::task::spawn_blocking(move || {
+                                        LlamaForCausalLM::from_pretrained(
+                                            &repo_files,
+                                            Some(Kind::BFloat16),
+                                            None,
+                                            Some(Device::Cuda(dp * tensor_parallelism + tp)),
+                                            tensor_parallelism_world,
+                                            Some(llm.max_seq_len as usize),
+                                        )
+                                    }));
+                                }
                             }
-                        }
-                        let tokenizer = auto_tokenizer(&repo_files)?;
-                        let mut models = Vec::new();
-                        for future in futures {
-                            models.push(future.await??);
-                        }
-                        info!(
-                            "Loaded {} onto {} gpu(s) (dp={},tp={})",
-                            hub_repo.repo_id,
-                            data_parallelism * tensor_parallelism,
-                            data_parallelism,
-                            tensor_parallelism
-                        );
-                        Ok((models, tokenizer))
-                    })
-                }
-            },
-        };
+                            let tokenizer = auto_tokenizer(&repo_files)?;
+                            let mut models = Vec::new();
+                            for future in futures {
+                                models.push(future.await??);
+                            }
+                            info!(
+                                "Loaded {} onto {} gpu(s) (dp={},tp={})",
+                                hub_repo.repo_id,
+                                data_parallelism * tensor_parallelism,
+                                data_parallelism,
+                                tensor_parallelism
+                            );
+                            Ok((models, tokenizer, checkpoint_extra_files))
+                        })
+                    }
+                },
+            };
         let (data, models) = tokio::join!(data_future, model_future);
-        let (models, tokenizer) = models??;
+        let (models, tokenizer, checkpoint_extra_files) = models??;
         let data = data?;
         let mut tp_models = Vec::new();
         for model in models {
@@ -1196,7 +1284,7 @@ impl<T: NodeIdentity> State<T> {
             }
             tp_models.last_mut().unwrap().push(model);
         }
-        Ok((data, tp_models, tokenizer))
+        Ok((data, tp_models, tokenizer, checkpoint_extra_files))
     }
 
     fn is_run_state(&self, run_state: RunState) -> bool {
