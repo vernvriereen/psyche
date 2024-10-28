@@ -122,7 +122,8 @@ pub fn save_tensors_into_safetensors(
     }
     if file_parts.len() == 1 {
         let path = dir.join("model.safetensors");
-        Tensor::write_safetensors(&file_parts[0].tensors, path.clone())?;
+        let metadata = HashMap::from([("format".to_string(), "pt".to_string())]);
+        Tensor::write_safetensors(&file_parts[0].tensors, path.clone(), &Some(metadata))?;
         Ok(vec![path])
     } else {
         let len = file_parts.len();
@@ -147,7 +148,9 @@ pub fn save_tensors_into_safetensors(
                         |(name, _)| (name.clone(), serde_json::Value::String(filename.clone())),
                     )));
                 std::thread::spawn(move || {
-                    Tensor::write_safetensors(&part.tensors, path.clone()).and(Ok(path))
+                    let metadata = HashMap::from([("format".to_string(), "pt".to_string())]);
+                    Tensor::write_safetensors(&part.tensors, path.clone(), &Some(metadata))
+                        .and(Ok(path))
                 })
             })
             .map(|future| future.join().unwrap())

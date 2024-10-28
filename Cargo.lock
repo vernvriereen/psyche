@@ -6615,7 +6615,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 [[package]]
 name = "tch"
 version = "0.17.0"
-source = "git+https://github.com/jquesnelle/tch-rs.git?rev=c283b69fcdcc2d26a2f04a5879f856129f1ad68f#c283b69fcdcc2d26a2f04a5879f856129f1ad68f"
+source = "git+https://github.com/jquesnelle/tch-rs.git?rev=c2bbd6ecc8e9f65fb7bbee51f43e69b7ace89719#c2bbd6ecc8e9f65fb7bbee51f43e69b7ace89719"
 dependencies = [
  "half",
  "lazy_static",
@@ -6955,7 +6955,7 @@ dependencies = [
 [[package]]
 name = "torch-sys"
 version = "0.17.0"
-source = "git+https://github.com/jquesnelle/tch-rs.git?rev=c283b69fcdcc2d26a2f04a5879f856129f1ad68f#c283b69fcdcc2d26a2f04a5879f856129f1ad68f"
+source = "git+https://github.com/jquesnelle/tch-rs.git?rev=c2bbd6ecc8e9f65fb7bbee51f43e69b7ace89719#c2bbd6ecc8e9f65fb7bbee51f43e69b7ace89719"
 dependencies = [
  "anyhow",
  "cc",
