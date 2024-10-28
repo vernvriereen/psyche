@@ -1,7 +1,7 @@
 use crate::{
     protocol::NE,
     state::{State, ToSend},
-    ClientTUIState, NC,
+    BroadcastMessage, ClientTUIState, NC,
 };
 use anyhow::Result;
 use psyche_coordinator::Coordinator;
@@ -144,17 +144,24 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
             ToSend::Broadcast((broadcast, payload)) => {
                 let new_ticket = p2p.add_downloadable(payload.clone()).await?;
                 debug!(
-                    "Broadcasting payload hash 0x{} for commitment 0x{}",
+                    "Broadcasting payload hash 0x{}",
                     hex::encode(new_ticket.hash()),
-                    hex::encode(broadcast.commitment)
                 );
 
                 let mut broadcast = broadcast;
-                broadcast.ticket = new_ticket;
+                match broadcast.borrow_mut() {
+                    BroadcastMessage::TrainingResult(training_result) => {
+                        training_result.ticket = new_ticket.clone()
+                    }
+                    BroadcastMessage::PeerAnnouncement(peer_announcement) => {
+                        peer_announcement.ticket = new_ticket.clone();
+                    }
+                }
+
                 p2p.broadcast(&broadcast).await?;
 
                 let identity = state.identity.clone();
-                let hash = broadcast.ticket.hash();
+                let hash = new_ticket.hash();
                 state.handle_broadcast(&identity, broadcast)?;
                 state.handle_payload(hash, payload).await
             }

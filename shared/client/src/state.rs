@@ -1,9 +1,10 @@
 use crate::{
     disto_results_to_bytes,
     fetch_data::{Batch, BatchId, BatchStep, DataFetcher, TrainingDataForStep},
+    protocol::TrainingResult,
     trainer::{DistroResults, ParallelModels, TrainOutput, Trainer},
     tui::ClientTUIState,
-    BroadcastMessage, Payload, SerializedDistroResult,
+    BroadcastMessage, Payload, PeerAnnouncement, SerializedDistroResult,
 };
 use anyhow::{bail, Error, Result};
 use psyche_coordinator::{
@@ -32,6 +33,8 @@ use tch::{Device, Kind};
 use tokenizers::Tokenizer;
 use tokio::{runtime::Handle, select, sync::Notify, task::JoinHandle, time::sleep};
 use tracing::{debug, error, info, warn};
+
+const WARMUP_PEER_ANNOUNCEMENT_DURATION: Duration = Duration::from_secs(10);
 
 type TaskResult<T> = Option<JoinHandle<Result<T>>>;
 
@@ -71,8 +74,8 @@ pub struct State<T: NodeIdentity> {
     committee_info: Option<(CommitteeProof, WitnessProof, CommitteeSelection)>,
     state: Option<Coordinator<T>>,
     prev_state: Option<Coordinator<T>>,
-    commitments: HashMap<u64, Vec<(T, BroadcastMessage)>>,
-    prev_commitments: HashMap<u64, Vec<(T, BroadcastMessage)>>,
+    commitments: HashMap<u64, Vec<(T, TrainingResult)>>,
+    prev_commitments: HashMap<u64, Vec<(T, TrainingResult)>>,
     commitments_per_client: HashMap<T, u32>,
     payloads: HashMap<psyche_network::Hash, PayloadState<T>>,
     prev_payloads: HashMap<psyche_network::Hash, PayloadState<T>>,
@@ -101,6 +104,7 @@ pub struct State<T: NodeIdentity> {
     apply_start: Option<Instant>,
     started_early_evals: bool,
     checkpoint_dir: Option<PathBuf>,
+    last_warmup_peer_announcement: Option<Instant>,
     /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
     _last_observed_num_batches_remaining: usize,
     _eval_results: HashMap<String, Vec<f64>>,
@@ -163,6 +167,7 @@ impl<T: NodeIdentity> State<T> {
             tokenizer: None,
             apply_start: None,
             started_early_evals: false,
+            last_warmup_peer_announcement: None,
             checkpoint_dir,
             _last_observed_num_batches_remaining: 0,
         }
@@ -276,14 +281,14 @@ impl<T: NodeIdentity> State<T> {
         committment.extend_from_slice(&batch_id.to_be_bytes());
         let commitment = sha256(&committment);
         let step = output.step;
-        let broadcast = BroadcastMessage {
+        let broadcast = BroadcastMessage::TrainingResult(TrainingResult {
             step,
             batch_id,
             commitment,
             ticket: dummy_blob_ticket(),
             proof: *committee_proof,
-        };
-        let payload = Payload {
+        });
+        let payload = Payload::DistroResult(crate::DistroResult {
             step,
             batch_id,
             distro_results: output
@@ -291,7 +296,7 @@ impl<T: NodeIdentity> State<T> {
                 .iter()
                 .map(SerializedDistroResult::try_from)
                 .collect::<std::result::Result<Vec<_>, _>>()?,
-        };
+        });
 
         // in non-greedy mode we can start evals right when we're done with our work
         if !self.started_early_evals && self.available_trainers.len() == self.data_parallelism {
@@ -363,6 +368,20 @@ impl<T: NodeIdentity> State<T> {
                 // send opprotunistic witness
                 return Ok(ToSend::Witness(witness));
             }
+        } else if self.is_run_state(RunState::Warmup) {
+            let now = Instant::now();
+            if match self.last_warmup_peer_announcement.as_ref() {
+                Some(last) => now - *last > WARMUP_PEER_ANNOUNCEMENT_DURATION,
+                None => true,
+            } {
+                self.last_warmup_peer_announcement = Some(now);
+                return Ok(ToSend::Broadcast((
+                    BroadcastMessage::PeerAnnouncement(PeerAnnouncement {
+                        ticket: dummy_blob_ticket(),
+                    }),
+                    Payload::Empty {},
+                )));
+            }
         }
         select! {
             applying = async {self.applying.as_mut().unwrap().await}, if self.applying.is_some() => {
@@ -405,55 +424,65 @@ impl<T: NodeIdentity> State<T> {
         debug!("Got network event {event:?}");
         match event {
             NetworkEvent::MessageReceived((public_key, message)) => {
-                // verify they are who they say they are
-                debug!(
-                    "Commitment 0x{} (step={},batch_id={}) received from {}",
-                    hex::encode(message.commitment),
-                    message.step,
-                    message.batch_id,
-                    public_key
-                );
-                if let Some(state) = &self.state {
-                    if state.step == message.step {
-                        if let Some((_, _, committee_selection)) = self.committee_info.as_ref() {
-                            if let Some(client) =
-                                watcher.get_client_for_p2p_public_key(public_key.as_bytes())
-                            {
-                                if committee_selection.verify_committee_for_client(
-                                    client,
-                                    &message.proof,
-                                    &state.clients,
-                                ) {
-                                    return self.handle_broadcast(&client.id, message);
+                match &message {
+                    BroadcastMessage::TrainingResult(training_result) => {
+                        // verify they are who they say they are
+                        debug!(
+                            "Commitment 0x{} (step={},batch_id={}) received from {}",
+                            hex::encode(training_result.commitment),
+                            training_result.step,
+                            training_result.batch_id,
+                            public_key
+                        );
+                        if let Some(state) = &self.state {
+                            if state.step == training_result.step {
+                                if let Some((_, _, committee_selection)) =
+                                    self.committee_info.as_ref()
+                                {
+                                    if let Some(client) =
+                                        watcher.get_client_for_p2p_public_key(public_key.as_bytes())
+                                    {
+                                        if committee_selection.verify_committee_for_client(
+                                            client,
+                                            &training_result.proof,
+                                            &state.clients,
+                                        ) {
+                                            return self.handle_broadcast(&client.id, message);
+                                        }
+                                    }
                                 }
+                            } else {
+                                info!(
+                                    "Got broadcast for step {} from {} but current step is {}",
+                                    training_result.step, public_key, state.step
+                                );
                             }
                         }
-                    } else {
-                        info!(
-                            "Got broadcast for step {} from {} but current step is {}",
-                            message.step, public_key, state.step
-                        );
                     }
+                    BroadcastMessage::PeerAnnouncement(_) => todo!(),
                 }
             }
-            NetworkEvent::DownloadComplete(downloaded) => {
-                debug!(
-                    "Payload 0x{} received from {}",
-                    hex::encode(downloaded.hash),
-                    downloaded.from
-                );
-                if let Some(state) = &self.state {
-                    if state.step == downloaded.data.step {
-                        self.handle_payload(downloaded.hash, downloaded.data)
-                            .await?;
-                    } else {
-                        info!(
-                            "Got payload for step {} from {} but current step is {}",
-                            downloaded.data.step, downloaded.from, state.step
-                        );
+            NetworkEvent::DownloadComplete(downloaded) => match &downloaded.data {
+                Payload::DistroResult(distro_result) => {
+                    debug!(
+                        "Payload 0x{} received from {}",
+                        hex::encode(downloaded.hash),
+                        downloaded.from
+                    );
+                    if let Some(state) = &self.state {
+                        if state.step == distro_result.step {
+                            self.handle_payload(downloaded.hash, downloaded.data)
+                                .await?;
+                        } else {
+                            info!(
+                                "Got payload for step {} from {} but current step is {}",
+                                distro_result.step, downloaded.from, state.step
+                            );
+                        }
                     }
                 }
-            }
+                Payload::Empty {} => todo!(),
+            },
         }
         Ok(None)
     }
@@ -470,84 +499,100 @@ impl<T: NodeIdentity> State<T> {
                 return Ok(None);
             }
         };
-        let (_, witness_proof, _) = self
-            .committee_info
-            .as_ref()
-            .ok_or(Error::msg("Broadcast message processor has no self proofs"))?;
-        // verified by process_network_event caller
-        if broadcast.proof.committee == Committee::Trainer {
-            let client_commitments = *self.commitments_per_client.get(identity).unwrap_or(&0);
-            if state.is_greedy_data() {
-                if client_commitments >= state.max_batches_per_client {
-                    debug!(
-                        "Maximum commitments received from {}, dropping 0x{}",
-                        identity,
-                        hex::encode(broadcast.commitment)
-                    );
-                    return Ok(None);
-                }
-            } else {
-                let first_data_id = broadcast.batch_id * state.data_indicies_per_batch as u64;
-                let correct_assignee = match self.data_assignments.get(first_data_id) {
-                    Some(assignee) => identity == assignee,
-                    None => false,
-                };
-                if !correct_assignee {
-                    debug!(
-                        "Got batch {} from {} but was not assignee, dropping 0x{}",
-                        broadcast.batch_id,
-                        identity,
-                        hex::encode(broadcast.commitment)
-                    );
-                    return Ok(None);
-                }
-            }
-            self.commitments_per_client
-                .insert(identity.clone(), client_commitments + 1);
-            let total_commitments = self
-                .commitments_per_client
-                .values()
-                .fold(0, |acc, ele| acc + *ele);
-            debug!(
-                "Total commitments for step {}: {}",
-                state.step, total_commitments
-            );
-
-            if witness_proof.witness {
-                match self.blooms.as_mut() {
-                    Some((commit_bloom, _, _)) => commit_bloom.add(&sha256(&broadcast.commitment)),
-                    None => {
-                        debug!(
-                            "Already submitted witness, not adding commitment 0x{} to commit bloom",
-                            hex::encode(broadcast.commitment)
-                        );
+        let ticket = match broadcast {
+            BroadcastMessage::TrainingResult(training_result) => {
+                let (_, witness_proof, _) = self
+                    .committee_info
+                    .as_ref()
+                    .ok_or(Error::msg("Broadcast message processor has no self proofs"))?;
+                // verified by process_network_event caller
+                if training_result.proof.committee == Committee::Trainer {
+                    let client_commitments =
+                        *self.commitments_per_client.get(identity).unwrap_or(&0);
+                    if state.is_greedy_data() {
+                        if client_commitments >= state.max_batches_per_client {
+                            debug!(
+                                "Maximum commitments received from {}, dropping 0x{}",
+                                identity,
+                                hex::encode(training_result.commitment)
+                            );
+                            return Ok(None);
+                        }
+                    } else {
+                        let first_data_id =
+                            training_result.batch_id * state.data_indicies_per_batch as u64;
+                        let correct_assignee = match self.data_assignments.get(first_data_id) {
+                            Some(assignee) => identity == assignee,
+                            None => false,
+                        };
+                        if !correct_assignee {
+                            debug!(
+                                "Got batch {} from {} but was not assignee, dropping 0x{}",
+                                training_result.batch_id,
+                                identity,
+                                hex::encode(training_result.commitment)
+                            );
+                            return Ok(None);
+                        }
                     }
+                    self.commitments_per_client
+                        .insert(identity.clone(), client_commitments + 1);
+                    let total_commitments = self
+                        .commitments_per_client
+                        .values()
+                        .fold(0, |acc, ele| acc + *ele);
+                    debug!(
+                        "Total commitments for step {}: {}",
+                        state.step, total_commitments
+                    );
+
+                    if witness_proof.witness {
+                        match self.blooms.as_mut() {
+                            Some((commit_bloom, _, _)) => {
+                                commit_bloom.add(&sha256(&training_result.commitment))
+                            }
+                            None => {
+                                debug!(
+                            "Already submitted witness, not adding commitment 0x{} to commit bloom",
+                            hex::encode(training_result.commitment)
+                        );
+                            }
+                        }
+                    }
+                    self.commitments
+                        .entry(training_result.batch_id)
+                        .or_default();
+                    let ticket = training_result.ticket.clone();
+                    let batch_id = training_result.batch_id;
+                    self.commitments
+                        .get_mut(&training_result.batch_id)
+                        .unwrap()
+                        .push((identity.clone(), training_result));
+                    self.payloads.insert(
+                        ticket.hash(),
+                        PayloadState::Downloading((identity.clone(), batch_id)),
+                    );
+
+                    ticket
+                } else {
+                    // TODO implement broadcast for train / tiebreak
+                    error!(
+                        "broadcast not implemented for committee member {}",
+                        training_result.proof.committee
+                    );
+                    return Ok(None);
                 }
             }
-            self.commitments.entry(broadcast.batch_id).or_default();
-            let ticket = broadcast.ticket.clone();
-            let batch_id = broadcast.batch_id;
-            self.commitments
-                .get_mut(&broadcast.batch_id)
-                .unwrap()
-                .push((identity.clone(), broadcast));
-            self.payloads.insert(
-                ticket.hash(),
-                PayloadState::Downloading((identity.clone(), batch_id)),
-            );
-            // check if this is our broadcast -- if so don't download it (assume caller then calls handle_payload with data)
-            if *identity != self.identity {
-                return Ok(Some(ticket));
+            BroadcastMessage::PeerAnnouncement(peer_announcement) => {
+                debug!("Got peer announcement from {identity}");
+                peer_announcement.ticket
             }
-        } else {
-            // TODO implement broadcast for train / tiebreak
-            error!(
-                "broadcast not implemented for committee member {}",
-                broadcast.proof.committee
-            );
+        };
+        // check if this is our broadcast -- if so don't download it (assume caller then calls handle_payload with data)
+        match *identity == self.identity {
+            true => Ok(None),
+            false => Ok(Some(ticket)),
         }
-
-        Ok(None)
     }
 
     pub(crate) async fn handle_payload(
@@ -555,97 +600,101 @@ impl<T: NodeIdentity> State<T> {
         hash: psyche_network::Hash,
         payload: Payload,
     ) -> Result<()> {
-        let (from, batch_id) = match self.payloads.get(&hash) {
-            Some(PayloadState::Downloading(x)) => x,
-            Some(PayloadState::Deserializing(_)) => {
-                debug!("Duplicate download of {}", hash);
-                return Ok(());
-            }
-            None => {
-                debug!("Unknown download {}", hash);
-                return Ok(());
-            }
-        };
-        let commitments = match self.commitments.get(batch_id) {
-            Some(commitments) => commitments,
-            None => {
-                info!("No commitment for payload from {}", from);
-                return Ok(());
-            }
-        };
-        let commitment = match commitments
-            .iter()
-            .find(|x| x.0 == *from && x.1.ticket.hash() == hash)
-        {
-            Some(commitment) => &commitment.1,
-            None => {
-                info!("No commitment for payload from {}", from);
-                return Ok(());
-            }
-        };
-        let (_, witness_proof, _) = self
-            .committee_info
-            .as_ref()
-            .ok_or(Error::msg("Payload message processor has no self proofs"))?;
-        // TODO: verify payload matches commitment
-        // TODO: verify shape of distro_results
-
-        // we only care to add this to consensus & track it in batch IDs if we have any batch IDs that haven't yet been voted for.
-        let (just_consumed_last_batch_id, num_left) = if let Some(TrainingDataForStep {
-            batch_ids_not_yet_trained_on,
-            ..
-        }) = &mut self.training_data
-        {
-            // TODO: how do we do witnessing for verifiers that might be training on data that's not in the normal remaining batch IDs?
-            // TODO: also we want ALL those from everyone, right?
-            let mut remaining_batch_ids = batch_ids_not_yet_trained_on.lock().await; // CANCEL SAFETY
-            if witness_proof.witness {
-                match self.blooms.as_mut() {
-                    Some((_, participant_bloom, order_bloom)) => {
-                        participant_bloom.add(&sha256(from.as_ref()));
-                        if remaining_batch_ids.contains(batch_id) {
-                            // first received payload for this batch id, vote for it in consensus
-                            order_bloom.add(&sha256(&commitment.commitment));
-                        }
+        match payload {
+            Payload::DistroResult(distro_result) => {
+                let (from, batch_id) = match self.payloads.get(&hash) {
+                    Some(PayloadState::Downloading(x)) => x,
+                    Some(PayloadState::Deserializing(_)) => {
+                        debug!("Duplicate download of {}", hash);
+                        return Ok(());
                     }
                     None => {
-                        debug!(
-                            "Already submitted witness, not adding {} to participant bloom",
-                            from
-                        );
+                        debug!("Unknown download {}", hash);
+                        return Ok(());
                     }
+                };
+                let commitments = match self.commitments.get(batch_id) {
+                    Some(commitments) => commitments,
+                    None => {
+                        info!("No commitment for payload from {}", from);
+                        return Ok(());
+                    }
+                };
+                let commitment = match commitments
+                    .iter()
+                    .find(|x| x.0 == *from && x.1.ticket.hash() == hash)
+                {
+                    Some(commitment) => &commitment.1,
+                    None => {
+                        info!("No commitment for payload from {}", from);
+                        return Ok(());
+                    }
+                };
+                let (_, witness_proof, _) = self
+                    .committee_info
+                    .as_ref()
+                    .ok_or(Error::msg("Payload message processor has no self proofs"))?;
+                // TODO: verify payload matches commitment
+                // TODO: verify shape of distro_results
+
+                // we only care to add this to consensus & track it in batch IDs if we have any batch IDs that haven't yet been voted for.
+                let (just_consumed_last_batch_id, num_left) = if let Some(TrainingDataForStep {
+                    batch_ids_not_yet_trained_on,
+                    ..
+                }) = &mut self.training_data
+                {
+                    // TODO: how do we do witnessing for verifiers that might be training on data that's not in the normal remaining batch IDs?
+                    // TODO: also we want ALL those from everyone, right?
+                    let mut remaining_batch_ids = batch_ids_not_yet_trained_on.lock().await; // CANCEL SAFETY
+                    if witness_proof.witness {
+                        match self.blooms.as_mut() {
+                            Some((_, participant_bloom, order_bloom)) => {
+                                participant_bloom.add(&sha256(from.as_ref()));
+                                if remaining_batch_ids.contains(batch_id) {
+                                    // first received payload for this batch id, vote for it in consensus
+                                    order_bloom.add(&sha256(&commitment.commitment));
+                                }
+                            }
+                            None => {
+                                debug!(
+                                    "Already submitted witness, not adding {} to participant bloom",
+                                    from
+                                );
+                            }
+                        }
+                    }
+
+                    remaining_batch_ids.remove(batch_id);
+                    debug!(
+                        "Remaining batches to download for step {}: {}",
+                        distro_result.step,
+                        remaining_batch_ids.len()
+                    );
+                    (remaining_batch_ids.is_empty(), remaining_batch_ids.len())
+                } else {
+                    // it was already empty, so we didn't just consume the last value.
+                    (false, 0)
+                };
+                self._last_observed_num_batches_remaining = num_left;
+
+                if just_consumed_last_batch_id {
+                    self.training_data = None;
                 }
+
+                // we unconditionally store every seen payload, since we're not yet sure what consensus will be on whether it's included.
+                let deserializing = tokio::task::spawn_blocking(move || {
+                    let maybe_results: Result<Vec<DistroResult>, _> = distro_result
+                        .distro_results
+                        .iter()
+                        .map(|x| x.try_into())
+                        .collect();
+                    maybe_results.map_err(|err| Error::msg(format!("Error deserializing: {}", err)))
+                });
+                self.payloads
+                    .insert(hash, PayloadState::Deserializing(deserializing));
             }
-
-            remaining_batch_ids.remove(batch_id);
-            debug!(
-                "Remaining batches to download for step {}: {}",
-                payload.step,
-                remaining_batch_ids.len()
-            );
-            (remaining_batch_ids.is_empty(), remaining_batch_ids.len())
-        } else {
-            // it was already empty, so we didn't just consume the last value.
-            (false, 0)
-        };
-        self._last_observed_num_batches_remaining = num_left;
-
-        if just_consumed_last_batch_id {
-            self.training_data = None;
+            Payload::Empty {} => {},
         }
-
-        // we unconditionally store every seen payload, since we're not yet sure what consensus will be on whether it's included.
-        let deserializing = tokio::task::spawn_blocking(move || {
-            let maybe_results: Result<Vec<DistroResult>, _> = payload
-                .distro_results
-                .iter()
-                .map(|x| x.try_into())
-                .collect();
-            maybe_results.map_err(|err| Error::msg(format!("Error deserializing: {}", err)))
-        });
-        self.payloads
-            .insert(hash, PayloadState::Deserializing(deserializing));
-
         Ok(())
     }
 
@@ -938,7 +987,7 @@ impl<T: NodeIdentity> State<T> {
             true => self.prev_payloads.drain().collect(),
             false => self.payloads.drain().collect(),
         };
-        let commitments: HashMap<u64, Vec<(T, BroadcastMessage)>> = match state.overlapped {
+        let commitments: HashMap<u64, Vec<(T, TrainingResult)>> = match state.overlapped {
             true => self.prev_commitments.drain().collect(),
             false => self.commitments.drain().collect(),
         };
@@ -1272,34 +1321,38 @@ impl<T: NodeIdentity> State<T> {
 
     fn maybe_write_gradients(&self, payload: &Payload) {
         if let Some(write_gradients_dir) = &self.write_gradients_dir {
-            info!("Trying to write distro result to disk...");
-            if let Err(e) = fs::create_dir_all(write_gradients_dir) {
-                warn!("Failed to create write_gradients_dir: {e}");
-                return;
-            };
-
-            let fname = format!(
-                "result-step{}-batch{}.vec-postcard",
-                payload.step, payload.batch_id
-            );
-            let fpath = write_gradients_dir.join(&fname);
-            let serialized = match disto_results_to_bytes(&payload.distro_results) {
-                Err(e) => {
-                    error!("Failed to serialize distro result data {fname} to bytes {e}");
+            if let Payload::DistroResult(distro_result) = payload {
+                info!("Trying to write distro result to disk...");
+                if let Err(e) = fs::create_dir_all(write_gradients_dir) {
+                    warn!("Failed to create write_gradients_dir: {e}");
                     return;
-                }
-                Ok(bin) => bin,
-            };
-            tokio::task::spawn({
-                async move {
-                    match tokio::fs::write(fpath, serialized).await {
-                        Ok(()) => info!("Wrote distro result {fname}."),
-                        Err(e) => {
-                            error!("Failed to write serialized distro result data {fname}: {e}");
+                };
+
+                let fname = format!(
+                    "result-step{}-batch{}.vec-postcard",
+                    distro_result.step, distro_result.batch_id
+                );
+                let fpath = write_gradients_dir.join(&fname);
+                let serialized = match disto_results_to_bytes(&distro_result.distro_results) {
+                    Err(e) => {
+                        error!("Failed to serialize distro result data {fname} to bytes {e}");
+                        return;
+                    }
+                    Ok(bin) => bin,
+                };
+                tokio::task::spawn({
+                    async move {
+                        match tokio::fs::write(fpath, serialized).await {
+                            Ok(()) => info!("Wrote distro result {fname}."),
+                            Err(e) => {
+                                error!(
+                                    "Failed to write serialized distro result data {fname}: {e}"
+                                );
+                            }
                         }
                     }
-                }
-            });
+                });
+            }
         }
     }
 }
