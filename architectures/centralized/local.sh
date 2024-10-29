@@ -35,6 +35,8 @@ fi
 cargo build -p psyche-centralized-server
 cargo build -p psyche-centralized-client
 
+cargo run -p psyche-centralized-server -- --state $STATE_PATH --data-config $DATA_PATH validate-config
+
 # Create a new tmux session
 tmux new-session -d -s psyche
 
@@ -69,12 +71,19 @@ tmux send-keys "nvtop" C-m
 
 # Send client commands to the rest of the panes
 for ((i=2; i<=(NUM_CLIENTS+1); i++)); do
+    key_path="${2%/}/keys/client-$((i-1)).key"
+
     tmux select-pane -t $i
+
+    cmd="RUST_BACKTRACE=1 cargo run -p psyche-centralized-client -- train --secret-key $key_path --run-id $run_id --server-addr localhost:$SERVER_PORT --tui $TUI"
     if [ "$WRITE_DISTRO_DATA" != "false" ]; then
-        tmux send-keys "RUST_BACKTRACE=1 cargo run -p psyche-centralized-client -- --run-id $run_id --server-addr localhost:$SERVER_PORT --tui $TUI --write-gradients-dir $WRITE_DISTRO_DATA" C-m
-    else
-        tmux send-keys "RUST_BACKTRACE=1 cargo run -p psyche-centralized-client -- --run-id $run_id --server-addr localhost:$SERVER_PORT --tui $TUI" C-m
+        cmd="$cmd --write-gradients-dir $WRITE_DISTRO_DATA"
     fi
+
+    if [ $i -eq 2 ]; then
+        cmd="$cmd --hub-repo bug-free-chainsaw/tiny-local-20m --checkpoint-dir ../../checkpoints"
+    fi
+    tmux send-keys "$cmd" C-m
 done
 
 # Attach to the tmux session
