@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use app::{App, DataServerInfo};
 use clap::{ArgAction, Parser};
 use psyche_coordinator::Coordinator;
@@ -12,6 +12,20 @@ mod dashboard;
 
 #[derive(Parser, Debug)]
 struct Args {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
+    #[command(flatten)]
+    common: CommonArgs,
+}
+
+#[derive(Parser, Debug)]
+enum Commands {
+    ValidateConfig,
+}
+
+#[derive(Parser, Debug, Clone)]
+struct CommonArgs {
     /// if not specified, a random free port will be chosen.
     #[clap(short, long)]
     p2p_port: Option<u16>,
@@ -41,13 +55,14 @@ struct Args {
     #[clap(long)]
     save_state_dir: Option<PathBuf>,
 }
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
 
+    let common_args = args.common;
+    let command = args.command;
     psyche_tui::init_logging(
-        if args.tui {
+        if common_args.tui {
             LogOutput::TUI
         } else {
             LogOutput::Console
@@ -55,17 +70,20 @@ async fn main() -> Result<()> {
         Level::INFO,
     );
 
-    let coordinator = match args.state {
-        Some(state_path) => toml::from_str(std::str::from_utf8(&std::fs::read(state_path)?)?)?,
+    let coordinator = match common_args.state {
+        Some(state_path) => toml::from_str(std::str::from_utf8(&std::fs::read(&state_path)?)?)
+            .with_context(|| {
+                format!("failed to parse coordinator state toml file {state_path:?}")
+            })?,
         None => Coordinator::default(),
     };
 
-    info!("joining gossip room");
-
-    let data_server_config = match args.data_config {
+    let data_server_config = match common_args.data_config {
         Some(config_path) => {
             let mut data_config: DataServerInfo =
-                toml::from_str(std::str::from_utf8(&std::fs::read(&config_path)?)?)?;
+                toml::from_str(std::str::from_utf8(&std::fs::read(&config_path)?)?).with_context(
+                    || format!("failed to parse data server config toml file {config_path:?}"),
+                )?;
 
             // data dir, if relative, should be relative to the config's path.
             if !data_config.dir.is_absolute() {
@@ -77,17 +95,24 @@ async fn main() -> Result<()> {
         None => None,
     };
 
-    App::new(
-        args.tui,
-        coordinator,
-        data_server_config,
-        args.p2p_port,
-        args.server_port,
-        args.save_state_dir,
-    )
-    .await?
-    .run()
-    .await?;
+    match command {
+        Some(Commands::ValidateConfig) => {
+            info!("configs are OK!");
+        }
+        None => {
+            App::new(
+                common_args.tui,
+                coordinator,
+                data_server_config,
+                common_args.p2p_port,
+                common_args.server_port,
+                common_args.save_state_dir,
+            )
+            .await?
+            .run()
+            .await?;
+        }
+    }
 
     Ok(())
 }
