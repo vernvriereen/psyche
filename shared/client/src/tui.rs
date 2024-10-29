@@ -19,9 +19,9 @@ lazy_static::lazy_static! {
 pub struct ClientTUI;
 
 fn convert_tokens_per_sec(tokens_per_sec: f32) -> String {
-    const KB: f32 = 1024.0;
-    const MB: f32 = KB * 1024.0;
-    const GB: f32 = MB * 1024.0;
+    const KB: f32 = 1000.0;
+    const MB: f32 = KB * 1000.0;
+    const GB: f32 = MB * 1000.0;
 
     if tokens_per_sec == 0. {
         String::new()
@@ -33,6 +33,26 @@ fn convert_tokens_per_sec(tokens_per_sec: f32) -> String {
         format!("{:.1}M tok/s", tokens_per_sec / MB)
     } else {
         format!("{:.1}B tok/s", tokens_per_sec / GB)
+    }
+}
+
+fn convert_tokens(tokens: u64) -> String {
+    let tokens = tokens as f32;
+    const KB: f32 = 1000.0;
+    const MB: f32 = KB * 1000.0;
+    const GB: f32 = MB * 1000.0;
+    const TB: f32 = GB * 1000.0;
+
+    if tokens < KB {
+        format!("{}", tokens)
+    } else if tokens < MB {
+        format!("{:.1}K", tokens / KB)
+    } else if tokens < GB {
+        format!("{:.1}M", tokens / MB)
+    } else if tokens < TB {
+        format!("{:.1}B", tokens / GB)
+    } else {
+        format!("{:.1}T", tokens / TB)
     }
 }
 
@@ -114,14 +134,19 @@ impl psyche_tui::CustomWidget for ClientTUI {
                 Layout::horizontal([Constraint::Fill(1), Constraint::Length(right_size)])
                     .split(coord_split[1]);
 
-            let hsplit = Layout::horizontal(Constraint::from_fills([1, 1, 1])).split(plot_split[0]);
+            let hsplit = Layout::horizontal(Constraint::from_fills([1, 1, 1, 1])).split(plot_split[0]);
             Paragraph::new(format!("State: {}", state.run_state)).render(hsplit[0], buf);
+            Paragraph::new(format!("Batches Left: {}", state.batches_left)).render(hsplit[1], buf);
             Paragraph::new(format!(
                 "Global Speed: {}",
                 convert_tokens_per_sec(state.global_tokens_per_second)
             ))
-            .render(hsplit[1], buf);
-            Paragraph::new(format!("Batches Left: {}", state.batches_left)).render(hsplit[2], buf);
+            .render(hsplit[2], buf);
+            Paragraph::new(format!(
+                "Total Tokens: {}",
+                convert_tokens(state.total_tokens)
+            ))
+            .render(hsplit[2], buf);
         }
         if !state.evals.is_empty() {
             let plot_split =
@@ -197,4 +222,5 @@ pub struct ClientTUIState {
     pub loss: Vec<f32>,
     pub evals: HashMap<String, Vec<f64>>,
     pub global_tokens_per_second: f32,
+    pub total_tokens: u64,
 }

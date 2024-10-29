@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use anyhow::{Error, Result};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
-use psyche_client::{Client, ClientTUI, ClientTUIState, NC};
+use psyche_client::{Client, ClientTUI, ClientTUIState, WandBInfo, NC};
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_network::{NetworkTUIState, NetworkTui, RelayMode, SecretKey, TcpClient};
 use psyche_tui::logging::LoggerWidget;
@@ -72,6 +72,7 @@ pub struct App {
     checkpoint_dir: Option<PathBuf>,
     hub_repo: Option<String>,
     hub_token: Option<String>,
+    wandb_info: Option<WandBInfo>
 }
 
 pub struct AppBuilder(AppParams);
@@ -92,6 +93,7 @@ pub struct AppParams {
     pub checkpoint_dir: Option<PathBuf>,
     pub hub_repo: Option<String>,
     pub hub_token: Option<String>,
+    pub wandb_info: Option<WandBInfo>,
 }
 
 impl AppBuilder {
@@ -136,6 +138,7 @@ impl AppBuilder {
             checkpoint_dir: p.checkpoint_dir,
             hub_repo: p.hub_repo,
             hub_token: p.hub_token,
+            wandb_info: p.wandb_info,
         };
         app.run(p2p).await
     }
@@ -182,6 +185,7 @@ impl App {
             self.checkpoint_dir.clone(),
             self.hub_repo.clone(),
             self.hub_token.clone(),
+            self.wandb_info.clone(),
         );
 
         loop {

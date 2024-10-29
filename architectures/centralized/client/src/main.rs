@@ -2,6 +2,7 @@ use crate::app::{AppBuilder, AppParams, Tabs, TAB_NAMES};
 
 use anyhow::{bail, Result};
 use clap::{ArgAction, Parser, Subcommand};
+use psyche_client::WandBInfo;
 use psyche_eval::{Hellaswag, MMLUPro};
 use psyche_network::SecretKey;
 use psyche_tui::{maybe_start_render_loop, LogOutput};
@@ -75,6 +76,15 @@ enum Commands {
 
         #[clap(long)]
         hub_repo: Option<String>,
+
+        #[clap(long)]
+        wandb_project: Option<String>,
+
+        #[clap(long)]
+        wandb_run: Option<String>,
+
+        #[clap(long)]
+        wandb_entity: Option<String>,
     },
 }
 
@@ -106,6 +116,9 @@ async fn async_main() -> Result<()> {
             eval_task_max_docs,
             checkpoint_dir,
             hub_repo,
+            wandb_run,
+            wandb_entity,
+            wandb_project,
         } => {
             #[cfg(target_os = "windows")]
             {
@@ -138,6 +151,23 @@ async fn async_main() -> Result<()> {
                     }
                 }
                 None => None,
+            };
+
+            let wandb_info = match std::env::var("WANDB_API_KEY") {
+                Ok(wandb_api_key) => Some(WandBInfo {
+                    project: wandb_project.unwrap_or("psyche".to_string()),
+                    run: wandb_run.unwrap_or(run_id.clone()),
+                    entity: wandb_entity,
+                    api_key: wandb_api_key,
+                }),
+                Err(_) => {
+                    match wandb_entity.is_some() || wandb_run.is_some() || wandb_project.is_some() {
+                        true => bail!(
+                            "WANDB_API_KEY environment variable must be set for wandb integration"
+                        ),
+                        false => None,
+                    }
+                }
             };
 
             let eval_tasks = match eval_tasks {
@@ -203,6 +233,7 @@ async fn async_main() -> Result<()> {
                 checkpoint_dir,
                 hub_repo,
                 hub_token,
+                wandb_info,
             })
             .run()
             .await

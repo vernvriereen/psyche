@@ -1,7 +1,5 @@
 use crate::{
-    protocol::NE,
-    state::{State, ToSend},
-    BroadcastMessage, ClientTUIState, NC,
+    protocol::NE, state::{State, ToSend}, BroadcastMessage, ClientTUIState, WandBInfo, NC
 };
 use anyhow::Result;
 use psyche_coordinator::Coordinator;
@@ -49,6 +47,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         checkpoint_dir: Option<PathBuf>,
         hub_repo: Option<String>,
         hub_token: Option<String>,
+        wandb_info: Option<WandBInfo>,
     ) -> Self {
         let cancel = CancellationToken::new();
         let (tx, rx) = watch::channel::<TUIStates>(Default::default());
@@ -70,7 +69,8 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                     write_gradients_dir,
                     checkpoint_dir,
                     hub_repo,
-                    hub_token
+                    hub_token,
+                    wandb_info,
                 );
                 let clear_uploads = state.get_clear_downloads_notification();
 

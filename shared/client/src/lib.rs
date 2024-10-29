@@ -12,3 +12,11 @@ pub use serialized_distro::{
     disto_results_to_bytes, distro_results_from_reader, SerializedDistroResult,
 };
 pub use tui::{ClientTUI, ClientTUIState};
+
+#[derive(Clone)]
+pub struct WandBInfo {
+    pub project: String,
+    pub run: String,
+    pub entity: Option<String>,
+    pub api_key: String,
+}

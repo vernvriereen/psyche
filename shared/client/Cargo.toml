@@ -24,6 +24,7 @@ rand.workspace = true
 futures.workspace = true
 hex = "0.4.3"
 lazy_static = "1.5.0"
+wandb = { git = "https://github.com/NousResearch/wandb-rs.git", rev = "ee26b3bc3b9d4882df04c29a223dc256488d544d" }
 
 [features]
 parallelism = ["psyche-modeling/parallelism"]

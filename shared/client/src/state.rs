@@ -4,7 +4,7 @@ use crate::{
     protocol::TrainingResult,
     trainer::{DistroResults, ParallelModels, TrainOutput, Trainer},
     tui::ClientTUIState,
-    BroadcastMessage, Payload, PeerAnnouncement, SerializedDistroResult,
+    BroadcastMessage, Payload, PeerAnnouncement, SerializedDistroResult, WandBInfo,
 };
 use anyhow::{bail, Error, Result};
 use psyche_coordinator::{
@@ -76,6 +76,7 @@ pub struct State<T: NodeIdentity> {
         Vec<ParallelModels>,
         Tokenizer,
         Vec<PathBuf>,
+        Option<wandb::Run>,
     )>,
     available_trainers: Vec<Trainer>,
     trainings: Vec<JoinHandle<Result<(TrainOutput, u64)>>>,
@@ -119,6 +120,9 @@ pub struct State<T: NodeIdentity> {
     last_warmup_peer_announcement: Option<Instant>,
     hub_repo: Option<String>,
     hub_token: Option<String>,
+    wandb_info: Option<WandBInfo>,
+    wandb_run: Option<Arc<wandb::Run>>,
+    wandb_log: HashMap<String, wandb::DataValue>,
     /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
     _last_observed_num_batches_remaining: usize,
     _eval_results: HashMap<String, Vec<f64>>,
@@ -137,6 +141,7 @@ impl<T: NodeIdentity> State<T> {
         checkpoint_dir: Option<PathBuf>,
         hub_repo: Option<String>,
         hub_token: Option<String>,
+        wandb_info: Option<WandBInfo>,
     ) -> Self {
         assert!(data_parallelism > 0);
         assert!(tensor_parallelism > 0);
@@ -193,6 +198,9 @@ impl<T: NodeIdentity> State<T> {
             checkpointing: None,
             hub_repo,
             hub_token,
+            wandb_info,
+            wandb_run: None,
+            wandb_log: HashMap::new(),
             _last_observed_num_batches_remaining: 0,
         }
     }
@@ -228,6 +236,10 @@ impl<T: NodeIdentity> State<T> {
 
     pub fn get_clear_downloads_notification(&self) -> Arc<Notify> {
         self.notify_clear_uploads.clone()
+    }
+
+    pub fn log_to_wandb(&mut self, key: String, value: wandb::DataValue) {
+        self.wandb_log.insert(key, value);
     }
 
     fn handle_poll_next_applying(&mut self, trainers: Vec<Trainer>) -> Result<ToSend> {
@@ -774,6 +786,7 @@ impl<T: NodeIdentity> State<T> {
                                     self.data_parallelism,
                                     self.tensor_parallelism,
                                     self.hub_token.clone(),
+                                    self.wandb_info.clone(),
                                 )))
                         } else {
                             bail!("Warmup but still applying");
@@ -813,9 +826,10 @@ impl<T: NodeIdentity> State<T> {
             if !data_and_model_load.is_finished() {
                 bail!("Data and model load not finished when round started!")
             }
-            let (data_provider, models, tokenizer, checkpoint_extra_files) =
+            let (data_provider, models, tokenizer, checkpoint_extra_files, wandb_run) =
                 data_and_model_load.await??; // not a cancel safety point, this should return immediately
             self.checkpoint_extra_files = checkpoint_extra_files;
+            self.wandb_run = wandb_run.map(|x| Arc::new(x));
 
             // TODO add data fetching for verifying, too..
             self.data_fetcher = Some(DataFetcher::new(data_provider, self.data_parallelism * 2));
@@ -965,6 +979,7 @@ impl<T: NodeIdentity> State<T> {
         self.commitments_per_client.clear();
         self.prev_payloads = self.payloads.drain().collect();
         self.notify_clear_uploads.notify_one(); // clear any served uploads we have
+        self._last_observed_num_batches_remaining = state.batches_per_round as usize;
         Ok(())
     }
 
@@ -1033,7 +1048,45 @@ impl<T: NodeIdentity> State<T> {
             let loss = sum / count as f32;
             info!("Step {} loss: {}", state.step, loss);
             self.losses.push(loss);
+            self.wandb_log.insert(
+                "train/loss".to_owned(),
+                wandb::DataValue::Float(loss as f64),
+            );
         }
+        if let Some(wandb_run) = &self.wandb_run {
+            self.wandb_log.insert(
+                "train/total_tokens".to_owned(),
+                wandb::DataValue::Int(self.total_tokens()),
+            );
+            self.wandb_log.insert(
+                "train/tokens_per_sec".to_owned(),
+                wandb::DataValue::Float(self.global_tokens_per_second() as f64),
+            );
+            self.wandb_log.insert(
+                "coordinator/num_clients".to_owned(),
+                wandb::DataValue::Int(state.clients.len() as u64),
+            );
+            self.wandb_log.insert(
+                "coordinator/epoch".to_owned(),
+                wandb::DataValue::Int(state.epoch as u64),
+            );
+            self.wandb_log.insert(
+                "coordinator/round".to_owned(),
+                wandb::DataValue::Int(
+                    state
+                        .current_round()
+                        .ok()
+                        .map(|x| x.height)
+                        .unwrap_or_default() as u64,
+                ),
+            );
+            self.wandb_log
+                .insert("_step".to_owned(), wandb::DataValue::Int(state.step as u64));
+            let wandb_log = self.wandb_log.drain().collect::<HashMap<_, _>>();
+            let wandb_run = wandb_run.clone();
+            tokio::spawn(async move { wandb_run.log(wandb_log).await });
+        }
+
         self.apply_start = Some(Instant::now());
 
         let trainers = self.available_trainers.drain(..).collect::<Vec<_>>();
@@ -1248,11 +1301,13 @@ impl<T: NodeIdentity> State<T> {
         data_parallelism: usize,
         tensor_parallelism: usize,
         hub_token: Option<String>,
+        wandb_info: Option<WandBInfo>,
     ) -> Result<(
         DataProviderTcpClient<T>,
         Vec<ParallelModels>,
         Tokenizer,
         Vec<PathBuf>,
+        Option<wandb::Run>,
     )> {
         let model::Model::LLM(llm) = model;
         let data_future = match &llm.data_location {
@@ -1353,9 +1408,23 @@ impl<T: NodeIdentity> State<T> {
                     }
                 },
             };
-        let (data, models) = tokio::join!(data_future, model_future);
+        let wandb_future: JoinHandle<Result<Option<wandb::Run>>> = tokio::spawn(async move {
+            match wandb_info {
+                Some(wandb_info) => {
+                    let wandb = wandb::WandB::new(wandb::BackendOptions::new(wandb_info.api_key));
+                    let mut run_info = wandb::RunInfo::new(wandb_info.project).name(wandb_info.run);
+                    if let Some(entity) = wandb_info.entity {
+                        run_info = run_info.entity(entity);
+                    }
+                    Ok(Some(wandb.new_run(run_info.build()?).await?))
+                }
+                None => Ok(None),
+            }
+        });
+        let (data, models, wandb_run) = tokio::join!(data_future, model_future, wandb_future);
         let (models, tokenizer, checkpoint_extra_files) = models??;
         let data = data?;
+        let wandb_run = wandb_run??;
         let mut tp_models = Vec::new();
         for model in models {
             if tp_models
@@ -1367,7 +1436,13 @@ impl<T: NodeIdentity> State<T> {
             }
             tp_models.last_mut().unwrap().push(model);
         }
-        Ok((data, tp_models, tokenizer, checkpoint_extra_files))
+        Ok((
+            data,
+            tp_models,
+            tokenizer,
+            checkpoint_extra_files,
+            wandb_run,
+        ))
     }
 
     fn is_run_state(&self, run_state: RunState) -> bool {
@@ -1483,6 +1558,13 @@ impl<T: NodeIdentity> State<T> {
                             self._eval_results.insert(key, vec![value]);
                         } else {
                             self._eval_results.get_mut(&key).unwrap().push(value);
+                            self.wandb_log.insert(
+                                format!(
+                                    "eval/{}",
+                                    key.to_lowercase().replace(char::is_whitespace, "_")
+                                ),
+                                wandb::DataValue::Float(value),
+                            );
                         }
                     }
                 }
@@ -1527,26 +1609,22 @@ impl<T: NodeIdentity> State<T> {
             }
         }
     }
-}
 
-impl<T: NodeIdentity> From<&State<T>> for ClientTUIState {
-    fn from(value: &State<T>) -> Self {
-        let coordinator = value.state.as_ref();
-        let committee = value.committee_info.as_ref().map(|x| x.0.committee);
-        let global_tokens_per_second = match value.round_durations.is_empty() {
+    fn global_tokens_per_second(&self) -> f32 {
+        match self.round_durations.is_empty() {
             true => 0.,
-            false => match coordinator {
+            false => match &self.state {
                 Some(coordinator) => match &coordinator.model {
                     Some(model::Model::LLM(llm)) => match llm.data_type {
                         model::LLMTrainingDataType::Pretraining => {
                             let tokens = coordinator.batches_per_round
                                 * coordinator.data_indicies_per_batch
                                 * llm.max_seq_len;
-                            let seconds = value
+                            let seconds = self
                                 .round_durations
                                 .iter()
                                 .fold(0f32, |acc, ele| acc + ele.as_secs_f32());
-                            tokens as f32 / (seconds / value.round_durations.len() as f32)
+                            tokens as f32 / (seconds / self.round_durations.len() as f32)
                         }
                         model::LLMTrainingDataType::Finetuning => todo!(),
                     },
@@ -1554,14 +1632,39 @@ impl<T: NodeIdentity> From<&State<T>> for ClientTUIState {
                 },
                 None => 0.,
             },
-        };
+        }
+    }
+
+    fn total_tokens(&self) -> u64 {
+        self.state
+            .as_ref()
+            .and_then(|x| x.current_round().ok().map(|y| y.data_index))
+            .unwrap_or_default()
+            * match &self.state {
+                Some(coordinator) => match &coordinator.model {
+                    Some(model::Model::LLM(llm)) => match llm.data_type {
+                        model::LLMTrainingDataType::Pretraining => llm.max_seq_len as u64,
+                        model::LLMTrainingDataType::Finetuning => todo!(),
+                    },
+                    None => 0,
+                },
+                None => 0,
+            }
+    }
+}
+
+impl<T: NodeIdentity> From<&State<T>> for ClientTUIState {
+    fn from(value: &State<T>) -> Self {
+        let coordinator = value.state.as_ref();
+        let committee = value.committee_info.as_ref().map(|x| x.0.committee);
         ClientTUIState {
             step: coordinator.map(|x| x.step).unwrap_or_default(),
             committee,
             run_state: coordinator.map(|x| x.into()).unwrap_or_default(),
             loss: value.losses.clone(),
             batches_left: value._last_observed_num_batches_remaining,
-            global_tokens_per_second,
+            global_tokens_per_second: value.global_tokens_per_second(),
+            total_tokens: value.total_tokens(),
             evals: value._eval_results.clone(),
         }
     }
