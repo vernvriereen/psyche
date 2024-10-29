@@ -205,7 +205,9 @@ pub fn unsharded_cpu_variables(
     };
     let variables = vs.variables_.lock().unwrap();
     let shards = variables.shards.clone();
-    for (name, var) in variables.named_variables.iter() {
+    let mut variables = variables.named_variables.iter().collect::<Vec<_>>();
+    variables.sort_by_key(|x| x.0);
+    for (name, var) in variables {
         let var = match shards.get(name) {
             #[cfg(feature = "parallelism")]
             Some(shard) => {

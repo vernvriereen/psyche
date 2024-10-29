@@ -338,8 +338,6 @@ impl<T: NodeIdentity> State<T> {
                     if start {
                         self.started_early_evals = true;
                         self.start_evals();
-                    } else {
-                        info!("All trainers done but more to come");
                     }
                 }
             }
@@ -510,7 +508,9 @@ impl<T: NodeIdentity> State<T> {
                             }
                         }
                     }
-                    BroadcastMessage::PeerAnnouncement(_) => todo!(),
+                    BroadcastMessage::PeerAnnouncement(announcement) => {
+                        return Ok(Some(announcement.ticket.clone()))
+                    }
                 }
             }
             NetworkEvent::DownloadComplete(downloaded) => match &downloaded.data {
@@ -532,7 +532,7 @@ impl<T: NodeIdentity> State<T> {
                         }
                     }
                 }
-                Payload::Empty {} => todo!(),
+                Payload::Empty {} => {}
             },
         }
         Ok(None)
