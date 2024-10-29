@@ -47,6 +47,8 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         micro_batch_size: Option<usize>,
         write_gradients_dir: Option<PathBuf>,
         checkpoint_dir: Option<PathBuf>,
+        hub_repo: Option<String>,
+        hub_token: Option<String>,
     ) -> Self {
         let cancel = CancellationToken::new();
         let (tx, rx) = watch::channel::<TUIStates>(Default::default());
@@ -67,6 +69,8 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                     micro_batch_size,
                     write_gradients_dir,
                     checkpoint_dir,
+                    hub_repo,
+                    hub_token
                 );
                 let clear_uploads = state.get_clear_downloads_notification();
 

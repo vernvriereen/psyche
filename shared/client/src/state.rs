@@ -13,7 +13,9 @@ use psyche_coordinator::{
     BLOOM_FALSE_RATE, BLOOM_MAX_BITS, NUM_STORED_ROUNDS,
 };
 use psyche_core::{sha256, Bloom, BoundedQueue, IntervalTree, NodeIdentity, RunningAverage};
-use psyche_data_provider::{download_model_repo_async, DataProviderTcpClient};
+use psyche_data_provider::{
+    download_model_repo_async, upload_model_repo_async, DataProviderTcpClient,
+};
 use psyche_modeling::{
     auto_tokenizer, save_tensors_into_safetensors, CommunicatorId, DistroResult, LlamaForCausalLM,
 };
@@ -115,6 +117,8 @@ pub struct State<T: NodeIdentity> {
     checkpoint_extra_files: Vec<PathBuf>,
     checkpointing: TaskResult<(Trainer, Option<model::HubRepo>)>,
     last_warmup_peer_announcement: Option<Instant>,
+    hub_repo: Option<String>,
+    hub_token: Option<String>,
     /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
     _last_observed_num_batches_remaining: usize,
     _eval_results: HashMap<String, Vec<f64>>,
@@ -131,6 +135,8 @@ impl<T: NodeIdentity> State<T> {
         micro_batch_size: Option<usize>,
         write_gradients_dir: Option<PathBuf>,
         checkpoint_dir: Option<PathBuf>,
+        hub_repo: Option<String>,
+        hub_token: Option<String>,
     ) -> Self {
         assert!(data_parallelism > 0);
         assert!(tensor_parallelism > 0);
@@ -185,6 +191,8 @@ impl<T: NodeIdentity> State<T> {
             checkpoint_dir,
             checkpoint_extra_files: Vec::new(),
             checkpointing: None,
+            hub_repo,
+            hub_token,
             _last_observed_num_batches_remaining: 0,
         }
     }
@@ -765,6 +773,7 @@ impl<T: NodeIdentity> State<T> {
                                     model.clone(),
                                     self.data_parallelism,
                                     self.tensor_parallelism,
+                                    self.hub_token.clone(),
                                 )))
                         } else {
                             bail!("Warmup but still applying");
@@ -1175,30 +1184,49 @@ impl<T: NodeIdentity> State<T> {
             != RunState::Cooldown
         {
             if let Some(checkpoint_dir) = &self.checkpoint_dir {
-                let step = state.step - 1;
-                let run_id = state.run_id.clone();
                 match self.available_trainers.pop() {
                     Some(trainer) => {
+                        let step = state.step - 1;
+                        let run_id = state.run_id.clone();
                         let checkpoint_dir = checkpoint_dir.clone();
                         let checkpoint_extra_files = self.checkpoint_extra_files.clone();
+                        let hub_repo = self.hub_repo.clone();
+                        let hub_token = self.hub_token.clone();
                         self.checkpointing = Some(tokio::task::spawn_blocking(move || {
                             let (variables, trainer) = trainer.extract()?;
                             let path = checkpoint_dir.join(format!("{run_id}-step{step}"));
                             info!("Saving to {}", path.display());
-                            save_tensors_into_safetensors(variables, path.clone())?;
+                            let mut local = save_tensors_into_safetensors(variables, path.clone())?;
                             for extra in checkpoint_extra_files {
-                                std::fs::copy(
-                                    extra.clone(),
-                                    path.join(extra.file_name().unwrap()),
-                                )?;
+                                let to = path.join(extra.file_name().unwrap());
+                                std::fs::copy(extra.clone(), to.clone())?;
+                                local.push(to);
                             }
-                            Ok((
-                                trainer,
-                                Some(model::HubRepo {
-                                    repo_id: path.to_str().unwrap().to_string(),
-                                    revision: None,
-                                }),
-                            ))
+                            let hub_repo = match hub_repo {
+                                Some(hub_repo) => {
+                                    let hub_token =
+                                        hub_token.ok_or(Error::msg("No Hugging Face Hub token"))?;
+                                    let handle = Handle::current();
+                                    let hub_repo_ = hub_repo.clone();
+                                    info!("Uploading to {}", hub_repo);
+                                    let revision = handle.block_on(async move {
+                                        upload_model_repo_async(
+                                            hub_repo_,
+                                            local,
+                                            hub_token,
+                                            Some(format!("step {step}")),
+                                            None,
+                                        )
+                                        .await
+                                    })?;
+                                    Some(model::HubRepo {
+                                        repo_id: hub_repo,
+                                        revision: Some(revision),
+                                    })
+                                }
+                                None => None,
+                            };
+                            Ok((trainer, hub_repo))
                         }));
                     }
                     None => {
@@ -1219,6 +1247,7 @@ impl<T: NodeIdentity> State<T> {
         model: model::Model,
         data_parallelism: usize,
         tensor_parallelism: usize,
+        hub_token: Option<String>,
     ) -> Result<(
         DataProviderTcpClient<T>,
         Vec<ParallelModels>,
@@ -1261,7 +1290,7 @@ impl<T: NodeIdentity> State<T> {
                                         hub_repo.repo_id.clone(),
                                         hub_repo.revision,
                                         None,
-                                        None,
+                                        hub_token,
                                         None,
                                         false,
                                     )

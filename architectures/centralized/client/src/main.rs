@@ -72,6 +72,9 @@ enum Commands {
 
         #[clap(long)]
         checkpoint_dir: Option<PathBuf>,
+
+        #[clap(long)]
+        hub_repo: Option<String>,
     },
 }
 
@@ -102,6 +105,7 @@ async fn async_main() -> Result<()> {
             eval_seed,
             eval_task_max_docs,
             checkpoint_dir,
+            hub_repo,
         } => {
             #[cfg(target_os = "windows")]
             {
@@ -122,6 +126,19 @@ async fn async_main() -> Result<()> {
                     None,
                 );
             }
+
+            let hub_token = match &hub_repo {
+                Some(_) => {
+                    if checkpoint_dir.is_none() {
+                        bail!("--checkpoint-dir must be set if --hub-repo is set");
+                    }
+                    match std::env::var("HF_TOKEN") {
+                        Ok(hub_token) =>Some(hub_token),
+                        Err(_) => bail!("HF_TOKEN environment variable must be set for checkpoint uploading to Hugging Face Hub")
+                    }
+                }
+                None => None,
+            };
 
             let eval_tasks = match eval_tasks {
                 Some(eval_tasks) => {
@@ -184,6 +201,8 @@ async fn async_main() -> Result<()> {
                 eval_task_max_docs,
                 eval_tasks,
                 checkpoint_dir,
+                hub_repo,
+                hub_token,
             })
             .run()
             .await

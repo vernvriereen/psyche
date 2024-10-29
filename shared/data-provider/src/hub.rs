@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Error, Result};
 use hf_hub::{
     api::{sync::ApiError, Siblings},
     Cache, Repo, RepoType,
@@ -169,4 +169,38 @@ pub fn download_dataset_repo_sync(
         progress_bar,
         &DATASET_EXTENSIONS,
     )
+}
+
+pub async fn upload_model_repo_async(
+    repo_id: String,
+    files: Vec<PathBuf>,
+    token: String,
+    commit_message: Option<String>,
+    commit_description: Option<String>,
+) -> Result<String> {
+    let api = hf_hub::api::tokio::ApiBuilder::new()
+        .with_token(Some(token))
+        .build()?;
+    let repo = Repo::model(repo_id);
+    let api_repo = api.repo(repo);
+    let mut commit_info = None;
+    for file in files {
+        commit_info = Some(
+            api_repo
+                .upload_file(
+                    file.clone(),
+                    match file.file_name().and_then(|x| x.to_str()) {
+                        Some(file_name) => file_name,
+                        None => bail!("Could not get filename for {file:?}"),
+                    },
+                    commit_message.clone(),
+                    commit_description.clone(),
+                    false,
+                )
+                .await?,
+        );
+    }
+    commit_info
+        .map(|x| x.oid)
+        .ok_or(Error::msg("No commit hash"))
 }

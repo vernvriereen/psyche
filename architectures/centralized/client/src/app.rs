@@ -70,6 +70,8 @@ pub struct App {
     micro_batch_size: Option<usize>,
     write_gradients_dir: Option<PathBuf>,
     checkpoint_dir: Option<PathBuf>,
+    hub_repo: Option<String>,
+    hub_token: Option<String>,
 }
 
 pub struct AppBuilder(AppParams);
@@ -88,6 +90,8 @@ pub struct AppParams {
     pub eval_tasks: Vec<psyche_eval::Task>,
     pub eval_task_max_docs: Option<usize>,
     pub checkpoint_dir: Option<PathBuf>,
+    pub hub_repo: Option<String>,
+    pub hub_token: Option<String>,
 }
 
 impl AppBuilder {
@@ -130,6 +134,8 @@ impl AppBuilder {
             eval_tasks: p.eval_tasks,
             eval_task_max_docs: p.eval_task_max_docs,
             checkpoint_dir: p.checkpoint_dir,
+            hub_repo: p.hub_repo,
+            hub_token: p.hub_token,
         };
         app.run(p2p).await
     }
@@ -174,6 +180,8 @@ impl App {
             self.micro_batch_size,
             self.write_gradients_dir.clone(),
             self.checkpoint_dir.clone(),
+            self.hub_repo.clone(),
+            self.hub_token.clone(),
         );
 
         loop {
