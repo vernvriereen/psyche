@@ -9,5 +9,3 @@ psyche-modeling.workspace = true
 anyhow.workspace = true
 postcard.workspace = true
 tch.workspace = true
-
-toml = "0.8.19"
