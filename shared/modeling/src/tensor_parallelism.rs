@@ -207,6 +207,7 @@ pub fn unsharded_cpu_variables(
     let shards = variables.shards.clone();
     for (name, var) in variables.named_variables.iter() {
         let var = match shards.get(name) {
+            #[cfg(feature = "parallelism")]
             Some(shard) => {
                 let shards = (0..shard.world_size)
                     .map(|_| var.empty_like())
@@ -219,6 +220,8 @@ pub fn unsharded_cpu_variables(
                 };
                 unshard_tensor(shards, shard)
             }
+            #[cfg(not(feature = "parallelism"))]
+            Some(_) => bail!("Sharded model but parallelism feature turned off"),
             None => var.shallow_clone(),
         };
         if let Some(ret) = ret.as_mut() {

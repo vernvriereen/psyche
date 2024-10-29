@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::{Error, Result};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{Client, ClientTUI, ClientTUIState, NC};
-use psyche_coordinator::{Coordinator, HealthChecks, Witness};
+use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_network::{NetworkTUIState, NetworkTui, RelayMode, SecretKey, TcpClient};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
@@ -22,6 +22,7 @@ type TabsData = <Tabs as CustomWidget>::Data;
 enum ToSend {
     Witness(Witness),
     HealthCheck(HealthChecks),
+    Checkpoint(model::Checkpoint),
 }
 
 struct Backend {
@@ -45,6 +46,11 @@ impl WatcherBackend<ClientId> for Backend {
 
     async fn send_health_check(&mut self, health_checks: HealthChecks) -> Result<()> {
         self.tx.send(ToSend::HealthCheck(health_checks)).await?;
+        Ok(())
+    }
+
+    async fn send_checkpoint(&mut self, checkpoint: model::Checkpoint) -> Result<()> {
+        self.tx.send(ToSend::Checkpoint(checkpoint)).await?;
         Ok(())
     }
 }
@@ -189,6 +195,7 @@ impl App {
                     match to_send {
                         ToSend::Witness(witness) => self.server_conn.send(ClientToServerMessage::Witness(witness)).await?,
                         ToSend::HealthCheck(health_checks) => self.server_conn.send(ClientToServerMessage::HealthCheck(health_checks)).await?,
+                        ToSend::Checkpoint(checkpoint) => self.server_conn.send(ClientToServerMessage::Checkpoint(checkpoint)).await?,
                     };
                 }
             }

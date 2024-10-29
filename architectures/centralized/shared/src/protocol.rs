@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use anyhow::anyhow;
-use psyche_coordinator::{Coordinator, HealthChecks, Witness};
+use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_core::NodeIdentity;
 use psyche_network::{NodeId, PeerList, PublicKey, SecretKey, SignedMessage};
 use serde::{Deserialize, Serialize};
@@ -59,6 +59,7 @@ pub enum ClientToServerMessage {
     Join { run_id: String },
     Witness(Witness),
     HealthCheck(HealthChecks),
+    Checkpoint(model::Checkpoint)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

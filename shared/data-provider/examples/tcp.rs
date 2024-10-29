@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use async_trait::async_trait;
 use futures::future::try_join_all;
 use parquet::data_type::AsBytes;
-use psyche_coordinator::{Coordinator, HealthChecks, Witness};
+use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_core::{Networkable, NodeIdentity};
 use psyche_data_provider::{
     DataProviderTcpClient, DataProviderTcpServer, LengthKnownDataProvider, TokenizedDataProvider,
@@ -25,13 +25,15 @@ impl<T: NodeIdentity> WatcherBackend<T> for DummyBackend<T> {
     }
 
     async fn send_witness(&mut self, _witness: Witness) -> Result<()> {
-        assert!(false, "Data provider does not send witnesses");
-        Ok(())
+        bail!("Data provider does not send witnesses");
     }
 
     async fn send_health_check(&mut self, _health_checks: HealthChecks) -> Result<()> {
-        assert!(false, "Data provider does not send health check");
-        Ok(())
+        bail!("Data provider does not send health check");
+    }
+
+    async fn send_checkpoint(&mut self, _checkpoint: model::Checkpoint) -> Result<()> {
+        bail!("Data provider does not send checkpoints");
     }
 }
 

@@ -170,6 +170,9 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                 watcher.backend_mut().send_health_check(health_checks).await
             }
             ToSend::Nothing => Ok(()),
+            ToSend::Checkpoint(checkpoint) => {
+                watcher.backend_mut().send_checkpoint(checkpoint).await
+            }
         }
     }
 

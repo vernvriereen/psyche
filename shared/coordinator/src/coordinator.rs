@@ -1,5 +1,7 @@
 use crate::{
-    model::Model, traits::Backend, Committee, CommitteeProof, CommitteeSelection, WitnessProof,
+    model::{Checkpoint, Model},
+    traits::Backend,
+    Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
 use psyche_core::{sha256, Bloom, NodeIdentity};
 use psyche_serde::derive_serialize;
@@ -24,6 +26,7 @@ pub enum RunState {
     RoundTrain,
     RoundWitness,
     RoundApply,
+    Cooldown,
 }
 
 #[derive_serialize]
@@ -63,6 +66,7 @@ pub enum CoordinatorError {
     InvalidHealthCheck,
     Disabled,
     Finished,
+    InvalidCheckpoint,
 }
 
 pub type Commitment = [u8; 32];
@@ -79,6 +83,7 @@ pub struct Coordinator<T: NodeIdentity> {
     pub run_state_start_unix_timestamp: u64,
 
     pub warmup_time: u64,
+    pub cooldown_time: u64,
 
     pub max_round_train_time: u64,
     pub round_witness_time: u64,
@@ -102,6 +107,8 @@ pub struct Coordinator<T: NodeIdentity> {
     pub witness_nodes: u32,
     pub witness_quorum: u32,
 
+    pub checkpointers: Vec<T>,
+
     pub epoch: u32,
     pub rounds_per_epoch: u32,
     pub step: u32,
@@ -124,6 +131,7 @@ impl TryFrom<usize> for RunState {
             2 => Ok(RunState::RoundTrain),
             3 => Ok(RunState::RoundWitness),
             4 => Ok(RunState::RoundApply),
+            5 => Ok(RunState::Cooldown),
             _ => Err(CoordinatorError::InvalidRunState),
         }
     }
@@ -137,6 +145,7 @@ impl From<RunState> for usize {
             RunState::RoundTrain => 2,
             RunState::RoundWitness => 3,
             RunState::RoundApply => 4,
+            RunState::Cooldown => 5,
         }
     }
 }
@@ -187,6 +196,8 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             epoch_start_data_index: Default::default(),
             overlapped: Default::default(),
             total_steps: Default::default(),
+            cooldown_time: Default::default(),
+            checkpointers: Default::default(),
         }
     }
 }
@@ -201,6 +212,7 @@ impl std::fmt::Display for CoordinatorError {
             CoordinatorError::InvalidHealthCheck => write!(f, "Invalid health check"),
             CoordinatorError::Disabled => write!(f, "Disabled"),
             CoordinatorError::Finished => write!(f, "Finished"),
+            CoordinatorError::InvalidCheckpoint => write!(f, "Invalid checkpoint"),
         }
     }
 }
@@ -215,6 +227,7 @@ impl std::fmt::Display for RunState {
             RunState::RoundTrain => write!(f, "Training"),
             RunState::RoundWitness => write!(f, "Witness"),
             RunState::RoundApply => write!(f, "Apply"),
+            RunState::Cooldown => write!(f, "Cooldown"),
         }
     }
 }
@@ -235,6 +248,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             RunState::RoundTrain => self.tick_round_train(unix_timestamp),
             RunState::RoundWitness => self.tick_round_witness(unix_timestamp),
             RunState::RoundApply => self.tick_round_apply(unix_timestamp, random_seed),
+            RunState::Cooldown => self.tick_cooldown(unix_timestamp),
         }?;
         self.tick += 1;
         self.last_tick_unix_timestamp = unix_timestamp;
@@ -303,6 +317,23 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
         // todo: reward `from` for `dropped` health checks
         Ok(dropped)
+    }
+
+    pub fn checkpoint(
+        &mut self,
+        from: &Client<T>,
+        checkpoint: Checkpoint,
+        unix_timestamp: u64,
+    ) -> Result<(), CoordinatorError> {
+        if self.checkpointers.iter().find(|x| **x == from.id).is_some() {
+            if let Some(Model::LLM(llm)) = &mut self.model {
+                llm.checkpoint = checkpoint;
+            }
+            self.finish_cooldown(unix_timestamp);
+            Ok(())
+        } else {
+            Err(CoordinatorError::InvalidCheckpoint)
+        }
     }
 
     pub fn healthy(&self, proof: &CommitteeProof) -> bool {
@@ -512,6 +543,17 @@ impl<T: NodeIdentity> Coordinator<T> {
         if unix_timestamp >= self.round_apply_time + self.run_state_start_unix_timestamp {
             self.first_round = false;
             self.step += 1;
+
+            // WARNING: O(n) on number of clients, need to refactor
+            self.clients.retain(|x| {
+                if x.dropping_at_end_of_round {
+                    self.dropped_clients.push(x.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+
             let (height, data_index) = self
                 .current_round()
                 .map(|x| (x.height, x.data_index))
@@ -519,25 +561,21 @@ impl<T: NodeIdentity> Coordinator<T> {
             if self.step > self.total_steps {
                 self.start_waiting_for_members(unix_timestamp);
             } else if height == self.rounds_per_epoch - 1 {
-                self.rounds = Default::default();
-                self.epoch += 1;
-                self.epoch_start_data_index = Self::get_next_round_data_index(
-                    data_index,
-                    self.batches_per_round,
-                    self.data_indicies_per_batch,
-                );
-                self.start_waiting_for_members(unix_timestamp);
+                self.start_cooldown(unix_timestamp, data_index);
             } else {
-                // WARNING: O(n) on number of clients, need to refactor
-                self.clients.retain(|x| {
-                    if x.dropping_at_end_of_round {
-                        self.dropped_clients.push(x.clone());
-                        false
-                    } else {
-                        true
-                    }
-                });
                 self.start_round_train(unix_timestamp, random_seed, 0);
+            }
+        }
+        Ok(())
+    }
+
+    fn tick_cooldown(&mut self, unix_timestamp: u64) -> Result<(), CoordinatorError> {
+        // cooldown_time == 0 means we never automatically advance to the next epoch,
+        // so the only way to get there is through the checkpointing code.
+        // this forces everything to wait on a valid checkpoint
+        if self.cooldown_time > 0 {
+            if unix_timestamp >= self.cooldown_time + self.run_state_start_unix_timestamp {
+                self.finish_cooldown(unix_timestamp);
             }
         }
         Ok(())
@@ -578,6 +616,25 @@ impl<T: NodeIdentity> Coordinator<T> {
     fn start_waiting_for_members(&mut self, unix_timestamp: u64) {
         self.dropped_clients.clear();
         self.change_state(unix_timestamp, RunState::WaitingForMembers);
+    }
+
+    fn start_cooldown(&mut self, unix_timestamp: u64, data_index: u64) {
+        self.epoch_start_data_index = Self::get_next_round_data_index(
+            data_index,
+            self.batches_per_round,
+            self.data_indicies_per_batch,
+        );
+        self.rounds = Default::default();
+
+        if let Some(Model::LLM(llm)) = &mut self.model {
+            llm.checkpoint = Checkpoint::Ephemeral;
+        }
+        self.change_state(unix_timestamp, RunState::Cooldown);
+    }
+
+    fn finish_cooldown(&mut self, unix_timestamp: u64) {
+        self.epoch += 1;
+        self.start_waiting_for_members(unix_timestamp);
     }
 
     fn change_state(&mut self, unix_timestamp: u64, new_state: RunState) {

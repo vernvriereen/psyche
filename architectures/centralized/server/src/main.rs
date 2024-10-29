@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use app::{App, DataServerInfo};
@@ -32,11 +32,14 @@ struct Args {
 
     /// Path to TOML of Coordinator state
     #[clap(long)]
-    state: Option<String>,
+    state: Option<PathBuf>,
 
     /// Path to TOML of data server config
     #[clap(long)]
-    data_config: Option<String>,
+    data_config: Option<PathBuf>,
+
+    #[clap(long)]
+    save_state_dir: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -80,6 +83,7 @@ async fn main() -> Result<()> {
         data_server_config,
         args.p2p_port,
         args.server_port,
+        args.save_state_dir,
     )
     .await?
     .run()

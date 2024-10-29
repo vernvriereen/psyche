@@ -32,7 +32,7 @@ impl psyche_tui::CustomWidget for CoordinatorTui {
                     state
                         .clients
                         .iter()
-                        .map(|c| format!("{:?}", c).into())
+                        .map(|c| c.to_string().into())
                         .collect::<Vec<Line>>(),
                 )
                 .block(Block::bordered().title("Clients this round"))
@@ -82,6 +82,9 @@ pub enum TuiRunState {
     RoundTrain,
     RoundWitness,
     RoundApply,
+    Cooldown {
+        end_time: Option<Instant>,
+    },
 }
 
 impl Display for TuiRunState {
@@ -93,9 +96,16 @@ impl Display for TuiRunState {
                 let remaining = end_time.duration_since(Instant::now());
                 write!(f, "Warmup ({}s remaining)", remaining.as_secs())
             }
-            TuiRunState::RoundTrain => write!(f, "Training Round"),
-            TuiRunState::RoundWitness => write!(f, "Witnessing Round"),
-            TuiRunState::RoundApply => write!(f, "Applying Round"),
+            TuiRunState::RoundTrain => write!(f, "Training"),
+            TuiRunState::RoundWitness => write!(f, "Witnessing"),
+            TuiRunState::RoundApply => write!(f, "Applying"),
+            TuiRunState::Cooldown { end_time } => match end_time {
+                Some(end_time) => {
+                    let remaining = end_time.duration_since(Instant::now());
+                    write!(f, "Cooldown ({}s remaining)", remaining.as_secs())
+                }
+                None => write!(f, "Cooldown"),
+            },
         }
     }
 }
@@ -104,7 +114,7 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for TuiRunState {
     fn from(c: &Coordinator<T>) -> Self {
         match c.run_state {
             RunState::WaitingForMembers => TuiRunState::WaitingForMembers {
-                need: c.min_clients,
+                need: c.min_clients - c.clients.len() as u32,
             },
             RunState::Warmup => {
                 let time_since_epoch = SystemTime::now()
@@ -120,6 +130,24 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for TuiRunState {
             RunState::RoundTrain => TuiRunState::RoundTrain,
             RunState::RoundApply => TuiRunState::RoundApply,
             RunState::RoundWitness => TuiRunState::RoundWitness,
+            RunState::Cooldown => TuiRunState::Cooldown {
+                end_time: match c.cooldown_time {
+                    0 => None,
+                    cooldown_time => {
+                        let time_since_epoch = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or(Duration::ZERO);
+
+                        Some(
+                            Instant::now()
+                                + Duration::from_secs(
+                                    cooldown_time + c.run_state_start_unix_timestamp,
+                                )
+                                - time_since_epoch,
+                        )
+                    }
+                },
+            },
         }
     }
 }

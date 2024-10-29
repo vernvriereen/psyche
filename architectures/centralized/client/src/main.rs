@@ -1,7 +1,7 @@
 use crate::app::{AppBuilder, AppParams, Tabs, TAB_NAMES};
 
 use anyhow::{bail, Result};
-use clap::{ArgAction, Parser};
+use clap::{ArgAction, Parser, Subcommand};
 use psyche_eval::{Hellaswag, MMLUPro};
 use psyche_network::SecretKey;
 use psyche_tui::{maybe_start_render_loop, LogOutput};
@@ -13,140 +13,182 @@ mod app;
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[clap(long)]
-    secret_key: Option<String>,
+    #[command(subcommand)]
+    command: Commands,
+}
 
-    #[clap(short, long)]
-    bind_p2p_port: Option<u16>,
+#[derive(Subcommand, Debug)]
+enum Commands {
+    ShowIdentity {
+        secret_key: PathBuf,
+    },
+    Train {
+        #[clap(long)]
+        secret_key: Option<PathBuf>,
 
-    #[clap(
-        long,
-        action = ArgAction::Set,
-        default_value_t = true,
-        default_missing_value = "true",
-        num_args = 0..=1,
-        require_equals = false
-    )]
-    tui: bool,
+        #[clap(short, long)]
+        bind_p2p_port: Option<u16>,
 
-    #[clap(long)]
-    run_id: String,
+        #[clap(
+            long,
+            action = ArgAction::Set,
+            default_value_t = true,
+            default_missing_value = "true",
+            num_args = 0..=1,
+            require_equals = false
+        )]
+        tui: bool,
 
-    #[clap(long)]
-    server_addr: String,
+        #[clap(long)]
+        run_id: String,
 
-    #[clap(long, default_value_t = 1)]
-    data_parallelism: usize,
+        #[clap(long)]
+        server_addr: String,
 
-    #[clap(long, default_value_t = 1)]
-    tensor_parallelism: usize,
+        #[clap(long, default_value_t = 1)]
+        data_parallelism: usize,
 
-    #[clap(long)]
-    micro_batch_size: Option<usize>,
+        #[clap(long, default_value_t = 1)]
+        tensor_parallelism: usize,
 
-    /// If provided, every shared gradient this client sees will be written to this directory.
-    #[clap(long)]
-    write_gradients_dir: Option<PathBuf>,
+        #[clap(long)]
+        micro_batch_size: Option<usize>,
 
-    #[clap(long)]
-    eval_tasks: Option<String>,
+        /// If provided, every shared gradient this client sees will be written to this directory.
+        #[clap(long)]
+        write_gradients_dir: Option<PathBuf>,
 
-    #[clap(long, default_value_t = 0)]
-    eval_fewshot: usize,
+        #[clap(long)]
+        eval_tasks: Option<String>,
 
-    #[clap(long, default_value_t = 42)]
-    eval_seed: u64,
+        #[clap(long, default_value_t = 0)]
+        eval_fewshot: usize,
 
-    #[clap(long)]
-    eval_task_max_docs: Option<usize>,
+        #[clap(long, default_value_t = 42)]
+        eval_seed: u64,
 
-    #[clap(long)]
-    checkpoint_dir: Option<PathBuf>,
+        #[clap(long)]
+        eval_task_max_docs: Option<usize>,
+
+        #[clap(long)]
+        checkpoint_dir: Option<PathBuf>,
+    },
 }
 
 async fn async_main() -> Result<()> {
     let args = Args::parse();
 
-    #[cfg(target_os = "windows")]
-    {
-        // this is a gigantic hack to cover that called sdpa prints out
-        // "Torch was not compiled with flash attention." via TORCH_WARN
-        // on Windows, which screws with the TUI.
-        // it's done once (really TORCH_WARN_ONCE), so elicit that behavior
-        // before starting anything else
-        use tch::Tensor;
-        let device = tch::Device::Cuda(0);
-        let _ = Tensor::scaled_dot_product_attention::<Tensor>(
-            &Tensor::from_slice2(&[[0.]]).to(device),
-            &Tensor::from_slice2(&[[0.]]).to(device),
-            &Tensor::from_slice2(&[[0.]]).to(device),
-            None,
-            0.0,
-            false,
-            None,
-        );
-    }
-
-    let eval_tasks = match args.eval_tasks {
-        Some(eval_tasks) => {
-            let result: Result<Vec<psyche_eval::Task>> = eval_tasks
-                .split(",")
-                .map(|eval_task| {
-                    match eval_task.to_lowercase().as_str() {
-                        "hellaswag" => Hellaswag::load(),
-                        "mmlu_pro" => MMLUPro::load(),
-                        task => {
-                            bail!("Unknown eval task {task}");
-                        }
-                    }
-                    .map(|task_type| {
-                        psyche_eval::Task::new(task_type, args.eval_fewshot, args.eval_seed)
-                    })
-                })
-                .collect();
-            result?
+    match args.command {
+        Commands::ShowIdentity { secret_key } => {
+            println!(
+                "{}",
+                SecretKey::try_from_openssh(String::from_utf8(std::fs::read(secret_key)?)?)?
+                    .public()
+            );
+            Ok(())
         }
-        None => Vec::new(),
-    };
+        Commands::Train {
+            secret_key,
+            bind_p2p_port,
+            tui,
+            run_id,
+            server_addr,
+            data_parallelism,
+            tensor_parallelism,
+            micro_batch_size,
+            write_gradients_dir,
+            eval_tasks,
+            eval_fewshot,
+            eval_seed,
+            eval_task_max_docs,
+            checkpoint_dir,
+        } => {
+            #[cfg(target_os = "windows")]
+            {
+                // this is a gigantic hack to cover that called sdpa prints out
+                // "Torch was not compiled with flash attention." via TORCH_WARN
+                // on Windows, which screws with the TUI.
+                // it's done once (really TORCH_WARN_ONCE), so elicit that behavior
+                // before starting anything else
+                use tch::Tensor;
+                let device = tch::Device::Cuda(0);
+                let _ = Tensor::scaled_dot_product_attention::<Tensor>(
+                    &Tensor::from_slice2(&[[0.]]).to(device),
+                    &Tensor::from_slice2(&[[0.]]).to(device),
+                    &Tensor::from_slice2(&[[0.]]).to(device),
+                    None,
+                    0.0,
+                    false,
+                    None,
+                );
+            }
 
-    psyche_tui::init_logging(
-        if args.tui {
-            LogOutput::TUI
-        } else {
-            LogOutput::Console
-        },
-        Level::INFO,
-    );
+            let eval_tasks = match eval_tasks {
+                Some(eval_tasks) => {
+                    let result: Result<Vec<psyche_eval::Task>> = eval_tasks
+                        .split(",")
+                        .map(|eval_task| {
+                            match eval_task.to_lowercase().as_str() {
+                                "hellaswag" => Hellaswag::load(),
+                                "mmlu_pro" => MMLUPro::load(),
+                                task => {
+                                    bail!("Unknown eval task {task}");
+                                }
+                            }
+                            .map(|task_type| {
+                                psyche_eval::Task::new(task_type, eval_fewshot, eval_seed)
+                            })
+                        })
+                        .collect();
+                    result?
+                }
+                None => Vec::new(),
+            };
 
-    info!("Joining gossip room");
+            psyche_tui::init_logging(
+                if tui {
+                    LogOutput::TUI
+                } else {
+                    LogOutput::Console
+                },
+                Level::INFO,
+            );
 
-    let secret_key: SecretKey = args
-        .secret_key
-        .map(|k| k.parse().unwrap())
-        .unwrap_or_else(SecretKey::generate);
+            info!("Joining gossip room");
 
-    let tui = args.tui;
+            let secret_key: SecretKey = secret_key
+                .map(|k| {
+                    SecretKey::try_from_openssh(
+                        String::from_utf8(std::fs::read(k).unwrap()).unwrap(),
+                    )
+                    .unwrap()
+                })
+                .unwrap_or_else(SecretKey::generate);
 
-    let (cancel, tx_tui_state) =
-        maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;
+            let tui = tui;
 
-    AppBuilder::new(AppParams {
-        cancel,
-        secret_key,
-        server_addr: args.server_addr,
-        tx_tui_state,
-        run_id: args.run_id,
-        p2p_port: args.bind_p2p_port,
-        data_parallelism: args.data_parallelism,
-        tensor_parallelism: args.tensor_parallelism,
-        micro_batch_size: args.micro_batch_size,
-        write_gradients_dir: args.write_gradients_dir,
-        eval_task_max_docs: args.eval_task_max_docs,
-        eval_tasks,
-        checkpoint_dir: args.checkpoint_dir,
-    })
-    .run()
-    .await
+            let (cancel, tx_tui_state) =
+                maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;
+
+            AppBuilder::new(AppParams {
+                cancel,
+                secret_key,
+                server_addr,
+                tx_tui_state,
+                run_id,
+                p2p_port: bind_p2p_port,
+                data_parallelism,
+                tensor_parallelism,
+                micro_batch_size,
+                write_gradients_dir,
+                eval_task_max_docs,
+                eval_tasks,
+                checkpoint_dir,
+            })
+            .run()
+            .await
+        }
+    }
 }
 
 fn main() -> Result<()> {

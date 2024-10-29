@@ -52,6 +52,7 @@ pub enum ToSend {
     Broadcast(BroadcastAndPayload),
     Witness(Witness),
     HealthCheck(HealthChecks),
+    Checkpoint(model::Checkpoint),
 }
 
 type Bloom32 = Bloom<[u8; 32]>;
@@ -112,8 +113,7 @@ pub struct State<T: NodeIdentity> {
     started_early_evals: bool,
     checkpoint_dir: Option<PathBuf>,
     checkpoint_extra_files: Vec<PathBuf>,
-    checkpointing: TaskResult<Trainer>,
-    did_checkpoint: bool,
+    checkpointing: TaskResult<(Trainer, Option<model::HubRepo>)>,
     last_warmup_peer_announcement: Option<Instant>,
     /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
     _last_observed_num_batches_remaining: usize,
@@ -185,7 +185,6 @@ impl<T: NodeIdentity> State<T> {
             checkpoint_dir,
             checkpoint_extra_files: Vec::new(),
             checkpointing: None,
-            did_checkpoint: false,
             _last_observed_num_batches_remaining: 0,
         }
     }
@@ -211,10 +210,11 @@ impl<T: NodeIdentity> State<T> {
             .store(state.run_state.into(), Ordering::Relaxed);
         match state.run_state {
             RunState::WaitingForMembers => Ok(None),
-            RunState::Warmup => self.warmup().await.map(|_| None),
+            RunState::Warmup => self.warmup().map(|_| None),
             RunState::RoundTrain => self.round_train(position).await.map(|_| None),
             RunState::RoundWitness => self.round_witness(position).map(|x| x.map(ToSend::Witness)),
             RunState::RoundApply => self.round_apply().await.map(|_| None),
+            RunState::Cooldown => self.cooldown().map(|_| None),
         }
     }
 
@@ -330,6 +330,8 @@ impl<T: NodeIdentity> State<T> {
                     if start {
                         self.started_early_evals = true;
                         self.start_evals();
+                    } else {
+                        info!("All trainers done but more to come");
                     }
                 }
             }
@@ -374,12 +376,23 @@ impl<T: NodeIdentity> State<T> {
         Ok(ToSend::Nothing)
     }
 
-    fn handle_poll_next_checkpointing(&mut self, trainer: Trainer) -> Result<ToSend> {
+    fn handle_poll_next_checkpointing(
+        &mut self,
+        trainer: Trainer,
+        hub_repo: Option<model::HubRepo>,
+    ) -> Result<ToSend> {
         self.available_trainers.push(trainer);
-        if self.is_run_state(RunState::Warmup) {
-            self.start_evals();
+        match self
+            .state
+            .as_ref()
+            .and_then(|state| state.checkpointers.iter().find(|x| **x == self.identity))
+        {
+            Some(_) => match hub_repo {
+                Some(hub_repo) => Ok(ToSend::Checkpoint(model::Checkpoint::Hub(hub_repo))),
+                None => bail!("Checkpointing finished but hub repo not supplied"),
+            },
+            None => Ok(ToSend::Nothing),
         }
-        Ok(ToSend::Nothing)
     }
 
     pub async fn poll_next(&mut self) -> Result<ToSend> {
@@ -422,9 +435,9 @@ impl<T: NodeIdentity> State<T> {
                 }
             },
             finished = async {self.trainings.get_mut(*trainings_finished_position.as_ref().unwrap()).unwrap().await}, if trainings_finished_position.is_some() => {
-                let finished = finished??;
                 self.trainings.swap_remove(trainings_finished_position.unwrap());
-                self.handle_poll_next_trainings(finished.0, finished.1)
+                let (output, batch_id) = finished??;
+                self.handle_poll_next_trainings(output, batch_id)
             }
             health_checking = async {self.health_checking.as_mut().unwrap().await}, if self.health_checking.is_some() => {
                 self.health_checking = None;
@@ -436,7 +449,8 @@ impl<T: NodeIdentity> State<T> {
             }
             checkpointing = async {self.checkpointing.as_mut().unwrap().await}, if self.checkpointing.is_some() => {
                 self.checkpointing = None;
-                self.handle_poll_next_checkpointing(checkpointing??)
+                let (trainer, hub_repo) = checkpointing??;
+                self.handle_poll_next_checkpointing(trainer, hub_repo)
             }
             _ = sleep(Duration::from_secs_f32(0.1)) => {
                 // still need this?
@@ -727,8 +741,7 @@ impl<T: NodeIdentity> State<T> {
         Ok(())
     }
 
-    async fn warmup(&mut self) -> Result<()> {
-        self.cancel_evals().await?;
+    fn warmup(&mut self) -> Result<()> {
         let state = self
             .state
             .as_ref()
@@ -756,42 +769,8 @@ impl<T: NodeIdentity> State<T> {
                         } else {
                             bail!("Warmup but still applying");
                         }
-                    } else if !self.did_checkpoint {
-                        let step = state.step - 1;
-                        let run_id = state.run_id.clone();
-                        self.did_checkpoint = true;
-                        match self.available_trainers.pop() {
-                            Some(trainer) => {
-                                let checkpoint_dir = self.checkpoint_dir.clone();
-                                let checkpoint_extra_files = self.checkpoint_extra_files.clone();
-                                self.checkpointing =
-                                    Some(tokio::task::spawn_blocking(
-                                        move || match checkpoint_dir {
-                                            Some(checkpoint_dir) => {
-                                                let (variables, trainer) = trainer.extract()?;
-                                                let path = checkpoint_dir
-                                                    .join(format!("{run_id}-step{step}"));
-                                                info!("Saving to {}", path.display());
-                                                save_tensors_into_safetensors(
-                                                    variables,
-                                                    path.clone(),
-                                                )?;
-                                                for extra in checkpoint_extra_files {
-                                                    std::fs::copy(
-                                                        extra.clone(),
-                                                        path.join(extra.file_name().unwrap()),
-                                                    )?;
-                                                }
-                                                Ok(trainer)
-                                            }
-                                            None => Ok(trainer),
-                                        },
-                                    ));
-                            }
-                            None => {
-                                bail!("No available trainers for checkpointing");
-                            }
-                        }
+                    } else {
+                        self.start_evals();
                     }
                 }
                 None => {
@@ -896,8 +875,6 @@ impl<T: NodeIdentity> State<T> {
         }
         if self.checkpointing.is_some() {
             bail!("Ready to train but still checkpointing");
-        } else {
-            self.did_checkpoint = false;
         }
         if self.available_trainers.len() != self.data_parallelism {
             bail!(
@@ -997,7 +974,6 @@ impl<T: NodeIdentity> State<T> {
             .run_state
             != RunState::RoundWitness
         {
-            self.started_early_evals = false;
             self.start_evals();
         }
 
@@ -1006,6 +982,7 @@ impl<T: NodeIdentity> State<T> {
 
     async fn round_apply(&mut self) -> Result<()> {
         self.cancel_evals().await?; // CANCEL SAFETY
+        self.started_early_evals = false;
 
         let state = self
             .state
@@ -1182,6 +1159,60 @@ impl<T: NodeIdentity> State<T> {
         Ok(())
     }
 
+    fn cooldown(&mut self) -> Result<()> {
+        let state = self
+            .state
+            .as_ref()
+            .ok_or(Error::msg("No state in round witness"))?;
+        assert_eq!(state.run_state, RunState::Cooldown);
+
+        // check if this is a state transition
+        if self
+            .prev_state
+            .as_ref()
+            .ok_or(Error::msg("First seen state was cooldown"))?
+            .run_state
+            != RunState::Cooldown
+        {
+            if let Some(checkpoint_dir) = &self.checkpoint_dir {
+                let step = state.step - 1;
+                let run_id = state.run_id.clone();
+                match self.available_trainers.pop() {
+                    Some(trainer) => {
+                        let checkpoint_dir = checkpoint_dir.clone();
+                        let checkpoint_extra_files = self.checkpoint_extra_files.clone();
+                        self.checkpointing = Some(tokio::task::spawn_blocking(move || {
+                            let (variables, trainer) = trainer.extract()?;
+                            let path = checkpoint_dir.join(format!("{run_id}-step{step}"));
+                            info!("Saving to {}", path.display());
+                            save_tensors_into_safetensors(variables, path.clone())?;
+                            for extra in checkpoint_extra_files {
+                                std::fs::copy(
+                                    extra.clone(),
+                                    path.join(extra.file_name().unwrap()),
+                                )?;
+                            }
+                            Ok((
+                                trainer,
+                                Some(model::HubRepo {
+                                    repo_id: path.to_str().unwrap().to_string(),
+                                    revision: None,
+                                }),
+                            ))
+                        }));
+                    }
+                    None => {
+                        bail!("No available trainers for checkpointing");
+                    }
+                }
+            } else {
+                self.start_evals();
+            }
+        }
+
+        Ok(())
+    }
+
     async fn load_data_and_model(
         identity: T,
         private_key: T::PrivateKey,
@@ -1207,16 +1238,36 @@ impl<T: NodeIdentity> State<T> {
                     model::Checkpoint::Hub(hub_repo) => {
                         let hub_repo = hub_repo.clone();
                         tokio::spawn(async move {
-                            info!("Downloading {}", hub_repo.repo_id);
-                            let repo_files = download_model_repo_async(
-                                hub_repo.repo_id.clone(),
-                                hub_repo.revision,
-                                None,
-                                None,
-                                None,
-                                false,
-                            )
-                            .await?;
+                            let local = PathBuf::from(hub_repo.repo_id.clone());
+                            let repo_files = match hub_repo.revision.is_none()
+                                && tokio::fs::try_exists(local.clone())
+                                    .await
+                                    .unwrap_or_default()
+                            {
+                                true => {
+                                    let mut ret = Vec::new();
+                                    let mut read_dir = tokio::fs::read_dir(local).await?;
+                                    loop {
+                                        match read_dir.next_entry().await? {
+                                            Some(dir_entry) => ret.push(dir_entry.path()),
+                                            None => break,
+                                        }
+                                    }
+                                    ret
+                                }
+                                false => {
+                                    info!("Downloading {}", hub_repo.repo_id);
+                                    download_model_repo_async(
+                                        hub_repo.repo_id.clone(),
+                                        hub_repo.revision,
+                                        None,
+                                        None,
+                                        None,
+                                        false,
+                                    )
+                                    .await?
+                                }
+                            };
                             let checkpoint_extra_files = repo_files
                                 .iter()
                                 .filter(|file| {
@@ -1268,6 +1319,9 @@ impl<T: NodeIdentity> State<T> {
                             Ok((models, tokenizer, checkpoint_extra_files))
                         })
                     }
+                    model::Checkpoint::Ephemeral => {
+                        bail!("Joined an ephemeral run, cannot load model")
+                    }
                 },
             };
         let (data, models) = tokio::join!(data_future, model_future);
@@ -1316,11 +1370,12 @@ impl<T: NodeIdentity> State<T> {
         if !self.prepared_eval_tasks.is_empty() && !self.available_trainers.is_empty() {
             self.eval_cancel.store(false, Ordering::SeqCst);
             debug!(
-                "Starting evals {:?}",
+                "Starting evals {:?} on {} trainers",
                 self.prepared_eval_tasks
                     .iter()
                     .map(|x| x.task.name())
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>(),
+                self.available_trainers.len()
             );
             self.evals = self
                 .available_trainers

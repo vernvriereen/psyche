@@ -106,6 +106,7 @@ pub struct HubRepo {
 #[derive_serialize]
 #[derive(Clone, Debug)]
 pub enum Checkpoint {
+    Ephemeral,
     Hub(HubRepo),
 }
 

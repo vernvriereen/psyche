@@ -1,11 +1,11 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{BroadcastMessage, Payload, NC};
 use psyche_coordinator::model::{
-    Checkpoint, LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM,
+    self, Checkpoint, LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM,
 };
-use psyche_coordinator::{Client, Coordinator, HealthChecks, Witness};
+use psyche_coordinator::{Client, Coordinator, CoordinatorError, HealthChecks, RunState, Witness};
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider, TokenSize,
 };
@@ -71,13 +71,15 @@ impl psyche_watcher::Backend<ClientId> for ChannelCoordinatorBackend {
     }
 
     async fn send_witness(&mut self, _witness: Witness) -> Result<()> {
-        assert!(false, "Server does not send witnesses");
-        Ok(())
+        bail!("Server does not send witnesses");
     }
 
     async fn send_health_check(&mut self, _health_checks: HealthChecks) -> Result<()> {
-        assert!(false, "Server does not send health checks");
-        Ok(())
+        bail!("Server does not send health checks");
+    }
+
+    async fn send_checkpoint(&mut self, _checkpoint: model::Checkpoint) -> Result<()> {
+        bail!("Server does not send checkpoints");
     }
 }
 
@@ -92,6 +94,8 @@ pub struct App {
     coordinator: Coordinator<ClientId>,
     backend: Backend,
     training_data_server: Option<(Sender<Coordinator<ClientId>>, DataServer)>,
+    save_state_dir: Option<PathBuf>,
+    last_sync_step: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -105,10 +109,11 @@ pub struct DataServerInfo {
 impl App {
     pub async fn new(
         tui: bool,
-        coordinator: Coordinator<ClientId>,
+        mut coordinator: Coordinator<ClientId>,
         data_server_config: Option<DataServerInfo>,
         p2p_port: Option<u16>,
         server_port: Option<u16>,
+        save_state_dir: Option<PathBuf>,
     ) -> Result<Self> {
         let p2p = NC::init(
             &coordinator.run_id,
@@ -118,6 +123,8 @@ impl App {
             None,
         )
         .await?;
+
+        Self::reset_ephemeral(&mut coordinator);
 
         let training_data_server = if let Some(Model::LLM(LLM {
             data_location: LLMTrainingDataLocation::Server(url),
@@ -130,16 +137,25 @@ impl App {
                 panic!("Finetuning is not supported yet.")
             }
 
-            let Checkpoint::Hub(hub_repo) = checkpoint;
-            download_model_repo_async(
-                hub_repo.repo_id.clone(),
-                hub_repo.revision.clone(),
-                None,
-                None,
-                None,
-                true,
-            )
-            .await?;
+            if let Checkpoint::Hub(hub_repo) = checkpoint {
+                if hub_repo.revision.is_some()
+                    || !tokio::fs::try_exists(PathBuf::from(hub_repo.repo_id.clone()))
+                        .await
+                        .unwrap_or_default()
+                {
+                    download_model_repo_async(
+                        hub_repo.repo_id.clone(),
+                        hub_repo.revision.clone(),
+                        None,
+                        None,
+                        None,
+                        true,
+                    )
+                    .await?;
+                }
+            } else {
+                bail!("Cannot start without a Hub checkpoint");
+            }
 
             let server_addr: SocketAddr = url
                 .parse()
@@ -189,6 +205,8 @@ impl App {
                 net_server,
                 pending_clients: Vec::new(),
             },
+            save_state_dir,
+            last_sync_step: None,
         })
     }
 
@@ -237,11 +255,11 @@ impl App {
     }
 
     fn on_network_event(&mut self, event: NetworkEvent<BroadcastMessage, Payload>) {
-        if let NetworkEvent::MessageReceived((from, message)) = event {
-            warn!(
-                "got gossip message we don't handle yet {:?} {:?}",
-                from, message
-            );
+        if let NetworkEvent::MessageReceived((_, message)) = event {
+            match message {
+                BroadcastMessage::TrainingResult(_) => {}
+                BroadcastMessage::PeerAnnouncement(_) => {}
+            }
         }
     }
 
@@ -297,17 +315,32 @@ impl App {
                     Err(error) => warn!("Error when processing health check: {error}"),
                 }
             }
+            ClientToServerMessage::Checkpoint(checkpoint) => {
+                if let Err(error) = self.coordinator.checkpoint(
+                    &Client {
+                        id: from,
+                        dropping_at_end_of_round: false,
+                    },
+                    checkpoint,
+                    Self::get_timestamp(),
+                ) {
+                    warn!("Error when processing checkpoint: {error}");
+                }
+            }
         }
+        self.post_state_change();
     }
 
     async fn on_tick(&mut self) {
-        if let Err(err) = self.coordinator.tick(
+        match self.coordinator.tick(
             &self.backend,
             Self::get_timestamp(),
             rand::thread_rng().next_u64(),
         ) {
-            warn!("Coordinator tick error: {err}");
+            Ok(_) | Err(CoordinatorError::Disabled) => {}
+            Err(err) => warn!("Coordinator tick error: {err}"),
         }
+        self.post_state_change();
         if let Err(err) = self
             .backend
             .net_server
@@ -328,6 +361,42 @@ impl App {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs()
+    }
+
+    fn post_state_change(&mut self) {
+        if !self.coordinator.active() {
+            if let Some(last_sync_step) = self.last_sync_step {
+                if last_sync_step < self.coordinator.step {
+                    if let Some(save_state_dir) = &self.save_state_dir {
+                        let mut state = self.coordinator.clone();
+                        Self::reset_ephemeral(&mut state);
+                        match toml::to_string_pretty(&state) {
+                            Ok(toml) => {
+                                let filename = format!(
+                                    "{}-step{}.toml",
+                                    self.coordinator.run_id,
+                                    self.coordinator.step - 1
+                                );
+                                info!("Saving state to {filename}");
+                                if let Err(err) =
+                                    std::fs::write(save_state_dir.join(filename), toml)
+                                {
+                                    tracing::error!("Error saving TOML: {}", err);
+                                }
+                            }
+                            Err(err) => tracing::error!("Error serialized to TOML: {err}"),
+                        }
+                    }
+                }
+            }
+            self.last_sync_step = Some(self.coordinator.step);
+        }
+    }
+
+    fn reset_ephemeral(coordinator: &mut Coordinator<ClientId>) {
+        coordinator.run_state = RunState::WaitingForMembers;
+        coordinator.clients.clear();
+        coordinator.dropped_clients.clear();
     }
 }
 
