@@ -37,6 +37,7 @@ use tch::{Device, Kind};
 use tokenizers::Tokenizer;
 use tokio::{runtime::Handle, select, sync::Notify, task::JoinHandle, time::sleep};
 use tracing::{debug, error, info, warn};
+use wandb::LogData;
 
 const WARMUP_PEER_ANNOUNCEMENT_DURATION: Duration = Duration::from_secs(10);
 
@@ -122,7 +123,7 @@ pub struct State<T: NodeIdentity> {
     hub_token: Option<String>,
     wandb_info: Option<WandBInfo>,
     wandb_run: Option<Arc<wandb::Run>>,
-    wandb_log: HashMap<String, wandb::DataValue>,
+    wandb_log: LogData,
     /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
     _last_observed_num_batches_remaining: usize,
     _eval_results: HashMap<String, Vec<f64>>,
@@ -200,7 +201,7 @@ impl<T: NodeIdentity> State<T> {
             hub_token,
             wandb_info,
             wandb_run: None,
-            wandb_log: HashMap::new(),
+            wandb_log: LogData::new(),
             _last_observed_num_batches_remaining: 0,
         }
     }
@@ -1049,41 +1050,26 @@ impl<T: NodeIdentity> State<T> {
             let loss = sum / count as f32;
             info!("Step {} loss: {}", state.step, loss);
             self.losses.push(loss);
-            self.wandb_log.insert(
-                "train/loss".to_owned(),
-                wandb::DataValue::Float(loss as f64),
-            );
+            self.wandb_log.insert("train/loss", loss);
         }
         if let Some(wandb_run) = &self.wandb_run {
-            self.wandb_log.insert(
-                "train/total_tokens".to_owned(),
-                wandb::DataValue::Int(self.total_tokens()),
-            );
-            self.wandb_log.insert(
-                "train/tokens_per_sec".to_owned(),
-                wandb::DataValue::Float(self.global_tokens_per_second() as f64),
-            );
-            self.wandb_log.insert(
-                "coordinator/num_clients".to_owned(),
-                wandb::DataValue::Int(state.clients.len() as u64),
-            );
-            self.wandb_log.insert(
-                "coordinator/epoch".to_owned(),
-                wandb::DataValue::Int(state.epoch as u64),
-            );
-            self.wandb_log.insert(
-                "coordinator/round".to_owned(),
-                wandb::DataValue::Int(
-                    state
-                        .current_round()
-                        .ok()
-                        .map(|x| x.height)
-                        .unwrap_or_default() as u64,
-                ),
-            );
             self.wandb_log
-                .insert("_step".to_owned(), wandb::DataValue::Int(state.step as u64));
-            let wandb_log = self.wandb_log.drain().collect::<HashMap<_, _>>();
+                .insert("train/total_tokens", self.total_tokens());
+            self.wandb_log
+                .insert("train/tokens_per_sec", self.global_tokens_per_second());
+            self.wandb_log
+                .insert("coordinator/num_clients", state.clients.len());
+            self.wandb_log.insert("coordinator/epoch", state.epoch);
+            self.wandb_log.insert(
+                "coordinator/round",
+                state
+                    .current_round()
+                    .ok()
+                    .map(|x| x.height)
+                    .unwrap_or_default(),
+            );
+            self.wandb_log.insert("_step", state.step);
+            let wandb_log = std::mem::take(&mut self.wandb_log);
             let wandb_run = wandb_run.clone();
             tokio::spawn(async move { wandb_run.log(wandb_log).await });
         }
@@ -1564,7 +1550,7 @@ impl<T: NodeIdentity> State<T> {
                                     "eval/{}",
                                     key.to_lowercase().replace(char::is_whitespace, "_")
                                 ),
-                                wandb::DataValue::Float(value),
+                                value,
                             );
                         }
                     }

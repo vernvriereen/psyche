@@ -3093,7 +3093,7 @@ dependencies = [
 [[package]]
 name = "impl_from_tuple"
 version = "0.1.0"
-source = "git+https://github.com/NousResearch/wandb-rs.git?rev=ee26b3bc3b9d4882df04c29a223dc256488d544d#ee26b3bc3b9d4882df04c29a223dc256488d544d"
+source = "git+https://github.com/NousResearch/wandb-rs.git?rev=c1c543ffc26eeca0a0ab5fc9315d27ca5c33073f#c1c543ffc26eeca0a0ab5fc9315d27ca5c33073f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7461,7 +7461,7 @@ dependencies = [
 [[package]]
 name = "wandb"
 version = "0.1.0"
-source = "git+https://github.com/NousResearch/wandb-rs.git?rev=ee26b3bc3b9d4882df04c29a223dc256488d544d#ee26b3bc3b9d4882df04c29a223dc256488d544d"
+source = "git+https://github.com/NousResearch/wandb-rs.git?rev=c1c543ffc26eeca0a0ab5fc9315d27ca5c33073f#c1c543ffc26eeca0a0ab5fc9315d27ca5c33073f"
 dependencies = [
  "base64 0.22.1",
  "env_logger",

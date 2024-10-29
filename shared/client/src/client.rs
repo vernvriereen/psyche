@@ -19,6 +19,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error};
+use wandb::DataValue;
 
 pub type TUIStates = (ClientTUIState, NetworkTUIState);
 
@@ -187,35 +188,33 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
             p2p.remove_downloadable(blob).await?;
         }
         let remotes = p2p.remote_infos().await?;
-        let mut nodes = remotes
+        let mut nodes: HashMap<String, DataValue> = remotes
             .into_iter()
             .map(|x| {
                 (
                     x.node_id.to_string(),
-                    wandb::DataValue::String(
-                        x.addrs
-                            .into_iter()
-                            .map(|y| y.addr.to_string())
-                            .collect::<Vec<_>>()
-                            .join(","),
-                    ),
+                    x.addrs
+                        .into_iter()
+                        .map(|y| y.addr.to_string())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                        .into(),
                 )
             })
             .collect::<HashMap<_, _>>();
         let node_addr = p2p.node_addr().await?;
         nodes.insert(
             node_addr.node_id.to_string(),
-            wandb::DataValue::String(
-                node_addr
-                    .info
-                    .direct_addresses
-                    .iter()
-                    .map(|x| x.to_string())
-                    .collect::<Vec<_>>()
-                    .join(","),
-            ),
+            node_addr
+                .info
+                .direct_addresses
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+                .into(),
         );
-        state.log_to_wandb("p2p/nodes".to_owned(), wandb::DataValue::Dict(nodes));
+        state.log_to_wandb("p2p/nodes".to_owned(), nodes.into());
         Ok(())
     }
 
