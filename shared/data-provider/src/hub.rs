@@ -1,6 +1,6 @@
-use anyhow::{bail, Error, Result};
+use anyhow::{anyhow, Result};
 use hf_hub::{
-    api::{sync::ApiError, Siblings},
+    api::{sync::ApiError, tokio::UploadSource, Siblings},
     Cache, Repo, RepoType,
 };
 use std::path::PathBuf;
@@ -183,24 +183,28 @@ pub async fn upload_model_repo_async(
         .build()?;
     let repo = Repo::model(repo_id);
     let api_repo = api.repo(repo);
-    let mut commit_info = None;
-    for file in files {
-        commit_info = Some(
-            api_repo
-                .upload_file(
-                    file.clone(),
-                    match file.file_name().and_then(|x| x.to_str()) {
-                        Some(file_name) => file_name,
-                        None => bail!("Could not get filename for {file:?}"),
-                    },
-                    commit_message.clone(),
-                    commit_description.clone(),
-                    false,
-                )
-                .await?,
-        );
-    }
-    commit_info
-        .map(|x| x.oid)
-        .ok_or(Error::msg("No commit hash"))
+
+    let files: Result<Vec<(UploadSource, String)>> = files
+        .into_iter()
+        .map(|path| {
+            path.file_name()
+                .ok_or(anyhow!("path {path:?} is not a file"))
+                .and_then(|name| {
+                    name.to_str()
+                        .ok_or(anyhow!("path {name:?} is not a valid utf8 string"))
+                        .map(|s| s.to_string())
+                })
+                .map(|name| (path.into(), name))
+        })
+        .collect();
+
+    let commit_info = api_repo
+        .upload_files(
+            files?,
+            commit_message.clone(),
+            commit_description.clone(),
+            false,
+        )
+        .await?;
+    Ok(commit_info.oid)
 }
