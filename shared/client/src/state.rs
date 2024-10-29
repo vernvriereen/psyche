@@ -95,7 +95,7 @@ pub struct State<T: NodeIdentity> {
     round_losses: Vec<f32>,
     data_parallelism: usize,
     tensor_parallelism: usize,
-    notify_clear_uploads: Arc<Notify>,
+    notify_train_start: Arc<Notify>,
     micro_batch_size: Option<usize>,
     write_gradients_dir: Option<PathBuf>,
     atomic_run_state: Arc<AtomicUsize>,
@@ -168,7 +168,7 @@ impl<T: NodeIdentity> State<T> {
             prev_payloads: HashMap::new(),
             losses: Vec::new(),
             round_losses: Vec::new(),
-            notify_clear_uploads: Arc::new(Notify::new()),
+            notify_train_start: Arc::new(Notify::new()),
             data_parallelism,
             tensor_parallelism,
             micro_batch_size,
@@ -234,8 +234,8 @@ impl<T: NodeIdentity> State<T> {
         }
     }
 
-    pub fn get_clear_downloads_notification(&self) -> Arc<Notify> {
-        self.notify_clear_uploads.clone()
+    pub fn get_train_start_notification(&self) -> Arc<Notify> {
+        self.notify_train_start.clone()
     }
 
     pub fn log_to_wandb(&mut self, key: String, value: wandb::DataValue) {
@@ -774,6 +774,7 @@ impl<T: NodeIdentity> State<T> {
                 .is_some_and(|x| x.run_state != state.run_state)
         {
             info!("Warming up epoch {}", state.epoch);
+            self.round_start = None; // reset throughput metric
             match &state.model {
                 Some(model) => {
                     if self.available_trainers.is_empty() {
@@ -978,7 +979,7 @@ impl<T: NodeIdentity> State<T> {
         self.prev_commitments = self.commitments.drain().collect();
         self.commitments_per_client.clear();
         self.prev_payloads = self.payloads.drain().collect();
-        self.notify_clear_uploads.notify_one(); // clear any served uploads we have
+        self.notify_train_start.notify_one();
         self._last_observed_num_batches_remaining = state.batches_per_round as usize;
         Ok(())
     }

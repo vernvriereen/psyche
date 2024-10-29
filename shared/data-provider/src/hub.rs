@@ -3,6 +3,7 @@ use hf_hub::{
     api::{sync::ApiError, tokio::UploadSource, Siblings},
     Cache, Repo, RepoType,
 };
+use tracing::debug;
 use std::path::PathBuf;
 
 const MODEL_EXTENSIONS: [&str; 2] = [".safetensors", ".json"];
@@ -181,7 +182,7 @@ pub async fn upload_model_repo_async(
     let api = hf_hub::api::tokio::ApiBuilder::new()
         .with_token(Some(token))
         .build()?;
-    let repo = Repo::model(repo_id);
+    let repo = Repo::model(repo_id.clone());
     let api_repo = api.repo(repo);
 
     let files: Result<Vec<(UploadSource, String)>> = files
@@ -198,9 +199,12 @@ pub async fn upload_model_repo_async(
         })
         .collect();
 
+    let files = files?;
+    debug!("Committing to {}: {:?}", repo_id, files);
+
     let commit_info = api_repo
         .upload_files(
-            files?,
+            files,
             commit_message.clone(),
             commit_description.clone(),
             false,

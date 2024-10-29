@@ -4,13 +4,14 @@ use futures_util::{future::join_all, Sink, SinkExt, Stream, StreamExt};
 use iroh::{
     blobs::BlobFormat,
     gossip::net::{Command, Event, GossipEvent},
-    net::NodeAddr,
+    net::{endpoint::RemoteInfo, NodeAddr},
     node::{MemNode, Node},
 };
 use psyche_core::Networkable;
 use state::State;
 use std::{
     fmt::Debug,
+    future::IntoFuture,
     marker::PhantomData,
     net::{Ipv4Addr, SocketAddrV4},
     ops::Sub,
@@ -233,6 +234,20 @@ where
     pub async fn join_ticket(&self) -> Result<String> {
         let me = self.node_addr().await?;
         Ok(PeerList(vec![me]).to_string())
+    }
+
+    pub async fn remote_infos(&self) -> Result<Vec<RemoteInfo>> {
+        Ok(self
+            .node
+            .net()
+            .remote_info_iter()
+            .await?
+            .collect::<Vec<_>>()
+            .into_future()
+            .await
+            .into_iter()
+            .filter_map(|x| x.ok())
+            .collect())
     }
 
     pub async fn poll_next(&mut self) -> Result<Option<NetworkEvent<BroadcastMessage, Download>>> {

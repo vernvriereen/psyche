@@ -1,12 +1,14 @@
 use crate::{
-    protocol::NE, state::{State, ToSend}, BroadcastMessage, ClientTUIState, WandBInfo, NC
+    protocol::NE,
+    state::{State, ToSend},
+    BroadcastMessage, ClientTUIState, WandBInfo, NC,
 };
 use anyhow::Result;
 use psyche_coordinator::Coordinator;
 use psyche_core::NodeIdentity;
 use psyche_network::NetworkTUIState;
 use psyche_watcher::{Backend, BackendWatcher};
-use std::{borrow::BorrowMut, marker::PhantomData, path::PathBuf, sync::Arc};
+use std::{borrow::BorrowMut, collections::HashMap, marker::PhantomData, path::PathBuf, sync::Arc};
 use tokio::{
     select,
     sync::{
@@ -72,7 +74,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                     hub_token,
                     wandb_info,
                 );
-                let clear_uploads = state.get_clear_downloads_notification();
+                let train_start = state.get_train_start_notification();
 
                 loop {
                     let step_result: std::result::Result<
@@ -88,7 +90,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                         res = watcher.borrow_mut().poll_next() => res.map(|(c,cn)| Some((c, cn.clone()))),
                         res = p2p.poll_next() => Self::handle_p2p_poll(&mut state, &watcher, &mut p2p, res).await.map(|_| None),
                         res = state.poll_next() => Self::handle_state_poll(&mut state, &mut p2p, &mut watcher, res?).await.map(|_| None),
-                        _ = clear_uploads.notified() => Self::handle_clear_uploads(&mut p2p).await.map(|_| None),
+                        _ = train_start.notified() => Self::handle_train_start(&mut state, &mut p2p).await.map(|_| None),
                     };
 
                     if let Some(watcher_res) = step_result? {
@@ -180,10 +182,40 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         }
     }
 
-    async fn handle_clear_uploads(p2p: &mut NC) -> Result<()> {
+    async fn handle_train_start(state: &mut State<T>, p2p: &mut NC) -> Result<()> {
         for blob in p2p.currently_sharing_blobs().clone() {
             p2p.remove_downloadable(blob).await?;
         }
+        let remotes = p2p.remote_infos().await?;
+        let mut nodes = remotes
+            .into_iter()
+            .map(|x| {
+                (
+                    x.node_id.to_string(),
+                    wandb::DataValue::String(
+                        x.addrs
+                            .into_iter()
+                            .map(|y| y.addr.to_string())
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    ),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        let node_addr = p2p.node_addr().await?;
+        nodes.insert(
+            node_addr.node_id.to_string(),
+            wandb::DataValue::String(
+                node_addr
+                    .info
+                    .direct_addresses
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ),
+        );
+        state.log_to_wandb("p2p/nodes".to_owned(), wandb::DataValue::Dict(nodes));
         Ok(())
     }
 
