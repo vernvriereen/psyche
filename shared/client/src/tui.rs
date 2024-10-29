@@ -146,7 +146,7 @@ impl psyche_tui::CustomWidget for ClientTUI {
                 "Total Tokens: {}",
                 convert_tokens(state.total_tokens)
             ))
-            .render(hsplit[2], buf);
+            .render(hsplit[3], buf);
         }
         if !state.evals.is_empty() {
             let plot_split =
