@@ -8,11 +8,21 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     crane.url = "github:ipetkov/crane";
+    nix-gl-host = {
+      url = "github:arilotter/nix-gl-host-rs";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        crane.follows = "crane";
+        rust-overlay.follows = "rust-overlay";
+      };
+    };
   };
 
   outputs = inputs @ {
     flake-parts,
     crane,
+    rust-overlay,
+    nix-gl-host,
     ...
   }:
     flake-parts.lib.mkFlake {inherit inputs;} {
@@ -24,7 +34,7 @@
       perSystem = {system, ...}: let
         pkgs = import inputs.nixpkgs {
           inherit system;
-          overlays = [(import inputs.rust-overlay)];
+          overlays = [(import rust-overlay) nix-gl-host.overlays.default];
 
           config.allowUnfree = true;
           config.cudaSupport = true;
@@ -86,11 +96,25 @@
           // {
             inherit cargoArtifacts;
           });
+
+        useHostGpuDrivers = package:
+          pkgs.runCommand "${package.name}-nixgl-wrapped" {
+            nativeBuildInputs = [pkgs.makeWrapper];
+          } ''
+            mkdir -p $out/bin
+            for bin in ${package}/bin/*; do
+              if [ -f "$bin" ] && [ -x "$bin" ]; then
+                makeWrapper "$bin" "$out/bin/$(basename $bin)" \
+                  --run 'exec ${pkgs.nix-gl-host}/bin/nixglhost "'"$bin"'" "$@"'
+              fi
+            done
+          '';
       in rec {
         packages = {
-          psyche-centralized-client = buildPackage "psyche-centralized-client";
+          psyche-centralized-client = useHostGpuDrivers (buildPackage "psyche-centralized-client");
           psyche-centralized-server = buildPackage "psyche-centralized-server";
           expand-distro = buildPackage "expand-distro";
+          expand-distro = useHostGpuDrivers (buildPackage "expand-distro");
         };
 
         devShells.default = pkgs.mkShell {
