@@ -388,8 +388,10 @@ impl CompressDCT {
         kind: Kind,
         device: Device,
     ) -> Tensor {
-        let idx = if totalk <= 256 {
+        let idx = if totalk == 0{
             idx.shallow_clone()
+        } else if totalk <= 256 {
+           idx.view_dtype(Kind::Uint8)
         } else if totalk <= 65536 {
             idx.view_dtype(Kind::UInt16)
         } else if totalk <= 4294967296 {
@@ -477,7 +479,6 @@ impl Clone for DistroResult {
 pub struct Distro {
     sgd: Optimizer,
     compression_decay: f64,
-    compression_topk: i64,
     weight_decay: f64,
     state: Vec<State>,
     transform: TransformDCT,
@@ -491,7 +492,6 @@ impl Distro {
         vs: &VarStore,
         compression_decay: f64,
         compression_chunk: i64,
-        compression_topk: i64,
         weight_decay: f64,
         shard_index: usize,
         comm: Option<Arc<Communicator>>,
@@ -521,7 +521,6 @@ impl Distro {
         Self {
             sgd,
             compression_decay,
-            compression_topk,
             weight_decay,
             state,
             transform,
@@ -531,7 +530,7 @@ impl Distro {
     }
 
     #[allow(unused)]
-    pub fn generate(&mut self, lr: f64) -> Vec<DistroResult> {
+    pub fn generate(&mut self, lr: f64, compression_topk: i64, quantization: bool) -> Vec<DistroResult> {
         let _no_grad = tch::no_grad_guard();
         let variables = &mut self.sgd.trainable_variables_with_sharding();
         let mut ret = Vec::with_capacity(variables.len());
@@ -570,8 +569,8 @@ impl Distro {
                     // Compress delta
                     let (sparse_idx, sparse_val, xshape, totalk) = CompressDCT::compress(
                         &self.transform.encode(&gathered_delta),
-                        self.compression_topk,
-                        true,
+                        compression_topk,
+                        quantization,
                     );
 
                     // Estimate transmitted delta
@@ -601,7 +600,7 @@ impl Distro {
                     // Compress delta
                     let (sparse_idx, sparse_val, xshape, totalk) = CompressDCT::compress(
                         &self.transform.encode(delta),
-                        self.compression_topk,
+                        compression_topk,
                         true,
                     );
 

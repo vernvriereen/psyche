@@ -28,7 +28,11 @@ enum Optimizer {
         optimizer: nn::Optimizer,
         clip_grad_norm: Option<f32>,
     },
-    Distro(Distro),
+    Distro {
+        optimizer: Distro,
+        compression_topk: i64,
+        compression_warmup_topk: i64,
+    },
 }
 
 pub type DistroResults = Vec<DistroResult>;
@@ -121,16 +125,20 @@ impl Trainer {
                 model::Optimizer::Distro {
                     compression_decay,
                     compression_topk,
+                    compression_warmup_topk,
                     compression_chunk,
-                } => Optimizer::Distro(Distro::new(
-                    &model.variables,
-                    compression_decay as f64,
-                    compression_chunk as i64,
-                    compression_topk as i64,
-                    0.0,
-                    index,
-                    model.comm.clone(),
-                )),
+                } => Optimizer::Distro {
+                    optimizer: Distro::new(
+                        &model.variables,
+                        compression_decay as f64,
+                        compression_chunk as i64,
+                        0.0,
+                        index,
+                        model.comm.clone(),
+                    ),
+                    compression_topk: compression_topk as i64,
+                    compression_warmup_topk: compression_warmup_topk as i64,
+                },
             };
 
             let run_state = run_state.clone();
@@ -369,9 +377,19 @@ impl Trainer {
                                 optimizer: _,
                                 clip_grad_norm: _,
                             } => None,
-                            Optimizer::Distro(distro) => {
-                                let lr = lr_scheduler.get_lr(step);
-                                let ret = distro.generate(lr);
+                            Optimizer::Distro {
+                                optimizer,
+                                compression_topk,
+                                compression_warmup_topk,
+                            } => {
+                                let ret = optimizer.generate(
+                                    lr_scheduler.get_lr(step),
+                                    match lr_scheduler.in_warmup(step) {
+                                        true => *compression_warmup_topk,
+                                        false => *compression_topk,
+                                    },
+                                    true,
+                                );
                                 // just need results from one of the ranks
                                 match index == 0 {
                                     true => Some(ret),
@@ -522,13 +540,13 @@ fn optimize_step(
             optimizer.step();
             optimizer.zero_grad();
         }
-        Optimizer::Distro(distro) => match distro_results {
+        Optimizer::Distro { optimizer, .. } => match distro_results {
             Some(results) => {
                 debug!("Applying {} DisTrO gradients", results.len());
                 if barrier.wait().is_err() {
                     return ControlFlow::Break(());
                 }
-                distro.apply(results, lr);
+                optimizer.apply(results, lr);
                 if barrier.wait().is_err() {
                     return ControlFlow::Break(());
                 }

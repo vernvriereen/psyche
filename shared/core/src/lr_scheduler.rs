@@ -20,6 +20,10 @@ impl ConstantLR {
             warmup_init_lr,
         }
     }
+
+    pub fn in_warmup(&self, step: u32) -> bool {
+        step < self.warmup_steps
+    }
 }
 
 impl LearningRateScheduler for ConstantLR {
@@ -58,6 +62,10 @@ impl LinearLR {
             total_steps,
             final_lr,
         }
+    }
+
+    pub fn in_warmup(&self, step: u32) -> bool {
+        step < self.warmup_steps
     }
 }
 
@@ -99,6 +107,10 @@ impl CosineLR {
             total_steps,
             final_lr,
         }
+    }
+
+    pub fn in_warmup(&self, step: u32) -> bool {
+        step < self.warmup_steps
     }
 }
 

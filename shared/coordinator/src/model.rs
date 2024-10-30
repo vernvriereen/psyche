@@ -80,6 +80,7 @@ pub enum Optimizer {
     Distro {
         compression_decay: f32,
         compression_topk: u16,
+        compression_warmup_topk: u16,
         compression_chunk: u16,
     },
 }
@@ -151,12 +152,21 @@ pub enum AnyLearningRateScheduler {
     Linear(psyche_core::LinearLR),
     Cosine(psyche_core::CosineLR),
 }
+
 impl AnyLearningRateScheduler {
     pub fn get_lr(&self, step: u32) -> f64 {
         match self {
             Self::Constant(l) => l.get_lr(step),
             Self::Linear(l) => l.get_lr(step),
             Self::Cosine(l) => l.get_lr(step),
+        }
+    }
+
+    pub fn in_warmup(&self, step: u32) -> bool {
+        match self {
+            Self::Constant(l) => l.in_warmup(step),
+            Self::Linear(l) => l.in_warmup(step),
+            Self::Cosine(l) => l.in_warmup(step),
         }
     }
 }
