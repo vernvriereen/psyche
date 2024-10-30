@@ -27,7 +27,7 @@ enum Commands {
         #[clap(long)]
         secret_key: Option<PathBuf>,
 
-        #[clap(short, long)]
+        #[clap(short, long, env)]
         bind_p2p_port: Option<u16>,
 
         #[clap(
@@ -36,54 +36,55 @@ enum Commands {
             default_value_t = true,
             default_missing_value = "true",
             num_args = 0..=1,
-            require_equals = false
+            require_equals = false,
+            env
         )]
         tui: bool,
 
-        #[clap(long)]
+        #[clap(long, env)]
         run_id: String,
 
-        #[clap(long)]
+        #[clap(long, env)]
         server_addr: String,
 
-        #[clap(long, default_value_t = 1)]
+        #[clap(long, default_value_t = 1, env)]
         data_parallelism: usize,
 
-        #[clap(long, default_value_t = 1)]
+        #[clap(long, default_value_t = 1, env)]
         tensor_parallelism: usize,
 
-        #[clap(long)]
+        #[clap(long, env)]
         micro_batch_size: Option<usize>,
 
         /// If provided, every shared gradient this client sees will be written to this directory.
-        #[clap(long)]
+        #[clap(long, env)]
         write_gradients_dir: Option<PathBuf>,
 
-        #[clap(long)]
+        #[clap(long, env)]
         eval_tasks: Option<String>,
 
-        #[clap(long, default_value_t = 0)]
+        #[clap(long, default_value_t = 0, env)]
         eval_fewshot: usize,
 
-        #[clap(long, default_value_t = 42)]
+        #[clap(long, default_value_t = 42, env)]
         eval_seed: u64,
 
-        #[clap(long)]
+        #[clap(long, env)]
         eval_task_max_docs: Option<usize>,
 
-        #[clap(long)]
+        #[clap(long, env)]
         checkpoint_dir: Option<PathBuf>,
 
-        #[clap(long)]
+        #[clap(long, env)]
         hub_repo: Option<String>,
 
-        #[clap(long)]
+        #[clap(long, env)]
         wandb_project: Option<String>,
 
-        #[clap(long)]
+        #[clap(long, env)]
         wandb_run: Option<String>,
 
-        #[clap(long)]
+        #[clap(long, env)]
         wandb_entity: Option<String>,
     },
 }
