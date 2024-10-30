@@ -145,6 +145,7 @@
           buildInputs = with pkgs; [
             tmux
             nvtopPackages.full
+            just
           ];
         };
 

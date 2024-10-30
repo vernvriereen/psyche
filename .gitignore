@@ -22,6 +22,7 @@ ehthumbs_vista.db
 
 ### Tooling ###
 result
+nix-results/
 .direnv/
 .aider*
 flamegraph.svg
