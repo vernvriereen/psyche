@@ -183,7 +183,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
         let downloads = self.downloads.clone();
         let sender = self.tx_new_item.clone();
         tokio::spawn(async move {
-            info!("adding new download: {}", blob_ticket.hash());
+            debug!("Adding new download: {}", blob_ticket.hash());
             downloads
                 .lock()
                 .await
@@ -306,7 +306,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                     }
                     DownloadProgress::Done { .. } => None,
                     DownloadProgress::AllDone(stats) => {
-                        info!(
+                        debug!(
                             "Downloaded (index {index}) {}, {} ",
                             download.hash.clone(),
                             convert_bytes(stats.bytes_read as f64)

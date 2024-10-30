@@ -23,7 +23,7 @@ use tokio::{
     sync::mpsc,
     time::{interval, Interval},
 };
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use util::{fmt_relay_mode, gossip_topic};
 
 mod download_manager;
@@ -94,9 +94,7 @@ where
             None => SecretKey::generate(),
             Some(key) => key,
         };
-        info!("our secret key: {secret_key}");
-
-        info!("using relay servers: {}", fmt_relay_mode(&relay_mode));
+        debug!("Using relay servers: {}", fmt_relay_mode(&relay_mode));
 
         // TODO add an allowlist of public keys, don't let any connections from people with keys not in that list.
         let node = Node::memory()
@@ -109,13 +107,13 @@ where
             .spawn()
             .await?;
 
-        info!("our node id: {}", node.node_id());
+        info!("Our node id: {}", node.node_id());
 
         let peer_ids: Vec<_> = bootstrap_peers.iter().map(|p| p.node_id).collect();
         if bootstrap_peers.is_empty() {
-            info!("waiting for peers to join us...");
+            info!("Waiting for peers to join us...");
         } else {
-            info!("trying to connect to {} peers...", bootstrap_peers.len());
+            info!("Trying to connect to {} peers...", bootstrap_peers.len());
             // add the peer addrs from the ticket to our endpoint's addressbook so that they can be dialed
             for peer in bootstrap_peers.into_iter() {
                 node.net().add_node_addr(peer).await?;
@@ -125,7 +123,7 @@ where
             .gossip()
             .subscribe(gossip_topic(run_id), peer_ids)
             .await?;
-        info!("connected!");
+        info!("Connected!");
 
         // if this is not 1s, the bandwidth chart will be wrong.
         let update_stats_interval = interval(Duration::from_secs(1));
@@ -293,13 +291,13 @@ where
                 let blob_bytes = match node.blobs().read_to_bytes(update.hash).await {
                     Ok(b) => b,
                     Err(e) => {
-                        error!("failed to read bytes: {e}");
+                        error!("Failed to read bytes: {e}");
                         return;
                     }
                 };
                 let res = send.send(blob_bytes);
                 if res.is_err() {
-                    error!("failed to send read bytes result.");
+                    error!("Failed to send read bytes result.");
                 }
             });
             self.download_manager.read(update.from, update.hash, recv);

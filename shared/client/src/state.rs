@@ -21,7 +21,7 @@ use psyche_modeling::{
 };
 use psyche_network::{dummy_blob_ticket, BlobTicket, NetworkEvent};
 use psyche_watcher::{Backend, BackendWatcher};
-use rand::{seq::SliceRandom, thread_rng};
+use rand::{seq::SliceRandom, thread_rng, RngCore};
 use std::{
     collections::HashMap,
     fs,
@@ -432,11 +432,13 @@ impl<T: NodeIdentity> State<T> {
                 None => true,
             } {
                 self.last_warmup_peer_announcement = Some(now);
+                let mut random = [0u8; 32];
+                rand::thread_rng().fill_bytes(&mut random);
                 return Ok(ToSend::Broadcast((
                     BroadcastMessage::PeerAnnouncement(PeerAnnouncement {
                         ticket: dummy_blob_ticket(),
                     }),
-                    Payload::Empty {},
+                    Payload::Empty { random },
                 )));
             }
         }
@@ -545,7 +547,7 @@ impl<T: NodeIdentity> State<T> {
                         }
                     }
                 }
-                Payload::Empty {} => {}
+                Payload::Empty { random: _ } => {}
             },
         }
         Ok(None)
@@ -757,7 +759,7 @@ impl<T: NodeIdentity> State<T> {
                 self.payloads
                     .insert(hash, PayloadState::Deserializing(deserializing));
             }
-            Payload::Empty {} => {}
+            Payload::Empty { random: _ } => {}
         }
         Ok(())
     }
@@ -1027,9 +1029,8 @@ impl<T: NodeIdentity> State<T> {
             return Ok(());
         }
 
-        let mut trainers_still_running = self.data_parallelism - self.available_trainers.len();
+        let trainers_still_running = self.data_parallelism - self.available_trainers.len();
         if trainers_still_running > 0 {
-            trainers_still_running += 1;
             bail!("Apply round but {trainers_still_running} trainer(s) aren't finished");
         } else {
             debug!(

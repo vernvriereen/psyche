@@ -9,7 +9,7 @@ use tokio::{
     sync::{mpsc, Mutex},
 };
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 const MAX_FRAME_LENGTH: usize = 64 * 1024 * 1024;
 
@@ -114,7 +114,7 @@ where
                     .into(),
             )
             .await?;
-        info!("new client joined - sent challenge {:?}", challenge);
+        debug!("New client joined - sent challenge {:?}", challenge);
 
         // Receive and verify challenge response
         let response = ClientToServerMessage::<ToClient>::from_bytes(
@@ -131,9 +131,9 @@ where
                 response
             );
         };
-        info!("got response for challenge {:?}", challenge);
+        debug!("Got response for challenge {:?}", challenge);
         let identity = I::from_signed_bytes(&challenge_response, challenge)?;
-        info!("challenge response accepted! welcome, {:?}!", identity);
+        debug!("Challenge response accepted! welcome, {:?}!", identity);
         let (client_tx, mut client_rx) = mpsc::channel(32);
         clients.lock().await.insert(identity.clone(), client_tx);
 

@@ -36,5 +36,5 @@ pub struct DistroResult {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Payload {
     DistroResult(DistroResult),
-    Empty {},
+    Empty { random: [u8; 32] },
 }
