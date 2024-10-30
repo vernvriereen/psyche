@@ -67,27 +67,61 @@ pub struct Dataset {
 }
 
 impl Dataset {
-    pub fn load_dataset(repo_files: &[PathBuf], split: Option<Split>) -> Result<Self> {
+    pub fn load_dataset(repo_files: &[PathBuf], split: Option<Split>, subset: Option<String>) -> Result<Self> {
         let mut split = split;
         let mut to_load: Vec<PathBuf> = Vec::new();
         for file in repo_files {
             if looks_like_parquet_file(file) {
-                let mut parent = file.clone();
-                parent.pop();
-                if let Some(split_name) = parent.file_name() {
-                    if split.as_ref().is_some() {
-                        if split_name.eq_ignore_ascii_case(split.as_ref().unwrap().to_string()) {
-                            to_load.push(file.clone());
-                        }
-                    } else {
-                        for maybe_split in SPLITS {
-                            if split_name.eq_ignore_ascii_case(maybe_split.to_string()) {
-                                to_load.push(file.clone());
-                                split = Some(maybe_split);
-                                break;
+                let mut path_iter = file.iter().rev().skip(1);
+                let parent = path_iter.next();
+                let grandparent = path_iter.next();
+    
+                match (parent, grandparent) {
+                    (Some(split_name), Some(subset_name)) => {
+                        let split_str = split_name.to_string_lossy();
+                        if let Some(subset_filter) = &subset {
+                            if subset_name.to_str().unwrap_or_default() != subset_filter {
+                                continue;
                             }
                         }
-                    }
+    
+                        if let Some(actual_split) = split_str.split('-').next() {
+                            if split.as_ref().is_some() {
+                                if actual_split.eq_ignore_ascii_case(&split.as_ref().unwrap().to_string()) {
+                                    to_load.push(file.clone());
+                                }
+                            } else {
+                                for maybe_split in SPLITS {
+                                    if actual_split.eq_ignore_ascii_case(&maybe_split.to_string()) {
+                                        to_load.push(file.clone());
+                                        split = Some(maybe_split);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    },
+
+                    (Some(split_name), _) => {
+                        if subset.is_some() {
+                            continue;
+                        }
+                        
+                        if split.as_ref().is_some() {
+                            if split_name.eq_ignore_ascii_case(&split.as_ref().unwrap().to_string()) {
+                                to_load.push(file.clone());
+                            }
+                        } else {
+                            for maybe_split in SPLITS {
+                                if split_name.eq_ignore_ascii_case(&maybe_split.to_string()) {
+                                    to_load.push(file.clone());
+                                    split = Some(maybe_split);
+                                    break;
+                                }
+                            }
+                        }
+                    },
+                    _ => continue,
                 }
             }
         }

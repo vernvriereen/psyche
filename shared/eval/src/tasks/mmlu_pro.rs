@@ -23,11 +23,15 @@ pub struct MMLUPro {
 
 impl MMLUPro {
     pub fn load() -> Result<TaskType> {
-        let ret = MMLUPro {
-            test_dataset: load_dataset("TIGER-Lab/MMLU-Pro", Split::Test)?,
-            validation_dataset: load_dataset("TIGER-Lab/MMLU-Pro", Split::Validation)?,
+        let ret = Self {
+            test_dataset: load_dataset("TIGER-Lab/MMLU-Pro", Split::Test, None)?,
+            validation_dataset: load_dataset("TIGER-Lab/MMLU-Pro", Split::Validation, None)?,
         };
         Ok(TaskType::LogLikelihood(Box::new(ret)))
+    }
+
+    pub const fn name() -> &'static str {
+        "MMLU Pro"
     }
 
     fn row_to_document(dataset: &Dataset, row: Row) -> Document {
@@ -75,6 +79,6 @@ impl LogLikelihoodTask for MMLUPro {
 
 impl Display for MMLUPro {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "MMLU Pro")
+        write!(f, "{}", Self::name())
     }
 }

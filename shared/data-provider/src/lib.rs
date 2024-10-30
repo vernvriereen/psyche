@@ -11,7 +11,7 @@ pub use hub::{
     download_model_repo_sync, upload_model_repo_async,
 };
 pub use local::LocalDataProvider;
-pub use parquet::record::{ListAccessor, RowAccessor};
+pub use parquet::record::{ListAccessor, MapAccessor, RowAccessor};
 pub use remote::{DataProviderTcpClient, DataProviderTcpServer, DataServerTui};
 pub use token_size::TokenSize;
 pub use traits::{LengthKnownDataProvider, TokenizedDataProvider};

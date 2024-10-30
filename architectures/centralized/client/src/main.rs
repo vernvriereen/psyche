@@ -3,7 +3,7 @@ use crate::app::{AppBuilder, AppParams, Tabs, TAB_NAMES};
 use anyhow::{bail, Result};
 use clap::{ArgAction, Parser, Subcommand};
 use psyche_client::WandBInfo;
-use psyche_eval::{Hellaswag, MMLUPro};
+use psyche_eval::tasktype_from_name;
 use psyche_network::SecretKey;
 use psyche_tui::{maybe_start_render_loop, LogOutput};
 use std::path::PathBuf;
@@ -175,14 +175,7 @@ async fn async_main() -> Result<()> {
                     let result: Result<Vec<psyche_eval::Task>> = eval_tasks
                         .split(",")
                         .map(|eval_task| {
-                            match eval_task.to_lowercase().as_str() {
-                                "hellaswag" => Hellaswag::load(),
-                                "mmlu_pro" => MMLUPro::load(),
-                                task => {
-                                    bail!("Unknown eval task {task}");
-                                }
-                            }
-                            .map(|task_type| {
+                            tasktype_from_name(eval_task).map(|task_type| {
                                 psyche_eval::Task::new(task_type, eval_fewshot, eval_seed)
                             })
                         })

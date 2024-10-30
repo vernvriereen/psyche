@@ -42,11 +42,15 @@ pub struct Hellaswag {
 
 impl Hellaswag {
     pub fn load() -> Result<TaskType> {
-        let ret = Hellaswag {
-            train_dataset: load_dataset("Rowan/hellaswag", Split::Train)?,
-            validation_dataset: load_dataset("Rowan/hellaswag", Split::Validation)?,
+        let ret = Self {
+            train_dataset: load_dataset("Rowan/hellaswag", Split::Train, None)?,
+            validation_dataset: load_dataset("Rowan/hellaswag", Split::Validation, None)?,
         };
         Ok(TaskType::LogLikelihood(Box::new(ret)))
+    }
+
+    pub const fn name() -> &'static str {
+        "Hellaswag"
     }
 
     fn row_to_document(dataset: &Dataset, row: Row) -> Document {
@@ -100,6 +104,6 @@ impl LogLikelihoodTask for Hellaswag {
 
 impl Display for Hellaswag {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Hellaswag")
+        write!(f, "{}", Self::name())
     }
 }

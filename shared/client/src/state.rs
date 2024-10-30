@@ -1549,7 +1549,10 @@ impl<T: NodeIdentity> State<T> {
                             self.wandb_log.insert(
                                 format!(
                                     "eval/{}",
-                                    key.to_lowercase().replace(char::is_whitespace, "_")
+                                    key.to_lowercase()
+                                        .chars()
+                                        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+                                        .collect::<String>()
                                 ),
                                 value,
                             );
