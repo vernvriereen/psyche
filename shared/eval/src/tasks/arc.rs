@@ -63,7 +63,7 @@ impl ARC {
         let choices = labels
             .elements()
             .iter()
-            .map(|x| field_to_string(x))
+            .map(field_to_string)
             .collect::<Vec<_>>();
         let answer = choices.iter().position(|x| x == answer).unwrap();
         Document {
@@ -98,7 +98,7 @@ impl Display for ARC {
 
 impl ARCEasy {
     pub fn load() -> Result<TaskType> {
-        ARC::load(&Self::name())
+        ARC::load(Self::name())
     }
 
     pub const fn name() -> &'static str {
@@ -124,7 +124,7 @@ impl Display for ARCEasy {
 
 impl ARCChallenge {
     pub fn load() -> Result<TaskType> {
-        ARC::load(&Self::name())
+        ARC::load(Self::name())
     }
 
     pub const fn name() -> &'static str {

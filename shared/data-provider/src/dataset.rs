@@ -67,7 +67,11 @@ pub struct Dataset {
 }
 
 impl Dataset {
-    pub fn load_dataset(repo_files: &[PathBuf], split: Option<Split>, subset: Option<String>) -> Result<Self> {
+    pub fn load_dataset(
+        repo_files: &[PathBuf],
+        split: Option<Split>,
+        subset: Option<String>,
+    ) -> Result<Self> {
         let mut split = split;
         let mut to_load: Vec<PathBuf> = Vec::new();
         for file in repo_files {
@@ -75,7 +79,7 @@ impl Dataset {
                 let mut path_iter = file.iter().rev().skip(1);
                 let parent = path_iter.next();
                 let grandparent = path_iter.next();
-    
+
                 match (parent, grandparent) {
                     (Some(split_name), Some(subset_name)) => {
                         let split_str = split_name.to_string_lossy();
@@ -84,10 +88,12 @@ impl Dataset {
                                 continue;
                             }
                         }
-    
+
                         if let Some(actual_split) = split_str.split('-').next() {
                             if split.as_ref().is_some() {
-                                if actual_split.eq_ignore_ascii_case(&split.as_ref().unwrap().to_string()) {
+                                if actual_split
+                                    .eq_ignore_ascii_case(&split.as_ref().unwrap().to_string())
+                                {
                                     to_load.push(file.clone());
                                 }
                             } else {
@@ -100,27 +106,28 @@ impl Dataset {
                                 }
                             }
                         }
-                    },
+                    }
 
                     (Some(split_name), _) => {
                         if subset.is_some() {
                             continue;
                         }
-                        
+
                         if split.as_ref().is_some() {
-                            if split_name.eq_ignore_ascii_case(&split.as_ref().unwrap().to_string()) {
+                            if split_name.eq_ignore_ascii_case(split.as_ref().unwrap().to_string())
+                            {
                                 to_load.push(file.clone());
                             }
                         } else {
                             for maybe_split in SPLITS {
-                                if split_name.eq_ignore_ascii_case(&maybe_split.to_string()) {
+                                if split_name.eq_ignore_ascii_case(maybe_split.to_string()) {
                                     to_load.push(file.clone());
                                     split = Some(maybe_split);
                                     break;
                                 }
                             }
                         }
-                    },
+                    }
                     _ => continue,
                 }
             }

@@ -17,7 +17,7 @@ pub const ALL_TASK_NAMES: [&str; 4] = [
     ARCChallenge::name(),
     ARCEasy::name(),
     Hellaswag::name(),
-    MMLUPro::name()
+    MMLUPro::name(),
 ];
 
 pub fn load_dataset(repo_id: &str, split: Split, subset: Option<String>) -> Result<Dataset> {

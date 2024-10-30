@@ -325,7 +325,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         checkpoint: Checkpoint,
         unix_timestamp: u64,
     ) -> Result<(), CoordinatorError> {
-        if self.checkpointers.iter().find(|x| **x == from.id).is_some() {
+        if self.checkpointers.iter().any(|x| *x == from.id) {
             if let Some(Model::LLM(llm)) = &mut self.model {
                 llm.checkpoint = checkpoint;
             }
@@ -573,10 +573,10 @@ impl<T: NodeIdentity> Coordinator<T> {
         // cooldown_time == 0 means we never automatically advance to the next epoch,
         // so the only way to get there is through the checkpointing code.
         // this forces everything to wait on a valid checkpoint
-        if self.cooldown_time > 0 {
-            if unix_timestamp >= self.cooldown_time + self.run_state_start_unix_timestamp {
-                self.finish_cooldown(unix_timestamp);
-            }
+        if self.cooldown_time > 0
+            && unix_timestamp >= self.cooldown_time + self.run_state_start_unix_timestamp
+        {
+            self.finish_cooldown(unix_timestamp);
         }
         Ok(())
     }

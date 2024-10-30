@@ -13,12 +13,12 @@ pub use auto_tokenizer::auto_tokenizer;
 pub use batcher::Batcher;
 pub use distro::{CompressDCT, Distro, DistroResult};
 pub use llama::{Llama, LlamaEosToks};
-pub use llama_for_causal_lm::{LlamaForCausalLM, LlamaConfig};
-pub use sampling::{LogitsProcessor, Sampling};
+pub use llama_for_causal_lm::{LlamaConfig, LlamaForCausalLM};
 pub use safetensor_utils::{load_safetensors_into_variables, save_tensors_into_safetensors};
+pub use sampling::{LogitsProcessor, Sampling};
 pub use tensor_parallelism::{
-    AllReduce, Communicator, CommunicatorId, CudaSynchronize, DifferentiableAllReduceSum,
-    TensorParallelRowLinear, unsharded_cpu_variables
+    unsharded_cpu_variables, AllReduce, Communicator, CommunicatorId, CudaSynchronize,
+    DifferentiableAllReduceSum, TensorParallelRowLinear,
 };
 pub use token_output_stream::TokenOutputStream;
 pub use traits::CausalLM;

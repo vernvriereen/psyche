@@ -3,8 +3,8 @@ use hf_hub::{
     api::{sync::ApiError, tokio::UploadSource, Siblings},
     Cache, Repo, RepoType,
 };
-use tracing::debug;
 use std::path::PathBuf;
+use tracing::debug;
 
 const MODEL_EXTENSIONS: [&str; 2] = [".safetensors", ".json"];
 const DATASET_EXTENSIONS: [&str; 1] = [".parquet"];

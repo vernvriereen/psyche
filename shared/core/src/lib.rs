@@ -31,7 +31,3 @@ pub use similarity::{
     hamming_distance, is_similar, jaccard_distance, manhattan_distance, DistanceThresholds,
 };
 pub use swap_or_not::compute_shuffled_index;
-
-
-
-
