@@ -1,6 +1,6 @@
 use crate::{
     protocol::NE,
-    state::{State, ToSend},
+    state::{CheckpointUploadInfo, State, ToSend},
     BroadcastMessage, ClientTUIState, WandBInfo, NC,
 };
 use anyhow::Result;
@@ -88,8 +88,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         eval_task_max_docs: Option<usize>,
         micro_batch_size: Option<usize>,
         write_gradients_dir: Option<PathBuf>,
-        checkpoint_dir: Option<PathBuf>,
-        hub_repo: Option<String>,
+        checkpoint_write_info: Option<CheckpointUploadInfo>,
         hub_token: Option<String>,
         wandb_info: Option<WandBInfo>,
     ) -> Self {
@@ -111,8 +110,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                     eval_task_max_docs,
                     micro_batch_size,
                     write_gradients_dir,
-                    checkpoint_dir,
-                    hub_repo,
+                    checkpoint_write_info,
                     hub_token,
                     wandb_info,
                 );

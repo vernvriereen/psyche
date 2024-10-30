@@ -2,7 +2,7 @@ use crate::app::{AppBuilder, AppParams, Tabs, TAB_NAMES};
 
 use anyhow::{bail, Result};
 use clap::{ArgAction, Parser, Subcommand};
-use psyche_client::WandBInfo;
+use psyche_client::{CheckpointUploadInfo, WandBInfo};
 use psyche_eval::tasktype_from_name;
 use psyche_network::SecretKey;
 use psyche_tui::{maybe_start_render_loop, LogOutput};
@@ -140,17 +140,21 @@ async fn async_main() -> Result<()> {
                 );
             }
 
-            let hub_token = match &hub_repo {
-                Some(_) => {
-                    if checkpoint_dir.is_none() {
-                        bail!("--checkpoint-dir must be set if --hub-repo is set");
-                    }
-                    match std::env::var("HF_TOKEN") {
-                        Ok(hub_token) =>Some(hub_token),
-                        Err(_) => bail!("HF_TOKEN environment variable must be set for checkpoint uploading to Hugging Face Hub")
-                    }
+            let hub_read_token = std::env::var("HF_TOKEN").ok();
+
+            let checkpoint_upload_info = match (&hub_read_token, hub_repo, checkpoint_dir) {
+                (Some(token), Some(repo), Some(dir)) => Some(CheckpointUploadInfo {
+                    checkpoint_dir: dir,
+                    hub_repo: repo,
+                    hub_token: token.clone(),
+                }),
+                (None, Some(_), Some(_)) => {
+                    bail!("hub-repo and checkpoint-dir set, but no HF_TOKEN env variable.")
                 }
-                None => None,
+                (_, Some(_), None) => {
+                    bail!("--hub-repo was set, but no --checkpoint-dir was passed!")
+                }
+                (_, None, _) => None,
             };
 
             let wandb_info = match std::env::var("WANDB_API_KEY") {
@@ -223,9 +227,8 @@ async fn async_main() -> Result<()> {
                 write_gradients_dir,
                 eval_task_max_docs,
                 eval_tasks,
-                checkpoint_dir,
-                hub_repo,
-                hub_token,
+                checkpoint_upload_info,
+                hub_read_token,
                 wandb_info,
             })
             .run()

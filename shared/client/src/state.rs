@@ -69,6 +69,13 @@ struct EvalTask {
     next_index: Arc<AtomicUsize>,
 }
 
+#[derive(Debug, Clone)]
+pub struct CheckpointUploadInfo {
+    pub hub_repo: String,
+    pub hub_token: String,
+    pub checkpoint_dir: PathBuf,
+}
+
 pub struct State<T: NodeIdentity> {
     pub identity: T,
     private_key: T::PrivateKey,
@@ -116,12 +123,11 @@ pub struct State<T: NodeIdentity> {
     tokenizer: Option<Arc<Tokenizer>>,
     apply_start: Option<Instant>,
     started_early_evals: bool,
-    checkpoint_dir: Option<PathBuf>,
     checkpoint_extra_files: Vec<PathBuf>,
     checkpointing: TaskResult<(Trainer, Option<model::HubRepo>)>,
     last_warmup_peer_announcement: Option<Instant>,
-    hub_repo: Option<String>,
-    hub_token: Option<String>,
+    checkpoint_upload_info: Option<CheckpointUploadInfo>,
+    hub_read_token: Option<String>,
     wandb_info: Option<WandBInfo>,
     wandb_run: Option<Arc<wandb::Run>>,
     wandb_log: LogData,
@@ -141,9 +147,8 @@ impl<T: NodeIdentity> State<T> {
         eval_task_max_docs: Option<usize>,
         micro_batch_size: Option<usize>,
         write_gradients_dir: Option<PathBuf>,
-        checkpoint_dir: Option<PathBuf>,
-        hub_repo: Option<String>,
-        hub_token: Option<String>,
+        checkpoint_upload_info: Option<CheckpointUploadInfo>,
+        hub_read_token: Option<String>,
         wandb_info: Option<WandBInfo>,
     ) -> Self {
         assert!(data_parallelism > 0);
@@ -195,11 +200,10 @@ impl<T: NodeIdentity> State<T> {
             apply_start: None,
             started_early_evals: false,
             last_warmup_peer_announcement: None,
-            checkpoint_dir,
+            checkpoint_upload_info,
+            hub_read_token,
             checkpoint_extra_files: Vec::new(),
             checkpointing: None,
-            hub_repo,
-            hub_token,
             wandb_info,
             wandb_run: None,
             wandb_log: LogData::new(),
@@ -816,7 +820,7 @@ impl<T: NodeIdentity> State<T> {
                                     model.clone(),
                                     self.data_parallelism,
                                     self.tensor_parallelism,
-                                    self.hub_token.clone(),
+                                    self.hub_read_token.clone(),
                                     self.wandb_info.clone(),
                                 )))
                         } else {
@@ -1253,48 +1257,53 @@ impl<T: NodeIdentity> State<T> {
             .run_state
             != RunState::Cooldown
         {
-            if let Some(checkpoint_dir) = &self.checkpoint_dir {
+            // todo consider allowing ability to write checkpoint to disk without uploading to HF
+            if let Some(CheckpointUploadInfo {
+                hub_repo,
+                hub_token,
+                checkpoint_dir,
+            }) = self.checkpoint_upload_info.clone()
+            {
                 match self.available_trainers.pop() {
                     Some(trainer) => {
                         let step = state.step - 1;
                         let run_id = state.run_id.clone();
                         let checkpoint_dir = checkpoint_dir.clone();
                         let checkpoint_extra_files = self.checkpoint_extra_files.clone();
-                        let hub_repo = self.hub_repo.clone();
-                        let hub_token = self.hub_token.clone();
-                        self.checkpointing = Some(tokio::task::spawn_blocking(move || {
-                            let (variables, trainer) = trainer.extract()?;
+                        self.checkpointing = Some(tokio::task::spawn(async move {
+                            let (variables, trainer) =
+                                tokio::task::spawn_blocking(|| trainer.extract()).await??;
+
                             let path = checkpoint_dir.join(format!("{run_id}-step{step}"));
+
                             info!("Saving to {}", path.display());
-                            let mut local = save_tensors_into_safetensors(variables, path.clone())?;
+
+                            let mut local = tokio::task::spawn_blocking({
+                                let path = path.clone();
+                                move || save_tensors_into_safetensors(variables, path)
+                            })
+                            .await??;
+
                             for extra in checkpoint_extra_files {
                                 let to = path.join(extra.file_name().unwrap());
-                                std::fs::copy(extra.clone(), to.clone())?;
+                                tokio::fs::copy(extra.clone(), to.clone()).await?;
                                 local.push(to);
                             }
-                            let hub_repo = match hub_repo {
-                                Some(hub_repo) => {
-                                    let hub_token =
-                                        hub_token.ok_or(Error::msg("No Hugging Face Hub token"))?;
-                                    let handle = Handle::current();
-                                    let hub_repo_ = hub_repo.clone();
-                                    info!("Uploading to {}", hub_repo);
-                                    let revision = handle.block_on(async move {
-                                        upload_model_repo_async(
-                                            hub_repo_,
-                                            local,
-                                            hub_token,
-                                            Some(format!("step {step}")),
-                                            None,
-                                        )
-                                        .await
-                                    })?;
-                                    Some(model::HubRepo {
-                                        repo_id: hub_repo,
-                                        revision: Some(revision),
-                                    })
-                                }
-                                None => None,
+
+                            let hub_repo = {
+                                info!("Uploading to {}", hub_repo);
+                                let revision = upload_model_repo_async(
+                                    hub_repo.clone(),
+                                    local,
+                                    hub_token.clone(),
+                                    Some(format!("step {step}")),
+                                    None,
+                                )
+                                .await?;
+                                Some(model::HubRepo {
+                                    repo_id: hub_repo.clone(),
+                                    revision: Some(revision),
+                                })
                             };
                             Ok((trainer, hub_repo))
                         }));

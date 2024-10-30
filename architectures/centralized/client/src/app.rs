@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use anyhow::{Error, Result};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
-use psyche_client::{Client, ClientTUI, ClientTUIState, WandBInfo, NC};
+use psyche_client::{CheckpointUploadInfo, Client, ClientTUI, ClientTUIState, WandBInfo, NC};
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_network::{NetworkTUIState, NetworkTui, RelayMode, SecretKey, TcpClient};
 use psyche_tui::logging::LoggerWidget;
@@ -69,10 +69,9 @@ pub struct App {
     eval_task_max_docs: Option<usize>,
     micro_batch_size: Option<usize>,
     write_gradients_dir: Option<PathBuf>,
-    checkpoint_dir: Option<PathBuf>,
-    hub_repo: Option<String>,
-    hub_token: Option<String>,
-    wandb_info: Option<WandBInfo>
+    checkpoint_upload_info: Option<CheckpointUploadInfo>,
+    hub_read_token: Option<String>,
+    wandb_info: Option<WandBInfo>,
 }
 
 pub struct AppBuilder(AppParams);
@@ -90,9 +89,8 @@ pub struct AppParams {
     pub p2p_port: Option<u16>,
     pub eval_tasks: Vec<psyche_eval::Task>,
     pub eval_task_max_docs: Option<usize>,
-    pub checkpoint_dir: Option<PathBuf>,
-    pub hub_repo: Option<String>,
-    pub hub_token: Option<String>,
+    pub checkpoint_upload_info: Option<CheckpointUploadInfo>,
+    pub hub_read_token: Option<String>,
     pub wandb_info: Option<WandBInfo>,
 }
 
@@ -135,9 +133,8 @@ impl AppBuilder {
             write_gradients_dir: p.write_gradients_dir,
             eval_tasks: p.eval_tasks,
             eval_task_max_docs: p.eval_task_max_docs,
-            checkpoint_dir: p.checkpoint_dir,
-            hub_repo: p.hub_repo,
-            hub_token: p.hub_token,
+            checkpoint_upload_info: p.checkpoint_upload_info,
+            hub_read_token: p.hub_read_token,
             wandb_info: p.wandb_info,
         };
         app.run(p2p).await
@@ -182,9 +179,8 @@ impl App {
             self.eval_task_max_docs,
             self.micro_batch_size,
             self.write_gradients_dir.clone(),
-            self.checkpoint_dir.clone(),
-            self.hub_repo.clone(),
-            self.hub_token.clone(),
+            self.checkpoint_upload_info.clone(),
+            self.hub_read_token.clone(),
             self.wandb_info.clone(),
         );
 
