@@ -80,13 +80,7 @@ pub struct State<T: NodeIdentity> {
     pub identity: T,
     private_key: T::PrivateKey,
     showed_inclusion_message: bool,
-    data_and_model_load: TaskResult<(
-        DataProviderTcpClient<T>,
-        Vec<ParallelModels>,
-        Tokenizer,
-        Vec<PathBuf>,
-        Option<wandb::Run>,
-    )>,
+    data_and_model_load: TaskResult<LoadedModelAndData<T>>,
     available_trainers: Vec<Trainer>,
     trainings: Vec<JoinHandle<Result<(TrainOutput, u64)>>>,
     applying: TaskResult<Vec<Trainer>>,
@@ -861,10 +855,15 @@ impl<T: NodeIdentity> State<T> {
             if !data_and_model_load.is_finished() {
                 bail!("Data and model load not finished when round started!")
             }
-            let (data_provider, models, tokenizer, checkpoint_extra_files, wandb_run) =
-                data_and_model_load.await??; // not a cancel safety point, this should return immediately
+            let LoadedModelAndData {
+                data_provider,
+                models,
+                tokenizer,
+                checkpoint_extra_files,
+                wandb_run,
+            } = data_and_model_load.await??; // not a cancel safety point, this should return immediately
             self.checkpoint_extra_files = checkpoint_extra_files;
-            self.wandb_run = wandb_run.map(|x| Arc::new(x));
+            self.wandb_run = wandb_run.map(Arc::new);
 
             // TODO add data fetching for verifying, too..
             self.data_fetcher = Some(DataFetcher::new(data_provider, self.data_parallelism * 2));
@@ -928,7 +927,7 @@ impl<T: NodeIdentity> State<T> {
         if self.applying.is_some() {
             bail!("Ready to train but previous applying still running");
         }
-        if self.evals.len() > 0 {
+        if !self.evals.is_empty() {
             bail!("Ready to train but evals still running");
         }
         if self.checkpointing.is_some() {
@@ -1328,13 +1327,7 @@ impl<T: NodeIdentity> State<T> {
         tensor_parallelism: usize,
         hub_token: Option<String>,
         wandb_info: Option<WandBInfo>,
-    ) -> Result<(
-        DataProviderTcpClient<T>,
-        Vec<ParallelModels>,
-        Tokenizer,
-        Vec<PathBuf>,
-        Option<wandb::Run>,
-    )> {
+    ) -> Result<LoadedModelAndData<T>> {
         let model::Model::LLM(llm) = model;
         let data_future = match &llm.data_location {
             model::LLMTrainingDataLocation::Server(data_server) => {
@@ -1342,98 +1335,97 @@ impl<T: NodeIdentity> State<T> {
             }
             model::LLMTrainingDataLocation::Local(_) => todo!(),
         };
-        let model_future: JoinHandle<Result<(Vec<LlamaForCausalLM>, Tokenizer, Vec<PathBuf>)>> =
-            match &llm.architecture {
-                model::LLMArchitecture::HfLlama => match &llm.checkpoint {
-                    model::Checkpoint::Hub(hub_repo) => {
-                        let hub_repo = hub_repo.clone();
-                        tokio::spawn(async move {
-                            let local = PathBuf::from(hub_repo.repo_id.clone());
-                            let repo_files = match hub_repo.revision.is_none()
-                                && tokio::fs::try_exists(local.clone())
-                                    .await
-                                    .unwrap_or_default()
-                            {
-                                true => {
-                                    let mut ret = Vec::new();
-                                    let mut read_dir = tokio::fs::read_dir(local).await?;
-                                    loop {
-                                        match read_dir.next_entry().await? {
-                                            Some(dir_entry) => ret.push(dir_entry.path()),
-                                            None => break,
-                                        }
+        let model_future: JoinHandle<Result<RawLoadedModel>> = match &llm.architecture {
+            model::LLMArchitecture::HfLlama => match &llm.checkpoint {
+                model::Checkpoint::Hub(hub_repo) => {
+                    let hub_repo = hub_repo.clone();
+                    tokio::spawn(async move {
+                        let local = PathBuf::from(hub_repo.repo_id.clone());
+                        let repo_files = match hub_repo.revision.is_none()
+                            && tokio::fs::try_exists(local.clone())
+                                .await
+                                .unwrap_or_default()
+                        {
+                            true => {
+                                let mut ret = Vec::new();
+                                let mut read_dir = tokio::fs::read_dir(local).await?;
+                                while let Some(dir_entry) = read_dir.next_entry().await? {
+                                    ret.push(dir_entry.path())
+                                }
+                                ret
+                            }
+                            false => {
+                                info!("Downloading {}", hub_repo.repo_id);
+                                download_model_repo_async(
+                                    hub_repo.repo_id.clone(),
+                                    hub_repo.revision,
+                                    None,
+                                    hub_token,
+                                    None,
+                                    false,
+                                )
+                                .await?
+                            }
+                        };
+                        let checkpoint_extra_files = repo_files
+                            .iter()
+                            .filter(|file| {
+                                file.ends_with("config.json")
+                                    || file.ends_with("tokenizer.json")
+                                    || file.ends_with("tokenizer_config.json")
+                                    || file.ends_with("special_tokens_map.json")
+                                    || file.ends_with("generation_config.json")
+                            })
+                            .cloned()
+                            .collect();
+                        info!("Loading {}", hub_repo.repo_id);
+                        let mut futures = Vec::with_capacity(data_parallelism * tensor_parallelism);
+                        for dp in 0..data_parallelism {
+                            let communicator_id = Arc::new(CommunicatorId::new());
+                            for tp in 0..tensor_parallelism {
+                                let tensor_parallelism_world = match tensor_parallelism {
+                                    1 => None,
+                                    tensor_parallelism => {
+                                        Some((communicator_id.clone(), tp, tensor_parallelism))
                                     }
-                                    ret
-                                }
-                                false => {
-                                    info!("Downloading {}", hub_repo.repo_id);
-                                    download_model_repo_async(
-                                        hub_repo.repo_id.clone(),
-                                        hub_repo.revision,
+                                };
+                                let repo_files = repo_files.clone();
+                                futures.push(tokio::task::spawn_blocking(move || {
+                                    LlamaForCausalLM::from_pretrained(
+                                        &repo_files,
+                                        Some(Kind::BFloat16),
                                         None,
-                                        hub_token,
-                                        None,
-                                        false,
+                                        Some(Device::Cuda(dp * tensor_parallelism + tp)),
+                                        tensor_parallelism_world,
+                                        Some(llm.max_seq_len as usize),
                                     )
-                                    .await?
-                                }
-                            };
-                            let checkpoint_extra_files = repo_files
-                                .iter()
-                                .filter(|file| {
-                                    file.ends_with("config.json")
-                                        || file.ends_with("tokenizer.json")
-                                        || file.ends_with("tokenizer_config.json")
-                                        || file.ends_with("special_tokens_map.json")
-                                        || file.ends_with("generation_config.json")
-                                })
-                                .map(|x| x.clone())
-                                .collect();
-                            info!("Loading {}", hub_repo.repo_id);
-                            let mut futures =
-                                Vec::with_capacity(data_parallelism * tensor_parallelism);
-                            for dp in 0..data_parallelism {
-                                let communicator_id = Arc::new(CommunicatorId::new());
-                                for tp in 0..tensor_parallelism {
-                                    let tensor_parallelism_world = match tensor_parallelism {
-                                        1 => None,
-                                        tensor_parallelism => {
-                                            Some((communicator_id.clone(), tp, tensor_parallelism))
-                                        }
-                                    };
-                                    let repo_files = repo_files.clone();
-                                    futures.push(tokio::task::spawn_blocking(move || {
-                                        LlamaForCausalLM::from_pretrained(
-                                            &repo_files,
-                                            Some(Kind::BFloat16),
-                                            None,
-                                            Some(Device::Cuda(dp * tensor_parallelism + tp)),
-                                            tensor_parallelism_world,
-                                            Some(llm.max_seq_len as usize),
-                                        )
-                                    }));
-                                }
+                                }));
                             }
-                            let tokenizer = auto_tokenizer(&repo_files)?;
-                            let mut models = Vec::new();
-                            for future in futures {
-                                models.push(future.await??);
-                            }
-                            info!(
-                                "Loaded {} onto {} gpu(s) (dp={},tp={})",
-                                hub_repo.repo_id,
-                                data_parallelism * tensor_parallelism,
-                                data_parallelism,
-                                tensor_parallelism
-                            );
-                            Ok((models, tokenizer, checkpoint_extra_files))
+                        }
+                        let tokenizer = auto_tokenizer(&repo_files)?;
+                        let mut models = Vec::new();
+                        for future in futures {
+                            models.push(future.await??);
+                        }
+                        info!(
+                            "Loaded {} onto {} gpu(s) (dp={},tp={})",
+                            hub_repo.repo_id,
+                            data_parallelism * tensor_parallelism,
+                            data_parallelism,
+                            tensor_parallelism
+                        );
+                        Ok(RawLoadedModel {
+                            models,
+                            tokenizer,
+                            checkpoint_extra_files,
                         })
-                    }
-                    model::Checkpoint::Ephemeral => {
-                        bail!("Joined an ephemeral run, cannot load model")
-                    }
-                },
-            };
+                    })
+                }
+                model::Checkpoint::Ephemeral => {
+                    bail!("Joined an ephemeral run, cannot load model")
+                }
+            },
+        };
         let wandb_future: JoinHandle<Result<Option<wandb::Run>>> = tokio::spawn(async move {
             match wandb_info {
                 Some(wandb_info) => {
@@ -1448,7 +1440,11 @@ impl<T: NodeIdentity> State<T> {
             }
         });
         let (data, models, wandb_run) = tokio::join!(data_future, model_future, wandb_future);
-        let (models, tokenizer, checkpoint_extra_files) = models??;
+        let RawLoadedModel {
+            models,
+            tokenizer,
+            checkpoint_extra_files,
+        } = models??;
         let data = data?;
         let wandb_run = wandb_run??;
         let mut tp_models = Vec::new();
@@ -1462,13 +1458,13 @@ impl<T: NodeIdentity> State<T> {
             }
             tp_models.last_mut().unwrap().push(model);
         }
-        Ok((
-            data,
-            tp_models,
+        Ok(LoadedModelAndData {
+            data_provider: data,
+            models: tp_models,
             tokenizer,
             checkpoint_extra_files,
             wandb_run,
-        ))
+        })
     }
 
     fn is_run_state(&self, run_state: RunState) -> bool {
@@ -1569,7 +1565,7 @@ impl<T: NodeIdentity> State<T> {
                     for eval_task in &self.prepared_eval_tasks {
                         let metric_name: &str = eval_task.task.main_metric_name();
                         let task_name = eval_task.task.name();
-                        match eval_task.results.sample(&metric_name) {
+                        match eval_task.results.sample(metric_name) {
                             Some(metric) => {
                                 last_eval_results.insert(task_name.to_owned(), metric);
                                 info!("{} {}: {:.3}", task_name, metric_name, metric)
@@ -1580,21 +1576,21 @@ impl<T: NodeIdentity> State<T> {
                         }
                     }
                     for (key, value) in last_eval_results {
-                        if !self._eval_results.contains_key(&key) {
-                            self._eval_results.insert(key, vec![value]);
-                        } else {
-                            self._eval_results.get_mut(&key).unwrap().push(value);
-                            self.wandb_log.insert(
-                                format!(
-                                    "eval/{}",
-                                    key.to_lowercase()
-                                        .chars()
-                                        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-                                        .collect::<String>()
-                                ),
-                                value,
-                            );
-                        }
+                        self._eval_results
+                            .entry(key.clone())
+                            .or_default()
+                            .push(value);
+
+                        self.wandb_log.insert(
+                            format!(
+                                "eval/{}",
+                                key.to_lowercase()
+                                    .chars()
+                                    .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+                                    .collect::<String>()
+                            ),
+                            value,
+                        );
                     }
                 }
             }
@@ -1709,4 +1705,18 @@ impl<T: NodeIdentity> From<&State<T>> for ClientTUIState {
             evals: value._eval_results.clone(),
         }
     }
+}
+
+struct RawLoadedModel {
+    pub models: Vec<LlamaForCausalLM>,
+    pub tokenizer: Tokenizer,
+    pub checkpoint_extra_files: Vec<PathBuf>,
+}
+
+struct LoadedModelAndData<T: NodeIdentity> {
+    data_provider: DataProviderTcpClient<T>,
+    models: Vec<ParallelModels>,
+    tokenizer: Tokenizer,
+    checkpoint_extra_files: Vec<PathBuf>,
+    wandb_run: Option<wandb::Run>,
 }

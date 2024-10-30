@@ -1,13 +1,13 @@
 use anyhow::Result;
 use psyche_data_provider::download_model_repo_sync;
-use psyche_eval::{ARCChallenge, ARCEasy, Hellaswag, MMLUPro, Task};
+use psyche_eval::{ArcChallenge, ArcEasy, Hellaswag, MMLUPro, Task};
 use psyche_modeling::{auto_tokenizer, CausalLM, LlamaForCausalLM};
 use tch::{Device, Kind};
 
 fn main() -> Result<()> {
     let tasks = vec![
-        Task::new(ARCEasy::load()?, 0, 42),
-        Task::new(ARCChallenge::load()?, 0, 42),
+        Task::new(ArcEasy::load()?, 0, 42),
+        Task::new(ArcChallenge::load()?, 0, 42),
         Task::new(Hellaswag::load()?, 0, 42),
         Task::new(MMLUPro::load()?, 0, 42),
     ];

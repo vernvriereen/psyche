@@ -388,10 +388,10 @@ impl CompressDCT {
         kind: Kind,
         device: Device,
     ) -> Tensor {
-        let idx = if totalk == 0{
+        let idx = if totalk == 0 {
             idx.shallow_clone()
         } else if totalk <= 256 {
-           idx.view_dtype(Kind::Uint8)
+            idx.view_dtype(Kind::Uint8)
         } else if totalk <= 65536 {
             idx.view_dtype(Kind::UInt16)
         } else if totalk <= 4294967296 {
@@ -530,7 +530,12 @@ impl Distro {
     }
 
     #[allow(unused)]
-    pub fn generate(&mut self, lr: f64, compression_topk: i64, quantization: bool) -> Vec<DistroResult> {
+    pub fn generate(
+        &mut self,
+        lr: f64,
+        compression_topk: i64,
+        quantization: bool,
+    ) -> Vec<DistroResult> {
         let _no_grad = tch::no_grad_guard();
         let variables = &mut self.sgd.trainable_variables_with_sharding();
         let mut ret = Vec::with_capacity(variables.len());

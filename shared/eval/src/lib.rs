@@ -6,7 +6,7 @@ mod tasks;
 mod traits;
 
 pub use harness::{PreparedTask, PreparedTaskResult, Task, TaskType};
-pub use tasks::{ARCChallenge, ARCEasy, Hellaswag, MMLUPro};
+pub use tasks::{ArcChallenge, ArcEasy, Hellaswag, MMLUPro};
 
 pub const ASCII_UPPERCASE: [&str; 26] = [
     "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S",
@@ -14,8 +14,8 @@ pub const ASCII_UPPERCASE: [&str; 26] = [
 ];
 
 pub const ALL_TASK_NAMES: [&str; 4] = [
-    ARCChallenge::name(),
-    ARCEasy::name(),
+    ArcChallenge::name(),
+    ArcEasy::name(),
     Hellaswag::name(),
     MMLUPro::name(),
 ];
@@ -33,8 +33,8 @@ pub fn tasktype_from_name(name: &str) -> Result<TaskType> {
         .collect::<String>()
         .as_str()
     {
-        "arc_challenge" => ARCChallenge::load(),
-        "arc_easy" => ARCEasy::load(),
+        "arc_challenge" => ArcChallenge::load(),
+        "arc_easy" => ArcEasy::load(),
         "hellaswag" => Hellaswag::load(),
         "mmlu_pro" => MMLUPro::load(),
         _ => bail!("Unknown task {name}"),

@@ -29,7 +29,7 @@ enum Optimizer {
         clip_grad_norm: Option<f32>,
     },
     Distro {
-        optimizer: Distro,
+        optimizer: Box<Distro>,
         compression_topk: i64,
         compression_warmup_topk: i64,
     },
@@ -135,7 +135,8 @@ impl Trainer {
                         0.0,
                         index,
                         model.comm.clone(),
-                    ),
+                    )
+                    .into(),
                     compression_topk: compression_topk as i64,
                     compression_warmup_topk: compression_warmup_topk as i64,
                 },

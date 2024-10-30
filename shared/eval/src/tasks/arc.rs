@@ -3,18 +3,18 @@ use anyhow::Result;
 use psyche_data_provider::{Dataset, Field, Row, RowAccessor, Split};
 use std::fmt::Display;
 
-struct ARC {
+struct Arc {
     test_split: Dataset,
     validation_dataset: Dataset,
     name: String,
 }
 
-pub struct ARCEasy {
-    task: ARC,
+pub struct ArcEasy {
+    task: Arc,
 }
 
-pub struct ARCChallenge {
-    task: ARC,
+pub struct ArcChallenge {
+    task: Arc,
 }
 
 fn field_to_string(field: &Field) -> String {
@@ -24,7 +24,7 @@ fn field_to_string(field: &Field) -> String {
     }
 }
 
-impl ARC {
+impl Arc {
     pub fn load(subset: &str) -> Result<TaskType> {
         let ret = Self {
             test_split: load_dataset("allenai/ai2_arc", Split::Test, Some(subset.to_string()))?,
@@ -74,31 +74,31 @@ impl ARC {
     }
 }
 
-impl LogLikelihoodTask for ARC {
+impl LogLikelihoodTask for Arc {
     fn get_documents(&self) -> Vec<Document> {
         self.test_split
             .iter()
-            .map(|row| ARC::row_to_document(&self.test_split, row))
+            .map(|row| Arc::row_to_document(&self.test_split, row))
             .collect()
     }
 
     fn get_fewshot_documents(&self) -> Vec<Document> {
         self.validation_dataset
             .iter()
-            .map(|row| ARC::row_to_document(&self.validation_dataset, row))
+            .map(|row| Arc::row_to_document(&self.validation_dataset, row))
             .collect()
     }
 }
 
-impl Display for ARC {
+impl Display for Arc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)
     }
 }
 
-impl ARCEasy {
+impl ArcEasy {
     pub fn load() -> Result<TaskType> {
-        ARC::load(Self::name())
+        Arc::load(Self::name())
     }
 
     pub const fn name() -> &'static str {
@@ -106,7 +106,7 @@ impl ARCEasy {
     }
 }
 
-impl LogLikelihoodTask for ARCEasy {
+impl LogLikelihoodTask for ArcEasy {
     fn get_documents(&self) -> Vec<Document> {
         self.task.get_documents()
     }
@@ -116,15 +116,15 @@ impl LogLikelihoodTask for ARCEasy {
     }
 }
 
-impl Display for ARCEasy {
+impl Display for ArcEasy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.task)
     }
 }
 
-impl ARCChallenge {
+impl ArcChallenge {
     pub fn load() -> Result<TaskType> {
-        ARC::load(Self::name())
+        Arc::load(Self::name())
     }
 
     pub const fn name() -> &'static str {
@@ -132,7 +132,7 @@ impl ARCChallenge {
     }
 }
 
-impl LogLikelihoodTask for ARCChallenge {
+impl LogLikelihoodTask for ArcChallenge {
     fn get_documents(&self) -> Vec<Document> {
         self.task.get_documents()
     }
@@ -142,7 +142,7 @@ impl LogLikelihoodTask for ARCChallenge {
     }
 }
 
-impl Display for ARCChallenge {
+impl Display for ArcChallenge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.task)
     }

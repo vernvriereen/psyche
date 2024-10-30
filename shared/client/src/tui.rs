@@ -62,8 +62,8 @@ impl psyche_tui::CustomWidget for ClientTUI {
     fn render(&mut self, area: Rect, buf: &mut Buffer, state: &Self::Data) {
         let right_size = state
             .evals
-            .iter()
-            .map(|(key, _)| key.len())
+            .keys()
+            .map(|key| key.len())
             .max_by(|x, y| x.cmp(y))
             .unwrap_or(6) as u16;
         let coord_split = Layout::vertical(match state.evals.is_empty() {
@@ -160,8 +160,8 @@ impl psyche_tui::CustomWidget for ClientTUI {
             let y_max = 1.;
             let plot_data: Vec<_> = state
                 .evals
-                .iter()
-                .map(|(_, values)| {
+                .values()
+                .map(|values| {
                     values
                         .iter()
                         .enumerate()

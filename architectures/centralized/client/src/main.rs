@@ -18,6 +18,7 @@ struct Args {
     command: Commands,
 }
 
+#[allow(clippy::large_enum_variant)] // it's only used at startup, we don't care.
 #[derive(Subcommand, Debug)]
 enum Commands {
     ShowIdentity {
@@ -209,8 +210,6 @@ async fn async_main() -> Result<()> {
                     .unwrap()
                 })
                 .unwrap_or_else(SecretKey::generate);
-
-            let tui = tui;
 
             let (cancel, tx_tui_state) =
                 maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;
