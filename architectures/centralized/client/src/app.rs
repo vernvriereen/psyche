@@ -182,6 +182,7 @@ impl App {
             self.checkpoint_upload_info.clone(),
             self.hub_read_token.clone(),
             self.wandb_info.clone(),
+            None,
         );
 
         loop {

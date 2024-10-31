@@ -29,8 +29,6 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error};
 use wandb::DataValue;
 
-const REBROADCAST_DURATION: Duration = Duration::from_secs(2);
-
 pub type TUIStates = (ClientTUIState, NetworkTUIState);
 
 pub struct Client<T: NodeIdentity, B: Backend<T> + 'static> {
@@ -43,16 +41,23 @@ pub struct Client<T: NodeIdentity, B: Backend<T> + 'static> {
 
 type CoordinatorUpdate<T> = (Option<Coordinator<T>>, Coordinator<T>);
 
-#[derive(Default)]
 struct Rebroadcast {
     messages: Vec<BroadcastMessage>,
     last: Option<Instant>,
+    interval: Duration,
 }
 
 impl Rebroadcast {
+    fn new(interval: Duration) -> Self {
+        Self {
+            messages: Vec::new(),
+            last: None,
+            interval,
+        }
+    }
     async fn tick(&mut self, p2p: &mut NC) -> Result<()> {
         let time_up = match self.last {
-            Some(last) => Instant::now() - last >= REBROADCAST_DURATION,
+            Some(last) => Instant::now() - last >= self.interval,
             None => true,
         };
         if time_up {
@@ -91,6 +96,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         checkpoint_upload_info: Option<CheckpointUploadInfo>,
         hub_read_token: Option<String>,
         wandb_info: Option<WandBInfo>,
+        rebroadcast_interval: Option<Duration>,
     ) -> Self {
         let cancel = CancellationToken::new();
         let (tx, rx) = watch::channel::<TUIStates>(Default::default());
@@ -115,7 +121,8 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                     wandb_info,
                 });
                 let train_start = state.get_train_start_notification();
-                let mut rebroadcast = Rebroadcast::default();
+                let mut rebroadcast =
+                    rebroadcast_interval.map(|interval| Rebroadcast::new(interval));
 
                 loop {
                     let step_result: std::result::Result<
@@ -130,8 +137,8 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                         },
                         res = watcher.borrow_mut().poll_next() => res.map(|(c,cn)| Some((c, cn.clone()))),
                         res = p2p.poll_next() => Self::handle_p2p_poll(&mut state, &watcher, &mut p2p, res).await.map(|_| None),
-                        res = state.poll_next() => Self::handle_state_poll(&mut state, &mut p2p, &mut watcher, &mut rebroadcast, res?).await.map(|_| None),
-                        _ = train_start.notified() => Self::handle_train_start(&mut state, &mut p2p, &mut rebroadcast).await.map(|_| None),
+                        res = state.poll_next() => Self::handle_state_poll(&mut state, &mut p2p, &mut watcher, rebroadcast.as_mut(), res?).await.map(|_| None),
+                        _ = train_start.notified() => Self::handle_train_start(&mut state, &mut p2p, rebroadcast.as_mut()).await.map(|_| None),
                         _ = sleep(Duration::from_secs_f32(0.1)) => {
                             // wakeup to re-evaluate non-waitable conditions
                             Ok(None)
@@ -141,7 +148,9 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                     if let Some(watcher_res) = step_result? {
                         Self::handle_watcher_poll(&mut state, &mut watcher, watcher_res).await?;
                     }
-                    rebroadcast.tick(&mut p2p).await?;
+                    if let Some(rebroadcast) = &mut rebroadcast {
+                        rebroadcast.tick(&mut p2p).await?;
+                    }
                 }
 
                 Ok(())
@@ -190,7 +199,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         state: &mut State<T>,
         p2p: &mut NC,
         watcher: &mut BackendWatcher<T, B>,
-        rebroadcast: &mut Rebroadcast,
+        rebroadcast: Option<&mut Rebroadcast>,
         res: ToSend,
     ) -> Result<()> {
         match res {
@@ -205,7 +214,9 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                 match broadcast.borrow_mut() {
                     BroadcastMessage::TrainingResult(training_result) => {
                         training_result.ticket = new_ticket.clone();
-                        rebroadcast.push(broadcast.clone());
+                        if let Some(rebroadcast) = rebroadcast {
+                            rebroadcast.push(broadcast.clone());
+                        }
                     }
                     BroadcastMessage::PeerAnnouncement(peer_announcement) => {
                         peer_announcement.ticket = new_ticket.clone();
@@ -233,9 +244,11 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
     async fn handle_train_start(
         state: &mut State<T>,
         p2p: &mut NC,
-        rebroadcast: &mut Rebroadcast,
+        rebroadcast: Option<&mut Rebroadcast>,
     ) -> Result<()> {
-        rebroadcast.clear();
+        if let Some(rebroadcast) = rebroadcast {
+            rebroadcast.clear();
+        }
         for blob in p2p.currently_sharing_blobs().clone() {
             p2p.remove_downloadable(blob).await?;
         }
