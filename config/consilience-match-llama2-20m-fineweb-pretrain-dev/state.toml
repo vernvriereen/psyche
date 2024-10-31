@@ -1,0 +1,78 @@
+run_id = "consilience-match-llama2-20m-fineweb"
+run_state = "WaitingForMembers"
+run_state_start_unix_timestamp = 0
+warmup_time = 30
+cooldown_time = 5
+checkpointers = []
+overlapped = false
+rounds_per_epoch = 20
+max_round_train_time = 300
+round_witness_time = 2
+round_apply_time = 4
+rounds_head = 0
+first_round = false
+min_clients = 2
+tick = 0
+last_tick_unix_timestamp = 0
+batches_per_round = 4
+data_indicies_per_batch = 1
+max_batches_per_client = 10000
+verification_percent = 0
+witness_nodes = 1
+witness_quorum = 1
+epoch = 0
+step = 1
+last_step_unix_timestamp = 0
+clients = []
+dropped_clients = []
+epoch_start_data_index = 0
+total_steps = 25000
+overlapepd = false
+
+[[rounds]]
+height = 0
+clients_len = 0
+data_index = 0
+random_seed = 0
+tie_breaker_tasks = 0
+witnesses = []
+[[rounds]]
+height = 0
+clients_len = 0
+data_index = 0
+random_seed = 0
+tie_breaker_tasks = 0
+witnesses = []
+[[rounds]]
+height = 0
+clients_len = 0
+data_index = 0
+random_seed = 0
+tie_breaker_tasks = 0
+witnesses = []
+[[rounds]]
+height = 0
+clients_len = 0
+data_index = 0
+random_seed = 0
+tie_breaker_tasks = 0
+witnesses = []
+[model.LLM]
+architecture = "HfLlama"
+data_type = "Pretraining"
+max_seq_len = 512
+[model.LLM.data_location]
+Server = "127.0.0.1:20001"
+[model.LLM.checkpoint.Hub]
+repo_id = "emozilla/llama2-20m-init"
+[model.LLM.lr_schedule.Cosine]
+base_lr = 4.0e-4
+warmup_steps = 20
+warmup_init_lr = 0.0
+total_steps = 2000
+final_lr = 4.0e-5
+[model.LLM.optimizer.Distro]
+compression_decay = 0.999
+compression_chunk = 16
+compression_topk = 4
+compression_warmup_topk = 4
