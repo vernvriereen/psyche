@@ -2,10 +2,12 @@ use anyhow::{bail, Result};
 use chrono::{Local, Timelike};
 use clap::{ArgAction, Parser};
 use iroh::{
-    base::ticket::BlobTicket,
+    base::{base32, ticket::BlobTicket},
     net::relay::{RelayMap, RelayMode, RelayUrl},
 };
-use psyche_network::{NetworkConnection, NetworkEvent, NetworkTUIState, NetworkTui, PeerList};
+use psyche_network::{
+    NetworkConnection, NetworkEvent, NetworkTUIState, NetworkTui, PeerList, PublicKey,
+};
 use psyche_tui::{
     logging::LoggerWidget,
     maybe_start_render_loop,
@@ -195,12 +197,15 @@ impl App {
             }
         };
 
-        let message = Message::DistroResult { step, blob_ticket };
+        let message = Message::DistroResult {
+            step,
+            blob_ticket: blob_ticket.clone(),
+        };
 
         if let Err(e) = self.network.broadcast(&message).await {
             error!("Error sending message: {}", e);
         } else {
-            info!("broadcasted message for step {step}: {:?}", message);
+            info!("broadcasted message for step {step}: {}", blob_ticket);
         }
     }
 }
@@ -220,7 +225,15 @@ async fn main() -> Result<()> {
 
     let PeerList(peers) = args
         .peer_list
-        .map(|p| PeerList::from_str(&p).unwrap())
+        .map(|p| {
+            PeerList::from_str(&p).unwrap_or_else(|_| {
+                let single_node_id = base32::parse_vec(&p)
+                    .map(|b| PublicKey::try_from(&b as &[u8]))
+                    .expect("failed to parse peer list or node addr from arg")
+                    .expect("failed to parse peer list or node addr from arg");
+                PeerList(vec![single_node_id.into()])
+            })
+        })
         .unwrap_or_default();
 
     info!("joining gossip room");

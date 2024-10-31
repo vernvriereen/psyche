@@ -4,14 +4,17 @@ use std::{
     time::{Duration, Instant},
 };
 
-use iroh::{blobs::Hash, net::key::PublicKey};
+use iroh::{
+    blobs::Hash,
+    net::{endpoint::ConnectionType, key::PublicKey},
+};
 
 use crate::{download_manager::DownloadUpdate, peer_list::PeerList};
 
 #[derive(Debug)]
 pub struct State {
     pub join_ticket: PeerList,
-    pub last_seen: HashMap<PublicKey, Instant>,
+    pub last_seen: HashMap<PublicKey, (ConnectionType, Instant)>,
     pub bandwidth_tracker: BandwidthTracker,
     pub bandwidth_history: VecDeque<f64>,
     pub download_progesses: HashMap<Hash, DownloadUpdate>,

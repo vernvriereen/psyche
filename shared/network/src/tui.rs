@@ -10,7 +10,7 @@ use psyche_tui::ratatui::{
     },
 };
 
-use iroh::net::key::PublicKey;
+use iroh::net::{endpoint::ConnectionType, key::PublicKey};
 use std::{
     collections::{HashMap, VecDeque},
     ops::Sub,
@@ -55,18 +55,23 @@ impl psyche_tui::CustomWidget for NetworkTui {
                         )
                         .render(chunks[0], buf);
 
-                    List::new(state.last_seen.iter().map(|(peer_id, last_seen_instant)| {
-                        let last_seen_time = Instant::now().sub(*last_seen_instant).as_secs_f64();
-                        let li = ListItem::new(format!(
-                            "{}: {:.2} seconds ago",
-                            peer_id, last_seen_time
-                        ));
-                        if last_seen_time < 1.0 {
-                            li.bg(Color::LightYellow).fg(Color::Black)
-                        } else {
-                            li
-                        }
-                    }))
+                    List::new(state.last_seen.iter().map(
+                        |(peer_id, (peer_connection_method, last_seen_instant))| {
+                            let last_seen_time =
+                                Instant::now().sub(*last_seen_instant).as_secs_f64();
+                            let li = ListItem::new(format!(
+                                "{} ({}): {:.2} seconds ago",
+                                peer_id.fmt_short(),
+                                peer_connection_method,
+                                last_seen_time
+                            ));
+                            if last_seen_time < 1.0 {
+                                li.bg(Color::LightYellow).fg(Color::Black)
+                            } else {
+                                li
+                            }
+                        },
+                    ))
                     .block(
                         Block::default()
                             .title("Recently Seen Peers")
@@ -203,7 +208,7 @@ pub struct UIDownloadProgress {
 #[derive(Default, Debug, Clone)]
 pub struct NetworkTUIStateInner {
     pub join_ticket: PeerList,
-    pub last_seen: HashMap<PublicKey, Instant>,
+    pub last_seen: HashMap<PublicKey, (ConnectionType, Instant)>,
     // pub data_per_sec_per_client: HashMap<PublicKey, f64>,
     pub total_data_per_sec: f64,
     pub download_bandwidth_history: VecDeque<f64>,

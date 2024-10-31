@@ -110,8 +110,10 @@ where
             .spawn()
             .await?;
 
-        info!("Our node id: {}", node.node_id());
-
+        info!("Our node addr: {}", node.node_id());
+        let me = node.endpoint().node_addr().await?;
+        let join_ticket = PeerList(vec![me]);
+        info!("our join ticket: {}", join_ticket);
         let peer_ids: Vec<_> = bootstrap_peers.iter().map(|p| p.node_id).collect();
         if bootstrap_peers.is_empty() {
             info!("Waiting for peers to join us...");
@@ -298,7 +300,6 @@ where
         self.state
             .bandwidth_tracker
             .add_event(update.downloaded_size_delta);
-        self.state.last_seen.insert(update.from, Instant::now());
 
         if update.all_done {
             self.state.download_progesses.remove(&update.hash);
@@ -364,16 +365,16 @@ async fn on_update_stats(node: &MemNode, stats: &mut State) -> Result<()> {
 
     stats.join_ticket = ticket;
 
-    for (peer_id, last_recvd) in node
+    for (peer_id, conn_type, last_recvd) in node
         .endpoint()
         .remote_info_iter()
-        .filter_map(|i| i.last_received().map(|r| (i.node_id, r)))
+        .filter_map(|i| i.last_received().map(|r| (i.node_id, i.conn_type, r)))
     {
         // after 2 minutes with no comms, assume a client is disconnected.
         if last_recvd.as_secs() < 120 {
             stats
                 .last_seen
-                .insert(peer_id, Instant::now().sub(last_recvd));
+                .insert(peer_id, (conn_type, Instant::now().sub(last_recvd)));
         } else {
             stats.last_seen.remove(&peer_id);
         }
