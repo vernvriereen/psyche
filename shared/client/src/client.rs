@@ -1,6 +1,6 @@
 use crate::{
     protocol::NE,
-    state::{CheckpointUploadInfo, State, ToSend},
+    state::{CheckpointUploadInfo, State, StateOptions, ToSend},
     BroadcastMessage, ClientTUIState, WandBInfo, NC,
 };
 use anyhow::Result;
@@ -88,8 +88,8 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         eval_task_max_docs: Option<usize>,
         micro_batch_size: Option<usize>,
         write_gradients_dir: Option<PathBuf>,
-        checkpoint_write_info: Option<CheckpointUploadInfo>,
-        hub_token: Option<String>,
+        checkpoint_upload_info: Option<CheckpointUploadInfo>,
+        hub_read_token: Option<String>,
         wandb_info: Option<WandBInfo>,
     ) -> Self {
         let cancel = CancellationToken::new();
@@ -101,7 +101,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
             let req_tui_state = req_tui_state.clone();
             async move {
                 let mut watcher = BackendWatcher::new(backend);
-                let mut state = State::new(
+                let mut state = State::new(StateOptions {
                     identity,
                     private_key,
                     data_parallelism,
@@ -110,10 +110,10 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                     eval_task_max_docs,
                     micro_batch_size,
                     write_gradients_dir,
-                    checkpoint_write_info,
-                    hub_token,
+                    checkpoint_upload_info,
+                    hub_read_token,
                     wandb_info,
-                );
+                });
                 let train_start = state.get_train_start_notification();
                 let mut rebroadcast = Rebroadcast::default();
 

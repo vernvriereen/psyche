@@ -14,6 +14,7 @@ use std::{
 };
 use tch::{Kind, Tensor};
 use tokenizers::Tokenizer;
+use tracing::info;
 
 pub enum TaskType {
     LogLikelihood(Box<dyn LogLikelihoodTask>),
@@ -105,13 +106,10 @@ impl Task {
         mut self,
         tokenizer: &Tokenizer,
         bos_token_id: Option<i64>,
-        quiet: bool,
         limit: Option<usize>,
     ) -> PreparedTask {
         let name = format!("{}", &self);
-        if !quiet {
-            println!("Preparing {name}");
-        }
+        info!("Preparing {name}");
         match self.task_type {
             TaskType::LogLikelihood(llh) => {
                 let mut docs = llh.get_documents();
@@ -162,21 +160,25 @@ impl Task {
     }
 }
 
+pub struct EvalTaskOptions<'a, M: CausalLM> {
+    pub model: &'a mut M,
+    pub skip_and_step_by: Option<(usize, usize)>,
+    pub live_results: Option<Arc<RunningAverage>>,
+    pub cancel: Option<Arc<AtomicBool>>,
+    pub limit: Option<usize>,
+    pub loop_if_empty: bool,
+}
+
 impl PreparedTask {
     pub fn run<M: CausalLM>(
         &self,
-        model: &mut M,
-        quiet: bool,
-        skip_and_step_by: Option<(usize, usize)>,
-        live_results: Option<Arc<RunningAverage>>,
-        cancel: Option<Arc<AtomicBool>>,
-        limit: Option<usize>,
-        infinite: bool,
+        options: EvalTaskOptions<'_, M>,
+        progress_bar: bool,
     ) -> PreparedTaskResult {
-        let pbar = match quiet {
+        let pbar = match progress_bar {
             true => None,
             false => {
-                println!("Running {}", self.name);
+                info!("Running {}", self.name);
                 let pbar = ProgressBar::new(self.num as u64);
                 pbar.set_style(ProgressStyle::default_bar()
                     .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
@@ -190,63 +192,56 @@ impl PreparedTask {
             PreparedTaskType::LogLikelihood {
                 docs,
                 tokenized_fewshot,
-            } => Self::run_log_likelihood(
-                model,
-                docs,
-                skip_and_step_by,
-                tokenized_fewshot,
-                pbar,
-                live_results,
-                cancel,
-                limit,
-                infinite,
-            ),
+            } => Self::run_log_likelihood(options, docs, tokenized_fewshot, pbar),
         }
     }
 
     fn run_log_likelihood<M: CausalLM>(
-        model: &mut M,
+        options: EvalTaskOptions<'_, M>,
         docs: &[TokenizedLLHDocument],
-        skip_and_step_by: Option<(usize, usize)>,
         tokenized_fewshot: &[i64],
         pbar: Option<ProgressBar>,
-        live_results: Option<Arc<RunningAverage>>,
-        cancel: Option<Arc<AtomicBool>>,
-        mut limit: Option<usize>,
-        infinite: bool,
     ) -> PreparedTaskResult {
-        let results = live_results.unwrap_or_default();
-        let (mut skip, step_by) = skip_and_step_by.unwrap_or((0, 1));
+        let results = options.live_results.unwrap_or_default();
+        let (mut skip, step_by) = options.skip_and_step_by.unwrap_or((0, 1));
         results.add_entry_if_needed("acc", docs.len());
         results.add_entry_if_needed("acc_norm", docs.len());
         let mut next_index = skip;
         let fast_forward = (skip / docs.len()) * docs.len();
         skip -= fast_forward;
         let mut cancelled = false;
-        for (doc_index, doc) in docs.iter().cycle().enumerate().skip(skip).step_by(step_by) {
+
+        for (num_iterations, (doc_index, doc)) in docs
+            .iter()
+            .cycle()
+            .enumerate()
+            .skip(skip)
+            .step_by(step_by)
+            .enumerate()
+        {
             next_index = doc_index;
-            if let Some(cancel) = cancel.as_ref() {
+            if let Some(cancel) = options.cancel.as_ref() {
                 if cancel.load(Ordering::SeqCst) {
                     cancelled = true;
                     break;
                 }
             }
-            if !infinite && doc_index >= docs.len() {
+            if !options.loop_if_empty && doc_index >= docs.len() {
                 break;
             }
-            if let Some(limit_) = limit.as_ref() {
-                if *limit_ == 0 {
+            if let Some(limit) = options.limit {
+                if num_iterations >= limit {
                     break;
-                } else {
-                    limit = Some(limit_ - 1);
                 }
             }
             let mut context = tokenized_fewshot.to_vec();
             context.extend_from_slice(&doc.text);
             let mut scores: Vec<(f32, bool)> = Vec::new();
             if doc.choices.iter().all(|x| x.len() == 1) {
-                let ids = Tensor::from_slice(&context).to(model.device()).unsqueeze(0);
-                let (logits, _) = model.forward(&ids, None, Some(1));
+                let ids = Tensor::from_slice(&context)
+                    .to(options.model.device())
+                    .unsqueeze(0);
+                let (logits, _) = options.model.forward(&ids, None, Some(1));
                 let logits = logits.squeeze().log_softmax(-1, None);
                 let greedy: i64 = logits.argmax(-1, false).try_into().unwrap();
                 let index =
@@ -264,8 +259,13 @@ impl PreparedTask {
                 for choice in &doc.choices {
                     let mut ids = context.clone();
                     ids.extend_from_slice(choice);
-                    let ids = Tensor::from_slice(&ids).to(model.device()).unsqueeze(0);
-                    let (logits, _) = model.forward(&ids, None, Some((choice.len() + 1) as i64));
+                    let ids = Tensor::from_slice(&ids)
+                        .to(options.model.device())
+                        .unsqueeze(0);
+                    let (logits, _) =
+                        options
+                            .model
+                            .forward(&ids, None, Some((choice.len() + 1) as i64));
                     let logits =
                         logits
                             .log_softmax(-1, None)

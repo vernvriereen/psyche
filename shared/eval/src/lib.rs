@@ -5,7 +5,7 @@ mod harness;
 mod tasks;
 mod traits;
 
-pub use harness::{PreparedTask, PreparedTaskResult, Task, TaskType};
+pub use harness::{EvalTaskOptions, PreparedTask, PreparedTaskResult, Task, TaskType};
 pub use tasks::{ArcChallenge, ArcEasy, Hellaswag, MMLUPro};
 
 pub const ASCII_UPPERCASE: [&str; 26] = [

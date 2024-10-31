@@ -5202,6 +5202,7 @@ dependencies = [
  "regex",
  "tch",
  "tokenizers",
+ "tracing",
 ]
 
 [[package]]

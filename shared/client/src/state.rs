@@ -16,6 +16,7 @@ use psyche_core::{sha256, Bloom, BoundedQueue, IntervalTree, NodeIdentity, Runni
 use psyche_data_provider::{
     download_model_repo_async, upload_model_repo_async, DataProviderTcpClient,
 };
+use psyche_eval::EvalTaskOptions;
 use psyche_modeling::{
     auto_tokenizer, save_tensors_into_safetensors, CommunicatorId, DistroResult, LlamaForCausalLM,
 };
@@ -131,19 +132,35 @@ pub struct State<T: NodeIdentity> {
     _eval_results: HashMap<String, Vec<f64>>,
 }
 
+pub struct StateOptions<T: NodeIdentity> {
+    pub identity: T,
+    pub private_key: T::PrivateKey,
+    pub data_parallelism: usize,
+    pub tensor_parallelism: usize,
+    pub eval_tasks: Vec<psyche_eval::Task>,
+    pub eval_task_max_docs: Option<usize>,
+    pub micro_batch_size: Option<usize>,
+    pub write_gradients_dir: Option<PathBuf>,
+    pub checkpoint_upload_info: Option<CheckpointUploadInfo>,
+    pub hub_read_token: Option<String>,
+    pub wandb_info: Option<WandBInfo>,
+}
+
 impl<T: NodeIdentity> State<T> {
     pub fn new(
-        identity: T,
-        private_key: T::PrivateKey,
-        data_parallelism: usize,
-        tensor_parallelism: usize,
-        eval_tasks: Vec<psyche_eval::Task>,
-        eval_task_max_docs: Option<usize>,
-        micro_batch_size: Option<usize>,
-        write_gradients_dir: Option<PathBuf>,
-        checkpoint_upload_info: Option<CheckpointUploadInfo>,
-        hub_read_token: Option<String>,
-        wandb_info: Option<WandBInfo>,
+        StateOptions {
+            identity,
+            private_key,
+            data_parallelism,
+            tensor_parallelism,
+            eval_tasks,
+            eval_task_max_docs,
+            micro_batch_size,
+            write_gradients_dir,
+            checkpoint_upload_info,
+            hub_read_token,
+            wandb_info,
+        }: StateOptions<T>,
     ) -> Self {
         assert!(data_parallelism > 0);
         assert!(tensor_parallelism > 0);
@@ -901,7 +918,7 @@ impl<T: NodeIdentity> State<T> {
                     match tokenizer {
                         Some(tokenizer) => Ok(eval_tasks
                             .into_iter()
-                            .map(|task| task.prepare(&tokenizer, None, true, eval_task_max_docs))
+                            .map(|task| task.prepare(&tokenizer, None, eval_task_max_docs))
                             .collect()),
                         None => {
                             bail!("No tokenizer");
@@ -1530,12 +1547,17 @@ impl<T: NodeIdentity> State<T> {
                                     break;
                                 }
                                 let result = eval_task.task.run(
-                                    &mut trainer,
-                                    true,
-                                    Some((next_index + dp_index, data_parallelism)),
-                                    Some(eval_task.results.clone()),
-                                    Some(eval_cancel.clone()),
-                                    Some(10),
+                                    EvalTaskOptions {
+                                        model: &mut trainer,
+                                        skip_and_step_by: Some((
+                                            next_index + dp_index,
+                                            data_parallelism,
+                                        )),
+                                        live_results: Some(eval_task.results.clone()),
+                                        cancel: Some(eval_cancel.clone()),
+                                        limit: Some(10),
+                                        loop_if_empty: true,
+                                    },
                                     true,
                                 );
                                 eval_task

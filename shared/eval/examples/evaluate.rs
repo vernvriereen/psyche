@@ -1,6 +1,6 @@
 use anyhow::Result;
 use psyche_data_provider::download_model_repo_sync;
-use psyche_eval::{ArcChallenge, ArcEasy, Hellaswag, MMLUPro, Task};
+use psyche_eval::{ArcChallenge, ArcEasy, EvalTaskOptions, Hellaswag, MMLUPro, Task};
 use psyche_modeling::{auto_tokenizer, CausalLM, LlamaForCausalLM};
 use tch::{Device, Kind};
 
@@ -23,9 +23,18 @@ fn main() -> Result<()> {
     let tokenizer = auto_tokenizer(&repo)?;
     for task in tasks {
         let name = format!("{task}");
-        let result = task
-            .prepare(&tokenizer, model.bos_token_id(), false, None)
-            .run(&mut model, false, None, None, None, None, false);
+        let result = task.prepare(&tokenizer, model.bos_token_id(), None).run(
+            EvalTaskOptions {
+                model: &mut model,
+                skip_and_step_by: None,
+                live_results: None,
+                cancel: None,
+                limit: None,
+                loop_if_empty: false,
+            },
+            false,
+        );
+
         println!("{}: {:?}", name, result.scores);
     }
     Ok(())
