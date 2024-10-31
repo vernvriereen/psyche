@@ -170,14 +170,13 @@ where
 
     pub async fn broadcast_all(&mut self, messages: &[BroadcastMessage]) -> Result<()> {
         let encoded_messages: Result<Vec<Bytes>, _> = messages
-            .into_iter()
+            .iter()
             .map(|message| {
                 SignedMessage::sign_and_encode(self.node.endpoint().secret_key(), message)
             })
             .collect();
-        let encoded_messages = futures_util::stream::iter(
-            encoded_messages?.into_iter().map(|x| Command::Broadcast(x)),
-        );
+        let encoded_messages =
+            futures_util::stream::iter(encoded_messages?.into_iter().map(Command::Broadcast));
 
         self.gossip_tx.send_all(&mut encoded_messages.map(Ok)).await
     }

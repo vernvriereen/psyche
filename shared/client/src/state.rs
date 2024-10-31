@@ -577,8 +577,7 @@ impl<T: NodeIdentity> State<T> {
                     match self.payloads.get(&result.hash) {
                         Some(PayloadState::Downloading((_, _, ticket))) => {
                             info!("Download failed (retrying): {}", result.error);
-                            self.retried_downloads
-                                .insert(result.hash.clone(), retries + 1);
+                            self.retried_downloads.insert(result.hash, retries + 1);
                             return Ok(Some(ticket.clone()));
                         }
                         _ => {

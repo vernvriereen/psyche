@@ -393,13 +393,11 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                     hash: downloader.hash,
                 })))
             }
-            Err(e) => {
-                Ok(Some(DownloadManagerEvent::Failed(DownloadFailed {
-                    hash: downloader.hash,
-                    from: downloader.from,
-                    error: e
-                })))
-            }
+            Err(e) => Ok(Some(DownloadManagerEvent::Failed(DownloadFailed {
+                hash: downloader.hash,
+                from: downloader.from,
+                error: e,
+            }))),
         }
     }
 }
