@@ -11,7 +11,7 @@ pub use protocol::{BroadcastMessage, DistroResult, Payload, PeerAnnouncement, Tr
 pub use serialized_distro::{
     disto_results_to_bytes, distro_results_from_reader, SerializedDistroResult,
 };
-pub use state::CheckpointUploadInfo;
+pub use state::{BatchShuffleType, CheckpointUploadInfo, StateOptions};
 pub use tui::{ClientTUI, ClientTUIState};
 
 #[derive(Clone)]

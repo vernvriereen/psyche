@@ -1,7 +1,8 @@
 use psyche_coordinator::{get_batch_ids_for_round, Coordinator};
 use psyche_core::{IntervalTree, NodeIdentity};
 use psyche_data_provider::{DataProviderTcpClient, TokenizedDataProvider};
-use rand::Rng;
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 use std::{
     collections::HashSet,
     sync::{
@@ -24,14 +25,20 @@ pub struct DataFetcher<T: NodeIdentity> {
     data_provider: Arc<Mutex<DataProviderTcpClient<T>>>,
     active_fetch_task: Option<(BatchStep, JoinHandle<()>)>,
     buffer_size: usize,
+    get_rng_seed: Box<dyn Fn() -> [u8; 32] + Send>,
 }
 
 impl<T: NodeIdentity> DataFetcher<T> {
-    pub fn new(data_provider: DataProviderTcpClient<T>, buffer_size: usize) -> Self {
+    pub fn new(
+        data_provider: DataProviderTcpClient<T>,
+        buffer_size: usize,
+        get_rng_seed: Box<dyn Fn() -> [u8; 32] + Send>,
+    ) -> Self {
         Self {
             data_provider: Arc::new(Mutex::new(data_provider)),
             active_fetch_task: None,
             buffer_size,
+            get_rng_seed: Box::new(get_rng_seed),
         }
     }
 
@@ -82,6 +89,8 @@ impl<T: NodeIdentity> DataFetcher<T> {
                 let batch_ids_not_yet_trained_on: Arc<Mutex<HashSet<u64>>> =
                     batch_ids_not_yet_trained_on.clone();
                 let assigned_ids_done = assigned_ids_done.clone();
+                let rng_seed = (self.get_rng_seed)();
+                let mut deterministic_rng = ChaCha8Rng::from_seed(rng_seed);
                 async move {
                     loop {
                         let batch_id = {
@@ -98,7 +107,7 @@ impl<T: NodeIdentity> DataFetcher<T> {
                                             }
                                             len => remaining_batch_ids
                                                 .iter()
-                                                .nth(rand::thread_rng().gen_range(0..len))
+                                                .nth(deterministic_rng.gen_range(0..len))
                                                 .copied()
                                                 .unwrap(),
                                         }

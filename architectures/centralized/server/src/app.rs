@@ -214,6 +214,7 @@ impl App {
         loop {
             select! {
                 _ = self.cancel.cancelled() => {
+                    info!("got cancel callback, exiting cleanly.");
                     return Ok(());
                 }
 

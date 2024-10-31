@@ -22,7 +22,7 @@ use psyche_modeling::{
 };
 use psyche_network::{dummy_blob_ticket, BlobTicket, NetworkEvent};
 use psyche_watcher::{Backend, BackendWatcher};
-use rand::{seq::SliceRandom, thread_rng, RngCore};
+use rand::{seq::SliceRandom, thread_rng, Rng, RngCore};
 use std::{
     collections::HashMap,
     fs,
@@ -77,6 +77,11 @@ pub struct CheckpointUploadInfo {
     pub checkpoint_dir: PathBuf,
 }
 
+pub enum BatchShuffleType {
+    Random,
+    Fixed([u8; 32]),
+}
+
 pub struct State<T: NodeIdentity> {
     pub identity: T,
     private_key: T::PrivateKey,
@@ -99,6 +104,7 @@ pub struct State<T: NodeIdentity> {
     round_losses: Vec<f32>,
     data_parallelism: usize,
     tensor_parallelism: usize,
+    batch_shuffle_type: BatchShuffleType,
     notify_train_start: Arc<Notify>,
     micro_batch_size: Option<usize>,
     write_gradients_dir: Option<PathBuf>,
@@ -144,6 +150,7 @@ pub struct StateOptions<T: NodeIdentity> {
     pub checkpoint_upload_info: Option<CheckpointUploadInfo>,
     pub hub_read_token: Option<String>,
     pub wandb_info: Option<WandBInfo>,
+    pub batch_shuffle_type: BatchShuffleType,
 }
 
 impl<T: NodeIdentity> State<T> {
@@ -160,6 +167,7 @@ impl<T: NodeIdentity> State<T> {
             checkpoint_upload_info,
             hub_read_token,
             wandb_info,
+            batch_shuffle_type,
         }: StateOptions<T>,
     ) -> Self {
         assert!(data_parallelism > 0);
@@ -189,6 +197,7 @@ impl<T: NodeIdentity> State<T> {
             notify_train_start: Arc::new(Notify::new()),
             data_parallelism,
             tensor_parallelism,
+            batch_shuffle_type,
             micro_batch_size,
             write_gradients_dir,
             atomic_run_state: Arc::new(AtomicUsize::new(0)),
@@ -882,7 +891,18 @@ impl<T: NodeIdentity> State<T> {
             self.wandb_run = wandb_run.map(Arc::new);
 
             // TODO add data fetching for verifying, too..
-            self.data_fetcher = Some(DataFetcher::new(data_provider, self.data_parallelism * 2));
+            self.data_fetcher = Some(DataFetcher::new(
+                data_provider,
+                self.data_parallelism * 2,
+                match self.batch_shuffle_type {
+                    BatchShuffleType::Random => Box::new(|| {
+                        let mut arr = [0; 32];
+                        rand::thread_rng().fill(&mut arr);
+                        arr
+                    }),
+                    BatchShuffleType::Fixed(data) => Box::new(move || data),
+                },
+            ));
 
             let config = match &state.model {
                 Some(model) => model,
@@ -1630,8 +1650,10 @@ impl<T: NodeIdentity> State<T> {
                 };
 
                 let fname = format!(
-                    "result-step{}-batch{}.vec-postcard",
-                    distro_result.step, distro_result.batch_id
+                    "result-{}-step{}-batch{}.vec-postcard",
+                    self.identity.to_string(),
+                    distro_result.step,
+                    distro_result.batch_id
                 );
                 let fpath = write_gradients_dir.join(&fname);
                 let serialized = match disto_results_to_bytes(&distro_result.distro_results) {

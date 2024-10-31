@@ -1,8 +1,8 @@
 use crate::app::{AppBuilder, AppParams, Tabs, TAB_NAMES};
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use clap::{ArgAction, Parser, Subcommand};
-use psyche_client::{CheckpointUploadInfo, WandBInfo};
+use psyche_client::{BatchShuffleType, CheckpointUploadInfo, WandBInfo};
 use psyche_eval::tasktype_from_name;
 use psyche_network::SecretKey;
 use psyche_tui::{maybe_start_render_loop, LogOutput};
@@ -87,6 +87,10 @@ enum Commands {
 
         #[clap(long, env)]
         wandb_entity: Option<String>,
+
+        /// a 32-byte long hex string. WARNING: providing the same shuffle to two nodes will result in a LOT of duplicated & discarded training work.
+        #[clap(long, env)]
+        fixed_batch_shuffle: Option<String>,
     },
 }
 
@@ -121,6 +125,7 @@ async fn async_main() -> Result<()> {
             wandb_run,
             wandb_entity,
             wandb_project,
+            fixed_batch_shuffle,
         } => {
             #[cfg(target_os = "windows")]
             {
@@ -141,6 +146,15 @@ async fn async_main() -> Result<()> {
                     None,
                 );
             }
+
+            let batch_shuffle_type = match fixed_batch_shuffle {
+                None => BatchShuffleType::Random,
+                Some(seed) => BatchShuffleType::Fixed(
+                    hex::decode(seed)?
+                        .try_into()
+                        .map_err(|_| anyhow!("batch shuffle seed is not valid 32 bytes!"))?,
+                ),
+            };
 
             let hub_read_token = std::env::var("HF_TOKEN").ok();
 
@@ -202,7 +216,7 @@ async fn async_main() -> Result<()> {
 
             info!("Joining gossip room");
 
-            let secret_key: SecretKey = secret_key
+            let private_key: SecretKey = secret_key
                 .map(|k| {
                     SecretKey::try_from_openssh(
                         String::from_utf8(std::fs::read(k).unwrap()).unwrap(),
@@ -216,7 +230,7 @@ async fn async_main() -> Result<()> {
 
             AppBuilder::new(AppParams {
                 cancel,
-                secret_key,
+                private_key,
                 server_addr,
                 tx_tui_state,
                 run_id,
@@ -230,6 +244,7 @@ async fn async_main() -> Result<()> {
                 checkpoint_upload_info,
                 hub_read_token,
                 wandb_info,
+                batch_shuffle_type,
             })
             .run()
             .await

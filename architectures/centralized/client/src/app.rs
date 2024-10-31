@@ -3,7 +3,10 @@ use std::time::Duration;
 
 use anyhow::{Error, Result};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
-use psyche_client::{CheckpointUploadInfo, Client, ClientTUI, ClientTUIState, WandBInfo, NC};
+use psyche_client::{
+    BatchShuffleType, CheckpointUploadInfo, Client, ClientTUI, ClientTUIState, StateOptions,
+    WandBInfo, NC,
+};
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_network::{NetworkTUIState, NetworkTui, RelayMode, SecretKey, TcpClient};
 use psyche_tui::logging::LoggerWidget;
@@ -56,29 +59,19 @@ impl WatcherBackend<ClientId> for Backend {
 }
 
 pub struct App {
+    run_id: String,
     cancel: CancellationToken,
-    secret_key: SecretKey,
-    tx_tui_state: Option<Sender<TabsData>>,
     update_tui_interval: Interval,
+    tx_tui_state: Option<Sender<TabsData>>,
     coordinator_state: Coordinator<ClientId>,
     server_conn: TcpClient<ClientId, ClientToServerMessage, ServerToClientMessage>,
-    run_id: String,
-    data_parallelism: usize,
-    tensor_parallelism: usize,
-    eval_tasks: Vec<psyche_eval::Task>,
-    eval_task_max_docs: Option<usize>,
-    micro_batch_size: Option<usize>,
-    write_gradients_dir: Option<PathBuf>,
-    checkpoint_upload_info: Option<CheckpointUploadInfo>,
-    hub_read_token: Option<String>,
-    wandb_info: Option<WandBInfo>,
 }
 
 pub struct AppBuilder(AppParams);
 
 pub struct AppParams {
     pub cancel: CancellationToken,
-    pub secret_key: SecretKey,
+    pub private_key: SecretKey,
     pub server_addr: String,
     pub tx_tui_state: Option<Sender<TabsData>>,
     pub run_id: String,
@@ -92,6 +85,7 @@ pub struct AppParams {
     pub checkpoint_upload_info: Option<CheckpointUploadInfo>,
     pub hub_read_token: Option<String>,
     pub wandb_info: Option<WandBInfo>,
+    pub batch_shuffle_type: BatchShuffleType,
 }
 
 impl AppBuilder {
@@ -105,8 +99,8 @@ impl AppBuilder {
         let server_conn =
             TcpClient::<ClientId, ClientToServerMessage, ServerToClientMessage>::connect(
                 &p.server_addr,
-                p.secret_key.public().into(),
-                p.secret_key.clone(),
+                p.private_key.public().into(),
+                p.private_key.clone(),
             )
             .await?;
 
@@ -115,18 +109,19 @@ impl AppBuilder {
             p.p2p_port,
             RelayMode::Default,
             vec![],
-            Some(p.secret_key.clone()),
+            Some(p.private_key.clone()),
         )
         .await?;
 
         let mut app = App {
             cancel: p.cancel,
-            secret_key: p.secret_key,
             tx_tui_state: p.tx_tui_state,
             update_tui_interval: interval(Duration::from_millis(150)),
             coordinator_state: Coordinator::default(),
             server_conn,
             run_id: p.run_id,
+        };
+        let state_options: StateOptions<ClientId> = StateOptions {
             data_parallelism: p.data_parallelism,
             tensor_parallelism: p.tensor_parallelism,
             micro_batch_size: p.micro_batch_size,
@@ -136,13 +131,16 @@ impl AppBuilder {
             checkpoint_upload_info: p.checkpoint_upload_info,
             hub_read_token: p.hub_read_token,
             wandb_info: p.wandb_info,
+            identity: p.private_key.public().into(),
+            batch_shuffle_type: p.batch_shuffle_type,
+            private_key: p.private_key,
         };
-        app.run(p2p).await
+        app.run(p2p, state_options).await
     }
 }
 
 impl App {
-    pub async fn run(&mut self, mut p2p: NC) -> Result<()> {
+    pub async fn run(&mut self, mut p2p: NC, state_options: StateOptions<ClientId>) -> Result<()> {
         // sanity checks
         // if let Some(CheckpointUploadInfo {
         //     hub_repo,
@@ -158,7 +156,7 @@ impl App {
         //         bail!("checkpoint upload repo {hub_repo} is not writable with the passed API key.")
         //     }
         // }
-        
+
         self.server_conn
             .send(ClientToServerMessage::Join {
                 run_id: self.run_id.clone(),
@@ -180,26 +178,9 @@ impl App {
                 }
             }
         }
-        let eval_tasks = self.eval_tasks.drain(..).collect::<Vec<_>>();
         let (tx, rx) = mpsc::channel(128);
         let (witness_tx, mut witness_rx) = mpsc::channel(128);
-        let identity = ClientId::from(p2p.node_addr().await?.node_id);
-        let mut client = Client::new(
-            Backend { rx, tx: witness_tx },
-            p2p,
-            identity,
-            self.secret_key.clone(),
-            self.data_parallelism,
-            self.tensor_parallelism,
-            eval_tasks,
-            self.eval_task_max_docs,
-            self.micro_batch_size,
-            self.write_gradients_dir.clone(),
-            self.checkpoint_upload_info.clone(),
-            self.hub_read_token.clone(),
-            self.wandb_info.clone(),
-            None,
-        );
+        let mut client = Client::new(Backend { rx, tx: witness_tx }, p2p, state_options, None);
 
         loop {
             select! {

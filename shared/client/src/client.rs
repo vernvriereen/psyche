@@ -1,7 +1,7 @@
 use crate::{
     protocol::NE,
-    state::{CheckpointUploadInfo, State, StateOptions, ToSend},
-    BroadcastMessage, ClientTUIState, WandBInfo, NC,
+    state::{State, StateOptions, ToSend},
+    BroadcastMessage, ClientTUIState, NC,
 };
 use anyhow::Result;
 use psyche_coordinator::Coordinator;
@@ -12,7 +12,6 @@ use std::{
     borrow::BorrowMut,
     collections::HashMap,
     marker::PhantomData,
-    path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -85,17 +84,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
     pub fn new(
         backend: B,
         mut p2p: NC,
-        identity: T,
-        private_key: T::PrivateKey,
-        data_parallelism: usize,
-        tensor_parallelism: usize,
-        eval_tasks: Vec<psyche_eval::Task>,
-        eval_task_max_docs: Option<usize>,
-        micro_batch_size: Option<usize>,
-        write_gradients_dir: Option<PathBuf>,
-        checkpoint_upload_info: Option<CheckpointUploadInfo>,
-        hub_read_token: Option<String>,
-        wandb_info: Option<WandBInfo>,
+        state_options: StateOptions<T>,
         rebroadcast_interval: Option<Duration>,
     ) -> Self {
         let cancel = CancellationToken::new();
@@ -107,22 +96,9 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
             let req_tui_state = req_tui_state.clone();
             async move {
                 let mut watcher = BackendWatcher::new(backend);
-                let mut state = State::new(StateOptions {
-                    identity,
-                    private_key,
-                    data_parallelism,
-                    tensor_parallelism,
-                    eval_tasks,
-                    eval_task_max_docs,
-                    micro_batch_size,
-                    write_gradients_dir,
-                    checkpoint_upload_info,
-                    hub_read_token,
-                    wandb_info,
-                });
+                let mut state = State::new(state_options);
                 let train_start = state.get_train_start_notification();
-                let mut rebroadcast =
-                    rebroadcast_interval.map(|interval| Rebroadcast::new(interval));
+                let mut rebroadcast = rebroadcast_interval.map(Rebroadcast::new);
 
                 loop {
                     let step_result: std::result::Result<

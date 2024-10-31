@@ -19,6 +19,7 @@ tokio.workspace = true
 tracing.workspace = true
 tokio-util.workspace = true
 hf-hub.workspace = true
+hex = "0.4.3"
 
 [target.'cfg(windows)'.dependencies]
 tch.workspace = true
