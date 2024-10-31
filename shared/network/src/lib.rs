@@ -1,5 +1,8 @@
 use anyhow::{Error, Result};
-use download_manager::{DownloadComplete, DownloadManager, DownloadManagerEvent, DownloadUpdate};
+use bytes::Bytes;
+use download_manager::{
+    DownloadComplete, DownloadFailed, DownloadManager, DownloadManagerEvent, DownloadUpdate,
+};
 use futures_util::{future::join_all, Sink, SinkExt, Stream, StreamExt};
 use iroh::{
     blobs::BlobFormat,
@@ -165,6 +168,20 @@ where
             .await
     }
 
+    pub async fn broadcast_all(&mut self, messages: &[BroadcastMessage]) -> Result<()> {
+        let encoded_messages: Result<Vec<Bytes>, _> = messages
+            .into_iter()
+            .map(|message| {
+                SignedMessage::sign_and_encode(self.node.endpoint().secret_key(), message)
+            })
+            .collect();
+        let encoded_messages = futures_util::stream::iter(
+            encoded_messages?.into_iter().map(|x| Command::Broadcast(x)),
+        );
+
+        self.gossip_tx.send_all(&mut encoded_messages.map(Ok)).await
+    }
+
     pub async fn start_download(&mut self, ticket: BlobTicket) -> Result<()> {
         let mut progress = self
             .node
@@ -264,6 +281,9 @@ where
                     Some(DownloadManagerEvent::Update(update)) => {
                         self.on_download_update(update)?;
                     },
+                    Some(DownloadManagerEvent::Failed(result)) => {
+                        return Ok(Some(NetworkEvent::DownloadFailed(result)))
+                    }
                     None => {}
                 }
             }
@@ -281,26 +301,32 @@ where
             .add_event(update.downloaded_size_delta);
         self.state.last_seen.insert(update.from, Instant::now());
 
-        let is_done = update.downloaded_size == update.total_size;
-        if is_done {
+        if update.all_done {
             self.state.download_progesses.remove(&update.hash);
 
-            let node = self.node.clone();
-            let (send, recv) = oneshot::channel();
-            tokio::spawn(async move {
-                let blob_bytes = match node.blobs().read_to_bytes(update.hash).await {
-                    Ok(b) => b,
-                    Err(e) => {
-                        error!("Failed to read bytes: {e}");
-                        return;
-                    }
-                };
-                let res = send.send(blob_bytes);
-                if res.is_err() {
-                    error!("Failed to send read bytes result.");
+            let download = match update.error {
+                Some(err) => Err(Error::msg(format!("{}", err))),
+                None => {
+                    let node = self.node.clone();
+                    let (send, recv) = oneshot::channel();
+                    tokio::spawn(async move {
+                        let blob_bytes = match node.blobs().read_to_bytes(update.hash).await {
+                            Ok(b) => b,
+                            Err(e) => {
+                                error!("Failed to read bytes: {e}");
+                                return;
+                            }
+                        };
+                        let res = send.send(blob_bytes);
+                        if res.is_err() {
+                            error!("Failed to send read bytes result.");
+                        }
+                    });
+                    Ok(recv)
                 }
-            });
-            self.download_manager.read(update.from, update.hash, recv);
+            };
+            self.download_manager
+                .read(update.from, update.hash, download);
         } else {
             self.state.download_progesses.insert(update.hash, update);
         }
@@ -328,6 +354,7 @@ where
 {
     MessageReceived((PublicKey, BM)),
     DownloadComplete(DownloadComplete<D>),
+    DownloadFailed(DownloadFailed),
 }
 
 async fn on_update_stats(node: &MemNode, stats: &mut State) -> Result<()> {

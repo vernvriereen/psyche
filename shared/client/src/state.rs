@@ -40,11 +40,12 @@ use tracing::{debug, error, info, warn};
 use wandb::LogData;
 
 const WARMUP_PEER_ANNOUNCEMENT_DURATION: Duration = Duration::from_secs(10);
+const DOWNLOAD_RETRIES: usize = 3;
 
 type TaskResult<T> = Option<JoinHandle<Result<T>>>;
 
 enum PayloadState<T: NodeIdentity> {
-    Downloading((T, u64)),
+    Downloading((T, u64, BlobTicket)),
     Deserializing(JoinHandle<Result<Vec<DistroResult>>>),
 }
 
@@ -124,6 +125,7 @@ pub struct State<T: NodeIdentity> {
     wandb_info: Option<WandBInfo>,
     wandb_run: Option<Arc<wandb::Run>>,
     wandb_log: LogData,
+    retried_downloads: HashMap<psyche_network::Hash, usize>,
     /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
     _last_observed_num_batches_remaining: usize,
     _eval_results: HashMap<String, Vec<f64>>,
@@ -201,6 +203,7 @@ impl<T: NodeIdentity> State<T> {
             wandb_info,
             wandb_run: None,
             wandb_log: LogData::new(),
+            retried_downloads: HashMap::new(),
             _last_observed_num_batches_remaining: 0,
         }
     }
@@ -473,7 +476,7 @@ impl<T: NodeIdentity> State<T> {
                 self.handle_poll_next_checkpointing(trainer, hub_repo)
             }
             _ = sleep(Duration::from_secs_f32(0.1)) => {
-                // still need this?
+                // wakeup to re-evaluate non-waitable conditions
                 Ok(ToSend::Nothing)
             }
         }
@@ -527,27 +530,48 @@ impl<T: NodeIdentity> State<T> {
                     }
                 }
             }
-            NetworkEvent::DownloadComplete(downloaded) => match &downloaded.data {
-                Payload::DistroResult(distro_result) => {
-                    debug!(
-                        "Payload 0x{} received from {}",
-                        hex::encode(downloaded.hash),
-                        downloaded.from
-                    );
-                    if let Some(state) = &self.state {
-                        if state.step == distro_result.step {
-                            self.handle_payload(downloaded.hash, downloaded.data)
-                                .await?;
-                        } else {
-                            info!(
-                                "Got payload for step {} from {} but current step is {}",
-                                distro_result.step, downloaded.from, state.step
-                            );
+            NetworkEvent::DownloadComplete(downloaded) => {
+                self.retried_downloads.remove(&downloaded.hash);
+                match &downloaded.data {
+                    Payload::DistroResult(distro_result) => {
+                        debug!(
+                            "Payload 0x{} received from {}",
+                            hex::encode(downloaded.hash),
+                            downloaded.from
+                        );
+                        if let Some(state) = &self.state {
+                            if state.step == distro_result.step {
+                                self.handle_payload(downloaded.hash, downloaded.data)
+                                    .await?;
+                            } else {
+                                info!(
+                                    "Got payload for step {} from {} but current step is {}",
+                                    distro_result.step, downloaded.from, state.step
+                                );
+                            }
+                        }
+                    }
+                    Payload::Empty { random: _ } => {}
+                }
+            }
+            NetworkEvent::DownloadFailed(result) => {
+                let retries = *self.retried_downloads.get(&result.hash).unwrap_or(&0);
+                if retries >= DOWNLOAD_RETRIES {
+                    warn!("Download failed (not retrying): {}", result.error);
+                } else {
+                    match self.payloads.get(&result.hash) {
+                        Some(PayloadState::Downloading((_, _, ticket))) => {
+                            info!("Download failed (retrying): {}", result.error);
+                            self.retried_downloads
+                                .insert(result.hash.clone(), retries + 1);
+                            return Ok(Some(ticket.clone()));
+                        }
+                        _ => {
+                            info!("Missing payload for failed download 0x{}", result.hash);
                         }
                     }
                 }
-                Payload::Empty { random: _ } => {}
-            },
+            }
         }
         Ok(None)
     }
@@ -572,6 +596,11 @@ impl<T: NodeIdentity> State<T> {
                     .ok_or(Error::msg("Broadcast message processor has no self proofs"))?;
                 // verified by process_network_event caller
                 if training_result.proof.committee == Committee::Trainer {
+                    let ticket = training_result.ticket.clone();
+                    if self.payloads.contains_key(&ticket.hash()) {
+                        // if we already have this payload, ignore
+                        return Ok(None);
+                    }
                     let client_commitments =
                         *self.commitments_per_client.get(identity).unwrap_or(&0);
                     if state.is_greedy_data() {
@@ -606,7 +635,7 @@ impl<T: NodeIdentity> State<T> {
                         .commitments_per_client
                         .values()
                         .fold(0, |acc, ele| acc + *ele);
-                    debug!(
+                    info!(
                         "Total commitments for step {}: {}",
                         state.step, total_commitments
                     );
@@ -627,7 +656,6 @@ impl<T: NodeIdentity> State<T> {
                     self.commitments
                         .entry(training_result.batch_id)
                         .or_default();
-                    let ticket = training_result.ticket.clone();
                     let batch_id = training_result.batch_id;
                     self.commitments
                         .get_mut(&training_result.batch_id)
@@ -635,7 +663,7 @@ impl<T: NodeIdentity> State<T> {
                         .push((identity.clone(), training_result));
                     self.payloads.insert(
                         ticket.hash(),
-                        PayloadState::Downloading((identity.clone(), batch_id)),
+                        PayloadState::Downloading((identity.clone(), batch_id, ticket.clone())),
                     );
 
                     ticket
@@ -667,7 +695,7 @@ impl<T: NodeIdentity> State<T> {
     ) -> Result<()> {
         match payload {
             Payload::DistroResult(distro_result) => {
-                let (from, batch_id) = match self.payloads.get(&hash) {
+                let (from, batch_id, _) = match self.payloads.get(&hash) {
                     Some(PayloadState::Downloading(x)) => x,
                     Some(PayloadState::Deserializing(_)) => {
                         debug!("Duplicate download of {}", hash);
@@ -730,7 +758,7 @@ impl<T: NodeIdentity> State<T> {
                     }
 
                     remaining_batch_ids.remove(batch_id);
-                    debug!(
+                    info!(
                         "Remaining batches to download for step {}: {}",
                         distro_result.step,
                         remaining_batch_ids.len()
@@ -1051,7 +1079,8 @@ impl<T: NodeIdentity> State<T> {
             info!("Step {} loss: {}", state.step, loss);
             self.losses.push(loss);
             self.wandb_log.insert("train/loss", loss);
-            self.wandb_log.insert("train/certainty", self.certainty(loss));
+            self.wandb_log
+                .insert("train/certainty", self.certainty(loss));
         }
         if let Some(wandb_run) = &self.wandb_run {
             self.wandb_log

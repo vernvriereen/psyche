@@ -159,6 +159,9 @@ impl App {
                     file.data.len()
                 )
             }
+            NetworkEvent::DownloadFailed(result) => {
+                info!("Download failed: {}! Reason: {}", result.hash, result.error)
+            }
         }
     }
     async fn on_tick(&mut self) {

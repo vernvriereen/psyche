@@ -1,10 +1,10 @@
 use std::{fmt::Debug, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 
 use crate::util::convert_bytes;
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Context, Error, Result};
 use bytes::Bytes;
 use futures_util::future::select_all;
-use iroh::base::ticket::BlobTicket;
+use iroh::base::{rpc::RpcError, ticket::BlobTicket};
 use iroh::blobs::get::db::DownloadProgress;
 use iroh::net::key::PublicKey;
 use psyche_core::Networkable;
@@ -26,7 +26,7 @@ struct Download {
 struct ReadingFinishedDownload {
     from: PublicKey,
     hash: iroh::blobs::Hash,
-    download: oneshot::Receiver<Bytes>,
+    download: Result<oneshot::Receiver<Bytes>>,
 }
 
 impl Debug for ReadingFinishedDownload {
@@ -56,7 +56,11 @@ impl Download {
 }
 
 impl ReadingFinishedDownload {
-    fn new(from: PublicKey, hash: iroh::blobs::Hash, download: oneshot::Receiver<Bytes>) -> Self {
+    fn new(
+        from: PublicKey,
+        hash: iroh::blobs::Hash,
+        download: Result<oneshot::Receiver<Bytes>>,
+    ) -> Self {
         Self {
             download,
             from,
@@ -73,12 +77,20 @@ pub struct DownloadUpdate {
     pub downloaded_size: u64,
     pub total_size: u64,
     pub all_done: bool,
+    pub error: Option<RpcError>,
 }
 
 pub struct DownloadComplete<D: Networkable> {
     pub hash: iroh::blobs::Hash,
     pub from: PublicKey,
     pub data: D,
+}
+
+#[derive(Debug)]
+pub struct DownloadFailed {
+    pub hash: iroh::blobs::Hash,
+    pub from: PublicKey,
+    pub error: anyhow::Error,
 }
 
 impl<D: Networkable> Debug for DownloadComplete<D> {
@@ -94,6 +106,7 @@ impl<D: Networkable> Debug for DownloadComplete<D> {
 pub enum DownloadManagerEvent<D: Networkable> {
     Update(DownloadUpdate),
     Complete(DownloadComplete<D>),
+    Failed(DownloadFailed),
 }
 
 impl<D: Networkable> Debug for DownloadManagerEvent<D> {
@@ -101,6 +114,7 @@ impl<D: Networkable> Debug for DownloadManagerEvent<D> {
         match self {
             Self::Update(arg0) => f.debug_tuple("Update").field(arg0).finish(),
             Self::Complete(arg0) => f.debug_tuple("Complete").field(arg0).finish(),
+            Self::Failed(arg0) => f.debug_tuple("Failed").field(arg0).finish(),
         }
     }
 }
@@ -198,7 +212,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
         &mut self,
         from: PublicKey,
         hash: iroh::blobs::Hash,
-        download: oneshot::Receiver<Bytes>,
+        download: Result<oneshot::Receiver<Bytes>>,
     ) {
         let reading = self.reading.clone();
         let sender = self.tx_new_item.clone();
@@ -245,7 +259,16 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
 
         let read_futures = reading.iter_mut().enumerate().map(|(i, read)| {
             Box::pin(async move {
-                FutureResult::Read(i, (&mut read.download).await.map_err(|e| e.into()))
+                FutureResult::Read(
+                    i,
+                    match &mut read.download {
+                        Ok(download) => download.await.map_err(|e| e.into()),
+                        Err(err) => Err(Error::msg(format!(
+                            "Error downloading {}: {}",
+                            read.hash, err
+                        ))),
+                    },
+                )
             }) as Pin<Box<dyn Future<Output = FutureResult> + Send>>
         });
 
@@ -278,6 +301,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                         downloaded_size: size.value(),
                         total_size: size.value(),
                         all_done: false,
+                        error: None,
                     }),
                     DownloadProgress::Connected => None,
                     DownloadProgress::Found { size, .. } => {
@@ -289,6 +313,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                             downloaded_size: 0,
                             total_size: size,
                             all_done: false,
+                            error: None,
                         })
                     }
                     DownloadProgress::FoundHashSeq { .. } => None,
@@ -302,6 +327,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                             downloaded_size: offset,
                             total_size: download.total_size,
                             all_done: false,
+                            error: None,
                         })
                     }
                     DownloadProgress::Done { .. } => None,
@@ -318,6 +344,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                             downloaded_size: download.total_size,
                             total_size: download.total_size,
                             all_done: true,
+                            error: None,
                         })
                     }
                     DownloadProgress::Abort(err) => {
@@ -329,6 +356,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                             downloaded_size: 0,
                             total_size: 0,
                             all_done: true,
+                            error: Some(err),
                         })
                     }
                 };
@@ -354,7 +382,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
         result: Result<Bytes>,
         index: usize,
     ) -> Result<Option<DownloadManagerEvent<D>>> {
-        let downloader = reading.swap_remove(index);
+        let downloader: ReadingFinishedDownload = reading.swap_remove(index);
         match result {
             Ok(bytes) => {
                 let decoded = D::from_bytes(bytes.as_ref())
@@ -366,8 +394,11 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                 })))
             }
             Err(e) => {
-                error!("Read error: {}", e);
-                Err(e)
+                Ok(Some(DownloadManagerEvent::Failed(DownloadFailed {
+                    hash: downloader.hash,
+                    from: downloader.from,
+                    error: e
+                })))
             }
         }
     }

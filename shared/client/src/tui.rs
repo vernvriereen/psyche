@@ -12,7 +12,7 @@ use psyche_tui::ratatui::{
 use psyche_watcher::TuiRunState;
 
 lazy_static::lazy_static! {
-    static ref GRAPH_COLORS: [Style; 3] = [Style::default().red(), Style::default().magenta(), Style::default().green()];
+    static ref GRAPH_COLORS: [Style; 4] = [Style::default().red(), Style::default().magenta(), Style::default().green(), Style::default().cyan()];
 }
 
 #[derive(Default, Debug)]
@@ -134,7 +134,8 @@ impl psyche_tui::CustomWidget for ClientTUI {
                 Layout::horizontal([Constraint::Fill(1), Constraint::Length(right_size)])
                     .split(coord_split[1]);
 
-            let hsplit = Layout::horizontal(Constraint::from_fills([1, 1, 1, 1])).split(plot_split[0]);
+            let hsplit =
+                Layout::horizontal(Constraint::from_fills([1, 1, 1, 1])).split(plot_split[0]);
             Paragraph::new(format!("State: {}", state.run_state)).render(hsplit[0], buf);
             Paragraph::new(format!("Batches Left: {}", state.batches_left)).render(hsplit[1], buf);
             Paragraph::new(format!(

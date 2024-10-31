@@ -8,7 +8,14 @@ use psyche_coordinator::Coordinator;
 use psyche_core::NodeIdentity;
 use psyche_network::NetworkTUIState;
 use psyche_watcher::{Backend, BackendWatcher};
-use std::{borrow::BorrowMut, collections::HashMap, marker::PhantomData, path::PathBuf, sync::Arc};
+use std::{
+    borrow::BorrowMut,
+    collections::HashMap,
+    marker::PhantomData,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::{
     select,
     sync::{
@@ -16,10 +23,13 @@ use tokio::{
         Notify,
     },
     task::JoinHandle,
+    time::sleep,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error};
 use wandb::DataValue;
+
+const REBROADCAST_DURATION: Duration = Duration::from_secs(2);
 
 pub type TUIStates = (ClientTUIState, NetworkTUIState);
 
@@ -32,6 +42,37 @@ pub struct Client<T: NodeIdentity, B: Backend<T> + 'static> {
 }
 
 type CoordinatorUpdate<T> = (Option<Coordinator<T>>, Coordinator<T>);
+
+#[derive(Default)]
+struct Rebroadcast {
+    messages: Vec<BroadcastMessage>,
+    last: Option<Instant>,
+}
+
+impl Rebroadcast {
+    async fn tick(&mut self, p2p: &mut NC) -> Result<()> {
+        let time_up = match self.last {
+            Some(last) => Instant::now() - last >= REBROADCAST_DURATION,
+            None => true,
+        };
+        if time_up {
+            self.last = Some(Instant::now());
+            if !self.messages.is_empty() {
+                tracing::debug!("Rebroadcasting {} messages", self.messages.len());
+                return p2p.broadcast_all(&self.messages).await;
+            }
+        }
+        Ok(())
+    }
+
+    fn push(&mut self, message: BroadcastMessage) {
+        self.messages.push(message);
+    }
+
+    fn clear(&mut self) {
+        self.messages.clear();
+    }
+}
 
 impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
     // todo: refactor into a struct
@@ -76,6 +117,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                     wandb_info,
                 );
                 let train_start = state.get_train_start_notification();
+                let mut rebroadcast = Rebroadcast::default();
 
                 loop {
                     let step_result: std::result::Result<
@@ -90,13 +132,18 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                         },
                         res = watcher.borrow_mut().poll_next() => res.map(|(c,cn)| Some((c, cn.clone()))),
                         res = p2p.poll_next() => Self::handle_p2p_poll(&mut state, &watcher, &mut p2p, res).await.map(|_| None),
-                        res = state.poll_next() => Self::handle_state_poll(&mut state, &mut p2p, &mut watcher, res?).await.map(|_| None),
-                        _ = train_start.notified() => Self::handle_train_start(&mut state, &mut p2p).await.map(|_| None),
+                        res = state.poll_next() => Self::handle_state_poll(&mut state, &mut p2p, &mut watcher, &mut rebroadcast, res?).await.map(|_| None),
+                        _ = train_start.notified() => Self::handle_train_start(&mut state, &mut p2p, &mut rebroadcast).await.map(|_| None),
+                        _ = sleep(Duration::from_secs_f32(0.1)) => {
+                            // wakeup to re-evaluate non-waitable conditions
+                            Ok(None)
+                        }
                     };
 
                     if let Some(watcher_res) = step_result? {
                         Self::handle_watcher_poll(&mut state, &mut watcher, watcher_res).await?;
                     }
+                    rebroadcast.tick(&mut p2p).await?;
                 }
 
                 Ok(())
@@ -145,6 +192,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         state: &mut State<T>,
         p2p: &mut NC,
         watcher: &mut BackendWatcher<T, B>,
+        rebroadcast: &mut Rebroadcast,
         res: ToSend,
     ) -> Result<()> {
         match res {
@@ -158,7 +206,8 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                 let mut broadcast = broadcast;
                 match broadcast.borrow_mut() {
                     BroadcastMessage::TrainingResult(training_result) => {
-                        training_result.ticket = new_ticket.clone()
+                        training_result.ticket = new_ticket.clone();
+                        rebroadcast.push(broadcast.clone());
                     }
                     BroadcastMessage::PeerAnnouncement(peer_announcement) => {
                         peer_announcement.ticket = new_ticket.clone();
@@ -183,7 +232,12 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         }
     }
 
-    async fn handle_train_start(state: &mut State<T>, p2p: &mut NC) -> Result<()> {
+    async fn handle_train_start(
+        state: &mut State<T>,
+        p2p: &mut NC,
+        rebroadcast: &mut Rebroadcast,
+    ) -> Result<()> {
+        rebroadcast.clear();
         for blob in p2p.currently_sharing_blobs().clone() {
             p2p.remove_downloadable(blob).await?;
         }
