@@ -18,6 +18,7 @@ clap.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tokio-util.workspace = true
+hf-hub.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 tch.workspace = true

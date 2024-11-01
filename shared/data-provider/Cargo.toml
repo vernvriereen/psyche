@@ -9,7 +9,7 @@ psyche-core.workspace = true
 psyche-watcher.workspace = true
 psyche-tui.workspace = true
 psyche-network.workspace = true
-hf-hub = { git = "https://github.com/NousResearch/hf-hub.git", rev = "2dfe54b6916deba4f2c34fd2b7c184aa0683755c" }
+hf-hub.workspace = true
 parquet = "51.0.0"
 tokio.workspace = true
 async-trait.workspace = true

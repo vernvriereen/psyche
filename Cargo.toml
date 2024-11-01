@@ -21,6 +21,8 @@ psyche-modeling = { path = "./shared/modeling" }
 psyche-tui = { path = "./shared/tui" }
 psyche-watcher = { path = "./shared/watcher" }
 
+
+hf-hub = { git = "https://github.com/NousResearch/hf-hub.git", rev = "7764fac569bb20ba0a84cb2d0685fbd607834005" }
 tokio = { version = "1", features = [
     "io-util",
     "rt",
