@@ -108,6 +108,8 @@ pub fn save_tensors_into_safetensors(
     }
     std::fs::create_dir_all(dir.clone())?;
     let mut file_parts = vec![FilePart::default()];
+    let mut tensors = tensors.into_iter().collect::<Vec<_>>();
+    tensors.sort_by(|a, b| a.0.cmp(&b.0)); // sort so we have stable ordering for chunking
     for (name, tensor) in tensors {
         let size = tensor.numel() * tensor.kind().elt_size_in_bytes();
         if size > MAX_SAFETENSOR_PART_SIZE {
