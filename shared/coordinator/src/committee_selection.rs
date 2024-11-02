@@ -45,7 +45,7 @@ impl CommitteeSelection {
     ) -> Self {
         assert!(total_nodes < u64::MAX as usize);
         assert!(total_nodes >= tie_breaker_nodes);
-        assert!(total_nodes >= witness_nodes);
+        assert!(witness_nodes == 0 || total_nodes >= witness_nodes);
         assert!(verification_percent <= 100);
 
         let free_nodes = total_nodes - tie_breaker_nodes;
@@ -106,7 +106,10 @@ impl CommitteeSelection {
     }
 
     fn get_witness_from_position(&self, witness_position: u64) -> bool {
-        witness_position < self.witness_nodes
+        match self.witness_nodes {
+            0 => true,
+            witness_nodes => witness_position < witness_nodes,
+        }
     }
 
     pub fn verify_committee_for_client<T: NodeIdentity>(

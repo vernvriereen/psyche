@@ -283,7 +283,12 @@ impl<T: NodeIdentity> Coordinator<T> {
         let round = self.current_round_mut_unchecked();
         round.witnesses.push(witness);
 
-        if round.witnesses.len() == self.witness_nodes as usize {
+        if round.witnesses.len()
+            == match self.witness_nodes {
+                0 => self.clients.len(),
+                witness_nodes => witness_nodes as usize,
+            }
+        {
             // enough witnesses have early voted, go to witness state
             self.change_state(unix_timestamp, RunState::RoundWitness);
         }
@@ -374,7 +379,11 @@ impl<T: NodeIdentity> Coordinator<T> {
         witnesses: &[Witness],
         witness_quorum: u32,
     ) -> bool {
-        Self::trainer_healthy_score_by_witnesses(client, witnesses) >= witness_quorum
+        let score: u32 = Self::trainer_healthy_score_by_witnesses(client, witnesses);
+        match witness_quorum {
+            0 => score as usize == witnesses.len(),
+            witness_quorum => score >= witness_quorum,
+        }
     }
 
     pub fn trainer_healthy_score_by_witnesses(client: &Client<T>, witnesses: &[Witness]) -> u32 {
@@ -393,7 +402,11 @@ impl<T: NodeIdentity> Coordinator<T> {
         witnesses: &[Witness],
         witness_quorum: u32,
     ) -> bool {
-        Self::commitment_exists_score_by_witnesses(commitment, witnesses) >= witness_quorum
+        let score = Self::commitment_exists_score_by_witnesses(commitment, witnesses);
+        match witness_quorum {
+            0 => score as usize == witnesses.len(),
+            witness_quorum => score >= witness_quorum,
+        }
     }
 
     pub fn commitment_exists_score_by_witnesses(
@@ -427,7 +440,10 @@ impl<T: NodeIdentity> Coordinator<T> {
         scores
             .into_iter()
             .enumerate()
-            .filter(|(_, score)| *score >= witness_quorum)
+            .filter(|(_, score)| match witness_quorum {
+                0 => *score as usize == witnesses.len(),
+                witness_quorum => *score >= witness_quorum,
+            })
             .max_by_key(|(_, score)| *score)
             .map(|(index, _)| index)
     }

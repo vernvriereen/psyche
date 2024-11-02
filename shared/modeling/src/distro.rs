@@ -637,12 +637,14 @@ impl Distro {
     #[allow(unused)]
     pub fn apply(&mut self, results: &[Vec<DistroResult>], lr: f64) {
         let _no_grad = tch::no_grad_guard();
-        for (index, (variable, shard)) in self
-            .sgd
-            .trainable_variables_with_sharding()
-            .iter_mut()
-            .enumerate()
-        {
+        if results.is_empty() {
+            return;
+        }
+        let mut trainable_variables_with_sharding = self.sgd.trainable_variables_with_sharding();
+        for result in results {
+            assert!(result.len() == trainable_variables_with_sharding.len());
+        }
+        for (index, (variable, shard)) in trainable_variables_with_sharding.iter_mut().enumerate() {
             let device = variable.device();
 
             let indicies = results

@@ -543,7 +543,12 @@ fn optimize_step(
         }
         Optimizer::Distro { optimizer, .. } => match distro_results {
             Some(results) => {
-                debug!("Applying {} DisTrO gradients", results.len());
+                if !results.is_empty() {
+                    debug!("Applying {} DisTrO gradients", results.len());
+                } else {
+                    error!("Empty DisTrO gradients");
+                    return ControlFlow::Break(());
+                }
                 if barrier.wait().is_err() {
                     return ControlFlow::Break(());
                 }

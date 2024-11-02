@@ -319,7 +319,7 @@ impl<T: NodeIdentity> State<T> {
         self.available_trainers.push(output.trainer);
 
         debug!(
-            "Batch {} loss: {} cancelled: {}",
+            "Training on batch {} finished, loss: {} cancelled: {}",
             batch_id, output.loss, output.cancelled
         );
 
@@ -649,7 +649,7 @@ impl<T: NodeIdentity> State<T> {
                         .commitments_per_client
                         .values()
                         .fold(0, |acc, ele| acc + *ele);
-                    info!(
+                    debug!(
                         "Total commitments for step {}: {}",
                         state.step, total_commitments
                     );
@@ -772,7 +772,7 @@ impl<T: NodeIdentity> State<T> {
                     }
 
                     remaining_batch_ids.remove(batch_id);
-                    info!(
+                    debug!(
                         "Remaining batches to download for step {}: {}",
                         distro_result.step,
                         remaining_batch_ids.len()
@@ -1165,7 +1165,7 @@ impl<T: NodeIdentity> State<T> {
                     let batch_commitments = match commitments.get(&batch_id) {
                         Some(x) => x,
                         None => {
-                            warn!("DESYNC: No commitments for batch {}", batch_id);
+                            warn!("No commitments for batch {}", batch_id);
                             continue;
                         }
                     };
@@ -1179,7 +1179,7 @@ impl<T: NodeIdentity> State<T> {
                     ) {
                         Some(x) => x,
                         None => {
-                            warn!("DESYNC: No consensus commitment for batch {}", batch_id);
+                            warn!("No consensus commitment for batch {}", batch_id);
                             continue;
                         }
                     };
