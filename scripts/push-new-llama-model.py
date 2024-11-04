@@ -41,7 +41,7 @@ def main(args):
     model = LlamaForCausalLM(config)
     print("GPT-NeoX initialization...")
     initialize_weights(
-        model.model, config.num_hidden_layers, config.max_position_embeddings
+        model, config.num_hidden_layers, config.max_position_embeddings
     )
     print(model)
     total_params = sum(p.numel() for p in model.parameters())
