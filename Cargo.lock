@@ -2041,6 +2041,7 @@ name = "expand-distro"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "postcard",
  "psyche-client",
  "psyche-modeling",

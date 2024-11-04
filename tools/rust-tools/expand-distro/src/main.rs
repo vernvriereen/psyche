@@ -1,21 +1,23 @@
-use std::{
-    env,
-    io::{self, Write},
-};
+use std::io::{self, Write};
 
-use anyhow::bail;
+use clap::Parser;
 use psyche_client::distro_results_from_reader;
 use psyche_modeling::{CompressDCT, DistroResult};
 
+#[derive(Parser, Debug)]
+struct Args {
+    #[clap(long, default_value_t = false)]
+    cpu: bool,
+}
+
 fn main() -> anyhow::Result<()> {
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() != 1 {
-        bail!("Usage: cat <postcard_file> | expand-distro");
-    }
-
+    let args = Args::parse();
     let target_type = tch::Kind::BFloat16;
-    let target_device = tch::Device::cuda_if_available();
+    let target_device = if args.cpu {
+        tch::Device::Cpu
+    } else {
+        tch::Device::cuda_if_available()
+    };
 
     let distro_results_iter = distro_results_from_reader(io::stdin());
 
