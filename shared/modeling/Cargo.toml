@@ -23,5 +23,5 @@ safetensors = "0.3.0"
 clap = { workspace = true }
 
 [features]
-#parallelism = ["cudarc", "half"]
-parallelism = []
+parallelism = ["torch-sys/nccl"]
+
