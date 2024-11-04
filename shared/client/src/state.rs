@@ -1651,9 +1651,7 @@ impl<T: NodeIdentity> State<T> {
 
                 let fname = format!(
                     "result-{}-step{}-batch{}.vec-postcard",
-                    self.identity.to_string(),
-                    distro_result.step,
-                    distro_result.batch_id
+                    self.identity, distro_result.step, distro_result.batch_id
                 );
                 let fpath = write_gradients_dir.join(&fname);
                 let serialized = match disto_results_to_bytes(&distro_result.distro_results) {
