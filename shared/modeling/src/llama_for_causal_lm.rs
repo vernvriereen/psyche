@@ -29,6 +29,7 @@ pub struct LlamaConfig {
     pub eos_token_id: Option<LlamaEosToks>,
     pub rope_scaling: Option<Llama3RopeConfig>,
     pub max_position_embeddings: usize,
+    pub tie_word_embeddings: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -80,6 +81,7 @@ impl From<Config> for LlamaConfig {
             eos_token_id: value.eos_token_id,
             rope_scaling: value.rope_scaling,
             max_position_embeddings: value.max_position_embeddings,
+            tie_word_embeddings: false,
         }
     }
 }
@@ -114,6 +116,9 @@ impl LlamaForCausalLM {
                 .ok_or(Error::msg("missing config.json"))?
                 .as_path(),
         )?)?)?;
+        if llama_config.tie_word_embeddings {
+            bail!("Tied embeddings not supported");
+        }
         let mut config: Config = llama_config.into_config(match attn_implementation.unwrap_or(AttentionImplementation::Sdpa) {
             AttentionImplementation::Eager => false,
             AttentionImplementation::Sdpa => true,
