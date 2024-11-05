@@ -168,6 +168,20 @@
                 partitions = 1;
                 partitionType = "count";
               });
+
+            validate-all-configs = pkgs.runCommand "validate-configs" {} ''
+              dir="${./config}"
+              if [ ! -d "$dir" ]; then
+                echo "config dir $dir does not exist."
+                exit 1
+              fi
+
+              for f in $dir/*; do
+                  ${packages.psyche-centralized-server}/bin/psyche-centralized-server --state $f/state.toml --data-config $f/data.toml validate-config || exit 1
+              done;
+
+              touch $out
+            '';
           };
       };
     };
