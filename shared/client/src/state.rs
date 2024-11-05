@@ -1397,14 +1397,15 @@ impl<T: NodeIdentity> State<T> {
                         info!("Loading {}", hub_repo.repo_id);
                         let mut futures = Vec::with_capacity(data_parallelism * tensor_parallelism);
                         for dp in 0..data_parallelism {
-                            let communicator_id = Arc::new(CommunicatorId::new());
+                            let communicator_id = match tensor_parallelism {
+                                1 => None,
+                                _ => Some(Arc::new(CommunicatorId::new())),
+                            };
                             for tp in 0..tensor_parallelism {
-                                let tensor_parallelism_world = match tensor_parallelism {
-                                    1 => None,
-                                    tensor_parallelism => {
-                                        Some((communicator_id.clone(), tp, tensor_parallelism))
-                                    }
-                                };
+                                let tensor_parallelism_world =
+                                    communicator_id.as_ref().map(|communicator_id| {
+                                        (communicator_id.clone(), tp, tensor_parallelism)
+                                    });
                                 let repo_files = repo_files.clone();
                                 futures.push(tokio::task::spawn_blocking(move || {
                                     LlamaForCausalLM::from_pretrained(
