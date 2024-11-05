@@ -1,0 +1,10 @@
+[package]
+name = "local-testnet"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde = { workspace = true, features = ["derive"] }
+toml = "0.8.19"

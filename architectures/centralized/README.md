@@ -2,7 +2,7 @@
 
 ## Local Testing
 
-You can use `local.sh`, a Bash script that automates the process of launching a centralized server and multiple clients using tmux.
+You can use the `local-testnet` binary in `/tools/rust-tools/local-testnet`, which automates the process of launching a centralized server and multiple clients using tmux.
 
 ### Prerequisites
 
@@ -14,7 +14,7 @@ You can use `local.sh`, a Bash script that automates the process of launching a 
 ### Usage
 
 ```
-./local.sh <NUM_CLIENTS> <CONFIG_PATH> <WRITE_DISTRO_DATA> [SERVER_PORT] [TUI]
+cargo run -p local-testnet -- --num-clients <N> --config-path <CONFIG_PATH> [--write-distro-data <DIR>] [--server-port <PORT>] [--tui <bool>]
 ```
 
 - `NUM_CLIENTS`: Number of clients to launch
@@ -26,7 +26,7 @@ You can use `local.sh`, a Bash script that automates the process of launching a 
 ### Example
 
 ```bash
-./local.sh 3 /../../config/llama2-20m-dolma-noverify ./distro-data/llama2-20m-noverify 20000 false
+cargo run -p local-testnet -- --num-clients 3 --config-path ../../config/llama2-20m-dolma-noverify-no-checkpointer --write-distro-data ./distro-data/llama2-20m-noverify --tui false
 ```
 
-This command launches a server and 3 clients, using the configuration in `/path/to/config`, writing gradient data, using port 20000, and disabling the TUI for clients.
+This command launches a server and 3 clients, using the configuration in `/path/to/config`, writing gradient data, and disabling the TUI for clients.
