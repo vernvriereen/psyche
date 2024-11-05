@@ -31,7 +31,8 @@ enum Optimizer {
     Distro {
         optimizer: Box<Distro>,
         compression_topk: i64,
-        compression_warmup_topk: i64,
+        compression_topk_startup: i64,
+        compression_topk_startup_steps: u32,
     },
 }
 
@@ -125,7 +126,8 @@ impl Trainer {
                 model::Optimizer::Distro {
                     compression_decay,
                     compression_topk,
-                    compression_warmup_topk,
+                    compression_topk_startup,
+                    compression_topk_startup_steps,
                     compression_chunk,
                 } => Optimizer::Distro {
                     optimizer: Distro::new(
@@ -138,7 +140,8 @@ impl Trainer {
                     )
                     .into(),
                     compression_topk: compression_topk as i64,
-                    compression_warmup_topk: compression_warmup_topk as i64,
+                    compression_topk_startup: compression_topk_startup as i64,
+                    compression_topk_startup_steps,
                 },
             };
 
@@ -381,12 +384,13 @@ impl Trainer {
                             Optimizer::Distro {
                                 optimizer,
                                 compression_topk,
-                                compression_warmup_topk,
+                                compression_topk_startup,
+                                compression_topk_startup_steps
                             } => {
                                 let ret = optimizer.generate(
                                     lr_scheduler.get_lr(step),
-                                    match lr_scheduler.in_warmup(step) {
-                                        true => *compression_warmup_topk,
+                                    match step <= *compression_topk_startup_steps {
+                                        true => *compression_topk_startup,
                                         false => *compression_topk,
                                     },
                                     true,

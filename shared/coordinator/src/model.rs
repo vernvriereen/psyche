@@ -80,7 +80,8 @@ pub enum Optimizer {
     Distro {
         compression_decay: f32,
         compression_topk: u16,
-        compression_warmup_topk: u16,
+        compression_topk_startup: u16,
+        compression_topk_startup_steps: u32,
         compression_chunk: u16,
     },
 }
