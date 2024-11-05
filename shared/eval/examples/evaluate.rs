@@ -29,7 +29,7 @@ fn main() -> Result<()> {
         .map(|x| tasktype_from_name(x).map(|y| Task::new(y, args.num_fewshot, args.seed)))
         .collect();
     let tasks = tasks?;
-    let repo = download_model_repo_sync("unsloth/Meta-Llama-3.1-8B", None, None, None, true)?;
+    let repo = download_model_repo_sync(&args.model, None, None, None, true)?;
     let mut model = LlamaForCausalLM::from_pretrained(
         &repo,
         Some(Kind::BFloat16),
