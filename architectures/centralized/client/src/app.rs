@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::{bail, Error, Result};
-use hf_hub::Repo;
+use anyhow::{Error, Result};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{CheckpointUploadInfo, Client, ClientTUI, ClientTUIState, WandBInfo, NC};
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
@@ -145,20 +144,20 @@ impl AppBuilder {
 impl App {
     pub async fn run(&mut self, mut p2p: NC) -> Result<()> {
         // sanity checks
-        if let Some(CheckpointUploadInfo {
-            hub_repo,
-            hub_token,
-            ..
-        }) = &self.checkpoint_upload_info
-        {
-            let api = hf_hub::api::tokio::ApiBuilder::new()
-                .with_token(Some(hub_token.clone()))
-                .build()?;
-            let repo_api = api.repo(Repo::new(hub_repo.clone(), hf_hub::RepoType::Model));
-            if !repo_api.is_writable().await {
-                bail!("checkpoint upload repo {hub_repo} is not writable with the passed API key.")
-            }
-        }
+        // if let Some(CheckpointUploadInfo {
+        //     hub_repo,
+        //     hub_token,
+        //     ..
+        // }) = &self.checkpoint_upload_info
+        // {
+        //     let api = hf_hub::api::tokio::ApiBuilder::new()
+        //         .with_token(Some(hub_token.clone()))
+        //         .build()?;
+        //     let repo_api = api.repo(Repo::new(hub_repo.clone(), hf_hub::RepoType::Model));
+        //     if !repo_api.is_writable().await {
+        //         bail!("checkpoint upload repo {hub_repo} is not writable with the passed API key.")
+        //     }
+        // }
         
         self.server_conn
             .send(ClientToServerMessage::Join {
