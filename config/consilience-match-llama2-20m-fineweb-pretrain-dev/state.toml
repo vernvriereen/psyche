@@ -76,3 +76,4 @@ compression_decay = 0.999
 compression_chunk = 16
 compression_topk = 4
 compression_warmup_topk = 4
+quantize = false

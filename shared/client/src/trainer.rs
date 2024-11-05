@@ -33,6 +33,7 @@ enum Optimizer {
         compression_topk: i64,
         compression_topk_startup: i64,
         compression_topk_startup_steps: u32,
+        quantize: bool,
     },
 }
 
@@ -129,6 +130,7 @@ impl Trainer {
                     compression_topk_startup,
                     compression_topk_startup_steps,
                     compression_chunk,
+                    quantize,
                 } => Optimizer::Distro {
                     optimizer: Distro::new(
                         &model.variables,
@@ -142,6 +144,7 @@ impl Trainer {
                     compression_topk: compression_topk as i64,
                     compression_topk_startup: compression_topk_startup as i64,
                     compression_topk_startup_steps,
+                    quantize,
                 },
             };
 
@@ -385,7 +388,8 @@ impl Trainer {
                                 optimizer,
                                 compression_topk,
                                 compression_topk_startup,
-                                compression_topk_startup_steps
+                                compression_topk_startup_steps,
+                                quantize,
                             } => {
                                 let ret = optimizer.generate(
                                     lr_scheduler.get_lr(step),
@@ -393,7 +397,7 @@ impl Trainer {
                                         true => *compression_topk_startup,
                                         false => *compression_topk,
                                     },
-                                    true,
+                                    *quantize,
                                 );
                                 // just need results from one of the ranks
                                 match index == 0 {
