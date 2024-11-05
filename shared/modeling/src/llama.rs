@@ -119,10 +119,10 @@ fn repeat_kv(hidden_states: &Tensor, n_rep: i64) -> Tensor {
     // Add a new dimension and expand
     let hidden_states = hidden_states
         .unsqueeze(2)
-        .expand(&[batch, num_key_value_heads, n_rep, slen, head_dim], true);
+        .expand([batch, num_key_value_heads, n_rep, slen, head_dim], true);
 
     // Reshape to final dimensions
-    hidden_states.reshape(&[batch, num_key_value_heads * n_rep, slen, head_dim])
+    hidden_states.reshape([batch, num_key_value_heads * n_rep, slen, head_dim])
 }
 
 fn rotate_half(xs: &Tensor) -> Tensor {

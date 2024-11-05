@@ -25,7 +25,6 @@ fn main() -> Result<()> {
     let tasks: Result<Vec<Task>> = args
         .tasks
         .split(",")
-        .into_iter()
         .map(|x| tasktype_from_name(x).map(|y| Task::new(y, args.num_fewshot, args.seed)))
         .collect();
     let tasks = tasks?;
