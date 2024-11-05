@@ -33,6 +33,9 @@ perf.data.*
 libtorch*
 slurm*
 
+## JS ##
+node_modules/
+
 ### Data folders ###
 /data
 /distro-data
