@@ -176,7 +176,14 @@ fn inference(
 fn main() -> Result<()> {
     let _no_grad = tch::no_grad_guard();
     let args = Args::parse();
-    let repo_files = download_model_repo_sync(&args.model.clone(), None, None, None, true)?;
+    let repo_files = if std::fs::exists(args.model.clone()).unwrap_or_default() {
+        std::fs::read_dir(args.model.clone())
+            .unwrap()
+            .map(|x| x.unwrap().path())
+            .collect::<Vec<_>>()
+    } else {
+        download_model_repo_sync(&args.model.clone(), None, None, None, true)?
+    };
     let tokenizer = auto_tokenizer(&repo_files)?;
 
     let prompt = args.prompt.as_ref().map_or(DEFAULT_PROMPT, |p| p.as_str());
