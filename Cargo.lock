@@ -3817,6 +3817,7 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "clap",
+ "rand 0.8.5",
  "serde",
  "toml 0.8.19",
 ]
