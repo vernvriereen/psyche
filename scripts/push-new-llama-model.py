@@ -1,4 +1,4 @@
-from transformers import LlamaConfig, LlamaForCausalLM
+from transformers import LlamaConfig, LlamaForCausalLM, AutoTokenizer
 from transformers.models.llama.modeling_llama import (
     LlamaMLP,
     LlamaAttention,
@@ -55,6 +55,8 @@ def initialize_weights(model: LlamaForCausalLM):
 
 
 def main(args):
+    if not args.config:
+        raise RuntimeError("No config provided")
     config = LlamaConfig.from_pretrained(args.config)
     torch.set_default_dtype(args.dtype)
     if args.device:
@@ -67,14 +69,19 @@ def main(args):
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Model has {total_params} parameters")
     if not args.dry_run:
+        if not args.repo:
+            raise RuntimeError("No repo provided")
         model.push_to_hub(args.repo, private=args.private)
+        if args.tokenizer:
+            AutoTokenizer.from_pretrained(args.tokenizer).push_to_hub(
+                args.repo, private=args.private
+            )
 
 
 args = argparse.ArgumentParser()
 args.add_argument(
     "--config",
     type=str,
-    default="TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T",
     help="source config repo or path to JSON config",
 )
 args.add_argument("--repo", type=str, help="destination repo")
@@ -82,5 +89,6 @@ args.add_argument("--private", action="store_true", help="push as a private repo
 args.add_argument("--dtype", type=int, default=torch.bfloat16, help="torch dtype")
 args.add_argument("--dry-run", action="store_true", help="don't actually push")
 args.add_argument("--device", type=str, help="device to init on")
+args.add_argument("--tokenizer", type=str, help="tokenizer")
 
 main(args.parse_args())
