@@ -109,18 +109,20 @@ impl Cache {
     }
 }
 
-fn repeat_kv(xs: Tensor, n_rep: i64) -> Tensor {
+fn repeat_kv(hidden_states: &Tensor, n_rep: i64) -> Tensor {
+    let (batch, num_key_value_heads, slen, head_dim) = hidden_states.size4().unwrap();
+
     if n_rep == 1 {
-        xs
-    } else {
-        let (b_sz, n_kv_head, seq_len, head_dim) = xs.size4().unwrap();
-        Tensor::cat(&vec![&xs; n_rep as usize], 2).reshape([
-            b_sz,
-            n_kv_head * n_rep,
-            seq_len,
-            head_dim,
-        ])
+        return hidden_states.shallow_clone();
     }
+
+    // Add a new dimension and expand
+    let hidden_states = hidden_states
+        .unsqueeze(2)
+        .expand(&[batch, num_key_value_heads, n_rep, slen, head_dim], true);
+
+    // Reshape to final dimensions
+    hidden_states.reshape(&[batch, num_key_value_heads * n_rep, slen, head_dim])
 }
 
 fn rotate_half(xs: &Tensor) -> Tensor {
@@ -282,10 +284,8 @@ impl CausalSelfAttention {
         let (_b_sz, _, seq_len, _hidden_size) = x.size4().unwrap();
         let cos = cache.cos.narrow(0, index_pos, seq_len);
         let sin = cache.sin.narrow(0, index_pos, seq_len);
-        let cos = Tensor::cat(&[cos.copy(), cos], -1);
-        let sin = Tensor::cat(&[sin.copy(), sin], -1);
-        let cos = cos.narrow(0, 0, seq_len);
-        let sin = sin.narrow(0, 0, seq_len);
+        let cos = Tensor::cat(&[&cos, &cos], -1);
+        let sin = Tensor::cat(&[&sin, &sin], -1);
         let cos = cos.unsqueeze(0).unsqueeze(0);
         let sin = sin.unsqueeze(0).unsqueeze(0);
         (x * cos) + (rotate_half(x) * sin)
@@ -310,8 +310,8 @@ impl CausalSelfAttention {
             .transpose(1, 2);
         let q = self.apply_rotary_emb(&q, index_pos, cache).to_kind(kind);
         let k = self.apply_rotary_emb(&k, index_pos, cache).to_kind(kind);
-        let k = repeat_kv(k, local_n_head / local_n_kvhead);
-        let v = repeat_kv(v, local_n_head / local_n_kvhead);
+        let k = repeat_kv(&k, local_n_head / local_n_kvhead);
+        let v = repeat_kv(&v, local_n_head / local_n_kvhead);
         let y = if self.use_sdpa {
             let att =
                 Tensor::scaled_dot_product_attention::<Tensor>(&q, &k, &v, None, 0.0, t > 1, None);
