@@ -12,7 +12,7 @@ use tch::{Device, Kind, Tensor};
 
 #[derive(Parser, Debug, Clone)]
 struct Args {
-    #[arg(long, default_value = "emozilla/llama2-150m-init")]
+    #[arg(long, default_value = "emozilla/llama2-215m-init")]
     model: String,
 
     #[arg(long, default_value = "data")]
