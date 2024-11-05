@@ -237,47 +237,27 @@ impl PreparedTask {
             let mut context = tokenized_fewshot.to_vec();
             context.extend_from_slice(&doc.text);
             let mut scores: Vec<(f32, bool)> = Vec::new();
-            if doc.choices.iter().all(|x| x.len() == 1) {
-                let ids = Tensor::from_slice(&context)
+            for choice in &doc.choices {
+                let mut ids = context.clone();
+                ids.extend_from_slice(choice);
+                let ids = Tensor::from_slice(&ids)
                     .to(options.model.device())
                     .unsqueeze(0);
-                let (logits, _) = options.model.forward(&ids, None, Some(1));
-                let logits = logits.squeeze().log_softmax(-1, None);
-                let greedy: i64 = logits.argmax(-1, false).try_into().unwrap();
-                let index =
-                    Tensor::from_slice(&doc.choices.iter().map(|x| x[0]).collect::<Vec<_>>())
-                        .to(logits.device());
-                let logits = logits.gather(-1, &index, false);
-                let logits: Vec<f32> = logits.try_into().unwrap();
-                scores.extend(
+                let (logits, _) =
+                    options
+                        .model
+                        .forward(&ids, None, Some((choice.len() + 1) as i64));
+                let logits =
                     logits
-                        .into_iter()
-                        .zip(doc.choices.iter())
-                        .map(|(score, choice)| (score, choice[0] == greedy)),
-                );
-            } else {
-                for choice in &doc.choices {
-                    let mut ids = context.clone();
-                    ids.extend_from_slice(choice);
-                    let ids = Tensor::from_slice(&ids)
-                        .to(options.model.device())
-                        .unsqueeze(0);
-                    let (logits, _) =
-                        options
-                            .model
-                            .forward(&ids, None, Some((choice.len() + 1) as i64));
-                    let logits =
-                        logits
-                            .log_softmax(-1, None)
-                            .squeeze()
-                            .slice(0, 0, choice.len() as i64, 1);
-                    let greedy_tokens: Vec<i64> = logits.argmax(-1, false).try_into().unwrap();
-                    let exact_match = greedy_tokens.eq(choice);
-                    let index = Tensor::from_slice(choice).to(logits.device()).unsqueeze(-1);
-                    let logits = logits.gather(-1, &index, false);
-                    let loglikelihood: f32 = logits.sum(Kind::Float).try_into().unwrap();
-                    scores.push((loglikelihood, exact_match));
-                }
+                        .log_softmax(-1, None)
+                        .squeeze()
+                        .slice(0, 0, choice.len() as i64, 1);
+                let greedy_tokens: Vec<i64> = logits.argmax(-1, false).try_into().unwrap();
+                let exact_match = greedy_tokens.eq(choice);
+                let index = Tensor::from_slice(choice).to(logits.device()).unsqueeze(-1);
+                let logits = logits.gather(-1, &index, false);
+                let loglikelihood: f32 = logits.sum(Kind::Float).try_into().unwrap();
+                scores.push((loglikelihood, exact_match));
             }
             let selected: i64 = Tensor::from_slice(&scores.iter().map(|x| x.0).collect::<Vec<_>>())
                 .argmax(-1, false)
