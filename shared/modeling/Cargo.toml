@@ -23,5 +23,5 @@ safetensors = "0.3.0"
 clap = { workspace = true }
 
 [features]
-parallelism = ["torch-sys/nccl"]
+parallelism = ["tch/nccl", "torch-sys/nccl"]
 
