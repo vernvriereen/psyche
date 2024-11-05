@@ -10,26 +10,48 @@ import torch
 import math
 
 
-def initialize_weights(model: LlamaModel, n_layer: int, n_embd: int) -> None:
-    """GPT-NeoX weight initialization (https://arxiv.org/abs/2204.06745)."""
-    # Adapted from https://github.com/jzhang38/TinyLlama
+def _init_normal(module, std: float, cutoff_factor: float = 3.0):
+    with torch.no_grad():
+        cutoff = std * cutoff_factor
+        weight = module.weight
+        weight.normal_(0, std)
+        torch.clamp_(weight, min=-cutoff, max=cutoff)
+        if hasattr(module, "bias") and module.bias is not None:
+            module.bias.zero_()
 
-    for mod in model.modules():
-        if isinstance(mod, (nn.Embedding, nn.Linear)):
-            nn.init.normal_(mod.weight, mean=0.0, std=math.sqrt(2.0 / 5 / n_embd))
-            if getattr(mod, "bias", None) is not None:
-                torch.nn.init.zeros_(mod.bias)
 
-    # need a separate loop because `mod.o_proj` and `mod.down_proj` below are a `nn.Linear` too
-    for mod in model.modules():
-        if isinstance(mod, LlamaMLP):
-            nn.init.normal_(
-                mod.down_proj.weight, mean=0.0, std=(1 / math.sqrt(n_embd) / n_layer)
-            )
-        elif isinstance(mod, LlamaAttention):
-            nn.init.normal_(
-                mod.o_proj.weight, mean=0.0, std=(1 / math.sqrt(n_embd) / n_layer)
-            )
+def initialize_weights(model: LlamaForCausalLM):
+    """Initialize model weights using the "Mitchell" initialization scheme"""
+
+    wte_std = 1 / math.sqrt(model.config.hidden_size)
+    _init_normal(model.model.embed_tokens, std=wte_std)
+
+    for layer_id, layer in enumerate(model.model.layers):
+        attn_std = 1 / math.sqrt(model.config.hidden_size)
+        _init_normal(layer.self_attn.q_proj, std=attn_std)
+        _init_normal(layer.self_attn.k_proj, std=attn_std)
+        _init_normal(layer.self_attn.v_proj, std=attn_std)
+
+        attn_out_std = 1 / (math.sqrt(2 * model.config.hidden_size * (layer_id + 1)))
+        _init_normal(layer.self_attn.o_proj, std=attn_out_std)
+
+        ff_std = 1 / math.sqrt(model.config.hidden_size)
+        _init_normal(layer.mlp.gate_proj, std=ff_std)
+        _init_normal(layer.mlp.up_proj, std=ff_std)
+
+        ff_out_std = 1 / (
+            math.sqrt(2 * layer.mlp.down_proj.in_features * (layer_id + 1))
+        )
+        _init_normal(layer.mlp.down_proj, std=ff_out_std)
+
+        nn.init.ones_(layer.input_layernorm.weight)
+        nn.init.ones_(layer.post_attention_layernorm.weight)
+
+    nn.init.ones_(model.model.norm.weight)
+
+    if model.lm_head is not None:
+        lm_std = 1 / math.sqrt(model.config.hidden_size)
+        _init_normal(model.lm_head, std=lm_std)
 
 
 def main(args):
@@ -39,10 +61,8 @@ def main(args):
         torch.set_default_device(args.device)
     print("Initializing random model...")
     model = LlamaForCausalLM(config)
-    print("GPT-NeoX initialization...")
-    initialize_weights(
-        model, config.num_hidden_layers, config.max_position_embeddings
-    )
+    print("OLMo initialization...")
+    initialize_weights(model)
     print(model)
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Model has {total_params} parameters")
