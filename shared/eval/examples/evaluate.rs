@@ -1,16 +1,34 @@
 use anyhow::Result;
+use clap::Parser;
 use psyche_data_provider::download_model_repo_sync;
-use psyche_eval::{ArcChallenge, ArcEasy, EvalTaskOptions, Hellaswag, MMLUPro, Task};
+use psyche_eval::{tasktype_from_name, EvalTaskOptions, Task, ALL_TASK_NAMES};
 use psyche_modeling::{auto_tokenizer, CausalLM, LlamaForCausalLM};
 use tch::{Device, Kind};
 
+#[derive(Parser, Debug, Clone)]
+struct Args {
+    #[arg(long, default_value = "NousResearch/Llama-2-7b-hf")]
+    model: String,
+
+    #[arg(long, default_value_t = ALL_TASK_NAMES.join(","))]
+    tasks: String,
+
+    #[arg(long, default_value_t = 0)]
+    num_fewshot: usize,
+
+    #[arg(long, default_value_t = 42)]
+    seed: u64,
+}
+
 fn main() -> Result<()> {
-    let tasks = vec![
-        Task::new(ArcEasy::load()?, 0, 42),
-        Task::new(ArcChallenge::load()?, 0, 42),
-        Task::new(Hellaswag::load()?, 0, 42),
-        Task::new(MMLUPro::load()?, 0, 42),
-    ];
+    let args = Args::parse();
+    let tasks: Result<Vec<Task>> = args
+        .tasks
+        .split(",")
+        .into_iter()
+        .map(|x| tasktype_from_name(x).map(|y| Task::new(y, args.num_fewshot, args.seed)))
+        .collect();
+    let tasks = tasks?;
     let repo = download_model_repo_sync("unsloth/Meta-Llama-3.1-8B", None, None, None, true)?;
     let mut model = LlamaForCausalLM::from_pretrained(
         &repo,
