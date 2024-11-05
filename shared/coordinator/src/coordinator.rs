@@ -80,6 +80,8 @@ pub struct Coordinator<T: NodeIdentity> {
     #[cfg_attr(target_os = "solana", max_len(MAX_STRING_LEN))]
     pub run_id: String,
     pub run_state: RunState,
+
+    #[serde(default)]
     pub run_state_start_unix_timestamp: u64,
 
     pub warmup_time: u64,
@@ -88,15 +90,24 @@ pub struct Coordinator<T: NodeIdentity> {
     pub max_round_train_time: u64,
     pub round_witness_time: u64,
     pub round_apply_time: u64,
+
+    #[serde(default)]
     pub rounds: [Round; NUM_STORED_ROUNDS],
+    #[serde(default)]
     pub rounds_head: u32,
+    #[serde(default)]
     pub first_round: bool,
 
     pub min_clients: u32,
+
+    #[serde(default = "Vec::new")]
     pub clients: Vec<Client<T>>,
+    #[serde(default = "Vec::new")]
     pub dropped_clients: Vec<Client<T>>,
 
+    #[serde(default)]
     pub tick: u64,
+    #[serde(default)]
     pub last_tick_unix_timestamp: u64,
 
     pub batches_per_round: u32,
@@ -109,16 +120,27 @@ pub struct Coordinator<T: NodeIdentity> {
 
     pub checkpointers: Vec<T>,
 
+    #[serde(default)]
     pub epoch: u32,
     pub rounds_per_epoch: u32,
+
+    #[serde(default = "default_init_step")]
     pub step: u32,
     pub total_steps: u32,
+
+    #[serde(default)]
     pub last_step_unix_timestamp: u64,
+
+    #[serde(default)]
     pub epoch_start_data_index: u64,
 
     pub overlapped: bool,
 
     pub model: Option<Model>,
+}
+
+fn default_init_step() -> u32 {
+    1
 }
 
 impl TryFrom<usize> for RunState {
@@ -179,8 +201,8 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             rounds_head: Default::default(),
             first_round: Default::default(),
             min_clients: Default::default(),
-            clients: Vec::new(),
-            dropped_clients: Vec::new(),
+            clients: Default::default(),
+            dropped_clients: Default::default(),
             tick: Default::default(),
             last_tick_unix_timestamp: Default::default(),
             batches_per_round: Default::default(),

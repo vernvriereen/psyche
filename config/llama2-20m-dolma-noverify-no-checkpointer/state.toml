@@ -1,62 +1,22 @@
 run_id = "llama2-20m-dolma"
 run_state = "WaitingForMembers"
-run_state_start_unix_timestamp = 0
 warmup_time = 30
 cooldown_time = 0
 checkpointers = ["flcbpgkeaq4mvhuy6uv5tiarf77hxoy44zahhvaxzl3s4fezhknq"]
-overlapped = false
 rounds_per_epoch = 20
 max_round_train_time = 300
 round_witness_time = 2
 round_apply_time = 4
-rounds_head = 0
-first_round = false
 min_clients = 2
-tick = 0
-last_tick_unix_timestamp = 0
 batches_per_round = 8
 data_indicies_per_batch = 1
 max_batches_per_client = 10000
 verification_percent = 0
 witness_nodes = 1
 witness_quorum = 1
-epoch = 0
-step = 1
-last_step_unix_timestamp = 0
-clients = []
-dropped_clients = []
-epoch_start_data_index = 0
 total_steps = 25000
-overlapepd = false
+overlapped = false
 
-[[rounds]]
-height = 0
-clients_len = 0
-data_index = 0
-random_seed = 0
-tie_breaker_tasks = 0
-witnesses = []
-[[rounds]]
-height = 0
-clients_len = 0
-data_index = 0
-random_seed = 0
-tie_breaker_tasks = 0
-witnesses = []
-[[rounds]]
-height = 0
-clients_len = 0
-data_index = 0
-random_seed = 0
-tie_breaker_tasks = 0
-witnesses = []
-[[rounds]]
-height = 0
-clients_len = 0
-data_index = 0
-random_seed = 0
-tie_breaker_tasks = 0
-witnesses = []
 [model.LLM]
 architecture = "HfLlama"
 data_type = "Pretraining"
@@ -75,5 +35,6 @@ final_lr = 4.0e-5
 compression_decay = 0.999
 compression_chunk = 64
 compression_topk = 8
-compression_warmup_topk = 8
+compression_topk_startup = 8
+compression_topk_startup_steps = 20
 quantize = true
