@@ -1587,7 +1587,7 @@ impl<T: NodeIdentity> State<T> {
                                         limit: Some(10),
                                         loop_if_empty: true,
                                     },
-                                    true,
+                                    false,
                                 );
                                 eval_task
                                     .next_index
