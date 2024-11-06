@@ -18,6 +18,9 @@ struct Args {
 
     #[arg(long, default_value_t = 42)]
     seed: u64,
+
+    #[arg(long, default_value_t = false)]
+    quiet: bool,
 }
 
 fn main() -> Result<()> {
@@ -49,7 +52,7 @@ fn main() -> Result<()> {
                 limit: None,
                 loop_if_empty: false,
             },
-            false,
+            !args.quiet,
         );
 
         println!("{}: {:?}", name, result.scores);

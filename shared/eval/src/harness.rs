@@ -84,13 +84,14 @@ impl TokenizedLLHDocument {
             .choices
             .into_iter()
             .map(|x| {
-                tokenizer
-                    .encode(x, false)
+                let choice = tokenizer
+                    .encode(x.clone(), false)
                     .unwrap()
                     .get_ids()
                     .iter()
                     .map(|x| *x as i64)
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>();
+                choice
             })
             .collect();
         Self {
@@ -176,8 +177,8 @@ impl PreparedTask {
         progress_bar: bool,
     ) -> PreparedTaskResult {
         let pbar = match progress_bar {
-            true => None,
-            false => {
+            false => None,
+            true => {
                 info!("Running {}", self.name);
                 let pbar = ProgressBar::new(self.num as u64);
                 pbar.set_style(ProgressStyle::default_bar()
@@ -237,27 +238,51 @@ impl PreparedTask {
             let mut context = tokenized_fewshot.to_vec();
             context.extend_from_slice(&doc.text);
             let mut scores: Vec<(f32, bool)> = Vec::new();
-            for choice in &doc.choices {
-                let mut ids = context.clone();
-                ids.extend_from_slice(choice);
-                let ids = Tensor::from_slice(&ids)
+            if doc.choices.iter().all(|x| x.len() == 1) {
+                let ids = Tensor::from_slice(&context)
                     .to(options.model.device())
                     .unsqueeze(0);
-                let (logits, _) =
-                    options
-                        .model
-                        .forward(&ids, None, Some((choice.len() + 1) as i64));
-                let logits =
-                    logits
-                        .log_softmax(-1, None)
-                        .squeeze()
-                        .slice(0, 0, choice.len() as i64, 1);
-                let greedy_tokens: Vec<i64> = logits.argmax(-1, false).try_into().unwrap();
-                let exact_match = greedy_tokens.eq(choice);
-                let index = Tensor::from_slice(choice).to(logits.device()).unsqueeze(-1);
+                let (logits, _) = options.model.forward(&ids, None, Some(1));
+                let logits = logits.squeeze().log_softmax(-1, None);
+                let greedy: i64 = logits.argmax(-1, false).try_into().unwrap();
+                let index =
+                    Tensor::from_slice(&doc.choices.iter().map(|x| x[0]).collect::<Vec<_>>())
+                        .to(logits.device());
                 let logits = logits.gather(-1, &index, false);
-                let loglikelihood: f32 = logits.sum(Kind::Float).try_into().unwrap();
-                scores.push((loglikelihood, exact_match));
+                let logits: Vec<f32> = logits.try_into().unwrap();
+                scores.extend(
+                    logits
+                        .into_iter()
+                        .zip(doc.choices.iter())
+                        .map(|(score, choice)| (score, choice[0] == greedy)),
+                );
+            } else {
+                for choice in &doc.choices {
+                    let mut ids = context.clone();
+                    ids.extend_from_slice(choice);
+                    let ids = Tensor::from_slice(&ids)
+                        .to(options.model.device())
+                        .unsqueeze(0);
+                    // if the continuation is N tokens, we need the the last N + 1 logits, since we are getting the
+                    // probs at the last token of the prompt (so prediction of the first continuation)
+                    let (logits, _) =
+                        options
+                            .model
+                            .forward(&ids, None, Some((choice.len() + 1) as i64));
+                    // drop the last logit, since we don't want to score what comes after the continuation
+                    let logits = logits.log_softmax(-1, None).squeeze_dim(0).slice(
+                        0,
+                        0,
+                        choice.len() as i64,
+                        1,
+                    );
+                    let greedy_tokens: Vec<i64> = logits.argmax(-1, false).try_into().unwrap();
+                    let exact_match = greedy_tokens.eq(choice);
+                    let index = Tensor::from_slice(choice).to(logits.device()).unsqueeze(-1);
+                    let logits = logits.gather(-1, &index, false);
+                    let loglikelihood: f32 = logits.sum(Kind::Float).try_into().unwrap();
+                    scores.push((loglikelihood, exact_match));
+                }
             }
             let selected: i64 = Tensor::from_slice(&scores.iter().map(|x| x.0).collect::<Vec<_>>())
                 .argmax(-1, false)

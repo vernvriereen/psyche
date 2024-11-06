@@ -48,24 +48,20 @@ impl Arc {
             .unwrap();
         let choices = choices_and_labels.get_list(0).unwrap();
         let labels = choices_and_labels.get_list(1).unwrap();
-        let options = labels
-            .elements()
-            .iter()
-            .zip(choices.elements().iter())
-            .map(|(label, choice)| {
-                format!("{}. {}", field_to_string(label), field_to_string(choice))
-            })
-            .collect::<Vec<_>>();
-        let text = format!("Question: {}\n{}\nAnswer:", text, options.join("\n"));
+        let text = format!("Question: {}\nAnswer:", text);
         let answer = row
             .get_string(dataset.get_column_id("answerKey").unwrap())
             .unwrap();
-        let choices = labels
+        let choices = choices
             .elements()
             .iter()
             .map(field_to_string)
             .collect::<Vec<_>>();
-        let answer = choices.iter().position(|x| x == answer).unwrap();
+        let answer = labels
+            .elements()
+            .iter()
+            .position(|x| field_to_string(x) == *answer)
+            .unwrap();
         Document {
             text,
             choices,
