@@ -10,10 +10,11 @@ import {
 } from "react";
 import Globe, { type GlobeMethods } from "react-globe.gl";
 import { CoolTickMarks } from "./CoolTickMarks";
-import globePng from "./assets/lightglobe.png";
+import globeTexture from "./assets/transparentglobe.png";
 import { palette, twStrokeToColor } from "./palette";
 import useTailwind from "./tailwind";
 import type { PsycheStats, PyscheNode } from "./types/psyche";
+import { DisplayP3ColorSpace, DoubleSide, LinearSRGBColorSpace, MeshBasicMaterial, NearestFilter, TextureLoader } from "three";
 
 interface NodeConn {
   from: PyscheNode;
@@ -25,6 +26,18 @@ function uuidToArrayItem<T>(uuid: string, array: T[]) {
   const item = array[Number(color % BigInt(array.length))];
   return item;
 }
+
+const globeMaterial = new MeshBasicMaterial({
+  alphaTest: 0.9,
+  // side: DoubleSide,
+});
+
+new TextureLoader().load(globeTexture, texture => {
+  texture.minFilter = NearestFilter;
+  texture.magFilter = NearestFilter;
+  texture.colorSpace = ""
+  globeMaterial.map = texture;
+});
 
 export function TrainersMap({ run }: { run: PsycheStats }) {
   const containerEl: RefObject<HTMLDivElement> = useRef(null);
@@ -79,7 +92,7 @@ export function TrainersMap({ run }: { run: PsycheStats }) {
           width={size.w}
           height={size.h}
           ref={globeEl}
-          globeImageUrl={globePng}
+          globeMaterial={globeMaterial}
           showGraticules={false}
           showAtmosphere={false}
           atmosphereColor={primary}
