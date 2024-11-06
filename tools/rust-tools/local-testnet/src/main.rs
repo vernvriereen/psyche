@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use rand::seq::SliceRandom;
 use serde::Deserialize;
 use std::ffi::OsString;
@@ -12,13 +12,11 @@ use std::time::Duration;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Number of clients
-    #[clap(long)]
-    #[arg(value_parser = validate_num_clients)]
+    #[clap(long, value_parser = validate_num_clients)]
     num_clients: usize,
 
     /// Config directory path
-    #[arg(value_parser = validate_config_path)]
-    #[clap(long)]
+    #[clap(long,value_parser = validate_config_path)]
     config_path: PathBuf,
 
     /// Write DisTrO data to disk
@@ -26,13 +24,19 @@ struct Args {
     write_distro_data: Option<PathBuf>,
 
     /// Server port
-    #[clap(long)]
-    #[arg(default_value_t = 20000)]
+    #[clap(long, default_value_t = 20000)]
     server_port: u16,
 
     /// Enable TUI
-    #[clap(long)]
-    #[arg(default_value_t = true)]
+    #[clap(
+            long,
+            action = ArgAction::Set,
+            default_value_t = true,
+            default_missing_value = "true",
+            num_args = 0..=1,
+            require_equals = false,
+            env
+        )]
     tui: bool,
 
     /// Force listed clients to use the same random data shuffle, causing them to train on duplicate data.
@@ -43,10 +47,22 @@ struct Args {
     #[clap(long)]
     random_kill_num: Option<usize>,
 
-    #[clap(long)]
-    #[arg(default_value_t = 120)]
+    #[clap(long, default_value_t = 120)]
     /// Kill <RANDOM_KILL_NUM> clients randomly every N seconds
     random_kill_interval: u64,
+
+    #[clap(long, default_value = "info,psyche=debug")]
+    log: String,
+
+    /// HF repo for the first client to checkpoint at
+    #[clap(long)]
+    first_client_checkpoint: Option<String>,
+
+    #[clap(long)]
+    hf_token: Option<String>,
+
+    #[clap(long, default_value_t = false)]
+    write_log: bool,
 }
 
 fn validate_num_clients(s: &str) -> Result<usize> {
@@ -159,7 +175,8 @@ fn main() -> Result<()> {
 
     // Start server
     let server_cmd = format!(
-        "cargo run -p psyche-centralized-server -- --state {} --data-config {} --server-port {}",
+        "RUST_LOG={} cargo run -p psyche-centralized-server -- --state {} --data-config {} --server-port {}",
+        args.log,
         state_path.display(),
         data_path.display(),
         args.server_port
@@ -253,13 +270,20 @@ fn start_client(args: &Args, i: usize, run_id: &String, print: bool) {
         .status()
         .expect("Failed to select client pane");
 
-    let mut cmd: OsString = format!(
-        "RUST_BACKTRACE=1 cargo run -p psyche-centralized-client -- train --secret-key {} --run-id {} --server-addr localhost:{} --tui {}",
+    let mut cmd: OsString = if let Some(token) = &args.hf_token {
+        format!("HF_TOKEN={token} ").into()
+    } else {
+        OsString::new()
+    };
+
+    cmd.push(format!(
+        "RUST_LOG={} RUST_BACKTRACE=1 cargo run -p psyche-centralized-client -- train --secret-key {} --run-id {} --server-addr localhost:{} --tui {}",
+        args.log,
         key_path.display(),
         run_id,
         args.server_port,
         args.tui
-    ).into();
+    ));
 
     if let Some(dir) = &args.write_distro_data {
         cmd.push(" --write-gradients-dir ");
@@ -268,6 +292,17 @@ fn start_client(args: &Args, i: usize, run_id: &String, print: bool) {
 
     if args.force_same_shuffle.contains(&(i - 1)) {
         cmd.push(" --fixed-batch-shuffle 0000000000000000000000000000000000000000000000000000000000000001");
+    }
+
+    if let Some(repo) = &args.first_client_checkpoint {
+        if i == 2 {
+            cmd.push(format!(" --checkpoint-dir ./checkpoints --hub-repo {repo}"));
+        }
+    }
+
+    if args.write_log {
+        std::fs::create_dir_all("./logs").unwrap();
+        cmd.push(format!(" --write-log ./logs/client-{}.txt", i - 1))
     }
 
     if print {
