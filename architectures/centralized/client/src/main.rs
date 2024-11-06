@@ -91,6 +91,9 @@ enum Commands {
         /// a 32-byte long hex string. WARNING: providing the same shuffle to two nodes will result in a LOT of duplicated & discarded training work.
         #[clap(long, env)]
         fixed_batch_shuffle: Option<String>,
+
+        #[clap(long, env)]
+        write_log: Option<PathBuf>,
     },
 }
 
@@ -126,6 +129,7 @@ async fn async_main() -> Result<()> {
             wandb_entity,
             wandb_project,
             fixed_batch_shuffle,
+            write_log,
         } => {
             #[cfg(target_os = "windows")]
             {
@@ -212,6 +216,7 @@ async fn async_main() -> Result<()> {
                     LogOutput::Console
                 },
                 Level::INFO,
+                write_log,
             );
 
             info!("Joining gossip room");

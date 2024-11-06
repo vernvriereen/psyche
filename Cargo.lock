@@ -5161,6 +5161,7 @@ dependencies = [
  "psyche-core",
  "psyche-serde",
  "serde",
+ "tracing",
 ]
 
 [[package]]

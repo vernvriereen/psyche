@@ -1,3 +1,5 @@
+use std::{fs::OpenOptions, path::PathBuf};
+
 use crossterm::event::{Event, KeyCode, MouseEventKind};
 use ratatui::{
     buffer::Buffer,
@@ -5,7 +7,7 @@ use ratatui::{
     widgets::{Block, Widget},
 };
 use tracing::Level;
-use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter};
+use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Layer};
 use tui_logger::{TuiLoggerLevelOutput, TuiLoggerWidget, TuiWidgetEvent, TuiWidgetState};
 
 use crate::CustomWidget;
@@ -13,35 +15,33 @@ use crate::CustomWidget;
 pub enum LogOutput {
     TUI,
     Console,
-    // todo add a file logger ?
 }
 
-pub fn init_logging(output: LogOutput, level: Level) {
-    match output {
-        LogOutput::TUI => {
-            let subscriber = tracing_subscriber::registry()
-                .with(
-                    EnvFilter::builder()
-                        .with_default_directive(level.into())
-                        .from_env_lossy(),
-                )
-                .with(tui_logger::tracing_subscriber_layer());
+pub fn init_logging(output: LogOutput, level: Level, write_logs_file: Option<PathBuf>) {
+    let subscriber = tracing_subscriber::registry().with(
+        EnvFilter::builder()
+            .with_default_directive(level.into())
+            .from_env_lossy(),
+    );
 
-            tracing::subscriber::set_global_default(subscriber)
-                .expect("Unable to set global default subscriber");
-        }
-        LogOutput::Console => {
-            let subscriber = tracing_subscriber::registry()
-                .with(
-                    EnvFilter::builder()
-                        .with_default_directive(level.into())
-                        .from_env_lossy(),
-                )
-                .with(fmt::layer().with_writer(std::io::stdout));
-            tracing::subscriber::set_global_default(subscriber)
-                .expect("Unable to set global default subscriber");
-        }
+    let subscriber = match output {
+        LogOutput::TUI => subscriber.with(tui_logger::tracing_subscriber_layer().boxed()),
+        LogOutput::Console => subscriber.with(fmt::layer().with_writer(std::io::stdout).boxed()),
+    };
+
+    if let Some(dir) = write_logs_file {
+        let log_file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(dir)
+            .unwrap();
+        let subscriber = subscriber.with(fmt::layer().with_writer(log_file));
+
+        tracing::subscriber::set_global_default(subscriber)
+    } else {
+        tracing::subscriber::set_global_default(subscriber)
     }
+    .expect("Unable to set global default subscriber");
 }
 
 #[derive(Default)]

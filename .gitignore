@@ -40,4 +40,4 @@ node_modules/
 ### Data folders ###
 /data
 /distro-data
-/checkpoints
+checkpoints/

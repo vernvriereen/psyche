@@ -68,6 +68,7 @@ async fn main() -> Result<()> {
             LogOutput::Console
         },
         Level::INFO,
+        None,
     );
 
     let coordinator = match common_args.state {
