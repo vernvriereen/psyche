@@ -10,6 +10,7 @@ use psyche_serde::derive_serialize;
 use anchor_lang::prelude::*;
 #[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 #[allow(dead_code)]
 const MAX_STRING_LEN: usize = 64;
@@ -354,6 +355,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     ) -> Result<(), CoordinatorError> {
         if self.checkpointers.iter().any(|x| *x == from.id) {
             if let Some(Model::LLM(llm)) = &mut self.model {
+                info!("setting checkpoint to recieved checkpoint {:?}", checkpoint);
                 llm.checkpoint = checkpoint;
             }
             self.finish_cooldown(unix_timestamp);
@@ -652,6 +654,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         self.rounds = Default::default();
 
         if let Some(Model::LLM(llm)) = &mut self.model {
+            info!("setting checkpoint to ephemeral");
             llm.checkpoint = Checkpoint::Ephemeral;
         }
         self.change_state(unix_timestamp, RunState::Cooldown);

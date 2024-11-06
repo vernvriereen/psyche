@@ -7,6 +7,7 @@ edition = "2021"
 psyche-core.workspace = true
 psyche-serde.workspace = true
 async-trait.workspace = true
+tracing.workspace = true
 
 [target.'cfg(target_os = "solana")'.dependencies]
 anchor-lang.workspace = true
