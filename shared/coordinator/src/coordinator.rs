@@ -297,7 +297,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             return Err(CoordinatorError::InvalidRunState);
         }
 
-        for witness in &self.current_round_unchecked().witnesses {
+        for witness in &self.current_round().unwrap().witnesses {
             if self.clients[witness.index as usize] == *from {
                 return Err(CoordinatorError::DuplicateWitness);
             }
@@ -365,8 +365,8 @@ impl<T: NodeIdentity> Coordinator<T> {
 
     pub fn healthy(&self, proof: &CommitteeProof) -> bool {
         let round = match self.current_round() {
-            Ok(round) => round,
-            Err(_) => {
+            Some(round) => round,
+            None => {
                 return false;
             }
         };
@@ -470,46 +470,33 @@ impl<T: NodeIdentity> Coordinator<T> {
             .map(|(index, _)| index)
     }
 
-    pub fn current_round(&self) -> Result<&Round, CoordinatorError> {
-        match self.active() {
-            true => Ok(self.current_round_unchecked()),
-            false => Err(CoordinatorError::NoActiveRound),
-        }
-    }
-
-    pub fn prev_round(&self) -> Result<&Round, CoordinatorError> {
-        match self.active() && !self.first_round {
-            true => Ok(self.prev_round_unchecked()),
-            false => Err(CoordinatorError::NoActiveRound),
-        }
-    }
-
-    pub fn current_round_unchecked(&self) -> &Round {
-        &self.rounds[self.rounds_head as usize]
-    }
-
-    pub fn prev_round_unchecked(&self) -> &Round {
-        &self.rounds[match self.rounds_head as usize {
-            0 => NUM_STORED_ROUNDS - 1,
-            x => x - 1,
-        }]
+    pub fn current_round(&self) -> Option<&Round> {
+        self.rounds.get(self.rounds_head as usize)
     }
 
     pub fn current_round_mut_unchecked(&mut self) -> &mut Round {
         &mut self.rounds[self.rounds_head as usize]
     }
 
-    pub fn previous_round(&self) -> Result<Option<&Round>, CoordinatorError> {
+    // todo why are there two prev functions? do they do the same thing?
+    pub fn previous_round(&self) -> Option<&Round> {
         match self.current_round() {
-            Ok(round) => match self.rounds_head == 0 && round.height == 0 {
-                true => Ok(None),
+            Some(round) => match self.rounds_head == 0 && round.height == 0 {
+                true => None,
                 false => match self.rounds_head == 0 {
-                    true => Ok(Some(&self.rounds[3])),
-                    false => Ok(Some(&self.rounds[self.rounds_head as usize - 1])),
+                    true => Some(&self.rounds[3]),
+                    false => Some(&self.rounds[self.rounds_head as usize - 1]),
                 },
             },
-            Err(err) => Err(err),
+            None => None,
         }
+    }
+
+    pub fn prev_round(&self) -> Option<&Round> {
+        self.rounds.get(match self.rounds_head as usize {
+            0 => NUM_STORED_ROUNDS - 1,
+            x => x - 1,
+        })
     }
 
     pub fn active(&self) -> bool {

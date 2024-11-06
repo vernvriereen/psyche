@@ -26,6 +26,7 @@ hex = "0.4.3"
 lazy_static = "1.5.0"
 wandb = { git = "https://github.com/NousResearch/wandb-rs.git", rev = "c1c543ffc26eeca0a0ab5fc9315d27ca5c33073f" }
 rand_chacha.workspace = true
+thiserror = "2.0.0"
 
 [features]
 parallelism = ["psyche-modeling/parallelism"]

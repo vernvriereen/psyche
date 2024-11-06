@@ -30,7 +30,7 @@ pub fn assign_data_for_state<T: NodeIdentity>(
                 Committee::TieBreaker => assert_eq!(round.tie_breaker_tasks, 0), // TODO
                 Committee::Verifier => {
                     if first_pass {
-                        if let Ok(Some(previous_round)) = state.previous_round() {
+                        if let Some(previous_round) = state.previous_round() {
                             let selected = verifier_shuffle.pop().unwrap();
                             let start = previous_round.data_index
                                 + (selected * state.data_indicies_per_batch as u64);

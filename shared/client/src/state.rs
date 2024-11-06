@@ -35,8 +35,15 @@ use std::{
     time::{Duration, Instant},
 };
 use tch::{Device, Kind};
+use thiserror::Error;
 use tokenizers::Tokenizer;
-use tokio::{runtime::Handle, select, sync::Notify, task::JoinHandle, time::sleep};
+use tokio::{
+    runtime::Handle,
+    select,
+    sync::Notify,
+    task::{JoinError, JoinHandle},
+    time::sleep,
+};
 use tracing::{debug, error, info, warn};
 use wandb::LogData;
 
@@ -120,7 +127,7 @@ pub struct State<T: NodeIdentity> {
     eval_task_max_docs: Option<usize>,
     prepared_eval_tasks: Vec<Arc<EvalTask>>,
     preparing_eval_tasks: TaskResult<Vec<psyche_eval::PreparedTask>>,
-    evals: Vec<JoinHandle<Result<Trainer>>>,
+    evals: Vec<JoinHandle<std::result::Result<Trainer, EvalError>>>,
     tokenizer: Option<Arc<Tokenizer>>,
     apply_start: Option<Instant>,
     started_early_evals: bool,
@@ -235,10 +242,9 @@ impl<T: NodeIdentity> State<T> {
     pub async fn process_new_state(
         &mut self,
         state: &Coordinator<T>,
-        prev_state: Option<Coordinator<T>>,
+        _prev_state: Option<Coordinator<T>>,
     ) -> Result<Option<ToSend>> {
         self.state = Some(state.clone());
-        self.prev_state = prev_state;
         let position = match state.clients.iter().position(|x| x.id == self.identity) {
             Some(position) => position as u64,
             None => {
@@ -251,13 +257,51 @@ impl<T: NodeIdentity> State<T> {
         };
         self.atomic_run_state
             .store(state.run_state.into(), Ordering::Relaxed);
-        match state.run_state {
+        debug!(
+            "trying to tick {}. had prev state? {}",
+            state.run_state,
+            self.prev_state.is_some()
+        );
+        let tick_success_to_send: Result<Option<ToSend>, ()> = match state.run_state {
             RunState::WaitingForMembers => Ok(None),
-            RunState::Warmup => self.warmup().map(|_| None),
-            RunState::RoundTrain => self.round_train(position).await.map(|_| None),
-            RunState::RoundWitness => self.round_witness(position).map(|x| x.map(ToSend::Witness)),
-            RunState::RoundApply => self.round_apply().await.map(|_| None),
-            RunState::Cooldown => self.cooldown().map(|_| None),
+            RunState::Warmup => Ok(self.warmup().map(|_| None)?),
+            RunState::RoundTrain => match self.round_train(position).await {
+                Err(TickRoundTrainError::MissedWarmup) => Err(()),
+                Ok(()) => Ok(None),
+                Err(other_err) => return Err(other_err.into()),
+            },
+            RunState::RoundWitness => match self.round_witness(position) {
+                Err(TickRoundWitnessError::MissedWarmup) => Err(()),
+                Ok(witness) => Ok(witness.map(ToSend::Witness)),
+                Err(other_err) => return Err(other_err.into()),
+            },
+            RunState::RoundApply => match self.round_apply().await {
+                Err(TickRoundApplyError::MissedWarmup) => Err(()),
+                Ok(()) => Ok(None),
+                Err(other_err) => return Err(other_err.into()),
+            },
+            // todo err here?
+            RunState::Cooldown => match self.cooldown() {
+                Err(TickRoundCooldownError::MissedWarmup) => Err(()),
+                Ok(()) => Ok(None),
+                Err(other_err) => return Err(other_err.into()),
+            },
+        };
+        match tick_success_to_send {
+            Err(()) => {
+                // we must have missed warmup. we should just wait for next WaitingForClients step.
+                debug!(
+                    "missed warmup, failed to transition to {}. resetting prev state to None.",
+                    state.run_state
+                );
+                self.prev_state = None;
+                Ok(None)
+            }
+            Ok(send) => {
+                debug!("tick success for {}, setting prev state.", state.run_state);
+                self.prev_state = Some(state.clone());
+                Ok(send)
+            }
         }
     }
 
@@ -814,11 +858,8 @@ impl<T: NodeIdentity> State<T> {
         Ok(())
     }
 
-    fn warmup(&mut self) -> Result<()> {
-        let state = self
-            .state
-            .as_ref()
-            .ok_or(Error::msg("No state in warmup"))?;
+    fn warmup(&mut self) -> std::result::Result<(), EnterWarmupError> {
+        let state = self.state.as_ref().ok_or(EnterWarmupError::NoState)?;
         assert_eq!(state.run_state, RunState::Warmup);
         if self.prev_state.is_none()
             || self
@@ -845,7 +886,7 @@ impl<T: NodeIdentity> State<T> {
                                         .map(|info| (state.clone(), info.clone())),
                                 )))
                         } else {
-                            bail!("Warmup but still applying");
+                            return Err(EnterWarmupError::ApplyStillRunning);
                         }
                     } else {
                         self.start_evals();
@@ -859,16 +900,24 @@ impl<T: NodeIdentity> State<T> {
         Ok(())
     }
 
-    async fn round_train(&mut self, index: u64) -> Result<()> {
+    async fn round_train(&mut self, index: u64) -> std::result::Result<(), TickRoundTrainError> {
         if !self.started_early_evals {
             self.cancel_evals().await?; // CANCEL SAFETY
         }
 
-        let state = self
-            .state
-            .as_ref()
-            .ok_or(Error::msg("No state in round train"))?;
+        let state = self.state.as_ref().ok_or(TickRoundTrainError::NoState)?;
         assert_eq!(state.run_state, RunState::RoundTrain);
+
+        // check if this is a state transition
+        if self
+            .prev_state
+            .as_ref()
+            .ok_or(TickRoundTrainError::MissedWarmup)?
+            .run_state
+            == RunState::RoundTrain
+        {
+            return Ok(());
+        }
 
         // if all our states are empty (first execution), wait for the data provider and model load to finish
         if self.available_trainers.is_empty()
@@ -876,11 +925,12 @@ impl<T: NodeIdentity> State<T> {
             && self.training_data.is_none()
             && self.tokenizer.is_none()
         {
-            let data_and_model_load = self.data_and_model_load.take().ok_or(Error::msg(
-                "Round started but no model load was running. Did we miss warmup?",
-            ))?;
+            let data_and_model_load = self
+                .data_and_model_load
+                .take()
+                .ok_or(TickRoundTrainError::DataModelLoadNotStarted)?;
             if !data_and_model_load.is_finished() {
-                bail!("Data and model load not finished when round started!")
+                return Err(TickRoundTrainError::DataModelLoadUnfinished);
             }
             let LoadedModelAndData {
                 data_provider,
@@ -888,7 +938,10 @@ impl<T: NodeIdentity> State<T> {
                 tokenizer,
                 checkpoint_extra_files,
                 wandb_run,
-            } = data_and_model_load.await??; // not a cancel safety point, this should return immediately
+            } = data_and_model_load
+                .await
+                .map_err(TickRoundTrainError::DataModelLoadFailedToJoin)?
+                .map_err(TickRoundTrainError::DataModelLoadFailed)?; // not a cancel safety point, this should return immediately
             self.checkpoint_extra_files = checkpoint_extra_files;
             self.wandb_run = wandb_run.map(Arc::new);
 
@@ -950,36 +1003,27 @@ impl<T: NodeIdentity> State<T> {
             }
         }
 
-        // check if this is a state transition
-        if self
-            .prev_state
-            .as_ref()
-            .ok_or(Error::msg("First seen state was round state"))?
-            .run_state
-            == RunState::RoundTrain
-        {
-            return Ok(());
-        }
-
         // transition to RoundTrain -- round start time!
         if self.applying.is_some() {
-            bail!("Ready to train but previous applying still running");
+            return Err(TickRoundTrainError::ApplyStillRunning);
         }
         if !self.evals.is_empty() {
-            bail!("Ready to train but evals still running");
+            return Err(TickRoundTrainError::EvalsStillRunning);
         }
         if self.checkpointing.is_some() {
-            bail!("Ready to train but still checkpointing");
-        }
-        if self.available_trainers.len() != self.data_parallelism {
-            bail!(
-                "Missing trainers at training start, expected {} but have {}",
-                self.data_parallelism,
-                self.available_trainers.len()
-            );
+            return Err(TickRoundTrainError::CheckpointingStillRunning);
         }
 
-        let round = state.current_round()?;
+        let trainers_still_running = self.data_parallelism - self.available_trainers.len();
+        if trainers_still_running > 0 {
+            return Err(TickRoundTrainError::TrainersStillRunning(
+                trainers_still_running,
+            ));
+        }
+
+        let round = state
+            .current_round()
+            .ok_or(TickRoundTrainError::NoActiveRound)?;
 
         let now = Instant::now();
         if let Some(last_round_start) = self.round_start {
@@ -997,7 +1041,7 @@ impl<T: NodeIdentity> State<T> {
         self.data_assignments = assign_data_for_state(state, &committee_selection);
 
         if self.data_fetcher.is_none() {
-            bail!("Ready to train but no data fetcher! Did we miss warmup??");
+            return Err(TickRoundTrainError::NoDataFetcher);
         }
 
         let (num_batch_ids_for_this_round, training_data) = self
@@ -1055,18 +1099,18 @@ impl<T: NodeIdentity> State<T> {
         Ok(())
     }
 
-    fn round_witness(&mut self, index: u64) -> Result<Option<Witness>> {
-        let state = self
-            .state
-            .as_ref()
-            .ok_or(Error::msg("No state in round witness"))?;
+    fn round_witness(
+        &mut self,
+        index: u64,
+    ) -> std::result::Result<Option<Witness>, TickRoundWitnessError> {
+        let state = self.state.as_ref().ok_or(TickRoundWitnessError::NoState)?;
         assert_eq!(state.run_state, RunState::RoundWitness);
 
         // check if this is a state transition
         if self
             .prev_state
             .as_ref()
-            .ok_or(Error::msg("First seen state was witness"))?
+            .ok_or(TickRoundWitnessError::MissedWarmup)?
             .run_state
             != RunState::RoundWitness
         {
@@ -1076,21 +1120,18 @@ impl<T: NodeIdentity> State<T> {
         Ok(self.get_witness_to_send(index))
     }
 
-    async fn round_apply(&mut self) -> Result<()> {
+    async fn round_apply(&mut self) -> std::result::Result<(), TickRoundApplyError> {
         self.cancel_evals().await?; // CANCEL SAFETY
         self.started_early_evals = false;
 
-        let state = self
-            .state
-            .as_ref()
-            .ok_or(Error::msg("No state in round apply"))?;
+        let state = self.state.as_ref().ok_or(TickRoundApplyError::NoState)?;
         assert_eq!(state.run_state, RunState::RoundApply);
 
         // check if this is a state transition
         if self
             .prev_state
             .as_ref()
-            .ok_or(Error::msg("First seen state was apply"))?
+            .ok_or(TickRoundApplyError::MissedWarmup)?
             .run_state
             == RunState::RoundApply
         {
@@ -1099,7 +1140,9 @@ impl<T: NodeIdentity> State<T> {
 
         let trainers_still_running = self.data_parallelism - self.available_trainers.len();
         if trainers_still_running > 0 {
-            bail!("Apply round but {trainers_still_running} trainer(s) aren't finished");
+            return Err(TickRoundApplyError::TrainersStillRunning(
+                trainers_still_running,
+            ));
         } else {
             debug!(
                 "Apply start ({} commitments, {} payloads)",
@@ -1133,11 +1176,7 @@ impl<T: NodeIdentity> State<T> {
             self.wandb_log.insert("coordinator/epoch", state.epoch);
             self.wandb_log.insert(
                 "coordinator/round",
-                state
-                    .current_round()
-                    .ok()
-                    .map(|x| x.height)
-                    .unwrap_or_default(),
+                state.current_round().map(|x| x.height).unwrap_or_default(),
             );
             self.wandb_log.insert("_step", state.step);
             let wandb_log = std::mem::take(&mut self.wandb_log);
@@ -1175,8 +1214,12 @@ impl<T: NodeIdentity> State<T> {
             assert!(!payloads.is_empty());
             assert!(!commitments.is_empty());
             let round = match state.overlapped {
-                true => state.prev_round()?,
-                false => state.current_round()?,
+                true => state
+                    .prev_round()
+                    .ok_or(TickRoundApplyError::NoActiveRound)?,
+                false => state
+                    .current_round()
+                    .ok_or(TickRoundApplyError::NoActiveRound)?,
             };
             let witnesses = round.witnesses.clone();
             let batch_ids = get_batch_ids_for_round(round, state);
@@ -1252,10 +1295,14 @@ impl<T: NodeIdentity> State<T> {
         let (_, witness_proof, committee_selection) = self
             .committee_info
             .take()
-            .ok_or(Error::msg("No committee info in apply"))?;
+            .ok_or(TickRoundApplyError::NoCommitteeInfo)?;
 
         if witness_proof.witness {
-            let witnesses = state.current_round()?.witnesses.clone();
+            let witnesses = state
+                .current_round()
+                .ok_or(TickRoundApplyError::NoActiveRound)?
+                .witnesses
+                .clone();
             let witness_quorum = state.witness_quorum;
             let clients = state.clients.clone();
             self.health_checking = Some(tokio::task::spawn_blocking(move || {
@@ -1279,18 +1326,15 @@ impl<T: NodeIdentity> State<T> {
         Ok(())
     }
 
-    fn cooldown(&mut self) -> Result<()> {
-        let state = self
-            .state
-            .as_ref()
-            .ok_or(Error::msg("No state in round witness"))?;
+    fn cooldown(&mut self) -> std::result::Result<(), TickRoundCooldownError> {
+        let state = self.state.as_ref().ok_or(TickRoundCooldownError::NoState)?;
         assert_eq!(state.run_state, RunState::Cooldown);
 
         // check if this is a state transition
         if self
             .prev_state
             .as_ref()
-            .ok_or(Error::msg("First seen state was cooldown"))?
+            .ok_or(TickRoundCooldownError::MissedWarmup)?
             .run_state
             != RunState::Cooldown
         {
@@ -1346,7 +1390,7 @@ impl<T: NodeIdentity> State<T> {
                         }));
                     }
                     None => {
-                        bail!("No available trainers for checkpointing");
+                        return Err(TickRoundCooldownError::NoAvailableTrainersForCheckpointing)
                     }
                 }
             } else {
@@ -1602,7 +1646,7 @@ impl<T: NodeIdentity> State<T> {
     }
 
     // cancel safe
-    async fn cancel_evals(&mut self) -> Result<()> {
+    async fn cancel_evals(&mut self) -> std::result::Result<(), FinishEvalsError> {
         if !self.eval_cancel.swap(true, Ordering::SeqCst) {
             debug!("Cancelling evals");
         }
@@ -1714,7 +1758,7 @@ impl<T: NodeIdentity> State<T> {
     fn total_tokens(&self) -> u64 {
         self.state
             .as_ref()
-            .and_then(|x| x.current_round().ok().map(|y| y.data_index))
+            .and_then(|x| x.current_round().map(|y| y.data_index))
             .unwrap_or_default()
             * match &self.state {
                 Some(coordinator) => match &coordinator.model {
@@ -1756,6 +1800,111 @@ impl<T: NodeIdentity> From<&State<T>> for ClientTUIState {
             evals: value._eval_results.clone(),
         }
     }
+}
+
+#[derive(Error, Debug)]
+enum TickRoundWitnessError {
+    #[error("round entered with no state")]
+    NoState,
+
+    #[error("this was the first state seen, we must be mid-epoch.")]
+    MissedWarmup,
+}
+
+#[derive(Error, Debug)]
+enum TickRoundApplyError {
+    #[error("no round active")]
+    NoActiveRound,
+
+    #[error("this was the first state seen, we must be mid-epoch.")]
+    MissedWarmup,
+
+    #[error("couldn't cancel evals")]
+    EvalCancelFailed(#[from] FinishEvalsError),
+
+    #[error("{0} trainer(s) aren't finished")]
+    TrainersStillRunning(usize),
+
+    #[error("no committee info")]
+    NoCommitteeInfo,
+
+    #[error("round entered with no state")]
+    NoState,
+}
+
+#[derive(Error, Debug)]
+enum TickRoundCooldownError {
+    #[error("this was the first state seen, we must be mid-epoch.")]
+    MissedWarmup,
+
+    #[error("no trainers available for checkpointing")]
+    NoAvailableTrainersForCheckpointing,
+
+    #[error("round entered with no state")]
+    NoState,
+}
+
+#[derive(Error, Debug)]
+enum TickRoundTrainError {
+    #[error("no round active")]
+    NoActiveRound,
+
+    #[error("this was the first state seen, we must be mid-epoch.")]
+    MissedWarmup,
+
+    #[error("couldn't cancel evals")]
+    EvalCancelFailed(#[from] FinishEvalsError),
+
+    #[error("evals still running")]
+    EvalsStillRunning,
+
+    #[error("checkpointing still running")]
+    CheckpointingStillRunning,
+
+    #[error("apply still running")]
+    ApplyStillRunning,
+
+    #[error("{0} trainer(s) aren't finished")]
+    TrainersStillRunning(usize),
+
+    #[error("round entered with no state")]
+    NoState,
+
+    #[error("ready to train but no data fetcher! Did we miss warmup??")]
+    NoDataFetcher,
+
+    #[error("Data and model load not finished when round started!")]
+    DataModelLoadUnfinished,
+
+    #[error("Data and model load not started! Did we miss warmup??")]
+    DataModelLoadNotStarted,
+
+    #[error("failed to load data and model: {0}")]
+    DataModelLoadFailed(#[from] anyhow::Error),
+
+    #[error("failed to join data and model load task {0}")]
+    DataModelLoadFailedToJoin(#[from] JoinError),
+}
+
+#[derive(Error, Debug)]
+enum EnterWarmupError {
+    #[error("round entered with no state")]
+    NoState,
+
+    #[error("apply still running")]
+    ApplyStillRunning,
+}
+
+#[derive(Error, Debug)]
+enum EvalError {}
+
+#[derive(Error, Debug)]
+enum FinishEvalsError {
+    #[error("failed to join task {0}")]
+    JoinTask(#[from] JoinError),
+
+    #[error("eval failed {0}")]
+    EvalFailed(#[from] EvalError),
 }
 
 struct RawLoadedModel {

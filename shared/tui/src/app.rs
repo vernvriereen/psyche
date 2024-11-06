@@ -22,8 +22,6 @@ pub struct App<W: CustomWidget> {
     custom_widget_data_state: W::Data,
 }
 
-// TODO implement sending shutdown signal + graceful shutdown somehow..
-
 impl<W: CustomWidget> App<W> {
     pub fn new(widget: W) -> Self {
         Self {

@@ -65,7 +65,9 @@ impl CommitteeSelection {
     pub fn from_coordinator<T: NodeIdentity>(
         coordinator: &Coordinator<T>,
     ) -> Result<Self, CoordinatorError> {
-        let round = coordinator.current_round()?;
+        let round = coordinator
+            .current_round()
+            .ok_or(CoordinatorError::NoActiveRound)?;
         Ok(Self::new(
             round.tie_breaker_tasks as usize,
             coordinator.witness_nodes as usize,
