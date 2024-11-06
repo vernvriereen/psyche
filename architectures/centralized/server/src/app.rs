@@ -218,8 +218,10 @@ impl App {
                     return Ok(());
                 }
 
-                Ok(Some(event)) = self.p2p.poll_next() => {
-                    self.on_network_event(event);
+                Ok(p2p_event) = self.p2p.poll_next() => {
+                    if let Some(event) = p2p_event {
+                        self.on_network_event(event);
+                    }
                 }
                 Some(event) = self.backend.net_server.next() => {
                     self.on_client_message(event.0, event.1).await;
