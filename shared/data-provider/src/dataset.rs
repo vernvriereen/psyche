@@ -18,13 +18,14 @@ const SPLITS: [Split; 3] = [Split::Train, Split::Test, Split::Validation];
 
 fn looks_like_parquet_file(x: &Path) -> bool {
     if let Some(ext) = x.extension() {
-        if ext.eq_ignore_ascii_case("parquet") {
-            if let Some(stem) = x.file_stem() {
-                if let Some(s) = stem.to_str() {
-                    return s.parse::<usize>().is_ok();
-                }
-            }
-        }
+        // if ext.eq_ignore_ascii_case("parquet") {
+        //     if let Some(stem) = x.file_stem() {
+        //         if let Some(s) = stem.to_str() {
+        //             return s.parse::<usize>().is_ok();
+        //         }
+        //     }
+        // }
+        return ext.eq_ignore_ascii_case("parquet");
     };
     false
 }
@@ -74,6 +75,7 @@ impl Dataset {
     ) -> Result<Self> {
         let mut split = split;
         let mut to_load: Vec<PathBuf> = Vec::new();
+        // parquet converter structure
         for file in repo_files {
             if looks_like_parquet_file(file) {
                 let mut path_iter = file.iter().rev().skip(1);
@@ -129,6 +131,26 @@ impl Dataset {
                         }
                     }
                     _ => continue,
+                }
+            }
+        }
+        if to_load.is_empty() {
+            // ad-hoc structure
+            for file in repo_files {
+                if looks_like_parquet_file(file) {
+                    match split {
+                        Some(split) => {
+                            if file
+                                .file_name()
+                                .unwrap()
+                                .to_string_lossy()
+                                .starts_with(&split.to_string())
+                            {
+                                to_load.push(file.clone());
+                            }
+                        }
+                        None => to_load.push(file.clone()),
+                    }
                 }
             }
         }

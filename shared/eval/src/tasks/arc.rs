@@ -27,9 +27,15 @@ fn field_to_string(field: &Field) -> String {
 impl Arc {
     pub fn load(subset: &str) -> Result<TaskType> {
         let ret = Self {
-            test_split: load_dataset("allenai/ai2_arc", Split::Test, Some(subset.to_string()))?,
+            test_split: load_dataset(
+                "allenai/ai2_arc",
+                None,
+                Split::Test,
+                Some(subset.to_string()),
+            )?,
             validation_dataset: load_dataset(
                 "allenai/ai2_arc",
+                None,
                 Split::Validation,
                 Some(subset.to_string()),
             )?,

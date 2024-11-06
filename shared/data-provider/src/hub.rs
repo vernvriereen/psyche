@@ -86,17 +86,17 @@ pub async fn download_model_repo_async(
 
 pub async fn download_dataset_repo_async(
     repo_id: String,
+    revision: Option<String>,
     cache: Option<PathBuf>,
     token: Option<String>,
     max_concurrent_downloads: Option<usize>,
     progress_bar: bool,
 ) -> Result<Vec<PathBuf>> {
     download_repo_async(
-        Repo::with_revision(
-            repo_id,
-            RepoType::Dataset,
-            "refs/convert/parquet".to_owned(),
-        ),
+        match revision {
+            Some(revision) => Repo::with_revision(repo_id.to_owned(), RepoType::Dataset, revision),
+            None => Repo::new(repo_id.to_owned(), RepoType::Dataset),
+        },
         cache,
         token,
         max_concurrent_downloads,
@@ -155,16 +155,16 @@ pub fn download_model_repo_sync(
 
 pub fn download_dataset_repo_sync(
     repo_id: &str,
+    revision: Option<String>,
     cache: Option<PathBuf>,
     token: Option<String>,
     progress_bar: bool,
 ) -> Result<Vec<PathBuf>> {
     download_repo_sync(
-        Repo::with_revision(
-            repo_id.to_owned(),
-            RepoType::Dataset,
-            "refs/convert/parquet".to_owned(),
-        ),
+        match revision {
+            Some(revision) => Repo::with_revision(repo_id.to_owned(), RepoType::Dataset, revision),
+            None => Repo::new(repo_id.to_owned(), RepoType::Dataset),
+        },
         cache,
         token,
         progress_bar,

@@ -43,8 +43,8 @@ pub struct Hellaswag {
 impl Hellaswag {
     pub fn load() -> Result<TaskType> {
         let ret = Self {
-            train_dataset: load_dataset("Rowan/hellaswag", Split::Train, None)?,
-            validation_dataset: load_dataset("Rowan/hellaswag", Split::Validation, None)?,
+            train_dataset: load_dataset("Rowan/hellaswag", None, Split::Train, None)?,
+            validation_dataset: load_dataset("Rowan/hellaswag", None, Split::Validation, None)?,
         };
         Ok(TaskType::LogLikelihood(Box::new(ret)))
     }
