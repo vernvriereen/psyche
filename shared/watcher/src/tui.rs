@@ -43,10 +43,13 @@ impl psyche_tui::CustomWidget for CoordinatorTui {
             let vsplit = Layout::vertical(Constraint::from_fills([1, 1])).split(coord_split[1]);
             {
                 Paragraph::new(
-                    [format!("Data Source: {}", state.data_source)]
-                        .into_iter()
-                        .map(Line::from)
-                        .collect::<Vec<_>>(),
+                    [
+                        format!("Data Source: {}", state.data_source),
+                        format!("Model Checkpoint: {}", state.model_checkpoint),
+                    ]
+                    .into_iter()
+                    .map(Line::from)
+                    .collect::<Vec<_>>(),
                 )
                 .block(Block::bordered().title("Config"))
                 .render(vsplit[0], buf);
@@ -114,7 +117,7 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for TuiRunState {
     fn from(c: &Coordinator<T>) -> Self {
         match c.run_state {
             RunState::WaitingForMembers => TuiRunState::WaitingForMembers {
-                need: c.min_clients - c.clients.len() as u32,
+                need: c.min_clients.saturating_sub(c.clients.len() as u32),
             },
             RunState::Warmup => {
                 let time_since_epoch = SystemTime::now()
@@ -160,6 +163,7 @@ pub struct CoordinatorTuiState {
     pub clients: Vec<String>,
     pub tick: u64,
     pub data_source: String,
+    pub model_checkpoint: String,
     pub dropped_clients: usize,
 }
 
@@ -180,6 +184,15 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
                 .as_ref()
                 .and_then(|m| match m {
                     Model::LLM(l) => Some(format!("{:?}", l.data_type)),
+                    #[allow(unreachable_patterns)] // can happen later! remove when there's >1 lol
+                    _ => None,
+                })
+                .unwrap_or("no llm data source...".to_owned()),
+            model_checkpoint: value
+                .model
+                .as_ref()
+                .and_then(|m| match m {
+                    Model::LLM(l) => Some(format!("{:?}", l.checkpoint)),
                     #[allow(unreachable_patterns)] // can happen later! remove when there's >1 lol
                     _ => None,
                 })
