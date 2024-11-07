@@ -38,7 +38,7 @@ const BARKS: [&str; 5] = ["bork", "woof", "boof", "bark", "hello im a dog"];
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    init_logging(psyche_tui::LogOutput::TUI, Level::INFO);
+    init_logging(psyche_tui::LogOutput::TUI, Level::INFO, None);
 
     info!("foo");
     warn!("bar");

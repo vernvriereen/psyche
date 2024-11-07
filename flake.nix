@@ -146,6 +146,8 @@
             # for the ./local.sh script
             tmux
             nvtopPackages.full
+
+            # task runner~
             just
 
             # frontend

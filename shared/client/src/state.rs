@@ -2,7 +2,7 @@ use crate::{
     disto_results_to_bytes,
     fetch_data::{Batch, BatchId, BatchStep, DataFetcher, TrainingDataForStep},
     protocol::TrainingResult,
-    trainer::{DistroResults, ParallelModels, TrainOutput, Trainer},
+    trainer::{ApplyDistroResultError, DistroResults, ParallelModels, TrainOutput, Trainer},
     tui::ClientTUIState,
     BroadcastMessage, Payload, PeerAnnouncement, SerializedDistroResult, WandBInfo,
 };
@@ -36,6 +36,7 @@ use std::{
 };
 use tch::{Device, Kind};
 use thiserror::Error;
+use time::OffsetDateTime;
 use tokenizers::Tokenizer;
 use tokio::{
     runtime::Handle,
@@ -44,7 +45,7 @@ use tokio::{
     task::{JoinError, JoinHandle},
     time::sleep,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 use wandb::LogData;
 
 const WARMUP_PEER_ANNOUNCEMENT_DURATION: Duration = Duration::from_secs(10);
@@ -90,9 +91,9 @@ pub enum BatchShuffleType {
 }
 
 pub struct State<T: NodeIdentity> {
+    startup_time: OffsetDateTime,
     pub identity: T,
     private_key: T::PrivateKey,
-    showed_inclusion_message: bool,
     data_and_model_load: TaskResult<LoadedModelAndData<T>>,
     available_trainers: Vec<Trainer>,
     trainings: Vec<JoinHandle<Result<(TrainOutput, u64)>>>,
@@ -181,9 +182,9 @@ impl<T: NodeIdentity> State<T> {
         assert!(tensor_parallelism > 0);
         assert!(micro_batch_size.map(|x| x > 0).unwrap_or(true));
         Self {
+            startup_time: OffsetDateTime::now_utc(),
             identity,
             private_key,
-            showed_inclusion_message: false,
             data_and_model_load: None,
             training_data: None,
             available_trainers: Vec::new(),
@@ -248,16 +249,13 @@ impl<T: NodeIdentity> State<T> {
         let position = match state.clients.iter().position(|x| x.id == self.identity) {
             Some(position) => position as u64,
             None => {
-                if !self.showed_inclusion_message {
-                    info!("Awaiting inclusion in round");
-                    self.showed_inclusion_message = true;
-                }
+                info!("Awaiting inclusion in round");
                 return Ok(None);
             }
         };
         self.atomic_run_state
             .store(state.run_state.into(), Ordering::Relaxed);
-        debug!(
+        trace!(
             "trying to tick {}. had prev state? {}",
             state.run_state,
             self.prev_state.is_some()
@@ -290,7 +288,7 @@ impl<T: NodeIdentity> State<T> {
         match tick_success_to_send {
             Err(()) => {
                 // we must have missed warmup. we should just wait for next WaitingForClients step.
-                debug!(
+                trace!(
                     "missed warmup, failed to transition to {}. resetting prev state to None.",
                     state.run_state
                 );
@@ -298,7 +296,7 @@ impl<T: NodeIdentity> State<T> {
                 Ok(None)
             }
             Ok(send) => {
-                debug!("tick success for {}, setting prev state.", state.run_state);
+                trace!("tick success for {}, setting prev state.", state.run_state);
                 self.prev_state = Some(state.clone());
                 Ok(send)
             }
@@ -1274,16 +1272,17 @@ impl<T: NodeIdentity> State<T> {
                     .await
                     .push((step, distro_results.clone()));
 
-                let futures: Vec<JoinHandle<Result<Trainer>>> = trainers
-                    .into_iter()
-                    .map(|trainer| {
-                        let distro_results = distro_results.clone();
+                let futures: Vec<JoinHandle<std::result::Result<Trainer, ApplyDistroResultError>>> =
+                    trainers
+                        .into_iter()
+                        .map(|trainer| {
+                            let distro_results = distro_results.clone();
 
-                        tokio::task::spawn_blocking(move || {
-                            trainer.apply_distro_results(step, distro_results)
+                            tokio::task::spawn_blocking(move || {
+                                trainer.apply_distro_results(step, distro_results)
+                            })
                         })
-                    })
-                    .collect::<Vec<_>>();
+                        .collect::<Vec<_>>();
                 let mut trainers = Vec::new();
                 for future in futures {
                     trainers.push(future.await??);
@@ -1798,6 +1797,11 @@ impl<T: NodeIdentity> From<&State<T>> for ClientTUIState {
             global_tokens_per_second: value.global_tokens_per_second(),
             total_tokens: value.total_tokens(),
             evals: value._eval_results.clone(),
+            startup_time: value.startup_time,
+            checkpointer: value
+                .checkpoint_upload_info
+                .as_ref()
+                .map(|c| c.hub_repo.clone()),
         }
     }
 }

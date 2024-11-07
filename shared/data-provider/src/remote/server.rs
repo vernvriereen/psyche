@@ -1,7 +1,7 @@
 use anyhow::Result;
 use psyche_coordinator::Coordinator;
 use psyche_core::NodeIdentity;
-use psyche_network::TcpServer;
+use psyche_network::{ClientNotification, TcpServer};
 use psyche_watcher::Backend;
 use std::collections::{HashMap, HashSet};
 use tracing::{info, warn};
@@ -52,12 +52,18 @@ where
             new_state = self.backend.wait_for_new_state() => {
                 self.handle_new_state(new_state.unwrap());
             }
-            Some((from, message)) = self.tcp_server.next() => {
-                self.handle_client_message(from, message).await;
+            Some(event) = self.tcp_server.next() => {
+                match event {
+                    ClientNotification::Message((from, message)) => {
+                        self.handle_client_message(from, message).await;
+                    }
+                    ClientNotification::Disconnected(_) => {
+                        // noop :)
+                    }
+                }
             }
         }
     }
-
     pub async fn handle_client_message(&mut self, from: T, message: ClientToServerMessage) {
         match message {
             ClientToServerMessage::RequestTrainingData { data_ids } => {

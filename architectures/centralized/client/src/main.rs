@@ -7,6 +7,7 @@ use psyche_eval::tasktype_from_name;
 use psyche_network::SecretKey;
 use psyche_tui::{maybe_start_render_loop, LogOutput};
 use std::path::PathBuf;
+use time::OffsetDateTime;
 use tokio::runtime::Builder;
 use tracing::{info, Level};
 
@@ -219,7 +220,10 @@ async fn async_main() -> Result<()> {
                 write_log,
             );
 
-            info!("Joining gossip room");
+            info!(
+                "============ Client Startup at {} ============",
+                OffsetDateTime::now_utc()
+            );
 
             let private_key: SecretKey = secret_key
                 .map(|k| {

@@ -48,7 +48,7 @@ pub use iroh::{
 };
 pub use peer_list::PeerList;
 pub use signed_message::SignedMessage;
-pub use tcp::{TcpClient, TcpServer};
+pub use tcp::{ClientNotification, TcpClient, TcpServer};
 pub use tui::{NetworkTUIState, NetworkTui};
 
 pub struct NetworkConnection<BroadcastMessage, Download>

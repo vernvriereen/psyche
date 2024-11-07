@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use crate::{
     model::{Checkpoint, Model},
     traits::Backend,
@@ -35,6 +37,12 @@ pub enum RunState {
 pub struct Client<I: NodeIdentity> {
     pub id: I,
     pub dropping_at_end_of_round: bool,
+}
+
+impl<I: NodeIdentity> Hash for Client<I> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -522,7 +530,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
         let clients = backend.select_new_clients();
         if clients.len() as u32 >= self.min_clients {
-            self.clients = clients.into();
+            self.clients = clients;
             self.start_warmup(unix_timestamp);
         }
         Ok(())

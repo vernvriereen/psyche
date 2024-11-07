@@ -3819,6 +3819,7 @@ dependencies = [
  "clap",
  "rand 0.8.5",
  "serde",
+ "time",
  "toml 0.8.19",
 ]
 
@@ -5077,6 +5078,7 @@ dependencies = [
  "psyche-watcher",
  "rand 0.8.5",
  "tch",
+ "time",
  "tokio",
  "tokio-util",
  "tracing",
@@ -5145,6 +5147,7 @@ dependencies = [
  "serde",
  "tch",
  "thiserror 2.0.0",
+ "time",
  "tokenizers",
  "tokio",
  "tokio-util",

@@ -14,16 +14,10 @@ You can use the `local-testnet` binary in `/tools/rust-tools/local-testnet`, whi
 ### Usage
 
 ```
-cargo run -p local-testnet -- --num-clients <N> --config-path <CONFIG_PATH> [--write-distro-data <DIR>] [--server-port <PORT>] [--tui <bool>]
+cargo run -p local-testnet -- --help
 ```
 
-- `NUM_CLIENTS`: Number of clients to launch
-- `CONFIG_PATH`: Path to a folder containing `state.toml` and `data.toml`
-- `WRITE_DISTRO_DATA`: directory to write gradient data, or "false" to disable
-- `SERVER_PORT`: (Optional) port for the server (default: 20000)
-- `TUI`: (Optional) enable/disable TUI for clients (default: true)
-
-### Example
+### Example Invocations
 
 ```bash
 cargo run -p local-testnet -- --num-clients 3 --config-path ../../config/llama2-20m-dolma-noverify-no-checkpointer --write-distro-data ./distro-data/llama2-20m-noverify --tui false

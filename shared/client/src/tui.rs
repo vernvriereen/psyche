@@ -7,9 +7,10 @@ use psyche_tui::ratatui::{
     style::{Style, Stylize},
     symbols,
     text::Line,
-    widgets::{Axis, Chart, Dataset, GraphType, LegendPosition, Paragraph, Widget},
+    widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, LegendPosition, Paragraph, Widget},
 };
 use psyche_watcher::TuiRunState;
+use time::OffsetDateTime;
 
 lazy_static::lazy_static! {
     static ref GRAPH_COLORS: [Style; 4] = [Style::default().red(), Style::default().magenta(), Style::default().green(), Style::default().cyan()];
@@ -60,25 +61,18 @@ impl psyche_tui::CustomWidget for ClientTUI {
     type Data = ClientTUIState;
 
     fn render(&mut self, area: Rect, buf: &mut Buffer, state: &Self::Data) {
-        let right_size = state
-            .evals
-            .keys()
-            .map(|key| key.len())
-            .max_by(|x, y| x.cmp(y))
-            .unwrap_or(6) as u16;
-        let coord_split = Layout::vertical(match state.evals.is_empty() {
-            true => vec![Constraint::Fill(1), Constraint::Length(2)],
+        let coord_split = Layout::horizontal(match state.evals.is_empty() {
+            true => vec![Constraint::Fill(1), Constraint::Length(40)],
             false => vec![
                 Constraint::Fill(1),
-                Constraint::Length(2),
+                Constraint::Length(20),
                 Constraint::Fill(1),
             ],
         })
         .split(area);
         {
-            let plot_split =
-                Layout::horizontal([Constraint::Fill(1), Constraint::Length(right_size)])
-                    .split(coord_split[0]);
+            let loss_plot_split = Layout::vertical([Constraint::Fill(1), Constraint::Length(1)])
+                .split(coord_split[0]);
 
             let x_max = state.step as f64;
             let x_min = x_max - (state.loss.len() as f64);
@@ -114,45 +108,45 @@ impl psyche_tui::CustomWidget for ClientTUI {
                 .x_axis(x_axis)
                 .y_axis(y_axis)
                 .legend_position(Some(LegendPosition::TopRight))
-                .render(plot_split[0], buf);
+                .render(loss_plot_split[0], buf);
 
-            let vsplit = Layout::vertical([
-                Constraint::Fill(1),
-                Constraint::Length(2),
-                Constraint::Fill(1),
-            ])
-            .split(plot_split[1]);
-            Paragraph::new(vec![
-                Line::from("Loss"),
-                Line::from(format!("{:.3}", state.loss.last().unwrap_or(&0.0))),
-            ])
+            Paragraph::new(vec![Line::from(format!(
+                "Loss {:.3}",
+                state.loss.last().unwrap_or(&0.0)
+            ))])
             .centered()
-            .render(vsplit[1], buf);
+            .render(loss_plot_split[1], buf);
         }
         {
-            let plot_split =
-                Layout::horizontal([Constraint::Fill(1), Constraint::Length(right_size)])
-                    .split(coord_split[1]);
-
-            let hsplit =
-                Layout::horizontal(Constraint::from_fills([1, 1, 1, 1])).split(plot_split[0]);
-            Paragraph::new(format!("State: {}", state.run_state)).render(hsplit[0], buf);
-            Paragraph::new(format!("Batches Left: {}", state.batches_left)).render(hsplit[1], buf);
-            Paragraph::new(format!(
-                "Global Speed: {}",
-                convert_tokens_per_sec(state.global_tokens_per_second)
-            ))
-            .render(hsplit[2], buf);
-            Paragraph::new(format!(
-                "Total Tokens: {}",
-                convert_tokens(state.total_tokens)
-            ))
-            .render(hsplit[3], buf);
+            Paragraph::new(
+                vec![
+                    format!("Startup Time: {}", state.startup_time),
+                    format!("State: {}", state.run_state),
+                    format!("Batches Left: {}", state.batches_left),
+                    format!(
+                        "Global Speed: {}",
+                        convert_tokens_per_sec(state.global_tokens_per_second)
+                    ),
+                    format!("Total Tokens: {}", convert_tokens(state.total_tokens)),
+                    format!(
+                        "Checkpointer? {}",
+                        state.checkpointer.as_ref().map_or("no", |v| v)
+                    ),
+                ]
+                .into_iter()
+                .map(Line::from)
+                .collect::<Vec<_>>(),
+            )
+            .block(Block::new().borders(Borders::LEFT))
+            .render(coord_split[1], buf);
         }
+
         if !state.evals.is_empty() {
-            let plot_split =
-                Layout::horizontal([Constraint::Fill(1), Constraint::Length(right_size)])
-                    .split(coord_split[2]);
+            let plot_split = Layout::horizontal([
+                Constraint::Fill(1),
+                Constraint::Length(state.evals.len() as u16),
+            ])
+            .split(coord_split[2]);
 
             let x_max = state.step as f64;
             let x_min = x_max - (state.evals.values().map(|x| x.len()).max().unwrap()) as f64;
@@ -214,7 +208,7 @@ impl psyche_tui::CustomWidget for ClientTUI {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct ClientTUIState {
     pub step: u32,
     pub committee: Option<Committee>,
@@ -224,4 +218,23 @@ pub struct ClientTUIState {
     pub evals: HashMap<String, Vec<f64>>,
     pub global_tokens_per_second: f32,
     pub total_tokens: u64,
+    pub startup_time: OffsetDateTime,
+    pub checkpointer: Option<String>,
+}
+
+impl Default for ClientTUIState {
+    fn default() -> Self {
+        Self {
+            step: Default::default(),
+            committee: Default::default(),
+            run_state: Default::default(),
+            batches_left: Default::default(),
+            loss: Default::default(),
+            evals: Default::default(),
+            global_tokens_per_second: Default::default(),
+            total_tokens: Default::default(),
+            startup_time: OffsetDateTime::now_utc(),
+            checkpointer: Default::default(),
+        }
+    }
 }

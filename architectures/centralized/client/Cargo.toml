@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+
 psyche-centralized-shared = { path = "../shared" }
 psyche-client.workspace = true
 psyche-coordinator.workspace = true
@@ -19,6 +20,7 @@ tokio.workspace = true
 tracing.workspace = true
 tokio-util.workspace = true
 hf-hub.workspace = true
+time.workspace = true
 hex = "0.4.3"
 
 [target.'cfg(windows)'.dependencies]

@@ -54,7 +54,7 @@ impl CustomWidget for MinimalAndLogs {
 #[allow(dead_code)]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    init_logging(psyche_tui::LogOutput::TUI, Level::INFO);
+    init_logging(psyche_tui::LogOutput::TUI, Level::INFO, None);
 
     let (cancel, tx) = start_render_loop(MinimalAndLogs::new())?;
     let mut interval = interval(Duration::from_secs(2));

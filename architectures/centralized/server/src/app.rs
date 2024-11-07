@@ -9,12 +9,15 @@ use psyche_coordinator::{Client, Coordinator, CoordinatorError, HealthChecks, Ru
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider, TokenSize,
 };
-use psyche_network::{NetworkEvent, NetworkTui, PeerList, RelayMode, TcpServer};
+use psyche_network::{
+    ClientNotification, NetworkEvent, NetworkTui, PeerList, RelayMode, TcpServer,
+};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{maybe_start_render_loop, CustomWidget, MaybeTui, TabbedWidget};
 use psyche_watcher::CoordinatorTui;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -44,12 +47,12 @@ type TabsData = <Tabs as CustomWidget>::Data;
 
 struct Backend {
     net_server: TcpServer<ClientId, ClientToServerMessage, ServerToClientMessage>,
-    pending_clients: Vec<Client<ClientId>>,
+    pending_clients: HashSet<Client<ClientId>>,
 }
 
 impl psyche_coordinator::Backend<ClientId> for Backend {
-    fn select_new_clients(&self) -> &[Client<ClientId>] {
-        &self.pending_clients
+    fn select_new_clients(&self) -> Vec<Client<ClientId>> {
+        self.pending_clients.iter().cloned().collect()
     }
 }
 
@@ -203,7 +206,7 @@ impl App {
             coordinator,
             backend: Backend {
                 net_server,
-                pending_clients: Vec::new(),
+                pending_clients: HashSet::new(),
             },
             save_state_dir,
             last_sync_step: None,
@@ -224,7 +227,14 @@ impl App {
                     }
                 }
                 Some(event) = self.backend.net_server.next() => {
-                    self.on_client_message(event.0, event.1).await;
+                    match event {
+                        ClientNotification::Message((from, message)) => {
+                            self.on_client_message(from, message).await;
+                        }
+                        ClientNotification::Disconnected(from) => {
+                            self.on_disconnect(from);
+                        }
+                    }
                 }
                 _ = self.tick_interval.tick() => {
                     self.on_tick().await;
@@ -266,12 +276,18 @@ impl App {
         }
     }
 
+    fn on_disconnect(&mut self, from: ClientId) {
+        self.backend.pending_clients.remove(&Client {
+            id: from,
+            dropping_at_end_of_round: true,
+        });
+    }
     async fn on_client_message(&mut self, from: ClientId, event: ClientToServerMessage) {
         match event {
             ClientToServerMessage::Join { run_id } => {
                 // TODO: check whitelist
                 if self.coordinator.run_id == run_id {
-                    self.backend.pending_clients.push(Client {
+                    self.backend.pending_clients.insert(Client {
                         id: from.clone(),
                         dropping_at_end_of_round: false,
                     });
@@ -408,6 +424,12 @@ impl From<&App> for DashboardState {
         Self {
             coordinator_state: (&app.coordinator).into(),
             server_addr: app.backend.net_server.local_addr().to_string(),
+            nodes_next_epoch: app
+                .backend
+                .pending_clients
+                .iter()
+                .map(|c| c.id.to_string())
+                .collect(),
         }
     }
 }

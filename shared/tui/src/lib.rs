@@ -30,6 +30,7 @@ pub fn start_render_loop<T: CustomWidget>(
             let terminal = init_terminal().unwrap();
             let start_result = App::new(widget).start(cancel, terminal, rx).await;
             start_result.unwrap();
+            println!("explicit shutdown :)")
         }
     });
     Ok((cancel, tx))

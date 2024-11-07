@@ -221,6 +221,7 @@ async fn main() -> Result<()> {
             LogOutput::Console
         },
         Level::INFO,
+        None,
     );
 
     let PeerList(peers) = args

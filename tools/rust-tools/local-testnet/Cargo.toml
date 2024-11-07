@@ -8,4 +8,5 @@ anyhow.workspace = true
 clap.workspace = true
 rand.workspace = true
 serde = { workspace = true, features = ["derive"] }
+time.workspace = true
 toml = "0.8.19"

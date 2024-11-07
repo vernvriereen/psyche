@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt::Debug, marker::PhantomData, net::SocketAddr, sync::Arc};
 use tokio::{
     net::{TcpListener, TcpStream},
+    select,
     sync::{mpsc, Mutex},
 };
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
@@ -25,6 +26,11 @@ enum ClientToServerMessage<T: Debug> {
     Else(T),
 }
 
+pub enum ClientNotification<T: Debug, U: Debug> {
+    Message(T),
+    Disconnected(U),
+}
+
 pub struct TcpServer<I, ToServerMessage, ToClientMessage>
 where
     I: NodeIdentity,
@@ -37,6 +43,7 @@ where
     incoming_msg_stream: tokio_stream::wrappers::ReceiverStream<(I, ToServerMessage)>,
     send_msg: mpsc::Sender<(I, ToClientMessage)>,
     local_addr: SocketAddr,
+    disconnected_rx: mpsc::Receiver<I>,
 }
 
 impl<I, ToServer, ToClient> TcpServer<I, ToServer, ToClient>
@@ -52,6 +59,7 @@ where
 
         let (incoming_tx, incoming_rx) = mpsc::channel(100);
         let (send_msg, mut outgoing_rx) = mpsc::channel(100);
+        let (disconnected_tx, disconnected_rx) = mpsc::channel(100);
 
         let clients = Arc::new(Mutex::new(HashMap::new()));
 
@@ -61,8 +69,11 @@ where
                 while let Ok((stream, _)) = listener.accept().await {
                     let clients = clients.clone();
                     let incoming_tx = incoming_tx.clone();
+                    let disconnected_tx = disconnected_tx.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = Self::handle_connection(stream, clients, incoming_tx).await
+                        if let Err(e) =
+                            Self::handle_connection(stream, clients, incoming_tx, disconnected_tx)
+                                .await
                         {
                             error!("Error handling connection: {:?}", e);
                         }
@@ -90,6 +101,7 @@ where
             incoming_msg_stream: tokio_stream::wrappers::ReceiverStream::new(incoming_rx),
             send_msg,
             local_addr,
+            disconnected_rx,
         })
     }
 
@@ -101,6 +113,7 @@ where
         stream: TcpStream,
         clients: Arc<Mutex<HashMap<I, mpsc::Sender<ToClient>>>>,
         incoming_tx: mpsc::Sender<(I, ToServer)>,
+        disconnected_tx: mpsc::Sender<I>,
     ) -> Result<()> {
         let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
 
@@ -164,6 +177,7 @@ where
         }
 
         clients.lock().await.remove(&identity);
+        disconnected_tx.send(identity.clone()).await?;
         Ok(())
     }
 
@@ -176,8 +190,16 @@ where
             .collect()
     }
 
-    pub async fn next(&mut self) -> Option<(I, ToServer)> {
-        self.incoming_msg_stream.next().await
+    pub async fn next(&mut self) -> Option<ClientNotification<(I, ToServer), I>> {
+        select! {
+            Some(msg) = self.incoming_msg_stream.next() => {
+                Some(ClientNotification::Message(msg))
+            }
+            Some(msg) = self.disconnected_rx.recv() => {
+                Some(ClientNotification::Disconnected(msg))
+            }
+            else => None
+        }
     }
 
     pub async fn send_to(&mut self, to: I, msg: ToClient) -> Result<()> {

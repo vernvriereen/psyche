@@ -19,6 +19,7 @@ use tch::{
     nn::{self, OptimizerConfig},
     Device, Tensor,
 };
+use thiserror::Error;
 use tracing::{debug, error};
 
 pub type ParallelModels = Vec<LlamaForCausalLM>;
@@ -66,6 +67,7 @@ enum ParallelAssignment {
     Extract {},
 }
 
+#[derive(Debug)]
 enum ParallelResult {
     Train {
         loss: f32,
@@ -265,29 +267,33 @@ impl Trainer {
         })
     }
 
-    pub fn apply_distro_results(self, step: u32, results: Vec<DistroResults>) -> Result<Self> {
+    pub fn apply_distro_results(
+        self,
+        step: u32,
+        results: Vec<DistroResults>,
+    ) -> Result<Self, ApplyDistroResultError> {
         self.barrier.reset();
         for (tx, _) in &self.models {
             tx.send(ParallelAssignment::Optimize {
                 distro_results: Some(results.clone()),
                 step,
             })
-            .map_err(|err| {
-                Error::msg(format!(
-                    "Error sending optimization to trainer thread: {err}"
-                ))
-            })?;
+            .map_err(|_| ApplyDistroResultError::SendOptimize)?;
         }
         let start = Instant::now();
         for (_, rx) in &self.models {
             match rx.recv()? {
-                ParallelResult::Optimize {} => {
+                ParallelResult::Optimize => {
                     debug!(
                         "ParallelResult::Optimize received in {}s",
                         (Instant::now() - start).as_secs_f32()
                     );
                 }
-                _ => bail!("Got unexpected ParallelResult in apply_distro_results()"),
+                o => {
+                    return Err(ApplyDistroResultError::RecievedWrongResultType(format!(
+                        "{o:?}"
+                    )))
+                }
             }
         }
         Ok(self)
@@ -498,6 +504,18 @@ impl Trainer {
             }
         }
     }
+}
+
+#[derive(Error, Debug)]
+pub enum ApplyDistroResultError {
+    #[error("failed to send optimization to trainer thread - trainer thread RX is closed")]
+    SendOptimize,
+
+    #[error("failed to recv optimization result from trainer thread: {0}")]
+    ReceiveResult(#[from] std::sync::mpsc::RecvError),
+
+    #[error("recieved wrong result type from trainer thread. expected Optimize, got {0:?}")]
+    RecievedWrongResultType(String),
 }
 
 impl CausalLM for Trainer {

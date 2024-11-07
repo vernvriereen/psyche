@@ -12,6 +12,7 @@ use psyche_watcher::CoordinatorTuiState;
 pub struct DashboardState {
     pub server_addr: String,
     pub coordinator_state: CoordinatorTuiState,
+    pub nodes_next_epoch: Vec<String>,
 }
 #[derive(Default)]
 pub struct DashboardTui;
@@ -42,9 +43,22 @@ impl CustomWidget for DashboardTui {
                 .constraints(Constraint::from_fills([1, 1]))
                 .split(vertical[1]);
 
-            Paragraph::new(format!("{}", state.coordinator_state.run_state))
-                .block(Block::bordered().title("Run state"))
-                .render(coord_split[0], buf);
+            {
+                let vsplit = Layout::vertical(Constraint::from_fills([1, 1])).split(coord_split[0]);
+                Paragraph::new(format!("{}", state.coordinator_state.run_state))
+                    .block(Block::bordered().title("Run state"))
+                    .render(vsplit[0], buf);
+                Paragraph::new(
+                    state
+                        .nodes_next_epoch
+                        .iter()
+                        .cloned()
+                        .map(Line::from)
+                        .collect::<Vec<_>>(),
+                )
+                .block(Block::bordered().title("Clients next round"))
+                .render(vsplit[1], buf);
+            }
 
             Paragraph::new(
                 [
