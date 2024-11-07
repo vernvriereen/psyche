@@ -1,7 +1,7 @@
 mod arc;
 mod hellaswag;
-mod mmlu_pro;
 mod mmlu;
+mod mmlu_pro;
 
 pub use arc::ArcChallenge;
 pub use arc::ArcEasy;

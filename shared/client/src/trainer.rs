@@ -405,7 +405,9 @@ impl Trainer {
                                     lr_scheduler.get_lr(step),
                                     match step > *compression_decay_warmup_steps {
                                         true => 1.0,
-                                        false => step as f64 / *compression_decay_warmup_steps as f64,
+                                        false => {
+                                            step as f64 / *compression_decay_warmup_steps as f64
+                                        }
                                     },
                                     match step <= *compression_topk_startup_steps {
                                         true => *compression_topk_startup,
