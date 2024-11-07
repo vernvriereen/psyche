@@ -252,7 +252,8 @@ where
         Ok(PeerList(vec![me]).to_string())
     }
 
-    pub async fn remote_infos(&self) -> Result<Vec<RemoteInfo>> {
+    /// RemoteInfo and bandwidth in bytes/s for a node
+    pub async fn remote_infos(&self) -> Result<Vec<(RemoteInfo, f64)>> {
         Ok(self
             .node
             .net()
@@ -263,6 +264,14 @@ where
             .await
             .into_iter()
             .filter_map(|x| x.ok())
+            .map(|node_info| {
+                let bandwidth = self
+                    .state
+                    .bandwidth_tracker
+                    .get_bandwidth_by_node(&node_info.node_id)
+                    .unwrap_or_default();
+                (node_info, bandwidth)
+            })
             .collect())
     }
 
@@ -299,7 +308,7 @@ where
     fn on_download_update(&mut self, update: DownloadUpdate) -> Result<()> {
         self.state
             .bandwidth_tracker
-            .add_event(update.downloaded_size_delta);
+            .add_event(update.from, update.downloaded_size_delta);
 
         if update.all_done {
             self.state.download_progesses.remove(&update.hash);
@@ -382,7 +391,7 @@ async fn on_update_stats(node: &MemNode, stats: &mut State) -> Result<()> {
 
     stats
         .bandwidth_history
-        .push_back(stats.bandwidth_tracker.get_bandwidth());
+        .push_back(stats.bandwidth_tracker.get_total_bandwidth());
     const BANDWIDTH_GRAPH_SIZE: usize = 60;
     if stats.bandwidth_history.len() > BANDWIDTH_GRAPH_SIZE {
         stats.bandwidth_history.pop_front();

@@ -229,32 +229,48 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
             p2p.remove_downloadable(blob).await?;
         }
         let remotes = p2p.remote_infos().await?;
-        let mut nodes: HashMap<String, DataValue> = remotes
+        let node_addr = p2p.node_addr().await?;
+        let nodes: HashMap<String, DataValue> = remotes
             .into_iter()
-            .map(|x| {
+            .map(|(x, bandwidth)| {
                 (
                     x.node_id.to_string(),
-                    x.addrs
-                        .into_iter()
-                        .map(|y| y.addr.to_string())
-                        .collect::<Vec<_>>()
-                        .join(",")
-                        .into(),
+                    HashMap::from([
+                        (
+                            "ips",
+                            DataValue::from(
+                                x.addrs
+                                    .into_iter()
+                                    .map(|y| y.addr.to_string())
+                                    .collect::<Vec<_>>()
+                                    .join(","),
+                            ),
+                        ),
+                        ("bandwidth", DataValue::from(bandwidth)),
+                    ])
+                    .into(),
                 )
             })
-            .collect::<HashMap<_, _>>();
-        let node_addr = p2p.node_addr().await?;
-        nodes.insert(
-            node_addr.node_id.to_string(),
-            node_addr
-                .info
-                .direct_addresses
-                .iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<_>>()
-                .join(",")
+            .chain(std::iter::once((
+                node_addr.node_id.to_string(),
+                HashMap::from([
+                    (
+                        "ips",
+                        DataValue::from(
+                            node_addr
+                                .info
+                                .direct_addresses
+                                .iter()
+                                .map(|x| x.to_string())
+                                .collect::<Vec<_>>()
+                                .join(","),
+                        ),
+                    ),
+                    ("bandwidth", DataValue::from(0f32)),
+                ])
                 .into(),
-        );
+            )))
+            .collect::<HashMap<_, _>>();
         state.log_to_wandb("p2p/nodes".to_owned(), nodes.into());
         Ok(())
     }

@@ -6,7 +6,7 @@ use std::{
 
 use iroh::{
     blobs::Hash,
-    net::{endpoint::ConnectionType, key::PublicKey},
+    net::{endpoint::ConnectionType, key::PublicKey, NodeId},
 };
 
 use crate::{download_manager::DownloadUpdate, peer_list::PeerList};
@@ -44,55 +44,58 @@ struct DownloadEvent {
 #[derive(Debug)]
 pub struct BandwidthTracker {
     average_period_secs: u64,
-    events: VecDeque<DownloadEvent>,
-    total_bytes: u64,
+    events: HashMap<NodeId, VecDeque<DownloadEvent>>,
 }
 
 impl BandwidthTracker {
     pub fn new(average_period_secs: u64) -> Self {
         BandwidthTracker {
             average_period_secs,
-            events: VecDeque::new(),
-            total_bytes: 0,
+            events: HashMap::new(),
         }
     }
 
-    pub fn add_event(&mut self, num_bytes: u64) {
+    pub fn add_event(&mut self, from: NodeId, num_bytes: u64) {
         let now = Instant::now();
-        self.events.push_back(DownloadEvent {
+        let events = self.events.entry(from).or_default();
+        events.push_back(DownloadEvent {
             timestamp: now,
             num_bytes,
         });
-        self.total_bytes += num_bytes;
 
-        while let Some(event) = self.events.front() {
+        while let Some(event) = events.front() {
             if now.duration_since(event.timestamp) > Duration::from_secs(self.average_period_secs) {
-                if let Some(removed_event) = self.events.pop_front() {
-                    self.total_bytes -= removed_event.num_bytes;
-                }
+                events.pop_front();
             } else {
                 break;
             }
         }
     }
 
-    pub fn get_bandwidth(&self) -> f64 {
-        if self.events.is_empty() {
-            return 0.0;
-        }
+    pub fn get_bandwidth_by_node(&self, id: &NodeId) -> Option<f64> {
+        self.events.get(id).map(node_bandwidth)
+    }
 
-        let duration = self
-            .events
-            .back()
-            .unwrap()
-            .timestamp
-            .duration_since(self.events.front().unwrap().timestamp);
-        let seconds = duration.as_secs_f64();
+    pub fn get_total_bandwidth(&self) -> f64 {
+        self.events.values().map(node_bandwidth).sum()
+    }
+}
 
-        if seconds > 0.0 {
-            self.total_bytes as f64 / seconds
-        } else {
-            0.0
-        }
+fn node_bandwidth(val: &VecDeque<DownloadEvent>) -> f64 {
+    if val.is_empty() {
+        return 0.0;
+    }
+    let duration = val
+        .back()
+        .unwrap()
+        .timestamp
+        .duration_since(val.front().unwrap().timestamp);
+    let total_bytes: u64 = val.iter().map(|v| v.num_bytes).sum();
+    let seconds = duration.as_secs_f64();
+
+    if seconds > 0.0 {
+        total_bytes as f64 / seconds
+    } else {
+        0.0
     }
 }
