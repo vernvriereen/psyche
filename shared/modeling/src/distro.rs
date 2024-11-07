@@ -533,6 +533,7 @@ impl Distro {
     pub fn generate(
         &mut self,
         lr: f64,
+        warmup_factor: f64,
         compression_topk: i64,
         quantization: bool,
     ) -> Vec<DistroResult> {
@@ -547,9 +548,15 @@ impl Distro {
 
             let delta = &mut self.state.get_mut(index).unwrap().delta;
 
+            let mut compression_decay = self.compression_decay;
+            if warmup_factor < 1.0 {
+                let momentum_factor = warmup_factor.powf(0.1) * 0.1 + 0.9;
+                compression_decay *= momentum_factor;
+            }
+
             // decay delta
-            if self.compression_decay != 1.0 {
-                delta.multiply_scalar_(self.compression_decay);
+            if compression_decay != 1.0 {
+                delta.multiply_scalar_(compression_decay);
             }
 
             // add delta to new gradient
@@ -677,7 +684,6 @@ impl Distro {
             // Sign-SGD
             variable.grad().sign_();
         }
-
         // SGD step
         self.sgd.set_lr(lr);
         self.sgd.step();

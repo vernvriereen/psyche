@@ -30,6 +30,7 @@ enum Optimizer {
     },
     Distro {
         optimizer: Box<Distro>,
+        compression_decay_warmup_steps: u32,
         compression_topk: i64,
         compression_topk_startup: i64,
         compression_topk_startup_steps: u32,
@@ -126,6 +127,7 @@ impl Trainer {
                 },
                 model::Optimizer::Distro {
                     compression_decay,
+                    compression_decay_warmup_steps,
                     compression_topk,
                     compression_topk_startup,
                     compression_topk_startup_steps,
@@ -141,6 +143,7 @@ impl Trainer {
                         model.comm.clone(),
                     )
                     .into(),
+                    compression_decay_warmup_steps,
                     compression_topk: compression_topk as i64,
                     compression_topk_startup: compression_topk_startup as i64,
                     compression_topk_startup_steps,
@@ -386,6 +389,7 @@ impl Trainer {
                             } => None,
                             Optimizer::Distro {
                                 optimizer,
+                                compression_decay_warmup_steps,
                                 compression_topk,
                                 compression_topk_startup,
                                 compression_topk_startup_steps,
@@ -393,6 +397,10 @@ impl Trainer {
                             } => {
                                 let ret = optimizer.generate(
                                     lr_scheduler.get_lr(step),
+                                    match step > *compression_decay_warmup_steps {
+                                        true => 1.0,
+                                        false => step as f64 / *compression_decay_warmup_steps as f64,
+                                    },
                                     match step <= *compression_topk_startup_steps {
                                         true => *compression_topk_startup,
                                         false => *compression_topk,
