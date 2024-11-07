@@ -37,4 +37,5 @@ compression_chunk = 16
 compression_topk = 4
 compression_topk_startup = 4
 compression_topk_startup_steps = 20
+compression_decay_warmup_steps = 0
 quantize = false
