@@ -1,103 +1,122 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ResponsiveLineGraph } from "./Chart";
 import { TextStretcher } from "./TextStretcher";
 import { TrainersMap } from "./TrainersMap";
 import nousGirl from "./assets/nousgirl.png";
+import psycheLogo from "./assets/psyche.png";
 import { lerpColor } from "./color";
 import { formatNumber } from "./formatNumber";
+import { lookupIp } from "./geoip";
 import { palette } from "./palette";
-import type { PsycheStats, PyscheNode, StepStats } from "./types/psyche";
-import { type WandBHistoryItem, getData } from "./wandb";
-
-function randomLocation() {
-  return {
-    lat: Math.random() * 360 - 180,
-    lon: (Math.acos(2 * Math.random() - 1) * 170.12) / Math.PI - 85.06,
-  };
-}
-
-function randomNodes() {
-  const nodes: PyscheNode[] = Array.from({ length: 16 }, (_, i) => ({
-    location: randomLocation(),
-    index: i,
-    id: crypto.randomUUID(),
-    connections: [],
-  }));
-  for (const n of nodes) {
-    const num = Math.round(Math.random() * 5);
-    n.connections = Array.from({ length: num }, () => nodes[Math.floor(Math.random() * nodes.length)].id);
-  }
-  return nodes;
-}
+import type { GeolocatedNode } from "./types";
+import { type WandBData, getData } from "./wandb";
 
 export const App = () => {
-  const [wandbData, setWandbData] = useState<Array<WandBHistoryItem>>([]);
+  const [wandbRun, setWandbRun] = useState<WandBData | null>(null);
   useEffect(() => {
-    getData("nous_research", "psyche", "1b-100bt-32", 5000).then((data) => setWandbData(data));
+    getData("nous_research", "psyche", "3b-100bt-16", 5000).then((data) => {
+      setFading("fading");
+      setTimeout(() => {
+        setFading(false);
+      }, 2000);
+      setWandbRun(data);
+    });
   }, []);
-
-  const nodes = useMemo<PyscheNode[]>(randomNodes, []);
-
-  const run: PsycheStats = useMemo(
-    () => ({
-      nodes,
-      coordinator: {
-        runId: "DisTrO-llama3-405b-01",
-        batchesPerRound: 128,
-        roundHeight: 40,
-        totalBatches: 100_000,
-        tokensPerBatch: 2048,
-
-        epoch: wandbData.at(-1)?.["coordinator/epoch"] ?? 0,
-        startTime: new Date(),
-        stats: wandbData.map(
-          (data) =>
-            ({
-              step: data["coordinator/round"],
-              evals: {
-                hellaswag: data["eval/hellaswag"],
-                "mmlu pro": data["eval/mmlu_pro"],
-                "arc easy": data["eval/arc_easy"],
-                "arc challenge": data["eval/arc_challenge"],
-              },
-              certainty: data["train/certainty"],
-              loss: data["train/loss"],
-              tokensPerSecond: data["train/tokens_per_sec"],
-            }) satisfies StepStats,
-        ),
-      },
-    }),
-    [nodes, wandbData],
+  const [fading, setFading] = useState<"loading" | "fading" | false>("loading");
+  return (
+    <>
+      {fading && (
+        <div
+          className={`absolute w-screen h-screen flex flex-col items-center justify-center ${fading === "fading" ? "animate-fadeOut" : ""}`}
+        >
+          <div>
+            <img src={nousGirl} className="h-[calc(40vw/7)] inline" alt="nous girl logo" />
+            <img src={psycheLogo} className="h-[calc(40vw/7)] inline" alt="nous girl logo" />
+            <img src={nousGirl} className="h-[calc(40vw/7)] inline" alt="nous girl logo" />
+            <img src={psycheLogo} className="h-[calc(40vw/7)] inline" alt="nous girl logo" />
+            <img src={nousGirl} className="h-[calc(40vw/7)] inline" alt="nous girl logo" />
+            <img src={psycheLogo} className="h-[calc(40vw/7)] inline" alt="nous girl logo" />
+            <img src={nousGirl} className="h-[calc(40vw/7)] inline" alt="nous girl logo" />
+          </div>
+          <div className="text-9xl font-eva text">
+            <TextStretcher className="w-[10vw] h-[5vh] pt-1">NOUS</TextStretcher>
+            <TextStretcher className="w-[20vw] h-[5vh] pt-1">PSYCHE</TextStretcher>
+            <TextStretcher className="w-[40vw]">INITIALIZING...</TextStretcher>
+          </div>
+          <div className="pt-4">
+            <img src={psycheLogo} className="h-[calc(40vw/7)] inline" alt="nous girl logo" />
+            <img src={nousGirl} className="h-[calc(40vw/7)] inline" alt="nous girl logo" />
+            <img src={psycheLogo} className="h-[calc(40vw/7)] inline" alt="nous girl logo" />
+            <img src={nousGirl} className="h-[calc(40vw/7)] inline" alt="nous girl logo" />
+            <img src={psycheLogo} className="h-[calc(40vw/7)] inline" alt="nous girl logo" />
+            <img src={nousGirl} className="h-[calc(40vw/7)] inline" alt="nous girl logo" />
+            <img src={psycheLogo} className="h-[calc(40vw/7)] inline" alt="nous girl logo" />
+          </div>
+        </div>
+      )}
+      {wandbRun && <Run run={wandbRun} />}
+    </>
   );
+};
 
-  const numTotalTokens = run.coordinator.totalBatches * run.coordinator.tokensPerBatch;
-  const numCompletedTokens =
-    run.coordinator.batchesPerRound * run.coordinator.roundHeight * run.coordinator.tokensPerBatch;
+const Run: React.FC<{ run: WandBData }> = ({ run }) => {
+  const [nodes, setNodes] = useState<Array<GeolocatedNode>>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const promises = Object.entries(run.summary.p2p.nodes).map(async ([k, v]) => {
+        const ips = v.ips.split(",");
+        const goodIps = ips.filter(
+          (ip) =>
+            !ip.startsWith("10.") &&
+            !(ip.startsWith("172.") && +ip.split(".")[1] >= 16 && +ip.split(".")[1] <= 31) &&
+            !ip.startsWith("192.168"),
+        );
+        const ipResult = await lookupIp(goodIps[0].split(":")[0]);
+        return { id: k, ip: goodIps[0], ...ipResult };
+      });
+      const nodes = (await Promise.all(promises))
+        .filter((n): n is GeolocatedNode => n.latitude !== undefined)
+        .map((n) => {
+          // fudge locations to prevent bunching
+          n.latitude += (Math.random() - 0.5) * 2.5;
+          n.longitude += (Math.random() - 0.5) * 2.5;
+          return n;
+        });
+      if (!cancelled) {
+        setNodes(nodes);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [run]);
 
-  const evals = run.coordinator.stats.length
-    ? (Object.keys(run.coordinator.stats[0].evals) as Array<keyof (typeof run.coordinator.stats)[number]["evals"]>).map(
-      (evalName, index) => ({
-        points: run.coordinator.stats
-          .map((stat) => ({
-            x: stat.step,
-            y: stat.evals[evalName]!,
-          }))
-          .filter(({ y }) => y !== undefined),
-        className: palette[index],
-        label: evalName,
-      }),
-    )
-    : [];
+  // const remoteNodes = run.summary.
+  const numTotalTokens = run.config.total_steps;
+  const numCompletedTokens = run.summary.coordinator.round;
+
+  const evals = (Object.keys(run.summary.eval) as Array<keyof typeof run.summary.eval>).map((evalName, index) => ({
+    points: run.history
+      .map((historyItem) => ({
+        x: historyItem.coordinator.round,
+        y: historyItem.eval[evalName]!,
+      }))
+      .filter(({ y }) => y !== undefined),
+    className: palette[index],
+    label: evalName.toUpperCase().replaceAll("_", " "),
+  }));
 
   return (
-    <div className="font-eva h-screen w-screen p-4 text-primary flex flex-col">
-      <div className="w-full flex justify-center">
-        <img src={nousGirl} className="h-16" />
-        <TextStretcher className="flex-grow text-xl h-16 pb-2">
-          {`PSYCHE : DISTRIBUTED RUN _ ${run.coordinator.runId}`}
+    <div className="font-black h-screen w-screen p-4 text-primary flex flex-col animate-fadeIn">
+      <div className="w-full flex justify-center font-eva">
+        <img alt="Nous Girl Logo" src={nousGirl} className="h-16" />
+        <img alt="Nous Psyche Logo" src={psycheLogo} className="h-16" />
+        <TextStretcher className="font-normal text-plain flex-grow text-xl h-16 pb-2">
+          {`NOUS PSYCHE : DISTRIBUTED TRAINING RUN _ ${run.displayName}`}
         </TextStretcher>
       </div>
-      <p className="text-lg">
+      <p className="text-plain text-lg font-thin font-eva">
         Psyche is a distributed training framework. It interconnects globally distributed compute and trains
         state-of-the-art AI models at breakneck speeds. Psyche is powered by{" "}
         <a className="underline" href="https://github.com/NousResearch/DisTrO">
@@ -110,25 +129,25 @@ export const App = () => {
         <TrainingProgress numCompletedTokens={numCompletedTokens} numTotalTokens={numTotalTokens} />
         <div className="flex-1 flex flex-row max-h-[20vh]">
           <div className="w-[40%] ">
-            <TrainersMap run={run} /></div>
+            <TrainersMap nodes={nodes} />
+          </div>
           <div className="text-xl w-[60%]">
-            <RunMembers members={run.nodes} />
+            <RunMembers nodes={run.summary.p2p.nodes} />
           </div>
         </div>
         <div className="flex-1 grid grid-cols-2 overflow-auto">
           <div className="grid grid-cols-1 gap-4">
             <ResponsiveLineGraph
-              scale="power"
               title={["TRAINING", "CERTAINTY"]}
               lines={[
                 {
-                  points: run.coordinator.stats.map((s) => ({
-                    x: s.step,
-                    y: s.certainty * 100,
+                  points: run.history.map((s) => ({
+                    x: s.coordinator.round,
+                    y: s.train.certainty * 100,
                   })),
                   className: palette[1],
                   label: "Certainty",
-                  unit: "%"
+                  unit: "%",
                 },
               ]}
             />
@@ -136,9 +155,9 @@ export const App = () => {
               title={["TRAINING", "LOSS"]}
               lines={[
                 {
-                  points: run.coordinator.stats.map((s) => ({
-                    x: s.step,
-                    y: s.loss,
+                  points: run.history.map((s) => ({
+                    x: s.coordinator.round,
+                    y: s.train.loss,
                   })),
                   className: palette[0],
                   label: "Loss",
@@ -148,7 +167,13 @@ export const App = () => {
           </div>
           <div className="grid grid-cols-2 gap-4">
             {evals.map((e) => (
-              <ResponsiveLineGraph numXMarkers={2} numYMarkers={3} title={["EVALUATION", e.label]} lines={[e]} />
+              <ResponsiveLineGraph
+                key={e.label}
+                numXMarkers={2}
+                numYMarkers={3}
+                title={["EVALUATION", e.label]}
+                lines={[e]}
+              />
             ))}
           </div>
         </div>
@@ -162,7 +187,7 @@ function TrainingProgress({
   numTotalTokens,
 }: { numCompletedTokens: number; numTotalTokens: number }) {
   return (
-    <div className="flex flex-col py-4">
+    <div className="flex flex-col py-4 font-eva">
       <div className="w-full border-2 border-primary" />
       <div className="flex flex-row">
         <div className="flex flex-col text-center pr-4 text-xl">
@@ -179,35 +204,69 @@ function TrainingProgress({
   );
 }
 
-function RunMembers({ members }: { members: PyscheNode[] }) {
-  return (<div>
-    <div className="w-full border-2 border-primary mb-2"></div>
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2 p-2">
-      {members.map((m) => (
-        <div key={m.id}>
-          <div className="flex relative h-10">
-            <NodeStatus name={m.id} status={+m.id.replaceAll(/\D/g, "") % 6 !== 0 ? "done" : "bad"} />
-          </div>
-        </div>
-      ))}
-    </div></div>
-  );
-}
-
-function NodeStatus({ name, status }: { name: string; status: "done" | "bad" }) {
+function RunMembers({ nodes }: { nodes: Record<string, { bandwidth: number }> }) {
   return (
-    <div className="w-full relative">
-      <div className="absolute h-4 left-[50%]">
-        <div className="relative top-[-100%] left-[-50%] w-1 h-4 text-primary bg-primary" />
+    <div>
+      <div className="w-full border-2 border-primary mb-2 text-center bg-primary text-backdrop p-2 font-eva">
+        <TextStretcher>ESTIMATED NETWORK TRANSFER RATE</TextStretcher>
+        {convertBytes(Object.values(nodes).reduce((a, b) => a + b.bandwidth, 0))}/s
       </div>
-      <div className={`text-center rounded w-full h-8 ${status === "done" ? "bg-good text-good" : "bg-bad text-bad"}`}>
-        <span className="text-black">{name.slice(0, 7)}</span>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2 p-2">
+        {Object.entries(nodes).map(([id, { bandwidth }]) => (
+          <div key={id}>
+            <div className="flex relative h-18">
+              <NodeStatus name={id} bandwidth={bandwidth} />
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-function BucketedProgressBar({ total, value }: { total: number; value: number, colors?: string[] }) {
+function convertBytes(bytes: number): string {
+  if (Number.isNaN(bytes)) {
+    return "0 B";
+  }
+  const KB = 1024.0;
+  const MB = KB * 1024.0;
+  const GB = MB * 1024.0;
+  const TB = GB * 1024.0;
+  const PB = TB * 1024.0;
+
+  if (bytes < KB) {
+    return `${bytes} B`;
+  }
+  if (bytes < MB) {
+    return `${(bytes / KB).toFixed(2)} KB`;
+  }
+  if (bytes < GB) {
+    return `${(bytes / MB).toFixed(2)} MB`;
+  }
+  if (bytes < TB) {
+    return `${(bytes / GB).toFixed(2)} GB`;
+  }
+  if (bytes < PB) {
+    return `${(bytes / TB).toFixed(2)} TB`;
+  }
+  return `${(bytes / PB).toFixed(2)} PB`;
+}
+
+function NodeStatus({ name, bandwidth }: { name: string; bandwidth: number }) {
+  return (
+    <div className="w-full relative">
+      <div className="absolute h-4 left-[50%]">
+        <div className="relative top-[-100%] left-[-50%] w-1 h-4 text-primary bg-primary" />
+      </div>
+      <div className="flex flex-col items-center justify-center rounded w-full h-16 bg-primary text-backdrop">
+        <div>{name.slice(0, 7)}</div>
+        <div className="text-sm">{convertBytes(bandwidth)}/s</div>
+      </div>
+    </div>
+  );
+}
+
+function BucketedProgressBar({ total, value }: { total: number; value: number; colors?: string[] }) {
   const [divisions, setDivisions] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
 

@@ -3,7 +3,7 @@ import { curveLinear } from "@visx/curve";
 import { Group } from "@visx/group";
 import { LegendOrdinal } from "@visx/legend";
 import { ParentSize } from "@visx/responsive";
-import { scaleLinear, scaleLog, scaleOrdinal, scalePower } from "@visx/scale";
+import { scaleLinear, scaleOrdinal, scalePower } from "@visx/scale";
 import { Line, LinePath } from "@visx/shape";
 import type React from "react";
 import { useLayoutEffect, useState } from "react";
@@ -18,11 +18,11 @@ interface DataPoint {
 }
 
 interface LineGraphProps {
-  lines: Array<{ points: DataPoint[]; label: string; className: string, unit?: string }>;
+  lines: Array<{ points: DataPoint[]; label: string; className: string; unit?: string }>;
   numXMarkers?: number;
   numYMarkers?: number;
   title?: string | [string, string];
-  scale?: "linear" | "power"
+  scale?: "linear" | "power";
 }
 
 const LineGraphInner: React.FC<LineGraphProps & { width: number; height: number }> = ({
@@ -32,13 +32,13 @@ const LineGraphInner: React.FC<LineGraphProps & { width: number; height: number 
   lines,
   numXMarkers = 4,
   numYMarkers = 8,
-  scale
+  scale,
 }) => {
   // Calculate bounds
   const margin = {
     right: 0,
     left: 80,
-    bottom: height / 10,
+    bottom: 60,
   };
 
   const padding = {
@@ -48,8 +48,7 @@ const LineGraphInner: React.FC<LineGraphProps & { width: number; height: number 
   const xMax = width - margin.left - margin.right - padding.left;
   const yMax = height - margin.bottom - padding.bottom;
 
-
-  const scaleKind = scale === undefined ? 'linear' : scale;
+  const scaleKind = scale === undefined ? "linear" : scale;
   // Create scales
   const xScale = scaleLinear<number>({
     domain: [
@@ -61,16 +60,20 @@ const LineGraphInner: React.FC<LineGraphProps & { width: number; height: number 
 
   const scaleFuncs: Record<typeof scaleKind, typeof scaleLinear> = {
     linear: scaleLinear,
-    power: scalePower
-  }
+    power: scalePower,
+  };
 
-  const yScale = (scaleFuncs[scaleKind])<number>({
+  const yScale = scaleFuncs[scaleKind]<number>({
     domain: [
       Math.min(...lines.flatMap(({ points }) => points.map((d) => d.y))),
-      Math.max(...lines.flatMap(({ points }) => points.map((d) => d.y))) * 1.02,
+      Math.max(...lines.flatMap(({ points }) => points.map((d) => d.y))),
     ],
     range: [yMax, 0],
-    exponent: 10
+    ...(scaleKind === "power"
+      ? {
+          exponent: 10,
+        }
+      : {}),
   });
 
   const xDomain = xScale.domain() as [number, number];
@@ -138,35 +141,8 @@ const LineGraphInner: React.FC<LineGraphProps & { width: number; height: number 
   });
 
   return (
-    <div className="relative">
-      <div className="absolute top-0 bg-backdrop/70" style={{ left: `${padding.left + margin.left + 12}px` }}>
-        {title && (
-          <>
-            <div className=" w-32">
-              <TextStretcher className="text-2xl p-2 h-12 border-2 rounded-md border-primary">
-                {typeof title === "string" ? title : title[0]}
-              </TextStretcher>
-              {typeof title !== "string" && <TextStretcher className="py-2">{title[1]}</TextStretcher>}
-              {lines.length === 1 && lines[0].points.length > 0 && (
-                <TextStretcher>{`@${lines[0].points.at(-1)!.y.toFixed(2)}${lines[0].unit ?? ""}`}</TextStretcher>
-              )}
-            </div>
-
-            {lines.length > 1 && (
-              <LegendOrdinal
-                scale={ordinalScale}
-                labelFormat={(label) => label}
-                shape="line"
-                style={{
-                  fontSize: "1em",
-                }}
-              />
-            )}
-          </>
-        )}
-      </div>
-
-      <svg width={width} height={height}>
+    <div className="relative w-full h-full">
+      <svg width={width} height={height} className="absolute">
         <Group left={margin.left + padding.left} top={padding.bottom}>
           {verticalLinePositions.map((x, i) => (
             <line
@@ -325,6 +301,32 @@ const LineGraphInner: React.FC<LineGraphProps & { width: number; height: number 
           />
         </Group>
       </svg>
+      <div className="absolute top-0 bg-backdrop/70" style={{ left: `${padding.left + margin.left + 12}px` }}>
+        {title && (
+          <>
+            <div className=" w-32">
+              <TextStretcher className="text-2xl p-2 h-12 border-2 rounded-md border-primary">
+                {typeof title === "string" ? title : title[0]}
+              </TextStretcher>
+              {typeof title !== "string" && <TextStretcher className="my-2 h-12">{title[1]}</TextStretcher>}
+              {lines.length === 1 && lines[0].points.length > 0 && (
+                <TextStretcher>{`@${lines[0].points.at(-1)!.y.toFixed(2)}${lines[0].unit ?? ""}`}</TextStretcher>
+              )}
+            </div>
+
+            {lines.length > 1 && (
+              <LegendOrdinal
+                scale={ordinalScale}
+                labelFormat={(label) => label}
+                shape="line"
+                style={{
+                  fontSize: "1em",
+                }}
+              />
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 };
@@ -340,7 +342,7 @@ export const ResponsiveLineGraph: React.FC<LineGraphProps> = (props) => {
   }, [props.lines]);
 
   return (
-    <ParentSize key={forceRender} className="w-full h-full overflow-hidden">
+    <ParentSize key={forceRender} className="w-full h-full">
       {({ width, height }) => <LineGraphInner width={width} height={height} {...props} />}
     </ParentSize>
   );

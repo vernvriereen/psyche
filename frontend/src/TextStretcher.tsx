@@ -24,8 +24,9 @@ export function TextStretcher({
     const textStyle = window.getComputedStyle(textElement);
     const fontFamily = textStyle.getPropertyValue("font-family");
     const fontSize = textStyle.getPropertyValue("font-size");
+    const fontWeight = textStyle.getPropertyValue("font-weight");
 
-    context.font = `${fontSize} ${fontFamily}`;
+    context.font = `${fontWeight} ${fontSize} ${fontFamily}`;
 
     const textMetrics = context.measureText(children);
     const textWidth = textMetrics.width;

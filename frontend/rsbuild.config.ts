@@ -7,5 +7,6 @@ export default defineConfig({
   output: { assetPrefix: "./" },
   html: {
     title: "NOUS PSYCHE",
+    favicon: "./src/assets/psyche.png",
   },
 });

@@ -1,57 +1,128 @@
 export interface WandBHistoryItem {
   _step: number;
-  "train/loss": number;
-  "train/certainty": number;
-  "train/tokens_per_sec": number;
-  "train/total_tokens": number;
 
-  "eval/mmlu_pro"?: number;
-  "eval/hellaswag"?: number;
-  "eval/arc_easy"?: number;
-  "eval/arc_challenge"?: number;
+  p2p: {
+    nodes: Record<string, { ips: string; bandwidth: number }>;
+  };
+  train: {
+    loss: number;
+    certainty: number;
+    tokens_per_sec: number;
+    total_tokens: number;
+  };
 
-  "coordinator/round": number;
-  "coordinator/num_clients": number;
-  "coordinator/epoch": number;
+  eval: Record<string, number>;
+
+  coordinator: {
+    round: number;
+    num_clients: number;
+    epoch: number;
+  };
 }
 
-export async function getData(
-  entity: string,
-  project: string,
-  name: string,
-  samples?: number
-): Promise<WandBHistoryItem[]> {
-  const data = JSON.stringify({
-    query: `query RunFullHistory($project: String!, $entity: String!, $name: String!, $samples: Int) {
-      project(name: $project, entityName: $entity) {
-        run(name: $name) {
-          history(samples: $samples)
-        }
-      }
-    }`,
-    variables: {
-      entity,
-      project,
-      name,
-      samples,
-    },
-  });
+export interface WandBData {
+  id: string;
+  displayName: string;
+  createdAt: string;
+  config: {
+    total_steps: number;
+    rounds_per_epoch: number;
+    batches_per_round: number;
+  };
+  history: WandBHistoryItem[];
+  summary: WandBHistoryItem;
+}
 
+function slashReviver(_key: string, value: any) {
+  if (typeof value === "object" && value !== null) {
+    const nestedObject: Record<string, any> = {};
+    for (const [k, v] of Object.entries(value)) {
+      const [parentKey, childKey] = k.split("/");
+      if (childKey) {
+        nestedObject[parentKey] = nestedObject[parentKey] || {};
+        nestedObject[parentKey][childKey] = v;
+      } else {
+        nestedObject[k] = v;
+      }
+    }
+    return nestedObject;
+  }
+  return value;
+}
+
+async function gql(query: string, variables: Record<string, any>) {
   const response = await fetch("https://api.wandb.ai/graphql", {
     method: "post",
-    body: data,
+    body: JSON.stringify({
+      query,
+      variables,
+    }),
     headers: {
       "Content-Type": "application/json",
       ...(import.meta.env.PUBLIC_WANDB_TOKEN
         ? {
-            Authorization: `Basic ${btoa(
-              `api:${import.meta.env.PUBLIC_WANDB_TOKEN}`
-            )}`,
+            Authorization: `Basic ${btoa(`api:${import.meta.env.PUBLIC_WANDB_TOKEN}`)}`,
           }
         : {}),
     },
   });
 
   const json = await response.json();
-  return json.data.project.run.history.map((line: string) => JSON.parse(line));
+  return json;
+}
+
+export async function getData(entity: string, project: string, name: string, samples?: number): Promise<WandBData> {
+  const meta = (
+    await gql(
+      `query Run($project: String!, $entity: String!, $name: String!) {
+        project(name: $project, entityName: $entity) {
+            run(name: $name) {
+                ...RunFragment
+            }
+        }
+    }
+    fragment RunFragment on Run {
+      id
+      name
+      displayName
+      state
+      config
+      createdAt
+      heartbeatAt
+      description
+      notes
+      systemMetrics
+      summaryMetrics
+      historyLineCount
+    }`,
+      { entity, project, name },
+    )
+  ).data.project.run;
+  console.log(meta);
+  const history = (
+    await gql(
+      `query RunFullHistory($project: String!, $entity: String!, $name: String!, $samples: Int) {
+      project(name: $project, entityName: $entity) {
+        run(name: $name) {
+          history(samples: $samples)
+        }
+      }
+    }`,
+      {
+        entity,
+        project,
+        name,
+        samples,
+      },
+    )
+  ).data.project.run;
+
+  return {
+    id: meta.id,
+    createdAt: meta.createdAt,
+    displayName: meta.displayName,
+    config: JSON.parse(meta.config, slashReviver),
+    summary: JSON.parse(meta.summaryMetrics, slashReviver),
+    history: history.history.map((line: string) => JSON.parse(line, slashReviver)),
+  };
 }
