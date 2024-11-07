@@ -1162,7 +1162,9 @@ impl<T: NodeIdentity> State<T> {
             self.losses.push(loss);
             self.wandb_log.insert("train/loss", loss);
             self.wandb_log
-                .insert("train/certainty", self.certainty(loss));
+                .insert("train/perplexity", Self::perplexity(loss));
+            self.wandb_log
+                .insert("train/confidence", self.confidence(loss));
         }
         if let Some(wandb_run) = &self.wandb_run {
             self.wandb_log
@@ -1771,9 +1773,9 @@ impl<T: NodeIdentity> State<T> {
             }
     }
 
-    // normalized metric for how "certain" a model is, regardless of vocab size.
+    // normalized metric for how "confident" a model is, regardless of vocab size.
     // 1.0 indicates completely certain (no loss), 0.0 indicates random guessing, negative values are worse than guessing
-    fn certainty(&self, loss: f32) -> f32 {
+    fn confidence(&self, loss: f32) -> f32 {
         match &self.tokenizer {
             Some(tokenizer) => {
                 let max_entropy = (tokenizer.get_vocab_size(false) as f32).log2();
@@ -1781,6 +1783,10 @@ impl<T: NodeIdentity> State<T> {
             }
             None => 0.,
         }
+    }
+
+    fn perplexity(loss: f32) -> f32 {
+        loss.exp()
     }
 }
 
