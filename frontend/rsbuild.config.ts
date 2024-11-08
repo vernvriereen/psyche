@@ -6,7 +6,9 @@ export default defineConfig({
   plugins: [pluginReact(), pluginSvgr()],
   output: { assetPrefix: "./" },
   html: {
-    title: "NOUS PSYCHE",
-    favicon: "./src/assets/psyche.png",
+    title: "NOUS DisTro",
+    // title: "NOUS PSYCHE",
+    // favicon: "./src/assets/psyche.png",
+    favicon: "./src/assets/nousgirl.png",
   },
 });
