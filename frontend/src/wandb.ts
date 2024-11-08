@@ -68,7 +68,7 @@ async function gql(query: string, variables: Record<string, JsonValue>) {
       return undefined;
     }
   })();
-  const response = await fetch("https://psyche-eight.vercel.app/", {
+  const response = await fetch("https://psyche-eight.vercel.app/api/proxy", {
     method: "post",
     body: JSON.stringify({
       query,
