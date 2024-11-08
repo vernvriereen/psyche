@@ -41,7 +41,9 @@ export const App = () => {
 		);
 	}, []);
 	useEffect(() => {
-		fetchWandbData();
+		setInterval(() => {
+			fetchWandbData();
+		}, 60_000);
 	}, [fetchWandbData]);
 
 	useEffect(() => {
