@@ -162,17 +162,18 @@ const Run: React.FC<{
 			<div className="w-full flex flex-col justify-center font-eva pb-2">
 				<div className="w-full flex">
 					<img alt="Nous Girl Logo" src={nousGirl} className="h-16" />
-					<TextStretcher className="font-normal text-plain flex-grow text-xl h-16 pb-2 px-4">
+					<TextStretcher className="font-normal text-plain flex-grow text-xs h-16 pb-2 px-4">
 						NOUS DisTrO
 					</TextStretcher>
+					<img alt="Nous Girl Logo" src={nousGirl} className="h-16" />
 					{/* <img alt="Nous Psyche Logo" src={psycheLogo} className="h-16" /> */}
 				</div>
 				<div className="w-full flex">
 					{/* <img alt="Nous Psyche Logo" src={psycheLogo} className="h-16" /> */}
-					<TextStretcher className="font-normal text-plain flex-grow text-xl h-16 pb-2 px-4">
+					<TextStretcher className="font-normal text-plain flex-grow text-xs h-16 pb-2 px-4">
 						{`DISTRIBUTED TRAINING RUN _ ${run.displayName}`}
 					</TextStretcher>
-					<img alt="Nous Girl Logo" src={nousGirl} className="h-16" />
+					{/* <img alt="Nous Girl Logo" src={nousGirl} className="h-16" /> */}
 				</div>
 			</div>
 			<div className="text-plain text-lg font-thin font-eva">
@@ -201,7 +202,7 @@ const Run: React.FC<{
 					numTotalTokens={numTotalTokens}
 				/>
 				<div className="flex-1 grid xl:grid-cols-2 grid-cols-1 gap-8 auto-rows-fr">
-					<div className="grid xl:grid-cols-1 grid-cols-2">
+					<div className="grid xl:grid-cols-1 sm:grid-cols-2 grid-cols-1">
 						<ResponsiveLineGraph
 							numXMarkers={2}
 							numYMarkers={3}
@@ -237,7 +238,7 @@ const Run: React.FC<{
 
 					<TrainersMap nodes={nodes} />
 
-					<div className="grid grid-cols-2 gap-4">
+					<div className="grid sm:grid-cols-2 grid-cols-1 gap-4">
 						{evals.map((e) => (
 							<ResponsiveLineGraph
 								key={e.label}
