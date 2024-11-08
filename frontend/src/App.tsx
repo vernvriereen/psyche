@@ -40,7 +40,6 @@ export const App = () => {
 	const fetchWandbData = useCallback(() => {
 		getData("nous_research", "distro-live-test", "15b-100bt-2", 5000).then(
 			(data) => {
-				console.log(data);
 				if (data) {
 					setWandbRun(data);
 				} else {
