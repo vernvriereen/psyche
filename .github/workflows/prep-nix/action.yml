@@ -1,6 +1,0 @@
-name: "Prep nix"
-description: "Set up nix"
-runs:
-  using: "composite"
-  steps:
-    - uses: nixbuild/nix-quick-install-action@v28
