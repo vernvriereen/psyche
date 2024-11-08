@@ -6,7 +6,7 @@ export interface WandBHistoryItem {
   };
   train: {
     loss: number;
-    certainty: number;
+    confidence: number;
     tokens_per_sec: number;
     total_tokens: number;
   };
