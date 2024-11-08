@@ -24,7 +24,7 @@ rand.workspace = true
 futures.workspace = true
 hex = "0.4.3"
 lazy_static = "1.5.0"
-wandb = { git = "https://github.com/NousResearch/wandb-rs.git", rev = "c1c543ffc26eeca0a0ab5fc9315d27ca5c33073f" }
+wandb = { git = "https://github.com/NousResearch/wandb-rs.git", rev = "2b0b5fdb9e1384b35e0b29f7dae5508266bf783c" }
 rand_chacha.workspace = true
 thiserror = "2.0.0"
 time.workspace = true
