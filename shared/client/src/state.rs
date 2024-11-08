@@ -1535,6 +1535,10 @@ impl<T: NodeIdentity> State<T> {
                     let mut run_info = wandb::RunInfo::new(wandb_info.project)
                         .name(wandb_info.run)
                         .config((
+                            (
+                                "data_indicies_per_batch",
+                                warmup_state.data_indicies_per_batch,
+                            ),
                             ("batches_per_round", warmup_state.batches_per_round),
                             ("total_steps", warmup_state.total_steps),
                             ("rounds_per_epoch", warmup_state.rounds_per_epoch),
