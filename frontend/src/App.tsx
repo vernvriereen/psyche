@@ -55,8 +55,8 @@ export const App = () => {
 
 	return (
 		<>
-			{fading && <LoadingScreen fading={fading} />}
-			{wandbRun && <Run run={wandbRun} clipFirstEvalsN={5} />}
+			{fading && <LoadingScreen fading={fading} warmupRun={wandbRun} />}
+			{wandbRun?.summary && <Run run={wandbRun} clipFirstEvalsN={10} />}
 		</>
 	);
 };
@@ -221,7 +221,10 @@ const Run: React.FC<{ run: WandBData; clipFirstEvalsN?: number }> = ({
 	);
 };
 
-function LoadingScreen({ fading }: { fading: string }) {
+function LoadingScreen({
+	fading,
+	warmupRun,
+}: { fading: "fading" | "loading"; warmupRun: WandBData | null }) {
 	return (
 		<div
 			className={`absolute w-screen h-screen flex flex-col items-center justify-center ${fading === "fading" ? "animate-fadeOut" : ""}`}
@@ -240,10 +243,21 @@ function LoadingScreen({ fading }: { fading: string }) {
 					/>
 				</RepeatElements>
 			</div>
-			<div className="text-9xl font-eva text">
-				<TextStretcher className="w-[10vw] h-[5vh] pt-1">NOUS</TextStretcher>
-				<TextStretcher className="w-[20vw] h-[5vh] pt-1">PSYCHE</TextStretcher>
-				<TextStretcher className="w-[40vw]">INITIALIZING...</TextStretcher>
+			<div className="text-9xl font-eva text w-[40vw] p-[1vw]">
+				<TextStretcher className="w-[10vw] h-[5vw] mt-[1vw]">
+					NOUS
+				</TextStretcher>
+				<TextStretcher className="w-[20vw] h-[5vw] mt-[1vw]">
+					PSYCHE
+				</TextStretcher>
+				<TextStretcher className="w-full h-[15vw]">
+					INITIALIZING...
+				</TextStretcher>
+				{warmupRun && (
+					<TextStretcher className="w-full h-[3vw] mt-[2vw]">
+						{`RUN ${warmupRun.displayName} WARMING UP`}
+					</TextStretcher>
+				)}
 			</div>
 			<div className="pt-4">
 				<RepeatElements total={7}>
@@ -293,6 +307,8 @@ function TrainingProgress({
 function RunMembers({
 	nodes,
 }: { nodes: Record<string, { bandwidth: number }> }) {
+	const numNodes = Object.keys(nodes).length;
+	// we multiply all the #s * the number of nodes, since they're all doing this much transfer to every other node, and we're only loggin data from one.
 	return (
 		<div className="px-8">
 			<div className="w-full border-2 border-primary mb-2 text-center bg-primary text-backdrop p-2 font-eva">
@@ -300,14 +316,14 @@ function RunMembers({
 					ESTIMATED NETWORK TRANSFER RATE
 				</TextStretcher>
 				{convertBytes(
-					Object.values(nodes).reduce((a, b) => a + b.bandwidth, 0),
+					Object.values(nodes).reduce((a, b) => a + b.bandwidth, 0) * numNodes,
 				)}
 				/s
 			</div>
 			<div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2 p-2">
 				{Object.entries(nodes).map(([id, { bandwidth }]) => (
-					<div key={id}>
-						<div className="relative h-18">
+					<div key={id} className="relative h-18">
+						<div>
 							<NodeStatus name={id} bandwidth={bandwidth} />
 						</div>
 					</div>
