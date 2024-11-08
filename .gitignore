@@ -36,6 +36,7 @@ slurm*
 ## JS ##
 node_modules/
 .env.local
+dist/
 
 ### Data folders ###
 /data
