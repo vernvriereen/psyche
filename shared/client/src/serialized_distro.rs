@@ -85,11 +85,13 @@ impl TryFrom<&SerializedDistroResult> for DistroResult {
             sparse_idx: Tensor::load_from_stream_with_device(
                 Cursor::new(&value.sparse_idx),
                 Device::Cpu,
-            )?,
+            )?
+            .pin_memory(Device::Cuda(0)), // index not actually used, just to know backend
             sparse_val: Tensor::load_from_stream_with_device(
                 Cursor::new(&value.sparse_val),
                 Device::Cpu,
-            )?,
+            )?
+            .pin_memory(Device::Cuda(0)), // index not actually used, just to know backend
             xshape: value.xshape.iter().map(|x| *x as i64).collect(),
             totalk: value.totalk,
         })
