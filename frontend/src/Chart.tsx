@@ -343,12 +343,14 @@ const LineGraphInner: React.FC<
 			>
 				{title && (
 					<>
-						<div className=" w-32">
-							<TextStretcher className="text-2xl p-2 h-12 border-2 rounded-md border-primary">
+						<div className="xl:w-32 md:w-24 w-16">
+							<TextStretcher className="p-2 xl:h-12 md:h-10 h-8 border-2 rounded-md border-primary">
 								{typeof title === "string" ? title : title[0]}
 							</TextStretcher>
 							{typeof title !== "string" && (
-								<TextStretcher className="my-2 h-12">{title[1]}</TextStretcher>
+								<TextStretcher className="xl:my-2 my-1 xl:h-12 md:h-4 h-3">
+									{title[1]}
+								</TextStretcher>
 							)}
 							{singleLine && (
 								<TextStretcher>{`@${singleLine.points[singleLine.points.length - 1].y.toFixed(2)}${lines[0].unit ?? ""}`}</TextStretcher>

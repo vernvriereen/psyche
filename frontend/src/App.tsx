@@ -2,7 +2,6 @@ import {
 	useCallback,
 	useEffect,
 	useLayoutEffect,
-	useMemo,
 	useRef,
 	useState,
 } from "react";
@@ -33,23 +32,35 @@ function RepeatElements({
 export const App = () => {
 	const [wandbRun, setWandbRun] = useState<WandBData | null>(null);
 	const [fading, setFading] = useState<"loading" | "fading" | false>("loading");
+	const [error, setError] = useState(false);
 	const fetchWandbData = useCallback(() => {
 		getData("nous_research", "distro-live-test", "15b-100bt-2", 5000).then(
 			(data) => {
-				setWandbRun(data);
+				console.log(data);
+				if (data) {
+					setWandbRun(data);
+				} else {
+					setError(true);
+				}
 			},
 		);
 	}, []);
-	useEffect(() => {
-		const interval = setInterval(() => {
-			fetchWandbData();
-		}, 60_000);
-		fetchWandbData();
-		return () => clearInterval(interval);
-	}, [fetchWandbData]);
 
 	useEffect(() => {
-		if (wandbRun?.summary && fading === "loading") {
+		fetchWandbData();
+		if (!error) {
+			const interval = setInterval(() => {
+				fetchWandbData();
+			}, 60_000);
+			return () => clearInterval(interval);
+		}
+	}, [fetchWandbData, error]);
+
+	useEffect(() => {
+		if (
+			Object.keys(wandbRun?.summary ?? {}).length > 0 &&
+			fading === "loading"
+		) {
 			setFading("fading");
 			setTimeout(() => {
 				setFading(false);
@@ -59,16 +70,21 @@ export const App = () => {
 
 	return (
 		<>
-			{fading && <LoadingScreen fading={fading} warmupRun={wandbRun} />}
-			{wandbRun?.summary && <Run run={wandbRun} clipFirstEvalsN={10} />}
+			{fading && (
+				<LoadingScreen fading={fading} warmupRun={wandbRun} error={error} />
+			)}
+			{wandbRun && Object.keys(wandbRun?.summary ?? {}).length > 0 && (
+				<Run run={wandbRun} clipFirstEvalsN={10} tokensPerBatch={2048} />
+			)}
 		</>
 	);
 };
 
-const Run: React.FC<{ run: WandBData; clipFirstEvalsN?: number }> = ({
-	run,
-	clipFirstEvalsN,
-}) => {
+const Run: React.FC<{
+	run: WandBData;
+	clipFirstEvalsN?: number;
+	tokensPerBatch: number;
+}> = ({ run, clipFirstEvalsN, tokensPerBatch }) => {
 	const [nodes, setNodes] = useState<Array<GeolocatedNode>>([]);
 	useEffect(() => {
 		let cancelled = false;
@@ -110,11 +126,13 @@ const Run: React.FC<{ run: WandBData; clipFirstEvalsN?: number }> = ({
 	const numTotalTokens =
 		run.config.total_steps *
 		run.config.data_indicies_per_batch *
-		run.config.batches_per_round;
+		run.config.batches_per_round *
+		tokensPerBatch;
 	const numCompletedTokens =
 		run.summary.coordinator.round *
 		run.config.data_indicies_per_batch *
-		run.config.batches_per_round;
+		run.config.batches_per_round *
+		tokensPerBatch;
 
 	const evals = (
 		Object.keys(run.summary.eval) as Array<keyof typeof run.summary.eval>
@@ -138,14 +156,21 @@ const Run: React.FC<{ run: WandBData; clipFirstEvalsN?: number }> = ({
 
 	return (
 		<div className="font-black h-screen w-screen p-4 text-primary flex flex-col animate-fadeIn">
-			<div className="w-full flex justify-center font-eva pb-2">
-				<img alt="Nous Girl Logo" src={nousGirl} className="h-16" />
-				<img alt="Nous Psyche Logo" src={psycheLogo} className="h-16" />
-				<TextStretcher className="font-normal text-plain flex-grow text-xl h-16 pb-2 px-4">
-					{`NOUS PSYCHE : DISTRIBUTED TRAINING RUN _ ${run.displayName}`}
-				</TextStretcher>
-				<img alt="Nous Psyche Logo" src={psycheLogo} className="h-16" />
-				<img alt="Nous Girl Logo" src={nousGirl} className="h-16" />
+			<div className="w-full flex flex-col justify-center font-eva pb-2">
+				<div className="w-full flex">
+					<img alt="Nous Girl Logo" src={nousGirl} className="h-16" />
+					<TextStretcher className="font-normal text-plain flex-grow text-xl h-16 pb-2 px-4">
+						NOUS PSYCHE
+					</TextStretcher>
+					<img alt="Nous Psyche Logo" src={psycheLogo} className="h-16" />
+				</div>
+				<div className="w-full flex">
+					<img alt="Nous Psyche Logo" src={psycheLogo} className="h-16" />
+					<TextStretcher className="font-normal text-plain flex-grow text-xl h-16 pb-2 px-4">
+						{`DISTRIBUTED TRAINING RUN _ ${run.displayName}`}
+					</TextStretcher>
+					<img alt="Nous Girl Logo" src={nousGirl} className="h-16" />
+				</div>
 			</div>
 			<div className="text-plain text-lg font-thin font-eva">
 				<p>
@@ -170,17 +195,11 @@ const Run: React.FC<{ run: WandBData; clipFirstEvalsN?: number }> = ({
 					numCompletedTokens={numCompletedTokens}
 					numTotalTokens={numTotalTokens}
 				/>
-				<div className="flex-1 flex flex-row max-h-[20vh]">
-					<div className="w-[40%] ">
-						<TrainersMap nodes={nodes} />
-					</div>
-					<div className="text-xl w-[60%]">
-						<RunMembers nodes={run.summary.p2p.nodes} />
-					</div>
-				</div>
-				<div className="flex-1 grid grid-cols-2 overflow-auto">
-					<div className="grid grid-cols-1 gap-4">
+				<div className="flex-1 grid xl:grid-cols-2 grid-cols-1 gap-8 auto-rows-fr">
+					<div className="grid xl:grid-cols-1 grid-cols-2">
 						<ResponsiveLineGraph
+							numXMarkers={2}
+							numYMarkers={3}
 							title={["TRAINING", "CONFIDENCE"]}
 							lines={[
 								{
@@ -195,6 +214,8 @@ const Run: React.FC<{ run: WandBData; clipFirstEvalsN?: number }> = ({
 							]}
 						/>
 						<ResponsiveLineGraph
+							numXMarkers={2}
+							numYMarkers={3}
 							title={["TRAINING", "LOSS"]}
 							lines={[
 								{
@@ -208,6 +229,9 @@ const Run: React.FC<{ run: WandBData; clipFirstEvalsN?: number }> = ({
 							]}
 						/>
 					</div>
+
+					<TrainersMap nodes={nodes} />
+
 					<div className="grid grid-cols-2 gap-4">
 						{evals.map((e) => (
 							<ResponsiveLineGraph
@@ -219,6 +243,7 @@ const Run: React.FC<{ run: WandBData; clipFirstEvalsN?: number }> = ({
 							/>
 						))}
 					</div>
+					<RunMembers nodes={run.summary.p2p.nodes} />
 				</div>
 			</div>
 		</div>
@@ -228,7 +253,12 @@ const Run: React.FC<{ run: WandBData; clipFirstEvalsN?: number }> = ({
 function LoadingScreen({
 	fading,
 	warmupRun,
-}: { fading: "fading" | "loading"; warmupRun: WandBData | null }) {
+	error,
+}: {
+	fading: "fading" | "loading";
+	warmupRun: WandBData | null;
+	error: boolean;
+}) {
 	return (
 		<div
 			className={`absolute w-screen h-screen flex flex-col items-center justify-center ${fading === "fading" ? "animate-fadeOut" : ""}`}
@@ -254,13 +284,30 @@ function LoadingScreen({
 				<TextStretcher className="w-[20vw] h-[5vw] mt-[1vw]">
 					PSYCHE
 				</TextStretcher>
-				<TextStretcher className="w-full h-[15vw]">
-					INITIALIZING...
-				</TextStretcher>
-				{warmupRun && (
-					<TextStretcher className="w-full h-[3vw] mt-[2vw]">
-						{`RUN ${warmupRun.displayName} WARMING UP`}
+				{error ? (
+					<>
+						<TextStretcher className="text-bad w-full h-[15vw]">
+							Failure to load
+						</TextStretcher>
+
+						<TextStretcher className="w-full h-[5vw] pt-[2vw]">
+							TRY LATER
+						</TextStretcher>
+					</>
+				) : (
+					<TextStretcher className="w-full h-[15vw]">
+						INITIALIZING...
 					</TextStretcher>
+				)}
+				{warmupRun && (
+					<>
+						<TextStretcher className="w-full h-[3vw] mt-[2vw]">
+							{`RUN ${warmupRun.displayName}`}
+						</TextStretcher>
+						<TextStretcher className="w-full h-[2vw] mt-[2vw]">
+							PLEASE WAIT
+						</TextStretcher>
+					</>
 				)}
 			</div>
 			<div className="pt-4">
@@ -318,7 +365,7 @@ function RunMembers({
 	);
 	// we multiply all the #s * the number of nodes, since they're all doing this much transfer to every other node, and we're only loggin data from one.
 	return (
-		<div className="px-8">
+		<div className="mx-8 h-full overflow-hidden">
 			<div className="w-full border-2 border-primary mb-2 text-center bg-primary text-backdrop p-2 font-eva">
 				<TextStretcher className="pb-2">
 					ESTIMATED TOTAL NETWORK TRANSFER RATE
@@ -370,9 +417,8 @@ function convertBytes(bytes: number): string {
 function NodeStatus({ name, bandwidth }: { name: string; bandwidth: number }) {
 	return (
 		<div className="w-full relative">
-			<div className="absolute h-[calc(100%+2rem)] left-[50%] w-1 -top-4 bg-primary -z-10" />
-
-			<div className="absolute w-[calc(100%+2rem)] -left-4 h-1 top-[50%] bg-primary -z-10" />
+			<div className="absolute h-[calc(10000rem)] left-[50%] w-1 -top-4 bg-primary -z-10" />
+			<div className="absolute w-[calc(10000rem)] -left-4 h-1 top-[50%] bg-primary -z-10" />
 			<div className="flex flex-col items-center justify-center rounded w-full h-16 bg-primary text-backdrop">
 				<div>{name.slice(0, 7)}</div>
 				<div className="text-sm">{convertBytes(bandwidth)}/s</div>
