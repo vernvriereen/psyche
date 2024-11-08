@@ -41,9 +41,11 @@ export const App = () => {
 		);
 	}, []);
 	useEffect(() => {
-		setInterval(() => {
+		const interval = setInterval(() => {
 			fetchWandbData();
 		}, 60_000);
+		fetchWandbData();
+		return () => clearInterval(interval);
 	}, [fetchWandbData]);
 
 	useEffect(() => {
@@ -310,23 +312,25 @@ function RunMembers({
 	nodes,
 }: { nodes: Record<string, { bandwidth: number }> }) {
 	const numNodes = Object.keys(nodes).length;
+	const nodeTotalBandwidth = Object.values(nodes).reduce(
+		(a, b) => a + b.bandwidth,
+		0,
+	);
 	// we multiply all the #s * the number of nodes, since they're all doing this much transfer to every other node, and we're only loggin data from one.
 	return (
 		<div className="px-8">
 			<div className="w-full border-2 border-primary mb-2 text-center bg-primary text-backdrop p-2 font-eva">
 				<TextStretcher className="pb-2">
-					ESTIMATED NETWORK TRANSFER RATE
+					ESTIMATED TOTAL NETWORK TRANSFER RATE
 				</TextStretcher>
-				{convertBytes(
-					Object.values(nodes).reduce((a, b) => a + b.bandwidth, 0) * numNodes,
-				)}
-				/s
+				{convertBytes(nodeTotalBandwidth * numNodes)}
+				/s ({convertBytes(nodeTotalBandwidth)}/s download per node)
 			</div>
 			<div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2 p-2">
 				{Object.entries(nodes).map(([id, { bandwidth }]) => (
 					<div key={id} className="relative h-18">
 						<div>
-							<NodeStatus name={id} bandwidth={bandwidth} />
+							<NodeStatus name={id} bandwidth={bandwidth * numNodes} />
 						</div>
 					</div>
 				))}
@@ -366,9 +370,9 @@ function convertBytes(bytes: number): string {
 function NodeStatus({ name, bandwidth }: { name: string; bandwidth: number }) {
 	return (
 		<div className="w-full relative">
-			<div className="absolute h-4 left-[50%]">
-				<div className="relative top-[-100%] left-[-50%] w-1 h-4 text-primary bg-primary" />
-			</div>
+			<div className="absolute h-[calc(100%+2rem)] left-[50%] w-1 -top-4 bg-primary -z-10" />
+
+			<div className="absolute w-[calc(100%+2rem)] -left-4 h-1 top-[50%] bg-primary -z-10" />
 			<div className="flex flex-col items-center justify-center rounded w-full h-16 bg-primary text-backdrop">
 				<div>{name.slice(0, 7)}</div>
 				<div className="text-sm">{convertBytes(bandwidth)}/s</div>
