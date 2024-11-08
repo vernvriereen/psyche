@@ -9,7 +9,7 @@ import { type GraphLine, ResponsiveLineGraph } from "./Chart";
 import { TextStretcher } from "./TextStretcher";
 import { TrainersMap } from "./TrainersMap";
 import nousGirl from "./assets/nousgirl.png";
-import psycheLogo from "./assets/psyche.png";
+// import psycheLogo from "./assets/psyche.png";
 import { lerpColor } from "./color";
 import { formatNumber } from "./formatNumber";
 import { lookupIp } from "./geoip";
@@ -20,11 +20,15 @@ import { type WandBData, getData } from "./wandb";
 function RepeatElements({
 	children,
 	total,
-}: { children: JSX.Element[]; total: number }) {
-	const repeatedChildren: JSX.Element[] = [];
-	for (let i = 0; i < total; i++) {
-		const index = i % children.length;
-		repeatedChildren.push(children[index]);
+}: { children: JSX.Element[] | JSX.Element; total: number }) {
+	let repeatedChildren: JSX.Element[] = [];
+	if (Array.isArray(children)) {
+		for (let i = 0; i < total; i++) {
+			const index = i % children.length;
+			repeatedChildren.push(children[index]);
+		}
+	} else {
+		repeatedChildren = Array.from({ length: total }, () => children);
 	}
 	return repeatedChildren;
 }
@@ -160,12 +164,12 @@ const Run: React.FC<{
 				<div className="w-full flex">
 					<img alt="Nous Girl Logo" src={nousGirl} className="h-16" />
 					<TextStretcher className="font-normal text-plain flex-grow text-xl h-16 pb-2 px-4">
-						NOUS PSYCHE
+						NOUS DisTrO
 					</TextStretcher>
-					<img alt="Nous Psyche Logo" src={psycheLogo} className="h-16" />
+					{/* <img alt="Nous Psyche Logo" src={psycheLogo} className="h-16" /> */}
 				</div>
 				<div className="w-full flex">
-					<img alt="Nous Psyche Logo" src={psycheLogo} className="h-16" />
+					{/* <img alt="Nous Psyche Logo" src={psycheLogo} className="h-16" /> */}
 					<TextStretcher className="font-normal text-plain flex-grow text-xl h-16 pb-2 px-4">
 						{`DISTRIBUTED TRAINING RUN _ ${run.displayName}`}
 					</TextStretcher>
@@ -173,13 +177,15 @@ const Run: React.FC<{
 				</div>
 			</div>
 			<div className="text-plain text-lg font-thin font-eva">
-				<p>
-					Psyche is a DisTrO-native distributed training framework for AI
+				{/* <p>
+					Psyche is a 
+					DisTrO-native distributed training framework for AI
 					models. It interconnects globally dispersed compute and trains models
 					at breakneck speed, with high quality and accuracy.
-				</p>
+				</p> */}
 				<p>
-					Psyche is powered by{" "}
+					{/* Psyche is powered by{" "} */}
+					This run is powered by{" "}
 					<a
 						className="underline"
 						href="https://github.com/NousResearch/DisTrO"
@@ -270,11 +276,11 @@ function LoadingScreen({
 						className="h-[calc(40vw/7)] inline"
 						alt="nous girl logo"
 					/>
-					<img
+					{/* <img
 						src={psycheLogo}
 						className="h-[calc(40vw/7)] inline"
 						alt="nous psyche logo"
-					/>
+					/> */}
 				</RepeatElements>
 			</div>
 			<div className="text-9xl font-eva text w-[40vw] p-[1vw]">
@@ -282,7 +288,8 @@ function LoadingScreen({
 					NOUS
 				</TextStretcher>
 				<TextStretcher className="w-[20vw] h-[5vw] mt-[1vw]">
-					PSYCHE
+					{/* PSYCHE */}
+					DisTrO
 				</TextStretcher>
 				{error ? (
 					<>
@@ -312,11 +319,11 @@ function LoadingScreen({
 			</div>
 			<div className="pt-4">
 				<RepeatElements total={7}>
-					<img
+					{/* <img
 						src={psycheLogo}
 						className="h-[calc(40vw/7)] inline"
 						alt="nous psyche logo"
-					/>
+					/> */}
 					<img
 						src={nousGirl}
 						className="h-[calc(40vw/7)] inline"
@@ -472,7 +479,8 @@ function BucketedProgressBar({
 				const { r, g, b } = lerpColor(start, end, index / divisions);
 				return (
 					<div
-						key={`${r}${g}${b}`}
+						// biome-ignore lint/suspicious/noArrayIndexKey: this is correct, it's just a list.
+						key={index}
 						style={
 							index < filledDivisions
 								? {
