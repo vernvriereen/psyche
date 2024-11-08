@@ -141,6 +141,7 @@ pub struct State<T: NodeIdentity> {
     wandb_run: Option<Arc<wandb::Run>>,
     wandb_log: LogData,
     retried_downloads: HashMap<psyche_network::Hash, usize>,
+    all_batches_finished_deserializing: Arc<AtomicBool>,
     /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
     _last_observed_num_batches_remaining: usize,
     _eval_results: HashMap<String, Vec<f64>>,
@@ -236,6 +237,7 @@ impl<T: NodeIdentity> State<T> {
             wandb_run: None,
             wandb_log: LogData::new(),
             retried_downloads: HashMap::new(),
+            all_batches_finished_deserializing: Arc::new(AtomicBool::new(false)),
             _last_observed_num_batches_remaining: 0,
         }
     }
@@ -486,7 +488,9 @@ impl<T: NodeIdentity> State<T> {
         let trainings_finished_position = self.trainings.iter_mut().position(|x| x.is_finished());
         if self.is_run_state(RunState::RoundTrain)
             && self.committee_info.is_some()
-            && self.training_data.is_none()
+            && self
+                .all_batches_finished_deserializing
+                .load(Ordering::SeqCst)
         {
             let (_, witness_proof, _) = self.committee_info.as_ref().unwrap();
             if let Some(witness) = self.get_witness_to_send(witness_proof.index) {
@@ -840,13 +844,23 @@ impl<T: NodeIdentity> State<T> {
                 }
 
                 // we unconditionally store every seen payload, since we're not yet sure what consensus will be on whether it's included.
+                let all_batches_finished_deserializing =
+                    self.all_batches_finished_deserializing.clone();
                 let deserializing = tokio::task::spawn_blocking(move || {
                     let maybe_results: Result<Vec<DistroResult>, _> = distro_result
                         .distro_results
                         .iter()
                         .map(|x| x.try_into())
                         .collect();
-                    maybe_results.map_err(|err| Error::msg(format!("Error deserializing: {}", err)))
+                    match maybe_results {
+                        Ok(results) => {
+                            if just_consumed_last_batch_id {
+                                all_batches_finished_deserializing.store(true, Ordering::SeqCst);
+                            }
+                            Ok(results)
+                        }
+                        Err(err) => bail!("Error deserializing: {}", err),
+                    }
                 });
                 self.payloads
                     .insert(hash, PayloadState::Deserializing(deserializing));
@@ -1048,6 +1062,7 @@ impl<T: NodeIdentity> State<T> {
             .unwrap()
             .fetch_data(state, &self.data_assignments, &self.identity);
         self.training_data = Some(training_data);
+        self.all_batches_finished_deserializing.store(false, Ordering::SeqCst);
 
         let committee_proof = committee_selection.get_committee(index);
         let witness_proof = committee_selection.get_witness(index);
@@ -1253,12 +1268,17 @@ impl<T: NodeIdentity> State<T> {
                         Some(PayloadState::Deserializing(x)) => match x.is_finished() {
                             true => x.await.unwrap(),
                             false => {
-                                bail!("DESYNC: Did not finish downloading payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
+                                bail!("DESYNC: Did not finish deserializing payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
                             }
                         },
-                        _ => {
+                        Some(PayloadState::Downloading(_)) => {
                             bail!("DESYNC: Did not begin downloading payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
                         }
+                        None => bail!(
+                            "DESYNC: Unknown consensus commitment 0x{} for batch {}",
+                            hex::encode(consensus.commitment),
+                            batch_id
+                        ),
                     };
 
                     match maybe_results {
