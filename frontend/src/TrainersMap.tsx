@@ -20,12 +20,6 @@ import globeTexture from "./assets/transparentglobe.png";
 import useTailwind from "./tailwind";
 import type { GeolocatedNode } from "./types";
 
-// function idToArrayItem<T>(uuid: string, array: T[]) {
-//   const color = BigInt(`0x${uuid.replace(/\D/g, "")}`) % 0x1000000n;
-//   const item = array[Number(color % BigInt(array.length))];
-//   return item;
-// }
-
 const globeMaterial = new MeshBasicMaterial({
 	alphaTest: 0.9,
 });
@@ -46,6 +40,8 @@ export function TrainersMap({ nodes }: { nodes: Array<GeolocatedNode> }) {
 		}
 		// aim at continental US centroid
 		globeEl.current.pointOfView({ lat: 39.6, lng: -98.5, altitude: 2 });
+		globeEl.current.controls().autoRotate = true;
+		globeEl.current.controls().autoRotateSpeed = 0.5;
 	}, []);
 
 	const [size, setSize] = useState({ w: 0, h: 0 });
@@ -119,8 +115,11 @@ export function TrainersMap({ nodes }: { nodes: Array<GeolocatedNode> }) {
 							n.to.longitude) as (n: object) => number
 					}
 					arcDashLength={2}
+					arcAltitude={0.05}
 					arcDashGap={0}
+					arcStroke={0.2}
 					arcColor={() => good}
+					pointAltitude={0.02}
 					pointResolution={30}
 					pointsData={nodes}
 					pointLat={

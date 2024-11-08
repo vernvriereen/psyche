@@ -17,13 +17,15 @@ interface DataPoint {
 	y: number;
 }
 
+export interface GraphLine {
+	points: DataPoint[];
+	label: string;
+	className: string;
+	unit?: string;
+}
+
 interface LineGraphProps {
-	lines: Array<{
-		points: DataPoint[];
-		label: string;
-		className: string;
-		unit?: string;
-	}>;
+	lines: Array<GraphLine>;
 	numXMarkers?: number;
 	numYMarkers?: number;
 	title?: string | [string, string];
@@ -166,7 +168,7 @@ const LineGraphInner: React.FC<
 
 	return (
 		<div className="relative w-full h-full">
-			<svg width={width} height={height} className="absolute">
+			<svg width={width} height={height} className="absolute overflow-visible">
 				<title>
 					Line Graph {title ? `${title} ` : ""}of{" "}
 					{lines.map((l) => l.label).join(", ")} / step

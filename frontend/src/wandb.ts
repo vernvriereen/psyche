@@ -28,6 +28,7 @@ export interface WandBData {
 		total_steps: number;
 		rounds_per_epoch: number;
 		batches_per_round: number;
+		data_indicies_per_batch: number;
 	};
 	history: WandBHistoryItem[];
 	summary: WandBHistoryItem;
@@ -114,7 +115,6 @@ export async function getData(
 			{ entity, project, name },
 		)
 	).data.project.run;
-	console.log(meta);
 	const history = (
 		await gql(
 			`query RunFullHistory($project: String!, $entity: String!, $name: String!, $samples: Int) {
