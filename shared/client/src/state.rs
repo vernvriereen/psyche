@@ -36,7 +36,6 @@ use std::{
 };
 use tch::{Device, Kind};
 use thiserror::Error;
-use time::OffsetDateTime;
 use tokenizers::Tokenizer;
 use tokio::{
     runtime::Handle,
@@ -91,7 +90,6 @@ pub enum BatchShuffleType {
 }
 
 pub struct State<T: NodeIdentity> {
-    startup_time: OffsetDateTime,
     pub identity: T,
     private_key: T::PrivateKey,
     data_and_model_load: TaskResult<LoadedModelAndData<T>>,
@@ -183,7 +181,6 @@ impl<T: NodeIdentity> State<T> {
         assert!(tensor_parallelism > 0);
         assert!(micro_batch_size.map(|x| x > 0).unwrap_or(true));
         Self {
-            startup_time: OffsetDateTime::now_utc(),
             identity,
             private_key,
             data_and_model_load: None,
@@ -1062,7 +1059,8 @@ impl<T: NodeIdentity> State<T> {
             .unwrap()
             .fetch_data(state, &self.data_assignments, &self.identity);
         self.training_data = Some(training_data);
-        self.all_batches_finished_deserializing.store(false, Ordering::SeqCst);
+        self.all_batches_finished_deserializing
+            .store(false, Ordering::SeqCst);
 
         let committee_proof = committee_selection.get_committee(index);
         let witness_proof = committee_selection.get_witness(index);
@@ -1823,11 +1821,6 @@ impl<T: NodeIdentity> From<&State<T>> for ClientTUIState {
             global_tokens_per_second: value.global_tokens_per_second(),
             total_tokens: value.total_tokens(),
             evals: value._eval_results.clone(),
-            startup_time: value.startup_time,
-            checkpointer: value
-                .checkpoint_upload_info
-                .as_ref()
-                .map(|c| c.hub_repo.clone()),
         }
     }
 }
