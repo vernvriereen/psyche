@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
 // The target URL you want to proxy requests to
-const TARGET_URL = "https://api.example.com/endpoint";
+const TARGET_URL = "https://api.wandb.ai/graphql";
 
 // Configure CORS headers
 const corsHeaders = {
