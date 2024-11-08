@@ -85,11 +85,7 @@ fn node_bandwidth(val: &VecDeque<DownloadEvent>) -> f64 {
     if val.is_empty() {
         return 0.0;
     }
-    let duration = val
-        .back()
-        .unwrap()
-        .timestamp
-        .duration_since(val.front().unwrap().timestamp);
+    let duration = Instant::now().duration_since(val.front().unwrap().timestamp);
     let total_bytes: u64 = val.iter().map(|v| v.num_bytes).sum();
     let seconds = duration.as_secs_f64();
 
