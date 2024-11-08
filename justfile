@@ -4,6 +4,7 @@ check:
 
 # format & lint-fix code
 fmt:
+	biome check --fix frontend
 	cargo clippy --fix --allow-staged --all-targets
 	cargo fmt
 	alejandra .
