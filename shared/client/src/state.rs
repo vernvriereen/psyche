@@ -78,9 +78,14 @@ struct EvalTask {
 }
 
 #[derive(Debug, Clone)]
-pub struct CheckpointUploadInfo {
+pub struct HubUploadInfo {
     pub hub_repo: String,
     pub hub_token: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CheckpointSaveInfo {
+    pub hub_upload: Option<HubUploadInfo>,
     pub checkpoint_dir: PathBuf,
 }
 
@@ -133,7 +138,7 @@ pub struct State<T: NodeIdentity> {
     checkpoint_extra_files: Vec<PathBuf>,
     checkpointing: TaskResult<(Trainer, Option<model::HubRepo>)>,
     last_warmup_peer_announcement: Option<Instant>,
-    checkpoint_upload_info: Option<CheckpointUploadInfo>,
+    checkpoint_upload_info: Option<CheckpointSaveInfo>,
     hub_read_token: Option<String>,
     wandb_info: Option<WandBInfo>,
     wandb_run: Option<Arc<wandb::Run>>,
@@ -154,7 +159,7 @@ pub struct StateOptions<T: NodeIdentity> {
     pub eval_task_max_docs: Option<usize>,
     pub micro_batch_size: Option<usize>,
     pub write_gradients_dir: Option<PathBuf>,
-    pub checkpoint_upload_info: Option<CheckpointUploadInfo>,
+    pub checkpoint_upload_info: Option<CheckpointSaveInfo>,
     pub hub_read_token: Option<String>,
     pub wandb_info: Option<WandBInfo>,
     pub batch_shuffle_type: BatchShuffleType,
@@ -277,7 +282,6 @@ impl<T: NodeIdentity> State<T> {
                 Ok(()) => Ok(None),
                 Err(other_err) => return Err(other_err.into()),
             },
-            // todo err here?
             RunState::Cooldown => match self.cooldown() {
                 Err(TickRoundCooldownError::MissedWarmup) => Err(()),
                 Ok(()) => Ok(None),
@@ -475,7 +479,7 @@ impl<T: NodeIdentity> State<T> {
         {
             Some(_) => match hub_repo {
                 Some(hub_repo) => Ok(ToSend::Checkpoint(model::Checkpoint::Hub(hub_repo))),
-                None => bail!("Checkpointing finished but hub repo not supplied"),
+                None => Ok(ToSend::Nothing), // no repo, just local checkpoint
             },
             None => Ok(ToSend::Nothing),
         }
@@ -1358,9 +1362,8 @@ impl<T: NodeIdentity> State<T> {
             != RunState::Cooldown
         {
             // todo consider allowing ability to write checkpoint to disk without uploading to HF
-            if let Some(CheckpointUploadInfo {
-                hub_repo,
-                hub_token,
+            if let Some(CheckpointSaveInfo {
+                hub_upload,
                 checkpoint_dir,
             }) = self.checkpoint_upload_info.clone()
             {
@@ -1390,22 +1393,30 @@ impl<T: NodeIdentity> State<T> {
                                 local.push(to);
                             }
 
-                            let hub_repo = {
-                                info!("Uploading to {}", hub_repo);
-                                let revision = upload_model_repo_async(
-                                    hub_repo.clone(),
-                                    local,
-                                    hub_token.clone(),
-                                    Some(format!("step {step}")),
-                                    None,
-                                )
-                                .await?;
-                                Some(model::HubRepo {
-                                    repo_id: hub_repo.clone(),
-                                    revision: Some(revision),
-                                })
-                            };
-                            Ok((trainer, hub_repo))
+                            if let Some(HubUploadInfo {
+                                hub_repo,
+                                hub_token,
+                            }) = hub_upload
+                            {
+                                let hub_repo = {
+                                    info!("Uploading to {}", hub_repo);
+                                    let revision = upload_model_repo_async(
+                                        hub_repo.clone(),
+                                        local,
+                                        hub_token.clone(),
+                                        Some(format!("step {step}")),
+                                        None,
+                                    )
+                                    .await?;
+                                    Some(model::HubRepo {
+                                        repo_id: hub_repo.clone(),
+                                        revision: Some(revision),
+                                    })
+                                };
+                                Ok((trainer, hub_repo))
+                            } else {
+                                Ok((trainer, None))
+                            }
                         }));
                     }
                     None => {

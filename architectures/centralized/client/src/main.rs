@@ -2,7 +2,7 @@ use crate::app::{AppBuilder, AppParams, Tabs, TAB_NAMES};
 
 use anyhow::{anyhow, bail, Result};
 use clap::{ArgAction, Parser, Subcommand};
-use psyche_client::{BatchShuffleType, CheckpointUploadInfo, WandBInfo};
+use psyche_client::{BatchShuffleType, CheckpointSaveInfo, HubUploadInfo, WandBInfo};
 use psyche_eval::tasktype_from_name;
 use psyche_network::SecretKey;
 use psyche_tui::{maybe_start_render_loop, LogOutput};
@@ -164,10 +164,12 @@ async fn async_main() -> Result<()> {
             let hub_read_token = std::env::var("HF_TOKEN").ok();
 
             let checkpoint_upload_info = match (&hub_read_token, hub_repo, checkpoint_dir) {
-                (Some(token), Some(repo), Some(dir)) => Some(CheckpointUploadInfo {
+                (Some(token), Some(repo), Some(dir)) => Some(CheckpointSaveInfo {
                     checkpoint_dir: dir,
-                    hub_repo: repo,
-                    hub_token: token.clone(),
+                    hub_upload: Some(HubUploadInfo {
+                        hub_repo: repo,
+                        hub_token: token.to_string(),
+                    }),
                 }),
                 (None, Some(_), Some(_)) => {
                     bail!("hub-repo and checkpoint-dir set, but no HF_TOKEN env variable.")
@@ -175,6 +177,10 @@ async fn async_main() -> Result<()> {
                 (_, Some(_), None) => {
                     bail!("--hub-repo was set, but no --checkpoint-dir was passed!")
                 }
+                (_, None, Some(dir)) => Some(CheckpointSaveInfo {
+                    checkpoint_dir: dir,
+                    hub_upload: None,
+                }),
                 (_, None, _) => None,
             };
 

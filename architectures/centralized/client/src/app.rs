@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::{Error, Result};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{
-    BatchShuffleType, CheckpointUploadInfo, Client, ClientTUI, ClientTUIState, StateOptions,
+    BatchShuffleType, CheckpointSaveInfo, Client, ClientTUI, ClientTUIState, StateOptions,
     WandBInfo, NC,
 };
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
@@ -82,7 +82,7 @@ pub struct AppParams {
     pub p2p_port: Option<u16>,
     pub eval_tasks: Vec<psyche_eval::Task>,
     pub eval_task_max_docs: Option<usize>,
-    pub checkpoint_upload_info: Option<CheckpointUploadInfo>,
+    pub checkpoint_upload_info: Option<CheckpointSaveInfo>,
     pub hub_read_token: Option<String>,
     pub wandb_info: Option<WandBInfo>,
     pub batch_shuffle_type: BatchShuffleType,
