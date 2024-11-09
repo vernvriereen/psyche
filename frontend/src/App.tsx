@@ -159,18 +159,20 @@ const Run: React.FC<{
 
 	return (
 		<div className="font-black h-screen w-screen p-4 text-primary flex flex-col animate-fadeIn">
-			<div className="w-full flex flex-col justify-center font-eva pb-2">
-				<div className="w-full flex">
-					<img alt="Nous Girl Logo" src={nousGirl} className="h-16" />
-					<TextStretcher className="font-normal text-plain flex-grow text-xs h-16 pb-2 px-4">
+			<div className="w-full flex md:flex-row flex-col items-center place-content-between font-eva">
+				<div className="w-full max-w-[30em] flex items-center">
+					<div>
+						<img alt="Nous Girl Logo" src={nousGirl} className="h-16" />
+						<img alt="Nous Girl Logo" src={nousGirl} className="h-16" />
+					</div>
+					<TextStretcher className="font-normal text-plain flex-grow h-32 pb-2 px-4">
 						NOUS DisTrO
 					</TextStretcher>
-					<img alt="Nous Girl Logo" src={nousGirl} className="h-16" />
 					{/* <img alt="Nous Psyche Logo" src={psycheLogo} className="h-16" /> */}
 				</div>
-				<div className="w-full flex">
+				<div className="w-full max-w-[60em]">
 					{/* <img alt="Nous Psyche Logo" src={psycheLogo} className="h-16" /> */}
-					<TextStretcher className="font-normal text-plain flex-grow text-xs h-16 pb-2 px-4">
+					<TextStretcher className="w-full font-normal text-plain md:h-32 h-16 pb-2">
 						{`DISTRIBUTED TRAINING RUN _ ${run.displayName}`}
 					</TextStretcher>
 					{/* <img alt="Nous Girl Logo" src={nousGirl} className="h-16" /> */}
