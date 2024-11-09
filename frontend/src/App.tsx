@@ -402,7 +402,7 @@ function RunMembers({
 				{Object.entries(nodes).map(([id, { bandwidth }]) => (
 					<div key={id} className="relative h-18">
 						<div>
-							<NodeStatus name={id} bandwidth={bandwidth * numNodes} />
+							<NodeStatus name={id} bandwidth={bandwidth} />
 						</div>
 					</div>
 				))}
