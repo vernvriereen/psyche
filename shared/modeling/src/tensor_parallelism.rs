@@ -226,8 +226,14 @@ pub fn unsharded_cpu_variables(
             Some(_) => bail!("Sharded model but parallelism feature turned off"),
             None => var.shallow_clone(),
         };
+        // now you're probably thinking, why are you moving this to the CPU? why even unshard the tensor
+        // on the other ranks and not do it just on rank 0? here's the thing, you're right, you're absoutely right,
+        // except horribly, inexplicibly wrong. if you do that, the non-zero ranks fill up and can OOM -- the gathered
+        // tensors hang around for no reason. doing this operation on all ranks makes the memory free as one would expect.
+        // remember, we're just along for the ride.
+        let var = var.to_device(Device::Cpu);
         if let Some(ret) = ret.as_mut() {
-            ret.insert(name.to_owned(), var.to(Device::Cpu));
+            ret.insert(name.to_owned(), var);
         }
     }
     Ok(ret.unwrap_or_default())

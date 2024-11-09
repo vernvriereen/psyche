@@ -1374,11 +1374,11 @@ impl<T: NodeIdentity> State<T> {
                         let checkpoint_dir = checkpoint_dir.clone();
                         let checkpoint_extra_files = self.checkpoint_extra_files.clone();
                         self.checkpointing = Some(tokio::task::spawn(async move {
+                            info!("Extracting full model for save");
                             let (variables, trainer) =
                                 tokio::task::spawn_blocking(|| trainer.extract()).await??;
 
                             let path = checkpoint_dir.join(format!("{run_id}-step{step}"));
-
                             info!("Saving to {}", path.display());
 
                             let mut local = tokio::task::spawn_blocking({
