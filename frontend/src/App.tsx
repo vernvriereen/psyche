@@ -356,7 +356,7 @@ function TrainingProgress({
 					<div className="font-eva h-6">PROGRESS</div>
 					<TextStretcher className="font-eva w-[60%] m-auto">{`${((numCompletedTokens / numTotalTokens) * 100).toFixed(2)}%`}</TextStretcher>
 					<div>
-						{formatNumber(numCompletedTokens, 1).slice(0, -1)}&nbsp;/&nbsp;
+						{formatNumber(numCompletedTokens, 1)}&nbsp;/&nbsp;
 						{formatNumber(numTotalTokens, 0)}
 					</div>
 				</div>
