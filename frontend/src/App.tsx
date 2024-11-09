@@ -11,7 +11,7 @@ import { TrainersMap } from "./TrainersMap";
 import nousGirl from "./assets/nousgirl.png";
 // import psycheLogo from "./assets/psyche.png";
 import { lerpColor } from "./color";
-import { formatNumber } from "./formatNumber";
+import { formatNumber, formatTimeRemaining } from "./formatNumber";
 import { lookupIp } from "./geoip";
 import { palette } from "./palette";
 import type { GeolocatedNode } from "./types";
@@ -200,8 +200,9 @@ const Run: React.FC<{
 				<TrainingProgress
 					numCompletedTokens={numCompletedTokens}
 					numTotalTokens={numTotalTokens}
+					tokensPerSecond={run.summary.train.tokens_per_sec}
 				/>
-				<div className="flex-1 grid xl:grid-cols-2 grid-cols-1 gap-8 auto-rows-fr">
+				<div className="flex-1 grid xl:grid-cols-2 grid-cols-1 gap-8 auto-rows-fr grid-rows-[inmax(auto,50vh)_minmax(auto,50vh)_auto_auto]">
 					<div className="grid xl:grid-cols-1 sm:grid-cols-2 grid-cols-1">
 						<ResponsiveLineGraph
 							numXMarkers={2}
@@ -338,17 +339,25 @@ function LoadingScreen({
 function TrainingProgress({
 	numCompletedTokens,
 	numTotalTokens,
-}: { numCompletedTokens: number; numTotalTokens: number }) {
+	tokensPerSecond,
+}: {
+	numCompletedTokens: number;
+	numTotalTokens: number;
+	tokensPerSecond: number;
+}) {
+	const estTimeRemaining =
+		(numTotalTokens - numCompletedTokens) / tokensPerSecond;
+
 	return (
-		<div className="flex flex-col py-4 font-eva">
+		<div className="flex flex-col py-4">
 			<div className="w-full border-2 border-primary" />
 			<div className="flex flex-row">
 				<div className="flex flex-col text-center pr-4 text-xl">
-					<div>PROGRESS</div>
-					<TextStretcher className="w-[60%] m-auto">{`${((numCompletedTokens / numTotalTokens) * 100).toFixed(2)}%`}</TextStretcher>
+					<div className="font-eva h-6">PROGRESS</div>
+					<TextStretcher className="font-eva w-[60%] m-auto">{`${((numCompletedTokens / numTotalTokens) * 100).toFixed(2)}%`}</TextStretcher>
 					<div>
-						{formatNumber(numCompletedTokens)}&nbsp;/&nbsp;
-						{formatNumber(numTotalTokens)}
+						{formatNumber(numCompletedTokens, 1).slice(0, -1)}&nbsp;/&nbsp;
+						{formatNumber(numTotalTokens, 0)}
 					</div>
 				</div>
 				<BucketedProgressBar
@@ -356,6 +365,15 @@ function TrainingProgress({
 					value={numCompletedTokens}
 					colors={[]}
 				/>
+				<div className="flex flex-col text-center pl-4 text-xl w-40">
+					<TextStretcher className="font-eva h-6 pt-1">VELOCITY</TextStretcher>
+					<div className="font-eva">
+						{formatNumber(tokensPerSecond, 0)}tok/s
+					</div>
+					<TextStretcher className="py-1 h-6 w-4/5 m-auto">
+						{`${formatTimeRemaining(estTimeRemaining)} left`}
+					</TextStretcher>
+				</div>
 			</div>
 			<div className="w-full border-2 border-primary" />
 		</div>

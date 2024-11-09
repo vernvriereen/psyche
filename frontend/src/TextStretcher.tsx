@@ -94,9 +94,9 @@ export function TextStretcher({
 			className={className}
 			style={{ display: "flex", alignItems: "center" }}
 		>
-			<div ref={textRef} className="text-nowrap">
+			<span ref={textRef} className="text-nowrap">
 				{children}
-			</div>
+			</span>
 		</div>
 	);
 }

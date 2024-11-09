@@ -79,7 +79,6 @@ export function TrainersMap({ nodes }: { nodes: Array<GeolocatedNode> }) {
 
 	const tw = useTailwind();
 
-	const primary = tw.theme.colors.primary;
 	const good = tw.theme.colors.orange[400];
 
 	return (
@@ -95,7 +94,6 @@ export function TrainersMap({ nodes }: { nodes: Array<GeolocatedNode> }) {
 					globeMaterial={globeMaterial}
 					showGraticules={false}
 					showAtmosphere={false}
-					atmosphereColor={primary}
 					backgroundColor="rgba(0,0,0,0)"
 					arcsData={arcs}
 					arcStartLat={
