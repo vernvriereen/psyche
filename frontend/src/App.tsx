@@ -145,7 +145,7 @@ const Run: React.FC<{
 				points: run.history
 					.slice(clipFirstEvalsN ?? 0, -1)
 					.map((historyItem) => ({
-						x: historyItem.coordinator.round,
+						x: historyItem._step,
 						y: historyItem.eval[evalName],
 					}))
 					.filter(({ y }) => y !== undefined)
@@ -211,7 +211,7 @@ const Run: React.FC<{
 							lines={[
 								{
 									points: run.history.map((s) => ({
-										x: s.coordinator.round,
+										x: s._step,
 										y: s.train.confidence * 100,
 									})),
 									className: palette[1],
@@ -227,7 +227,7 @@ const Run: React.FC<{
 							lines={[
 								{
 									points: run.history.map((s) => ({
-										x: s.coordinator.round,
+										x: s._step,
 										y: s.train.loss,
 									})),
 									className: palette[0],
