@@ -131,8 +131,9 @@ const Run: React.FC<{
 		run.config.data_indicies_per_batch *
 		run.config.batches_per_round *
 		tokensPerBatch;
+
 	const numCompletedTokens =
-		run.summary.coordinator.round *
+		run.summary._step *
 		run.config.data_indicies_per_batch *
 		run.config.batches_per_round *
 		tokensPerBatch;
