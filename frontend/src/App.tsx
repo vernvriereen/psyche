@@ -383,7 +383,6 @@ function TrainingProgress({
 function RunMembers({
 	nodes,
 }: { nodes: Record<string, { bandwidth: number }> }) {
-	const numNodes = Object.keys(nodes).length;
 	const nodeTotalBandwidth = Object.values(nodes).reduce(
 		(a, b) => a + b.bandwidth,
 		0,
@@ -393,10 +392,9 @@ function RunMembers({
 		<div className="mx-8 h-full overflow-hidden">
 			<div className="w-full border-2 border-primary mb-2 text-center bg-primary text-backdrop p-2 font-eva">
 				<TextStretcher className="pb-2">
-					ESTIMATED TOTAL NETWORK TRANSFER RATE
+					PER-NODE NETWORK TRANSFER RATE
 				</TextStretcher>
-				{convertBytes(nodeTotalBandwidth * numNodes)}
-				/s ({convertBytes(nodeTotalBandwidth)}/s download per node)
+				{convertBytes(nodeTotalBandwidth)}/s
 			</div>
 			<div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2 p-2">
 				{Object.entries(nodes).map(([id, { bandwidth }]) => (
