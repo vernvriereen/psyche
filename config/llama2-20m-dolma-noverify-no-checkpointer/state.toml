@@ -1,7 +1,7 @@
 run_id = "llama2-20m-dolma"
 run_state = "WaitingForMembers"
 warmup_time = 30
-cooldown_time = 0
+cooldown_time = 10
 checkpointers = []
 rounds_per_epoch = 20
 max_round_train_time = 30
