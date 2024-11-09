@@ -6,7 +6,7 @@ use crate::{
     tui::ClientTUIState,
     BroadcastMessage, Payload, PeerAnnouncement, SerializedDistroResult, WandBInfo,
 };
-use anyhow::{bail, Error, Result};
+use anyhow::{anyhow, bail, Error, Result};
 use psyche_coordinator::{
     assign_data_for_state, get_batch_ids_for_round, model, Committee, CommitteeProof,
     CommitteeSelection, Coordinator, HealthChecks, RunState, Witness, WitnessProof,
@@ -1568,9 +1568,9 @@ impl<T: NodeIdentity> State<T> {
             models,
             tokenizer,
             checkpoint_extra_files,
-        } = models??;
-        let data = data?;
-        let wandb_run = wandb_run??;
+        } = models?.map_err(|err| anyhow!("model load error: {err}"))?;
+        let data = data.map_err(|err| anyhow!("data load error: {err}"))?;
+        let wandb_run = wandb_run?.map_err(|err| anyhow!("wandb load error: {err}"))?;
         let mut tp_models = Vec::new();
         for model in models {
             if tp_models
