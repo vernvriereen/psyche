@@ -38,7 +38,7 @@ export const App = () => {
 	const [fading, setFading] = useState<"loading" | "fading" | false>("loading");
 	const [error, setError] = useState(false);
 	const fetchWandbData = useCallback(() => {
-		getData("nous_research", "distro-live-test", "15b-100bt-2", 5000).then(
+		getData("nous_research", "distro-live-test", "15b-100bt-6", 5000).then(
 			(data) => {
 				if (data) {
 					setWandbRun(data);
