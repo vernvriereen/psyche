@@ -4,6 +4,7 @@ use psyche_core::{CosineLR, LearningRateScheduler};
 use psyche_data_provider::{download_model_repo_sync, LocalDataProvider};
 use psyche_modeling::{Batcher, CausalLM, CommunicatorId, LlamaForCausalLM};
 use rand::Rng;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -56,6 +57,9 @@ struct Args {
 
     #[arg(long)]
     tensor_parallelism: Option<usize>,
+
+    #[arg(long, default_value_t = false)]
+    optim_stats: bool,
 }
 
 fn train(
@@ -104,7 +108,22 @@ fn train(
         eps: args.eps,
         amsgrad: false,
     };
+
     let mut opt = adamw.build(&model.variables, args.learning_rate)?;
+
+    let mut index_to_name = HashMap::new();
+    let named_variables = model.variables.variables().into_iter().collect::<Vec<_>>();
+
+    for (index, variable) in opt.trainable_variables().iter().enumerate() {
+        if let Some(var) = named_variables
+            .iter()
+            .find(|x| x.1.is_set_to(variable))
+            .map(|x| x.0.clone())
+        {
+            index_to_name.insert(index, var);
+        }
+    }
+
     let grad_accum_steps = args.total_batch / args.micro_batch;
     let grad_accum_divisor = grad_accum_steps as f32;
     for step in 0..args.total_steps {
@@ -121,6 +140,21 @@ fn train(
             avg_loss += loss_value;
         }
         avg_loss /= grad_accum_divisor;
+
+        if rank == 0 && args.optim_stats {
+            let mut variables = opt.trainable_variables_with_sharding();
+            for (index, (variable, _shard)) in variables.iter_mut().enumerate() {
+                if let Some(name) = index_to_name.get(&index) {
+                    let grad_energy: f64 = variable
+                        .grad()
+                        .norm_scalaropt_dtype(1, Kind::BFloat16)
+                        .try_into()
+                        .unwrap();
+                    println!("{name} {grad_energy}")
+                }
+            }
+        }
+
         opt.clip_grad_norm(args.max_grad_norm);
         opt.step();
         opt.zero_grad();
@@ -128,6 +162,7 @@ fn train(
             .duration_since(start_time)
             .unwrap()
             .as_secs_f32();
+
         if rank == 0 {
             println!(
                 "step: {}, duration: {:.1}, lr: {:.1e}, loss: {:.4}",
