@@ -69,6 +69,18 @@ struct Args {
 
     #[clap(long, default_value_t = false)]
     write_log: bool,
+
+    #[clap(long, env)]
+    wandb_project: Option<String>,
+
+    #[clap(long, env)]
+    wandb_group: Option<String>,
+
+    #[clap(long, env)]
+    wandb_entity: Option<String>,
+
+    #[clap(long, default_value_t = false)]
+    optim_stats: bool,
 }
 
 fn validate_num_clients(s: &str) -> Result<usize> {
@@ -362,6 +374,16 @@ fn start_client(args: &Args, i: usize, run_id: &String, print: bool, start_time:
         }
     }
 
+    if let Some(entity) = &args.wandb_entity {
+        cmd.push(format!(" --wandb-entity {entity}"));
+    }
+    if let Some(group) = &args.wandb_group {
+        cmd.push(format!(" --wandb-group {group}"));
+    }
+    if let Some(project) = &args.wandb_project {
+        cmd.push(format!(" --wandb-project {project}"));
+    }
+
     if args.write_log {
         let log_dir = format!(
             "./logs/{}",
@@ -373,6 +395,10 @@ fn start_client(args: &Args, i: usize, run_id: &String, print: bool, start_time:
         );
         std::fs::create_dir_all(&log_dir).unwrap();
         cmd.push(format!(" --write-log {log_dir}/client-{}.txt", i - 1))
+    }
+
+    if args.optim_stats {
+        cmd.push(" --optim-stats")
     }
 
     if print {
