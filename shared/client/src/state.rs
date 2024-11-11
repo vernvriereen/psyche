@@ -1572,6 +1572,9 @@ impl<T: NodeIdentity> State<T> {
                     if let Some(entity) = wandb_info.entity {
                         run_info = run_info.entity(entity);
                     }
+                    if let Some(group) = wandb_info.group {
+                        run_info = run_info.group(group);
+                    }
                     Ok(Some(wandb.new_run(run_info.build()?).await?))
                 }
                 None => Ok(None),

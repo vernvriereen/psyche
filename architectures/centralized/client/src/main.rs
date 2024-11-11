@@ -87,6 +87,9 @@ enum Commands {
         wandb_run: Option<String>,
 
         #[clap(long, env)]
+        wandb_group: Option<String>,
+
+        #[clap(long, env)]
         wandb_entity: Option<String>,
 
         /// a 32-byte long hex string. WARNING: providing the same shuffle to two nodes will result in a LOT of duplicated & discarded training work.
@@ -131,6 +134,7 @@ async fn async_main() -> Result<()> {
             hub_repo,
             wandb_run,
             wandb_entity,
+            wandb_group,
             wandb_project,
             fixed_batch_shuffle,
             write_log,
@@ -188,23 +192,6 @@ async fn async_main() -> Result<()> {
                 (_, None, _) => None,
             };
 
-            let wandb_info = match std::env::var("WANDB_API_KEY") {
-                Ok(wandb_api_key) => Some(WandBInfo {
-                    project: wandb_project.unwrap_or("psyche".to_string()),
-                    run: wandb_run.unwrap_or(run_id.clone()),
-                    entity: wandb_entity,
-                    api_key: wandb_api_key,
-                }),
-                Err(_) => {
-                    match wandb_entity.is_some() || wandb_run.is_some() || wandb_project.is_some() {
-                        true => bail!(
-                            "WANDB_API_KEY environment variable must be set for wandb integration"
-                        ),
-                        false => None,
-                    }
-                }
-            };
-
             let eval_tasks = match eval_tasks {
                 Some(eval_tasks) => {
                     let result: Result<Vec<psyche_eval::Task>> = eval_tasks
@@ -243,6 +230,30 @@ async fn async_main() -> Result<()> {
                     .unwrap()
                 })
                 .unwrap_or_else(SecretKey::generate);
+
+            let wandb_info = match std::env::var("WANDB_API_KEY") {
+                Ok(wandb_api_key) => Some(WandBInfo {
+                    project: wandb_project.unwrap_or("psyche".to_string()),
+                    run: wandb_run.unwrap_or_else(|| {
+                        format!("{}-{}", run_id.clone(), private_key.public().fmt_short())
+                    }),
+                    entity: wandb_entity,
+                    api_key: wandb_api_key,
+                    group: wandb_group,
+                }),
+                Err(_) => {
+                    match wandb_entity.is_some()
+                        || wandb_run.is_some()
+                        || wandb_project.is_some()
+                        || wandb_group.is_some()
+                    {
+                        true => bail!(
+                            "WANDB_API_KEY environment variable must be set for wandb integration"
+                        ),
+                        false => None,
+                    }
+                }
+            };
 
             let (cancel, tx_tui_state) =
                 maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;

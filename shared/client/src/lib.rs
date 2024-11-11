@@ -18,6 +18,7 @@ pub use tui::{ClientTUI, ClientTUIState};
 pub struct WandBInfo {
     pub project: String,
     pub run: String,
+    pub group: Option<String>,
     pub entity: Option<String>,
     pub api_key: String,
 }
