@@ -183,7 +183,7 @@ impl App {
         let (cancel, tx_tui_state) =
             maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;
 
-        let tick_interval = interval(Duration::from_millis(1000));
+        let tick_interval = interval(Duration::from_millis(500));
 
         let update_tui_interval = interval(Duration::from_millis(150));
 

@@ -99,6 +99,7 @@ impl Trainer {
         optimizer: model::Optimizer,
         micro_batch_size: usize,
         run_state: Arc<AtomicUsize>,
+        stats: bool,
     ) -> Self {
         assert!(!models.is_empty());
         let first_model_device = models[0].device();
@@ -143,6 +144,7 @@ impl Trainer {
                         0.0,
                         index,
                         model.comm.clone(),
+                        stats
                     )
                     .into(),
                     compression_decay_warmup_steps,

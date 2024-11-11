@@ -86,6 +86,7 @@ pub struct AppParams {
     pub hub_read_token: Option<String>,
     pub wandb_info: Option<WandBInfo>,
     pub batch_shuffle_type: BatchShuffleType,
+    pub optim_stats: bool,
 }
 
 impl AppBuilder {
@@ -134,6 +135,7 @@ impl AppBuilder {
             identity: p.private_key.public().into(),
             batch_shuffle_type: p.batch_shuffle_type,
             private_key: p.private_key,
+            optim_stats: p.optim_stats,
         };
         app.run(p2p, state_options).await
     }

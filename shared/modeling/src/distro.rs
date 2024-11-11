@@ -463,6 +463,7 @@ pub struct DistroResult {
     pub sparse_val: Tensor,
     pub xshape: Vec<i64>,
     pub totalk: i64,
+    pub stats: Option<HashMap<String, f64>>,
 }
 
 impl Clone for DistroResult {
@@ -472,6 +473,7 @@ impl Clone for DistroResult {
             sparse_val: self.sparse_val.shallow_clone(),
             xshape: self.xshape.clone(),
             totalk: self.totalk,
+            stats: self.stats.clone(),
         }
     }
 }
@@ -485,6 +487,7 @@ pub struct Distro {
     shard_index: usize,
     #[allow(unused)]
     comm: Option<Arc<Communicator>>,
+    index_to_name: HashMap<usize, Option<String>>,
 }
 
 impl Distro {
@@ -495,6 +498,7 @@ impl Distro {
         weight_decay: f64,
         shard_index: usize,
         comm: Option<Arc<Communicator>>,
+        stats: bool,
     ) -> Self {
         let _no_grad = tch::no_grad_guard();
         let mut sgd: Optimizer = Sgd {
@@ -507,13 +511,24 @@ impl Distro {
         .unwrap();
         sgd.zero_grad_with_set_to_none(false);
 
+        let named_variables = vs.variables().into_iter().collect::<Vec<_>>();
         let variables = sgd.trainable_variables_with_sharding();
         let mut state = Vec::with_capacity(variables.len());
+        let mut index_to_name = HashMap::new();
 
-        for (variable, _) in &variables {
+        for (index, (variable, _)) in variables.iter().enumerate() {
             state.push(State {
                 delta: variable.zeros_like(),
             });
+            if stats {
+                index_to_name.insert(
+                    index,
+                    named_variables
+                        .iter()
+                        .find(|x| x.1.is_set_to(&variable))
+                        .map(|x| x.0.clone()),
+                );
+            }
         }
 
         let transform = TransformDCT::new(&variables, compression_chunk);
@@ -526,6 +541,7 @@ impl Distro {
             transform,
             shard_index,
             comm,
+            index_to_name,
         }
     }
 
@@ -545,8 +561,16 @@ impl Distro {
             if self.weight_decay != 0.0 {
                 variable.multiply_scalar_(1.0 - lr * self.weight_decay);
             }
+            let name = self.index_to_name.get(&index);
 
             let delta = &mut self.state.get_mut(index).unwrap().delta;
+            let delta_grad_energies: Option<(f64, f64)> = match &name {
+                Some(Some(_)) => Some((
+                    delta.norm().try_into().unwrap(),
+                    variable.grad().norm().try_into().unwrap(),
+                )),
+                _ => None,
+            };
 
             let mut compression_decay = self.compression_decay;
             if warmup_factor < 1.0 {
@@ -562,7 +586,7 @@ impl Distro {
             // add delta to new gradient
             delta.g_add_(&variable.grad().multiply_scalar(lr));
 
-            match shard {
+            let (sparse_idx, sparse_val, xshape, totalk, transmit_grad) = match shard {
                 #[cfg(feature = "parallelism")]
                 Some(shard) => {
                     assert!(self.comm.is_some());
@@ -596,15 +620,7 @@ impl Distro {
                     ));
                     let transmit_grad = tensor_shard(&transmit_grad, shard, self.shard_index);
 
-                    // Remove transmitted from delta
-                    delta.g_sub_(&transmit_grad);
-
-                    ret.push(DistroResult {
-                        sparse_idx,
-                        sparse_val,
-                        xshape,
-                        totalk,
-                    });
+                    (sparse_idx, sparse_val, xshape, totalk, transmit_grad)
                 }
                 #[cfg(not(feature = "parallelism"))]
                 Some(shard) => panic!("Sharded tensor without parallelism feature?"),
@@ -626,17 +642,38 @@ impl Distro {
                         variable.device(),
                     ));
 
-                    // Remove transmitted from delta
-                    delta.g_sub_(&transmit_grad);
-
-                    ret.push(DistroResult {
-                        sparse_idx,
-                        sparse_val,
-                        xshape,
-                        totalk,
-                    });
+                    (sparse_idx, sparse_val, xshape, totalk, transmit_grad)
                 }
-            }
+            };
+
+            let transmit_energy: Option<f64> = match &name {
+                Some(Some(_)) => Some(transmit_grad.norm().try_into().unwrap()),
+                _ => None,
+            };
+
+            // Remove transmitted from delta
+            delta.g_sub_(&transmit_grad);
+
+            ret.push(DistroResult {
+                sparse_idx,
+                sparse_val,
+                xshape,
+                totalk,
+                stats: match name {
+                    Some(Some(name)) => Some(HashMap::from([
+                        (
+                            format!("{name}.delta_energy"),
+                            delta_grad_energies.map(|x| x.0).unwrap(),
+                        ),
+                        (
+                            format!("{name}.grad_energy"),
+                            delta_grad_energies.map(|x| x.1).unwrap(),
+                        ),
+                        (format!("{name}.transmit_energy"), transmit_energy.unwrap()),
+                    ])),
+                    _ => None,
+                },
+            });
         }
         ret
     }

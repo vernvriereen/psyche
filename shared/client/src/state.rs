@@ -145,6 +145,7 @@ pub struct State<T: NodeIdentity> {
     wandb_log: LogData,
     retried_downloads: HashMap<psyche_network::Hash, usize>,
     all_batches_finished_deserializing: Arc<AtomicBool>,
+    optim_stats: bool,
     /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
     _last_observed_num_batches_remaining: usize,
     _eval_results: HashMap<String, Vec<f64>>,
@@ -163,6 +164,7 @@ pub struct StateOptions<T: NodeIdentity> {
     pub hub_read_token: Option<String>,
     pub wandb_info: Option<WandBInfo>,
     pub batch_shuffle_type: BatchShuffleType,
+    pub optim_stats: bool,
 }
 
 impl<T: NodeIdentity> State<T> {
@@ -180,6 +182,7 @@ impl<T: NodeIdentity> State<T> {
             hub_read_token,
             wandb_info,
             batch_shuffle_type,
+            optim_stats,
         }: StateOptions<T>,
     ) -> Self {
         assert!(data_parallelism > 0);
@@ -240,6 +243,7 @@ impl<T: NodeIdentity> State<T> {
             wandb_log: LogData::new(),
             retried_downloads: HashMap::new(),
             all_batches_finished_deserializing: Arc::new(AtomicBool::new(false)),
+            optim_stats,
             _last_observed_num_batches_remaining: 0,
         }
     }
@@ -379,6 +383,15 @@ impl<T: NodeIdentity> State<T> {
 
         if output.cancelled || !self.is_run_state(RunState::RoundTrain) {
             return Ok(ToSend::Nothing);
+        }
+        if self.round_losses.is_empty() {
+            for result in &output.distro_results {
+                if let Some(stats) = result.stats.as_ref() {
+                    for (name, value) in stats {
+                        self.wandb_log.insert(format!("optim/{name}"), *value);
+                    }
+                }
+            }
         }
         self.round_losses.push(output.loss);
         let (committee_proof, _, _) = self
@@ -991,6 +1004,7 @@ impl<T: NodeIdentity> State<T> {
                         self.micro_batch_size
                             .unwrap_or(state.data_indicies_per_batch as usize),
                         self.atomic_run_state.clone(),
+                        self.optim_stats,
                     )
                 })
                 .collect();

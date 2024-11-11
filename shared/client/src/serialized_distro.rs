@@ -94,6 +94,7 @@ impl TryFrom<&SerializedDistroResult> for DistroResult {
             .pin_memory(Device::Cuda(0)), // index not actually used, just to know backend
             xshape: value.xshape.iter().map(|x| *x as i64).collect(),
             totalk: value.totalk,
+            stats: None,
         })
     }
 }

@@ -95,6 +95,9 @@ enum Commands {
 
         #[clap(long, env)]
         write_log: Option<PathBuf>,
+
+        #[clap(long, default_value_t = false, env)]
+        optim_stats: bool,
     },
 }
 
@@ -131,6 +134,7 @@ async fn async_main() -> Result<()> {
             wandb_project,
             fixed_batch_shuffle,
             write_log,
+            optim_stats,
         } => {
             #[cfg(target_os = "windows")]
             {
@@ -260,6 +264,7 @@ async fn async_main() -> Result<()> {
                 hub_read_token,
                 wandb_info,
                 batch_shuffle_type,
+                optim_stats,
             })
             .run()
             .await
