@@ -566,8 +566,15 @@ impl Distro {
             let delta = &mut self.state.get_mut(index).unwrap().delta;
             let delta_grad_energies: Option<(f64, f64)> = match &name {
                 Some(Some(_)) => Some((
-                    delta.norm().try_into().unwrap(),
-                    variable.grad().norm().try_into().unwrap(),
+                    delta
+                        .norm_scalaropt_dtype(1, Kind::BFloat16)
+                        .try_into()
+                        .unwrap(),
+                    variable
+                        .grad()
+                        .norm_scalaropt_dtype(1, Kind::BFloat16)
+                        .try_into()
+                        .unwrap(),
                 )),
                 _ => None,
             };
@@ -647,7 +654,12 @@ impl Distro {
             };
 
             let transmit_energy: Option<f64> = match &name {
-                Some(Some(_)) => Some(transmit_grad.norm().try_into().unwrap()),
+                Some(Some(_)) => Some(
+                    transmit_grad
+                        .norm_scalaropt_dtype(1, Kind::BFloat16)
+                        .try_into()
+                        .unwrap(),
+                ),
                 _ => None,
             };
 
