@@ -148,8 +148,9 @@ impl RmsNorm {
 impl Module for RmsNorm {
     fn forward(&self, xs: &Tensor) -> Tensor {
         let kind = xs.kind();
-        let norm_xs = (xs.pow_tensor_scalar(2).mean_dim(-1, true, Kind::Float) + self.eps).sqrt();
-        let xs_normed = xs / norm_xs;
+        let xs = xs.to_kind(Kind::Float);
+        let variance = xs.pow_tensor_scalar(2).mean_dim(-1, true, Kind::Float);
+        let xs_normed = xs * (variance + self.eps).rsqrt();
         (&self.weight * xs_normed).to_kind(kind)
     }
 }
