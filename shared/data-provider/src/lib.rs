@@ -10,7 +10,7 @@ pub use hub::{
     download_dataset_repo_async, download_dataset_repo_sync, download_model_repo_async,
     download_model_repo_sync, upload_model_repo_async,
 };
-pub use local::LocalDataProvider;
+pub use local::{LocalDataProvider, Shuffle};
 pub use parquet::record::{ListAccessor, MapAccessor, RowAccessor};
 pub use remote::{DataProviderTcpClient, DataProviderTcpServer, DataServerTui};
 pub use token_size::TokenSize;

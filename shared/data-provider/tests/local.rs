@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use pretty_assertions::assert_eq;
-use psyche_data_provider::{LocalDataProvider, TokenSize, TokenizedDataProvider};
+use psyche_data_provider::{LocalDataProvider, Shuffle, TokenSize, TokenizedDataProvider};
 use tokenizers::Tokenizer;
 use tokio::fs::read_to_string;
 
@@ -20,8 +20,13 @@ const SEED: [u8; 32] = [
 #[tokio::test]
 async fn loads_dolma_subset() {
     let data_dir = test_path(&["resources", "dolma", "data"]);
-    let mut data_loader =
-        LocalDataProvider::new_from_directory(data_dir, TokenSize::TwoBytes, 2048, SEED).unwrap();
+    let mut data_loader = LocalDataProvider::new_from_directory(
+        data_dir,
+        TokenSize::TwoBytes,
+        2048,
+        Shuffle::Seeded(SEED),
+    )
+    .unwrap();
     let samples = data_loader.get_samples(&[0, 1]).await.unwrap();
 
     let tokenizer = Tokenizer::from_file(test_path(&["resources", "llama2_tokenizer.json"]))
@@ -50,8 +55,13 @@ async fn loads_dolma_subset() {
 #[tokio::test]
 async fn loads_fineweb_subset() {
     let data_dir = test_path(&["resources", "fineweb", "data"]);
-    let mut data_loader =
-        LocalDataProvider::new_from_directory(data_dir, TokenSize::TwoBytes, 2048, SEED).unwrap();
+    let mut data_loader = LocalDataProvider::new_from_directory(
+        data_dir,
+        TokenSize::TwoBytes,
+        2048,
+        Shuffle::Seeded(SEED),
+    )
+    .unwrap();
     let samples = data_loader.get_samples(&[0, 1]).await.unwrap();
 
     let tokenizer = Tokenizer::from_file(test_path(&["resources", "llama2_tokenizer.json"]))

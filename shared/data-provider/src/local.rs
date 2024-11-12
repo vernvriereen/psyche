@@ -26,6 +26,11 @@ pub struct LocalDataProvider {
     token_size_in_bytes: TokenSize,
 }
 
+pub enum Shuffle {
+    Seeded(<ChaCha8Rng as SeedableRng>::Seed),
+    DontShuffle,
+}
+
 impl LengthKnownDataProvider for LocalDataProvider {
     fn len(&self) -> usize {
         self.sequences.len()
@@ -36,7 +41,7 @@ impl LocalDataProvider {
         dir: impl AsRef<std::path::Path>,
         token_size_in_bytes: TokenSize,
         num_tokens_per_sequence: usize, // num tokens per sequence
-        random_seed: <ChaCha8Rng as SeedableRng>::Seed,
+        shuffle: Shuffle,
     ) -> Result<Self> {
         let dir = std::fs::canonicalize(&dir)
             .map_err(|e| anyhow!("Failed to open data directory {:?}: {e}", dir.as_ref()))?;
@@ -71,7 +76,10 @@ impl LocalDataProvider {
             dir.display()
         );
 
-        let mut deterministic_rng = ChaCha8Rng::from_seed(random_seed);
+        let deterministic_rng = match shuffle {
+            Shuffle::Seeded(random_seed) => Some(ChaCha8Rng::from_seed(random_seed)),
+            Shuffle::DontShuffle => None,
+        };
         let seq_len_in_bytes = num_tokens_per_sequence * usize::from(token_size_in_bytes);
 
         let sequences: Vec<SequencePointer> = {
@@ -89,7 +97,9 @@ impl LocalDataProvider {
                 })
                 .collect();
             // and shuffle the whole collection, to avoid bias from a specific file
-            all_indexes.shuffle(&mut deterministic_rng);
+            if let Some(mut deterministic_rng) = deterministic_rng {
+                all_indexes.shuffle(&mut deterministic_rng);
+            }
             all_indexes
         };
 
