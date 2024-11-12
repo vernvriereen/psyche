@@ -78,6 +78,7 @@ pub enum Optimizer {
         clip_grad_norm: Option<f32>,
     },
     Distro {
+        clip_grad_norm: Option<f32>,
         compression_decay: f32,
         compression_decay_warmup_steps: u32,
         compression_topk: u16,

@@ -1,6 +1,7 @@
 mod auto_tokenizer;
 mod batcher;
 mod distro;
+mod fp32_gradient_accumulator;
 mod llama;
 mod llama_for_causal_lm;
 mod safetensor_utils;
@@ -12,6 +13,7 @@ mod traits;
 pub use auto_tokenizer::auto_tokenizer;
 pub use batcher::Batcher;
 pub use distro::{CompressDCT, Distro, DistroResult};
+pub use fp32_gradient_accumulator::Fp32GradientAccumulator;
 pub use llama::{Llama, LlamaEosToks};
 pub use llama_for_causal_lm::{LlamaConfig, LlamaForCausalLM};
 pub use safetensor_utils::{load_safetensors_into_variables, save_tensors_into_safetensors};

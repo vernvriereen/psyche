@@ -545,7 +545,6 @@ impl Distro {
         }
     }
 
-    #[allow(unused)]
     pub fn generate(
         &mut self,
         lr: f64,
@@ -559,7 +558,7 @@ impl Distro {
         for (index, (variable, shard)) in variables.iter_mut().enumerate() {
             // step-Weight decay
             if self.weight_decay != 0.0 {
-                variable.multiply_scalar_(1.0 - lr * self.weight_decay);
+                let _ = variable.g_mul_scalar_(1.0 - lr * self.weight_decay);
             }
             let name = self.index_to_name.get(&index);
 
@@ -567,12 +566,12 @@ impl Distro {
             let delta_grad_energies: Option<(f64, f64)> = match &name {
                 Some(Some(_)) => Some((
                     delta
-                        .norm_scalaropt_dtype(1, Kind::BFloat16)
+                        .norm_scalaropt_dtype(1, Kind::Float)
                         .try_into()
                         .unwrap(),
                     variable
                         .grad()
-                        .norm_scalaropt_dtype(1, Kind::BFloat16)
+                        .norm_scalaropt_dtype(1, Kind::Float)
                         .try_into()
                         .unwrap(),
                 )),
@@ -587,20 +586,18 @@ impl Distro {
 
             // decay delta
             if compression_decay != 1.0 {
-                delta.multiply_scalar_(compression_decay);
+                let _ = delta.g_mul_scalar_(compression_decay);
             }
 
             // add delta to new gradient
-            delta.g_add_(&variable.grad().multiply_scalar(lr));
+            let _ = delta.g_add_(&variable.grad().multiply_scalar(lr));
 
             let (sparse_idx, sparse_val, xshape, totalk, transmit_grad) = match shard {
                 #[cfg(feature = "parallelism")]
                 Some(shard) => {
                     assert!(self.comm.is_some());
                     let comm = self.comm.as_ref().unwrap();
-                    let rank = comm.rank();
                     let world_size = comm.size();
-                    let kind = delta.kind();
 
                     // gather delta
                     let shards = (0..world_size)
@@ -656,7 +653,7 @@ impl Distro {
             let transmit_energy: Option<f64> = match &name {
                 Some(Some(_)) => Some(
                     transmit_grad
-                        .norm_scalaropt_dtype(1, Kind::BFloat16)
+                        .norm_scalaropt_dtype(1, Kind::Float)
                         .try_into()
                         .unwrap(),
                 ),
@@ -664,7 +661,7 @@ impl Distro {
             };
 
             // Remove transmitted from delta
-            delta.g_sub_(&transmit_grad);
+            let _ = delta.g_sub_(&transmit_grad);
 
             ret.push(DistroResult {
                 sparse_idx,
@@ -736,7 +733,19 @@ impl Distro {
         // SGD step
         self.sgd.set_lr(lr);
         self.sgd.step();
+        self.zero_grad();
+    }
+
+    pub fn zero_grad(&mut self) {
         self.sgd.zero_grad_with_set_to_none(false);
+    }
+
+    pub fn trainable_variables(&self) -> Vec<Tensor> {
+        self.sgd.trainable_variables()
+    }
+
+    pub fn clip_grad_norm(&self, max_grad_norm: f64) {
+        self.sgd.clip_grad_norm(max_grad_norm);
     }
 }
 

@@ -205,7 +205,13 @@ impl CausalLM for LlamaForCausalLM {
                 let shift_labels = labels.slice(1, 1, None, 1).contiguous();
                 let shift_logits = shift_logits.view([-1i64, self.config.vocab_size as i64]);
                 let shift_targets = shift_labels.view(-1).to_kind(Kind::Int64);
-                let loss = shift_logits.cross_entropy_for_logits(&shift_targets);
+                let loss = shift_logits.cross_entropy_loss::<Tensor>(
+                    &shift_targets,
+                    None,
+                    tch::Reduction::Mean,
+                    -100,
+                    0.0,
+                );
                 Some(loss)
             }
             None => None,

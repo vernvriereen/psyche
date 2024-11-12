@@ -156,9 +156,9 @@ impl Module for RmsNorm {
 
 #[derive(Debug)]
 struct Mlp {
-    pub(crate) c_fc1: nn::Linear,
-    pub(crate) c_fc2: nn::Linear,
-    pub(crate) c_proj: TensorParallelRowLinear,
+    pub(crate) gate_proj: nn::Linear,
+    pub(crate) up_proj: nn::Linear,
+    pub(crate) down_proj: TensorParallelRowLinear,
 }
 
 impl Mlp {
@@ -172,9 +172,9 @@ impl Mlp {
             }),
             ..Default::default()
         };
-        let c_fc1 = nn::linear(&vs / "gate_proj", n_embd, n_hidden, c);
-        let c_fc2 = nn::linear(&vs / "up_proj", n_embd, n_hidden, c);
-        let c_proj = TensorParallelRowLinear::new(
+        let gate_proj = nn::linear(&vs / "gate_proj", n_embd, n_hidden, c);
+        let up_proj = nn::linear(&vs / "up_proj", n_embd, n_hidden, c);
+        let down_proj = TensorParallelRowLinear::new(
             nn::linear(
                 &vs / "down_proj",
                 n_hidden,
@@ -191,17 +191,17 @@ impl Mlp {
             comm,
         );
         Self {
-            c_fc1,
-            c_fc2,
-            c_proj,
+            gate_proj,
+            up_proj,
+            down_proj,
         }
     }
 }
 
 impl Module for Mlp {
     fn forward(&self, xs: &Tensor) -> Tensor {
-        let xs = xs.apply(&self.c_fc1).silu() * xs.apply(&self.c_fc2);
-        xs.apply(&self.c_proj)
+        self.down_proj
+            .forward(&(self.gate_proj.forward(&xs).silu() * self.up_proj.forward(&xs)))
     }
 }
 
@@ -313,8 +313,9 @@ impl CausalSelfAttention {
         let k = repeat_kv(&k, local_n_head / local_n_kvhead);
         let v = repeat_kv(&v, local_n_head / local_n_kvhead);
         let y = if self.use_sdpa {
+            let scale = Some(1.0 / (self.head_dim as f64).sqrt());
             let att =
-                Tensor::scaled_dot_product_attention::<Tensor>(&q, &k, &v, None, 0.0, t > 1, None);
+                Tensor::scaled_dot_product_attention::<Tensor>(&q, &k, &v, None, 0.0, t > 1, scale);
             att.transpose(1, 2).reshape([b, t, c / self.tp_size])
         } else {
             let k_shape = k.size();

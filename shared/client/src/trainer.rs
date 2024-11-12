@@ -5,7 +5,10 @@ use psyche_coordinator::{
     RunState,
 };
 use psyche_core::CancellableBarrier;
-use psyche_modeling::{unsharded_cpu_variables, CausalLM, Distro, DistroResult, LlamaForCausalLM};
+use psyche_modeling::{
+    unsharded_cpu_variables, CausalLM, Distro, DistroResult, Fp32GradientAccumulator,
+    LlamaForCausalLM,
+};
 use std::{
     collections::HashMap,
     ops::ControlFlow,
@@ -31,6 +34,7 @@ enum Optimizer {
     },
     Distro {
         optimizer: Box<Distro>,
+        clip_grad_norm: Option<f32>,
         compression_decay_warmup_steps: u32,
         compression_topk: i64,
         compression_topk_startup: i64,
@@ -129,6 +133,7 @@ impl Trainer {
                     clip_grad_norm,
                 },
                 model::Optimizer::Distro {
+                    clip_grad_norm,
                     compression_decay,
                     compression_decay_warmup_steps,
                     compression_topk,
@@ -144,9 +149,10 @@ impl Trainer {
                         0.0,
                         index,
                         model.comm.clone(),
-                        stats
+                        stats,
                     )
                     .into(),
+                    clip_grad_norm,
                     compression_decay_warmup_steps,
                     compression_topk: compression_topk as i64,
                     compression_topk_startup: compression_topk_startup as i64,
@@ -183,6 +189,7 @@ impl Trainer {
         model: &mut LlamaForCausalLM,
         data: &[Vec<i32>],
         barrier: &Arc<CancellableBarrier>,
+        loss_scale: Option<f64>,
     ) -> Result<Option<f32>> {
         let device = model.device();
         let inputs = Tensor::from_slice2(data).to(device);
@@ -191,7 +198,10 @@ impl Trainer {
             return Ok(None);
         }
         let (_, loss) = model.forward(&inputs, Some(&targets), None);
-        let loss = loss.ok_or(Error::msg("No loss"))?;
+        let mut loss = loss.ok_or(Error::msg("No loss"))?;
+        if let Some(loss_scale) = loss_scale {
+            loss = loss / loss_scale;
+        }
         loss.backward();
         if barrier.wait().is_err() {
             return Ok(None);
@@ -335,10 +345,11 @@ impl Trainer {
         lr_scheduler: AnyLearningRateScheduler,
         barrier: Arc<CancellableBarrier>,
     ) {
-        if let Err(err) = Self::forward_backward(&mut model, &[vec![0i32]], &barrier) {
+        if let Err(err) = Self::forward_backward(&mut model, &[vec![0i32]], &barrier, None) {
             error!("Test forward/backward gave error {err}");
             return;
         }
+        let mut grad_accum: Option<Fp32GradientAccumulator> = None;
         loop {
             match assignment.recv() {
                 Ok(ParallelAssignment::Train {
@@ -359,13 +370,30 @@ impl Trainer {
                         error!("Micro batch size doesn't evenly divide batch size");
                         return;
                     }
+
                     let grad_accum_steps = data.len() / micro_batch_size;
-                    let grad_accum_divisor = grad_accum_steps as f32;
+                    if grad_accum_steps != 1 && grad_accum.is_none() {
+                        debug!("Allocating FP32 gradient accumulator");
+                        let parameters = match &mut optimizer {
+                            Optimizer::AdamW { optimizer, .. } => optimizer.trainable_variables(),
+                            Optimizer::Distro { optimizer, .. } => optimizer.trainable_variables(),
+                        };
+                        grad_accum = Some(Fp32GradientAccumulator::new(&parameters, model.device()))
+                    }
+                    let grad_accum_divisor = grad_accum_steps as f64;
                     let micro_batches = data.chunks_exact(micro_batch_size);
                     assert_eq!(micro_batches.len(), grad_accum_steps);
+                    match &mut grad_accum {
+                        Some(grad_accum) => grad_accum.zero_grad(),
+                        None => match &mut optimizer {
+                            Optimizer::AdamW { optimizer, .. } => optimizer.zero_grad(),
+                            Optimizer::Distro { optimizer, .. } => optimizer.zero_grad(),
+                        },
+                    };
+
                     let mut loss = 0f32;
                     let mut cancelled = false;
-                    for micro_batch in micro_batches {
+                    for (index, micro_batch) in micro_batches.enumerate() {
                         if RunState::try_from(run_state.load(Ordering::Relaxed)).unwrap()
                             != RunState::RoundTrain
                         {
@@ -374,7 +402,12 @@ impl Trainer {
                             debug!("Aborting training, run state changed");
                             break;
                         }
-                        match Self::forward_backward(&mut model, micro_batch, &barrier) {
+                        match Self::forward_backward(
+                            &mut model,
+                            micro_batch,
+                            &barrier,
+                            Some(grad_accum_divisor),
+                        ) {
                             Ok(Some(batch_loss)) => loss += batch_loss,
                             Ok(None) => {
                                 // cancelled barrier catching race to on run_state
@@ -387,8 +420,10 @@ impl Trainer {
                                 return;
                             }
                         }
+                        if let Some(grad_accumulator) = &mut grad_accum {
+                            grad_accumulator.accumulate_gradients(index == grad_accum_steps - 1);
+                        }
                     }
-                    loss /= grad_accum_divisor;
                     let distro_results = match cancelled {
                         false => match &mut optimizer {
                             Optimizer::AdamW {
@@ -397,12 +432,16 @@ impl Trainer {
                             } => None,
                             Optimizer::Distro {
                                 optimizer,
+                                clip_grad_norm,
                                 compression_decay_warmup_steps,
                                 compression_topk,
                                 compression_topk_startup,
                                 compression_topk_startup_steps,
                                 quantize,
                             } => {
+                                if let Some(clip_grad_norm) = clip_grad_norm {
+                                    optimizer.clip_grad_norm(*clip_grad_norm as f64);
+                                }
                                 let ret = optimizer.generate(
                                     lr_scheduler.get_lr(step),
                                     match step > *compression_decay_warmup_steps {

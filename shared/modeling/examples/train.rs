@@ -125,7 +125,7 @@ fn train(
     }
 
     let grad_accum_steps = args.total_batch / args.micro_batch;
-    let grad_accum_divisor = grad_accum_steps as f32;
+    let grad_accum_divisor = grad_accum_steps as f64;
     for step in 0..args.total_steps {
         let start_time = SystemTime::now();
         let lr = schedule.get_lr(step);
@@ -134,12 +134,11 @@ fn train(
         for _ in 0..grad_accum_steps {
             let (inputs, targets) = batch_iter.next().unwrap()?;
             let (_, loss) = model.forward(&inputs, Some(&targets), None);
-            let loss = loss.unwrap();
+            let loss = loss.unwrap() / grad_accum_divisor;
             loss.backward();
             let loss_value: f32 = loss.try_into()?;
             avg_loss += loss_value;
         }
-        avg_loss /= grad_accum_divisor;
 
         if rank == 0 && args.optim_stats {
             let mut variables = opt.trainable_variables_with_sharding();
@@ -147,7 +146,7 @@ fn train(
                 if let Some(name) = index_to_name.get(&index) {
                     let grad_energy: f64 = variable
                         .grad()
-                        .norm_scalaropt_dtype(1, Kind::BFloat16)
+                        .norm_scalaropt_dtype(1, Kind::Float)
                         .try_into()
                         .unwrap();
                     println!("{name} {grad_energy}")
