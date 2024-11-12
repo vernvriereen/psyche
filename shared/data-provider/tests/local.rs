@@ -3,10 +3,8 @@ use std::path::PathBuf;
 use pretty_assertions::assert_eq;
 use psyche_data_provider::{LocalDataProvider, TokenSize, TokenizedDataProvider};
 use tokenizers::Tokenizer;
-use tokio::{
-    fs::{read_to_string, File},
-    io::AsyncWriteExt,
-};
+use tokio::fs::read_to_string;
+
 fn test_path(path: &[&str]) -> PathBuf {
     [env!("CARGO_MANIFEST_DIR"), "tests"]
         .iter()
@@ -77,13 +75,4 @@ async fn loads_fineweb_subset() {
             "sample {i} (left) doesn't match decoded reference (right) from file {decoded_path:?}"
         );
     }
-}
-
-#[allow(unused)]
-async fn write_to_tmp_file(data: &[u8]) {
-    let mut f = File::create("/tmp/foo")
-        .await
-        .expect("Unable to create /tmp/foo");
-    f.write_all(data).await.expect("Unable to write data");
-    println!("wrote data to /tmp/foo")
 }
