@@ -633,7 +633,7 @@ impl Distro {
                     let (sparse_idx, sparse_val, xshape, totalk) = CompressDCT::compress(
                         &self.transform.encode(delta),
                         compression_topk,
-                        true,
+                        quantization,
                     );
 
                     // Estimate transmitted delta
