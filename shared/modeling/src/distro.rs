@@ -358,22 +358,21 @@ impl CompressDCT {
         let mut idx = x.abs().topk(topk, -1, true, false).1;
         let mut val = x.gather(-1, &idx, false);
 
-        if quantization {
-            if totalk <= 256 {
-                idx = idx.to_kind(Kind::Uint8);
-            } else if totalk <= 65536 {
-                idx = idx.to_kind(Kind::UInt16).view_dtype(Kind::Uint8);
-            } else if totalk <= 4294967296 {
-                idx = idx.to_kind(Kind::UInt32).view_dtype(Kind::Uint8);
-            }
+        if totalk <= 256 {
+            idx = idx.to_kind(Kind::Uint8);
+        } else if totalk <= 65536 {
+            idx = idx.to_kind(Kind::UInt16).view_dtype(Kind::Uint8);
+        } else if totalk <= 4294967296 {
+            idx = idx.to_kind(Kind::UInt32).view_dtype(Kind::Uint8);
+        }
 
+        if quantization {
             val = val
-                .g_mul_scalar_(1e4)
-                .clamp_(-100., 100.)
+                .multiply_scalar(1e4)
+                .clamp_(-448., 448.) //min max representable values in float8e4m3fn
                 .to_kind(Kind::Float8e4m3fn)
                 .view_dtype(Kind::Uint8);
-        } else {
-            totalk = 0;
+            totalk = -totalk; // indicator we're quantizaed
         }
 
         (idx, val, xshape, totalk)
@@ -388,25 +387,26 @@ impl CompressDCT {
         kind: Kind,
         device: Device,
     ) -> Tensor {
-        let idx = if totalk == 0 {
-            idx.shallow_clone()
-        } else if totalk <= 256 {
+        let quantized = totalk < 0;
+        let totalk = totalk.abs();
+
+        let idx = if totalk <= 256 {
             idx.view_dtype(Kind::Uint8)
         } else if totalk <= 65536 {
             idx.view_dtype(Kind::UInt16)
         } else if totalk <= 4294967296 {
             idx.view_dtype(Kind::UInt32)
         } else {
-            unimplemented!()
+            idx.shallow_clone()
         }
         .to_kind(Kind::Int64);
 
-        let val = if totalk > 0 {
-            val.view_dtype(Kind::Float8e4m3fn)
+        let val = match quantized {
+            true => val
+                .view_dtype(Kind::Float8e4m3fn)
                 .to_kind(kind)
-                .g_mul_scalar_(1e-4)
-        } else {
-            val.shallow_clone()
+                .multiply_scalar(1e-4),
+            false => val.shallow_clone(),
         };
 
         let mut x: Tensor = Tensor::zeros(xshape, (kind, device));
@@ -627,7 +627,7 @@ impl Distro {
                     (sparse_idx, sparse_val, xshape, totalk, transmit_grad)
                 }
                 #[cfg(not(feature = "parallelism"))]
-                Some(shard) => panic!("Sharded tensor without parallelism feature?"),
+                Some(_) => panic!("Sharded tensor without parallelism feature?"),
                 None => {
                     // Compress delta
                     let (sparse_idx, sparse_val, xshape, totalk) = CompressDCT::compress(
@@ -753,6 +753,8 @@ unsafe impl Send for Distro {}
 
 #[cfg(test)]
 mod tests {
+    use std::i64;
+
     use tch::Device;
 
     use super::*;
@@ -872,7 +874,7 @@ mod tests {
         assert_eq!(truth.0, ret.0);
         assert!(truth.1.allclose(&ret.1, 1e-4, 1e-8, false));
         assert_eq!(truth.2, ret.2);
-        assert_eq!(0, ret.3); // totalk changed to 0 when quantization is false
+        assert_eq!(4, ret.3);
     }
 
     #[test]
@@ -890,7 +892,7 @@ mod tests {
         assert_eq!(truth.0, ret.0);
         assert!(truth.1.allclose(&ret.1, 1e-4, 1e-8, false));
         assert_eq!(truth.2, ret.2);
-        assert_eq!(0, ret.3); // totalk changed to 0 when quantization is false
+        assert_eq!(8, ret.3);
     }
 
     #[test]
@@ -902,7 +904,7 @@ mod tests {
         let truth = _1d_float(&[
             0.0000, 0.9625, 0.5487, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
         ]);
-        let ret = CompressDCT::decompress(&idx, &val, &xshape, 0, p.kind(), p.device());
+        let ret = CompressDCT::decompress(&idx, &val, &xshape, i64::MAX, p.kind(), p.device());
         assert!(truth.allclose(&ret, 1e-4, 1e-8, false));
     }
 
@@ -923,7 +925,7 @@ mod tests {
             [0.0000, 0.0000, 0.8285, 0.8163],
             [0.0000, 0.7600, 0.0000, 0.9093],
         ]);
-        let ret = CompressDCT::decompress(&idx, &val, &xshape, 0, p.kind(), p.device());
+        let ret = CompressDCT::decompress(&idx, &val, &xshape, i64::MAX, p.kind(), p.device());
         assert!(truth.allclose(&ret, 1e-4, 1e-8, false));
     }
 
