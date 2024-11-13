@@ -64,8 +64,8 @@ def main(args):
         "text-generation",
         model=model,
         tokenizer=tokenizer,
-        do_sample=True,
-        temperature=args.temperature,
+        do_sample=args.temperature and args.temperature > 0,
+        temperature=args.temperature if args.temperature else None,
         streamer=streamer,
         max_new_tokens=args.max_tokens,
     )
@@ -75,7 +75,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="NousResearch/Llama-2-7b-hf")
-    parser.add_argument("--temperature", default=0.6)
+    parser.add_argument("--temperature", default=0.6, type=float)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--max-tokens", default=1024)
     main(parser.parse_args())
