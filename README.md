@@ -28,3 +28,9 @@ nix build .#expand-distro
 
 To build the centralized client & push it to docker.io's hub,
 `$ just docker-push-centralized-client`
+
+## Utils
+
+### compare-hf-psyche.sh
+
+compares hf & psyche training implementations bit-for-bit.

@@ -43,3 +43,5 @@ dist/
 /distro-data
 checkpoints/
 logs/
+
+txt/
