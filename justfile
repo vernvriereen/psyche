@@ -4,10 +4,10 @@ check:
 
 # format & lint-fix code
 fmt:
-	biome check --fix frontend
 	cargo clippy --fix --allow-staged --all-targets
 	cargo fmt
 	alejandra .
+	cd frontend && biome check --fix .
 
 # build the centralized client Docker image
 docker-build-centralized-client:
