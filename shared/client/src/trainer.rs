@@ -147,7 +147,6 @@ impl Trainer {
                         compression_decay as f64,
                         compression_chunk as i64,
                         0.0,
-                        index,
                         model.comm.clone(),
                         stats,
                     )
@@ -393,7 +392,7 @@ impl Trainer {
 
                     let mut loss = 0f32;
                     let mut cancelled = false;
-                    for (index, micro_batch) in micro_batches.enumerate() {
+                    for micro_batch in micro_batches {
                         if RunState::try_from(run_state.load(Ordering::Relaxed)).unwrap()
                             != RunState::RoundTrain
                         {
@@ -420,9 +419,12 @@ impl Trainer {
                                 return;
                             }
                         }
-                        if let Some(grad_accumulator) = &mut grad_accum {
-                            grad_accumulator.accumulate_gradients(index == grad_accum_steps - 1);
+                        if let Some(grad_accum) = &mut grad_accum {
+                            grad_accum.accumulate_gradients();
                         }
+                    }
+                    if let Some(grad_accum) = &mut grad_accum {
+                        grad_accum.apply_accumulation();
                     }
                     let distro_results = match cancelled {
                         false => match &mut optimizer {
@@ -439,27 +441,39 @@ impl Trainer {
                                 compression_topk_startup_steps,
                                 quantize,
                             } => {
-                                if let Some(clip_grad_norm) = clip_grad_norm {
-                                    optimizer.clip_grad_norm(*clip_grad_norm as f64);
-                                }
-                                let ret = optimizer.generate(
-                                    lr_scheduler.get_lr(step),
-                                    match step > *compression_decay_warmup_steps {
-                                        true => 1.0,
-                                        false => {
-                                            step as f64 / *compression_decay_warmup_steps as f64
+                                let clipped = match clip_grad_norm {
+                                    Some(clip_grad_norm) => match barrier.wait() {
+                                        Ok(_) => {
+                                            optimizer.clip_grad_norm(*clip_grad_norm as f64);
+                                            barrier.wait().is_ok()
                                         }
+                                        Err(_) => false,
                                     },
-                                    match step <= *compression_topk_startup_steps {
-                                        true => *compression_topk_startup,
-                                        false => *compression_topk,
-                                    },
-                                    *quantize,
-                                );
-                                // just need results from one of the ranks
-                                match index == 0 {
-                                    true => Some(ret),
-                                    false => None,
+                                    None => true,
+                                };
+                                if clipped {
+                                    let ret = optimizer.generate(
+                                        lr_scheduler.get_lr(step),
+                                        match step > *compression_decay_warmup_steps {
+                                            true => 1.0,
+                                            false => {
+                                                step as f64 / *compression_decay_warmup_steps as f64
+                                            }
+                                        },
+                                        match step <= *compression_topk_startup_steps {
+                                            true => *compression_topk_startup,
+                                            false => *compression_topk,
+                                        },
+                                        *quantize,
+                                    );
+                                    // just need results from one of the ranks
+                                    match index == 0 {
+                                        true => Some(ret),
+                                        false => None,
+                                    }
+                                } else {
+                                    cancelled = true;
+                                    None
                                 }
                             }
                         },

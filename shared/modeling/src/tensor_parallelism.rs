@@ -163,17 +163,17 @@ pub fn unshard_tensor(sharded_tensors: Vec<Tensor>, shard: &Shard) -> Tensor {
 }
 
 #[allow(unused)]
-pub fn tensor_shard(full_tensor: &Tensor, shard: &Shard, n: usize) -> Tensor {
+pub fn tensor_shard(full_tensor: &Tensor, shard: &Shard) -> Tensor {
     let Shard {
-        dim, world_size, ..
+        dim, world_size, rank,
     } = *shard;
 
     let full_shape = full_tensor.size();
     let total_size = full_shape[dim];
 
     let shard_size = total_size / (world_size as i64);
-    let start = (n as i64) * shard_size;
-    let end = ((n + 1) as i64) * shard_size;
+    let start = (rank as i64) * shard_size;
+    let end = ((rank + 1) as i64) * shard_size;
 
     full_tensor.slice(dim as i64, start, Some(end), 1)
 }

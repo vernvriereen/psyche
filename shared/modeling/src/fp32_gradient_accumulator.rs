@@ -33,41 +33,31 @@ impl Fp32GradientAccumulator {
         }
     }
 
-    pub fn accumulate_gradients(&mut self, accumulation_step: bool) {
+    pub fn accumulate_gradients(&mut self) {
         for (param, (start, end)) in &self.parameters {
             let mut grad = param.grad();
-
             let mut grad_slice = self.fp32_grads.slice(0, *start, *end, 1);
-            let _ = grad_slice.g_add_(&grad.to_kind(Kind::Float).view([-1]));
+            let _t = grad_slice.g_add_(&grad.to_kind(Kind::Float).view([-1]));
+            let _t = grad.zero_();
+        }
+    }
 
-            if accumulation_step {
-                grad.copy_(&grad_slice.to_kind(param.kind()).view_as(&param));
-            } else {
-                let _ = grad.zero_();
-            }
+    pub fn apply_accumulation(&mut self) {
+        for (param, (start, end)) in &self.parameters {
+            let mut grad = param.grad();
+            let grad_slice = self.fp32_grads.slice(0, *start, *end, 1);
+            grad.copy_(&grad_slice.to_kind(param.kind()).view_as(&param));
         }
     }
 
     pub fn zero_grad(&mut self) {
         let _ = self.fp32_grads.zero_();
         for (param, _) in &self.parameters {
-            let _ = param.grad().zero_();
+            let _t = param.grad().zero_();
         }
     }
 
     pub fn get_full_grad_buffer(&self) -> &Tensor {
         &self.fp32_grads
-    }
-
-    pub fn scale_gradients(&mut self, scale: f64) {
-        let _ = self.fp32_grads.g_mul_scalar_(scale);
-    }
-
-    pub fn clip_grad_norm(&mut self, max_norm: f64) {
-        let total_norm: f64 = self.fp32_grads.norm().try_into().unwrap();
-        if total_norm > max_norm {
-            let scale = max_norm / (total_norm + 1e-6);
-            self.scale_gradients(scale);
-        }
     }
 }

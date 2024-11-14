@@ -2,7 +2,9 @@ use anyhow::Result;
 use clap::Parser;
 use psyche_core::{CosineLR, LearningRateScheduler};
 use psyche_data_provider::{download_model_repo_sync, LocalDataProvider};
-use psyche_modeling::{Batcher, CausalLM, CommunicatorId, LlamaForCausalLM};
+use psyche_modeling::{
+    Batcher, CausalLM, CommunicatorId, Fp32GradientAccumulator, LlamaForCausalLM,
+};
 use rand::Rng;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -126,6 +128,7 @@ fn train(
 
     let grad_accum_steps = args.total_batch / args.micro_batch;
     let grad_accum_divisor = grad_accum_steps as f64;
+    let mut grad_accum = Fp32GradientAccumulator::new(&opt.trainable_variables(), device);
     for step in 0..args.total_steps {
         let start_time = SystemTime::now();
         let lr = schedule.get_lr(step);
@@ -138,7 +141,9 @@ fn train(
             loss.backward();
             let loss_value: f32 = loss.try_into()?;
             avg_loss += loss_value;
+            grad_accum.accumulate_gradients();
         }
+        grad_accum.apply_accumulation();
 
         if rank == 0 && args.optim_stats {
             let mut variables = opt.trainable_variables_with_sharding();

@@ -5,7 +5,7 @@ use crate::{
 use std::{cmp::Ordering, collections::HashMap, f64::consts::PI, sync::Arc};
 use tch::{
     nn::{Optimizer, OptimizerConfig, Sgd, Shard, VarStore},
-    Device, Kind, Tensor,
+    Device, Kind, ReduceOpType, Tensor,
 };
 
 #[cfg(feature = "parallelism")]
@@ -484,7 +484,6 @@ pub struct Distro {
     weight_decay: f64,
     state: Vec<State>,
     transform: TransformDCT,
-    shard_index: usize,
     #[allow(unused)]
     comm: Option<Arc<Communicator>>,
     index_to_name: HashMap<usize, Option<String>>,
@@ -496,7 +495,6 @@ impl Distro {
         compression_decay: f64,
         compression_chunk: i64,
         weight_decay: f64,
-        shard_index: usize,
         comm: Option<Arc<Communicator>>,
         stats: bool,
     ) -> Self {
@@ -539,7 +537,6 @@ impl Distro {
             weight_decay,
             state,
             transform,
-            shard_index,
             comm,
             index_to_name,
         }
@@ -558,7 +555,7 @@ impl Distro {
         for (index, (variable, shard)) in variables.iter_mut().enumerate() {
             // step-Weight decay
             if self.weight_decay != 0.0 {
-                let _ = variable.g_mul_scalar_(1.0 - lr * self.weight_decay);
+                let _t = variable.g_mul_scalar_(1.0 - lr * self.weight_decay);
             }
             let name = self.index_to_name.get(&index);
 
@@ -586,11 +583,11 @@ impl Distro {
 
             // decay delta
             if compression_decay != 1.0 {
-                let _ = delta.g_mul_scalar_(compression_decay);
+                let _t = delta.g_mul_scalar_(compression_decay);
             }
 
             // add delta to new gradient
-            let _ = delta.g_add_(&variable.grad().multiply_scalar(lr));
+            let _t = delta.g_add_(&variable.grad().multiply_scalar(lr));
 
             let (sparse_idx, sparse_val, xshape, totalk, transmit_grad) = match shard {
                 #[cfg(feature = "parallelism")]
@@ -622,7 +619,7 @@ impl Distro {
                         variable.kind(),
                         variable.device(),
                     ));
-                    let transmit_grad = tensor_shard(&transmit_grad, shard, self.shard_index);
+                    let transmit_grad = tensor_shard(&transmit_grad, shard);
 
                     (sparse_idx, sparse_val, xshape, totalk, transmit_grad)
                 }
@@ -661,7 +658,7 @@ impl Distro {
             };
 
             // Remove transmitted from delta
-            let _ = delta.g_sub_(&transmit_grad);
+            let _t = delta.g_sub_(&transmit_grad);
 
             ret.push(DistroResult {
                 sparse_idx,
@@ -723,7 +720,7 @@ impl Distro {
 
             // Set grad to values
             variable.grad().copy_(&match shard {
-                Some(shard) => tensor_shard(&new_grad, shard, self.shard_index),
+                Some(shard) => tensor_shard(&new_grad, shard),
                 None => new_grad,
             });
 
@@ -744,8 +741,69 @@ impl Distro {
         self.sgd.trainable_variables()
     }
 
-    pub fn clip_grad_norm(&self, max_grad_norm: f64) {
-        self.sgd.clip_grad_norm(max_grad_norm);
+    pub fn trainable_variables_with_sharding(&self) -> Vec<(Tensor, Option<Shard>)> {
+        self.sgd.trainable_variables_with_sharding()
+    }
+
+    /// Clips gradient norm, properly handling tensor-parallel parameters.
+    ///
+    /// For a model with both sharded and replicated parameters, the true L2 norm is:
+    /// sqrt(||w_shared||^2 + ||w_replicated||^2) where:
+    /// - w_shared are parameters sharded across ranks (like TP linear layers)
+    /// - w_replicated are parameters replicated on all ranks (like layernorms)
+    ///
+    /// For sharded parameters, since each rank has an orthogonal slice of the full parameter:
+    /// ||w_shared||^2 = ||w_shared_1||^2 + ||w_shared_2||^2 + ... + ||w_shared_n||^2
+    /// where w_shared_i is the shard on rank i. We compute this via all_reduce_sum of local squared norms.
+    ///
+    /// For replicated parameters:
+    /// ||w_replicated||^2 is identical on all ranks, so we compute it locally.
+    ///
+    /// The orthogonality of sharded parameters across ranks ensures that:
+    /// total_norm = sqrt(all_reduce(||w_shared_local||^2) + ||w_replicated||^2)
+    /// gives us the correct global L2 norm as if all parameters were on a single device.
+    pub fn clip_grad_norm(&mut self, max_norm: f64) {
+        let vars = self.sgd.trainable_variables_with_sharding();
+        let device = if !vars.is_empty() {
+            vars[0].0.device()
+        } else {
+            return;
+        };
+
+        let mut sharded_norm_sq = Tensor::zeros([], (Kind::Float, device));
+        let mut replicated_norm_sq = Tensor::zeros([], (Kind::Float, device));
+
+        for (param, shard) in &self.sgd.trainable_variables_with_sharding() {
+            let grad = param.grad();
+            if grad.defined() {
+                let local_norm = grad.norm();
+                let local_norm_sq = &local_norm * &local_norm;
+
+                match shard {
+                    Some(_) => sharded_norm_sq += local_norm_sq,
+                    None => replicated_norm_sq += local_norm_sq,
+                }
+            }
+        }
+
+        if let Some(comm) = &self.comm {
+            comm.all_reduce(&[&sharded_norm_sq], ReduceOpType::Sum)
+                .unwrap();
+        }
+        let total_norm: f64 = (sharded_norm_sq + replicated_norm_sq)
+            .sqrt()
+            .try_into()
+            .unwrap();
+
+        if total_norm > max_norm {
+            let scale = max_norm / (total_norm + 1e-6);
+            for (param, _) in vars {
+                let mut grad = param.grad();
+                if grad.defined() {
+                    let _t = grad.g_mul_scalar_(scale);
+                }
+            }
+        }
     }
 }
 
