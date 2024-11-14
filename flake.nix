@@ -51,12 +51,15 @@
           filter = path: type: (testResourcesFilter path type) || (craneLib.filterCargoSources path type);
         };
 
-        torch = pkgs.libtorch-bin.dev.overrideAttrs (old: {
-          version = "2.4.0";
+        torch = pkgs.libtorch-bin.dev.overrideAttrs (old: let
+          version = "2.4.1";
+          cuda = "124";
+        in {
+          version = version;
           src = pkgs.fetchzip {
-            name = "libtorch-cxx11-abi-shared-with-deps-2.4.0-cu124.zip";
-            url = "https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.4.0%2Bcu124.zip";
-            hash = "sha256-aned9QWMX5fe2U9igs4e2UjczmtwDq+v8z/feYnP9aQ=";
+            name = "libtorch-cxx11-abi-shared-with-deps-${version}-cu${cuda}.zip";
+            url = "https://download.pytorch.org/libtorch/cu${cuda}/libtorch-cxx11-abi-shared-with-deps-${version}%2Bcu${cuda}.zip";
+            hash = "sha256-/MKmr4RnF2FSGjheJc4221K38TWweWAtAbCVYzGSPZM=";
           };
         });
 
