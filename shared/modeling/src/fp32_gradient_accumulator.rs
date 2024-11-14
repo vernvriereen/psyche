@@ -25,7 +25,7 @@ impl Fp32GradientAccumulator {
             })
             .collect::<Vec<_>>();
 
-        let fp32_grads = Tensor::zeros(&[total_numel], (Kind::Float, device));
+        let fp32_grads = Tensor::zeros([total_numel], (Kind::Float, device));
 
         Self {
             parameters,
@@ -46,7 +46,7 @@ impl Fp32GradientAccumulator {
         for (param, (start, end)) in &self.parameters {
             let mut grad = param.grad();
             let grad_slice = self.fp32_grads.slice(0, *start, *end, 1);
-            grad.copy_(&grad_slice.to_kind(param.kind()).view_as(&param));
+            grad.copy_(&grad_slice.to_kind(param.kind()).view_as(param));
         }
     }
 

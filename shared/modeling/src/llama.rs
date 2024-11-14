@@ -203,7 +203,7 @@ impl Mlp {
 impl Module for Mlp {
     fn forward(&self, xs: &Tensor) -> Tensor {
         self.down_proj
-            .forward(&(self.gate_proj.forward(&xs).silu() * self.up_proj.forward(&xs)))
+            .forward(&(self.gate_proj.forward(xs).silu() * self.up_proj.forward(xs)))
     }
 }
 

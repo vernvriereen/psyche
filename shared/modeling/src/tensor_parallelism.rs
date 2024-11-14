@@ -165,7 +165,9 @@ pub fn unshard_tensor(sharded_tensors: Vec<Tensor>, shard: &Shard) -> Tensor {
 #[allow(unused)]
 pub fn tensor_shard(full_tensor: &Tensor, shard: &Shard) -> Tensor {
     let Shard {
-        dim, world_size, rank,
+        dim,
+        world_size,
+        rank,
     } = *shard;
 
     let full_shape = full_tensor.size();

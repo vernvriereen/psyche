@@ -199,7 +199,7 @@ impl Trainer {
         let (_, loss) = model.forward(&inputs, Some(&targets), None);
         let mut loss = loss.ok_or(Error::msg("No loss"))?;
         if let Some(loss_scale) = loss_scale {
-            loss = loss / loss_scale;
+            loss /= loss_scale;
         }
         loss.backward();
         if barrier.wait().is_err() {
