@@ -5,8 +5,11 @@ use crate::{
 use std::{cmp::Ordering, collections::HashMap, f64::consts::PI, sync::Arc};
 use tch::{
     nn::{Optimizer, OptimizerConfig, Sgd, Shard, VarStore},
-    Device, Kind, ReduceOpType, Tensor,
+    Device, Kind, Tensor,
 };
+
+#[cfg(feature = "parallelism")]
+use tch::ReduceOpType;
 
 #[cfg(feature = "parallelism")]
 use crate::tensor_parallelism::unshard_tensor;
@@ -484,7 +487,6 @@ pub struct Distro {
     weight_decay: f64,
     state: Vec<State>,
     transform: TransformDCT,
-    #[allow(unused)]
     comm: Option<Arc<Communicator>>,
     index_to_name: HashMap<usize, Option<String>>,
 }
@@ -523,7 +525,7 @@ impl Distro {
                     index,
                     named_variables
                         .iter()
-                        .find(|x| x.1.is_set_to(&variable))
+                        .find(|x| x.1.is_set_to(variable))
                         .map(|x| x.0.clone()),
                 );
             }
@@ -787,6 +789,10 @@ impl Distro {
         }
 
         if let Some(comm) = &self.comm {
+            #[cfg(not(feature = "parallelism"))]
+            panic!("communicator passed, but parallelism is not enabled.");
+
+            #[cfg(feature = "parallelism")]
             comm.all_reduce(&[&sharded_norm_sq], ReduceOpType::Sum)
                 .unwrap();
         }
@@ -811,7 +817,6 @@ unsafe impl Send for Distro {}
 
 #[cfg(test)]
 mod tests {
-    use std::i64;
 
     use tch::Device;
 
