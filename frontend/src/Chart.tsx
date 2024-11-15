@@ -1,12 +1,13 @@
 import { Axis } from "@visx/axis";
 import { curveLinear } from "@visx/curve";
+import { localPoint } from "@visx/event";
 import { Group } from "@visx/group";
 import { LegendOrdinal } from "@visx/legend";
 import { ParentSize } from "@visx/responsive";
 import { scaleLinear, scaleOrdinal, scalePower } from "@visx/scale";
-import { Line, LinePath } from "@visx/shape";
+import { Bar, Line, LinePath } from "@visx/shape";
 import type React from "react";
-import { useLayoutEffect, useState } from "react";
+import { useCallback, useLayoutEffect, useState } from "react";
 import { GridOfPlusSymbols } from "./ChartPlus";
 import { TextStretcher } from "./TextStretcher";
 import { twStrokeToColor } from "./palette";
@@ -148,6 +149,51 @@ const LineGraphInner: React.FC<LineGraphProps & { width: number; height: number 
   });
 
   const singleLine = lines.length === 1 && lines[0].points.length && lines[0];
+
+  const [tooltipData, setTooltipData] = useState<{ x: number; y: number; lineLabel: string } | null>(null);
+  const [tooltipLeft, setTooltipLeft] = useState<number>(0);
+  const [tooltipTop, setTooltipTop] = useState<number>(0);
+
+  const handleTooltip = useCallback(
+    (event: React.TouchEvent<SVGRectElement> | React.MouseEvent<SVGRectElement>) => {
+      const { x } = localPoint(event) || { x: 0, y: 0 };
+      const xValue = xScale.invert(x - margin.left - padding.left);
+
+      // Find the closest point for each line
+      let closestPoint: DataPoint | null = null;
+      let minDistance = Number.POSITIVE_INFINITY;
+      let activeLineLabel = "";
+
+      for (const line of lines) {
+        const point = line.points.reduce((closest, current) => {
+          const distance = Math.abs(current.x - xValue);
+          return distance < Math.abs(closest.x - xValue) ? current : closest;
+        });
+
+        const distance = Math.abs(point.x - xValue);
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestPoint = point;
+          activeLineLabel = line.label;
+        }
+      }
+
+      if (closestPoint) {
+        setTooltipData({
+          x: closestPoint.x,
+          y: closestPoint.y,
+          lineLabel: activeLineLabel,
+        });
+        setTooltipLeft(xScale(closestPoint.x) + margin.left + padding.left);
+        setTooltipTop(yScale(closestPoint.y) + padding.bottom);
+      }
+    },
+    [xScale, yScale, lines],
+  );
+
+  const handleMouseLeave = () => {
+    setTooltipData(null);
+  };
 
   return (
     <div className="relative w-full h-full">
@@ -316,8 +362,56 @@ const LineGraphInner: React.FC<LineGraphProps & { width: number; height: number 
             hideZero
           />
         </Group>
+        <Bar
+          x={margin.left + padding.left}
+          y={padding.bottom}
+          width={innerWidth}
+          height={innerHeight}
+          fill="transparent"
+          onTouchStart={handleTooltip}
+          onTouchMove={handleTooltip}
+          onMouseMove={handleTooltip}
+          onMouseLeave={handleMouseLeave}
+        />
+        {tooltipData && (
+          <g>
+            <Line
+              from={{ x: tooltipLeft, y: padding.bottom }}
+              to={{ x: tooltipLeft, y: height - margin.bottom }}
+              className="stroke-primary"
+              strokeWidth={1}
+              pointerEvents="none"
+            />
+            <circle
+              cx={tooltipLeft}
+              cy={tooltipTop}
+              r={4}
+              className="fill-primary stroke-backdrop"
+              strokeWidth={2}
+              pointerEvents="none"
+            />
+          </g>
+        )}
       </svg>
-      <div className="absolute top-0 bg-backdrop/70" style={{ left: `${padding.left + margin.left + 12}px` }}>
+
+      {tooltipData && (
+        <div
+          className="absolute z-10 pointer-events-none bg-primary text-backdrop text-nowrap top-8 py-1 px-2 text-center"
+          style={{
+            left: tooltipLeft + 10,
+            transform: "translate(-50%, -100%)",
+          }}
+        >
+          <div className="font-eva text-xl">{tooltipData.lineLabel}</div>
+          <div>
+            {tooltipData.x}: {tooltipData.y.toFixed(2)}
+          </div>
+        </div>
+      )}
+      <div
+        className="absolute top-0 bg-backdrop/70 pointer-events-none"
+        style={{ left: `${padding.left + margin.left + 12}px` }}
+      >
         {title && (
           <>
             <div className="xl:w-32 md:w-24 w-16">
