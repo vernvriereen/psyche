@@ -16,7 +16,7 @@ import useTailwind from "./tailwind";
 import type { GeolocatedNode } from "./types";
 
 const globeMaterial = new MeshBasicMaterial({
-  alphaTest: 0.9,
+  alphaTest: 0,
 });
 
 new TextureLoader().load(globeTexture, (texture) => {
@@ -35,7 +35,6 @@ export function TrainersMap({ nodes }: { nodes: Array<GeolocatedNode> }) {
     }
     // aim at continental US centroid
     globeEl.current.pointOfView({ lat: 39.6, lng: -98.5, altitude: 2 });
-    globeEl.current.controls().autoRotate = true;
     globeEl.current.controls().autoRotateSpeed = 0.5;
   }, []);
 
@@ -76,12 +75,23 @@ export function TrainersMap({ nodes }: { nodes: Array<GeolocatedNode> }) {
 
   const good = tw.theme.colors.orange[400];
 
+  const [rotate, setRotate] = useState(true);
+  useEffect(() => {
+    if (!globeEl.current) {
+      return;
+    }
+    globeEl.current.controls().autoRotate = rotate;
+  }, [rotate]);
   return (
     <div className="w-full h-full relative" ref={containerEl}>
       <div className="absolute top-0 bottom-0 left-0 right-0">
         <CoolTickMarks className="text-grid" />
       </div>
-      <div className="absolute top-0 bottom-0 left-0 right-0">
+      <div
+        className="absolute top-0 bottom-0 left-0 right-0"
+        onMouseEnter={() => setRotate(false)}
+        onMouseLeave={() => setRotate(true)}
+      >
         <Globe
           width={size.w}
           height={size.h}
@@ -96,7 +106,6 @@ export function TrainersMap({ nodes }: { nodes: Array<GeolocatedNode> }) {
           arcEndLat={((n: { from: GeolocatedNode; to: GeolocatedNode }) => n.to.latitude) as (n: object) => number}
           arcEndLng={((n: { from: GeolocatedNode; to: GeolocatedNode }) => n.to.longitude) as (n: object) => number}
           arcDashLength={2}
-          arcAltitude={0.05}
           arcDashGap={0}
           arcStroke={0.2}
           arcColor={() => good}
@@ -105,7 +114,6 @@ export function TrainersMap({ nodes }: { nodes: Array<GeolocatedNode> }) {
           pointsData={nodes}
           pointLat={((p: GeolocatedNode) => p.latitude) as (n: object) => number}
           pointLng={((p: GeolocatedNode) => p.longitude) as (n: object) => number}
-          // pointColor={((p: GeolocatedNode) => twStrokeToColor(idToArrayItem(p.id, palette), tw)) as any}
           pointColor={() => good}
           pointLabel={
             ((p: GeolocatedNode) => `<div class="bg-backdrop text-primary">node ${p.id.slice(0, 10)}</div>`) as (
