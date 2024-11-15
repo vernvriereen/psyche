@@ -405,14 +405,14 @@ function BucketedProgressBar({ total, value }: { total: number; value: number; c
   const filledDivisions = Math.min(Math.round((value / total) * divisions) + 1, divisions);
 
   const start = {
-    r: 73,
-    g: 168,
-    b: 137,
+    r: 169,
+    g: 118,
+    b: 195,
   };
   const end = {
-    r: 121,
-    g: 11,
-    b: 176,
+    r: 95,
+    g: 42,
+    b: 98,
   };
   return (
     <div ref={containerRef} className="flex flex-row justify-between w-full h-full">
