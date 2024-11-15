@@ -19,8 +19,8 @@ pub use llama_for_causal_lm::{LlamaConfig, LlamaForCausalLM};
 pub use safetensor_utils::{load_safetensors_into_variables, save_tensors_into_safetensors};
 pub use sampling::{LogitsProcessor, Sampling};
 pub use tensor_parallelism::{
-    unsharded_cpu_variables, AllReduce, Communicator, CommunicatorId, CudaSynchronize,
-    DifferentiableAllReduceSum, TensorParallelRowLinear,
+    unsharded_cpu_variables, AllReduce, ColumnParallelLinear, Communicator, CommunicatorId,
+    CudaSynchronize, RowParallelLinear,
 };
 pub use token_output_stream::TokenOutputStream;
 pub use traits::CausalLM;

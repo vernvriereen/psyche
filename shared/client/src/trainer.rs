@@ -201,6 +201,9 @@ impl Trainer {
         if let Some(loss_scale) = loss_scale {
             loss /= loss_scale;
         }
+        if barrier.wait().is_err() {
+            return Ok(None);
+        }
         loss.backward();
         if barrier.wait().is_err() {
             return Ok(None);
@@ -344,10 +347,6 @@ impl Trainer {
         lr_scheduler: AnyLearningRateScheduler,
         barrier: Arc<CancellableBarrier>,
     ) {
-        if let Err(err) = Self::forward_backward(&mut model, &[vec![0i32]], &barrier, None) {
-            error!("Test forward/backward gave error {err}");
-            return;
-        }
         let mut grad_accum: Option<Fp32GradientAccumulator> = None;
         loop {
             match assignment.recv() {
@@ -382,12 +381,13 @@ impl Trainer {
                     let grad_accum_divisor = grad_accum_steps as f64;
                     let micro_batches = data.chunks_exact(micro_batch_size);
                     assert_eq!(micro_batches.len(), grad_accum_steps);
-                    match &mut grad_accum {
-                        Some(grad_accum) => grad_accum.zero_grad(),
-                        None => match &mut optimizer {
-                            Optimizer::AdamW { optimizer, .. } => optimizer.zero_grad(),
-                            Optimizer::Distro { optimizer, .. } => optimizer.zero_grad(),
-                        },
+
+                    if let Some(grad_accum) = &mut grad_accum {
+                        grad_accum.zero_grad();
+                    }
+                    match &mut optimizer {
+                        Optimizer::AdamW { optimizer, .. } => optimizer.zero_grad(),
+                        Optimizer::Distro { optimizer, .. } => optimizer.zero_grad(),
                     };
 
                     let mut loss = 0f32;

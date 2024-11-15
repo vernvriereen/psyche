@@ -555,54 +555,48 @@ impl Distro {
         let variables = &mut self.sgd.trainable_variables_with_sharding();
         let mut ret = Vec::with_capacity(variables.len());
         for (index, (variable, shard)) in variables.iter_mut().enumerate() {
-            // step-Weight decay
-            if self.weight_decay != 0.0 {
-                let _t = variable.g_mul_scalar_(1.0 - lr * self.weight_decay);
-            }
             let name = self.index_to_name.get(&index);
-
-            let delta = &mut self.state.get_mut(index).unwrap().delta;
-            let delta_grad_energies: Option<(f64, f64)> = match &name {
-                Some(Some(_)) => Some((
-                    delta
-                        .norm_scalaropt_dtype(1, Kind::Float)
-                        .try_into()
-                        .unwrap(),
+            let grad_energy: Option<f64> = match &name {
+                Some(Some(_)) => Some(
                     variable
                         .grad()
                         .norm_scalaropt_dtype(1, Kind::Float)
                         .try_into()
                         .unwrap(),
-                )),
+                ),
                 _ => None,
             };
 
+            // weight decay
+            if self.weight_decay != 0.0 {
+                let _t = variable.g_mul_scalar_(1.0 - lr * self.weight_decay);
+            }
+
+            // decay delta
             let mut compression_decay = self.compression_decay;
             if warmup_factor < 1.0 {
                 let momentum_factor = warmup_factor.powf(0.1) * 0.1 + 0.9;
                 compression_decay *= momentum_factor;
             }
-
-            // decay delta
+            let delta = &mut self.state.get_mut(index).unwrap().delta;
             if compression_decay != 1.0 {
                 let _t = delta.g_mul_scalar_(compression_decay);
             }
 
             // add delta to new gradient
-            let _t = delta.g_add_(&variable.grad().multiply_scalar(lr));
+            let _ = delta.g_add_(&variable.grad().multiply_scalar(lr));
 
-            let (sparse_idx, sparse_val, xshape, totalk, transmit_grad) = match shard {
+            let (sparse_idx, sparse_val, xshape, totalk, transmit_grad, full_delta) = match shard {
                 #[cfg(feature = "parallelism")]
                 Some(shard) => {
                     assert!(self.comm.is_some());
                     let comm = self.comm.as_ref().unwrap();
-                    let world_size = comm.size();
 
                     // gather delta
-                    let shards = (0..world_size)
+                    let shards = (0..shard.world_size)
                         .map(|_| delta.empty_like())
                         .collect::<Vec<_>>();
-                    comm.all_gather(&shards, delta).unwrap();
+                    comm.all_gather(&shards, &delta).unwrap();
                     let gathered_delta = unshard_tensor(shards, shard);
 
                     // Compress delta
@@ -623,14 +617,24 @@ impl Distro {
                     ));
                     let transmit_grad = tensor_shard(&transmit_grad, shard);
 
-                    (sparse_idx, sparse_val, xshape, totalk, transmit_grad)
+                    (
+                        sparse_idx,
+                        sparse_val,
+                        xshape,
+                        totalk,
+                        transmit_grad,
+                        gathered_delta,
+                    )
                 }
                 #[cfg(not(feature = "parallelism"))]
                 Some(_) => panic!("Sharded tensor without parallelism feature?"),
                 None => {
+                    // add delta to new gradient
+                    let delta = delta.g_add_(&variable.grad().multiply_scalar(lr));
+
                     // Compress delta
                     let (sparse_idx, sparse_val, xshape, totalk) = CompressDCT::compress(
-                        &self.transform.encode(delta),
+                        &self.transform.encode(&delta),
                         compression_topk,
                         quantization,
                     );
@@ -645,17 +649,21 @@ impl Distro {
                         variable.device(),
                     ));
 
-                    (sparse_idx, sparse_val, xshape, totalk, transmit_grad)
+                    (sparse_idx, sparse_val, xshape, totalk, transmit_grad, delta)
                 }
             };
 
-            let transmit_energy: Option<f64> = match &name {
-                Some(Some(_)) => Some(
+            let delta_transmit_energies: Option<(f64, f64)> = match &name {
+                Some(Some(_)) => Some((
+                    full_delta
+                        .norm_scalaropt_dtype(1, Kind::Float)
+                        .try_into()
+                        .unwrap(),
                     transmit_grad
                         .norm_scalaropt_dtype(1, Kind::Float)
                         .try_into()
                         .unwrap(),
-                ),
+                )),
                 _ => None,
             };
 
@@ -671,13 +679,13 @@ impl Distro {
                     Some(Some(name)) => Some(HashMap::from([
                         (
                             format!("{name}.delta_energy"),
-                            delta_grad_energies.map(|x| x.0).unwrap(),
+                            delta_transmit_energies.map(|x| x.0).unwrap(),
                         ),
                         (
-                            format!("{name}.grad_energy"),
-                            delta_grad_energies.map(|x| x.1).unwrap(),
+                            format!("{name}.transmit_energy"),
+                            delta_transmit_energies.map(|x| x.1).unwrap(),
                         ),
-                        (format!("{name}.transmit_energy"), transmit_energy.unwrap()),
+                        (format!("{name}.grad_energy"), grad_energy.unwrap()),
                     ])),
                     _ => None,
                 },

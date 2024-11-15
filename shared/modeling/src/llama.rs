@@ -1,8 +1,8 @@
-use std::{f32::consts::PI, sync::Arc};
-use tch::nn::{self, Module, Shard};
-use tch::{Device, Kind, Tensor};
+use crate::{ColumnParallelLinear, Communicator, RowParallelLinear};
 
-use crate::{Communicator, TensorParallelRowLinear};
+use std::{f32::consts::PI, sync::Arc};
+use tch::nn::{self, Module};
+use tch::{Device, Kind, Tensor};
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
 pub enum Llama3RopeType {
@@ -158,40 +158,38 @@ impl Module for RmsNorm {
 
 #[derive(Debug)]
 struct Mlp {
-    pub(crate) gate_proj: nn::Linear,
-    pub(crate) up_proj: nn::Linear,
-    pub(crate) down_proj: TensorParallelRowLinear,
+    gate_proj: ColumnParallelLinear,
+    up_proj: ColumnParallelLinear,
+    down_proj: RowParallelLinear,
 }
 
 impl Mlp {
     fn new(vs: nn::Path, n_embd: i64, n_hidden: i64, comm: Option<Arc<Communicator>>) -> Self {
-        let c = nn::LinearConfig {
-            bias: false,
-            shard: comm.as_ref().map(|comm| Shard {
-                dim: 0,
-                rank: comm.rank() as usize,
-                world_size: comm.size() as usize,
-            }),
-            ..Default::default()
-        };
-        let gate_proj = nn::linear(&vs / "gate_proj", n_embd, n_hidden, c);
-        let up_proj = nn::linear(&vs / "up_proj", n_embd, n_hidden, c);
-        let down_proj = TensorParallelRowLinear::new(
-            nn::linear(
-                &vs / "down_proj",
-                n_hidden,
-                n_embd,
-                nn::LinearConfig {
-                    shard: comm.as_ref().map(|comm| Shard {
-                        dim: 1,
-                        rank: comm.rank() as usize,
-                        world_size: comm.size() as usize,
-                    }),
-                    ..c
-                },
-            ),
-            comm,
+        let tp_size = comm.as_ref().map(|x| x.size()).unwrap_or(1);
+        assert_eq!(
+            n_hidden % tp_size,
+            0,
+            "n_hidden must be divisible by tp_size"
         );
+
+        let gate_proj = ColumnParallelLinear::new(
+            &vs / "gate_proj",
+            n_embd,
+            n_hidden,
+            false,
+            false, // Don't gather - going into activation
+            comm.clone(),
+        );
+        let up_proj = ColumnParallelLinear::new(
+            &vs / "up_proj",
+            n_embd,
+            n_hidden,
+            false,
+            false,
+            comm.clone(),
+        );
+        let down_proj =
+            RowParallelLinear::new(&vs / "down_proj", n_hidden, n_embd, false, true, comm);
         Self {
             gate_proj,
             up_proj,
@@ -210,10 +208,10 @@ impl Module for Mlp {
 #[allow(dead_code)]
 #[derive(Debug)]
 struct CausalSelfAttention {
-    q_proj: nn::Linear,
-    k_proj: nn::Linear,
-    v_proj: nn::Linear,
-    o_proj: TensorParallelRowLinear,
+    q_proj: ColumnParallelLinear,
+    k_proj: ColumnParallelLinear,
+    v_proj: ColumnParallelLinear,
+    o_proj: RowParallelLinear,
     n_head: i64,
     n_kvhead: i64,
     n_embd: i64,
@@ -234,48 +232,49 @@ impl CausalSelfAttention {
         use_sdpa: bool,
         comm: Option<Arc<Communicator>>,
     ) -> Self {
-        let c = nn::LinearConfig {
-            bias: false,
-            shard: comm.as_ref().map(|comm| Shard {
-                dim: 0,
-                rank: comm.rank() as usize,
-                world_size: comm.size() as usize,
-            }),
-            ..Default::default()
-        };
         let tp_size = comm.as_ref().map(|x| x.size()).unwrap_or(1);
+        assert_eq!(n_head % tp_size, 0, "n_head must be divisible by tp_size");
+        assert_eq!(
+            n_kvheads % tp_size,
+            0,
+            "n_kvheads must be divisible by tp_size"
+        );
+
         let head_dim = n_embd / n_head;
         let size_q = head_dim * n_head;
         let size_kv = head_dim * n_kvheads;
-        let q_proj = nn::linear(&vs / "q_proj", n_embd, size_q, c);
-        let k_proj = nn::linear(&vs / "k_proj", n_embd, size_kv, c);
-        let v_proj = nn::linear(&vs / "v_proj", n_embd, size_kv, c);
-        let o_proj = TensorParallelRowLinear::new(
-            nn::linear(
-                &vs / "o_proj",
-                size_q,
-                n_embd,
-                nn::LinearConfig {
-                    shard: comm.as_ref().map(|comm| Shard {
-                        dim: 1,
-                        rank: comm.rank() as usize,
-                        world_size: comm.size() as usize,
-                    }),
-                    ..c
-                },
-            ),
-            comm,
+
+        // println!("n_embd: {n_embd}");
+        // println!("n_head: {n_head}");
+        // println!("n_kvheads: {n_kvheads}");
+        // println!("head_dim: {head_dim}");
+        // println!("size_q: {size_q}");
+        // println!("size_kv: {size_kv}");
+
+        let q_proj = ColumnParallelLinear::new(
+            &vs / "q_proj",
+            n_embd,
+            size_q,
+            false,
+            false, // Don't gather - we want to keep sharded for attention
+            comm.clone(),
         );
+        let k_proj =
+            ColumnParallelLinear::new(&vs / "k_proj", n_embd, size_kv, false, false, comm.clone());
+        let v_proj =
+            ColumnParallelLinear::new(&vs / "v_proj", n_embd, size_kv, false, false, comm.clone());
+        let o_proj = RowParallelLinear::new(&vs / "o_proj", size_q, n_embd, false, true, comm);
+
         Self {
             q_proj,
             k_proj,
             v_proj,
             o_proj,
             n_head,
-            head_dim,
             n_kvhead: n_kvheads,
             n_embd,
             n_max_seq_len,
+            head_dim,
             device: vs.device(),
             use_sdpa,
             tp_size,
@@ -295,42 +294,96 @@ impl CausalSelfAttention {
 
     fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut Cache) -> Tensor {
         let (b, t, c) = x.size3().unwrap();
+        assert_eq!(c, self.n_embd, "Input hidden size mismatch");
         let kind = x.kind();
+
+        //println!("\nCausalSelfAttention Forward:");
+        //println!("Input size: {:?}", x.size());
+
+        // These projections now return sharded tensors
         let q = self.q_proj.forward(x);
         let k = self.k_proj.forward(x);
         let v = self.v_proj.forward(x);
+
+        //println!("After projections:");
+        //println!("q size: {:?}", q.size());
+        //println!("k size: {:?}", k.size());
+        //println!("v size: {:?}", v.size());
+
         let local_n_head = self.n_head / self.tp_size;
         let local_n_kvhead = self.n_kvhead / self.tp_size;
+
+        //println!("local_n_head: {}, local_n_kvhead: {}", local_n_head, local_n_kvhead);
+
+        // Ensure we're using the correct dimensions for the sharded tensors
         let q = q
+            .contiguous()
             .reshape([b, t, local_n_head, self.head_dim])
             .transpose(1, 2);
         let k = k
+            .contiguous()
             .reshape([b, t, local_n_kvhead, self.head_dim])
             .transpose(1, 2);
         let v = v
+            .contiguous()
             .reshape([b, t, local_n_kvhead, self.head_dim])
             .transpose(1, 2);
+
+        //println!("After reshape and transpose:");
+        //println!("q size: {:?}", q.size());
+        //println!("k size: {:?}", k.size());
+        //println!("v size: {:?}", v.size());
+
         let q = self.apply_rotary_emb(&q, index_pos, cache).to_kind(kind);
         let k = self.apply_rotary_emb(&k, index_pos, cache).to_kind(kind);
+
+        // Make sure repeat_kv handles the local dimensions correctly
         let k = repeat_kv(&k, local_n_head / local_n_kvhead);
         let v = repeat_kv(&v, local_n_head / local_n_kvhead);
+
+        //println!("After repeat_kv:");
+        //println!("k size: {:?}", k.size());
+        //println!("v size: {:?}", v.size());
+
+        let scale = 1.0 / (self.head_dim as f64).sqrt();
+
         let y = if self.use_sdpa {
-            let scale = Some(1.0 / (self.head_dim as f64).sqrt());
-            let att =
-                Tensor::scaled_dot_product_attention::<Tensor>(&q, &k, &v, None, 0.0, t > 1, scale);
-            att.transpose(1, 2).reshape([b, t, c / self.tp_size])
+            let att = Tensor::scaled_dot_product_attention::<Tensor>(
+                &q,
+                &k,
+                &v,
+                None,
+                0.0,
+                t > 1,
+                Some(scale),
+            );
+            //println!("After attention (sdpa):");
+            //println!("att size: {:?}", att.size());
+            // Use the local head dimension for reshaping
+            let y = att
+                .transpose(1, 2)
+                .contiguous()
+                .reshape([b, t, local_n_head * self.head_dim]);
+
+            //println!("After reshape:");
+            //println!("y size: {:?}", y.size());
+            y
         } else {
-            let k_shape = k.size();
-            let att: Tensor =
-                q.matmul(&k.transpose(-2, -1)) / (*k_shape.last().unwrap() as f64).sqrt();
+            let att = q.matmul(&k.transpose(-2, -1)) * scale;
             let mask = Tensor::ones([t, t], (kind, self.device))
                 .tril(0)
                 .reshape([1, 1, t, t]);
             let att = att.masked_fill(&mask.eq(0.), f64::NEG_INFINITY);
             let y = att.softmax(-1, kind).matmul(&v);
-            y.transpose(1, 2).reshape([b, t, c / self.tp_size])
+            // Use the local head dimension for reshaping
+            y.transpose(1, 2)
+                .contiguous()
+                .reshape([b, t, local_n_head * self.head_dim])
         };
-        self.o_proj.forward(&y)
+
+        let output = self.o_proj.forward(&y);
+        //println!("Final output size: {:?}", output.size());
+        output
     }
 }
 

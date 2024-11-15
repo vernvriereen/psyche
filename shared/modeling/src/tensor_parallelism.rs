@@ -55,41 +55,8 @@ impl From<ReduceType> for ReduceOpType {
     }
 }
 
-#[derive(Debug)]
-pub struct TensorParallelRowLinear {
-    pub(crate) linear: nn::Linear,
-    pub(crate) comm: Option<Arc<Communicator>>,
-}
-
-unsafe impl Send for TensorParallelRowLinear {}
-
-impl TensorParallelRowLinear {
-    pub fn new(linear: nn::Linear, comm: Option<Arc<Communicator>>) -> Self {
-        Self { linear, comm }
-    }
-}
-
-impl Module for TensorParallelRowLinear {
-    #[cfg(feature = "parallelism")]
-    fn forward(&self, x: &Tensor) -> Tensor {
-        let mut x = self.linear.forward(x).contiguous();
-        x.differentiable_all_reduce_sum_(&self.comm);
-        x
-    }
-
-    #[cfg(not(feature = "parallelism"))]
-    fn forward(&self, x: &Tensor) -> Tensor {
-        assert!(self.comm.is_none());
-        self.linear.forward(x).contiguous()
-    }
-}
-
 pub trait AllReduce {
     fn all_reduce_(&mut self, comm: &Option<Arc<Communicator>>, op: ReduceType);
-}
-
-pub trait DifferentiableAllReduceSum {
-    fn differentiable_all_reduce_sum_(&mut self, comm: &Option<Arc<Communicator>>);
 }
 
 pub trait CudaSynchronize {
@@ -112,21 +79,6 @@ impl AllReduce for Tensor {
     }
 }
 
-impl DifferentiableAllReduceSum for Tensor {
-    #[cfg(feature = "parallelism")]
-    fn differentiable_all_reduce_sum_(&mut self, comm: &Option<Arc<Communicator>>) {
-        if let Some(comm) = comm {
-            comm.differentiable_all_reduce_sum(self).unwrap();
-            self.device().cuda_synchronize();
-        }
-    }
-
-    #[cfg(not(feature = "parallelism"))]
-    fn differentiable_all_reduce_sum_(&mut self, comm: &Option<Arc<Communicator>>) {
-        assert!(comm.is_none());
-    }
-}
-
 impl CudaSynchronize for Device {
     fn cuda_synchronize(&self) {
         match &self {
@@ -135,6 +87,210 @@ impl CudaSynchronize for Device {
         }
     }
 }
+
+pub trait ModelParallelRegion {
+    fn copy_to_model_parallel_region(&self, comm: &Option<Arc<Communicator>>) -> Tensor;
+    fn reduce_from_model_parallel_region(&self, comm: &Option<Arc<Communicator>>) -> Tensor;
+    fn scatter_to_model_parallel_region(&self, comm: &Option<Arc<Communicator>>) -> Tensor;
+    fn gather_from_model_parallel_region(&self, comm: &Option<Arc<Communicator>>) -> Tensor;
+}
+
+impl ModelParallelRegion for Tensor {
+    #[cfg(feature = "parallelism")]
+    fn copy_to_model_parallel_region(&self, comm: &Option<Arc<Communicator>>) -> Tensor {
+        match comm {
+            Some(comm) => comm.copy_to_model_parallel(self).unwrap(),
+            None => self.shallow_clone(),
+        }
+    }
+
+    #[cfg(feature = "parallelism")]
+    fn reduce_from_model_parallel_region(&self, comm: &Option<Arc<Communicator>>) -> Tensor {
+        match comm {
+            Some(comm) => comm.reduce_from_model_parallel(self).unwrap(),
+            None => self.shallow_clone(),
+        }
+    }
+
+    #[cfg(feature = "parallelism")]
+    fn scatter_to_model_parallel_region(&self, comm: &Option<Arc<Communicator>>) -> Tensor {
+        match comm {
+            Some(comm) => comm.scatter_to_model_parallel(self).unwrap(),
+            None => self.shallow_clone(),
+        }
+    }
+
+    #[cfg(feature = "parallelism")]
+    fn gather_from_model_parallel_region(&self, comm: &Option<Arc<Communicator>>) -> Tensor {
+        match comm {
+            Some(comm) => comm.gather_from_model_parallel(self).unwrap(),
+            None => self.shallow_clone(),
+        }
+    }
+
+    #[cfg(not(feature = "parallelism"))]
+    fn copy_to_model_parallel_region(&self, comm: &Option<Arc<Communicator>>) -> Tensor {
+        assert!(comm.is_none());
+        self.shallow_clone()
+    }
+
+    #[cfg(not(feature = "parallelism"))]
+    fn reduce_from_model_parallel_region(&self, comm: &Option<Arc<Communicator>>) -> Tensor {
+        assert!(comm.is_none());
+        self.shallow_clone()
+    }
+
+    #[cfg(not(feature = "parallelism"))]
+    fn scatter_to_model_parallel_region(&self, comm: &Option<Arc<Communicator>>) -> Tensor {
+        assert!(comm.is_none());
+        self.shallow_clone()
+    }
+
+    #[cfg(not(feature = "parallelism"))]
+    fn gather_from_model_parallel_region(&self, comm: &Option<Arc<Communicator>>) -> Tensor {
+        assert!(comm.is_none());
+        self.shallow_clone()
+    }
+}
+
+#[derive(Debug)]
+pub struct ColumnParallelLinear {
+    linear: nn::Linear,
+    comm: Option<Arc<Communicator>>,
+    gather_output: bool,
+}
+
+#[derive(Debug)]
+pub struct RowParallelLinear {
+    linear: nn::Linear,
+    comm: Option<Arc<Communicator>>,
+    input_is_parallel: bool,
+}
+
+impl ColumnParallelLinear {
+    pub fn new(
+        vs: nn::Path,
+        in_features: i64,
+        out_features: i64,
+        bias: bool,
+        gather_output: bool,
+        comm: Option<Arc<Communicator>>,
+    ) -> Self {
+        let world_size = comm.as_ref().map(|c| c.size()).unwrap_or(1);
+        assert_eq!(
+            out_features % world_size,
+            0,
+            "out_features must be divisible by world_size"
+        );
+
+        let linear = nn::linear(
+            &vs,
+            in_features,
+            out_features,
+            nn::LinearConfig {
+                bias,
+                shard: comm.as_ref().map(|comm| Shard {
+                    dim: 0,
+                    rank: comm.rank() as usize,
+                    world_size: comm.size() as usize,
+                }),
+                ..Default::default()
+            },
+        );
+
+        Self {
+            linear,
+            comm,
+            gather_output,
+        }
+    }
+}
+
+impl Module for ColumnParallelLinear {
+    fn forward(&self, input: &Tensor) -> Tensor {
+        match &self.comm {
+            Some(_) => {
+                let device = input.device();
+                let input_parallel = input.copy_to_model_parallel_region(&self.comm).contiguous();
+                let output_parallel = self.linear.forward(&input_parallel);
+
+                let ret = if self.gather_output {
+                    output_parallel.gather_from_model_parallel_region(&self.comm)
+                } else {
+                    output_parallel
+                };
+                device.cuda_synchronize();
+                ret
+            }
+            None => self.linear.forward(&input),
+        }
+    }
+}
+
+unsafe impl Send for ColumnParallelLinear {}
+
+impl RowParallelLinear {
+    pub fn new(
+        vs: nn::Path,
+        in_features: i64,
+        out_features: i64,
+        bias: bool,
+        input_is_parallel: bool,
+        comm: Option<Arc<Communicator>>,
+    ) -> Self {
+        let world_size = comm.as_ref().map(|c| c.size()).unwrap_or(1);
+        assert_eq!(
+            in_features % world_size,
+            0,
+            "in_features must be divisible by world_size"
+        );
+
+        let linear = nn::linear(
+            &vs,
+            in_features,
+            out_features,
+            nn::LinearConfig {
+                bias,
+                shard: comm.as_ref().map(|comm| Shard {
+                    dim: 1,
+                    rank: comm.rank() as usize,
+                    world_size: comm.size() as usize,
+                }),
+                ..Default::default()
+            },
+        );
+
+        Self {
+            linear,
+            comm,
+            input_is_parallel,
+        }
+    }
+}
+
+impl Module for RowParallelLinear {
+    fn forward(&self, input: &Tensor) -> Tensor {
+        match &self.comm {
+            Some(_) => {
+                let device = input.device();
+
+                let input_parallel = if self.input_is_parallel {
+                    input.shallow_clone()
+                } else {
+                    input.scatter_to_model_parallel_region(&self.comm)
+                };
+
+                let output_parallel = self.linear.forward(&input_parallel);
+                let ret = output_parallel.reduce_from_model_parallel_region(&self.comm);
+                device.cuda_synchronize();
+                ret
+            }
+            None => self.linear.forward(input),
+        }
+    }
+}
+
+unsafe impl Send for RowParallelLinear {}
 
 #[allow(unused)]
 pub fn unshard_tensor(sharded_tensors: Vec<Tensor>, shard: &Shard) -> Tensor {

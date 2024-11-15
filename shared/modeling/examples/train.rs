@@ -7,7 +7,7 @@ use psyche_modeling::{
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Barrier};
 use std::time::SystemTime;
 use tch::nn::{self, OptimizerConfig};
 use tch::{Device, Kind, Tensor};
@@ -71,7 +71,7 @@ struct Args {
 
 fn train(
     repo_files: Vec<PathBuf>,
-    tensor_parallelism: Option<(Arc<CommunicatorId>, usize, usize)>,
+    tensor_parallelism: Option<(Arc<CommunicatorId>, usize, usize, Arc<Barrier>)>,
     args: Args,
 ) -> Result<()> {
     println!(
@@ -101,7 +101,7 @@ fn train(
     )?;
     let rank = tensor_parallelism
         .as_ref()
-        .map(|(_, rank, _)| *rank)
+        .map(|(_, rank, _, _)| *rank)
         .unwrap_or_default();
     let mut model = LlamaForCausalLM::from_pretrained(
         &repo_files,
@@ -110,7 +110,9 @@ fn train(
         args.cpu
             .then_some(Device::Cpu)
             .or(tensor_parallelism.as_ref().map(|_| Device::Cuda(rank))),
-        tensor_parallelism,
+            tensor_parallelism
+            .as_ref()
+            .map(|(id, rank, size, _)| (id.clone(), *rank, *size)),
         None,
     )?;
     let device = model.device();
@@ -161,9 +163,14 @@ fn train(
         opt.set_lr(lr);
         let mut avg_loss: f32 = 0.0;
         for i in 0..grad_accum_steps {
-            eprintln!("rust step {step} grad accum {i}");
             let (inputs, targets) = batch_iter.next().unwrap()?;
+            if let Some((_, _, _, barrier)) = tensor_parallelism.as_ref() {
+                barrier.wait();
+            }
             let (_, loss) = model.forward(&inputs, Some(&targets), None);
+            if let Some((_, _, _, barrier)) = tensor_parallelism.as_ref() {
+                barrier.wait();
+            }
             let loss = loss.unwrap() / grad_accum_divisor;
             if args.print_tensors {
                 println!(
@@ -172,9 +179,12 @@ fn train(
                 );
             }
             loss.backward();
+            if let Some((_, _, _, barrier)) = tensor_parallelism.as_ref() {
+                barrier.wait();
+            }
 
             let loss_value: f32 = loss.try_into()?;
-            avg_loss += loss_value * grad_accum_divisor as f32;
+            avg_loss += loss_value;
 
             grad_accum.accumulate_gradients();
         }
@@ -211,6 +221,7 @@ fn train(
         opt.clip_grad_norm(args.max_grad_norm);
         opt.step();
         opt.zero_grad();
+        grad_accum.zero_grad();
         let duration = SystemTime::now()
             .duration_since(start_time)
             .unwrap()
@@ -233,13 +244,15 @@ fn main() -> Result<()> {
         Some(0) | Some(1) | None => train(repo_files, None, args)?,
         Some(world_size) => {
             let id = Arc::new(CommunicatorId::new());
+            let barrier = Arc::new(Barrier::new(world_size));
             let threads = (0..world_size)
                 .map(|rank| {
                     let repo_files = repo_files.clone();
                     let args = args.clone();
                     let id = id.clone();
+                    let barrier = barrier.clone();
                     std::thread::spawn(move || {
-                        train(repo_files, Some((id, rank, world_size)), args)
+                        train(repo_files, Some((id, rank, world_size, barrier)), args)
                     })
                 })
                 .collect::<Vec<_>>();

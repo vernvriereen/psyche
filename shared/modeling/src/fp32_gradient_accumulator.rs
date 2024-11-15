@@ -7,6 +7,7 @@ pub struct Fp32GradientAccumulator {
 
 impl Fp32GradientAccumulator {
     pub fn new(parameters: &[Tensor], device: Device) -> Self {
+        let _no_grad = tch::no_grad_guard();
         let mut total_numel: i64 = 0;
 
         let parameters = parameters
@@ -34,15 +35,17 @@ impl Fp32GradientAccumulator {
     }
 
     pub fn accumulate_gradients(&mut self) {
-        for (param, (start, end)) in &self.parameters {
-            let mut grad = param.grad();
+        let _no_grad = tch::no_grad_guard();
+        for (param, (start, end)) in &mut self.parameters {
+            let grad = param.grad();
             let mut grad_slice = self.fp32_grads.slice(0, *start, *end, 1);
             let _t = grad_slice.g_add_(&grad.to_kind(Kind::Float).view([-1]));
-            let _t = grad.zero_();
+            param.zero_grad();
         }
     }
 
     pub fn apply_accumulation(&mut self) {
+        let _no_grad = tch::no_grad_guard();
         for (param, (start, end)) in &self.parameters {
             let mut grad = param.grad();
             let grad_slice = self.fp32_grads.slice(0, *start, *end, 1);
@@ -52,9 +55,6 @@ impl Fp32GradientAccumulator {
 
     pub fn zero_grad(&mut self) {
         let _ = self.fp32_grads.zero_();
-        for (param, _) in &self.parameters {
-            let _t = param.grad().zero_();
-        }
     }
 
     pub fn get_full_grad_buffer(&self) -> &Tensor {
