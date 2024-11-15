@@ -1,16 +1,19 @@
 use std::fmt::Display;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 
 pub struct CancellableBarrier {
-    mutex: Mutex<()>,
+    state: Mutex<BarrierState>,
     cvar: Condvar,
-    count: AtomicUsize,
     total: usize,
-    generation: AtomicUsize,
-    cancelled: AtomicBool,
 }
 
+struct BarrierState {
+    count: usize,
+    generation: usize,
+    cancelled: bool,
+}
+
+#[derive(Debug)]
 pub struct CancelledBarrier;
 
 impl Display for CancelledBarrier {
@@ -21,208 +24,283 @@ impl Display for CancelledBarrier {
 
 impl CancellableBarrier {
     pub fn new(n: usize) -> Arc<Self> {
+        assert!(n > 0, "Barrier size must be greater than 0");
         Arc::new(Self {
-            mutex: Mutex::new(()),
+            state: Mutex::new(BarrierState {
+                count: 0,
+                generation: 0,
+                cancelled: false,
+            }),
             cvar: Condvar::new(),
-            count: AtomicUsize::new(0),
             total: n,
-            generation: AtomicUsize::new(0),
-            cancelled: AtomicBool::new(false),
         })
     }
 
     pub fn wait(&self) -> Result<(), CancelledBarrier> {
-        let mut guard = self.mutex.lock().unwrap();
-        let local_gen = self.generation.load(Ordering::Acquire);
+        let mut state = self.state.lock().unwrap();
+        let generation = state.generation;
 
-        if self.cancelled.load(Ordering::Acquire) {
+        if state.cancelled {
             return Err(CancelledBarrier);
         }
 
-        let count = self.count.fetch_add(1, Ordering::Acquire) + 1;
-        if count < self.total {
-            loop {
-                guard = self.cvar.wait(guard).unwrap();
-                if self.cancelled.load(Ordering::Acquire) {
-                    return Err(CancelledBarrier {});
-                }
-                if local_gen != self.generation.load(Ordering::Acquire) {
-                    return Ok(());
-                }
+        state.count += 1;
+
+        if state.count < self.total {
+            // Not all threads have arrived yet, wait
+            while !state.cancelled && generation == state.generation {
+                state = self.cvar.wait(state).unwrap();
             }
+
+            // If cancelled, we need to clean up
+            if state.cancelled {
+                // Only decrease if we haven't reset the count already
+                if state.count > 0 {
+                    state.count -= 1;
+                }
+                self.cvar.notify_all();
+                return Err(CancelledBarrier);
+            }
+
+            Ok(())
         } else {
-            self.count.store(0, Ordering::Release);
-            self.generation.fetch_add(1, Ordering::Release);
+            // Last thread to arrive
+            state.count = 0;
+            state.generation = state.generation.wrapping_add(1);
             self.cvar.notify_all();
             Ok(())
         }
     }
 
     pub fn cancel(&self) {
-        self.cancelled.store(true, Ordering::Release);
+        let mut state = self.state.lock().unwrap();
+        state.cancelled = true;
+        state.count = 0;
+        state.generation = state.generation.wrapping_add(1);
         self.cvar.notify_all();
     }
 
     pub fn reset(&self) {
-        self.cancelled.store(false, Ordering::Release);
-        self.count.store(0, Ordering::Release);
-        self.generation.fetch_add(1, Ordering::Release);
+        let mut state = self.state.lock().unwrap();
+        state.cancelled = false;
+        state.count = 0;
+        state.generation = state.generation.wrapping_add(1);
+        self.cvar.notify_all();
     }
 }
+
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::mpsc;
     use std::thread;
     use std::time::Duration;
 
     #[test]
-    fn test_barrier_normal_operation() {
-        let num_threads = 3;
-        let barrier = CancellableBarrier::new(num_threads);
-        let counter = Arc::new(AtomicUsize::new(0));
+    fn test_barrier_basic() {
+        let barrier = CancellableBarrier::new(3);
+        let barrier2 = barrier.clone();
+        let barrier3 = barrier.clone();
 
-        let handles: Vec<_> = (0..num_threads)
-            .map(|_| {
-                let barrier = Arc::clone(&barrier);
-                let counter = Arc::clone(&counter);
-                thread::spawn(move || {
-                    assert!(barrier.wait().is_ok());
-                    counter.fetch_add(1, Ordering::SeqCst);
-                })
-            })
-            .collect();
+        let t1 = thread::spawn(move || barrier.wait().unwrap());
+        let t2 = thread::spawn(move || barrier2.wait().unwrap());
+        let t3 = thread::spawn(move || barrier3.wait().unwrap());
 
-        for handle in handles {
-            handle.join().unwrap();
-        }
-
-        assert_eq!(counter.load(Ordering::SeqCst), num_threads);
+        t1.join().unwrap();
+        t2.join().unwrap();
+        t3.join().unwrap();
     }
 
     #[test]
-    fn test_barrier_cancellation() {
-        let num_threads = 3;
-        let barrier = CancellableBarrier::new(num_threads);
-        let counter = Arc::new(AtomicUsize::new(0));
+    fn test_barrier_cancel() {
+        let barrier = CancellableBarrier::new(3);
+        let barrier2 = barrier.clone();
+        let barrier3 = barrier.clone();
 
-        let handles: Vec<_> = (0..num_threads)
-            .map(|_| {
-                let barrier = Arc::clone(&barrier);
-                let counter = Arc::clone(&counter);
-                thread::spawn(move || {
-                    thread::sleep(Duration::from_millis(10));
-                    if barrier.wait().is_err() {
-                        counter.fetch_add(1, Ordering::SeqCst);
-                    }
-                })
-            })
-            .collect();
+        let t1 = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(100));
+            barrier.wait()
+        });
 
-        thread::sleep(Duration::from_millis(5));
-        barrier.cancel();
+        let t2 = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(100));
+            barrier2.wait()
+        });
 
-        for handle in handles {
-            handle.join().unwrap();
-        }
+        let t3 = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            barrier3.cancel();
+        });
 
-        assert_eq!(counter.load(Ordering::SeqCst), num_threads);
+        assert!(t1.join().unwrap().is_err());
+        assert!(t2.join().unwrap().is_err());
+        t3.join().unwrap();
     }
 
     #[test]
     fn test_barrier_reset_and_reuse() {
-        let num_threads = 3;
-        let barrier = CancellableBarrier::new(num_threads);
-        let counter = Arc::new(AtomicUsize::new(0));
+        let barrier = CancellableBarrier::new(2);
+        let barrier1 = barrier.clone();
+        let barrier2 = barrier.clone();
 
         // First use
-        let handles: Vec<_> = (0..num_threads)
-            .map(|_| {
-                let barrier = Arc::clone(&barrier);
-                let counter = Arc::clone(&counter);
-                thread::spawn(move || {
-                    assert!(barrier.wait().is_ok());
-                    counter.fetch_add(1, Ordering::SeqCst);
-                })
-            })
-            .collect();
+        let t1 = thread::spawn(move || barrier1.wait().unwrap());
+        let t2 = thread::spawn(move || barrier2.wait().unwrap());
+        t1.join().unwrap();
+        t2.join().unwrap();
 
-        for handle in handles {
-            handle.join().unwrap();
-        }
-
-        assert_eq!(counter.load(Ordering::SeqCst), num_threads);
-
-        // Reset and second use
+        // Reset and reuse
         barrier.reset();
-        counter.store(0, Ordering::SeqCst);
+        let barrier2 = barrier.clone();
 
-        let handles: Vec<_> = (0..num_threads)
-            .map(|_| {
-                let barrier = Arc::clone(&barrier);
-                let counter = Arc::clone(&counter);
-                thread::spawn(move || {
-                    assert!(barrier.wait().is_ok());
-                    counter.fetch_add(1, Ordering::SeqCst);
-                })
-            })
-            .collect();
-
-        for handle in handles {
-            handle.join().unwrap();
-        }
-
-        assert_eq!(counter.load(Ordering::SeqCst), num_threads);
+        let t1 = thread::spawn(move || barrier.wait().unwrap());
+        let t2 = thread::spawn(move || barrier2.wait().unwrap());
+        t1.join().unwrap();
+        t2.join().unwrap();
     }
 
     #[test]
-    fn test_barrier_cancel_then_reset() {
-        let num_threads = 3;
-        let barrier = CancellableBarrier::new(num_threads);
-        let counter = Arc::new(AtomicUsize::new(0));
+    fn test_barrier_multiple_generations() {
+        let barrier = CancellableBarrier::new(2);
+        let (tx, rx) = mpsc::channel();
 
-        // First use with cancellation
-        let handles: Vec<_> = (0..num_threads)
-            .map(|_| {
-                let barrier = Arc::clone(&barrier);
-                let counter = Arc::clone(&counter);
-                thread::spawn(move || {
-                    thread::sleep(Duration::from_millis(10));
-                    if barrier.wait().is_err() {
-                        counter.fetch_add(1, Ordering::SeqCst);
-                    }
-                })
-            })
-            .collect();
+        let mut handles = vec![];
+        for _ in 0..2 {  // Changed from 3 to 2 to match barrier size
+            let barrier = barrier.clone();
+            let tx = tx.clone();
+            handles.push(thread::spawn(move || {
+                for i in 0..3 {
+                    barrier.wait().unwrap();
+                    tx.send(i).unwrap();
+                }
+            }));
+        }
 
-        thread::sleep(Duration::from_millis(5));
+        // We should receive the numbers in order for each thread
+        let mut results = vec![];
+        for _ in 0..6 {  // Changed from 9 to 6 (2 threads * 3 iterations)
+            results.push(rx.recv().unwrap());
+        }
+
+        // Check that we got two sequences of 0,1,2
+        assert_eq!(results.iter().filter(|&&x| x == 0).count(), 2);
+        assert_eq!(results.iter().filter(|&&x| x == 1).count(), 2);
+        assert_eq!(results.iter().filter(|&&x| x == 2).count(), 2);
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_barrier_cancel_and_reset() {
+        let barrier = CancellableBarrier::new(3);
+        
+        // Cancel before any waits
         barrier.cancel();
+        assert!(barrier.wait().is_err());
 
-        for handle in handles {
-            handle.join().unwrap();
-        }
-
-        assert_eq!(counter.load(Ordering::SeqCst), num_threads);
-
-        // Reset and second use
+        // Reset and try again
         barrier.reset();
-        counter.store(0, Ordering::SeqCst);
+        let barrier2 = barrier.clone();
+        let barrier3 = barrier.clone();
 
-        let handles: Vec<_> = (0..num_threads)
-            .map(|_| {
-                let barrier = Arc::clone(&barrier);
-                let counter = Arc::clone(&counter);
-                thread::spawn(move || {
-                    assert!(barrier.wait().is_ok());
-                    counter.fetch_add(1, Ordering::SeqCst);
-                })
-            })
-            .collect();
+        let t1 = thread::spawn(move || barrier.wait().unwrap());
+        let t2 = thread::spawn(move || barrier2.wait().unwrap());
+        let t3 = thread::spawn(move || barrier3.wait().unwrap());
+
+        t1.join().unwrap();
+        t2.join().unwrap();
+        t3.join().unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Barrier size must be greater than 0")]
+    fn test_barrier_zero_size() {
+        CancellableBarrier::new(0);
+    }
+
+    #[test]
+    fn test_barrier_single_thread() {
+        let barrier = CancellableBarrier::new(1);
+        barrier.wait().unwrap(); // Should complete immediately
+    }
+
+    #[test]
+    fn test_barrier_cancel_after_partial_arrival() {
+        let barrier = CancellableBarrier::new(3);
+        let barrier2 = barrier.clone();
+        let barrier3 = barrier.clone();
+
+        let t1 = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            barrier.wait()
+        });
+
+        let t2 = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            barrier2.wait()
+        });
+
+        // Let the other threads start waiting
+        thread::sleep(Duration::from_millis(100));
+        barrier3.cancel();
+
+        assert!(t1.join().unwrap().is_err());
+        assert!(t2.join().unwrap().is_err());
+    }
+
+    #[test]
+    fn test_barrier_stress() {
+        let barrier = CancellableBarrier::new(10);
+        let mut handles = vec![];
+
+        for _ in 0..10 {
+            let barrier = barrier.clone();
+            handles.push(thread::spawn(move || {
+                for _ in 0..100 {
+                    barrier.wait().unwrap();
+                }
+            }));
+        }
 
         for handle in handles {
             handle.join().unwrap();
         }
+    }
 
-        assert_eq!(counter.load(Ordering::SeqCst), num_threads);
+    #[test]
+    fn test_barrier_cancel_stress() {
+        let barrier = CancellableBarrier::new(10);
+        let mut handles = vec![];
+
+        // Spawn 9 waiting threads
+        for _ in 0..9 {
+            let barrier = barrier.clone();
+            handles.push(thread::spawn(move || {
+                loop {
+                    match barrier.wait() {
+                        Ok(()) => continue,
+                        Err(_) => break,
+                    }
+                }
+            }));
+        }
+
+        // Spawn a thread that alternates between cancel and reset
+        let cancel_barrier = barrier.clone();
+        handles.push(thread::spawn(move || {
+            for _ in 0..10 {
+                thread::sleep(Duration::from_millis(1));
+                cancel_barrier.cancel();
+                thread::sleep(Duration::from_millis(1));
+                cancel_barrier.reset();
+            }
+        }));
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
     }
 }
