@@ -118,29 +118,39 @@ export async function getData(
     const meta = _meta.data.project.run;
     const history = (
       await gql(
-        `query RunFullHistory($project: String!, $entity: String!, $name: String!, $samples: Int) {
-      project(name: $project, entityName: $entity) {
-        run(name: $name) {
-          history(samples: $samples)
-        }
-      }
-    }`,
+        `query RunSampledHistory($project: String!, $entity: String!, $name: String!, $specs: [JSONString!]!) {
+            project(name: $project, entityName: $entity) {
+                run(name: $name) { sampledHistory(specs: $specs) }
+            }
+        }`,
         {
           entity,
           project,
           name,
-          ...(samples !== undefined ? { samples } : {}),
+          specs: JSON.stringify({
+            samples: samples ?? 500,
+            keys: [
+              "_step",
+              "train/loss",
+              "train/confidence",
+              "train/tokens_per_sec",
+              "train/total_tokens",
+              "eval/hellaswag",
+              "eval/mmlu",
+              "eval/arc_easy",
+              "eval/arc_challenge",
+            ],
+          }),
         },
       )
-    ).data.project.run;
-
+    ).data.project.run.sampledHistory[0];
     return {
       id: meta.id,
       createdAt: meta.createdAt,
       displayName: meta.displayName,
       config: JSON.parse(meta.config, slashReviver),
       summary: JSON.parse(meta.summaryMetrics, slashReviver),
-      history: history.history.map((line: string) => JSON.parse(line, slashReviver)),
+      history: history.map((line: object) => JSON.parse(JSON.stringify(line), slashReviver)),
     };
   } catch (err) {
     console.error(err);
