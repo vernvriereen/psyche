@@ -99,8 +99,8 @@ enum Commands {
         #[clap(long, env)]
         write_log: Option<PathBuf>,
 
-        #[clap(long, default_value_t = false, env)]
-        optim_stats: bool,
+        #[clap(long, default_value_t = 10, env)]
+        optim_stats: u32,
     },
 }
 

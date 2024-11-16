@@ -103,7 +103,7 @@ impl Trainer {
         optimizer: model::Optimizer,
         micro_batch_size: usize,
         run_state: Arc<AtomicUsize>,
-        stats: bool,
+        stats: u32,
     ) -> Self {
         assert!(!models.is_empty());
         let first_model_device = models[0].device();
@@ -148,7 +148,6 @@ impl Trainer {
                         compression_chunk as i64,
                         0.0,
                         model.comm.clone(),
-                        stats,
                     )
                     .into(),
                     clip_grad_norm,
@@ -174,6 +173,7 @@ impl Trainer {
                     run_state,
                     lr_scheduler,
                     barrier,
+                    stats,
                 )
             });
         }
@@ -346,6 +346,7 @@ impl Trainer {
         run_state: Arc<AtomicUsize>,
         lr_scheduler: AnyLearningRateScheduler,
         barrier: Arc<CancellableBarrier>,
+        stats: u32,
     ) {
         let mut grad_accum: Option<Fp32GradientAccumulator> = None;
         loop {
@@ -465,6 +466,7 @@ impl Trainer {
                                             false => *compression_topk,
                                         },
                                         *quantize,
+                                        stats > 0 && stats % step == 0,
                                     );
                                     // just need results from one of the ranks
                                     match index == 0 {

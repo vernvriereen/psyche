@@ -498,7 +498,6 @@ impl Distro {
         compression_chunk: i64,
         weight_decay: f64,
         comm: Option<Arc<Communicator>>,
-        stats: bool,
     ) -> Self {
         let _no_grad = tch::no_grad_guard();
         let mut sgd: Optimizer = Sgd {
@@ -520,15 +519,13 @@ impl Distro {
             state.push(State {
                 delta: variable.zeros_like(),
             });
-            if stats {
-                index_to_name.insert(
-                    index,
-                    named_variables
-                        .iter()
-                        .find(|x| x.1.is_set_to(variable))
-                        .map(|x| x.0.clone()),
-                );
-            }
+            index_to_name.insert(
+                index,
+                named_variables
+                    .iter()
+                    .find(|x| x.1.is_set_to(variable))
+                    .map(|x| x.0.clone()),
+            );
         }
 
         let transform = TransformDCT::new(&variables, compression_chunk);
@@ -550,14 +547,14 @@ impl Distro {
         warmup_factor: f64,
         compression_topk: i64,
         quantization: bool,
+        stats: bool,
     ) -> Vec<DistroResult> {
         let _no_grad = tch::no_grad_guard();
         let variables = &mut self.sgd.trainable_variables_with_sharding();
         let mut ret = Vec::with_capacity(variables.len());
         for (index, (variable, shard)) in variables.iter_mut().enumerate() {
-            let name = self.index_to_name.get(&index);
-            let grad_energy: Option<f64> = match &name {
-                Some(Some(_)) => Some(
+            let grad_energy: Option<f64> = match stats {
+                true => Some(
                     variable
                         .grad()
                         .norm_scalaropt_dtype(1, Kind::Float)
@@ -653,8 +650,8 @@ impl Distro {
                 }
             };
 
-            let delta_transmit_energies: Option<(f64, f64)> = match &name {
-                Some(Some(_)) => Some((
+            let delta_transmit_energies: Option<(f64, f64)> = match stats {
+                true => Some((
                     full_delta
                         .norm_scalaropt_dtype(1, Kind::Float)
                         .try_into()
@@ -664,7 +661,7 @@ impl Distro {
                         .try_into()
                         .unwrap(),
                 )),
-                _ => None,
+                false => None,
             };
 
             // Remove transmitted from delta
@@ -675,19 +672,22 @@ impl Distro {
                 sparse_val,
                 xshape,
                 totalk,
-                stats: match name {
-                    Some(Some(name)) => Some(HashMap::from([
-                        (
-                            format!("{name}.delta_energy"),
-                            delta_transmit_energies.map(|x| x.0).unwrap(),
-                        ),
-                        (
-                            format!("{name}.transmit_energy"),
-                            delta_transmit_energies.map(|x| x.1).unwrap(),
-                        ),
-                        (format!("{name}.grad_energy"), grad_energy.unwrap()),
-                    ])),
-                    _ => None,
+                stats: match stats {
+                    true => match self.index_to_name.get(&index) {
+                        Some(Some(name)) => Some(HashMap::from([
+                            (
+                                format!("{name}.delta_energy"),
+                                delta_transmit_energies.map(|x| x.0).unwrap(),
+                            ),
+                            (
+                                format!("{name}.transmit_energy"),
+                                delta_transmit_energies.map(|x| x.1).unwrap(),
+                            ),
+                            (format!("{name}.grad_energy"), grad_energy.unwrap()),
+                        ])),
+                        _ => None,
+                    },
+                    false => None,
                 },
             });
         }
