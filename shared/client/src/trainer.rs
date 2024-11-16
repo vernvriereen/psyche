@@ -103,7 +103,7 @@ impl Trainer {
         optimizer: model::Optimizer,
         micro_batch_size: usize,
         run_state: Arc<AtomicUsize>,
-        stats: u32,
+        stats: Option<u32>,
     ) -> Self {
         assert!(!models.is_empty());
         let first_model_device = models[0].device();
@@ -346,7 +346,7 @@ impl Trainer {
         run_state: Arc<AtomicUsize>,
         lr_scheduler: AnyLearningRateScheduler,
         barrier: Arc<CancellableBarrier>,
-        stats: u32,
+        stats: Option<u32>,
     ) {
         let mut grad_accum: Option<Fp32GradientAccumulator> = None;
         loop {
@@ -466,7 +466,9 @@ impl Trainer {
                                             false => *compression_topk,
                                         },
                                         *quantize,
-                                        stats > 0 && stats % step == 0,
+                                        stats
+                                            .and_then(|stats| Some(stats % step == 0))
+                                            .unwrap_or(false),
                                     );
                                     // just need results from one of the ranks
                                     match index == 0 {

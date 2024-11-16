@@ -86,7 +86,7 @@ pub struct AppParams {
     pub hub_read_token: Option<String>,
     pub wandb_info: Option<WandBInfo>,
     pub batch_shuffle_type: BatchShuffleType,
-    pub optim_stats: u32,
+    pub optim_stats: Option<u32>,
 }
 
 impl AppBuilder {

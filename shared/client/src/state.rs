@@ -145,7 +145,7 @@ pub struct State<T: NodeIdentity> {
     wandb_log: LogData,
     retried_downloads: HashMap<psyche_network::Hash, usize>,
     all_batches_finished_deserializing: Arc<AtomicBool>,
-    optim_stats: u32,
+    optim_stats: Option<u32>,
     /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
     _last_observed_num_batches_remaining: usize,
     _eval_results: HashMap<String, Vec<f64>>,
@@ -164,7 +164,7 @@ pub struct StateOptions<T: NodeIdentity> {
     pub hub_read_token: Option<String>,
     pub wandb_info: Option<WandBInfo>,
     pub batch_shuffle_type: BatchShuffleType,
-    pub optim_stats: u32,
+    pub optim_stats: Option<u32>,
 }
 
 impl<T: NodeIdentity> State<T> {
