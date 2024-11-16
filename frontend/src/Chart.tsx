@@ -399,7 +399,8 @@ const LineGraphInner: React.FC<LineGraphProps & { width: number; height: number 
           className="absolute z-10 pointer-events-none bg-primary text-backdrop text-nowrap top-8 py-1 px-2 text-center"
           style={{
             left: tooltipLeft + 10,
-            transform: "translate(-50%, -100%)",
+            top: '50%',
+            transform: "translate(0, -100%)",
           }}
         >
           <div className="font-eva text-xl">{tooltipData.lineLabel}</div>
