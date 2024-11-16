@@ -376,8 +376,8 @@ const LineGraphInner: React.FC<LineGraphProps & { width: number; height: number 
         <Bar
           x={margin.left + padding.left}
           y={padding.bottom}
-          width={innerWidth}
-          height={innerHeight}
+          width={width}
+          height={height}
           fill="transparent"
           onTouchStart={handleTooltip}
           onTouchMove={handleTooltip}

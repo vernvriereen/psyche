@@ -171,85 +171,83 @@ const Run: React.FC<{
           numTotalTokens={numTotalTokens}
           tokensPerSecond={run.summary.train.tokens_per_sec}
         />
-        <div className="flex-1 grid xl:grid-cols-2 grid-cols-1 gap-8 auto-rows-fr">
-          <div className="grid xl:grid-cols-1 sm:grid-cols-2 grid-cols-1">
-            <div className="grid sm:grid-cols-2 grid-cols-1 gap-4">
-              <ResponsiveLineGraph
-                xLabel="step"
-                numXMarkers={2}
-                numYMarkers={3}
-                title={["TRAINING", "CONFIDENCE"]}
-                lines={[
-                  {
-                    points: run.history.map((s) => ({
-                      x: s._step,
-                      y: s.train.confidence * 100,
-                    })),
-                    className: palette[1],
-                    label: "Confidence",
-                    unit: "%",
-                  },
-                ]}
-              />
-              <ResponsiveLineGraph
-                xLabel="step"
-                numXMarkers={2}
-                numYMarkers={3}
-                title={["TRAINING", "LOSS"]}
-                lines={[
-                  {
-                    points: run.history.map((s) => ({
-                      x: s._step,
-                      y: s.train.loss,
-                    })),
-                    className: palette[0],
-                    label: "Loss",
-                  },
-                ]}
-              />
+        <div className="flex-1 grid xl:grid-cols-2 grid-cols-1 gap-8 xl:grid-rows-[repeat(2,minmax(30vh,1fr))] grid-rows-[minmax(60vh,1fr)_minmax(auto,0.5fr)_minmax(40vh,1fr)_minmax(auto,1fr)]">
+          <div className="grid sm:grid-cols-2 grid-cols-1 gap-4">
+            <ResponsiveLineGraph
+              xLabel="step"
+              numXMarkers={2}
+              numYMarkers={3}
+              title={["TRAINING", "CONFIDENCE"]}
+              lines={[
+                {
+                  points: run.history.map((s) => ({
+                    x: s._step,
+                    y: s.train.confidence * 100,
+                  })),
+                  className: palette[1],
+                  label: "Confidence",
+                  unit: "%",
+                },
+              ]}
+            />
+            <ResponsiveLineGraph
+              xLabel="step"
+              numXMarkers={2}
+              numYMarkers={3}
+              title={["TRAINING", "LOSS"]}
+              lines={[
+                {
+                  points: run.history.map((s) => ({
+                    x: s._step,
+                    y: s.train.loss,
+                  })),
+                  className: palette[0],
+                  label: "Loss",
+                },
+              ]}
+            />
 
-              <ResponsiveLineGraph
-                xLabel="step"
-                renderValue={(v) => formatNumber(v, 0)}
-                numXMarkers={2}
-                numYMarkers={3}
-                title={["METRICS", "TOK/S"]}
-                lines={[
-                  {
-                    className: palette[2],
-                    label: "Tokens Per Second",
-                    unit: " tok/s",
-                    points: run.history.map((s) => ({
+            <ResponsiveLineGraph
+              xLabel="step"
+              renderValue={(v) => formatNumber(v, 0)}
+              numXMarkers={2}
+              numYMarkers={3}
+              title={["METRICS", "TOK/S"]}
+              lines={[
+                {
+                  className: palette[2],
+                  label: "Tokens Per Second",
+                  unit: " tok/s",
+                  points: run.history.map((s) => ({
+                    x: s._step,
+                    y: s.train.tokens_per_sec,
+                  })),
+                },
+              ]}
+            />
+            <ResponsiveLineGraph
+              xLabel="step"
+              renderValue={convertBytes}
+              numXMarkers={2}
+              numYMarkers={3}
+              title={["METRICS", "BANDWIDTH"]}
+              lines={[
+                {
+                  className: palette[2],
+                  label: "Node Bandwidth",
+                  unit: "/s",
+                  points: run.history
+                    .filter((s) => !!s.p2p?.nodes)
+                    .map((s) => ({
                       x: s._step,
-                      y: s.train.tokens_per_sec,
+                      y: Object.values(s.p2p.nodes)
+                        .map((v) => v.bandwidth)
+                        .filter((x) => !!x)
+                        .reduce((a, b) => a + b, 0),
                     })),
-                  },
-                ]}
-              />
-              <ResponsiveLineGraph
-                xLabel="step"
-                renderValue={convertBytes}
-                numXMarkers={2}
-                numYMarkers={3}
-                title={["METRICS", "BANDWIDTH"]}
-                lines={[
-                  {
-                    className: palette[2],
-                    label: "Node Bandwidth",
-                    unit: "/s",
-                    points: run.history
-                      .filter((s) => !!s.p2p?.nodes)
-                      .map((s) => ({
-                        x: s._step,
-                        y: Object.values(s.p2p.nodes)
-                          .map((v) => v.bandwidth)
-                          .filter((x) => !!x)
-                          .reduce((a, b) => a + b, 0),
-                      })),
-                  },
-                ]}
-              />
-            </div>
+                },
+              ]}
+            />
           </div>
 
           <TrainersMap nodes={nodes} />
