@@ -467,7 +467,7 @@ impl Trainer {
                                         },
                                         *quantize,
                                         stats
-                                            .and_then(|stats| Some(stats % step == 0))
+                                            .and_then(|stats| Some(step % stats == 0))
                                             .unwrap_or(false),
                                     );
                                     // just need results from one of the ranks
