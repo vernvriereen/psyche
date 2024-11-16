@@ -23,7 +23,7 @@ use tch::{
     Device, Tensor,
 };
 use thiserror::Error;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 pub type ParallelModels = Vec<LlamaForCausalLM>;
 
@@ -636,16 +636,15 @@ fn optimize_step(
             Some(results) => {
                 if !results.is_empty() {
                     debug!("Applying {} DisTrO gradients", results.len());
+                    if barrier.wait().is_err() {
+                        return ControlFlow::Break(());
+                    }
+                    optimizer.apply(results, lr);
+                    if barrier.wait().is_err() {
+                        return ControlFlow::Break(());
+                    }
                 } else {
-                    error!("Empty DisTrO gradients");
-                    return ControlFlow::Break(());
-                }
-                if barrier.wait().is_err() {
-                    return ControlFlow::Break(());
-                }
-                optimizer.apply(results, lr);
-                if barrier.wait().is_err() {
-                    return ControlFlow::Break(());
+                    warn!("Empty DisTrO gradients, model parameters will not be updated");
                 }
             }
             None => {
