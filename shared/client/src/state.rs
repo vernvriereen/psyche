@@ -261,12 +261,11 @@ impl<T: NodeIdentity> State<T> {
         let position = match state.clients.iter().position(|x| x.id == self.identity) {
             Some(position) => position as u64,
             None => {
-                info!("Awaiting inclusion in round");
                 return Ok(None);
             }
         };
         self.atomic_run_state
-            .store(state.run_state.into(), Ordering::Relaxed);
+            .store(state.run_state.into(), Ordering::SeqCst);
         trace!(
             "trying to tick {}. had prev state? {}",
             state.run_state,

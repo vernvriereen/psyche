@@ -221,9 +221,7 @@ fn train(
         opt.clip_grad_norm(args.max_grad_norm);
         opt.step();
         opt.zero_grad();
-        if let Some(grad_accum) = &mut grad_accum {
-            grad_accum.zero_grad();
-        }
+        grad_accum.zero_grad();
         let duration = SystemTime::now()
             .duration_since(start_time)
             .unwrap()

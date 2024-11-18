@@ -4,7 +4,7 @@ use crate::util::convert_bytes;
 use anyhow::{bail, Context, Error, Result};
 use bytes::Bytes;
 use futures_util::future::select_all;
-use iroh::base::{rpc::RpcError, ticket::BlobTicket};
+use iroh::base::ticket::BlobTicket;
 use iroh::blobs::get::db::DownloadProgress;
 use iroh::net::key::PublicKey;
 use psyche_core::Networkable;
@@ -77,7 +77,7 @@ pub struct DownloadUpdate {
     pub downloaded_size: u64,
     pub total_size: u64,
     pub all_done: bool,
-    pub error: Option<RpcError>,
+    pub error: Option<String>,
 }
 
 pub struct DownloadComplete<D: Networkable> {
@@ -356,7 +356,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                             downloaded_size: 0,
                             total_size: 0,
                             all_done: true,
-                            error: Some(err),
+                            error: Some(format!("{err}")),
                         })
                     }
                 };

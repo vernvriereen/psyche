@@ -14,16 +14,16 @@ use std::{
     ops::ControlFlow,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        mpsc, Arc,
+        mpsc, Arc, Condvar, Mutex,
     },
     time::Instant,
 };
 use tch::{
     nn::{self, OptimizerConfig},
-    Device, Tensor,
+    Device, Kind, Tensor,
 };
 use thiserror::Error;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 pub type ParallelModels = Vec<LlamaForCausalLM>;
 
@@ -108,8 +108,11 @@ impl Trainer {
     ) -> Self {
         assert!(!models.is_empty());
         let first_model_device = models[0].device();
+
         let mut ret = Vec::with_capacity(models.len());
+
         let barrier = CancellableBarrier::new(models.len());
+
         for (index, model) in models.into_iter().enumerate() {
             let (assignment_tx, assignment_rx) = mpsc::channel();
             let (result_tx, result_rx) = mpsc::channel();
@@ -163,6 +166,7 @@ impl Trainer {
             let run_state = run_state.clone();
             let lr_scheduler = lr_scheduler.clone();
             let barrier = barrier.clone();
+
             std::thread::spawn(move || {
                 Self::model_thread(
                     model,
@@ -179,6 +183,7 @@ impl Trainer {
                 )
             });
         }
+
         Self {
             models: ret,
             first_model_device,
@@ -351,6 +356,10 @@ impl Trainer {
         stats: Option<u32>,
         grad_accum_in_fp32: bool,
     ) {
+        if barrier.wait().is_err() {
+            error!("Incorrect model_thread boot");
+            return;
+        }
         let mut grad_accum: Option<Fp32GradientAccumulator> = None;
         loop {
             match assignment.recv() {
@@ -397,12 +406,12 @@ impl Trainer {
                     let mut loss = 0f32;
                     let mut cancelled = false;
                     for micro_batch in micro_batches {
-                        if RunState::try_from(run_state.load(Ordering::Relaxed)).unwrap()
+                        if RunState::try_from(run_state.load(Ordering::SeqCst)).unwrap()
                             != RunState::RoundTrain
                         {
                             cancelled = true;
                             barrier.cancel();
-                            debug!("Aborting training, run state changed");
+                            warn!("Aborting training, run state changed");
                             break;
                         }
                         match Self::forward_backward(
@@ -415,7 +424,7 @@ impl Trainer {
                             Ok(None) => {
                                 // cancelled barrier catching race to on run_state
                                 cancelled = true;
-                                debug!("Aborting training, run state changed");
+                                warn!("Aborting training, run state changed");
                                 break;
                             }
                             Err(err) => {
