@@ -13,7 +13,6 @@ use std::{
 use tch::{Device, Kind, Tensor};
 use tokenizers::Tokenizer;
 
-const EOS_TOKEN: &str = "</s>";
 const DEFAULT_PROMPT: &str = r"
 EDWARD:
 I wonder how our princely father 'scaped,
@@ -114,11 +113,7 @@ fn inference(
             .map(|(id, rank, size, _)| (id.clone(), *rank, *size)),
         None,
     )?;
-    let eos_token_id = model
-        .config
-        .eos_token_id
-        .clone()
-        .or_else(|| tokenizer.token_to_id(EOS_TOKEN).map(LlamaEosToks::Single));
+    let eos_token_id = model.config.eos_token_id.clone();
     let mut logits_processor = {
         let temperature = args.temperature;
         let sampling = if temperature <= 0. {
@@ -156,13 +151,26 @@ fn inference(
 
         match eos_token_id {
             Some(LlamaEosToks::Single(eos_tok_id)) if next_token == eos_tok_id => {
+                if rank == 0 {
+                    println!(
+                        "{}",
+                        tokenizer.tokenizer().decode(&[next_token], false).unwrap()
+                    );
+                }
                 break;
             }
             Some(LlamaEosToks::Multiple(ref eos_ids)) if eos_ids.contains(&next_token) => {
+                if rank == 0 {
+                    println!(
+                        "{}",
+                        tokenizer.tokenizer().decode(&[next_token], false).unwrap()
+                    );
+                }
                 break;
             }
             _ => (),
         }
+
         if let Some(t) = tokenizer.next_token(next_token)? {
             if rank == 0 {
                 print!("{t}");

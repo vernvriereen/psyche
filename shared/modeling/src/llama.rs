@@ -116,12 +116,10 @@ fn repeat_kv(hidden_states: &Tensor, n_rep: i64) -> Tensor {
         return hidden_states.shallow_clone();
     }
 
-    // Add a new dimension and expand
     let hidden_states = hidden_states
         .unsqueeze(2)
-        .expand([batch, num_key_value_heads, n_rep, slen, head_dim], true);
+        .expand([batch, num_key_value_heads, n_rep, slen, head_dim], false);
 
-    // Reshape to final dimensions
     hidden_states.reshape([batch, num_key_value_heads * n_rep, slen, head_dim])
 }
 
@@ -177,7 +175,7 @@ impl Mlp {
             n_embd,
             n_hidden,
             false,
-            false, // Don't gather - going into activation
+            false,
             comm.clone(),
         );
         let up_proj = ColumnParallelLinear::new(
@@ -244,21 +242,8 @@ impl CausalSelfAttention {
         let size_q = head_dim * n_head;
         let size_kv = head_dim * n_kvheads;
 
-        // println!("n_embd: {n_embd}");
-        // println!("n_head: {n_head}");
-        // println!("n_kvheads: {n_kvheads}");
-        // println!("head_dim: {head_dim}");
-        // println!("size_q: {size_q}");
-        // println!("size_kv: {size_kv}");
-
-        let q_proj = ColumnParallelLinear::new(
-            &vs / "q_proj",
-            n_embd,
-            size_q,
-            false,
-            false, // Don't gather - we want to keep sharded for attention
-            comm.clone(),
-        );
+        let q_proj =
+            ColumnParallelLinear::new(&vs / "q_proj", n_embd, size_q, false, false, comm.clone());
         let k_proj =
             ColumnParallelLinear::new(&vs / "k_proj", n_embd, size_kv, false, false, comm.clone());
         let v_proj =
@@ -297,25 +282,13 @@ impl CausalSelfAttention {
         assert_eq!(c, self.n_embd, "Input hidden size mismatch");
         let kind = x.kind();
 
-        //println!("\nCausalSelfAttention Forward:");
-        //println!("Input size: {:?}", x.size());
-
-        // These projections now return sharded tensors
         let q = self.q_proj.forward(x);
         let k = self.k_proj.forward(x);
         let v = self.v_proj.forward(x);
 
-        //println!("After projections:");
-        //println!("q size: {:?}", q.size());
-        //println!("k size: {:?}", k.size());
-        //println!("v size: {:?}", v.size());
-
         let local_n_head = self.n_head / self.tp_size;
         let local_n_kvhead = self.n_kvhead / self.tp_size;
 
-        //println!("local_n_head: {}, local_n_kvhead: {}", local_n_head, local_n_kvhead);
-
-        // Ensure we're using the correct dimensions for the sharded tensors
         let q = q
             .contiguous()
             .reshape([b, t, local_n_head, self.head_dim])
@@ -329,21 +302,11 @@ impl CausalSelfAttention {
             .reshape([b, t, local_n_kvhead, self.head_dim])
             .transpose(1, 2);
 
-        //println!("After reshape and transpose:");
-        //println!("q size: {:?}", q.size());
-        //println!("k size: {:?}", k.size());
-        //println!("v size: {:?}", v.size());
-
         let q = self.apply_rotary_emb(&q, index_pos, cache).to_kind(kind);
         let k = self.apply_rotary_emb(&k, index_pos, cache).to_kind(kind);
 
-        // Make sure repeat_kv handles the local dimensions correctly
         let k = repeat_kv(&k, local_n_head / local_n_kvhead);
         let v = repeat_kv(&v, local_n_head / local_n_kvhead);
-
-        //println!("After repeat_kv:");
-        //println!("k size: {:?}", k.size());
-        //println!("v size: {:?}", v.size());
 
         let scale = 1.0 / (self.head_dim as f64).sqrt();
 
@@ -357,17 +320,9 @@ impl CausalSelfAttention {
                 t > 1,
                 Some(scale),
             );
-            //println!("After attention (sdpa):");
-            //println!("att size: {:?}", att.size());
-            // Use the local head dimension for reshaping
-            let y = att
-                .transpose(1, 2)
+            att.transpose(1, 2)
                 .contiguous()
-                .reshape([b, t, local_n_head * self.head_dim]);
-
-            //println!("After reshape:");
-            //println!("y size: {:?}", y.size());
-            y
+                .reshape([b, t, local_n_head * self.head_dim])
         } else {
             let att = q.matmul(&k.transpose(-2, -1)) * scale;
             let mask = Tensor::ones([t, t], (kind, self.device))
@@ -375,14 +330,12 @@ impl CausalSelfAttention {
                 .reshape([1, 1, t, t]);
             let att = att.masked_fill(&mask.eq(0.), f64::NEG_INFINITY);
             let y = att.softmax(-1, kind).matmul(&v);
-            // Use the local head dimension for reshaping
             y.transpose(1, 2)
                 .contiguous()
                 .reshape([b, t, local_n_head * self.head_dim])
         };
 
         let output = self.o_proj.forward(&y);
-        //println!("Final output size: {:?}", output.size());
         output
     }
 }

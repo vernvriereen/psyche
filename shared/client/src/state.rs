@@ -146,6 +146,7 @@ pub struct State<T: NodeIdentity> {
     retried_downloads: HashMap<psyche_network::Hash, usize>,
     all_batches_finished_deserializing: Arc<AtomicBool>,
     optim_stats: Option<u32>,
+    grad_accum_in_fp32: bool,
     /// only used for the TUI. do not rely upon this staying in sync or i will be very angy >:(
     _last_observed_num_batches_remaining: usize,
     _eval_results: HashMap<String, Vec<f64>>,
@@ -165,6 +166,7 @@ pub struct StateOptions<T: NodeIdentity> {
     pub wandb_info: Option<WandBInfo>,
     pub batch_shuffle_type: BatchShuffleType,
     pub optim_stats: Option<u32>,
+    pub grad_accum_in_fp32: bool,
 }
 
 impl<T: NodeIdentity> State<T> {
@@ -183,6 +185,7 @@ impl<T: NodeIdentity> State<T> {
             wandb_info,
             batch_shuffle_type,
             optim_stats,
+            grad_accum_in_fp32,
         }: StateOptions<T>,
     ) -> Self {
         assert!(data_parallelism > 0);
@@ -244,6 +247,7 @@ impl<T: NodeIdentity> State<T> {
             retried_downloads: HashMap::new(),
             all_batches_finished_deserializing: Arc::new(AtomicBool::new(false)),
             optim_stats,
+            grad_accum_in_fp32,
             _last_observed_num_batches_remaining: 0,
         }
     }
@@ -1005,6 +1009,7 @@ impl<T: NodeIdentity> State<T> {
                             .unwrap_or(state.data_indicies_per_batch as usize),
                         self.atomic_run_state.clone(),
                         self.optim_stats,
+                        self.grad_accum_in_fp32,
                     )
                 })
                 .collect();

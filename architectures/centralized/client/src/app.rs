@@ -87,6 +87,7 @@ pub struct AppParams {
     pub wandb_info: Option<WandBInfo>,
     pub batch_shuffle_type: BatchShuffleType,
     pub optim_stats: Option<u32>,
+    pub grad_accum_in_fp32: bool,
 }
 
 impl AppBuilder {
@@ -136,6 +137,7 @@ impl AppBuilder {
             batch_shuffle_type: p.batch_shuffle_type,
             private_key: p.private_key,
             optim_stats: p.optim_stats,
+            grad_accum_in_fp32: p.grad_accum_in_fp32,
         };
         app.run(p2p, state_options).await
     }

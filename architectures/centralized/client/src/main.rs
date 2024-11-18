@@ -101,6 +101,9 @@ enum Commands {
 
         #[clap(long, env)]
         optim_stats_steps: Option<u32>,
+
+        #[clap(long, default_value_t = false, env)]
+        grad_accum_in_fp32: bool,
     },
 }
 
@@ -139,6 +142,7 @@ async fn async_main() -> Result<()> {
             fixed_batch_shuffle,
             write_log,
             optim_stats_steps,
+            grad_accum_in_fp32,
         } => {
             #[cfg(target_os = "windows")]
             {
@@ -276,6 +280,7 @@ async fn async_main() -> Result<()> {
                 wandb_info,
                 batch_shuffle_type,
                 optim_stats: optim_stats_steps,
+                grad_accum_in_fp32,
             })
             .run()
             .await

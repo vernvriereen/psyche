@@ -3,7 +3,7 @@ use clap::Parser;
 use psyche_core::{CosineLR, LearningRateScheduler};
 use psyche_data_provider::{download_model_repo_sync, LocalDataProvider, Shuffle};
 use psyche_modeling::{
-    Batcher, CausalLM, CommunicatorId, Fp32GradientAccumulator, LlamaForCausalLM,
+    Batcher, CausalLM, CommunicatorId, Fp32GradientAccumulator, LlamaForCausalLM
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -221,7 +221,9 @@ fn train(
         opt.clip_grad_norm(args.max_grad_norm);
         opt.step();
         opt.zero_grad();
-        grad_accum.zero_grad();
+        if let Some(grad_accum) = &mut grad_accum {
+            grad_accum.zero_grad();
+        }
         let duration = SystemTime::now()
             .duration_since(start_time)
             .unwrap()

@@ -104,6 +104,7 @@ impl Trainer {
         micro_batch_size: usize,
         run_state: Arc<AtomicUsize>,
         stats: Option<u32>,
+        grad_accum_in_fp32: bool,
     ) -> Self {
         assert!(!models.is_empty());
         let first_model_device = models[0].device();
@@ -174,6 +175,7 @@ impl Trainer {
                     lr_scheduler,
                     barrier,
                     stats,
+                    grad_accum_in_fp32,
                 )
             });
         }
@@ -347,6 +349,7 @@ impl Trainer {
         lr_scheduler: AnyLearningRateScheduler,
         barrier: Arc<CancellableBarrier>,
         stats: Option<u32>,
+        grad_accum_in_fp32: bool,
     ) {
         let mut grad_accum: Option<Fp32GradientAccumulator> = None;
         loop {
@@ -371,7 +374,7 @@ impl Trainer {
                     }
 
                     let grad_accum_steps = data.len() / micro_batch_size;
-                    if grad_accum_steps != 1 && grad_accum.is_none() {
+                    if grad_accum_in_fp32 && grad_accum_steps != 1 && grad_accum.is_none() {
                         debug!("Allocating FP32 gradient accumulator");
                         let parameters = match &mut optimizer {
                             Optimizer::AdamW { optimizer, .. } => optimizer.trainable_variables(),
