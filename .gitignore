@@ -37,6 +37,7 @@ slurm*
 node_modules/
 .env.local
 dist/
+.next/
 
 ### Data folders ###
 /data

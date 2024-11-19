@@ -20,7 +20,7 @@ docker-push-centralized-client: docker-build-centralized-client
 
 # dev the frontend
 dev-frontend:
-	cd frontend && bun install && bun dev
+	cd frontend && bun install && bun run dev
 
 # spin up a local testnet
 local-testnet +args:

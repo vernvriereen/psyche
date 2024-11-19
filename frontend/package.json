@@ -1,40 +1,38 @@
 {
-  "name": "template-rsbuild-react-ts-tailwind",
-  "private": true,
-  "version": "1.0.0",
-  "scripts": {
-    "build": "rsbuild build",
-    "check": "biome check --write",
-    "dev": "rsbuild dev --open",
-    "format": "biome format --write",
-    "preview": "rsbuild preview"
-  },
-  "dependencies": {
-    "@visx/axis": "^3.10.1",
-    "@visx/curve": "^3.3.0",
-    "@visx/event": "^3.12.0",
-    "@visx/grid": "^3.5.0",
-    "@visx/group": "^3.3.0",
-    "@visx/legend": "^3.10.3",
-    "@visx/responsive": "^3.10.2",
-    "@visx/scale": "^3.5.0",
-    "@visx/shape": "^3.5.0",
-    "@visx/text": "^3.3.0",
-    "react": "18.3.1",
-    "react-bigtext": "^1.0.1",
-    "react-dom": "18.3.1",
-    "react-globe.gl": "^2.27.2",
-    "three": "^0.170.0"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "1.8.3",
-    "@rsbuild/core": "1.0.1",
-    "@rsbuild/plugin-react": "1.0.1",
-    "@rsbuild/plugin-svgr": "1.0.1",
-    "@types/react": "18.3.5",
-    "@types/react-dom": "18.3.0",
-    "@types/three": "^0.169.0",
-    "tailwindcss": "3.4.10",
-    "typescript": "5.6.2"
-  }
+	"name": "vercel-proxy-wandb",
+	"version": "0.1.0",
+	"private": true,
+	"scripts": {
+		"dev": "next dev",
+		"build": "next build",
+		"start": "next start",
+		"lint": "next lint"
+	},
+	"dependencies": {
+		"@visx/axis": "^3.12.0",
+		"@visx/curve": "^3.12.0",
+		"@visx/event": "^3.12.0",
+		"@visx/grid": "^3.12.0",
+		"@visx/group": "^3.12.0",
+		"@visx/legend": "^3.12.0",
+		"@visx/responsive": "^3.12.0",
+		"@visx/scale": "^3.12.0",
+		"@visx/shape": "^3.12.0",
+		"@visx/text": "^3.12.0",
+		"next": "15.0.3",
+		"react": "19.0.0-rc-66855b96-20241106",
+		"react-dom": "19.0.0-rc-66855b96-20241106"
+	},
+	"devDependencies": {
+		"@types/node": "^20",
+		"@types/react": "^18",
+		"@types/react-dom": "^18",
+		"autoprefixer": "^10.4.20",
+		"eslint": "^8",
+		"eslint-config-next": "15.0.3",
+		"postcss": "^8.4.49",
+		"tailwindcss": "^3.4.15",
+		"typescript": "^5"
+	},
+	"browserslist": ["defaults and fully supports es6-module"]
 }
