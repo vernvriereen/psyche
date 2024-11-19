@@ -14,16 +14,16 @@ use std::{
     ops::ControlFlow,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        mpsc, Arc, Condvar, Mutex,
+        mpsc, Arc,
     },
     time::Instant,
 };
 use tch::{
     nn::{self, OptimizerConfig},
-    Device, Kind, Tensor,
+    Device, Tensor,
 };
 use thiserror::Error;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 pub type ParallelModels = Vec<LlamaForCausalLM>;
 

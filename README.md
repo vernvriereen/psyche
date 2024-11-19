@@ -34,3 +34,8 @@ To build the centralized client & push it to docker.io's hub,
 ### compare-hf-psyche.sh
 
 compares hf & psyche training implementations bit-for-bit.
+
+
+## Notes
+
+Running a Psyche client may require setting `NCCL_P2P_DISABLE=1` -- in a Dockerized environment single-process NCCL deadlocks (but works in bare metal).
