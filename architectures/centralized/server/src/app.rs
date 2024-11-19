@@ -297,7 +297,9 @@ impl App {
                     let client_joined = self
                         .backend
                         .net_server
-                        .broadcast(ServerToClientMessage::P2PConnect(self.p2p.get_all_peers()))
+                        .broadcast(ServerToClientMessage::P2PConnect(
+                            self.p2p.get_all_peers().await,
+                        ))
                         .await;
                     if let Err(e) = client_joined {
                         warn!("Error sending p2p list to client: {e}");

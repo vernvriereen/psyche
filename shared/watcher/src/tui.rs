@@ -126,7 +126,13 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for TuiRunState {
 
                 TuiRunState::Warmup {
                     end_time: Instant::now()
-                        + Duration::from_secs(c.warmup_time + c.run_state_start_unix_timestamp)
+                        + Duration::from_secs(
+                            if c.step <= 1 {
+                                c.init_warmup_time
+                            } else {
+                                c.warmup_time
+                            } + c.run_state_start_unix_timestamp,
+                        )
                         - time_since_epoch,
                 }
             }
