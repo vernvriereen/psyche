@@ -341,6 +341,22 @@ where
         }
         Ok(())
     }
+
+    pub async fn get_all_peers(&self) -> PeerList {
+        let nodes: Vec<Result<RemoteInfo, _>> = self
+            .node
+            .net()
+            .remote_info_iter()
+            .await
+            .unwrap()
+            .collect()
+            .await;
+        let mut all_nodes = vec![self.node_addr().await.expect("node addr works..")];
+        for node in nodes {
+            all_nodes.push(node.unwrap().into());
+        }
+        PeerList(all_nodes)
+    }
 }
 
 fn parse_gossip_event<BroadcastMessage: Networkable>(

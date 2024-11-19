@@ -10,9 +10,7 @@ use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider, Shuffle,
     TokenSize,
 };
-use psyche_network::{
-    ClientNotification, NetworkEvent, NetworkTui, PeerList, RelayMode, TcpServer,
-};
+use psyche_network::{ClientNotification, NetworkEvent, NetworkTui, RelayMode, TcpServer};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{maybe_start_render_loop, CustomWidget, MaybeTui, TabbedWidget};
 use psyche_watcher::CoordinatorTui;
@@ -299,14 +297,7 @@ impl App {
                     let client_joined = self
                         .backend
                         .net_server
-                        .send_to(
-                            from,
-                            ServerToClientMessage::P2PConnect(PeerList(vec![self
-                                .p2p
-                                .node_addr()
-                                .await
-                                .expect("node addr works..")])),
-                        )
+                        .broadcast(ServerToClientMessage::P2PConnect(self.p2p.get_all_peers()))
                         .await;
                     if let Err(e) = client_joined {
                         warn!("Error sending p2p list to client: {e}");
