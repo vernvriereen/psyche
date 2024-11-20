@@ -160,23 +160,67 @@ export async function getData(
 							"eval/mmlu",
 							"eval/arc_easy",
 							"eval/arc_challenge",
-							...Object.keys(summary.p2p.nodes).map(
-								(node) => `p2p/nodes.${node}.bandwidth`,
-							),
 						],
 					}),
 				},
 			)
 		).data.project.run.sampledHistory[0];
+
+		const bandwidthHistoryForEachNode = (
+			await Promise.all(
+				Object.keys(summary.p2p.nodes).map((node) => {
+					const nodeBw = `p2p/nodes.${node}.bandwidth`;
+					return gql(
+						`query RunSampledHistory($project: String!, $entity: String!, $name: String!, $specs: [JSONString!]!) {
+            project(name: $project, entityName: $entity) {
+                run(name: $name) { sampledHistory(specs: $specs) }
+            }
+        }`,
+						{
+							entity,
+							project,
+							name,
+							specs: JSON.stringify({
+								samples: samples ?? 500,
+								keys: ["_step", nodeBw],
+							}),
+						},
+					);
+				}),
+			)
+		).map((h) =>
+			(h.data.project.run.sampledHistory[0] as Array<object>).map(
+				(line) =>
+					JSON.parse(JSON.stringify(line), slashDotReviver) as WandBHistoryItem,
+			),
+		);
+
+		const fullHistory = history.map((line: object) => {
+			const history = JSON.parse(
+				JSON.stringify(line),
+				slashDotReviver,
+			) as WandBHistoryItem;
+			if (!("p2p" in history)) {
+				(history as Record<string, object>).p2p = {
+					nodes: {},
+				};
+			}
+			for (const bw of bandwidthHistoryForEachNode) {
+				const thisStep = bw.find((v) => v._step === history._step);
+				if (thisStep) {
+					history.p2p.nodes = { ...history.p2p.nodes, ...thisStep.p2p.nodes };
+				}
+			}
+			return history;
+		});
+
 		return {
 			id: meta.id,
 			createdAt: meta.createdAt,
 			displayName: meta.displayName,
 			config: JSON.parse(meta.config, slashDotReviver),
 			summary,
-			history: history.map((line: object) =>
-				JSON.parse(JSON.stringify(line), slashDotReviver),
-			),
+			history: fullHistory,
 		};
 	} catch (err) {
 		console.error(err);
