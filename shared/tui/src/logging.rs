@@ -35,7 +35,7 @@ pub fn init_logging(output: LogOutput, level: Level, write_logs_file: Option<Pat
             .create(true)
             .open(dir)
             .unwrap();
-        let subscriber = subscriber.with(fmt::layer().with_writer(log_file));
+        let subscriber = subscriber.with(fmt::layer().with_ansi(false).with_writer(log_file));
 
         tracing::subscriber::set_global_default(subscriber)
     } else {
