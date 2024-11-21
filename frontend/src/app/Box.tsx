@@ -37,7 +37,7 @@ export function Box({
 }>) {
 	return (
 		<div className="relative pt-4 pb-2 w-full">
-			<div className="px-6 absolute -translate-y-[50%] w-full">
+			<div className="px-6 absolute -translate-y-[50%] w-full text-plain">
 				{Children.map(<span>{title}</span>, giveLeafChildrenBgBackdrop)}
 			</div>
 			<div

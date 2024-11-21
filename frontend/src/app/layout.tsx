@@ -22,7 +22,7 @@ export default function RootLayout({
 }) {
 	return (
 		<html lang="en" className={`${mono.variable}`}>
-			<body>{children}</body>
+			<body className="bg-backdrop">{children}</body>
 		</html>
 	);
 }

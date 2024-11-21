@@ -7,6 +7,8 @@ import { distroLogo } from "./distro-logo";
 import { formatBytes, formatNumber } from "./format";
 import { lookupIp } from "./geoip";
 import type { WandBData } from "./wandb";
+import { setTheme } from "./dark";
+import { SocialIcon } from "./SocialIcon";
 
 export const Run: React.FC<{
 	run: WandBData;
@@ -83,6 +85,10 @@ export const Run: React.FC<{
 			}) satisfies GraphLine,
 	);
 
+	const [dark, setDark] = useState(localStorage.getItem("theme") === "dark");
+	useEffect(() => {
+		setTheme(dark);
+	}, [dark]);
 	return (
 		<div className="p-4 pt-0 pb-2 text-primary font-monoubuntu flex flex-col h-full min-h-[100vh]">
 			<Box
@@ -90,13 +96,21 @@ export const Run: React.FC<{
 					<span className="flex flex-row justify-between">
 						<span className="flex flex-row gap-6">
 							<span>15b 100bt run</span>
-							<span>colors</span>
+							{/* biome-ignore lint/a11y/useKeyWithClickEvents: <explanation> */}
+							<button
+								type="button"
+								onClick={() => {
+									setDark(!dark);
+								}}
+							>
+								{dark ? "light" : "dark"} mode
+							</button>
 						</span>
 						<span>Nous DisTrO</span>
-						<span>
-							<span>GH</span>
-							<span>TW</span>
-							<span>BS</span>
+						<span className="flex items-center gap-1">
+							<SocialIcon type="bluesky" />
+							<SocialIcon type="twitter" />
+							<SocialIcon type="github" />
 						</span>
 					</span>
 				}
@@ -134,7 +148,7 @@ export const Run: React.FC<{
 					<div className="p-3 pl-6 min-w-[40vw] flex items-center">
 						<Box title="Live Global Status" fullH={false}>
 							<div className="h-fit py-8">
-								<MapPoints coordinates={nodes} />
+								<MapPoints coordinates={nodes} dark={dark} />
 							</div>
 						</Box>
 					</div>

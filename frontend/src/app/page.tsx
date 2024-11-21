@@ -1,28 +1,13 @@
 "use client";
-import {
-	Children,
-	ReactElement,
-	type ReactNode,
-	cloneElement,
-	isValidElement,
-	useCallback,
-	useEffect,
-	useLayoutEffect,
-	useRef,
-	useState,
-} from "react";
-import { type GraphLine, ResponsiveLineGraph } from "./Chart";
-import { distroLogo } from "./distro-logo";
-import { lookupIp } from "./geoip";
+import { useCallback, useEffect, useState } from "react";
 import { type WandBData, getData } from "./wandb";
 
-import { Box } from "./Box";
 import { LoadingScreen } from "./LoadingScreen";
-import { TrainingProgress } from "./Progress";
 import { Run } from "./Run";
-import { formatBytes, formatNumber } from "./format";
+import { setTheme } from "./dark";
 
 export default function App() {
+	setTheme();
 	const [wandbRun, setWandbRun] = useState<WandBData | null>(null);
 	const [fading, setFading] = useState<"loading" | "fading" | false>("loading");
 	const [error, setError] = useState(false);

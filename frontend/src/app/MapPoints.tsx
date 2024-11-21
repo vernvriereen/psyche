@@ -1,4 +1,5 @@
 import map from "./distro-map-light.png";
+import mapDark from "./distro-map.png";
 export interface GeolocatedNode {
 	id: string;
 	ip: string;
@@ -9,7 +10,8 @@ export interface GeolocatedNode {
 
 export const MapPoints: React.FC<{
 	coordinates: Array<GeolocatedNode>;
-}> = ({ coordinates }) => {
+	dark: boolean;
+}> = ({ coordinates, dark }) => {
 	const projectToCylindricalEquidistant = (
 		lat: number,
 		lng: number,
@@ -26,8 +28,13 @@ export const MapPoints: React.FC<{
 
 	return (
 		<div className="relative inline-block">
-			<img src={map.src} alt="Nodes Map" className="w-full h-auto" />
+			<img
+				src={(dark ? mapDark : map).src}
+				alt="Nodes Map"
+				className="w-full h-auto"
+			/>
 			<svg className="absolute w-full h-full top-0 left-0">
+				<title>A world map of all nodes in this run</title>
 				{coordinates
 					.flatMap((from, index) =>
 						coordinates.map((to, index2) => ({
