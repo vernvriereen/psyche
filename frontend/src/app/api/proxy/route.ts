@@ -34,6 +34,13 @@ export async function POST(request: NextRequest) {
 			}
 		});
 
+		if (!request.headers.has("authorization") && process.env.WANDB_TOKEN) {
+			headers.set(
+				"authorization",
+				`Basic ${btoa(`api:${process.env.WANDB_TOKEN}`)}`,
+			);
+		}
+
 		// Forward the request to the target URL
 		const response = await fetch(TARGET_URL, {
 			method: "POST",
