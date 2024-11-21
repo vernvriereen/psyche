@@ -1,8 +1,8 @@
 use crate::{
     disto_results_to_bytes,
-    fetch_data::{Batch, BatchId, BatchStep, DataFetcher, TrainingDataForStep},
+    fetch_data::{Batch, BatchId, DataFetcher, TrainingDataForStep},
     protocol::TrainingResult,
-    trainer::{ApplyDistroResultError, DistroResults, ParallelModels, TrainOutput, Trainer},
+    trainer::{ApplyDistroResultError, ParallelModels, TrainOutput, Trainer},
     tui::ClientTUIState,
     BroadcastMessage, Payload, PeerAnnouncement, SerializedDistroResult, WandBInfo,
 };
@@ -10,7 +10,7 @@ use anyhow::{anyhow, bail, Error, Result};
 use psyche_coordinator::{
     assign_data_for_state, get_batch_ids_for_round, model, Committee, CommitteeProof,
     CommitteeSelection, Coordinator, HealthChecks, RunState, Witness, WitnessProof,
-    BLOOM_FALSE_RATE, BLOOM_MAX_BITS, NUM_STORED_ROUNDS,
+    BLOOM_FALSE_RATE, BLOOM_MAX_BITS,
 };
 use psyche_core::{sha256, Bloom, BoundedQueue, IntervalTree, NodeIdentity, RunningAverage};
 use psyche_data_provider::{
@@ -26,7 +26,6 @@ use rand::{seq::SliceRandom, thread_rng, Rng, RngCore};
 use std::{
     collections::HashMap,
     fs,
-    ops::Deref,
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -38,7 +37,6 @@ use tch::{Device, Kind};
 use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::{
-    runtime::Handle,
     select,
     sync::Notify,
     task::{JoinError, JoinHandle},
@@ -69,7 +67,7 @@ pub enum ToSend {
 
 type Bloom32 = Bloom<[u8; 32]>;
 
-type Rollbacks = BoundedQueue<(BatchStep, Vec<DistroResults>)>;
+// type Rollbacks = BoundedQueue<(BatchStep, Vec<DistroResults>)>;
 
 struct EvalTask {
     task: psyche_eval::PreparedTask,
@@ -120,7 +118,7 @@ pub struct State<T: NodeIdentity> {
     micro_batch_size: Option<usize>,
     write_gradients_dir: Option<PathBuf>,
     atomic_run_state: Arc<AtomicUsize>,
-    round_rollbacks: Arc<tokio::sync::Mutex<Rollbacks>>,
+    //round_rollbacks: Arc<tokio::sync::Mutex<Rollbacks>>,
     training_data: Option<TrainingDataForStep>,
     data_fetcher: Option<DataFetcher<T>>,
     round_start: Option<Instant>,
@@ -218,7 +216,7 @@ impl<T: NodeIdentity> State<T> {
             micro_batch_size,
             write_gradients_dir,
             atomic_run_state: Arc::new(AtomicUsize::new(0)),
-            round_rollbacks: tokio::sync::Mutex::new(BoundedQueue::new(NUM_STORED_ROUNDS)).into(),
+            //round_rollbacks: tokio::sync::Mutex::new(BoundedQueue::new(NUM_STORED_ROUNDS)).into(),
             data_fetcher: None,
             round_start: None,
             round_durations: BoundedQueue::new(16),
@@ -346,29 +344,29 @@ impl<T: NodeIdentity> State<T> {
                 .pop()
                 .ok_or(Error::msg("Round start but no trainer object (didn't finish training previous round or applying it?)"))?;
 
-        let round_rollbacks = self.round_rollbacks.clone();
-        let handle = Handle::current();
+        //let round_rollbacks = self.round_rollbacks.clone();
+        //let handle = Handle::current();
         self.trainings.push(tokio::task::spawn_blocking(move || {
-                let rollback: Vec<_> = handle.block_on(async {
-                    round_rollbacks
-                        .lock()
-                        .await
-                        .deref()
-                        .iter()
-                        // we only want to roll back if our state is ahead,
-                        // so if we get data for e.g. step 6, but we have rollback data for steps 6, 7, 8,
-                        // this will roll back steps 6, 7, 8.
-                        .filter(|(from_round, _)| *from_round >= batch_step)
-                        .cloned()
-                        .collect()
-                });
-                if !rollback.is_empty() {
-                    debug!("Computed rollback - we are training on data for step {batch_step}, so we should roll back steps {}", rollback.iter().map(|f| f.0.to_string()).collect::<Vec<_>>().join(","));
-                }
+            // let rollback: Vec<_> = handle.block_on(async {
+            //     round_rollbacks
+            //         .lock()
+            //         .await
+            //         .deref()
+            //         .iter()
+            //         // we only want to roll back if our state is ahead,
+            //         // so if we get data for e.g. step 6, but we have rollback data for steps 6, 7, 8,
+            //         // this will roll back steps 6, 7, 8.
+            //         .filter(|(from_round, _)| *from_round >= batch_step)
+            //         .cloned()
+            //         .collect()
+            // });
+            // if !rollback.is_empty() {
+            //     debug!("Computed rollback - we are training on data for step {batch_step}, so we should roll back steps {}", rollback.iter().map(|f| f.0.to_string()).collect::<Vec<_>>().join(","));
+            // }
 
-                let output = trainer.train(batch_step, batch, rollback)?;
-                Ok((output, batch_id))
-            }));
+            let output = trainer.train(batch_step, batch, vec![])?;
+            Ok((output, batch_id))
+        }));
         Ok(ToSend::Nothing)
     }
 
@@ -1222,7 +1220,7 @@ impl<T: NodeIdentity> State<T> {
         self.apply_start = Some(Instant::now());
 
         let trainers = self.available_trainers.drain(..).collect::<Vec<_>>();
-        let round_rollbacks = self.round_rollbacks.clone();
+        //let round_rollbacks = self.round_rollbacks.clone();
         let step = state.step;
         let witness_quorum = state.witness_quorum;
 
@@ -1242,7 +1240,7 @@ impl<T: NodeIdentity> State<T> {
             // step. this skip "primes" the pump
             info!("First round of epoch in overlap mode, skipping apply");
             self.applying = Some(tokio::task::spawn(async move {
-                round_rollbacks.lock().await.push((step, Vec::new()));
+                //round_rollbacks.lock().await.push((step, Vec::new()));
                 Ok(trainers)
             }));
         } else {
@@ -1309,10 +1307,10 @@ impl<T: NodeIdentity> State<T> {
                     }
                 }
 
-                round_rollbacks
-                    .lock()
-                    .await
-                    .push((step, distro_results.clone()));
+                // round_rollbacks
+                //     .lock()
+                //     .await
+                //     .push((step, distro_results.clone()));
 
                 let futures: Vec<JoinHandle<std::result::Result<Trainer, ApplyDistroResultError>>> =
                     trainers
