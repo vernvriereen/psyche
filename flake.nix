@@ -156,6 +156,9 @@
             # frontend
             bun
             biome
+
+            # running things on non-NixOS
+            pkgs.nix-gl-host
           ];
         };
 
