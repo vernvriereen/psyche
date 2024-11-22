@@ -54,6 +54,12 @@ struct CommonArgs {
 
     #[clap(long)]
     save_state_dir: Option<PathBuf>,
+
+    #[clap(long)]
+    init_warmup_time: Option<u32>,
+
+    #[clap(long)]
+    init_min_clients: Option<u32>,
 }
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -112,6 +118,8 @@ async fn main() -> Result<()> {
                 common_args.p2p_port,
                 common_args.server_port,
                 common_args.save_state_dir,
+                common_args.init_warmup_time,
+                common_args.init_min_clients,
             )
             .await?
             .run()

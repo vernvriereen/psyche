@@ -93,7 +93,6 @@ pub struct Coordinator<T: NodeIdentity> {
     pub run_state_start_unix_timestamp: u64,
 
     pub warmup_time: u64,
-    pub init_warmup_time: u64,
     pub cooldown_time: u64,
 
     pub max_round_train_time: u64,
@@ -202,7 +201,6 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             run_state: Default::default(),
             run_state_start_unix_timestamp: Default::default(),
             warmup_time: Default::default(),
-            init_warmup_time: Default::default(),
             rounds_per_epoch: Default::default(),
             max_round_train_time: Default::default(),
             round_witness_time: Default::default(),
@@ -488,7 +486,6 @@ impl<T: NodeIdentity> Coordinator<T> {
         &mut self.rounds[self.rounds_head as usize]
     }
 
-    // todo why are there two prev functions? do they do the same thing?
     pub fn previous_round(&self) -> Option<&Round> {
         match self.current_round() {
             Some(round) => match self.rounds_head == 0 && round.height == 0 {
@@ -500,13 +497,6 @@ impl<T: NodeIdentity> Coordinator<T> {
             },
             None => None,
         }
-    }
-
-    pub fn prev_round(&self) -> Option<&Round> {
-        self.rounds.get(match self.rounds_head as usize {
-            0 => NUM_STORED_ROUNDS - 1,
-            x => x - 1,
-        })
     }
 
     pub fn active(&self) -> bool {
@@ -544,12 +534,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         if (self.clients.len() as u32) < self.min_clients {
             self.start_waiting_for_members(unix_timestamp);
         } else {
-            let warmup_time = if self.step <= 1 {
-                self.init_warmup_time
-            } else {
-                self.warmup_time
-            };
-            if unix_timestamp >= warmup_time + self.run_state_start_unix_timestamp {
+            if unix_timestamp >= self.warmup_time + self.run_state_start_unix_timestamp {
                 self.first_round = true;
                 self.start_round_train(unix_timestamp, random_seed, 0);
             }
