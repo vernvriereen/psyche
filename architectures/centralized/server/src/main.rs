@@ -56,7 +56,7 @@ struct CommonArgs {
     save_state_dir: Option<PathBuf>,
 
     #[clap(long)]
-    init_warmup_time: Option<u32>,
+    init_warmup_time: Option<u64>,
 
     #[clap(long)]
     init_min_clients: Option<u32>,

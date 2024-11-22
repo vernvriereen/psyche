@@ -491,7 +491,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             Some(round) => match self.rounds_head == 0 && round.height == 0 {
                 true => None,
                 false => match self.rounds_head == 0 {
-                    true => Some(&self.rounds[3]),
+                    true => Some(&self.rounds[NUM_STORED_ROUNDS - 1]),
                     false => Some(&self.rounds[self.rounds_head as usize - 1]),
                 },
             },

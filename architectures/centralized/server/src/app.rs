@@ -98,7 +98,7 @@ pub struct App {
     training_data_server: Option<(Sender<Coordinator<ClientId>>, DataServer)>,
     save_state_dir: Option<PathBuf>,
     last_sync_step: Option<u32>,
-    original_warmup_time: u32,
+    original_warmup_time: u64,
     original_min_clients: u32,
 }
 
@@ -118,7 +118,7 @@ impl App {
         p2p_port: Option<u16>,
         server_port: Option<u16>,
         save_state_dir: Option<PathBuf>,
-        init_warmup_time: Option<u32>,
+        init_warmup_time: Option<u64>,
         init_min_clients: Option<u32>,
     ) -> Result<Self> {
         let p2p = NC::init(
@@ -421,12 +421,12 @@ impl App {
                         }
                     }
                 }
-            } else {
-                // reset to original values if we changed them to something special for init
-                self.coordinator.warmup_time = self.original_warmup_time;
-                self.coordinator.min_clients = self.original_min_clients;
             }
             self.last_sync_step = Some(self.coordinator.step);
+        } else {
+            // reset to original values if we changed them to something special for init
+            self.coordinator.warmup_time = self.original_warmup_time;
+            self.coordinator.min_clients = self.original_min_clients;
         }
     }
 
