@@ -4,7 +4,7 @@ use psyche_coordinator::{
     model::{self, AnyLearningRateScheduler},
     RunState,
 };
-use psyche_core::CancellableBarrier;
+use psyche_core::{CancellableBarrier, LearningRateScheduler};
 use psyche_modeling::{
     unsharded_cpu_variables, CausalLM, Distro, DistroResult, Fp32GradientAccumulator,
     LlamaForCausalLM,
@@ -105,6 +105,7 @@ impl Trainer {
         run_state: Arc<AtomicUsize>,
         stats: Option<u32>,
         grad_accum_in_fp32: bool,
+        warmup_starting_at_step: Option<u32>,
     ) -> Self {
         assert!(!models.is_empty());
         let first_model_device = models[0].device();
@@ -166,6 +167,16 @@ impl Trainer {
             let run_state = run_state.clone();
             let lr_scheduler = lr_scheduler.clone();
             let barrier = barrier.clone();
+            let lr_warmup = warmup_starting_at_step.map(|step| {
+                (
+                    psyche_core::ConstantLR::new(
+                        lr_scheduler.get_lr(step + lr_scheduler.get_warmup_steps()),
+                        lr_scheduler.get_warmup_steps(),
+                        lr_scheduler.get_warmup_init_lr(),
+                    ),
+                    step,
+                )
+            });
 
             std::thread::spawn(move || {
                 Self::model_thread(
@@ -180,6 +191,7 @@ impl Trainer {
                     barrier,
                     stats,
                     grad_accum_in_fp32,
+                    lr_warmup,
                 )
             });
         }
@@ -355,6 +367,7 @@ impl Trainer {
         barrier: Arc<CancellableBarrier>,
         stats: Option<u32>,
         grad_accum_in_fp32: bool,
+        lr_warmup: Option<(psyche_core::ConstantLR, u32)>,
     ) {
         if barrier.wait().is_err() {
             error!("Incorrect model_thread boot");
@@ -439,6 +452,17 @@ impl Trainer {
                     if let Some(grad_accum) = &mut grad_accum {
                         grad_accum.apply_accumulation();
                     }
+
+                    let lr = match &lr_warmup {
+                        Some((warmup_scheduler, warmup_start_step)) => {
+                            match step - warmup_start_step <= warmup_scheduler.get_warmup_steps() {
+                                true => warmup_scheduler.get_lr(step - warmup_start_step),
+                                false => lr_scheduler.get_lr(step),
+                            }
+                        }
+                        None => lr_scheduler.get_lr(step),
+                    };
+
                     let distro_results = match cancelled {
                         false => match &mut optimizer {
                             Optimizer::AdamW {
@@ -466,7 +490,7 @@ impl Trainer {
                                 };
                                 if clipped {
                                     let ret = optimizer.generate(
-                                        lr_scheduler.get_lr(step),
+                                        lr,
                                         match step > *compression_decay_warmup_steps {
                                             true => 1.0,
                                             false => {
@@ -506,10 +530,9 @@ impl Trainer {
                         return;
                     }
 
-                    for (step, result) in rollback.iter() {
+                    for (_, result) in rollback.iter() {
                         // TODO freeze the optimizer and prevent this from modifying its internal state, methinks, right? or maybe save it and restore it later?
                         // we just want to have the same optimizer state wyhen we exit, save for the main operation (if not frozen. hmm)
-                        let lr = lr_scheduler.get_lr(*step);
                         if optimize_step(lr, &mut optimizer, Some(result), &barrier).is_break() {
                             panic!("Failed to roll forwards.")
                         };
@@ -519,7 +542,15 @@ impl Trainer {
                     distro_results,
                     step,
                 }) => {
-                    let lr = lr_scheduler.get_lr(step);
+                    let lr = match &lr_warmup {
+                        Some((warmup_scheduler, warmup_start_step)) => {
+                            match step - warmup_start_step <= warmup_scheduler.get_warmup_steps() {
+                                true => warmup_scheduler.get_lr(step - warmup_start_step),
+                                false => lr_scheduler.get_lr(step),
+                            }
+                        }
+                        None => lr_scheduler.get_lr(step),
+                    };
                     if optimize_step(lr, &mut optimizer, distro_results.as_ref(), &barrier)
                         .is_break()
                     {

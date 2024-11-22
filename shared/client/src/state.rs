@@ -1007,6 +1007,7 @@ impl<T: NodeIdentity> State<T> {
                         self.atomic_run_state.clone(),
                         self.optim_stats,
                         self.grad_accum_in_fp32,
+                        Some(state.step),
                     )
                 })
                 .collect();

@@ -19,31 +19,31 @@ pub fn assign_data_for_state<T: NodeIdentity>(
         })
         .collect::<Vec<_>>();
     deterministic_shuffle(&mut client_shuffle, round.random_seed);
-    assert_eq!(state.batches_per_round % state.data_indicies_per_batch, 0);
-    let mut verifier_shuffle =
-        (0..(state.batches_per_round / state.data_indicies_per_batch) as u64).collect::<Vec<_>>();
-    deterministic_shuffle(&mut verifier_shuffle, round.random_seed);
-    let mut first_pass = true;
+    //assert_eq!(state.batches_per_round % state.data_indicies_per_batch, 0);
+    // let mut verifier_shuffle =
+    //     (0..(state.batches_per_round / state.data_indicies_per_batch) as u64).collect::<Vec<_>>();
+    // deterministic_shuffle(&mut verifier_shuffle, round.random_seed);
+    // let mut first_pass = true;
     while remaining > 0 {
         for (client, committee) in &client_shuffle {
             match committee {
                 Committee::TieBreaker => assert_eq!(round.tie_breaker_tasks, 0), // TODO
                 Committee::Verifier => {
-                    if first_pass {
-                        if let Some(previous_round) = state.previous_round() {
-                            let selected = verifier_shuffle.pop().unwrap();
-                            let start = previous_round.data_index
-                                + (selected * state.data_indicies_per_batch as u64);
-                            ret.insert(
-                                ClosedInterval::new(
-                                    start,
-                                    start + state.data_indicies_per_batch as u64 - 1,
-                                ),
-                                client.id.clone(),
-                            )
-                            .unwrap();
-                        }
-                    }
+                    // if first_pass {
+                    //     if let Some(previous_round) = state.previous_round() {
+                    //         let selected = verifier_shuffle.pop().unwrap();
+                    //         let start = previous_round.data_index
+                    //             + (selected * state.data_indicies_per_batch as u64);
+                    //         ret.insert(
+                    //             ClosedInterval::new(
+                    //                 start,
+                    //                 start + state.data_indicies_per_batch as u64 - 1,
+                    //             ),
+                    //             client.id.clone(),
+                    //         )
+                    //         .unwrap();
+                    //     }
+                    // }
                 }
                 Committee::Trainer => {
                     let num = data_indicies_per_client.min(remaining);
@@ -56,7 +56,7 @@ pub fn assign_data_for_state<T: NodeIdentity>(
                 }
             }
         }
-        first_pass = false;
+        // first_pass = false;
     }
     ret
 }

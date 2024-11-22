@@ -166,11 +166,19 @@ impl AnyLearningRateScheduler {
         }
     }
 
-    pub fn in_warmup(&self, step: u32) -> bool {
+    pub fn get_warmup_steps(&self) -> u32 {
         match self {
-            Self::Constant(l) => l.in_warmup(step),
-            Self::Linear(l) => l.in_warmup(step),
-            Self::Cosine(l) => l.in_warmup(step),
+            Self::Constant(l) => l.get_warmup_steps(),
+            Self::Linear(l) => l.get_warmup_steps(),
+            Self::Cosine(l) => l.get_warmup_steps(),
+        }
+    }
+
+    pub fn get_warmup_init_lr(&self) -> f64 {
+        match self {
+            Self::Constant(l) => l.get_warmup_init_lr(),
+            Self::Linear(l) => l.get_warmup_init_lr(),
+            Self::Cosine(l) => l.get_warmup_init_lr(),
         }
     }
 }

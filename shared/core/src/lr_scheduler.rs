@@ -21,8 +21,12 @@ impl ConstantLR {
         }
     }
 
-    pub fn in_warmup(&self, step: u32) -> bool {
-        step < self.warmup_steps
+    pub fn get_warmup_steps(&self) -> u32 {
+        self.warmup_steps
+    }
+
+    pub fn get_warmup_init_lr(&self) -> f64 {
+        self.warmup_init_lr
     }
 }
 
@@ -64,8 +68,12 @@ impl LinearLR {
         }
     }
 
-    pub fn in_warmup(&self, step: u32) -> bool {
-        step < self.warmup_steps
+    pub fn get_warmup_steps(&self) -> u32 {
+        self.warmup_steps
+    }
+
+    pub fn get_warmup_init_lr(&self) -> f64 {
+        self.warmup_init_lr
     }
 }
 
@@ -109,8 +117,12 @@ impl CosineLR {
         }
     }
 
-    pub fn in_warmup(&self, step: u32) -> bool {
-        step < self.warmup_steps
+    pub fn get_warmup_steps(&self) -> u32 {
+        self.warmup_steps
+    }
+
+    pub fn get_warmup_init_lr(&self) -> f64 {
+        self.warmup_init_lr
     }
 }
 

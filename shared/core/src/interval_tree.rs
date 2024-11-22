@@ -39,6 +39,10 @@ impl<T: Copy + Ord, V> IntervalTree<T, V> {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.tree.clear();
+    }
+
     pub fn insert(&mut self, interval: ClosedInterval<T>, value: V) -> Result<(), String> {
         if let Some((_, existing_interval)) = self.tree.range(..=interval.start).next_back() {
             if existing_interval.0.end >= interval.start {
