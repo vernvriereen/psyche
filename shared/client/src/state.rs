@@ -1443,17 +1443,16 @@ impl<T: NodeIdentity> State<T> {
             }));
         }
 
-        if !state.overlapped || (state.overlapped && !state.first_round) {
-            let (_, witness_proof, committee_selection) = match state.overlapped {
-                true => &mut self.previous_round.committee_info,
-                false => &mut self.current_round.committee_info,
-            }
-            .clone()
-            .ok_or(TickRoundWitnessError::NoCommitteeInfo)?;
+        if !state.first_round {
+            let (_, witness_proof, committee_selection) = self
+                .previous_round
+                .committee_info
+                .clone()
+                .ok_or(TickRoundWitnessError::NoCommitteeInfo)?;
 
             if witness_proof.witness {
                 let witnesses = state
-                    .current_round()
+                    .previous_round()
                     .ok_or(TickRoundWitnessError::NoActiveRound)?
                     .witnesses
                     .clone();

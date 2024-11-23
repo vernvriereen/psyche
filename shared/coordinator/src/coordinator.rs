@@ -12,7 +12,6 @@ use psyche_serde::derive_serialize;
 use anchor_lang::prelude::*;
 #[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
-use tracing::info;
 
 #[allow(dead_code)]
 const MAX_STRING_LEN: usize = 64;
@@ -316,7 +315,6 @@ impl<T: NodeIdentity> Coordinator<T> {
             }
         {
             // enough witnesses have early voted, go to witness state
-            info!("Early witnesses met");
             self.change_state(unix_timestamp, RunState::RoundWitness);
         }
         Ok(())
@@ -330,14 +328,10 @@ impl<T: NodeIdentity> Coordinator<T> {
         if self.min_clients == 0 {
             return Err(CoordinatorError::Disabled);
         }
-        if self.run_state == RunState::RoundTrain && !checks.is_empty() {
-            for proof in &checks {
-                if self.healthy(proof) {
-                    return Err(CoordinatorError::InvalidHealthCheck);
-                }
+        for proof in &checks {
+            if self.healthy(proof) {
+                return Err(CoordinatorError::InvalidHealthCheck);
             }
-        } else {
-            return Err(CoordinatorError::InvalidRunState);
         }
         let mut dropped = 0;
         for proof in &checks {
@@ -372,7 +366,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         let round = match self.previous_round() {
             Some(round) => round,
             None => {
-                return false;
+                return true;
             }
         };
         let index = proof.index as usize;
