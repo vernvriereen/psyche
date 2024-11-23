@@ -45,7 +45,7 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 use wandb::LogData;
 
-const WARMUP_PEER_ANNOUNCEMENT_DURATION: Duration = Duration::from_secs(30);
+const WARMUP_PEER_ANNOUNCEMENT_DURATION: Duration = Duration::from_secs(60);
 const DOWNLOAD_RETRIES: usize = 3;
 
 type TaskResult<T> = Option<JoinHandle<Result<T>>>;
