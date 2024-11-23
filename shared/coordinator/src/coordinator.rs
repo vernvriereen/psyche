@@ -12,6 +12,7 @@ use psyche_serde::derive_serialize;
 use anchor_lang::prelude::*;
 #[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 #[allow(dead_code)]
 const MAX_STRING_LEN: usize = 64;
@@ -27,7 +28,6 @@ pub enum RunState {
     Warmup,
     RoundTrain,
     RoundWitness,
-    RoundApply,
     Cooldown,
 }
 
@@ -98,7 +98,6 @@ pub struct Coordinator<T: NodeIdentity> {
 
     pub max_round_train_time: u64,
     pub round_witness_time: u64,
-    pub round_apply_time: u64,
 
     #[serde(default)]
     pub rounds: [Round; NUM_STORED_ROUNDS],
@@ -161,8 +160,7 @@ impl TryFrom<usize> for RunState {
             1 => Ok(RunState::Warmup),
             2 => Ok(RunState::RoundTrain),
             3 => Ok(RunState::RoundWitness),
-            4 => Ok(RunState::RoundApply),
-            5 => Ok(RunState::Cooldown),
+            4 => Ok(RunState::Cooldown),
             _ => Err(CoordinatorError::InvalidRunState),
         }
     }
@@ -175,8 +173,7 @@ impl From<RunState> for usize {
             RunState::Warmup => 1,
             RunState::RoundTrain => 2,
             RunState::RoundWitness => 3,
-            RunState::RoundApply => 4,
-            RunState::Cooldown => 5,
+            RunState::Cooldown => 4,
         }
     }
 }
@@ -206,7 +203,6 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             rounds_per_epoch: Default::default(),
             max_round_train_time: Default::default(),
             round_witness_time: Default::default(),
-            round_apply_time: Default::default(),
             rounds: Default::default(),
             rounds_head: Default::default(),
             first_round: Default::default(),
@@ -258,7 +254,6 @@ impl std::fmt::Display for RunState {
             RunState::Warmup => write!(f, "Warmup"),
             RunState::RoundTrain => write!(f, "Training"),
             RunState::RoundWitness => write!(f, "Witness"),
-            RunState::RoundApply => write!(f, "Apply"),
             RunState::Cooldown => write!(f, "Cooldown"),
         }
     }
@@ -278,8 +273,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             RunState::WaitingForMembers => self.tick_waiting_for_members(backend, unix_timestamp),
             RunState::Warmup => self.tick_warmup(unix_timestamp, random_seed),
             RunState::RoundTrain => self.tick_round_train(unix_timestamp),
-            RunState::RoundWitness => self.tick_round_witness(unix_timestamp),
-            RunState::RoundApply => self.tick_round_apply(unix_timestamp, random_seed),
+            RunState::RoundWitness => self.tick_round_witness(unix_timestamp, random_seed),
             RunState::Cooldown => self.tick_cooldown(unix_timestamp),
         }?;
         self.tick += 1;
@@ -322,6 +316,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             }
         {
             // enough witnesses have early voted, go to witness state
+            info!("Early witnesses met");
             self.change_state(unix_timestamp, RunState::RoundWitness);
         }
         Ok(())
@@ -335,7 +330,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         if self.min_clients == 0 {
             return Err(CoordinatorError::Disabled);
         }
-        if self.run_state == RunState::RoundApply && !checks.is_empty() {
+        if self.run_state == RunState::RoundTrain && !checks.is_empty() {
             for proof in &checks {
                 if self.healthy(proof) {
                     return Err(CoordinatorError::InvalidHealthCheck);
@@ -374,7 +369,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     pub fn healthy(&self, proof: &CommitteeProof) -> bool {
-        let round = match self.current_round() {
+        let round = match self.previous_round() {
             Some(round) => round,
             None => {
                 return false;
@@ -494,19 +489,12 @@ impl<T: NodeIdentity> Coordinator<T> {
             Some(round) => match self.rounds_head == 0 && round.height == 0 {
                 true => None,
                 false => match self.rounds_head == 0 {
-                    true => Some(&self.rounds[3]),
+                    true => Some(&self.rounds[NUM_STORED_ROUNDS - 1]),
                     false => Some(&self.rounds[self.rounds_head as usize - 1]),
                 },
             },
             None => None,
         }
-    }
-
-    pub fn prev_round(&self) -> Option<&Round> {
-        self.rounds.get(match self.rounds_head as usize {
-            0 => NUM_STORED_ROUNDS - 1,
-            x => x - 1,
-        })
     }
 
     pub fn active(&self) -> bool {
@@ -549,7 +537,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             } else {
                 self.warmup_time
             };
-            if unix_timestamp >= warmup_time + self.run_state_start_unix_timestamp {
+            if self.check_timeout(unix_timestamp, warmup_time) {
                 self.first_round = true;
                 self.start_round_train(unix_timestamp, random_seed, 0);
             }
@@ -558,7 +546,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     fn tick_round_train(&mut self, unix_timestamp: u64) -> Result<(), CoordinatorError> {
-        if unix_timestamp >= self.max_round_train_time + self.run_state_start_unix_timestamp {
+        if self.check_timeout(unix_timestamp, self.max_round_train_time) {
             if self.is_greedy_data() {
                 // if we take longer than our max round train time, abandon the epoch and start over (assume too many people left)
                 self.start_waiting_for_members(unix_timestamp);
@@ -569,20 +557,13 @@ impl<T: NodeIdentity> Coordinator<T> {
         Ok(())
     }
 
-    fn tick_round_witness(&mut self, unix_timestamp: u64) -> Result<(), CoordinatorError> {
-        if unix_timestamp >= self.round_witness_time + self.run_state_start_unix_timestamp {
-            // TODO: Punish idle witnesses
-            self.change_state(unix_timestamp, RunState::RoundApply);
-        }
-        Ok(())
-    }
-
-    fn tick_round_apply(
+    fn tick_round_witness(
         &mut self,
         unix_timestamp: u64,
         random_seed: u64,
     ) -> Result<(), CoordinatorError> {
-        if unix_timestamp >= self.round_apply_time + self.run_state_start_unix_timestamp {
+        if self.check_timeout(unix_timestamp, self.round_witness_time) {
+            // TODO: Punish idle witnesses
             self.first_round = false;
             self.step += 1;
 
@@ -615,12 +596,15 @@ impl<T: NodeIdentity> Coordinator<T> {
         // cooldown_time == 0 means we never automatically advance to the next epoch,
         // so the only way to get there is through the checkpointing code.
         // this forces everything to wait on a valid checkpoint
-        if self.cooldown_time > 0
-            && unix_timestamp >= self.cooldown_time + self.run_state_start_unix_timestamp
-        {
+        if self.cooldown_time > 0 && self.check_timeout(unix_timestamp, self.cooldown_time) {
             self.finish_cooldown(unix_timestamp);
         }
         Ok(())
+    }
+
+    fn check_timeout(&self, unix_timestamp: u64, duration: u64) -> bool {
+        self.run_state_start_unix_timestamp != unix_timestamp
+            && unix_timestamp >= duration + self.run_state_start_unix_timestamp
     }
 
     fn start_round_train(&mut self, unix_timestamp: u64, random_seed: u64, tie_breaker_tasks: u32) {

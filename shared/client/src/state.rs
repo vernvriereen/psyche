@@ -50,6 +50,7 @@ const DOWNLOAD_RETRIES: usize = 3;
 
 type TaskResult<T> = Option<JoinHandle<Result<T>>>;
 
+#[derive(Debug)]
 enum PayloadState<T: NodeIdentity> {
     Downloading((T, u64, BlobTicket)),
     Deserializing(JoinHandle<Result<Vec<DistroResult>>>),
@@ -204,6 +205,9 @@ impl<T: NodeIdentity> RoundState<T> {
                 if let Some((commit_bloom, participant_bloom, order_bloom)) = blooms {
                     info!("Submitting witness blooms");
                     self.sent_witness = true;
+                    debug!("Commit bloom: {:?}", commit_bloom);
+                    debug!("Participant bloom: {:?}", participant_bloom);
+                    debug!("Order bloom: {:?}", order_bloom);
                     return Some(Witness {
                         index,
                         proof: *witness_proof,
@@ -324,11 +328,6 @@ impl<T: NodeIdentity> State<T> {
             RunState::RoundWitness => match self.round_witness(position) {
                 Err(TickRoundWitnessError::MissedWarmup) => Err(()),
                 Ok(witness) => Ok(witness.map(ToSend::Witness)),
-                Err(other_err) => return Err(other_err.into()),
-            },
-            RunState::RoundApply => match self.round_apply().await {
-                Err(TickRoundApplyError::MissedWarmup) => Err(()),
-                Ok(()) => Ok(None),
                 Err(other_err) => return Err(other_err.into()),
             },
             RunState::Cooldown => match self.cooldown() {
@@ -565,6 +564,7 @@ impl<T: NodeIdentity> State<T> {
         // );
         if is_train
             && self.training_data.is_none() // this is only true once we've finished all the training we're gonna do for this round and are sitting idle
+            && self.applying.is_none()
             && opprotunistic_witness_round.committee_info.is_some()
             && opprotunistic_witness_round
                 .all_batches_finished_deserializing
@@ -1280,45 +1280,14 @@ impl<T: NodeIdentity> State<T> {
             .as_ref()
             .ok_or(TickRoundWitnessError::MissedWarmup)?
             .run_state
-            != RunState::RoundWitness
+            == RunState::RoundWitness
         {
-            self.start_evals();
-        }
-
-        Ok(
-            match self
-                .state
-                .as_ref()
-                .map(|x| x.overlapped)
-                .unwrap_or_default()
-            {
-                true => self.previous_round.get_witness_to_send(index),
-                false => self.current_round.get_witness_to_send(index),
-            },
-        )
-    }
-
-    async fn round_apply(&mut self) -> std::result::Result<(), TickRoundApplyError> {
-        self.cancel_evals().await?; // CANCEL SAFETY
-        self.started_early_evals = false;
-
-        let state = self.state.as_ref().ok_or(TickRoundApplyError::NoState)?;
-        assert_eq!(state.run_state, RunState::RoundApply);
-
-        // check if this is a state transition
-        if self
-            .prev_state
-            .as_ref()
-            .ok_or(TickRoundApplyError::MissedWarmup)?
-            .run_state
-            == RunState::RoundApply
-        {
-            return Ok(());
+            return Ok(None);
         }
 
         let trainers_still_running = self.data_parallelism - self.available_trainers.len();
         if trainers_still_running > 0 {
-            return Err(TickRoundApplyError::TrainersStillRunning(
+            return Err(TickRoundWitnessError::TrainersStillRunning(
                 trainers_still_running,
             ));
         }
@@ -1387,14 +1356,14 @@ impl<T: NodeIdentity> State<T> {
             assert!(!commitments.is_empty());
             let round = state
                 .current_round()
-                .ok_or(TickRoundApplyError::NoActiveRound)?;
+                .ok_or(TickRoundWitnessError::NoActiveRound)?;
             let witnesses = round.witnesses.clone();
             let batch_ids = get_batch_ids_for_round(
                 match state.overlapped {
                     // witnesses are from current round but the actual batch numbers are from the previous
                     true => state
                         .previous_round()
-                        .ok_or(TickRoundApplyError::NoActiveRound)?,
+                        .ok_or(TickRoundWitnessError::NoActiveRound)?,
                     false => round,
                 },
                 state,
@@ -1474,46 +1443,60 @@ impl<T: NodeIdentity> State<T> {
             }));
         }
 
-        let (_, witness_proof, committee_selection) = match state.overlapped {
-            true => {
-                if state.first_round {
-                    return Ok(()); // no health check on first round of overlapped
-                } else {
-                    &mut self.previous_round.committee_info
-                }
+        if !state.overlapped || (state.overlapped && !state.first_round) {
+            let (_, witness_proof, committee_selection) = match state.overlapped {
+                true => &mut self.previous_round.committee_info,
+                false => &mut self.current_round.committee_info,
             }
-            false => &mut self.current_round.committee_info,
-        }
-        .take()
-        .ok_or(TickRoundApplyError::NoCommitteeInfo)?;
+            .clone()
+            .ok_or(TickRoundWitnessError::NoCommitteeInfo)?;
 
-        if witness_proof.witness {
-            let witnesses = state
-                .current_round()
-                .ok_or(TickRoundApplyError::NoActiveRound)?
-                .witnesses
-                .clone();
-            let witness_quorum = state.witness_quorum;
-            let clients = state.clients.clone();
-            self.health_checking = Some(tokio::task::spawn_blocking(move || {
-                let mut checks = HealthChecks::new();
-                for (index, client) in clients.into_iter().enumerate() {
-                    let proof = committee_selection.get_committee(index as u64);
-                    if proof.committee == Committee::Trainer
-                        && !Coordinator::trainer_healthy_by_witnesses(
-                            &client,
-                            &witnesses,
-                            witness_quorum,
-                        )
-                    {
-                        checks.push(proof);
+            if witness_proof.witness {
+                let witnesses = state
+                    .current_round()
+                    .ok_or(TickRoundWitnessError::NoActiveRound)?
+                    .witnesses
+                    .clone();
+                let witness_quorum = state.witness_quorum;
+                let clients = state.clients.clone();
+                self.health_checking = Some(tokio::task::spawn_blocking(move || {
+                    let mut checks = HealthChecks::new();
+                    for (index, client) in clients.into_iter().enumerate() {
+                        let proof = committee_selection.get_committee(index as u64);
+                        if proof.committee == Committee::Trainer {
+                            debug!(
+                                "Trainer {:?} health score: {}",
+                                client,
+                                Coordinator::trainer_healthy_score_by_witnesses(
+                                    &client, &witnesses
+                                )
+                            );
+                            if !Coordinator::trainer_healthy_by_witnesses(
+                                &client,
+                                &witnesses,
+                                witness_quorum,
+                            ) {
+                                debug!("Found unhealthy trainer at index {index}");
+                                checks.push(proof);
+                            }
+                        }
                     }
-                }
-                Ok(checks)
-            }));
+                    Ok(checks)
+                }));
+            }
         }
 
-        Ok(())
+        Ok(
+            match self
+                .state
+                .as_ref()
+                .map(|x| x.overlapped)
+                .unwrap_or_default()
+            {
+                true => self.previous_round.get_witness_to_send(index),
+                false => self.current_round.get_witness_to_send(index),
+            },
+        )
     }
 
     fn cooldown(&mut self) -> std::result::Result<(), TickRoundCooldownError> {
@@ -2002,15 +1985,9 @@ enum TickRoundWitnessError {
 
     #[error("this was the first state seen, we must be mid-epoch.")]
     MissedWarmup,
-}
 
-#[derive(Error, Debug)]
-enum TickRoundApplyError {
     #[error("no round active")]
     NoActiveRound,
-
-    #[error("this was the first state seen, we must be mid-epoch.")]
-    MissedWarmup,
 
     #[error("couldn't cancel evals")]
     EvalCancelFailed(#[from] FinishEvalsError),
@@ -2020,9 +1997,6 @@ enum TickRoundApplyError {
 
     #[error("no committee info")]
     NoCommitteeInfo,
-
-    #[error("round entered with no state")]
-    NoState,
 }
 
 #[derive(Error, Debug)]

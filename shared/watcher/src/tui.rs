@@ -84,7 +84,6 @@ pub enum TuiRunState {
     },
     RoundTrain,
     RoundWitness,
-    RoundApply,
     Cooldown {
         end_time: Option<Instant>,
     },
@@ -101,7 +100,6 @@ impl Display for TuiRunState {
             }
             TuiRunState::RoundTrain => write!(f, "Training"),
             TuiRunState::RoundWitness => write!(f, "Witnessing"),
-            TuiRunState::RoundApply => write!(f, "Applying"),
             TuiRunState::Cooldown { end_time } => match end_time {
                 Some(end_time) => {
                     let remaining = end_time.duration_since(Instant::now());
@@ -137,7 +135,6 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for TuiRunState {
                 }
             }
             RunState::RoundTrain => TuiRunState::RoundTrain,
-            RunState::RoundApply => TuiRunState::RoundApply,
             RunState::RoundWitness => TuiRunState::RoundWitness,
             RunState::Cooldown => TuiRunState::Cooldown {
                 end_time: match c.cooldown_time {
