@@ -287,11 +287,9 @@ impl<T: NodeIdentity> Coordinator<T> {
         if self.min_clients == 0 {
             return Err(CoordinatorError::Disabled);
         }
-        if !CommitteeSelection::from_coordinator(self)?.verify_witness_for_client(
-            from,
-            &witness.proof,
-            &self.clients,
-        ) {
+        if !CommitteeSelection::from_coordinator(self, self.overlapped && !self.first_round)?
+            .verify_witness_for_client(from, &witness.proof, &self.clients)
+        {
             return Err(CoordinatorError::InvalidWitness);
         }
         if self.run_state != RunState::RoundWitness && self.run_state != RunState::RoundTrain {
@@ -367,10 +365,16 @@ impl<T: NodeIdentity> Coordinator<T> {
                 return true;
             }
         };
-        let index = proof.index as usize;
-        if index < self.clients.len() {
-            let client = &self.clients[index];
-            let selection = match CommitteeSelection::from_coordinator(self) {
+        let index = proof.index;
+        if index < round.clients_len as u64 {
+            let client =
+                match self.get_client_at_historical_index(index as usize, round.clients_len) {
+                    Some(client) => client,
+                    None => {
+                        return false;
+                    }
+                };
+            let selection = match CommitteeSelection::from_coordinator(self, false) {
                 Ok(selection) => selection,
                 Err(_) => {
                     return false;
@@ -497,6 +501,23 @@ impl<T: NodeIdentity> Coordinator<T> {
 
     pub fn is_greedy_data(&self) -> bool {
         self.max_batches_per_client != 0
+    }
+
+    pub fn get_client_at_historical_index(&self, n: usize, clients_len: u32) -> Option<&Client<T>> {
+        if n < self.clients.len() {
+            Some(&self.clients[n])
+        } else if n < clients_len as usize {
+            let offset = clients_len as usize - n - 1;
+            self.dropped_clients.iter().rev().nth(offset)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_historical_clients(&self, clients_len: u32) -> Vec<&Client<T>> {
+        (0..clients_len)
+            .filter_map(|i| self.get_client_at_historical_index(i as usize, clients_len))
+            .collect()
     }
 
     fn tick_waiting_for_members(
