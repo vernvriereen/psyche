@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{BroadcastMessage, Payload, NC};
@@ -18,7 +18,7 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::time::interval;
@@ -102,12 +102,28 @@ pub struct App {
     original_min_clients: u32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DataServerInfo {
     pub dir: PathBuf,
     pub token_size: TokenSize,
     pub seq_len: usize,
     pub shuffle_seed: [u8; 32],
+}
+
+impl DataServerInfo {
+    pub fn new(config_path: PathBuf) -> Result<Self> {
+        let mut data_config: DataServerInfo = toml::from_str(std::str::from_utf8(&std::fs::read(
+            &config_path,
+        )?)?)
+        .with_context(|| format!("failed to parse data server config toml file {config_path:?}"))?;
+
+        // data dir, if relative, should be relative to the config's path.
+        if !data_config.dir.is_absolute() {
+            let config_dir = Path::new(&config_path).parent().unwrap_or(Path::new(""));
+            data_config.dir = config_dir.join(data_config.dir);
+        }
+        Ok(data_config)
+    }
 }
 
 impl App {
@@ -450,4 +466,36 @@ impl From<&App> for DashboardState {
                 .collect(),
         }
     }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // use psyche_coordinator::Coordinator;
+
+    #[tokio::test]
+    async fn connect_and_disconnect_nodes(){
+        let mut coordinator: Coordinator<ClientId> = Coordinator::default();
+    
+        coordinator.run_state = RunState::WaitingForMembers;
+        coordinator.clients.clear();
+        coordinator.dropped_clients.clear();
+        let p2p = NC::init(
+            &coordinator.run_id,
+            // p2p_port,
+            None,
+            RelayMode::Default,
+            vec![],
+            None,
+        )
+        .await.unwrap();
+    
+    let (tx, backend) = ChannelCoordinatorBackend::new();
+
+    dbg!(coordinator.clients);
+    
+    }
+
+
 }
