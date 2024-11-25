@@ -468,34 +468,87 @@ impl From<&App> for DashboardState {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
-    // use psyche_coordinator::Coordinator;
+    use psyche_centralized_client::app::{AppBuilder, AppParams};
+    use psyche_client::BatchShuffleType;
+    use psyche_network::SecretKey;
 
     #[tokio::test]
-    async fn connect_and_disconnect_nodes(){
+    async fn connect_and_disconnect_nodes() {
         let mut coordinator: Coordinator<ClientId> = Coordinator::default();
-    
-        coordinator.run_state = RunState::WaitingForMembers;
-        coordinator.clients.clear();
-        coordinator.dropped_clients.clear();
+
+        coordinator.run_id = "test".to_string();
+
+        let p2p_port = Some(10);
+
         let p2p = NC::init(
             &coordinator.run_id,
-            // p2p_port,
-            None,
+            p2p_port,
             RelayMode::Default,
             vec![],
             None,
         )
-        .await.unwrap();
-    
-    let (tx, backend) = ChannelCoordinatorBackend::new();
+        .await
+        .unwrap();
 
-    dbg!(coordinator.clients);
-    
+        let (tx, backend) = ChannelCoordinatorBackend::new();
+
+        let data_server_info = DataServerInfo {
+            dir: PathBuf::from("./"),
+            token_size: TokenSize::TwoBytes,
+            seq_len: 2048,
+            shuffle_seed: [1; 32],
+        };
+
+        // let port = Some(8080);
+
+        tokio::spawn(async {
+            App::new(
+                false,
+                coordinator,
+                Some(data_server_info),
+                Some(10),
+                Some(10),
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap()
+            .run()
+            .await
+            .unwrap()
+        });
+
+        // Client
+        let client_app_params = AppParams {
+            cancel: CancellationToken::default(),
+            private_key: SecretKey::generate(),
+            server_addr: "localhost:8080".to_string(),
+            tx_tui_state: None,
+            run_id: "test".to_string(),
+            data_parallelism: 0,
+            tensor_parallelism: 0,
+            micro_batch_size: None,
+            write_gradients_dir: None,
+            p2p_port,
+            eval_tasks: Vec::new(),
+            eval_task_max_docs: None,
+            checkpoint_upload_info: None,
+            hub_read_token: None,
+            wandb_info: None,
+            batch_shuffle_type: BatchShuffleType::Fixed([0; 32]),
+            optim_stats: None,
+            grad_accum_in_fp32: false,
+        };
+
+        let client_app_builder = AppBuilder::new(client_app_params);
+
+        tokio::spawn(client_app_builder.run());
+        // dbg!(&coordinator.clients);
     }
-
-
 }
