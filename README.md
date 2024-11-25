@@ -6,13 +6,59 @@ To install `nix`, simply run `curl --proto '=https' --tlsv1.2 -sSf -L https://in
 
 ## Setup
 
-### Non-Nix
+### Ubuntu
 
-1. Download & install the latest Rust version (probably using `rustup`: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
-2. Download `libtorch` 2.4.1 with CUDA 12.4 from this link: https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.4.1%2Bcu124.zip
-3. Extract it to some folder with `tar -zxvf libtorch-cxx11-abi-shared-with-deps-2.4.1%2Bcu124.zip`
-4. Modify your environment variables (bashrc, zshrc, etc) to include `export LIBTORCH=/path/to/libtorch`, pointing to the libtorch folder you just extracted
-5. (optional) Install `just`
+The following instructions are needed for a server with a fresh Ubuntu installation
+
+1. Install drivers
+
+```
+sudo apt update
+sudo apt install -y ubuntu-drivers-common
+sudo ubuntu-drivers install
+```
+
+2. Install CUDA libraries
+
+```
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt-get update
+sudo apt-get -y install cuda-toolkit-12-4
+rm cuda-keyring_1.1-1_all.deb
+sudo apt-get install libnccl-dev libnccl2
+sudo apt install nvidia-cuda-toolkit
+```
+
+3. Download libtorch & extract
+
+```
+wget https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.4.1%2Bcu124.zip
+unzip libtorch-cxx11-abi-shared-with-deps-2.4.1%2Bcu124.zip
+rm libtorch-cxx11-abi-shared-with-deps-2.4.1%2Bcu124.zip
+```
+
+4. In the `.bashrc` file, set the following libtorch environment variables. Here `<path_to_libtorch>` is the absolute path
+to the extracted `libtorch` folder from the previous step
+
+```
+export LIBTORCH=<path_to_libtorch>
+export LIBTORCH_INCLUDE=<path_to_libtorch>
+export LIBTORCH_LIB=<path_to_libtorch>
+export LD_LIBRARY_PATH=<path_to_libtorch>/lib:$LD_LIBRARY_PATH
+```
+
+5. Download & install Rust
+
+```
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+6. (optional) Install `just`
+
+```
+sudo snap install just --edge --classic
+```
 
 ### Nix
 
