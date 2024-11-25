@@ -325,7 +325,7 @@ impl<T: NodeIdentity> State<T> {
                 Ok(()) => Ok(None),
                 Err(other_err) => return Err(other_err.into()),
             },
-            RunState::RoundWitness => match self.round_witness(position).await {
+            RunState::RoundWitness => match self.round_witness(position) {
                 Err(TickRoundWitnessError::MissedWarmup) => Err(()),
                 Ok(witness) => Ok(witness.map(ToSend::Witness)),
                 Err(other_err) => return Err(other_err.into()),
@@ -1311,12 +1311,10 @@ impl<T: NodeIdentity> State<T> {
         Ok(())
     }
 
-    async fn round_witness(
+    fn round_witness(
         &mut self,
         index: u64,
     ) -> std::result::Result<Option<Witness>, TickRoundWitnessError> {
-        self.cancel_evals().await?; // CANCEL SAFETY
-
         let state = self.state.as_ref().ok_or(TickRoundWitnessError::NoState)?;
         assert_eq!(state.run_state, RunState::RoundWitness);
 
@@ -1331,11 +1329,8 @@ impl<T: NodeIdentity> State<T> {
             return Ok(None);
         }
 
-        let trainers_still_running = self.data_parallelism - self.available_trainers.len();
-        if trainers_still_running > 0 {
-            return Err(TickRoundWitnessError::TrainersStillRunning(
-                trainers_still_running,
-            ));
+        if !self.training_finished_for_this_round {
+            warn!("Training didn't finish when witness round reached, we are likely to desync");
         }
 
         let mut sum = 0.0;
@@ -1447,7 +1442,10 @@ impl<T: NodeIdentity> State<T> {
             .ok_or(ApplyError::NoActiveRound)?;
             let witnesses = round.witnesses.clone();
             let batch_ids = get_batch_ids_for_round(round, state);
-            debug!("Applying witnesses for step {}/round {}", step, round.height);
+            debug!(
+                "Applying witnesses for step {}/round {}",
+                step, round.height
+            );
             self.applying = Some(tokio::task::spawn(async move {
                 let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
 
@@ -1764,7 +1762,7 @@ impl<T: NodeIdentity> State<T> {
     fn start_evals(&mut self) {
         if !self.prepared_eval_tasks.is_empty() && !self.available_trainers.is_empty() {
             self.eval_cancel.store(false, Ordering::SeqCst);
-            debug!(
+            info!(
                 "Starting evals {:?} on {} trainers",
                 self.prepared_eval_tasks
                     .iter()
@@ -1827,7 +1825,7 @@ impl<T: NodeIdentity> State<T> {
     // cancel safe
     async fn cancel_evals(&mut self) -> std::result::Result<(), FinishEvalsError> {
         if !self.eval_cancel.swap(true, Ordering::SeqCst) {
-            debug!("Cancelling evals");
+            info!("Cancelling evals");
         }
         while !self.evals.is_empty() {
             if let Some(finished) = self.evals.iter_mut().position(|x| x.is_finished()) {
@@ -1999,9 +1997,6 @@ enum TickRoundWitnessError {
 
     #[error("couldn't cancel evals")]
     EvalCancelFailed(#[from] FinishEvalsError),
-
-    #[error("{0} trainer(s) aren't finished")]
-    TrainersStillRunning(usize),
 }
 
 #[derive(Error, Debug)]
