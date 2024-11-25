@@ -371,6 +371,9 @@ impl<T: NodeIdentity> State<T> {
                 self.available_trainers.len()
             );
         }
+        if self.is_run_state(RunState::Cooldown) {
+            self.checkpoint();
+        }
         Ok(ToSend::Nothing)
     }
 
@@ -1176,125 +1179,6 @@ impl<T: NodeIdentity> State<T> {
             return Err(TickRoundTrainError::CheckpointingStillRunning);
         }
 
-        let round = state
-            .current_round()
-            .ok_or(TickRoundTrainError::NoActiveRound)?;
-
-        self.apply_start = Some(Instant::now());
-        let trainers = self.available_trainers.drain(..).collect::<Vec<_>>();
-        if state.first_round || (state.overlapped && round.height == 1) {
-            // in overlapped mode the first training step of each epoch has no apply phase.
-            // this is so that on the trainer we can we overlap the uploading
-            // of the last step's results while concurrently computing the next
-            // step. this skip "primes" the pump
-            info!("Skipping early apply");
-            self.applying = Some(tokio::task::spawn(async move {
-                //round_rollbacks.lock().await.push((step, Vec::new()));
-                Ok(trainers)
-            }));
-        } else {
-            //let round_rollbacks = self.round_rollbacks.clone();
-            let step = state.step;
-            let witness_quorum = state.witness_quorum;
-
-            let mut payloads: HashMap<psyche_network::Hash, PayloadState<T>> =
-                match state.overlapped {
-                    true => std::mem::take(&mut self.previous_round.downloads),
-                    false => std::mem::take(&mut self.current_round.downloads),
-                };
-            let commitments: HashMap<u64, Vec<(T, TrainingResult)>> = match state.overlapped {
-                true => std::mem::take(&mut self.previous_round.results),
-                false => std::mem::take(&mut self.current_round.results),
-            };
-            assert!(!payloads.is_empty());
-            assert!(!commitments.is_empty());
-
-            let witnesses = round.witnesses.clone();
-            let batch_ids = get_batch_ids_for_round(
-                // coordinator has already advanced to the next round but we haven't started ours yet.
-                // our current_round corresponds to the coordinator's previous_round
-                match state.overlapped {
-                    true => state.previous_previous_round(),
-                    false => state.previous_round(),
-                }
-                .ok_or(TickRoundTrainError::NoActiveRound)?,
-                state,
-            );
-            self.applying = Some(tokio::task::spawn(async move {
-                let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
-
-                for batch_id in batch_ids {
-                    let batch_commitments = match commitments.get(&batch_id) {
-                        Some(x) => x,
-                        None => {
-                            warn!("No commitments for batch {}", batch_id);
-                            continue;
-                        }
-                    };
-                    let consensus = match Coordinator::<T>::select_consensus_commitment_by_witnesses(
-                        &batch_commitments
-                            .iter()
-                            .map(|x| x.1.commitment)
-                            .collect::<Vec<_>>(),
-                        &witnesses,
-                        witness_quorum,
-                    ) {
-                        Some(x) => x,
-                        None => {
-                            warn!("No consensus commitment for batch {}", batch_id);
-                            continue;
-                        }
-                    };
-                    let consensus = &batch_commitments[consensus].1;
-                    let maybe_results = match payloads.remove(&consensus.ticket.hash()) {
-                        Some(PayloadState::Deserializing(x)) => match x.is_finished() {
-                            true => x.await.unwrap(),
-                            false => {
-                                bail!("DESYNC: Did not finish deserializing payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
-                            }
-                        },
-                        Some(PayloadState::Downloading(_)) => {
-                            bail!("DESYNC: Did not begin downloading payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
-                        }
-                        None => bail!(
-                            "DESYNC: Unknown consensus commitment 0x{} for batch {}",
-                            hex::encode(consensus.commitment),
-                            batch_id
-                        ),
-                    };
-
-                    match maybe_results {
-                        Ok(results) => {
-                            distro_results.push(results);
-                        }
-                        Err(err) => warn!("DESYNC: Got the following error when deserializing results for commitment 0x{}: {}", hex::encode(consensus.commitment), err),
-                    }
-                }
-
-                // round_rollbacks
-                //     .lock()
-                //     .await
-                //     .push((step, distro_results.clone()));
-
-                let futures: Vec<JoinHandle<std::result::Result<Trainer, ApplyDistroResultError>>> =
-                    trainers
-                        .into_iter()
-                        .map(|trainer| {
-                            let distro_results = distro_results.clone();
-
-                            tokio::task::spawn_blocking(move || {
-                                trainer.apply_distro_results(step, distro_results)
-                            })
-                        })
-                        .collect::<Vec<_>>();
-                let mut trainers = Vec::new();
-                for future in futures {
-                    trainers.push(future.await??);
-                }
-                Ok(trainers)
-            }));
-        }
-
         if !state.first_round {
             // as with applying, the coordinator has already advanced to the next round but we haven't started ours yet.
             // our current_round corresponds to the coordinator's previous_round
@@ -1339,6 +1223,9 @@ impl<T: NodeIdentity> State<T> {
             }
         }
 
+        self.apply()?;
+
+        let state = self.state.as_ref().ok_or(TickRoundTrainError::NoState)?;
         debug!("Transitioning to train step {}", state.step);
 
         let now = Instant::now();
@@ -1346,6 +1233,10 @@ impl<T: NodeIdentity> State<T> {
             self.round_durations.push(now - last_round_start);
         }
         self.round_start = Some(Instant::now());
+
+        let round = state
+            .current_round()
+            .ok_or(TickRoundTrainError::NoActiveRound)?;
 
         self.previous_round = std::mem::take(&mut self.current_round);
         self.current_round.height = round.height;
@@ -1505,7 +1396,137 @@ impl<T: NodeIdentity> State<T> {
             .run_state
             != RunState::Cooldown
         {
-            // todo consider allowing ability to write checkpoint to disk without uploading to HF
+            self.apply()?;
+        }
+
+        Ok(())
+    }
+
+    fn apply(&mut self) -> std::result::Result<(), ApplyError> {
+        let state = self.state.as_ref().ok_or(ApplyError::NoState)?;
+
+        self.apply_start = Some(Instant::now());
+        let trainers = self.available_trainers.drain(..).collect::<Vec<_>>();
+        if state.first_round
+            || (state.overlapped
+                && state.current_round().map(|x| x.height).unwrap_or_default() == 1)
+        {
+            // in overlapped mode the first training step of each epoch has no apply phase.
+            // this is so that on the trainer we can we overlap the uploading
+            // of the last step's results while concurrently computing the next
+            // step. this skip "primes" the pump
+            info!("Skipping early apply");
+            self.applying = Some(tokio::task::spawn(async move {
+                //round_rollbacks.lock().await.push((step, Vec::new()));
+                Ok(trainers)
+            }));
+        } else {
+            let step = state.step;
+            let witness_quorum = state.witness_quorum;
+
+            let mut payloads: HashMap<psyche_network::Hash, PayloadState<T>> =
+                match state.overlapped {
+                    true => std::mem::take(&mut self.previous_round.downloads),
+                    false => std::mem::take(&mut self.current_round.downloads),
+                };
+            let commitments: HashMap<u64, Vec<(T, TrainingResult)>> = match state.overlapped {
+                true => std::mem::take(&mut self.previous_round.results),
+                false => std::mem::take(&mut self.current_round.results),
+            };
+            assert!(!payloads.is_empty());
+            assert!(!commitments.is_empty());
+
+            // coordinator has already advanced to the next round (unless we're in cooldown) but we haven't started ours yet.
+            // so our current_round corresponds to the coordinator's previous_round
+            let round = match (state.overlapped, state.run_state == RunState::Cooldown) {
+                (true, false) => state.previous_previous_round(),
+                (false, false) => state.previous_round(),
+                (true, true) => state.previous_round(),
+                (false, true) => state.current_round(),
+            }
+            .ok_or(ApplyError::NoActiveRound)?;
+            let witnesses = round.witnesses.clone();
+            let batch_ids = get_batch_ids_for_round(round, state);
+            debug!("Applying witnesses for step {}/round {}", step, round.height);
+            self.applying = Some(tokio::task::spawn(async move {
+                let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
+
+                for batch_id in batch_ids {
+                    let batch_commitments = match commitments.get(&batch_id) {
+                        Some(x) => x,
+                        None => {
+                            warn!("No commitments for batch {}", batch_id);
+                            continue;
+                        }
+                    };
+                    let consensus = match Coordinator::<T>::select_consensus_commitment_by_witnesses(
+                        &batch_commitments
+                            .iter()
+                            .map(|x| x.1.commitment)
+                            .collect::<Vec<_>>(),
+                        &witnesses,
+                        witness_quorum,
+                    ) {
+                        Some(x) => x,
+                        None => {
+                            warn!("No consensus commitment for batch {}", batch_id);
+                            continue;
+                        }
+                    };
+                    let consensus = &batch_commitments[consensus].1;
+                    let maybe_results = match payloads.remove(&consensus.ticket.hash()) {
+                        Some(PayloadState::Deserializing(x)) => match x.is_finished() {
+                            true => x.await.unwrap(),
+                            false => {
+                                bail!("DESYNC: Did not finish deserializing payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
+                            }
+                        },
+                        Some(PayloadState::Downloading(_)) => {
+                            bail!("DESYNC: Did not begin downloading payload for consensus commitment 0x{} for batch {}", hex::encode(consensus.commitment), batch_id);
+                        }
+                        None => bail!(
+                            "DESYNC: Unknown consensus commitment 0x{} for batch {}",
+                            hex::encode(consensus.commitment),
+                            batch_id
+                        ),
+                    };
+
+                    match maybe_results {
+                        Ok(results) => {
+                            distro_results.push(results);
+                        }
+                        Err(err) => warn!("DESYNC: Got the following error when deserializing results for commitment 0x{}: {}", hex::encode(consensus.commitment), err),
+                    }
+                }
+
+                // round_rollbacks
+                //     .lock()
+                //     .await
+                //     .push((step, distro_results.clone()));
+
+                let futures: Vec<JoinHandle<std::result::Result<Trainer, ApplyDistroResultError>>> =
+                    trainers
+                        .into_iter()
+                        .map(|trainer| {
+                            let distro_results = distro_results.clone();
+
+                            tokio::task::spawn_blocking(move || {
+                                trainer.apply_distro_results(step, distro_results)
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                let mut trainers = Vec::new();
+                for future in futures {
+                    trainers.push(future.await??);
+                }
+                Ok(trainers)
+            }));
+        }
+        Ok(())
+    }
+
+    fn checkpoint(&mut self) {
+        if let Some(state) = self.state.as_ref() {
             if let Some(CheckpointSaveInfo {
                 hub_upload,
                 checkpoint_dir,
@@ -1564,15 +1585,11 @@ impl<T: NodeIdentity> State<T> {
                         }));
                     }
                     None => {
-                        return Err(TickRoundCooldownError::NoAvailableTrainersForCheckpointing)
+                        warn!("No available trainers for checkpointing");
                     }
                 }
-            } else {
-                self.start_evals();
             }
         }
-
-        Ok(())
     }
 
     async fn load_data_and_model(
@@ -1992,11 +2009,11 @@ enum TickRoundCooldownError {
     #[error("this was the first state seen, we must be mid-epoch.")]
     MissedWarmup,
 
-    #[error("no trainers available for checkpointing")]
-    NoAvailableTrainersForCheckpointing,
-
     #[error("round entered with no state")]
     NoState,
+
+    #[error("Apply failed {0}")]
+    ApplyFailed(#[from] ApplyError),
 }
 
 #[derive(Error, Debug)]
@@ -2036,6 +2053,9 @@ enum TickRoundTrainError {
 
     #[error("No committee info")]
     NoCommitteeInfo,
+
+    #[error("Apply failed {0}")]
+    ApplyFailed(#[from] ApplyError),
 }
 
 #[derive(Error, Debug)]
@@ -2057,6 +2077,15 @@ enum FinishEvalsError {
 
     #[error("eval failed {0}")]
     EvalFailed(#[from] EvalError),
+}
+
+#[derive(Error, Debug)]
+enum ApplyError {
+    #[error("no round active")]
+    NoActiveRound,
+
+    #[error("round entered with no state")]
+    NoState,
 }
 
 struct RawLoadedModel {

@@ -656,7 +656,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     fn start_warmup(&mut self, unix_timestamp: u64) {
-        self.rounds.fill(Round::empty());
+        self.rounds = Default::default();
         self.change_state(unix_timestamp, RunState::Warmup);
     }
 
@@ -671,7 +671,6 @@ impl<T: NodeIdentity> Coordinator<T> {
             self.batches_per_round,
             self.data_indicies_per_batch,
         );
-        self.rounds = Default::default();
 
         if let Some(Model::LLM(llm)) = &mut self.model {
             llm.checkpoint = Checkpoint::Ephemeral;
