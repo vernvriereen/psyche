@@ -115,7 +115,6 @@ pub struct State<T: NodeIdentity> {
     write_gradients_dir: Option<PathBuf>,
     atomic_run_state: Arc<AtomicUsize>,
     //round_rollbacks: Arc<tokio::sync::Mutex<Rollbacks>>,
-    training_data: Option<TrainingDataForStep>,
     data_fetcher: Option<DataFetcher<T>>,
     round_start: Option<Instant>,
     round_durations: BoundedQueue<Duration>,
@@ -127,7 +126,7 @@ pub struct State<T: NodeIdentity> {
     evals: Vec<JoinHandle<std::result::Result<Trainer, EvalError>>>,
     tokenizer: Option<Arc<Tokenizer>>,
     apply_start: Option<Instant>,
-    started_early_evals: bool,
+    training_finished_for_this_round: bool,
     checkpoint_extra_files: Vec<PathBuf>,
     checkpointing: TaskResult<(Trainer, Option<model::HubRepo>)>,
     last_warmup_peer_announcement: Option<Instant>,
@@ -170,6 +169,7 @@ struct RoundState<T: NodeIdentity> {
     blooms: Option<(Bloom32, Bloom32, Bloom32)>,
     committee_info: Option<(CommitteeProof, WitnessProof, CommitteeSelection)>,
     all_batches_finished_deserializing: Arc<AtomicBool>,
+    training_data: Option<TrainingDataForStep>,
 }
 
 impl<T: NodeIdentity> RoundState<T> {
@@ -184,6 +184,7 @@ impl<T: NodeIdentity> RoundState<T> {
             blooms: None,
             committee_info: None,
             all_batches_finished_deserializing: Arc::new(AtomicBool::new(false)),
+            training_data: None,
         }
     }
 }
@@ -248,7 +249,6 @@ impl<T: NodeIdentity> State<T> {
             identity,
             private_key,
             data_and_model_load: None,
-            training_data: None,
             available_trainers: Vec::new(),
             trainings: Vec::new(),
             applying: None,
@@ -282,7 +282,7 @@ impl<T: NodeIdentity> State<T> {
             preparing_eval_tasks: None,
             tokenizer: None,
             apply_start: None,
-            started_early_evals: false,
+            training_finished_for_this_round: false,
             last_warmup_peer_announcement: None,
             checkpoint_upload_info,
             hub_read_token,
@@ -325,7 +325,7 @@ impl<T: NodeIdentity> State<T> {
                 Ok(()) => Ok(None),
                 Err(other_err) => return Err(other_err.into()),
             },
-            RunState::RoundWitness => match self.round_witness(position) {
+            RunState::RoundWitness => match self.round_witness(position).await {
                 Err(TickRoundWitnessError::MissedWarmup) => Err(()),
                 Ok(witness) => Ok(witness.map(ToSend::Witness)),
                 Err(other_err) => return Err(other_err.into()),
@@ -466,10 +466,12 @@ impl<T: NodeIdentity> State<T> {
         });
 
         // in non-greedy mode we can start evals right when we're done with our work
-        if !self.started_early_evals && self.available_trainers.len() == self.data_parallelism {
+        if !self.training_finished_for_this_round
+            && self.available_trainers.len() == self.data_parallelism
+        {
             if let Some(state) = &self.state {
                 if !state.is_greedy_data() {
-                    let start = if let Some(training_data) = &self.training_data {
+                    let start = if let Some(training_data) = &self.current_round.training_data {
                         // all data has been pushed, we've consumed it all, and all trainers have finished
                         training_data.assigned_ids_done.load(Ordering::SeqCst)
                             && training_data.next_sample.is_empty()
@@ -478,7 +480,7 @@ impl<T: NodeIdentity> State<T> {
                         true
                     };
                     if start {
-                        self.started_early_evals = true;
+                        self.training_finished_for_this_round = true;
                         self.start_evals();
                     }
                 }
@@ -554,21 +556,29 @@ impl<T: NodeIdentity> State<T> {
             },
             None => &mut self.current_round,
         };
-        // debug!(
-        //     "opprorunistic check {}: committe_info.is_some(): {}, all_batches_finished_deserializing: {}",
-        //     opprotunistic_witness_round.height,
-        //     opprotunistic_witness_round.committee_info.is_some(),
-        //     opprotunistic_witness_round
-        //         .all_batches_finished_deserializing
-        //         .load(Ordering::SeqCst)
-        // );
+        // if is_train && !opprotunistic_witness_round.sent_witness {
+        //     info!(
+        //         "opprorunistic check {}: committe_info.is_some(): {}, all_batches_finished_deserializing: {}, training_finished_for_this_round: {}",
+        //         opprotunistic_witness_round.height,
+        //         opprotunistic_witness_round.committee_info.is_some(),
+        //         opprotunistic_witness_round
+        //             .all_batches_finished_deserializing
+        //             .load(Ordering::SeqCst),
+        //         self.training_finished_for_this_round,
+        //     );
+        // }
         if is_train
-            && self.training_data.is_none() // this is only true once we've finished all the training we're gonna do for this round and are sitting idle
-            && self.applying.is_none()
+            && self.training_finished_for_this_round
             && opprotunistic_witness_round.committee_info.is_some()
-            && opprotunistic_witness_round
+            && (opprotunistic_witness_round
                 .all_batches_finished_deserializing
                 .load(Ordering::SeqCst)
+                || (self
+                    .state
+                    .as_ref()
+                    .map(|x| x.overlapped)
+                    .unwrap_or_default()
+                    && opprotunistic_witness_round.height <= 1))
         {
             let (_, witness_proof, _) =
                 opprotunistic_witness_round.committee_info.as_ref().unwrap();
@@ -600,11 +610,11 @@ impl<T: NodeIdentity> State<T> {
                 self.applying = None;
                 self.handle_poll_next_applying(applying??)
             },
-            sample = async {self.training_data.as_mut().unwrap().next_sample.recv().await}, if self.is_run_state(RunState::RoundTrain)
+            sample = async {self.current_round.training_data.as_mut().unwrap().next_sample.recv().await}, if self.is_run_state(RunState::RoundTrain)
             && !self.available_trainers.is_empty()
-            && self.training_data.is_some() => {
+            && self.current_round.training_data.is_some() => {
                 match sample {
-                    Some(sample) => self.handle_poll_next_training_data(sample.0, sample.1, self.training_data.as_ref().unwrap().step),
+                    Some(sample) => self.handle_poll_next_training_data(sample.0, sample.1, self.current_round.training_data.as_ref().unwrap().step),
                     None => Ok(ToSend::Nothing),
                 }
             },
@@ -661,23 +671,14 @@ impl<T: NodeIdentity> State<T> {
             NetworkEvent::DownloadComplete(downloaded) => {
                 self.retried_downloads.remove(&downloaded.hash);
                 match &downloaded.data {
-                    Payload::DistroResult(distro_result) => {
+                    Payload::DistroResult(_) => {
                         debug!(
                             "Payload 0x{} received from {}",
                             hex::encode(downloaded.hash),
                             downloaded.from
                         );
-                        if let Some(state) = &self.state {
-                            if state.step == distro_result.step {
-                                self.handle_payload(downloaded.hash, downloaded.data)
-                                    .await?;
-                            } else {
-                                info!(
-                                    "Got payload for step {} from {} but current step is {}",
-                                    distro_result.step, downloaded.from, state.step
-                                );
-                            }
-                        }
+                        self.handle_payload(downloaded.hash, downloaded.data)
+                            .await?;
                     }
                     Payload::Empty { random: _ } => {}
                 }
@@ -743,19 +744,26 @@ impl<T: NodeIdentity> State<T> {
         };
         let ticket = match broadcast {
             BroadcastMessage::TrainingResult(training_result) => {
-                let round_state = if state.overlapped && training_result.step < state.step {
-                    if training_result.step != state.step - 1 {
+                let round_state = if state.overlapped {
+                    if training_result.step == state.step {
+                        debug!(
+                            "Queueing download for current step {}",
+                            training_result.step
+                        );
+                        &mut self.current_round
+                    } else if training_result.step == state.step - 1 {
+                        debug!(
+                            "Queueing download for previous step {}",
+                            training_result.step
+                        );
+                        &mut self.previous_round
+                    } else {
                         debug!(
                             "Ignoring result from step {} (current step is {})",
                             training_result.step, state.step
                         );
                         return Ok(None);
                     }
-                    debug!(
-                        "Queueing download for previous step {}",
-                        training_result.step
-                    );
-                    &mut self.previous_round
                 } else if training_result.step != state.step {
                     debug!(
                         "Ignoring result from step {} (current step is {})",
@@ -949,7 +957,7 @@ impl<T: NodeIdentity> State<T> {
                 let (just_consumed_last_batch_id, num_left) = if let Some(TrainingDataForStep {
                     batch_ids_not_yet_trained_on,
                     ..
-                }) = &mut self.training_data
+                }) = &mut round_state.training_data
                 {
                     // TODO: how do we do witnessing for verifiers that might be training on data that's not in the normal remaining batch IDs?
                     // TODO: also we want ALL those from everyone, right?
@@ -981,13 +989,10 @@ impl<T: NodeIdentity> State<T> {
                     (remaining_batch_ids.is_empty(), remaining_batch_ids.len())
                 } else {
                     // it was already empty, so we didn't just consume the last value.
+                    debug!("Got download of {} but training data is empty", hash);
                     (false, 0)
                 };
                 self._last_observed_num_batches_remaining = num_left;
-
-                if just_consumed_last_batch_id {
-                    self.training_data = None;
-                }
 
                 // we unconditionally store every seen payload, since we're not yet sure what consensus will be on whether it's included.
                 let all_batches_finished_deserializing =
@@ -1001,6 +1006,7 @@ impl<T: NodeIdentity> State<T> {
                     match maybe_results {
                         Ok(results) => {
                             if just_consumed_last_batch_id {
+                                debug!("Finished deserializing last batch");
                                 all_batches_finished_deserializing.store(true, Ordering::SeqCst);
                             }
                             Ok(results)
@@ -1060,9 +1066,7 @@ impl<T: NodeIdentity> State<T> {
     }
 
     async fn round_train(&mut self, index: u64) -> std::result::Result<(), TickRoundTrainError> {
-        if !self.started_early_evals {
-            self.cancel_evals().await?; // CANCEL SAFETY
-        }
+        self.cancel_evals().await?; // CANCEL SAFETY
 
         let state = self.state.as_ref().ok_or(TickRoundTrainError::NoState)?;
         assert_eq!(state.run_state, RunState::RoundTrain);
@@ -1081,7 +1085,6 @@ impl<T: NodeIdentity> State<T> {
         // if all our states are empty (first execution), wait for the data provider and model load to finish
         if self.available_trainers.is_empty()
             && self.data_fetcher.is_none()
-            && self.training_data.is_none()
             && self.tokenizer.is_none()
         {
             let data_and_model_load = self
@@ -1166,9 +1169,6 @@ impl<T: NodeIdentity> State<T> {
         }
 
         // transition to RoundTrain -- round start time!
-        if self.applying.is_some() {
-            return Err(TickRoundTrainError::ApplyStillRunning);
-        }
         if !self.evals.is_empty() {
             return Err(TickRoundTrainError::EvalsStillRunning);
         }
@@ -1176,196 +1176,48 @@ impl<T: NodeIdentity> State<T> {
             return Err(TickRoundTrainError::CheckpointingStillRunning);
         }
 
-        let trainers_still_running = self.data_parallelism - self.available_trainers.len();
-        if trainers_still_running > 0 {
-            return Err(TickRoundTrainError::TrainersStillRunning(
-                trainers_still_running,
-            ));
-        }
-
         let round = state
             .current_round()
             .ok_or(TickRoundTrainError::NoActiveRound)?;
 
-        debug!("Transitioning to train step {}", state.step);
-
-        let now = Instant::now();
-        if let Some(last_round_start) = self.round_start {
-            self.round_durations.push(now - last_round_start);
-        }
-        self.round_start = Some(Instant::now());
-
-        self.previous_round = std::mem::take(&mut self.current_round);
-        self.current_round.height = round.height;
-        if self.previous_round.height == 0 && state.overlapped {
-            self.previous_round.sent_witness = false; // we need to resend the witness from the first step again on real step
-        }
-
-        let committee_selection = CommitteeSelection::new(
-            round.tie_breaker_tasks as usize,
-            state.witness_nodes as usize,
-            state.verification_percent,
-            state.clients.len(),
-            round.random_seed,
-        );
-        self.current_round.data_assignments = assign_data_for_state(state, &committee_selection);
-
-        if self.data_fetcher.is_none() {
-            return Err(TickRoundTrainError::NoDataFetcher);
-        }
-
-        let (num_batch_ids_for_this_round, training_data) = self
-            .data_fetcher
-            .as_mut()
-            .unwrap()
-            .fetch_data(state, &self.current_round.data_assignments, &self.identity);
-        self.training_data = Some(training_data);
-
-        let committee_proof = committee_selection.get_committee(index);
-        let witness_proof = committee_selection.get_witness(index);
-        info!(
-            "Assignment for step {} (round {}/epoch {}): index={} committee position={} committee={} witness position={} witness={}",
-            state.step, round.height, state.epoch, index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness
-        );
-        self.current_round.blooms = match witness_proof.witness {
-            true => {
-                let commit_bloom = Bloom::random(
-                    num_batch_ids_for_this_round * 2,
-                    BLOOM_FALSE_RATE,
-                    BLOOM_MAX_BITS,
-                );
-                let participant_bloom =
-                    Bloom::random(state.clients.len(), BLOOM_FALSE_RATE, BLOOM_MAX_BITS);
-                let order_bloom = Bloom::random(
-                    num_batch_ids_for_this_round,
-                    BLOOM_FALSE_RATE,
-                    BLOOM_MAX_BITS,
-                );
-                debug!(
-                    "Commit bloom size: {} bits, {} keys",
-                    commit_bloom.bits.len(),
-                    commit_bloom.keys.len()
-                );
-                debug!(
-                    "Participant bloom size: {} bits, {} keys",
-                    participant_bloom.bits.len(),
-                    participant_bloom.keys.len()
-                );
-                debug!(
-                    "Order bloom size: {} bits, {} keys",
-                    order_bloom.bits.len(),
-                    order_bloom.keys.len()
-                );
-                Some((commit_bloom, participant_bloom, order_bloom))
-            }
-            false => None,
-        };
-        self.current_round.committee_info =
-            Some((committee_proof, witness_proof, committee_selection));
-        self.notify_train_start.notify_one();
-        self._last_observed_num_batches_remaining = state.batches_per_round as usize;
-        Ok(())
-    }
-
-    fn round_witness(
-        &mut self,
-        index: u64,
-    ) -> std::result::Result<Option<Witness>, TickRoundWitnessError> {
-        let state = self.state.as_ref().ok_or(TickRoundWitnessError::NoState)?;
-        assert_eq!(state.run_state, RunState::RoundWitness);
-
-        // check if this is a state transition
-        if self
-            .prev_state
-            .as_ref()
-            .ok_or(TickRoundWitnessError::MissedWarmup)?
-            .run_state
-            == RunState::RoundWitness
-        {
-            return Ok(None);
-        }
-
-        let trainers_still_running = self.data_parallelism - self.available_trainers.len();
-        if trainers_still_running > 0 {
-            return Err(TickRoundWitnessError::TrainersStillRunning(
-                trainers_still_running,
-            ));
-        }
-
-        let mut sum = 0.0;
-        let count = self.round_losses.len();
-        if count > 0 {
-            for x in self.round_losses.drain(..) {
-                sum += x;
-            }
-            let loss = sum / count as f32;
-            info!("Step {} loss: {}", state.step, loss);
-            self.losses.push(loss);
-            self.wandb_log.insert("train/loss", loss);
-            self.wandb_log
-                .insert("train/perplexity", Self::perplexity(loss));
-            self.wandb_log
-                .insert("train/confidence", self.confidence(loss));
-        }
-        if let Some(wandb_run) = &self.wandb_run {
-            self.wandb_log
-                .insert("train/total_tokens", self.total_tokens());
-            self.wandb_log
-                .insert("train/tokens_per_sec", self.global_tokens_per_second());
-            self.wandb_log
-                .insert("coordinator/num_clients", state.clients.len());
-            self.wandb_log.insert("coordinator/epoch", state.epoch);
-            self.wandb_log.insert(
-                "coordinator/round",
-                state.current_round().map(|x| x.height).unwrap_or_default(),
-            );
-            self.wandb_log.insert("_step", state.step);
-            let wandb_log = std::mem::take(&mut self.wandb_log);
-            let wandb_run = wandb_run.clone();
-            tokio::spawn(async move { wandb_run.log(wandb_log).await });
-        }
-
         self.apply_start = Some(Instant::now());
-
         let trainers = self.available_trainers.drain(..).collect::<Vec<_>>();
-        //let round_rollbacks = self.round_rollbacks.clone();
-        let step = state.step;
-        let witness_quorum = state.witness_quorum;
-
-        let mut payloads: HashMap<psyche_network::Hash, PayloadState<T>> = match state.overlapped {
-            true => std::mem::take(&mut self.previous_round.downloads),
-            false => std::mem::take(&mut self.current_round.downloads),
-        };
-        let commitments: HashMap<u64, Vec<(T, TrainingResult)>> = match state.overlapped {
-            true => std::mem::take(&mut self.previous_round.results),
-            false => std::mem::take(&mut self.current_round.results),
-        };
-
-        if state.overlapped && state.first_round {
+        if state.first_round || (state.overlapped && round.height == 1) {
             // in overlapped mode the first training step of each epoch has no apply phase.
             // this is so that on the trainer we can we overlap the uploading
             // of the last step's results while concurrently computing the next
             // step. this skip "primes" the pump
-            info!("First round of epoch in overlap mode, skipping apply");
+            info!("Skipping early apply");
             self.applying = Some(tokio::task::spawn(async move {
                 //round_rollbacks.lock().await.push((step, Vec::new()));
                 Ok(trainers)
             }));
         } else {
+            //let round_rollbacks = self.round_rollbacks.clone();
+            let step = state.step;
+            let witness_quorum = state.witness_quorum;
+
+            let mut payloads: HashMap<psyche_network::Hash, PayloadState<T>> =
+                match state.overlapped {
+                    true => std::mem::take(&mut self.previous_round.downloads),
+                    false => std::mem::take(&mut self.current_round.downloads),
+                };
+            let commitments: HashMap<u64, Vec<(T, TrainingResult)>> = match state.overlapped {
+                true => std::mem::take(&mut self.previous_round.results),
+                false => std::mem::take(&mut self.current_round.results),
+            };
             assert!(!payloads.is_empty());
             assert!(!commitments.is_empty());
-            let round = state
-                .current_round()
-                .ok_or(TickRoundWitnessError::NoActiveRound)?;
+
             let witnesses = round.witnesses.clone();
             let batch_ids = get_batch_ids_for_round(
+                // coordinator has already advanced to the next round but we haven't started ours yet.
+                // our current_round corresponds to the coordinator's previous_round
                 match state.overlapped {
-                    // witnesses are from current round but the actual batch numbers are from the previous
-                    true => state
-                        .previous_round()
-                        .ok_or(TickRoundWitnessError::NoActiveRound)?,
-                    false => round,
-                },
+                    true => state.previous_previous_round(),
+                    false => state.previous_round(),
+                }
+                .ok_or(TickRoundTrainError::NoActiveRound)?,
                 state,
             );
             self.applying = Some(tokio::task::spawn(async move {
@@ -1444,16 +1296,18 @@ impl<T: NodeIdentity> State<T> {
         }
 
         if !state.first_round {
+            // as with applying, the coordinator has already advanced to the next round but we haven't started ours yet.
+            // our current_round corresponds to the coordinator's previous_round
             let (_, witness_proof, committee_selection) = self
-                .previous_round
+                .current_round
                 .committee_info
                 .clone()
-                .ok_or(TickRoundWitnessError::NoCommitteeInfo)?;
+                .ok_or(TickRoundTrainError::NoCommitteeInfo)?;
 
             if witness_proof.witness {
                 let witnesses = state
                     .previous_round()
-                    .ok_or(TickRoundWitnessError::NoActiveRound)?
+                    .ok_or(TickRoundTrainError::NoActiveRound)?
                     .witnesses
                     .clone();
                 let witness_quorum = state.witness_quorum;
@@ -1483,6 +1337,147 @@ impl<T: NodeIdentity> State<T> {
                     Ok(checks)
                 }));
             }
+        }
+
+        debug!("Transitioning to train step {}", state.step);
+
+        let now = Instant::now();
+        if let Some(last_round_start) = self.round_start {
+            self.round_durations.push(now - last_round_start);
+        }
+        self.round_start = Some(Instant::now());
+
+        self.previous_round = std::mem::take(&mut self.current_round);
+        self.current_round.height = round.height;
+        if self.previous_round.height == 0 && state.overlapped {
+            self.previous_round.sent_witness = false; // we need to resend the witness from the first step again on real step
+        }
+
+        let committee_selection = CommitteeSelection::new(
+            round.tie_breaker_tasks as usize,
+            state.witness_nodes as usize,
+            state.verification_percent,
+            state.clients.len(),
+            round.random_seed,
+        );
+        self.current_round.data_assignments = assign_data_for_state(state, &committee_selection);
+        self.training_finished_for_this_round = false;
+
+        if self.data_fetcher.is_none() {
+            return Err(TickRoundTrainError::NoDataFetcher);
+        }
+
+        let (num_batch_ids_for_this_round, training_data) = self
+            .data_fetcher
+            .as_mut()
+            .unwrap()
+            .fetch_data(state, &self.current_round.data_assignments, &self.identity);
+        self.current_round.training_data = Some(training_data);
+
+        let committee_proof = committee_selection.get_committee(index);
+        let witness_proof = committee_selection.get_witness(index);
+        info!(
+            "Assignment for step {} (round {}/epoch {}): index={} committee position={} committee={} witness position={} witness={}",
+            state.step, round.height, state.epoch, index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness
+        );
+        self.current_round.blooms = match witness_proof.witness {
+            true => {
+                let commit_bloom = Bloom::random(
+                    num_batch_ids_for_this_round * 2,
+                    BLOOM_FALSE_RATE,
+                    BLOOM_MAX_BITS,
+                );
+                let participant_bloom =
+                    Bloom::random(state.clients.len(), BLOOM_FALSE_RATE, BLOOM_MAX_BITS);
+                let order_bloom = Bloom::random(
+                    num_batch_ids_for_this_round,
+                    BLOOM_FALSE_RATE,
+                    BLOOM_MAX_BITS,
+                );
+                debug!(
+                    "Commit bloom size: {} bits, {} keys",
+                    commit_bloom.bits.len(),
+                    commit_bloom.keys.len()
+                );
+                debug!(
+                    "Participant bloom size: {} bits, {} keys",
+                    participant_bloom.bits.len(),
+                    participant_bloom.keys.len()
+                );
+                debug!(
+                    "Order bloom size: {} bits, {} keys",
+                    order_bloom.bits.len(),
+                    order_bloom.keys.len()
+                );
+                Some((commit_bloom, participant_bloom, order_bloom))
+            }
+            false => None,
+        };
+        self.current_round.committee_info =
+            Some((committee_proof, witness_proof, committee_selection));
+        self.notify_train_start.notify_one();
+        self._last_observed_num_batches_remaining = state.batches_per_round as usize;
+        Ok(())
+    }
+
+    async fn round_witness(
+        &mut self,
+        index: u64,
+    ) -> std::result::Result<Option<Witness>, TickRoundWitnessError> {
+        self.cancel_evals().await?; // CANCEL SAFETY
+
+        let state = self.state.as_ref().ok_or(TickRoundWitnessError::NoState)?;
+        assert_eq!(state.run_state, RunState::RoundWitness);
+
+        // check if this is a state transition
+        if self
+            .prev_state
+            .as_ref()
+            .ok_or(TickRoundWitnessError::MissedWarmup)?
+            .run_state
+            == RunState::RoundWitness
+        {
+            return Ok(None);
+        }
+
+        let trainers_still_running = self.data_parallelism - self.available_trainers.len();
+        if trainers_still_running > 0 {
+            return Err(TickRoundWitnessError::TrainersStillRunning(
+                trainers_still_running,
+            ));
+        }
+
+        let mut sum = 0.0;
+        let count = self.round_losses.len();
+        if count > 0 {
+            for x in self.round_losses.drain(..) {
+                sum += x;
+            }
+            let loss = sum / count as f32;
+            info!("Step {} loss: {}", state.step, loss);
+            self.losses.push(loss);
+            self.wandb_log.insert("train/loss", loss);
+            self.wandb_log
+                .insert("train/perplexity", Self::perplexity(loss));
+            self.wandb_log
+                .insert("train/confidence", self.confidence(loss));
+        }
+        if let Some(wandb_run) = &self.wandb_run {
+            self.wandb_log
+                .insert("train/total_tokens", self.total_tokens());
+            self.wandb_log
+                .insert("train/tokens_per_sec", self.global_tokens_per_second());
+            self.wandb_log
+                .insert("coordinator/num_clients", state.clients.len());
+            self.wandb_log.insert("coordinator/epoch", state.epoch);
+            self.wandb_log.insert(
+                "coordinator/round",
+                state.current_round().map(|x| x.height).unwrap_or_default(),
+            );
+            self.wandb_log.insert("_step", state.step);
+            let wandb_log = std::mem::take(&mut self.wandb_log);
+            let wandb_run = wandb_run.clone();
+            tokio::spawn(async move { wandb_run.log(wandb_log).await });
         }
 
         Ok(
@@ -1985,17 +1980,11 @@ enum TickRoundWitnessError {
     #[error("this was the first state seen, we must be mid-epoch.")]
     MissedWarmup,
 
-    #[error("no round active")]
-    NoActiveRound,
-
     #[error("couldn't cancel evals")]
     EvalCancelFailed(#[from] FinishEvalsError),
 
     #[error("{0} trainer(s) aren't finished")]
     TrainersStillRunning(usize),
-
-    #[error("no committee info")]
-    NoCommitteeInfo,
 }
 
 #[derive(Error, Debug)]
@@ -2027,12 +2016,6 @@ enum TickRoundTrainError {
     #[error("checkpointing still running")]
     CheckpointingStillRunning,
 
-    #[error("apply still running")]
-    ApplyStillRunning,
-
-    #[error("{0} trainer(s) aren't finished")]
-    TrainersStillRunning(usize),
-
     #[error("round entered with no state")]
     NoState,
 
@@ -2050,6 +2033,9 @@ enum TickRoundTrainError {
 
     #[error("failed to join data and model load task {0}")]
     DataModelLoadFailedToJoin(#[from] JoinError),
+
+    #[error("No committee info")]
+    NoCommitteeInfo,
 }
 
 #[derive(Error, Debug)]

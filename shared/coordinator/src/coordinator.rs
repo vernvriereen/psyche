@@ -492,6 +492,20 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
     }
 
+    pub fn previous_previous_round(&self) -> Option<&Round> {
+        match self.current_round() {
+            Some(round) => match self.rounds_head == 0 && round.height <= 1 {
+                true => None,
+                false => match self.rounds_head {
+                    0 => Some(&self.rounds[NUM_STORED_ROUNDS - 2]),
+                    1 => Some(&self.rounds[NUM_STORED_ROUNDS - 1]), 
+                    n => Some(&self.rounds[n as usize - 2]),
+                },
+            },
+            None => None,
+        }
+    }
+
     pub fn active(&self) -> bool {
         !matches!(
             self.run_state,
