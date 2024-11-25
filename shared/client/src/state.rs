@@ -1069,8 +1069,6 @@ impl<T: NodeIdentity> State<T> {
     }
 
     async fn round_train(&mut self, index: u64) -> std::result::Result<(), TickRoundTrainError> {
-        self.cancel_evals().await?; // CANCEL SAFETY
-
         let state = self.state.as_ref().ok_or(TickRoundTrainError::NoState)?;
         assert_eq!(state.run_state, RunState::RoundTrain);
 
@@ -1084,6 +1082,10 @@ impl<T: NodeIdentity> State<T> {
         {
             return Ok(());
         }
+
+        // is this cancel safe if we need to rely on seeing the first transition?
+        self.cancel_evals().await?;
+        let state = self.state.as_ref().ok_or(TickRoundTrainError::NoState)?;
 
         // if all our states are empty (first execution), wait for the data provider and model load to finish
         if self.available_trainers.is_empty()
@@ -1762,7 +1764,7 @@ impl<T: NodeIdentity> State<T> {
     fn start_evals(&mut self) {
         if !self.prepared_eval_tasks.is_empty() && !self.available_trainers.is_empty() {
             self.eval_cancel.store(false, Ordering::SeqCst);
-            info!(
+            debug!(
                 "Starting evals {:?} on {} trainers",
                 self.prepared_eval_tasks
                     .iter()
@@ -1825,7 +1827,7 @@ impl<T: NodeIdentity> State<T> {
     // cancel safe
     async fn cancel_evals(&mut self) -> std::result::Result<(), FinishEvalsError> {
         if !self.eval_cancel.swap(true, Ordering::SeqCst) {
-            info!("Cancelling evals");
+            debug!("Cancelling evals");
         }
         while !self.evals.is_empty() {
             if let Some(finished) = self.evals.iter_mut().position(|x| x.is_finished()) {
