@@ -44,7 +44,7 @@ pub(super) const TAB_NAMES: [&str; 5] = [
 ];
 type TabsData = <Tabs as CustomWidget>::Data;
 
-pub struct Backend {
+struct Backend {
     net_server: TcpServer<ClientId, ClientToServerMessage, ServerToClientMessage>,
     pending_clients: HashSet<Client<ClientId>>,
 }
