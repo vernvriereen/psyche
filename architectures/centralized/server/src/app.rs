@@ -102,6 +102,12 @@ pub struct App {
     original_min_clients: u32,
 }
 
+impl App {
+    pub fn get_clients(&self) -> usize {
+        self.coordinator.clients.len()
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DataServerInfo {
     pub dir: PathBuf,
@@ -137,6 +143,8 @@ impl App {
         init_warmup_time: Option<u64>,
         init_min_clients: Option<u32>,
     ) -> Result<Self> {
+        dbg!(&coordinator);
+        dbg!(&p2p_port);
         let p2p = NC::init(
             &coordinator.run_id,
             p2p_port,
@@ -155,11 +163,15 @@ impl App {
             ..
         })) = &coordinator.model
         {
+            dbg!(&url);
+            dbg!(&data_type);
+            dbg!(&checkpoint);
             if let LLMTrainingDataType::Finetuning = data_type {
                 panic!("Finetuning is not supported yet.")
             }
 
             if let Checkpoint::Hub(hub_repo) = checkpoint {
+                dbg!(&hub_repo);
                 if hub_repo.revision.is_some()
                     || !tokio::fs::try_exists(PathBuf::from(hub_repo.repo_id.clone()))
                         .await
@@ -185,10 +197,15 @@ impl App {
             let server_port = server_addr.port();
             let DataServerInfo {
                 dir,
-               seq_len,
-               shuffle_seed,
-               token_size
+                seq_len,
+                shuffle_seed,
+                token_size
             } = data_server_config.ok_or_else(|| anyhow!("Coordinator state requires we host training data, but no --data-config passed."))?;
+            dbg!("data");
+            dbg!(&dir);
+            dbg!(&seq_len);
+            dbg!(&shuffle_seed);
+            dbg!(&token_size);
             let local_data_provider = LocalDataProvider::new_from_directory(
                 dir,
                 token_size,
@@ -249,6 +266,7 @@ impl App {
     }
 
     pub async fn run(&mut self) -> Result<()> {
+        println!("IMPRIMIIIII");
         loop {
             select! {
                 _ = self.cancel.cancelled() => {
@@ -446,7 +464,7 @@ impl App {
         }
     }
 
-    fn reset_ephemeral(coordinator: &mut Coordinator<ClientId>) {
+    pub fn reset_ephemeral(coordinator: &mut Coordinator<ClientId>) {
         coordinator.run_state = RunState::WaitingForMembers;
         coordinator.clients.clear();
         coordinator.dropped_clients.clear();
@@ -476,9 +494,13 @@ mod tests {
     use psyche_centralized_client::app::{AppBuilder, AppParams};
     use psyche_client::BatchShuffleType;
     use psyche_network::SecretKey;
+    use tokio::{join, sync::Mutex};
 
     #[tokio::test]
     async fn connect_and_disconnect_nodes() {
+        println!("Going to sleep...");
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        println!("Awake!");
         let mut coordinator: Coordinator<ClientId> = Coordinator::default();
 
         coordinator.run_id = "test".to_string();
@@ -504,25 +526,27 @@ mod tests {
             shuffle_seed: [1; 32],
         };
 
-        // let port = Some(8080);
+        let server = App::new(
+            false,
+            coordinator,
+            Some(data_server_info),
+            // p2p port
+            Some(1234),
+            Some(8080),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
-        tokio::spawn(async {
-            App::new(
-                false,
-                coordinator,
-                Some(data_server_info),
-                Some(10),
-                Some(10),
-                None,
-                None,
-                None,
-            )
-            .await
-            .unwrap()
-            .run()
-            .await
-            .unwrap()
-        });
+        let server = Arc::new(Mutex::new(server));
+        let server_clone = server.clone();
+        let server_task =
+            tokio::spawn(async move { server_clone.lock().await.run().await.unwrap() });
+
+        // server_task.abort();
+        tokio::time::sleep(Duration::from_secs(2)).await;
 
         // Client
         let client_app_params = AppParams {
@@ -548,7 +572,18 @@ mod tests {
 
         let client_app_builder = AppBuilder::new(client_app_params);
 
-        tokio::spawn(client_app_builder.run());
+        println!("Hola 1");
+
+        let client_handle = tokio::spawn(async { client_app_builder.run().await.unwrap() });
         // dbg!(&coordinator.clients);
+        println!("Hola 2");
+        //
+        let _ = join!(client_handle);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        println!("Hola 3");
+        server_task.abort();
+
+        assert_eq!(server.lock().await.coordinator.clients.len(), 1);
     }
 }
