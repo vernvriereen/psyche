@@ -1,0 +1,17 @@
+[package]
+name = "tests"
+edition = "2021"
+version.workspace = true
+
+[dev-dependencies]
+psyche-centralized-client = { path = "../client" }
+psyche-centralized-server = { path = "../server" }
+psyche-client.workspace = true
+psyche-coordinator.workspace = true
+psyche-data-provider.workspace = true
+psyche-network.workspace = true
+psyche-centralized-shared = { path = "../shared" }
+tokio-util.workspace = true
+
+tokio.workspace = true
+
