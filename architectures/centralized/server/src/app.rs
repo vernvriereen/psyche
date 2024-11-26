@@ -143,8 +143,6 @@ impl App {
         init_warmup_time: Option<u64>,
         init_min_clients: Option<u32>,
     ) -> Result<Self> {
-        dbg!(&coordinator);
-        dbg!(&p2p_port);
         let p2p = NC::init(
             &coordinator.run_id,
             p2p_port,
@@ -163,15 +161,11 @@ impl App {
             ..
         })) = &coordinator.model
         {
-            dbg!(&url);
-            dbg!(&data_type);
-            dbg!(&checkpoint);
             if let LLMTrainingDataType::Finetuning = data_type {
                 panic!("Finetuning is not supported yet.")
             }
 
             if let Checkpoint::Hub(hub_repo) = checkpoint {
-                dbg!(&hub_repo);
                 if hub_repo.revision.is_some()
                     || !tokio::fs::try_exists(PathBuf::from(hub_repo.repo_id.clone()))
                         .await
@@ -201,11 +195,6 @@ impl App {
                 shuffle_seed,
                 token_size
             } = data_server_config.ok_or_else(|| anyhow!("Coordinator state requires we host training data, but no --data-config passed."))?;
-            dbg!("data");
-            dbg!(&dir);
-            dbg!(&seq_len);
-            dbg!(&shuffle_seed);
-            dbg!(&token_size);
             let local_data_provider = LocalDataProvider::new_from_directory(
                 dir,
                 token_size,
@@ -266,7 +255,6 @@ impl App {
     }
 
     pub async fn run(&mut self) -> Result<()> {
-        println!("IMPRIMIIIII");
         loop {
             select! {
                 _ = self.cancel.cancelled() => {
@@ -282,7 +270,6 @@ impl App {
                 Some(event) = self.backend.net_server.next() => {
                     match event {
                         ClientNotification::Message((from, message)) => {
-                            println!("RECEIVED MESSAGE: {:?} FROM: {}", message, from);
                             self.on_client_message(from, message).await;
                         }
                         ClientNotification::Disconnected(from) => {
@@ -342,18 +329,11 @@ impl App {
         match event {
             ClientToServerMessage::Join { run_id } => {
                 // TODO: check whitelist
-                println!("VOY A ENTRAR IF");
                 if self.coordinator.run_id == run_id {
-                    println!("ENTRE IF");
                     self.backend.pending_clients.insert(Client {
                         id: from.clone(),
                         dropping_at_end_of_round: false,
                     });
-
-                    println!(
-                        "PENDING CLIENTS LEN: {}",
-                        self.backend.pending_clients.len()
-                    );
                     let client_joined = self
                         .backend
                         .net_server
@@ -365,7 +345,6 @@ impl App {
                         warn!("Error sending p2p list to client: {e}");
                     }
                 } else {
-                    println!("NO ENTRE IF :(");
                     info!("{from:?} tried to join unknown run {run_id}");
                 }
             }
