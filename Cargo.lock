@@ -6945,6 +6945,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "tests"
+version = "0.0.1"
+dependencies = [
+ "psyche-centralized-client",
+ "psyche-centralized-server",
+ "psyche-centralized-shared",
+ "psyche-client",
+ "psyche-coordinator",
+ "psyche-data-provider",
+ "psyche-network",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
