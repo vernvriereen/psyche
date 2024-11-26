@@ -48,6 +48,15 @@ export LIBTORCH_LIB=<path_to_libtorch>
 export LD_LIBRARY_PATH=<path_to_libtorch>/lib:$LD_LIBRARY_PATH
 ```
 
+This can also be acheived by making a `.cargo/config.toml` file in the checkout path
+
+```
+[env]
+LIBTORCH=<path_to_libtorch>
+LD_LIBRARY_PATH=<path_to_libtorch>/lib
+CUDA_ROOT = "/usr/local/cuda-12.4"
+```
+
 5. Download & install Rust
 
 ```
