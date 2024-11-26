@@ -103,8 +103,8 @@ pub struct App {
 }
 
 impl App {
-    pub fn get_clients_len(&self) -> usize {
-        self.coordinator.clients.len()
+    pub fn get_pending_clients_len(&self) -> usize {
+        self.backend.pending_clients.len()
     }
 }
 
@@ -454,7 +454,7 @@ impl App {
         }
     }
 
-    pub fn reset_ephemeral(coordinator: &mut Coordinator<ClientId>) {
+    fn reset_ephemeral(coordinator: &mut Coordinator<ClientId>) {
         coordinator.run_state = RunState::WaitingForMembers;
         coordinator.clients.clear();
         coordinator.dropped_clients.clear();

@@ -84,7 +84,7 @@ mod tests {
 
         server_task.abort();
 
-        assert_eq!(server.lock().await.get_clients_len(), 1);
+        assert_eq!(server.lock().await.get_pending_clients_len(), 1);
     }
 }
 
