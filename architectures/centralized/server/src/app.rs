@@ -44,9 +44,9 @@ pub(super) const TAB_NAMES: [&str; 5] = [
 ];
 type TabsData = <Tabs as CustomWidget>::Data;
 
-struct Backend {
+pub struct Backend {
     net_server: TcpServer<ClientId, ClientToServerMessage, ServerToClientMessage>,
-    pending_clients: HashSet<Client<ClientId>>,
+    pub pending_clients: HashSet<Client<ClientId>>,
 }
 
 impl psyche_coordinator::Backend<ClientId> for Backend {
@@ -94,7 +94,7 @@ pub struct App {
     tick_interval: Interval,
     update_tui_interval: Interval,
     coordinator: Coordinator<ClientId>,
-    backend: Backend,
+    pub backend: Backend,
     training_data_server: Option<(Sender<Coordinator<ClientId>>, DataServer)>,
     save_state_dir: Option<PathBuf>,
     last_sync_step: Option<u32>,
