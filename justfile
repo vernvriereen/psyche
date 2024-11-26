@@ -18,10 +18,6 @@ docker-build-centralized-client:
 docker-push-centralized-client: docker-build-centralized-client
 	docker push docker.io/nousresearch/psyche-centralized-client
 
-# dev the frontend
-dev-frontend:
-	cd frontend && bun install && bun dev
-
 # spin up a local testnet
 local-testnet +args:
 	cargo run -p local-testnet -- {{args}}
