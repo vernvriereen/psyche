@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 fast-math.workspace = true
 serde.workspace = true
-postcard.workspace = true
 anyhow.workspace = true
 bv = { version="0.11.1",  features = ["serde"] }
 fnv = "1.0.7"

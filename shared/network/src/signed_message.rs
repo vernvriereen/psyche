@@ -1,10 +1,10 @@
-use std::marker::PhantomData;
+use crate::Networkable;
 
 use anyhow::Result;
 use bytes::Bytes;
 use iroh::net::key::{PublicKey, SecretKey, Signature};
-use psyche_core::Networkable;
 use serde::{Deserialize, Serialize};
+use std::marker::PhantomData;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignedMessage<T: Networkable> {

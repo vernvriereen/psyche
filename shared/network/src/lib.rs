@@ -10,7 +10,6 @@ use iroh::{
     net::{endpoint::RemoteInfo, NodeAddr},
     node::{MemNode, Node},
 };
-use psyche_core::Networkable;
 use state::State;
 use std::{
     fmt::Debug,
@@ -31,6 +30,7 @@ use util::{fmt_relay_mode, gossip_topic};
 
 mod download_manager;
 mod peer_list;
+mod serde;
 mod signed_message;
 mod state;
 mod tcp;
@@ -47,6 +47,7 @@ pub use iroh::{
     },
 };
 pub use peer_list::PeerList;
+pub use serde::Networkable;
 pub use signed_message::SignedMessage;
 pub use tcp::{ClientNotification, TcpClient, TcpServer};
 pub use tui::{NetworkTUIState, NetworkTui};

@@ -10,7 +10,6 @@ mod lr_scheduler;
 mod merkle_tree;
 mod node_identity;
 mod running_average;
-mod serde;
 mod sha256;
 mod similarity;
 mod swap_or_not;
@@ -25,7 +24,6 @@ pub use lr_scheduler::*;
 pub use merkle_tree::{Hash as RootType, MerkleTree, OwnedProof, Proof};
 pub use node_identity::NodeIdentity;
 pub use running_average::RunningAverage;
-pub use serde::Networkable;
 pub use sha256::{sha256, sha256v};
 pub use similarity::{
     hamming_distance, is_similar, jaccard_distance, manhattan_distance, DistanceThresholds,

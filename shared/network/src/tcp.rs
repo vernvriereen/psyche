@@ -1,6 +1,8 @@
+use crate::Networkable;
+
 use anyhow::{anyhow, bail, Result};
 use futures_util::{future::join_all, SinkExt, StreamExt};
-use psyche_core::{Networkable, NodeIdentity};
+use psyche_core::NodeIdentity;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt::Debug, marker::PhantomData, net::SocketAddr, sync::Arc};

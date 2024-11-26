@@ -19,7 +19,6 @@ ehthumbs.db
 ehthumbs_vista.db
 [Dd]esktop.ini
 
-
 ### Tooling ###
 result
 nix-results/
@@ -38,5 +37,7 @@ slurm*
 /distro-data
 checkpoints/
 logs/
-
 txt/
+
+### Solana ###
+test-ledger

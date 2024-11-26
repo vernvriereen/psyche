@@ -1,5 +1,5 @@
 [workspace]
-members = ["architectures/*/*", "shared/*", "tools/rust-tools/*"]
+members = ["architectures/centralized/*", "shared/*", "tools/rust-tools/*"]
 resolver = "2"
 
 [workspace.metadata.crane]
@@ -9,7 +9,6 @@ name = "psyche-workspace"
 version = "0.0.1"
 
 [workspace.dependencies]
-
 psyche-coordinator = { path = "./shared/coordinator" }
 psyche-core = { path = "./shared/core" }
 psyche-client = { path = "./shared/client" }

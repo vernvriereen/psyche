@@ -3,10 +3,11 @@ use async_trait::async_trait;
 use futures::future::try_join_all;
 use parquet::data_type::AsBytes;
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
-use psyche_core::{Networkable, NodeIdentity};
+use psyche_core::NodeIdentity;
 use psyche_data_provider::{
     DataProviderTcpClient, DataProviderTcpServer, LengthKnownDataProvider, TokenizedDataProvider,
 };
+use psyche_network::Networkable;
 use psyche_tui::init_logging;
 use psyche_watcher::Backend as WatcherBackend;
 use rand::Rng;

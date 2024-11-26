@@ -12,7 +12,7 @@ The following instructions are needed for a server with a fresh Ubuntu installat
 
 1. Install drivers
 
-```
+```bash
 sudo apt update
 sudo apt install -y ubuntu-drivers-common
 sudo ubuntu-drivers install
@@ -20,7 +20,7 @@ sudo ubuntu-drivers install
 
 2. Install CUDA libraries
 
-```
+```bash
 wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
 sudo dpkg -i cuda-keyring_1.1-1_all.deb
 sudo apt-get update
@@ -32,7 +32,7 @@ sudo apt install nvidia-cuda-toolkit
 
 3. Download libtorch & extract
 
-```
+```bash
 wget https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.4.1%2Bcu124.zip
 unzip libtorch-cxx11-abi-shared-with-deps-2.4.1%2Bcu124.zip
 rm libtorch-cxx11-abi-shared-with-deps-2.4.1%2Bcu124.zip
@@ -41,7 +41,7 @@ rm libtorch-cxx11-abi-shared-with-deps-2.4.1%2Bcu124.zip
 4. In the `.bashrc` file, set the following libtorch environment variables. Here `<path_to_libtorch>` is the absolute path
 to the extracted `libtorch` folder from the previous step
 
-```
+```bash
 export LIBTORCH=<path_to_libtorch>
 export LIBTORCH_INCLUDE=<path_to_libtorch>
 export LIBTORCH_LIB=<path_to_libtorch>
@@ -59,14 +59,29 @@ CUDA_ROOT = "/usr/local/cuda-12.4"
 
 5. Download & install Rust
 
-```
+```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
 6. (optional) Install `just`
 
-```
+```bash
 sudo snap install just --edge --classic
+```
+
+7. (optional) Install Solana and Anchor
+
+Install Solana
+```bash
+sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+```
+
+After installation, follow the instructions to add the Solana tools to PATH.
+
+Install Anchor
+```bash
+cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+avm install latest
 ```
 
 ### Nix
@@ -102,8 +117,20 @@ nix build .#expand-distro
 
 ## Building & pushing Docker images
 
-To build the centralized client & push it to docker.io's hub,
-`$ just docker-push-centralized-client`
+To build the centralized client & push it to docker.io's hub, `just docker-push-centralized-client`
+
+## Solana
+
+To build the Solana programs, install required Solana tools (Step 7 in Setup).
+
+For local development, create a wallet and switch the using a local validator.
+
+```bash
+solana-keygen new
+solana config set --url localhost
+```
+
+Then, in a new terminal, run a validator with `solana-test-validator`.
 
 ## Utils
 

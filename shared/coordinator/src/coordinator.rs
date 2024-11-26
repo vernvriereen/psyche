@@ -13,8 +13,11 @@ use anchor_lang::prelude::*;
 #[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
 
-#[allow(dead_code)]
+#[cfg(target_os = "solana")]
 const MAX_STRING_LEN: usize = 64;
+
+#[cfg(target_os = "solana")]
+const MAX_NUM_CLIENTS: usize = 64;
 
 pub const BLOOM_FALSE_RATE: f64 = 0.01f64;
 pub const BLOOM_MAX_BITS: usize = 1024 * 8;
@@ -83,12 +86,13 @@ pub const NUM_STORED_ROUNDS: usize = 4;
 
 #[derive_serialize]
 #[derive(Clone, Debug)]
+#[cfg_attr(target_os = "solana", derive(InitSpace))]
 pub struct Coordinator<T: NodeIdentity> {
     #[cfg_attr(target_os = "solana", max_len(MAX_STRING_LEN))]
     pub run_id: String,
     pub run_state: RunState,
 
-    #[serde(default)]
+    #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub run_state_start_unix_timestamp: u64,
 
     pub warmup_time: u64,
@@ -97,23 +101,25 @@ pub struct Coordinator<T: NodeIdentity> {
     pub max_round_train_time: u64,
     pub round_witness_time: u64,
 
-    #[serde(default)]
+    #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub rounds: [Round; NUM_STORED_ROUNDS],
-    #[serde(default)]
+    #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub rounds_head: u32,
-    #[serde(default)]
+    #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub first_round: bool,
 
     pub min_clients: u32,
 
-    #[serde(default = "Vec::new")]
+    #[cfg_attr(target_os = "solana", max_len(MAX_NUM_CLIENTS))]
+    #[cfg_attr(not(target_os = "solana"), serde(default = "Vec::new"))]
     pub clients: Vec<Client<T>>,
-    #[serde(default = "Vec::new")]
+    #[cfg_attr(target_os = "solana", max_len(MAX_NUM_CLIENTS))]
+    #[cfg_attr(not(target_os = "solana"), serde(default = "Vec::new"))]
     pub dropped_clients: Vec<Client<T>>,
 
-    #[serde(default)]
+    #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub tick: u64,
-    #[serde(default)]
+    #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub last_tick_unix_timestamp: u64,
 
     pub batches_per_round: u32,
@@ -124,20 +130,22 @@ pub struct Coordinator<T: NodeIdentity> {
     pub witness_nodes: u32,
     pub witness_quorum: u32,
 
+    #[cfg_attr(target_os = "solana", max_len(MAX_NUM_CLIENTS))]
+    #[cfg_attr(not(target_os = "solana"), serde(default = "Vec::new"))]
     pub checkpointers: Vec<T>,
 
-    #[serde(default)]
+    #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub epoch: u32,
     pub rounds_per_epoch: u32,
 
-    #[serde(default = "default_init_step")]
+    #[cfg_attr(not(target_os = "solana"), serde(default = "default_init_step"))]
     pub step: u32,
     pub total_steps: u32,
 
-    #[serde(default)]
+    #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub last_step_unix_timestamp: u64,
 
-    #[serde(default)]
+    #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub epoch_start_data_index: u64,
 
     pub overlapped: bool,
@@ -152,7 +160,7 @@ fn default_init_step() -> u32 {
 impl TryFrom<usize> for RunState {
     type Error = CoordinatorError;
 
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
+    fn try_from(value: usize) -> std::result::Result<Self, Self::Error> {
         match value {
             0 => Ok(RunState::WaitingForMembers),
             1 => Ok(RunState::Warmup),
@@ -262,7 +270,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         backend: &dyn Backend<T>,
         unix_timestamp: u64,
         random_seed: u64,
-    ) -> Result<(), CoordinatorError> {
+    ) -> std::result::Result<(), CoordinatorError> {
         if self.min_clients == 0 {
             return Err(CoordinatorError::Disabled);
         }
@@ -283,7 +291,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         from: &Client<T>,
         witness: Witness,
         unix_timestamp: u64,
-    ) -> Result<(), CoordinatorError> {
+    ) -> std::result::Result<(), CoordinatorError> {
         if self.min_clients == 0 {
             return Err(CoordinatorError::Disabled);
         }
@@ -320,7 +328,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         &mut self,
         _from: &Client<T>,
         checks: HealthChecks,
-    ) -> Result<u32, CoordinatorError> {
+    ) -> std::result::Result<u32, CoordinatorError> {
         if self.min_clients == 0 {
             return Err(CoordinatorError::Disabled);
         }
@@ -346,7 +354,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         from: &Client<T>,
         checkpoint: Checkpoint,
         unix_timestamp: u64,
-    ) -> Result<(), CoordinatorError> {
+    ) -> std::result::Result<(), CoordinatorError> {
         if self.checkpointers.iter().any(|x| *x == from.id) {
             if let Some(Model::LLM(llm)) = &mut self.model {
                 llm.checkpoint = checkpoint;
@@ -538,7 +546,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         &mut self,
         backend: &dyn Backend<T>,
         unix_timestamp: u64,
-    ) -> Result<(), CoordinatorError> {
+    ) -> std::result::Result<(), CoordinatorError> {
         if self.step > self.total_steps {
             return Err(CoordinatorError::Finished);
         }
@@ -554,7 +562,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         &mut self,
         unix_timestamp: u64,
         random_seed: u64,
-    ) -> Result<(), CoordinatorError> {
+    ) -> std::result::Result<(), CoordinatorError> {
         if (self.clients.len() as u32) < self.min_clients {
             self.start_waiting_for_members(unix_timestamp);
         } else {
@@ -566,7 +574,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         Ok(())
     }
 
-    fn tick_round_train(&mut self, unix_timestamp: u64) -> Result<(), CoordinatorError> {
+    fn tick_round_train(&mut self, unix_timestamp: u64) -> std::result::Result<(), CoordinatorError> {
         if self.check_timeout(unix_timestamp, self.max_round_train_time) {
             if self.is_greedy_data() {
                 // if we take longer than our max round train time, abandon the epoch and start over (assume too many people left)
@@ -582,7 +590,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         &mut self,
         unix_timestamp: u64,
         random_seed: u64,
-    ) -> Result<(), CoordinatorError> {
+    ) -> std::result::Result<(), CoordinatorError> {
         if self.check_timeout(unix_timestamp, self.round_witness_time) {
             // TODO: Punish idle witnesses
             self.first_round = false;
@@ -613,7 +621,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         Ok(())
     }
 
-    fn tick_cooldown(&mut self, unix_timestamp: u64) -> Result<(), CoordinatorError> {
+    fn tick_cooldown(&mut self, unix_timestamp: u64) -> std::result::Result<(), CoordinatorError> {
         // cooldown_time == 0 means we never automatically advance to the next epoch,
         // so the only way to get there is through the checkpointing code.
         // this forces everything to wait on a valid checkpoint
