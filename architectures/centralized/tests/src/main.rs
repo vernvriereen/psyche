@@ -16,17 +16,16 @@ mod tests {
     use psyche_data_provider::TokenSize;
     use tokio_util::sync::CancellationToken;
 
+    const RUN_ID: &str = "test";
 
 
 
     #[tokio::test]
     async fn connect_and_disconnect_nodes() {
-        tokio::time::sleep(Duration::from_secs(1)).await;
+
         let mut coordinator: Coordinator<ClientId> = Coordinator::default();
 
-        coordinator.run_id = "test".to_string();
-
-        let p2p_port = Some(10);
+        coordinator.run_id = RUN_ID.to_string();
 
         let data_server_info = DataServerInfo {
             dir: PathBuf::from("./"),
@@ -60,12 +59,12 @@ mod tests {
             private_key: SecretKey::generate(),
             server_addr: "localhost:8080".to_string(),
             tx_tui_state: None,
-            run_id: "test".to_string(),
+            run_id: RUN_ID.to_string(),
             data_parallelism: 1,
             tensor_parallelism: 1,
             micro_batch_size: None,
             write_gradients_dir: None,
-            p2p_port,
+            p2p_port: Some(10),
             eval_tasks: Vec::new(),
             eval_task_max_docs: None,
             checkpoint_upload_info: None,
