@@ -80,7 +80,7 @@ async fn main() -> Result<()> {
     let coordinator = match common_args.state {
         Some(state_path) => toml::from_str(std::str::from_utf8(&std::fs::read(&state_path)?)?)
             .with_context(|| {
-                format!("failed to parse – state toml file {state_path:?}")
+                format!("failed to parse coordinator state toml file {state_path:?}")
             })?,
         None => Coordinator::default(),
     };
@@ -126,5 +126,6 @@ async fn main() -> Result<()> {
             .await?;
         }
     }
+
     Ok(())
 }
