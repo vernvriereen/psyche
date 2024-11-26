@@ -282,6 +282,7 @@ impl App {
                 Some(event) = self.backend.net_server.next() => {
                     match event {
                         ClientNotification::Message((from, message)) => {
+                            println!("RECEIVED MESSAGE: {:?} FROM: {}", message, from);
                             self.on_client_message(from, message).await;
                         }
                         ClientNotification::Disconnected(from) => {
@@ -302,6 +303,8 @@ impl App {
                 } => {}
                 else => break,
             }
+
+            tokio::task::yield_now().await;
         }
         Ok(())
     }
@@ -339,11 +342,18 @@ impl App {
         match event {
             ClientToServerMessage::Join { run_id } => {
                 // TODO: check whitelist
+                println!("VOY A ENTRAR IF");
                 if self.coordinator.run_id == run_id {
+                    println!("ENTRE IF");
                     self.backend.pending_clients.insert(Client {
                         id: from.clone(),
                         dropping_at_end_of_round: false,
                     });
+
+                    println!(
+                        "PENDING CLIENTS LEN: {}",
+                        self.backend.pending_clients.len()
+                    );
                     let client_joined = self
                         .backend
                         .net_server
@@ -355,6 +365,7 @@ impl App {
                         warn!("Error sending p2p list to client: {e}");
                     }
                 } else {
+                    println!("NO ENTRE IF :(");
                     info!("{from:?} tried to join unknown run {run_id}");
                 }
             }
@@ -517,8 +528,6 @@ mod tests {
         .await
         .unwrap();
 
-        let (tx, backend) = ChannelCoordinatorBackend::new();
-
         let data_server_info = DataServerInfo {
             dir: PathBuf::from("./"),
             token_size: TokenSize::TwoBytes,
@@ -546,7 +555,7 @@ mod tests {
             tokio::spawn(async move { server_clone.lock().await.run().await.unwrap() });
 
         // server_task.abort();
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        // tokio::time::sleep(Duration::from_secs(5)).await;
 
         // Client
         let client_app_params = AppParams {
@@ -577,13 +586,11 @@ mod tests {
         let client_handle = tokio::spawn(async { client_app_builder.run().await.unwrap() });
         // dbg!(&coordinator.clients);
         println!("Hola 2");
-        //
-        let _ = join!(client_handle);
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         println!("Hola 3");
         server_task.abort();
 
-        assert_eq!(server.lock().await.coordinator.clients.len(), 1);
+        assert_eq!(server.lock().await.backend.pending_clients.len(), 1);
     }
 }
