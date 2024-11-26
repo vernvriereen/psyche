@@ -795,15 +795,16 @@ impl Distro {
                 }
             }
         }
-
+        #[cfg(feature = "parallelism")]
         if let Some(comm) = &self.comm {
-            #[cfg(not(feature = "parallelism"))]
-            panic!("communicator passed, but parallelism is not enabled.");
-
-            #[cfg(feature = "parallelism")]
             comm.all_reduce(&[&sharded_norm_sq], ReduceOpType::Sum)
                 .unwrap();
         }
+        #[cfg(not(feature = "parallelism"))]
+        if self.comm.is_some() {
+            panic!("communicator passed, but parallelism is not enabled.");
+        }
+
         let total_norm: f64 = (sharded_norm_sq + replicated_norm_sq)
             .sqrt()
             .try_into()
