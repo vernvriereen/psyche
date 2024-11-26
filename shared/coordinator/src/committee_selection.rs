@@ -64,15 +64,18 @@ impl CommitteeSelection {
 
     pub fn from_coordinator<T: NodeIdentity>(
         coordinator: &Coordinator<T>,
+        previous_round: bool,
     ) -> Result<Self, CoordinatorError> {
-        let round = coordinator
-            .current_round()
-            .ok_or(CoordinatorError::NoActiveRound)?;
+        let round = match previous_round {
+            true => coordinator.previous_round(),
+            false => coordinator.current_round(),
+        }
+        .ok_or(CoordinatorError::NoActiveRound)?;
         Ok(Self::new(
             round.tie_breaker_tasks as usize,
             coordinator.witness_nodes as usize,
             coordinator.verification_percent,
-            coordinator.clients.len(),
+            round.clients_len as usize,
             round.random_seed,
         ))
     }

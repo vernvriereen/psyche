@@ -302,7 +302,7 @@ impl App {
         });
     }
     async fn on_client_message(&mut self, from: ClientId, event: ClientToServerMessage) {
-        match event {
+        let broadcast = match event {
             ClientToServerMessage::Join { run_id } => {
                 // TODO: check whitelist
                 if self.coordinator.run_id == run_id {
@@ -323,8 +323,10 @@ impl App {
                 } else {
                     info!("{from:?} tried to join unknown run {run_id}");
                 }
+                false
             }
             ClientToServerMessage::Witness(witness) => {
+                let state_before = self.coordinator.run_state;
                 if let Err(error) = self.coordinator.witness(
                     &Client {
                         id: from,
@@ -335,6 +337,7 @@ impl App {
                 ) {
                     warn!("Error when processing witness: {error}");
                 }
+                self.coordinator.run_state != state_before
             }
             ClientToServerMessage::HealthCheck(health_checks) => {
                 match self.coordinator.health_check(
@@ -344,8 +347,15 @@ impl App {
                     },
                     health_checks,
                 ) {
-                    Ok(dropped) => info!("Dropped {} clients from health check", dropped),
-                    Err(error) => warn!("Error when processing health check: {error}"),
+                    Ok(dropped) => {
+                        info!("Dropped {} clients from health check", dropped);
+                        dropped > 0
+                    }
+
+                    Err(error) => {
+                        warn!("Error when processing health check: {error}");
+                        false
+                    }
                 }
             }
             ClientToServerMessage::Checkpoint(checkpoint) => {
@@ -359,9 +369,10 @@ impl App {
                 ) {
                     warn!("Error when processing checkpoint: {error}");
                 }
+                true
             }
-        }
-        self.post_state_change();
+        };
+        self.post_state_change(broadcast).await;
     }
 
     async fn on_tick(&mut self) {
@@ -373,20 +384,7 @@ impl App {
             Ok(_) | Err(CoordinatorError::Disabled) => {}
             Err(err) => warn!("Coordinator tick error: {err}"),
         }
-        self.post_state_change();
-        if let Err(err) = self
-            .backend
-            .net_server
-            .broadcast(ServerToClientMessage::Coordinator(Box::new(
-                self.coordinator.clone(),
-            )))
-            .await
-        {
-            warn!("Error in on_tick: {err}");
-        }
-        if let Some((ref sender, _)) = self.training_data_server {
-            sender.send(self.coordinator.clone()).await.unwrap();
-        }
+        self.post_state_change(true).await;
     }
 
     fn get_timestamp() -> u64 {
@@ -396,7 +394,7 @@ impl App {
             .as_secs()
     }
 
-    fn post_state_change(&mut self) {
+    async fn post_state_change(&mut self, broadcast: bool) {
         if !self.coordinator.active() {
             if let Some(last_sync_step) = self.last_sync_step {
                 if last_sync_step < self.coordinator.step {
@@ -427,6 +425,21 @@ impl App {
             // reset to original values if we changed them to something special for init
             self.coordinator.warmup_time = self.original_warmup_time;
             self.coordinator.min_clients = self.original_min_clients;
+        }
+        if broadcast {
+            if let Err(err) = self
+                .backend
+                .net_server
+                .broadcast(ServerToClientMessage::Coordinator(Box::new(
+                    self.coordinator.clone(),
+                )))
+                .await
+            {
+                warn!("Error in on_tick: {err}");
+            }
+            if let Some((ref sender, _)) = self.training_data_server {
+                sender.send(self.coordinator.clone()).await.unwrap();
+            }
         }
     }
 
