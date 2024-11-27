@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 // https://flawed.net.nz/2018/02/21/attacking-merkle-trees-with-a-second-preimage-attack
 const LEAF_PREFIX: &[u8] = &[0];
 const INTERMEDIATE_PREFIX: &[u8] = &[1];
-const MAX_NUM_PROOFS: usize = 256;
+const MAX_PROOFS_LEN: usize = 16400;
 
 macro_rules! hash_leaf {
     {$d:ident} => {
@@ -101,7 +101,7 @@ pub struct Proof<'a>(Vec<ProofEntry<'a>>);
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 #[derive_serialize]
 pub struct OwnedProof {
-    #[cfg_attr(target_os = "solana", max_len(MAX_NUM_PROOFS))]
+    #[cfg_attr(target_os = "solana", max_len(MAX_PROOFS_LEN))]
     entries: Vec<OwnedProofEntry>,
 }
 
