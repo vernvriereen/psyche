@@ -729,6 +729,15 @@ checksum = "79296716171880943b8470b5f8d03aa55eb2e645a4874bdbb28adb49162e012c"
 [[package]]
 name = "bv"
 version = "0.11.1"
+dependencies = [
+ "borsh 0.10.4",
+ "feature-probe",
+ "serde",
+]
+
+[[package]]
+name = "bv"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8834bb1d8ee5dc048ee3124f2c7c1afcc6bc9aed03f11e9dfd8c69470a5db340"
 dependencies = [
@@ -1385,9 +1394,10 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang 0.29.0",
  "anyhow",
- "bv",
+ "bv 0.11.1",
  "fast-math",
  "fnv",
+ "psyche-serde",
  "serde",
  "sha2 0.10.8",
 ]
@@ -1709,7 +1719,7 @@ checksum = "03ab2c30c15311b511c0d1151e4ab6bc9a3e080a37e7c6e7c2d96f5784cf9434"
 dependencies = [
  "block-buffer 0.10.4",
  "bs58 0.4.0",
- "bv",
+ "bv 0.11.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "either",
  "generic-array",
  "im",
@@ -1756,7 +1766,7 @@ dependencies = [
  "borsh 0.9.3",
  "borsh 1.5.3",
  "bs58 0.4.0",
- "bv",
+ "bv 0.11.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytemuck",
  "cc",
  "console_error_panic_hook",

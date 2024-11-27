@@ -65,7 +65,6 @@ pub enum ToSend {
     HealthCheck(HealthChecks),
     Checkpoint(model::Checkpoint),
 }
-
 type Bloom32 = Bloom<[u8; 32]>;
 
 // type Rollbacks = BoundedQueue<(BatchStep, Vec<DistroResults>)>;

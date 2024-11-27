@@ -13,24 +13,24 @@ use anchor_lang::prelude::*;
 #[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
 
-#[cfg(target_os = "solana")]
-const MAX_STRING_LEN: usize = 64;
-
-#[cfg(target_os = "solana")]
-const MAX_NUM_CLIENTS: usize = 64;
+pub const MAX_STRING_LEN: usize = 64;
+pub const MAX_NUM_CLIENTS: usize = 64;
+pub const MAX_NUM_WITNESSES: usize = 16;
 
 pub const BLOOM_FALSE_RATE: f64 = 0.01f64;
 pub const BLOOM_MAX_BITS: usize = 1024 * 8;
 
+
+#[repr(u8)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 #[derive_serialize]
 pub enum RunState {
     #[default]
-    WaitingForMembers,
-    Warmup,
-    RoundTrain,
-    RoundWitness,
-    Cooldown,
+    WaitingForMembers = 0,
+    Warmup = 1,
+    RoundTrain = 2,
+    RoundWitness = 3,
+    Cooldown = 4,
 }
 
 #[derive_serialize]
@@ -54,6 +54,7 @@ pub struct Round {
     pub tie_breaker_tasks: u32,
     pub data_index: u64,
     pub random_seed: u64,
+    #[cfg_attr(target_os = "solana", max_len(MAX_NUM_WITNESSES))]
     pub witnesses: Vec<Witness>,
 }
 
@@ -86,7 +87,6 @@ pub const NUM_STORED_ROUNDS: usize = 4;
 
 #[derive_serialize]
 #[derive(Clone, Debug)]
-#[cfg_attr(target_os = "solana", derive(InitSpace))]
 pub struct Coordinator<T: NodeIdentity> {
     #[cfg_attr(target_os = "solana", max_len(MAX_STRING_LEN))]
     pub run_id: String,
@@ -506,7 +506,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 true => None,
                 false => match self.rounds_head {
                     0 => Some(&self.rounds[NUM_STORED_ROUNDS - 2]),
-                    1 => Some(&self.rounds[NUM_STORED_ROUNDS - 1]), 
+                    1 => Some(&self.rounds[NUM_STORED_ROUNDS - 1]),
                     n => Some(&self.rounds[n as usize - 2]),
                 },
             },
@@ -574,7 +574,10 @@ impl<T: NodeIdentity> Coordinator<T> {
         Ok(())
     }
 
-    fn tick_round_train(&mut self, unix_timestamp: u64) -> std::result::Result<(), CoordinatorError> {
+    fn tick_round_train(
+        &mut self,
+        unix_timestamp: u64,
+    ) -> std::result::Result<(), CoordinatorError> {
         if self.check_timeout(unix_timestamp, self.max_round_train_time) {
             if self.is_greedy_data() {
                 // if we take longer than our max round train time, abandon the epoch and start over (assume too many people left)

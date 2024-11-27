@@ -1,6 +1,11 @@
-use serde::{Deserialize, Serialize};
-
 use crate::sha256::sha256v;
+
+use psyche_serde::derive_serialize;
+
+#[cfg(target_os = "solana")]
+use anchor_lang::prelude::*;
+#[cfg(not(target_os = "solana"))]
+use serde::{Deserialize, Serialize};
 
 // from https://github.com/solana-labs/solana/blob/27eff8408b7223bb3c4ab70523f8a8dca3ca6645/merkle-tree/src/merkle_tree.rs
 
@@ -33,7 +38,8 @@ pub struct MerkleTree {
 #[derive(Debug, PartialEq, Eq)]
 pub struct ProofEntry<'a>(&'a Hash, Option<&'a Hash>, Option<&'a Hash>);
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive_serialize]
 pub struct OwnedProofEntry(Hash, Option<Hash>, Option<Hash>);
 
 impl<'a> ProofEntry<'a> {
@@ -56,7 +62,8 @@ impl<'a> From<ProofEntry<'a>> for OwnedProofEntry {
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Proof<'a>(Vec<ProofEntry<'a>>);
 
-#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+#[derive_serialize]
 pub struct OwnedProof(Vec<OwnedProofEntry>);
 
 impl<'a> From<Proof<'a>> for OwnedProof {
