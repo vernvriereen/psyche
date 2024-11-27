@@ -120,6 +120,17 @@ pub struct DataServerInfo {
     pub shuffle_seed: [u8; 32],
 }
 
+impl DataServerInfo {
+    pub fn default() -> DataServerInfo {
+            DataServerInfo {
+                dir: PathBuf::from("./"),
+                token_size: TokenSize::TwoBytes,
+                seq_len: 2048,
+                shuffle_seed: [1; 32],
+            }
+    }
+}
+
 impl App {
     pub async fn new(
         tui: bool,
