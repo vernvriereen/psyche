@@ -1,9 +1,9 @@
 [package]
-name = "tests"
+name = "testing"
 edition = "2021"
 version.workspace = true
 
-[dev-dependencies]
+[dependencies]
 psyche-centralized-client = { path = "../client" }
 psyche-centralized-server = { path = "../server" }
 psyche-centralized-shared = { path = "../shared" }
@@ -14,4 +14,3 @@ psyche-network.workspace = true
 tokio-util.workspace = true
 
 tokio.workspace = true
-

@@ -1,0 +1,93 @@
+use psyche_centralized_server::app::{App as ServerApp, DataServerInfo};
+use psyche_centralized_shared::ClientId;
+use psyche_coordinator::Coordinator;
+use psyche_data_provider::TokenSize;
+use std::path::PathBuf;
+use tokio::{
+    select,
+    sync::{
+        mpsc::{self, Receiver},
+        oneshot,
+    },
+};
+
+pub const RUN_ID: &str = "test";
+
+enum TestingQueryMsg {
+    QueryClients { respond_to: oneshot::Sender<u32> },
+}
+
+struct CoordinatorServer {
+    inner: ServerApp,
+    query_chan_receiver: Receiver<TestingQueryMsg>,
+}
+
+impl CoordinatorServer {
+    pub async fn new(query_chan_receiver: Receiver<TestingQueryMsg>) -> Self {
+        let mut coordinator: Coordinator<ClientId> = Coordinator::default();
+        coordinator.run_id = RUN_ID.to_string();
+
+        let data_server_info = DataServerInfo {
+            dir: PathBuf::from("./"),
+            token_size: TokenSize::TwoBytes,
+            seq_len: 2048,
+            shuffle_seed: [1; 32],
+        };
+
+        let server = ServerApp::new(
+            false,
+            coordinator,
+            Some(data_server_info),
+            Some(1234),
+            Some(8080),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        Self {
+            inner: server,
+            query_chan_receiver,
+        }
+    }
+
+    pub async fn handle_message(&mut self, msg: TestingQueryMsg) {
+        match msg {
+            TestingQueryMsg::QueryClients { respond_to } => {
+                let clients_len = self.inner.get_pending_clients_len();
+                let _ = respond_to.send(clients_len as u32).unwrap();
+            }
+        }
+    }
+
+    pub async fn run(&mut self) {
+        loop {
+            select! {
+                res = self.inner.run() => res.unwrap(),
+                Some(client_msg) = self.query_chan_receiver.recv() => self.handle_message(client_msg).await
+            }
+        }
+    }
+}
+
+pub struct CoordinatorServerHandle {
+    query_chan_sender: mpsc::Sender<TestingQueryMsg>,
+}
+
+impl CoordinatorServerHandle {
+    pub async fn new() -> Self {
+        let (query_chan_sender, query_chan_receiver) = mpsc::channel(8);
+        let mut server = CoordinatorServer::new(query_chan_receiver).await;
+        tokio::spawn(async move { server.run().await });
+        Self { query_chan_sender }
+    }
+
+    pub async fn get_clients_len(&self) -> u32 {
+        let (send, recv) = oneshot::channel();
+        let msg = TestingQueryMsg::QueryClients { respond_to: send };
+        let _ = self.query_chan_sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+}

@@ -6945,7 +6945,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tests"
+name = "testing"
 version = "0.0.1"
 dependencies = [
  "psyche-centralized-client",
