@@ -120,22 +120,6 @@ pub struct DataServerInfo {
     pub shuffle_seed: [u8; 32],
 }
 
-impl DataServerInfo {
-    pub fn new(config_path: PathBuf) -> Result<Self> {
-        let mut data_config: DataServerInfo = toml::from_str(std::str::from_utf8(&std::fs::read(
-            &config_path,
-        )?)?)
-        .with_context(|| format!("failed to parse data server config toml file {config_path:?}"))?;
-
-        // data dir, if relative, should be relative to the config's path.
-        if !data_config.dir.is_absolute() {
-            let config_dir = Path::new(&config_path).parent().unwrap_or(Path::new(""));
-            data_config.dir = config_dir.join(data_config.dir);
-        }
-        Ok(data_config)
-    }
-}
-
 impl App {
     pub async fn new(
         tui: bool,
