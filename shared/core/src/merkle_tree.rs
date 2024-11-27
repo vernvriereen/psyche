@@ -16,7 +16,8 @@ const LEAF_PREFIX: &[u8] = &[0];
 const INTERMEDIATE_PREFIX: &[u8] = &[1];
 
 #[cfg(target_os = "solana")]
-const MAX_PROOFS_LEN: usize = 16400;
+// TODO: We should rethink this constant when merkle tree gets used.
+const MAX_PROOFS_LEN: usize = 100;
 
 macro_rules! hash_leaf {
     {$d:ident} => {
