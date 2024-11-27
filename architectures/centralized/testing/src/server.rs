@@ -28,17 +28,10 @@ impl CoordinatorServer {
         let mut coordinator: Coordinator<ClientId> = Coordinator::default();
         coordinator.run_id = RUN_ID.to_string();
 
-        let data_server_info = DataServerInfo {
-            dir: PathBuf::from("./"),
-            token_size: TokenSize::TwoBytes,
-            seq_len: 2048,
-            shuffle_seed: [1; 32],
-        };
-
         let server = ServerApp::new(
             false,
             coordinator,
-            Some(data_server_info),
+            Some(DataServerInfo::default()),
             Some(1234),
             Some(8080),
             None,
@@ -58,17 +51,10 @@ impl CoordinatorServer {
         let mut coordinator: Coordinator<ClientId> = Coordinator::default();
         coordinator.run_id = RUN_ID.to_string();
 
-        let data_server_info = DataServerInfo {
-            dir: PathBuf::from("./"),
-            token_size: TokenSize::TwoBytes,
-            seq_len: 2048,
-            shuffle_seed: [1; 32],
-        };
-
         let server = ServerApp::new(
             false,
             coordinator,
-            Some(data_server_info),
+            Some(DataServerInfo::default()),
             Some(1234),
             Some(8080),
             None,

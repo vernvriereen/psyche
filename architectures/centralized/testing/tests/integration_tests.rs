@@ -95,8 +95,6 @@ async fn assert_state_change_waiting_for_members_to_warmup() {
     assert_eq!(num_clients, 0);
     assert_eq!(run_state, RunState::WaitingForMembers);
 
-    tokio::time::sleep(Duration::from_secs(10)).await;
-
     for _ in 0..2 {
         let client_app_params = AppParams {
             cancel: CancellationToken::default(),
