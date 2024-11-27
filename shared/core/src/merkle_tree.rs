@@ -1,6 +1,5 @@
 use crate::sha256::sha256v;
 
-use anchor_lang::Space;
 use psyche_serde::derive_serialize;
 
 #[cfg(target_os = "solana")]
@@ -15,6 +14,8 @@ use serde::{Deserialize, Serialize};
 // https://flawed.net.nz/2018/02/21/attacking-merkle-trees-with-a-second-preimage-attack
 const LEAF_PREFIX: &[u8] = &[0];
 const INTERMEDIATE_PREFIX: &[u8] = &[1];
+
+#[cfg(target_os = "solana")]
 const MAX_PROOFS_LEN: usize = 16400;
 
 macro_rules! hash_leaf {
@@ -49,6 +50,7 @@ impl AsRef<[u8]> for HashWrapper {
     }
 }
 
+#[cfg(target_os = "solana")]
 impl Space for HashWrapper {
     const INIT_SPACE: usize = 32;
 }
