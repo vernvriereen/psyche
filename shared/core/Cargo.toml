@@ -9,7 +9,6 @@ anyhow.workspace = true
 fast-math.workspace = true
 fnv = "1.0.7"
 rand = { workspace = true, optional = true }
-anchor-lang.workspace = true
 serde.workspace = true
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
