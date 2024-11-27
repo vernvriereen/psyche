@@ -1,5 +1,6 @@
 use crate::sha256::sha256v;
 
+use anchor_lang::Space;
 use psyche_serde::derive_serialize;
 
 #[cfg(target_os = "solana")]
@@ -14,6 +15,7 @@ use serde::{Deserialize, Serialize};
 // https://flawed.net.nz/2018/02/21/attacking-merkle-trees-with-a-second-preimage-attack
 const LEAF_PREFIX: &[u8] = &[0];
 const INTERMEDIATE_PREFIX: &[u8] = &[1];
+const MAX_NUM_PROOFS: usize = 256;
 
 macro_rules! hash_leaf {
     {$d:ident} => {
@@ -27,26 +29,56 @@ macro_rules! hash_intermediate {
     }
 }
 
-pub type Hash = [u8; 32];
+/// This wrapper is used to implement the `Space` trait for the actual hash.
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
+#[cfg_attr(target_os = "solana", derive(AnchorSerialize, AnchorDeserialize))]
+#[cfg_attr(not(target_os = "solana"), derive(Serialize, Deserialize))]
+pub struct HashWrapper {
+    pub inner: [u8; 32],
+}
+
+impl HashWrapper {
+    pub fn new(inner: [u8; 32]) -> Self {
+        Self { inner }
+    }
+}
+
+impl AsRef<[u8]> for HashWrapper {
+    fn as_ref(&self) -> &[u8] {
+        &self.inner
+    }
+}
+
+impl Space for HashWrapper {
+    const INIT_SPACE: usize = 32;
+}
 
 #[derive(Debug)]
 pub struct MerkleTree {
     leaf_count: usize,
-    nodes: Vec<Hash>,
+    nodes: Vec<HashWrapper>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct ProofEntry<'a>(&'a Hash, Option<&'a Hash>, Option<&'a Hash>);
+pub struct ProofEntry<'a>(
+    &'a HashWrapper,
+    Option<&'a HashWrapper>,
+    Option<&'a HashWrapper>,
+);
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[derive_serialize]
-pub struct OwnedProofEntry(Hash, Option<Hash>, Option<Hash>);
+pub struct OwnedProofEntry {
+    target: HashWrapper,
+    left_sibling: Option<HashWrapper>,
+    right_sibling: Option<HashWrapper>,
+}
 
 impl<'a> ProofEntry<'a> {
     pub fn new(
-        target: &'a Hash,
-        left_sibling: Option<&'a Hash>,
-        right_sibling: Option<&'a Hash>,
+        target: &'a HashWrapper,
+        left_sibling: Option<&'a HashWrapper>,
+        right_sibling: Option<&'a HashWrapper>,
     ) -> Self {
         assert!(left_sibling.is_none() ^ right_sibling.is_none());
         Self(target, left_sibling, right_sibling)
@@ -55,7 +87,12 @@ impl<'a> ProofEntry<'a> {
 
 impl<'a> From<ProofEntry<'a>> for OwnedProofEntry {
     fn from(value: ProofEntry<'a>) -> Self {
-        Self(*value.0, value.1.cloned(), value.2.cloned())
+        // Self(*value.0, value.1.cloned(), value.2.cloned())
+        Self {
+            target: value.0.clone(),
+            left_sibling: value.1.cloned(),
+            right_sibling: value.2.cloned(),
+        }
     }
 }
 
@@ -64,22 +101,27 @@ pub struct Proof<'a>(Vec<ProofEntry<'a>>);
 
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 #[derive_serialize]
-pub struct OwnedProof(Vec<OwnedProofEntry>);
+pub struct OwnedProof {
+    #[cfg_attr(target_os = "solana", max_len(MAX_NUM_PROOFS))]
+    entries: Vec<OwnedProofEntry>,
+}
 
 impl<'a> From<Proof<'a>> for OwnedProof {
     fn from(value: Proof<'a>) -> Self {
-        Self(value.0.into_iter().map(|x| x.into()).collect())
+        Self {
+            entries: value.0.into_iter().map(|x| x.into()).collect(),
+        }
     }
 }
 
 impl OwnedProof {
-    pub fn verify(&self, candidate: Hash) -> bool {
-        let result = self.0.iter().try_fold(candidate, |candidate, pe| {
-            let lsib = pe.1.unwrap_or(candidate);
-            let rsib = pe.2.unwrap_or(candidate);
-            let hash = hash_intermediate!(lsib, rsib);
+    pub fn verify(&self, candidate: HashWrapper) -> bool {
+        let result = self.entries.iter().try_fold(candidate, |candidate, pe| {
+            let lsib = pe.right_sibling.clone().unwrap_or(candidate.clone());
+            let rsib = pe.left_sibling.clone().unwrap_or(candidate);
+            let hash = HashWrapper::new(hash_intermediate!(lsib, rsib));
 
-            if hash == pe.0 {
+            if hash == pe.target {
                 Some(hash)
             } else {
                 None
@@ -90,11 +132,11 @@ impl OwnedProof {
 
     pub fn verify_item<T: AsRef<[u8]>>(&self, item: &T) -> bool {
         let candidate_item = item.as_ref();
-        self.verify(hash_leaf!(candidate_item))
+        self.verify(HashWrapper::new(hash_leaf!(candidate_item)))
     }
 
-    pub fn get_root(&self) -> Option<&Hash> {
-        self.0.last().map(|x| &x.0)
+    pub fn get_root(&self) -> Option<&HashWrapper> {
+        self.entries.last().map(|x| &x.target)
     }
 }
 
@@ -103,11 +145,11 @@ impl<'a> Proof<'a> {
         self.0.push(entry)
     }
 
-    pub fn verify(&self, candidate: Hash) -> bool {
+    pub fn verify(&self, candidate: HashWrapper) -> bool {
         let result = self.0.iter().try_fold(candidate, |candidate, pe| {
             let lsib = pe.1.unwrap_or(&candidate);
             let rsib = pe.2.unwrap_or(&candidate);
-            let hash = hash_intermediate!(lsib, rsib);
+            let hash = HashWrapper::new(hash_intermediate!(lsib, rsib));
 
             if hash == *pe.0 {
                 Some(hash)
@@ -120,10 +162,10 @@ impl<'a> Proof<'a> {
 
     pub fn verify_item<T: AsRef<[u8]>>(&self, item: &T) -> bool {
         let candidate_item = item.as_ref();
-        self.verify(hash_leaf!(candidate_item))
+        self.verify(HashWrapper::new(hash_leaf!(candidate_item)))
     }
 
-    pub fn get_root(&self) -> Option<&Hash> {
+    pub fn get_root(&self) -> Option<&HashWrapper> {
         self.0.last().map(|x| x.0)
     }
 }
@@ -170,7 +212,7 @@ impl MerkleTree {
 
         for item in items {
             let item = item.as_ref();
-            let hash = hash_leaf!(item);
+            let hash = HashWrapper::new(hash_leaf!(item));
             mt.nodes.push(hash);
         }
 
@@ -189,7 +231,7 @@ impl MerkleTree {
                     &mt.nodes[prev_level_start + prev_level_idx]
                 };
 
-                let hash = hash_intermediate!(lsib, rsib);
+                let hash = HashWrapper::new(hash_intermediate!(lsib, rsib));
                 mt.nodes.push(hash);
             }
             prev_level_start = level_start;
@@ -201,7 +243,7 @@ impl MerkleTree {
         mt
     }
 
-    pub fn get_root(&self) -> Option<&Hash> {
+    pub fn get_root(&self) -> Option<&HashWrapper> {
         self.nodes.iter().last()
     }
 
@@ -263,7 +305,7 @@ mod tests {
     fn test_tree_from_one() {
         let input = b"test";
         let mt = MerkleTree::new(&[input]);
-        let expected = hash_leaf!(input);
+        let expected = HashWrapper::new(hash_leaf!(input));
         assert_eq!(mt.get_root(), Some(&expected));
     }
 
@@ -285,7 +327,7 @@ mod tests {
     fn test_path_verify_good() {
         let mt = MerkleTree::new(TEST);
         for (i, s) in TEST.iter().enumerate() {
-            let hash = hash_leaf!(s);
+            let hash = HashWrapper::new(hash_leaf!(s));
             let path = mt.find_path(i).unwrap();
             assert!(path.verify(hash));
         }
@@ -295,7 +337,7 @@ mod tests {
     fn test_path_verify_bad() {
         let mt = MerkleTree::new(TEST);
         for (i, s) in BAD.iter().enumerate() {
-            let hash = hash_leaf!(s);
+            let hash = HashWrapper::new(hash_leaf!(s));
             let path = mt.find_path(i).unwrap();
             assert!(!path.verify(hash));
         }
@@ -303,12 +345,12 @@ mod tests {
 
     #[test]
     fn test_proof_entry_instantiation_lsib_set() {
-        ProofEntry::new(&Hash::default(), Some(&Hash::default()), None);
+        ProofEntry::new(&HashWrapper::default(), Some(&HashWrapper::default()), None);
     }
 
     #[test]
     fn test_proof_entry_instantiation_rsib_set() {
-        ProofEntry::new(&Hash::default(), None, Some(&Hash::default()));
+        ProofEntry::new(&HashWrapper::default(), None, Some(&HashWrapper::default()));
     }
 
     #[test]
@@ -333,16 +375,16 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_proof_entry_instantiation_both_clear() {
-        ProofEntry::new(&Hash::default(), None, None);
+        ProofEntry::new(&HashWrapper::default(), None, None);
     }
 
     #[test]
     #[should_panic]
     fn test_proof_entry_instantiation_both_set() {
         ProofEntry::new(
-            &Hash::default(),
-            Some(&Hash::default()),
-            Some(&Hash::default()),
+            &HashWrapper::default(),
+            Some(&HashWrapper::default()),
+            Some(&HashWrapper::default()),
         );
     }
 }

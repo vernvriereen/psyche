@@ -21,7 +21,7 @@ pub use deterministic_shuffle::deterministic_shuffle;
 pub use interval_tree::{ClosedInterval, IntervalTree};
 pub use lcg::LCG;
 pub use lr_scheduler::*;
-pub use merkle_tree::{Hash as RootType, MerkleTree, OwnedProof, Proof};
+pub use merkle_tree::{HashWrapper as RootType, MerkleTree, OwnedProof, Proof};
 pub use node_identity::NodeIdentity;
 pub use running_average::RunningAverage;
 pub use sha256::{sha256, sha256v};
