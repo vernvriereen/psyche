@@ -106,6 +106,10 @@ impl App {
     pub fn get_pending_clients_len(&self) -> usize {
         self.backend.pending_clients.len()
     }
+
+    pub fn get_runstate(&self) -> RunState {
+        self.coordinator.run_state
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
