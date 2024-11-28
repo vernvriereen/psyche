@@ -12,7 +12,7 @@ async fn connect_single_node() {
     tokio::spawn(async { client_app_builder.run().await.unwrap() });
 
     // Wait to ensure client is up
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
     let num_clients = server_handle.get_clients_len().await;
 
@@ -21,26 +21,28 @@ async fn connect_single_node() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn connect_multiple_nodes() {
-    let number_of_nodes: u32 = 10;
+    let number_of_nodes = 10;
     let server_handle = CoordinatorServerHandle::default().await;
 
     for _ in 0..number_of_nodes {
         let client_app_builder = AppBuilder::default();
         tokio::spawn(async { client_app_builder.run().await.unwrap() });
+        // Wait to ensure client are up
     }
-    // Wait to ensure client are up
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    tokio::time::sleep(Duration::from_millis(150 * number_of_nodes)).await;
 
     let num_clients = server_handle.get_clients_len().await;
     let run_state = server_handle.get_run_state().await;
 
-    assert_eq!(num_clients, number_of_nodes);
+    assert_eq!(num_clients as u64, number_of_nodes);
     assert_eq!(run_state, RunState::WaitingForMembers);
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn assert_state_change_waiting_for_members_to_warmup() {
-    let server_handle = CoordinatorServerHandle::new(Some(2)).await;
+    let init_min_clients = 2;
+
+    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
 
     let num_clients = server_handle.get_clients_len().await;
     let run_state = server_handle.get_run_state().await;
@@ -53,7 +55,7 @@ async fn assert_state_change_waiting_for_members_to_warmup() {
         tokio::spawn(async { client_app_builder.run().await.unwrap() });
     }
     // Wait to ensure client are up
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
     let num_clients = server_handle.get_clients_len().await;
     let run_state = server_handle.get_run_state().await;

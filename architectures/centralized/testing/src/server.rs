@@ -9,11 +9,11 @@ use tokio::{
     },
 };
 
-use crate::RUN_ID;
+use crate::{RUN_ID, SERVER_PORT};
 
 enum TestingQueryMsg {
     QueryClients {
-        respond_to: oneshot::Sender<u32>,
+        respond_to: oneshot::Sender<usize>,
     },
     QueryRunState {
         respond_to: oneshot::Sender<RunState>,
@@ -34,8 +34,8 @@ impl CoordinatorServer {
             false,
             coordinator,
             Some(DataServerInfo::default()),
-            Some(1234),
-            Some(8080),
+            None,
+            Some(SERVER_PORT),
             None,
             None,
             None,
@@ -60,8 +60,8 @@ impl CoordinatorServer {
             false,
             coordinator,
             Some(DataServerInfo::default()),
-            Some(1234),
-            Some(8080),
+            None,
+            Some(SERVER_PORT),
             None,
             Some(30),
             init_min_clients,
@@ -79,7 +79,7 @@ impl CoordinatorServer {
         match msg {
             TestingQueryMsg::QueryClients { respond_to } => {
                 let clients_len = self.inner.get_pending_clients_len();
-                let _ = respond_to.send(clients_len as u32).unwrap();
+                let _ = respond_to.send(clients_len).unwrap();
             }
             TestingQueryMsg::QueryRunState { respond_to } => {
                 let run_state = self.inner.get_run_state();
@@ -110,14 +110,14 @@ impl CoordinatorServerHandle {
         Self { query_chan_sender }
     }
 
-    pub async fn new(init_min_clients: Option<u32>) -> Self {
+    pub async fn new(init_min_clients: u32) -> Self {
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
-        let mut server = CoordinatorServer::new(query_chan_receiver, init_min_clients).await;
+        let mut server = CoordinatorServer::new(query_chan_receiver, Some(init_min_clients)).await;
         tokio::spawn(async move { server.run().await });
         Self { query_chan_sender }
     }
 
-    pub async fn get_clients_len(&self) -> u32 {
+    pub async fn get_clients_len(&self) -> usize {
         let (send, recv) = oneshot::channel();
         let msg = TestingQueryMsg::QueryClients { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
