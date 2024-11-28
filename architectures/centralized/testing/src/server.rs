@@ -82,7 +82,7 @@ impl CoordinatorServer {
                 let _ = respond_to.send(clients_len as u32).unwrap();
             }
             TestingQueryMsg::QueryRunState { respond_to } => {
-                let run_state = self.inner.get_runstate();
+                let run_state = self.inner.get_run_state();
                 let _ = respond_to.send(run_state).unwrap();
             }
         }
