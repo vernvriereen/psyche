@@ -21,3 +21,7 @@ docker-push-centralized-client: docker-build-centralized-client
 # spin up a local testnet
 local-testnet +args:
 	cargo run -p local-testnet -- {{args}}
+
+# build solana coordinator
+deploy-local-solana-coordinator:
+    cd architectures/decentralized/solana-coordinator && anchor build && anchor deploy
