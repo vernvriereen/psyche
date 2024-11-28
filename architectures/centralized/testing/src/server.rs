@@ -12,8 +12,12 @@ use tokio::{
 pub const RUN_ID: &str = "test";
 
 enum TestingQueryMsg {
-    QueryClients { respond_to: oneshot::Sender<u32> },
-    QueryRunState { respond_to: oneshot::Sender<RunState> },
+    QueryClients {
+        respond_to: oneshot::Sender<u32>,
+    },
+    QueryRunState {
+        respond_to: oneshot::Sender<RunState>,
+    },
 }
 
 struct CoordinatorServer {
@@ -45,7 +49,10 @@ impl CoordinatorServer {
         }
     }
 
-    pub async fn new(query_chan_receiver: Receiver<TestingQueryMsg>, init_min_clients: Option<u32>) -> Self {
+    pub async fn new(
+        query_chan_receiver: Receiver<TestingQueryMsg>,
+        init_min_clients: Option<u32>,
+    ) -> Self {
         let mut coordinator: Coordinator<ClientId> = Coordinator::default();
         coordinator.run_id = RUN_ID.to_string();
 
@@ -77,7 +84,7 @@ impl CoordinatorServer {
             TestingQueryMsg::QueryRunState { respond_to } => {
                 let run_state = self.inner.get_runstate();
                 let _ = respond_to.send(run_state).unwrap();
-            },
+            }
         }
     }
 
