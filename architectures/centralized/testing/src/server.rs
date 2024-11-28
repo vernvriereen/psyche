@@ -1,8 +1,6 @@
 use psyche_centralized_server::app::{App as ServerApp, DataServerInfo};
 use psyche_centralized_shared::ClientId;
 use psyche_coordinator::{Coordinator, RunState};
-use psyche_data_provider::TokenSize;
-use std::path::PathBuf;
 use tokio::{
     select,
     sync::{

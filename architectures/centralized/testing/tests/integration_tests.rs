@@ -1,11 +1,8 @@
 use std::time::Duration;
 
-use psyche_centralized_client::app::{AppBuilder, AppParams};
-use psyche_client::BatchShuffleType;
+use psyche_centralized_client::app::AppBuilder;
 use psyche_coordinator::RunState;
-use psyche_network::SecretKey;
-use testing::server::{CoordinatorServerHandle, RUN_ID};
-use tokio_util::sync::CancellationToken;
+use testing::server::CoordinatorServerHandle;
 
 #[tokio::test]
 async fn connect_single_node() {
