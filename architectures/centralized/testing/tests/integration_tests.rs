@@ -27,8 +27,8 @@ async fn connect_multiple_nodes() {
     for _ in 0..number_of_nodes {
         let client_app_builder = AppBuilder::default();
         tokio::spawn(async { client_app_builder.run().await.unwrap() });
-        // Wait to ensure client are up
     }
+    // Wait to ensure client are up
     tokio::time::sleep(Duration::from_millis(150 * number_of_nodes)).await;
 
     let num_clients = server_handle.get_clients_len().await;
