@@ -285,12 +285,13 @@ impl App {
                 _ = async {
                     if let Some((_, server))  = &mut self.training_data_server {
                         server.poll().await
+                    } else {
+                        tokio::task::yield_now().await;
                     }
                 } => {}
                 else => break,
             }
 
-            tokio::task::yield_now().await;
         }
         Ok(())
     }
