@@ -18,8 +18,9 @@ pub const MAX_NUM_CLIENTS: usize = 64;
 pub const MAX_NUM_WITNESSES: usize = 16;
 
 pub const BLOOM_FALSE_RATE: f64 = 0.01f64;
-pub const BLOOM_MAX_BITS: usize = 1024 * 8;
 
+// bloom filter with 1024 bits (16 u64)
+pub type WitnessBloom = Bloom<16, 8>;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -63,9 +64,9 @@ pub struct Round {
 pub struct Witness {
     pub index: u64,
     pub proof: WitnessProof,
-    pub commit_bloom: Bloom<[u8; 32]>,
-    pub participant_bloom: Bloom<[u8; 32]>,
-    pub order_bloom: Bloom<[u8; 32]>,
+    pub commit_bloom: WitnessBloom,
+    pub participant_bloom: WitnessBloom,
+    pub order_bloom: WitnessBloom,
 }
 
 #[derive(Clone, Debug)]
@@ -153,6 +154,7 @@ pub struct Coordinator<T: NodeIdentity> {
     pub model: Option<Model>,
 }
 
+#[allow(dead_code)]
 fn default_init_step() -> u32 {
     1
 }
