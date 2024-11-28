@@ -2,10 +2,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{Error, Result};
-use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
+use psyche_centralized_shared::{ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{
-    BatchShuffleType, CheckpointSaveInfo, Client, ClientTUI, ClientTUIState, StateOptions,
-    WandBInfo, NC,
+    BatchShuffleType, CheckpointSaveInfo, Client, ClientId, ClientTUI, ClientTUIState,
+    StateOptions, WandBInfo, NC,
 };
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_network::{NetworkTUIState, NetworkTui, RelayMode, SecretKey, TcpClient};
