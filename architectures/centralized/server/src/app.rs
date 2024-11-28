@@ -102,12 +102,13 @@ pub struct App {
     original_min_clients: u32,
 }
 
+#[cfg(feature = "testing")]
 impl App {
     pub fn get_pending_clients_len(&self) -> usize {
         self.backend.pending_clients.len()
     }
 
-    pub fn get_runstate(&self) -> RunState {
+    pub fn get_run_state(&self) -> RunState {
         self.coordinator.run_state
     }
 }

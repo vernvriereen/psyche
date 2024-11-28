@@ -9,7 +9,7 @@ use tokio::{
     },
 };
 
-pub const RUN_ID: &str = "test";
+use crate::RUN_ID;
 
 enum TestingQueryMsg {
     QueryClients {

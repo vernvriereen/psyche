@@ -28,3 +28,6 @@ chrono.workspace = true
 clap.workspace = true
 futures.workspace = true
 toml = "0.8.19"
+
+[features]
+testing = []
