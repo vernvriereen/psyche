@@ -163,8 +163,7 @@ impl<const U: usize, const K: usize> Bloom<U, K> {
         use rand::Rng;
         let m = Self::num_bits(num_items as f64, false_rate);
         let num_bits = std::cmp::max(1, std::cmp::min(m as usize, Self::max_bits()));
-        let num_keys = Self::num_keys(num_bits as f64, num_items as f64) as usize;
-        let keys: Vec<u64> = (0..num_keys).map(|_| rand::thread_rng().gen()).collect();
+        let keys: Vec<u64> = (0..K).map(|_| rand::thread_rng().gen()).collect();
         Self::new(num_bits, &keys)
     }
 
@@ -176,6 +175,7 @@ impl<const U: usize, const K: usize> Bloom<U, K> {
     }
 
     #[cfg(feature = "rand")]
+    #[allow(dead_code)]
     fn num_keys(num_bits: f64, num_items: f64) -> f64 {
         let n = num_items;
         let m = num_bits;
