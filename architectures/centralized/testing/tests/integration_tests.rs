@@ -1,7 +1,9 @@
 use std::time::Duration;
 
 use psyche_coordinator::RunState;
-use testing::{client::client_app_builder_default_for_testing, server::CoordinatorServerHandle};
+use testing::{
+    client_test_utils::client_app_builder_default_for_testing, server::CoordinatorServerHandle,
+};
 
 #[tokio::test]
 async fn connect_single_node() {
