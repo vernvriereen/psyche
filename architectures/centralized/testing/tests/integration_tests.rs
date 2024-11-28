@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
 async fn connect_single_node() {
-    let server_handle = CoordinatorServerHandle::new().await;
+    let server_handle = CoordinatorServerHandle::default().await;
 
     let client_app_builder = AppBuilder::default();
     tokio::spawn(async { client_app_builder.run().await.unwrap() });
@@ -25,7 +25,7 @@ async fn connect_single_node() {
 #[tokio::test(flavor = "multi_thread")]
 async fn connect_multiple_nodes() {
     let number_of_nodes: u32 = 10;
-    let server_handle = CoordinatorServerHandle::new().await;
+    let server_handle = CoordinatorServerHandle::default().await;
 
     for _ in 0..number_of_nodes {
         let client_app_builder = AppBuilder::default();
@@ -43,7 +43,7 @@ async fn connect_multiple_nodes() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn assert_state_change_waiting_for_members_to_warmup() {
-    let server_handle = CoordinatorServerHandle::new_custom(Some(2)).await;
+    let server_handle = CoordinatorServerHandle::new(Some(2)).await;
 
     let num_clients = server_handle.get_clients_len().await;
     let run_state = server_handle.get_run_state().await;

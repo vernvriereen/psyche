@@ -24,7 +24,7 @@ struct CoordinatorServer {
 }
 
 impl CoordinatorServer {
-    pub async fn new(query_chan_receiver: Receiver<TestingQueryMsg>) -> Self {
+    pub async fn default(query_chan_receiver: Receiver<TestingQueryMsg>) -> Self {
         let mut coordinator: Coordinator<ClientId> = Coordinator::default();
         coordinator.run_id = RUN_ID.to_string();
 
@@ -47,7 +47,7 @@ impl CoordinatorServer {
         }
     }
 
-    pub async fn new_custom(query_chan_receiver: Receiver<TestingQueryMsg>, init_min_clients: Option<u32>) -> Self {
+    pub async fn new(query_chan_receiver: Receiver<TestingQueryMsg>, init_min_clients: Option<u32>) -> Self {
         let mut coordinator: Coordinator<ClientId> = Coordinator::default();
         coordinator.run_id = RUN_ID.to_string();
 
@@ -98,16 +98,16 @@ pub struct CoordinatorServerHandle {
 }
 
 impl CoordinatorServerHandle {
-    pub async fn new() -> Self {
+    pub async fn default() -> Self {
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
-        let mut server = CoordinatorServer::new(query_chan_receiver).await;
+        let mut server = CoordinatorServer::default(query_chan_receiver).await;
         tokio::spawn(async move { server.run().await });
         Self { query_chan_sender }
     }
 
-    pub async fn new_custom(init_min_clients: Option<u32>) -> Self {
+    pub async fn new(init_min_clients: Option<u32>) -> Self {
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
-        let mut server = CoordinatorServer::new_custom(query_chan_receiver, init_min_clients).await;
+        let mut server = CoordinatorServer::new(query_chan_receiver, init_min_clients).await;
         tokio::spawn(async move { server.run().await });
         Self { query_chan_sender }
     }
