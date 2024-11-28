@@ -1,5 +1,5 @@
 [workspace]
-members = ["architectures/centralized/*", "shared/*", "tools/rust-tools/*"]
+members = ["architectures/centralized/*", "architectures/decentralized/solana-client", "shared/*", "tools/rust-tools/*"]
 resolver = "2"
 
 [workspace.metadata.crane]
@@ -19,6 +19,9 @@ psyche-serde = { path = "./shared/serde" }
 psyche-modeling = { path = "./shared/modeling" }
 psyche-tui = { path = "./shared/tui" }
 psyche-watcher = { path = "./shared/watcher" }
+
+psyche-solana-coordinator = { path = "./architectures/decentralized/solana-coordinator/programs/solana-coordinator" }
+psyche-solana-client = { path = "./architectures/decentralized/solana-client" }
 
 
 hf-hub = { git = "https://github.com/NousResearch/hf-hub.git", rev = "7764fac569bb20ba0a84cb2d0685fbd607834005" }
@@ -60,6 +63,8 @@ torch-sys = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "e8b64d8de
 # torch-sys = { path = "../tch-rs/torch-sys" }
 pretty_assertions = "1.4.1"
 time = { version = "0.3.36", features = ["formatting", "macros"] }
+solana-sdk = "2.1.4"
+solana-client = "2.1.4"
 
 # solana-program uses curve25519-dalek v3.2.1, which pins zeroize <1.4 for MSRV cares.
 # we don't care about that MSRV guarantee, so we override zeroize dep to be simply "=1"
