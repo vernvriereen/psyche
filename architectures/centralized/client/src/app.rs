@@ -90,9 +90,38 @@ pub struct AppParams {
     pub grad_accum_in_fp32: bool,
 }
 
+impl AppParams{
+    pub fn default() -> Self {
+        AppParams {
+            cancel: CancellationToken::default(),
+            private_key: SecretKey::generate(),
+            server_addr: "localhost:8080".to_string(),
+            tx_tui_state: None,
+            run_id: "test".to_string(),
+            data_parallelism: 1,
+            tensor_parallelism: 1,
+            micro_batch_size: None,
+            write_gradients_dir: None,
+            p2p_port: None,
+            eval_tasks: Vec::new(),
+            eval_task_max_docs: None,
+            checkpoint_upload_info: None,
+            hub_read_token: None,
+            wandb_info: None,
+            batch_shuffle_type: BatchShuffleType::Fixed([0; 32]),
+            optim_stats: None,
+            grad_accum_in_fp32: false,
+        }}
+
+}
+
 impl AppBuilder {
     pub fn new(params: AppParams) -> Self {
         Self(params)
+    }
+
+    pub fn default() -> Self {
+        AppBuilder(AppParams::default())
     }
 
     pub async fn run(self) -> Result<()> {
