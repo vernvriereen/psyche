@@ -5,7 +5,7 @@ version.workspace = true
 
 [dependencies]
 psyche-centralized-client = { path = "../client" }
-psyche-centralized-server = { path = "../server", features = ["testing"] }
+psyche-centralized-server = { path = "../server" }
 psyche-centralized-shared = { path = "../shared" }
 psyche-client.workspace = true
 psyche-coordinator.workspace = true

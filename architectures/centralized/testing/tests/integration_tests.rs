@@ -1,14 +1,13 @@
 use std::time::Duration;
 
-use psyche_centralized_client::app::AppBuilder;
 use psyche_coordinator::RunState;
-use testing::server::CoordinatorServerHandle;
+use testing::{client::client_app_builder_default_for_testing, server::CoordinatorServerHandle};
 
 #[tokio::test]
 async fn connect_single_node() {
     let server_handle = CoordinatorServerHandle::default().await;
 
-    let client_app_builder = AppBuilder::default();
+    let client_app_builder = client_app_builder_default_for_testing();
     tokio::spawn(async { client_app_builder.run().await.unwrap() });
 
     // Wait to ensure client is up
@@ -25,7 +24,7 @@ async fn connect_multiple_nodes() {
     let server_handle = CoordinatorServerHandle::default().await;
 
     for _ in 0..number_of_nodes {
-        let client_app_builder = AppBuilder::default();
+        let client_app_builder = client_app_builder_default_for_testing();
         tokio::spawn(async { client_app_builder.run().await.unwrap() });
     }
     // Wait to ensure client are up
@@ -51,7 +50,7 @@ async fn assert_state_change_waiting_for_members_to_warmup() {
     assert_eq!(run_state, RunState::WaitingForMembers);
 
     for _ in 0..2 {
-        let client_app_builder = AppBuilder::default();
+        let client_app_builder = client_app_builder_default_for_testing();
         tokio::spawn(async { client_app_builder.run().await.unwrap() });
     }
     // Wait to ensure client are up

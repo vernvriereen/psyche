@@ -102,7 +102,10 @@ pub struct App {
     original_min_clients: u32,
 }
 
-#[cfg(feature = "testing")]
+/// Methods intended for testing purposes only.
+///
+/// These methods provide access to internal App parameters
+/// to facilitate testing and debugging.
 impl App {
     pub fn get_pending_clients_len(&self) -> usize {
         self.backend.pending_clients.len()
@@ -119,17 +122,6 @@ pub struct DataServerInfo {
     pub token_size: TokenSize,
     pub seq_len: usize,
     pub shuffle_seed: [u8; 32],
-}
-
-impl DataServerInfo {
-    pub fn default() -> DataServerInfo {
-            DataServerInfo {
-                dir: PathBuf::from("./"),
-                token_size: TokenSize::TwoBytes,
-                seq_len: 2048,
-                shuffle_seed: [1; 32],
-            }
-    }
 }
 
 impl App {

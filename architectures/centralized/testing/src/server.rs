@@ -1,6 +1,9 @@
+use std::path::PathBuf;
+
 use psyche_centralized_server::app::{App as ServerApp, DataServerInfo};
 use psyche_centralized_shared::ClientId;
 use psyche_coordinator::{Coordinator, RunState};
+use psyche_data_provider::TokenSize;
 use tokio::{
     select,
     sync::{
@@ -10,6 +13,15 @@ use tokio::{
 };
 
 use crate::{RUN_ID, SERVER_PORT};
+
+fn data_server_info_default_for_testing() -> DataServerInfo {
+    DataServerInfo {
+        dir: PathBuf::from("./"),
+        token_size: TokenSize::TwoBytes,
+        seq_len: 2048,
+        shuffle_seed: [1; 32],
+    }
+}
 
 enum TestingQueryMsg {
     QueryClients {
@@ -33,7 +45,7 @@ impl CoordinatorServer {
         let server = ServerApp::new(
             false,
             coordinator,
-            Some(DataServerInfo::default()),
+            Some(data_server_info_default_for_testing()),
             None,
             Some(SERVER_PORT),
             None,
@@ -59,7 +71,7 @@ impl CoordinatorServer {
         let server = ServerApp::new(
             false,
             coordinator,
-            Some(DataServerInfo::default()),
+            Some(data_server_info_default_for_testing()),
             None,
             Some(SERVER_PORT),
             None,
