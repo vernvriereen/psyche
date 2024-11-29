@@ -25,3 +25,7 @@ dev-frontend:
 # spin up a local testnet
 local-testnet +args:
 	cargo run -p local-testnet -- {{args}}
+
+# run integration tests
+integration-test:
+    cargo test --test integration_tests -- --test-threads=1

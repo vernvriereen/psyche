@@ -13,7 +13,7 @@ async fn connect_single_node() {
     tokio::spawn(async { client_app_builder.run().await.unwrap() });
 
     // Wait to ensure client is up
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
     let num_clients = server_handle.get_clients_len().await;
 
@@ -30,7 +30,7 @@ async fn connect_multiple_nodes() {
         tokio::spawn(async { client_app_builder.run().await.unwrap() });
     }
     // Wait to ensure client are up
-    tokio::time::sleep(Duration::from_millis(150 * number_of_nodes)).await;
+    tokio::time::sleep(Duration::from_millis(200 * number_of_nodes)).await;
 
     let num_clients = server_handle.get_clients_len().await;
     let run_state = server_handle.get_run_state().await;
@@ -56,7 +56,7 @@ async fn assert_state_change_waiting_for_members_to_warmup() {
         tokio::spawn(async { client_app_builder.run().await.unwrap() });
     }
     // Wait to ensure client are up
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
     let num_clients = server_handle.get_clients_len().await;
     let run_state = server_handle.get_run_state().await;
