@@ -5,10 +5,8 @@ version.workspace = true
 
 [dependencies]
 anchor-client.workspace = true
-solana-sdk.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
-anchor-lang.workspace = true
 psyche-watcher.workspace = true
 psyche-solana-coordinator.workspace = true
 psyche-client.workspace = true
