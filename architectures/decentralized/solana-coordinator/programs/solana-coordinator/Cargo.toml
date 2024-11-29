@@ -17,6 +17,6 @@ no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
-anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "6fbfc40fe886ac1e943523e704a4991c325910a2" }
+anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "020a3046582944030f17b6524006eeaf26951cb8" }
 bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
 psyche-coordinator = { path = "../../../../../shared/coordinator" }
