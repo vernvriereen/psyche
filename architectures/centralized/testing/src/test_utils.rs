@@ -12,6 +12,26 @@ use tokio_util::sync::CancellationToken;
 use crate::RUN_ID;
 use crate::SERVER_PORT;
 
+pub async fn assert_with_retries<T, F, Fut>(mut function: F, y: T)
+where
+    T: PartialEq + std::fmt::Debug,
+    Fut: Future<Output = T>,
+    F: FnMut() -> Fut,
+{
+    let retry_attempts: u64 = 15;
+    let mut result;
+    for attempt in 1..=retry_attempts {
+        result = function().await;
+        if result == y {
+            return;
+        } else if attempt == retry_attempts {
+            panic!("assertion failed {:?} != {:?}", result, y);
+        } else {
+            tokio::time::sleep(Duration::from_millis(250 * attempt)).await;
+        }
+    }
+}
+
 pub fn client_app_params_default_for_testing() -> AppParams {
     AppParams {
         cancel: CancellationToken::default(),
@@ -45,26 +65,5 @@ pub fn data_server_info_default_for_testing() -> DataServerInfo {
         token_size: TokenSize::TwoBytes,
         seq_len: 2048,
         shuffle_seed: [1; 32],
-    }
-}
-
-const RETRY_ATTEMPTS: u64 = 15;
-
-pub async fn assert_with_retries<T, F, Fut>(mut function: F, y: T)
-where
-    T: PartialEq + std::fmt::Debug,
-    Fut: Future<Output = T>,
-    F: FnMut() -> Fut,
-{
-    let mut result;
-    for attempt in 1..=RETRY_ATTEMPTS {
-        result = function().await;
-        if result == y {
-            return;
-        } else if attempt == RETRY_ATTEMPTS {
-            panic!("assertion failed {:?} != {:?}", result, y);
-        } else {
-            tokio::time::sleep(Duration::from_millis(250 * attempt)).await;
-        }
     }
 }
