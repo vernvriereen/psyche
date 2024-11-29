@@ -1,23 +1,17 @@
-use std::time::Duration;
-
 use psyche_coordinator::RunState;
 use testing::{
-    client_test_utils::client_app_builder_default_for_testing, server::CoordinatorServerHandle,
+    server::CoordinatorServerHandle,
+    test_utils::{assert_with_retries, client_app_builder_default_for_testing},
 };
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn connect_single_node() {
     let server_handle = CoordinatorServerHandle::default().await;
 
     let client_app_builder = client_app_builder_default_for_testing();
     tokio::spawn(async { client_app_builder.run().await.unwrap() });
 
-    // Wait to ensure client is up
-    tokio::time::sleep(Duration::from_secs(1)).await;
-
-    let num_clients = server_handle.get_clients_len().await;
-
-    assert_eq!(num_clients, 1);
+    assert_with_retries(|| server_handle.get_clients_len(), 1).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -29,14 +23,13 @@ async fn connect_multiple_nodes() {
         let client_app_builder = client_app_builder_default_for_testing();
         tokio::spawn(async { client_app_builder.run().await.unwrap() });
     }
-    // Wait to ensure client are up
-    tokio::time::sleep(Duration::from_millis(200 * number_of_nodes)).await;
 
-    let num_clients = server_handle.get_clients_len().await;
-    let run_state = server_handle.get_run_state().await;
-
-    assert_eq!(num_clients as u64, number_of_nodes);
-    assert_eq!(run_state, RunState::WaitingForMembers);
+    assert_with_retries(|| server_handle.get_clients_len(), number_of_nodes as usize).await;
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -45,22 +38,18 @@ async fn assert_state_change_waiting_for_members_to_warmup() {
 
     let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
 
-    let num_clients = server_handle.get_clients_len().await;
-    let run_state = server_handle.get_run_state().await;
-
-    assert_eq!(num_clients, 0);
-    assert_eq!(run_state, RunState::WaitingForMembers);
+    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
 
     for _ in 0..2 {
         let client_app_builder = client_app_builder_default_for_testing();
         tokio::spawn(async { client_app_builder.run().await.unwrap() });
     }
-    // Wait to ensure client are up
-    tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let num_clients = server_handle.get_clients_len().await;
-    let run_state = server_handle.get_run_state().await;
-
-    assert_eq!(num_clients, 2);
-    assert_eq!(run_state, RunState::Warmup);
+    assert_with_retries(|| server_handle.get_clients_len(), 2).await;
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
 }

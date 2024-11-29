@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use psyche_centralized_server::app::App as ServerApp;
 use psyche_centralized_shared::ClientId;
 use psyche_coordinator::{Coordinator, RunState};
@@ -11,7 +9,7 @@ use tokio::{
     },
 };
 
-use crate::{server_test_utils::data_server_info_default_for_testing, RUN_ID, SERVER_PORT};
+use crate::{test_utils::data_server_info_default_for_testing, RUN_ID, SERVER_PORT};
 
 enum TestingQueryMsg {
     QueryClients {
@@ -109,9 +107,6 @@ impl CoordinatorServerHandle {
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
         let mut server = CoordinatorServer::default(query_chan_receiver).await;
         tokio::spawn(async move { server.run().await });
-
-        // Wait to ensure Server is up
-        tokio::time::sleep(Duration::from_millis(250)).await;
 
         Self { query_chan_sender }
     }

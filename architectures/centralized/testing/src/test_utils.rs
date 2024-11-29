@@ -1,5 +1,11 @@
+use std::future::Future;
+use std::path::PathBuf;
+use std::time::Duration;
+
 use psyche_centralized_client::app::{AppBuilder, AppParams};
+use psyche_centralized_server::app::DataServerInfo;
 use psyche_client::BatchShuffleType;
+use psyche_data_provider::TokenSize;
 use psyche_network::SecretKey;
 use tokio_util::sync::CancellationToken;
 
@@ -31,4 +37,34 @@ pub fn client_app_params_default_for_testing() -> AppParams {
 
 pub fn client_app_builder_default_for_testing() -> AppBuilder {
     AppBuilder::new(client_app_params_default_for_testing())
+}
+
+pub fn data_server_info_default_for_testing() -> DataServerInfo {
+    DataServerInfo {
+        dir: PathBuf::from("./"),
+        token_size: TokenSize::TwoBytes,
+        seq_len: 2048,
+        shuffle_seed: [1; 32],
+    }
+}
+
+const RETRY_ATTEMPTS: u64 = 15;
+
+pub async fn assert_with_retries<T, F, Fut>(mut function: F, y: T)
+where
+    T: PartialEq + std::fmt::Debug,
+    Fut: Future<Output = T>,
+    F: FnMut() -> Fut,
+{
+    let mut result;
+    for attempt in 1..=RETRY_ATTEMPTS {
+        result = function().await;
+        if result == y {
+            return;
+        } else if attempt == RETRY_ATTEMPTS {
+            panic!("assertion failed {:?} != {:?}", result, y);
+        } else {
+            tokio::time::sleep(Duration::from_millis(250 * attempt)).await;
+        }
+    }
 }
