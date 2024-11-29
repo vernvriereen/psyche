@@ -64,7 +64,7 @@ torch-sys = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "e8b64d8de
 pretty_assertions = "1.4.1"
 time = { version = "0.3.36", features = ["formatting", "macros"] }
 solana-sdk = "2.1.4"
-solana-client = "2.1.4"
+anchor-client = "0.30.1"
 
 # solana-program uses curve25519-dalek v3.2.1, which pins zeroize <1.4 for MSRV cares.
 # we don't care about that MSRV guarantee, so we override zeroize dep to be simply "=1"

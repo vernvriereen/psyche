@@ -8,7 +8,7 @@ mod tui;
 
 pub use client::Client;
 pub use protocol::{
-    BroadcastMessage, ClientId, DistroResult, Payload, PeerAnnouncement, TrainingResult, NC,
+    BroadcastMessage, DistroResult, Payload, PeerAnnouncement, TrainingResult, NC,
 };
 pub use serialized_distro::{
     disto_results_to_bytes, distro_results_from_reader, SerializedDistroResult,

@@ -1,7 +1,6 @@
 use std::str::FromStr;
 
 use anyhow::Result;
-use psyche_client::ClientId;
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_watcher::Backend as WatcherBackend;
 use solana_client::rpc_client::RpcClient;

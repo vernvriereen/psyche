@@ -1,5 +1,9 @@
 use anchor_lang::prelude::*;
 
+mod client_id;
+
+pub use client_id::ClientId;
+
 declare_id!("2mQJR6fyjAJwoevxzZVLW6ReLenK1dxPzDmVTVMW5AKx");
 
 #[program]

@@ -1272,6 +1272,7 @@ name = "psyche-solana-coordinator"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "bytemuck",
  "psyche-coordinator",
 ]
 
