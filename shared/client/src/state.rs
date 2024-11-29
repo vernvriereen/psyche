@@ -9,8 +9,8 @@ use crate::{
 use anyhow::{anyhow, bail, Error, Result};
 use psyche_coordinator::{
     assign_data_for_state, get_batch_ids_for_round, model, Committee, CommitteeProof,
-    CommitteeSelection, Coordinator, HealthChecks, RunState, Witness, WitnessProof,
-    BLOOM_FALSE_RATE, BLOOM_MAX_BITS,
+    CommitteeSelection, Coordinator, HealthChecks, RunState, Witness, WitnessBloom, WitnessProof,
+    BLOOM_FALSE_RATE,
 };
 use psyche_core::{sha256, Bloom, BoundedQueue, IntervalTree, NodeIdentity, RunningAverage};
 use psyche_data_provider::{
@@ -65,7 +65,6 @@ pub enum ToSend {
     HealthCheck(HealthChecks),
     Checkpoint(model::Checkpoint),
 }
-type Bloom32 = Bloom<[u8; 32]>;
 
 // type Rollbacks = BoundedQueue<(BatchStep, Vec<DistroResults>)>;
 
@@ -165,7 +164,7 @@ struct RoundState<T: NodeIdentity> {
     results: HashMap<u64, Vec<(T, TrainingResult)>>,
     commitments_per_client: HashMap<T, u32>,
     data_assignments: IntervalTree<u64, T>,
-    blooms: Option<(Bloom32, Bloom32, Bloom32)>,
+    blooms: Option<(WitnessBloom, WitnessBloom, WitnessBloom)>,
     committee_info: Option<(CommitteeProof, WitnessProof, CommitteeSelection)>,
     all_batches_finished_deserializing: Arc<AtomicBool>,
     training_data: Option<TrainingDataForStep>,
@@ -1274,33 +1273,10 @@ impl<T: NodeIdentity> State<T> {
         );
         self.current_round.blooms = match witness_proof.witness {
             true => {
-                let commit_bloom = Bloom::random(
-                    num_batch_ids_for_this_round * 2,
-                    BLOOM_FALSE_RATE,
-                    BLOOM_MAX_BITS,
-                );
-                let participant_bloom =
-                    Bloom::random(state.clients.len(), BLOOM_FALSE_RATE, BLOOM_MAX_BITS);
-                let order_bloom = Bloom::random(
-                    num_batch_ids_for_this_round,
-                    BLOOM_FALSE_RATE,
-                    BLOOM_MAX_BITS,
-                );
-                debug!(
-                    "Commit bloom size: {} bits, {} keys",
-                    commit_bloom.bits.len(),
-                    commit_bloom.keys.len()
-                );
-                debug!(
-                    "Participant bloom size: {} bits, {} keys",
-                    participant_bloom.bits.len(),
-                    participant_bloom.keys.len()
-                );
-                debug!(
-                    "Order bloom size: {} bits, {} keys",
-                    order_bloom.bits.len(),
-                    order_bloom.keys.len()
-                );
+                let commit_bloom =
+                    Bloom::random(num_batch_ids_for_this_round * 2, BLOOM_FALSE_RATE);
+                let participant_bloom = Bloom::random(state.clients.len(), BLOOM_FALSE_RATE);
+                let order_bloom = Bloom::random(num_batch_ids_for_this_round, BLOOM_FALSE_RATE);
                 Some((commit_bloom, participant_bloom, order_bloom))
             }
             false => None,
