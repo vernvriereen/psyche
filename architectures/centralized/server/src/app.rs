@@ -314,9 +314,11 @@ impl App {
 
     fn on_disconnect(&mut self, from: ClientId) {
         self.backend.pending_clients.remove(&Client {
-            id: from,
+            id: from.clone(),
             dropping_at_end_of_round: true,
         });
+
+        self.coordinator.clients.retain(|client| client.id != from);
     }
     async fn on_client_message(&mut self, from: ClientId, event: ClientToServerMessage) {
         match event {
