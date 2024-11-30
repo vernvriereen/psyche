@@ -1,5 +1,10 @@
 [workspace]
-members = ["architectures/centralized/*", "shared/*", "tools/rust-tools/*"]
+members = [
+    "architectures/centralized/*",
+    "architectures/decentralized/solana-client",
+    "shared/*",
+    "tools/rust-tools/*",
+]
 resolver = "2"
 
 [workspace.metadata.crane]
@@ -19,6 +24,9 @@ psyche-serde = { path = "./shared/serde" }
 psyche-modeling = { path = "./shared/modeling" }
 psyche-tui = { path = "./shared/tui" }
 psyche-watcher = { path = "./shared/watcher" }
+
+psyche-solana-coordinator = { path = "./architectures/decentralized/solana-coordinator/programs/solana-coordinator" }
+psyche-solana-client = { path = "./architectures/decentralized/solana-client" }
 
 
 hf-hub = { git = "https://github.com/NousResearch/hf-hub.git", rev = "7764fac569bb20ba0a84cb2d0685fbd607834005" }
@@ -45,7 +53,6 @@ sha2 = "0.10.8"
 futures = "0.3.30"
 futures-util = "0.3.30"
 chrono = "0.4.38"
-anchor-lang = "0.30.1"
 fast-math = "0.1"
 async-trait = "0.1.82"
 iroh = "0.26.0"
@@ -61,10 +68,9 @@ torch-sys = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "e8b64d8de
 pretty_assertions = "1.4.1"
 time = { version = "0.3.36", features = ["formatting", "macros"] }
 
-# solana-program uses curve25519-dalek v3.2.1, which pins zeroize <1.4 for MSRV cares.
-# we don't care about that MSRV guarantee, so we override zeroize dep to be simply "=1"
-[patch.crates-io]
-curve25519-dalek = { git = "https://github.com/NousResearch/curve25519-dalek.git", rev = "20f6f1540c8ce7fcd54c33470e06032946b2a143" }
+anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "020a3046582944030f17b6524006eeaf26951cb8" }
+anchor-client = { git = "https://github.com/coral-xyz/anchor.git", rev = "020a3046582944030f17b6524006eeaf26951cb8", features = ["async"] }
+
 
 [profile.release]
 debug = false

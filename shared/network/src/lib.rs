@@ -29,6 +29,7 @@ use tracing::{debug, error, info};
 use util::{fmt_relay_mode, gossip_topic};
 
 mod download_manager;
+mod networkable_node_identity;
 mod peer_list;
 mod serde;
 mod signed_message;
@@ -46,6 +47,7 @@ pub use iroh::{
         NodeId,
     },
 };
+pub use networkable_node_identity::NetworkableNodeIdentity;
 pub use peer_list::PeerList;
 pub use serde::Networkable;
 pub use signed_message::SignedMessage;

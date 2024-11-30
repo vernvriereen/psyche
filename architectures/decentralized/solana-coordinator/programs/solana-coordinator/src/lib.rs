@@ -1,6 +1,10 @@
 use anchor_lang::prelude::*;
 
-declare_id!("8Ff7mrPkP9QD9vER8WVNwf18293HFzawcJG3CjjQKWky");
+mod client_id;
+
+pub use client_id::ClientId;
+
+declare_id!("93nSTEimZTz6cMN6KCkEjJPbSxMtTBf1kntSRzB9bTsQ");
 
 #[program]
 pub mod solana_coordinator {

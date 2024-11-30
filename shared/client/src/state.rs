@@ -12,7 +12,7 @@ use psyche_coordinator::{
     CommitteeSelection, Coordinator, HealthChecks, RunState, Witness, WitnessBloom, WitnessProof,
     BLOOM_FALSE_RATE,
 };
-use psyche_core::{sha256, Bloom, BoundedQueue, IntervalTree, NodeIdentity, RunningAverage};
+use psyche_core::{sha256, Bloom, BoundedQueue, IntervalTree, RunningAverage};
 use psyche_data_provider::{
     download_model_repo_async, upload_model_repo_async, DataProviderTcpClient,
 };
@@ -20,7 +20,7 @@ use psyche_eval::EvalTaskOptions;
 use psyche_modeling::{
     auto_tokenizer, save_tensors_into_safetensors, CommunicatorId, DistroResult, LlamaForCausalLM,
 };
-use psyche_network::{dummy_blob_ticket, BlobTicket, NetworkEvent, PublicKey};
+use psyche_network::{dummy_blob_ticket, BlobTicket, NetworkEvent, NetworkableNodeIdentity, PublicKey};
 use psyche_watcher::{Backend, BackendWatcher};
 use rand::{seq::SliceRandom, thread_rng, Rng, RngCore};
 use std::{
@@ -51,7 +51,7 @@ const DOWNLOAD_RETRIES: usize = 3;
 type TaskResult<T> = Option<JoinHandle<Result<T>>>;
 
 #[derive(Debug)]
-enum PayloadState<T: NodeIdentity> {
+enum PayloadState<T: NetworkableNodeIdentity> {
     Downloading((T, u64, BlobTicket)),
     Deserializing(JoinHandle<Result<Vec<DistroResult>>>),
 }
@@ -91,7 +91,7 @@ pub enum BatchShuffleType {
     Fixed([u8; 32]),
 }
 
-pub struct State<T: NodeIdentity> {
+pub struct State<T: NetworkableNodeIdentity> {
     pub identity: T,
     private_key: T::PrivateKey,
     data_and_model_load: TaskResult<LoadedModelAndData<T>>,
@@ -141,7 +141,7 @@ pub struct State<T: NodeIdentity> {
     _eval_results: HashMap<String, Vec<f64>>,
 }
 
-pub struct StateOptions<T: NodeIdentity> {
+pub struct StateOptions<T: NetworkableNodeIdentity> {
     pub identity: T,
     pub private_key: T::PrivateKey,
     pub data_parallelism: usize,
@@ -157,7 +157,7 @@ pub struct StateOptions<T: NodeIdentity> {
     pub optim_stats: Option<u32>,
     pub grad_accum_in_fp32: bool,
 }
-struct RoundState<T: NodeIdentity> {
+struct RoundState<T: NetworkableNodeIdentity> {
     height: u32,
     sent_witness: bool,
     downloads: HashMap<psyche_network::Hash, PayloadState<T>>,
@@ -170,7 +170,7 @@ struct RoundState<T: NodeIdentity> {
     training_data: Option<TrainingDataForStep>,
 }
 
-impl<T: NodeIdentity> RoundState<T> {
+impl<T: NetworkableNodeIdentity> RoundState<T> {
     fn new() -> Self {
         Self {
             height: 0,
@@ -187,13 +187,13 @@ impl<T: NodeIdentity> RoundState<T> {
     }
 }
 
-impl<T: NodeIdentity> Default for RoundState<T> {
+impl<T: NetworkableNodeIdentity> Default for RoundState<T> {
     fn default() -> Self {
         RoundState::new()
     }
 }
 
-impl<T: NodeIdentity> RoundState<T> {
+impl<T: NetworkableNodeIdentity> RoundState<T> {
     fn get_witness_to_send(&mut self, index: u64) -> Option<Witness> {
         if self.sent_witness {
             return None;
@@ -221,7 +221,7 @@ impl<T: NodeIdentity> RoundState<T> {
     }
 }
 
-impl<T: NodeIdentity> State<T> {
+impl<T: NetworkableNodeIdentity> State<T> {
     pub fn new(
         StateOptions {
             identity,
@@ -1943,7 +1943,7 @@ impl<T: NodeIdentity> State<T> {
     }
 }
 
-impl<T: NodeIdentity> From<&State<T>> for ClientTUIState {
+impl<T: NetworkableNodeIdentity> From<&State<T>> for ClientTUIState {
     fn from(value: &State<T>) -> Self {
         let coordinator = value.state.as_ref();
         let committee = value
@@ -2066,7 +2066,7 @@ struct RawLoadedModel {
     pub checkpoint_extra_files: Vec<PathBuf>,
 }
 
-struct LoadedModelAndData<T: NodeIdentity> {
+struct LoadedModelAndData<T: NetworkableNodeIdentity> {
     data_provider: DataProviderTcpClient<T>,
     models: Vec<ParallelModels>,
     tokenizer: Tokenizer,
