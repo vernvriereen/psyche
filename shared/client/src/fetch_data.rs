@@ -1,6 +1,7 @@
 use psyche_coordinator::{get_batch_ids_for_round, Coordinator};
-use psyche_core::{IntervalTree, NodeIdentity};
+use psyche_core::IntervalTree;
 use psyche_data_provider::{DataProviderTcpClient, TokenizedDataProvider};
+use psyche_network::NetworkableNodeIdentity;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::{
@@ -21,14 +22,14 @@ pub type BatchId = u64;
 pub type BatchStep = u32;
 pub type BatchIdSet = HashSet<BatchId>;
 
-pub struct DataFetcher<T: NodeIdentity> {
+pub struct DataFetcher<T: NetworkableNodeIdentity> {
     data_provider: Arc<Mutex<DataProviderTcpClient<T>>>,
     active_fetch_task: Option<(BatchStep, JoinHandle<()>)>,
     buffer_size: usize,
     get_rng_seed: Box<dyn Fn() -> [u8; 32] + Send>,
 }
 
-impl<T: NodeIdentity> DataFetcher<T> {
+impl<T: NetworkableNodeIdentity> DataFetcher<T> {
     pub fn new(
         data_provider: DataProviderTcpClient<T>,
         buffer_size: usize,

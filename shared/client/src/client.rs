@@ -6,7 +6,7 @@ use crate::{
 use anyhow::Result;
 use psyche_coordinator::Coordinator;
 use psyche_core::NodeIdentity;
-use psyche_network::NetworkTUIState;
+use psyche_network::{NetworkTUIState, NetworkableNodeIdentity};
 use psyche_watcher::{Backend, BackendWatcher};
 use std::{
     borrow::BorrowMut,
@@ -78,7 +78,7 @@ impl Rebroadcast {
     }
 }
 
-impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
+impl<T: NetworkableNodeIdentity, B: Backend<T> + 'static> Client<T, B> {
     // todo: refactor into a struct
     #[allow(clippy::too_many_arguments)]
     pub fn new(

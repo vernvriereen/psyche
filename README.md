@@ -122,15 +122,15 @@ To build the centralized client & push it to docker.io's hub, `just docker-push-
 ## Solana
 
 To build the Solana programs, install required Solana tools (Step 7 in Setup).
-
 For local development, create a wallet and switch the using a local validator.
 
 ```bash
 solana-keygen new
 solana config set --url localhost
 ```
-
 Then, in a new terminal, run a validator with `solana-test-validator`.
+Once that's running, you can deploy the solana coordinator using `just deploy-local-solana-coordinator`
+and send a basic transaction from a client running `cargo run -p psyche-solana-client`
 
 ## Utils
 
