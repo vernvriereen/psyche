@@ -7,7 +7,7 @@ use psyche_core::NodeIdentity;
 use psyche_data_provider::{
     DataProviderTcpClient, DataProviderTcpServer, LengthKnownDataProvider, TokenizedDataProvider,
 };
-use psyche_network::Networkable;
+use psyche_network::{Networkable, NetworkableNodeIdentity};
 use psyche_tui::init_logging;
 use psyche_watcher::Backend as WatcherBackend;
 use rand::Rng;
@@ -17,10 +17,10 @@ use tracing::{info, Level};
 
 // Simulated backend for demonstration
 #[allow(dead_code)]
-struct DummyBackend<T: NodeIdentity>(Vec<T>);
+struct DummyBackend<T: NetworkableNodeIdentity>(Vec<T>);
 
 #[async_trait]
-impl<T: NodeIdentity> WatcherBackend<T> for DummyBackend<T> {
+impl<T: NetworkableNodeIdentity> WatcherBackend<T> for DummyBackend<T> {
     async fn wait_for_new_state(&mut self) -> Result<Coordinator<T>> {
         Ok(Coordinator::default())
     }
@@ -49,6 +49,9 @@ impl Display for DummyNodeIdentity {
 }
 
 impl NodeIdentity for DummyNodeIdentity {
+}
+
+impl NetworkableNodeIdentity for DummyNodeIdentity {
     type PrivateKey = ();
     fn from_signed_bytes(bytes: &[u8], challenge: [u8; 32]) -> Result<Self> {
         let (serialized_challenge, bytes) = bytes.split_at(32);

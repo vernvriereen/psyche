@@ -3089,6 +3089,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3688e69b38018fec1557254f64c8dc2cc8ec502890182f395dbb0aa997aa5735"
 
 [[package]]
+name = "home"
+version = "0.5.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3d1354bf6b7235cb4a0576c2619fd4ed18183f689b12b006a0ee7329eeff9a5"
+dependencies = [
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "hostname"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5814,6 +5823,7 @@ dependencies = [
  "anchor-client",
  "anyhow",
  "async-trait",
+ "home",
  "psyche-client",
  "psyche-coordinator",
  "psyche-solana-coordinator",
@@ -5828,6 +5838,7 @@ dependencies = [
  "anchor-lang",
  "bytemuck",
  "psyche-coordinator",
+ "psyche-core",
 ]
 
 [[package]]
@@ -5854,6 +5865,7 @@ dependencies = [
  "async-trait",
  "psyche-coordinator",
  "psyche-core",
+ "psyche-network",
  "psyche-tui",
 ]
 

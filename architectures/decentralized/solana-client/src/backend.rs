@@ -1,30 +1,21 @@
-use std::str::FromStr;
-
+use anchor_client::{solana_sdk::signature::Keypair, Client, Cluster, Program};
 use anyhow::Result;
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_watcher::Backend as WatcherBackend;
-use solana_client::rpc_client::RpcClient;
-use solana_sdk::{
-    instruction::Instruction, pubkey::Pubkey, signature::Keypair, signer::Signer,
-    transaction::Transaction,
-};
+use solana_coordinator::ClientId;
+use std::sync::Arc;
 
 pub struct SolanaBackend {
-    client: solana_client::rpc_client::RpcClient,
-    payer: Keypair,
-    program_id: solana_sdk::pubkey::Pubkey,
+    program: Program<Arc<Keypair>>,
 }
 
 impl SolanaBackend {
-    pub fn new(url: String, program_id: String, payer: Keypair) -> Result<Self> {
-        let client = RpcClient::new(url);
-        let program_id = Pubkey::from_str(&program_id)?;
+    pub fn new(cluster: Cluster, payer: Keypair) -> Result<Self> {
+        let payer = Arc::new(payer);
+        let client = Client::new(cluster, payer.clone());
+        let program = client.program(solana_coordinator::ID)?;
 
-        Ok(Self {
-            client,
-            payer,
-            program_id,
-        })
+        Ok(Self { program })
     }
 }
 
@@ -53,28 +44,13 @@ impl WatcherBackend<ClientId> for SolanaBackend {
 
 impl SolanaBackend {
     pub async fn send_transacion_test(&mut self) -> Result<()> {
-        let accounts = vec![solana_sdk::instruction::AccountMeta::new_readonly(
-            self.payer.pubkey(),
-            true,
-        )];
-
-        let data =
-            anchor_lang::InstructionData::data(&solana_coordinator::instruction::Initialize {});
-        let initialize_instruction = Instruction {
-            program_id: self.program_id,
-            accounts,
-            data,
-        };
-
-        let recent_blockhash = self.client.get_latest_blockhash()?;
-        let transaction = Transaction::new_signed_with_payer(
-            &[initialize_instruction],
-            Some(&self.payer.pubkey()),
-            &[&self.payer],
-            recent_blockhash,
-        );
-        let signature = self.client.send_and_confirm_transaction(&transaction)?;
-
+        let signature = self
+            .program
+            .request()
+            .accounts(solana_coordinator::accounts::Initialize {})
+            .args(solana_coordinator::instruction::Initialize)
+            .send()
+            .await?;
         println!("Transaction confirmed with signature: {}", signature);
         Ok(())
     }

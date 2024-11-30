@@ -4,7 +4,7 @@ mod client_id;
 
 pub use client_id::ClientId;
 
-declare_id!("2mQJR6fyjAJwoevxzZVLW6ReLenK1dxPzDmVTVMW5AKx");
+declare_id!("93nSTEimZTz6cMN6KCkEjJPbSxMtTBf1kntSRzB9bTsQ");
 
 #[program]
 pub mod solana_coordinator {
