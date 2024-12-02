@@ -55,7 +55,7 @@ async fn assert_state_change_waiting_for_members_to_warmup() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn assert_state_warmup_to_change_waiting_for_members() {
+async fn assert_state_change_warmup_to_waiting_for_members() {
     let server_handle = CoordinatorServerHandle::new(2).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
