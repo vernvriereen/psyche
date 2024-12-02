@@ -48,7 +48,9 @@ impl SolanaBackend {
             .program
             .request()
             .accounts(solana_coordinator::accounts::Initialize {})
-            .args(solana_coordinator::instruction::Initialize)
+            .args(solana_coordinator::instruction::Initialize {
+                run_id: "Test".to_string(),
+            })
             .send()
             .await?;
         println!("Transaction confirmed with signature: {}", signature);

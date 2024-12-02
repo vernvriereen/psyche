@@ -6,7 +6,7 @@ use psyche_core::NodeIdentity;
 #[derive(Debug, InitSpace)]
 pub struct ClientId {
     pub owner: Pubkey,
-    pub p2p_identity: [u8; 32]
+    pub p2p_identity: [u8; 32],
 }
 
 impl AsRef<[u8]> for ClientId {
@@ -27,8 +27,7 @@ impl std::cmp::PartialEq for ClientId {
     }
 }
 
-impl std::cmp::Eq for ClientId {
-}
+impl std::cmp::Eq for ClientId {}
 
 impl std::fmt::Display for ClientId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -36,5 +35,4 @@ impl std::fmt::Display for ClientId {
     }
 }
 
-impl NodeIdentity for ClientId {
-}
+impl NodeIdentity for ClientId {}

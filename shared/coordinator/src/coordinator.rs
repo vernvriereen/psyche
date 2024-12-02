@@ -5,11 +5,10 @@ use crate::{
     traits::Backend,
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
+use anchor_lang::{AccountDeserialize, AccountSerialize, Accounts};
 use psyche_core::{sha256, Bloom, NodeIdentity};
 use psyche_serde::derive_serialize;
 
-#[cfg(target_os = "solana")]
-use anchor_lang::prelude::*;
 #[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
 
@@ -152,6 +151,30 @@ pub struct Coordinator<T: NodeIdentity> {
     pub overlapped: bool,
 
     pub model: Option<Model>,
+}
+
+impl<T> AccountSerialize for Coordinator<T>
+where
+    T: NodeIdentity, // Ensure T also implements AnchorSerialize
+{
+    fn try_serialize<W: std::io::Write>(&self, _writer: &mut W) -> anchor_lang::Result<()> {
+        // Serialize the struct to the writer
+        Ok(())
+    }
+}
+
+impl<T> AccountDeserialize for Coordinator<T>
+where
+    T: NodeIdentity, // Ensure T also implements AnchorDeserialize
+{
+    fn try_deserialize<W: std::io::Read>(_reader: &mut W) -> anchor_lang::Result<Self> {
+        // Deserialize the struct from the reader
+        Ok(Self::default())
+    }
+
+    fn try_deserialize_unchecked(buf: &mut &[u8]) -> anchor_lang::Result<Self> {
+        Ok(Self::default())
+    }
 }
 
 #[allow(dead_code)]

@@ -8,6 +8,7 @@ psyche-core.workspace = true
 psyche-serde.workspace = true
 async-trait.workspace = true
 tracing.workspace = true
+anchor-lang.workspace = true
 
 [target.'cfg(target_os = "solana")'.dependencies]
 anchor-lang.workspace = true
