@@ -1,11 +1,17 @@
 use crate::{Client, Coordinator, CoordinatorError};
 use psyche_core::{compute_shuffled_index, sha256, sha256v, NodeIdentity};
+use psyche_serde::derive_serialize;
+
+#[cfg(target_os = "solana")]
+use anchor_lang::prelude::*;
+#[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
 
 pub const COMMITTEE_SALT: &str = "committee";
 pub const WITNESS_SALT: &str = "witness";
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive_serialize]
 pub enum Committee {
     TieBreaker,
     Verifier,
@@ -21,14 +27,16 @@ pub struct CommitteeSelection {
     seed: [u8; 32],
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive_serialize]
 pub struct CommitteeProof {
     pub committee: Committee,
     pub position: u64,
     pub index: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive_serialize]
 pub struct WitnessProof {
     pub witness: bool,
     pub position: u64,
@@ -64,15 +72,18 @@ impl CommitteeSelection {
 
     pub fn from_coordinator<T: NodeIdentity>(
         coordinator: &Coordinator<T>,
-    ) -> Result<Self, CoordinatorError> {
-        let round = coordinator
-            .current_round()
-            .ok_or(CoordinatorError::NoActiveRound)?;
+        previous_round: bool,
+    ) -> std::result::Result<Self, CoordinatorError> {
+        let round = match previous_round {
+            true => coordinator.previous_round(),
+            false => coordinator.current_round(),
+        }
+        .ok_or(CoordinatorError::NoActiveRound)?;
         Ok(Self::new(
             round.tie_breaker_tasks as usize,
             coordinator.witness_nodes as usize,
             coordinator.verification_percent,
-            coordinator.clients.len(),
+            round.clients_len as usize,
             round.random_seed,
         ))
     }

@@ -1,4 +1,5 @@
-use psyche_core::Networkable;
+use crate::{peer_list::PeerList, util::convert_bytes, NetworkConnection, Networkable};
+
 use psyche_tui::ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
@@ -9,15 +10,12 @@ use psyche_tui::ratatui::{
         Widget, Wrap,
     },
 };
-
 use iroh::net::{endpoint::ConnectionType, key::PublicKey};
 use std::{
     collections::{HashMap, VecDeque},
     ops::Sub,
     time::Instant,
 };
-
-use crate::{peer_list::PeerList, util::convert_bytes, NetworkConnection};
 
 #[derive(Default, Debug)]
 pub struct NetworkTui;

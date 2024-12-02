@@ -2,10 +2,10 @@
 use sha2::{Digest, Sha256};
 
 #[cfg(target_os = "solana")]
-use anchor_lang::solana_program::hash::{hash, hashv, Hash};
+use anchor_lang::solana_program::hash::{hash, hashv};
 
 pub fn sha256(data: &[u8]) -> [u8; 32] {
-    #[cfg(not(feature = "solana"))]
+    #[cfg(not(target_os = "solana"))]
     {
         let mut hasher = Sha256::new();
         hasher.update(data);

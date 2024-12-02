@@ -1,12 +1,12 @@
 use crate::traits::Backend;
 use anyhow::Result;
 use psyche_coordinator::{Client, Coordinator, RunState};
-use psyche_core::NodeIdentity;
+use psyche_network::NetworkableNodeIdentity;
 use std::{collections::HashMap, mem::replace};
 
 pub struct BackendWatcher<T, B>
 where
-    T: NodeIdentity,
+    T: NetworkableNodeIdentity,
     B: Backend<T> + Send + 'static,
 {
     backend: B,
@@ -16,7 +16,7 @@ where
 
 impl<T, B> BackendWatcher<T, B>
 where
-    T: NodeIdentity,
+    T: NetworkableNodeIdentity,
     B: Backend<T> + Send + 'static,
 {
     pub fn new(backend: B) -> Self {

@@ -1,17 +1,17 @@
-use std::{fmt::Debug, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 
-use crate::util::convert_bytes;
+use crate::{util::convert_bytes, Networkable};
+
 use anyhow::{bail, Context, Error, Result};
 use bytes::Bytes;
 use futures_util::future::select_all;
 use iroh::base::ticket::BlobTicket;
 use iroh::blobs::get::db::DownloadProgress;
 use iroh::net::key::PublicKey;
-use psyche_core::Networkable;
 use tokio::{
     sync::{mpsc, oneshot, Mutex},
     task::JoinHandle,
 };
+use std::{fmt::Debug, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 use tracing::{debug, error, info, warn};
 
 #[derive(Debug)]

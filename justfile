@@ -18,10 +18,6 @@ docker-build-centralized-client:
 docker-push-centralized-client: docker-build-centralized-client
 	docker push docker.io/nousresearch/psyche-centralized-client
 
-# dev the frontend
-dev-frontend:
-	cd frontend && bun install && bun dev
-
 # spin up a local testnet
 local-testnet +args:
 	cargo run -p local-testnet -- {{args}}
@@ -29,3 +25,7 @@ local-testnet +args:
 # run integration tests
 integration-test:
     cargo test --test integration_tests -- --test-threads=1
+
+# build solana coordinator
+deploy-local-solana-coordinator:
+    cd architectures/decentralized/solana-coordinator && anchor build && anchor deploy
