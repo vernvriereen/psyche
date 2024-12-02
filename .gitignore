@@ -19,7 +19,6 @@ ehthumbs.db
 ehthumbs_vista.db
 [Dd]esktop.ini
 
-
 ### Tooling ###
 result
 nix-results/
@@ -33,15 +32,12 @@ perf.data.*
 libtorch*
 slurm*
 
-## JS ##
-node_modules/
-.env.local
-dist/
-
 ### Data folders ###
 /data
 /distro-data
 checkpoints/
 logs/
-
 txt/
+
+### Solana ###
+test-ledger

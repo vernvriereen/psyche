@@ -1,10 +1,9 @@
 use anyhow::Result;
 use psyche_coordinator::Coordinator;
-use psyche_core::NodeIdentity;
-use psyche_network::{ClientNotification, TcpServer};
+use psyche_network::{ClientNotification, NetworkableNodeIdentity, TcpServer};
 use psyche_watcher::Backend;
 use std::collections::{HashMap, HashSet};
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 use crate::traits::{LengthKnownDataProvider, TokenizedDataProvider};
 
@@ -12,7 +11,7 @@ use super::shared::{ClientToServerMessage, RejectionReason, ServerToClientMessag
 
 pub struct DataProviderTcpServer<T, D, W>
 where
-    T: NodeIdentity,
+    T: NetworkableNodeIdentity,
     D: TokenizedDataProvider + LengthKnownDataProvider,
     W: Backend<T>,
 {
@@ -27,7 +26,7 @@ where
 
 impl<T, D, W> DataProviderTcpServer<T, D, W>
 where
-    T: NodeIdentity + 'static,
+    T: NetworkableNodeIdentity + 'static,
     D: TokenizedDataProvider + LengthKnownDataProvider + 'static,
     W: Backend<T> + 'static,
 {
@@ -85,7 +84,7 @@ where
                             .await
                         {
                             Ok(()) => {
-                                info!("sent training data to {:?}", from);
+                                debug!("sent training data to {:?}", from);
                             }
                             Err(err) => {
                                 warn!("Failed to send training data to {:?}: {err}", from);
@@ -102,7 +101,7 @@ where
                             .await
                         {
                             Ok(()) => {
-                                info!("sent error to {:?}", from);
+                                debug!("sent error to {:?}", from);
                             }
                             Err(err) => {
                                 warn!("Failed to send error to {:?}: {err}", from);

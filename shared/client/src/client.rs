@@ -6,7 +6,7 @@ use crate::{
 use anyhow::Result;
 use psyche_coordinator::Coordinator;
 use psyche_core::NodeIdentity;
-use psyche_network::NetworkTUIState;
+use psyche_network::{NetworkTUIState, NetworkableNodeIdentity};
 use psyche_watcher::{Backend, BackendWatcher};
 use std::{
     borrow::BorrowMut,
@@ -78,7 +78,7 @@ impl Rebroadcast {
     }
 }
 
-impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
+impl<T: NetworkableNodeIdentity, B: Backend<T> + 'static> Client<T, B> {
     // todo: refactor into a struct
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -203,7 +203,7 @@ impl<T: NodeIdentity, B: Backend<T> + 'static> Client<T, B> {
 
                 let identity = state.identity.clone();
                 let hash = new_ticket.hash();
-                state.handle_broadcast(&identity, broadcast)?;
+                state.handle_broadcast_from_identity(&identity, None, broadcast)?;
                 state.handle_payload(hash, payload).await
             }
             ToSend::Witness(witness) => watcher.backend_mut().send_witness(witness).await,

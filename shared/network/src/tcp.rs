@@ -1,6 +1,8 @@
+use crate::{Networkable, NetworkableNodeIdentity};
+
 use anyhow::{anyhow, bail, Result};
 use futures_util::{future::join_all, SinkExt, StreamExt};
-use psyche_core::{Networkable, NodeIdentity};
+use psyche_core::NodeIdentity;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt::Debug, marker::PhantomData, net::SocketAddr, sync::Arc};
@@ -48,7 +50,7 @@ where
 
 impl<I, ToServer, ToClient> TcpServer<I, ToServer, ToClient>
 where
-    I: NodeIdentity,
+    I: NetworkableNodeIdentity,
     ToServer: Networkable + Clone + Debug + Send + Sync + 'static,
     ToClient: Networkable + Clone + Debug + Send + Sync + 'static,
 {
@@ -234,7 +236,7 @@ where
 
 impl<I, ToServer, ToClient> TcpClient<I, ToServer, ToClient>
 where
-    I: NodeIdentity,
+    I: NetworkableNodeIdentity,
     ToServer: Networkable + Debug + Send + Sync + 'static,
     ToClient: Networkable + Debug + Send + Sync + 'static,
 {

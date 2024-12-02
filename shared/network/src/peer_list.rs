@@ -1,9 +1,9 @@
-use std::{fmt, str::FromStr};
+use crate::Networkable;
 
 use anyhow::Result;
 use iroh::{base::base32, net::NodeAddr};
-use psyche_core::Networkable;
 use serde::{Deserialize, Serialize};
+use std::{fmt, str::FromStr};
 
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct PeerList(pub Vec<NodeAddr>);

@@ -1,18 +1,17 @@
 use anyhow::{bail, Result};
-use psyche_core::NodeIdentity;
-use psyche_network::TcpClient;
+use psyche_network::{NetworkableNodeIdentity, TcpClient};
 use tracing::debug;
 
 use crate::TokenizedDataProvider;
 
 use super::shared::{ClientToServerMessage, ServerToClientMessage};
 
-pub struct DataProviderTcpClient<T: NodeIdentity> {
+pub struct DataProviderTcpClient<T: NetworkableNodeIdentity> {
     address: String,
     tcp_client: TcpClient<T, ClientToServerMessage, ServerToClientMessage>,
 }
 
-impl<T: NodeIdentity> DataProviderTcpClient<T> {
+impl<T: NetworkableNodeIdentity> DataProviderTcpClient<T> {
     pub async fn connect(addr: &str, identity: T, private_key: T::PrivateKey) -> Result<Self> {
         let tcp_client = TcpClient::<T, ClientToServerMessage, ServerToClientMessage>::connect(
             addr,
@@ -54,7 +53,7 @@ impl<T: NodeIdentity> DataProviderTcpClient<T> {
     }
 }
 
-impl<T: NodeIdentity> TokenizedDataProvider for DataProviderTcpClient<T> {
+impl<T: NetworkableNodeIdentity> TokenizedDataProvider for DataProviderTcpClient<T> {
     async fn get_samples(&mut self, data_ids: &[usize]) -> Result<Vec<Vec<i32>>> {
         debug!("[{:?}] get samples..", self.tcp_client.get_identity());
         self.receive_training_data(data_ids).await
