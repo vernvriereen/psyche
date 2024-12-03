@@ -1,13 +1,14 @@
+use psyche_core::BatchId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ServerToClientMessage {
     TrainingData {
-        data_ids: Vec<usize>,
+        data_ids: Vec<BatchId>,
         raw_data: Vec<Vec<i32>>,
     },
     RequestRejected {
-        data_ids: Vec<usize>,
+        data_ids: Vec<BatchId>,
         reason: RejectionReason,
     },
 }
@@ -20,5 +21,5 @@ pub enum RejectionReason {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ClientToServerMessage {
-    RequestTrainingData { data_ids: Vec<usize> },
+    RequestTrainingData { data_ids: Vec<BatchId> },
 }

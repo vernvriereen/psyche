@@ -3,11 +3,13 @@ use std::sync::{Arc, Condvar, Mutex};
 #[derive(Debug)]
 pub struct CancelledBarrier {}
 
+#[derive(Debug)]
 pub struct CancellableBarrier {
     mutex: Mutex<BarrierState>,
     condvar: Condvar,
 }
 
+#[derive(Debug)]
 struct BarrierState {
     count: usize,
     total: usize,

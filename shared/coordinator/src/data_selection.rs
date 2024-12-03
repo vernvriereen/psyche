@@ -1,10 +1,10 @@
 use crate::{Committee, CommitteeSelection, Coordinator, Round};
-use psyche_core::{deterministic_shuffle, ClosedInterval, IntervalTree, NodeIdentity};
+use psyche_core::{deterministic_shuffle, BatchId, ClosedInterval, IntervalTree, NodeIdentity};
 
 pub fn assign_data_for_state<T: NodeIdentity>(
     state: &Coordinator<T>,
     committee_selection: &CommitteeSelection,
-) -> IntervalTree<u64, T> {
+) -> IntervalTree<BatchId, T> {
     let data_indicies_per_client = state.data_indicies_per_batch as u64;
     let round = state.current_round().unwrap();
     let mut ret = IntervalTree::new();
@@ -48,8 +48,14 @@ pub fn assign_data_for_state<T: NodeIdentity>(
                 Committee::Trainer => {
                     let num = data_indicies_per_client.min(remaining);
                     if num > 0 {
-                        ret.insert(ClosedInterval::new(sum, sum + num - 1), client.id.clone())
-                            .unwrap();
+                        ret.insert(
+                            ClosedInterval::new(
+                                BatchId::from_u64(sum),
+                                BatchId::from_u64(sum + num - 1),
+                            ),
+                            client.id.clone(),
+                        )
+                        .unwrap();
                         sum += num;
                         remaining -= num;
                     }
@@ -61,7 +67,12 @@ pub fn assign_data_for_state<T: NodeIdentity>(
     ret
 }
 
-pub fn get_batch_ids_for_round<T: NodeIdentity>(round: &Round, state: &Coordinator<T>) -> Vec<u64> {
+pub fn get_batch_ids_for_round<T: NodeIdentity>(
+    round: &Round,
+    state: &Coordinator<T>,
+) -> Vec<BatchId> {
     let batch_index = round.data_index / state.data_indicies_per_batch as u64;
-    (batch_index..(batch_index + state.batches_per_round as u64)).collect::<Vec<_>>()
+    (batch_index..(batch_index + state.batches_per_round as u64))
+        .map(BatchId::from_u64)
+        .collect::<Vec<_>>()
 }

@@ -4,8 +4,7 @@ use std::time::Duration;
 use anyhow::{Error, Result};
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{
-    BatchShuffleType, CheckpointSaveInfo, Client, ClientTUI, ClientTUIState,
-    StateOptions, WandBInfo, NC,
+    CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
 };
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_network::{NetworkTUIState, NetworkTui, RelayMode, SecretKey, TcpClient};
@@ -19,11 +18,11 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 pub(super) type Tabs = TabbedWidget<(ClientTUI, CoordinatorTui, NetworkTui, LoggerWidget)>;
-pub(super) const TAB_NAMES: [&str; 4] = ["Client", "Coordinator", "Network", "Logger"];
+pub const TAB_NAMES: [&str; 4] = ["Client", "Coordinator", "Network", "Logger"];
 type TabsData = <Tabs as CustomWidget>::Data;
 
-enum ToSend {
-    Witness(Witness),
+pub enum ToSend {
+    Witness(Box<Witness>),
     HealthCheck(HealthChecks),
     Checkpoint(model::Checkpoint),
 }
@@ -43,7 +42,7 @@ impl WatcherBackend<ClientId> for Backend {
     }
 
     async fn send_witness(&mut self, witness: Witness) -> Result<()> {
-        self.tx.send(ToSend::Witness(witness)).await?;
+        self.tx.send(ToSend::Witness(Box::new(witness))).await?;
         Ok(())
     }
 
@@ -82,10 +81,9 @@ pub struct AppParams {
     pub p2p_port: Option<u16>,
     pub eval_tasks: Vec<psyche_eval::Task>,
     pub eval_task_max_docs: Option<usize>,
-    pub checkpoint_upload_info: Option<CheckpointSaveInfo>,
+    pub checkpoint_upload_info: Option<CheckpointConfig>,
     pub hub_read_token: Option<String>,
     pub wandb_info: Option<WandBInfo>,
-    pub batch_shuffle_type: BatchShuffleType,
     pub optim_stats: Option<u32>,
     pub grad_accum_in_fp32: bool,
 }
@@ -123,20 +121,19 @@ impl AppBuilder {
             server_conn,
             run_id: p.run_id,
         };
-        let state_options: StateOptions<ClientId> = StateOptions {
+        let state_options: RunInitConfig<ClientId> = RunInitConfig {
             data_parallelism: p.data_parallelism,
             tensor_parallelism: p.tensor_parallelism,
             micro_batch_size: p.micro_batch_size,
             write_gradients_dir: p.write_gradients_dir,
             eval_tasks: p.eval_tasks,
             eval_task_max_docs: p.eval_task_max_docs,
-            checkpoint_upload_info: p.checkpoint_upload_info,
+            checkpoint_config: p.checkpoint_upload_info,
             hub_read_token: p.hub_read_token,
             wandb_info: p.wandb_info,
             identity: p.private_key.public().into(),
-            batch_shuffle_type: p.batch_shuffle_type,
             private_key: p.private_key,
-            optim_stats: p.optim_stats,
+            optim_stats_every_n_steps: p.optim_stats,
             grad_accum_in_fp32: p.grad_accum_in_fp32,
         };
         app.run(p2p, state_options).await
@@ -144,7 +141,7 @@ impl AppBuilder {
 }
 
 impl App {
-    pub async fn run(&mut self, mut p2p: NC, state_options: StateOptions<ClientId>) -> Result<()> {
+    pub async fn run(&mut self, mut p2p: NC, state_options: RunInitConfig<ClientId>) -> Result<()> {
         // sanity checks
         // if let Some(CheckpointUploadInfo {
         //     hub_repo,
@@ -182,9 +179,16 @@ impl App {
                 }
             }
         }
-        let (tx, rx) = mpsc::channel(128);
-        let (witness_tx, mut witness_rx) = mpsc::channel(128);
-        let mut client = Client::new(Backend { rx, tx: witness_tx }, p2p, state_options, None);
+        let (tx_from_server_message, rx_from_server_message) = mpsc::channel(128);
+        let (tx_to_server_message, mut rx_to_server_message) = mpsc::channel(128);
+        let mut client = Client::new(
+            Backend {
+                rx: rx_from_server_message,
+                tx: tx_to_server_message,
+            },
+            p2p,
+            state_options,
+        );
 
         loop {
             select! {
@@ -192,16 +196,16 @@ impl App {
                    break;
                 }
                 message = self.server_conn.receive() => {
-                    self.on_server_message(message?, &tx).await;
+                    self.on_server_message(message?, &tx_from_server_message).await;
                 }
                 _ = self.update_tui_interval.tick() => {
                     let (client_tui_state, network_tui_state) = client.tui_states().await;
                     self.update_tui(client_tui_state, network_tui_state).await?;
                 }
-                res = client.process() => {
-                    res?;
+                res = client.finished() => {
+                    res??;
                 }
-                Some(to_send) = witness_rx.recv() => {
+                Some(to_send) = rx_to_server_message.recv() => {
                     match to_send {
                         ToSend::Witness(witness) => self.server_conn.send(ClientToServerMessage::Witness(witness)).await?,
                         ToSend::HealthCheck(health_checks) => self.server_conn.send(ClientToServerMessage::HealthCheck(health_checks)).await?,

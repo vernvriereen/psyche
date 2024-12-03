@@ -34,6 +34,12 @@ impl Communicator {
 }
 
 #[cfg(not(feature = "parallelism"))]
+impl Default for CommunicatorId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CommunicatorId {
     pub fn new() -> Self {
         unimplemented!()
@@ -191,7 +197,7 @@ impl ColumnParallelLinear {
                 bias,
                 shard: comm.as_ref().map(|comm| Shard {
                     dim: 0,
-                    rank: comm.rank() as usize,
+                    rank: comm.rank(),
                     world_size: comm.size() as usize,
                 }),
                 ..Default::default()
@@ -222,7 +228,7 @@ impl Module for ColumnParallelLinear {
                 device.cuda_synchronize();
                 ret
             }
-            None => self.linear.forward(&input),
+            None => self.linear.forward(input),
         }
     }
 }
@@ -253,7 +259,7 @@ impl RowParallelLinear {
                 bias,
                 shard: comm.as_ref().map(|comm| Shard {
                     dim: 1,
-                    rank: comm.rank() as usize,
+                    rank: comm.rank(),
                     world_size: comm.size() as usize,
                 }),
                 ..Default::default()

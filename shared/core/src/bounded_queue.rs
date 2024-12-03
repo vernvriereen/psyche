@@ -1,21 +1,14 @@
 use std::collections::VecDeque;
 
-pub struct BoundedQueue<T> {
+#[derive(Default)]
+pub struct BoundedQueue<T, const U: usize> {
     queue: VecDeque<T>,
-    max_len: usize,
 }
 
-impl<T> BoundedQueue<T> {
-    pub fn new(max_len: usize) -> Self {
-        BoundedQueue {
-            queue: VecDeque::with_capacity(max_len),
-            max_len,
-        }
-    }
-
+impl<T, const U: usize> BoundedQueue<T, U> {
     pub fn push(&mut self, item: T) {
         self.queue.push_back(item);
-        if self.queue.len() > self.max_len {
+        if self.queue.len() > U {
             self.queue.pop_front();
         }
     }
@@ -33,7 +26,7 @@ impl<T> BoundedQueue<T> {
     }
 }
 
-impl<T> IntoIterator for BoundedQueue<T> {
+impl<T, const U: usize> IntoIterator for BoundedQueue<T, U> {
     type Item = T;
     type IntoIter = std::collections::vec_deque::IntoIter<Self::Item>;
 
@@ -48,13 +41,13 @@ mod tests {
 
     #[test]
     fn test_new_queue() {
-        let queue: BoundedQueue<i32> = BoundedQueue::new(4);
+        let queue: BoundedQueue<i32, 4> = BoundedQueue::default();
         assert_eq!(queue.iter().count(), 0);
     }
 
     #[test]
     fn test_push_within_limit() {
-        let mut queue = BoundedQueue::new(4);
+        let mut queue = BoundedQueue::<i32, 4>::default();
         queue.push(1);
         queue.push(2);
         queue.push(3);
@@ -64,7 +57,7 @@ mod tests {
 
     #[test]
     fn test_iter() {
-        let mut queue = BoundedQueue::new(3);
+        let mut queue = BoundedQueue::<i32, 3>::default();
         queue.push(1);
         queue.push(2);
         queue.push(3);
@@ -78,7 +71,7 @@ mod tests {
 
     #[test]
     fn test_into_iter() {
-        let mut queue = BoundedQueue::new(3);
+        let mut queue = BoundedQueue::<i32, 3>::default();
         queue.push(1);
         queue.push(2);
         queue.push(3);
@@ -89,7 +82,7 @@ mod tests {
 
     #[test]
     fn test_push_to_full_queue() {
-        let mut queue = BoundedQueue::new(3);
+        let mut queue = BoundedQueue::<i32, 3>::default();
         queue.push(1);
         queue.push(2);
         queue.push(3);
@@ -100,7 +93,7 @@ mod tests {
 
     #[test]
     fn test_queue_with_max_len_zero() {
-        let mut queue = BoundedQueue::new(0);
+        let mut queue = BoundedQueue::<i32, 0>::default();
         queue.push(1);
         queue.push(2);
 
@@ -109,7 +102,7 @@ mod tests {
 
     #[test]
     fn test_queue_with_max_len_one() {
-        let mut queue = BoundedQueue::new(1);
+        let mut queue = BoundedQueue::<i32, 1>::default();
         queue.push(1);
         queue.push(2);
         queue.push(3);

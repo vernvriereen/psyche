@@ -1,10 +1,7 @@
 use crate::fetch_data::Batch;
-use anyhow::{bail, Error, Result};
-use psyche_coordinator::{
-    model::{self, AnyLearningRateScheduler},
-    RunState,
-};
-use psyche_core::{CancellableBarrier, LearningRateScheduler};
+use anyhow::{Error, Result};
+use psyche_coordinator::model::{self, AnyLearningRateScheduler};
+use psyche_core::{BatchId, CancellableBarrier, LearningRateScheduler};
 use psyche_modeling::{
     unsharded_cpu_variables, CausalLM, Distro, DistroResult, Fp32GradientAccumulator,
     LlamaForCausalLM,
@@ -12,10 +9,7 @@ use psyche_modeling::{
 use std::{
     collections::HashMap,
     ops::ControlFlow,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        mpsc, Arc,
-    },
+    sync::{mpsc, Arc},
     time::Instant,
 };
 use tch::{
@@ -23,6 +17,7 @@ use tch::{
     Device, Tensor,
 };
 use thiserror::Error;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
 
 pub type ParallelModels = Vec<LlamaForCausalLM>;
@@ -45,7 +40,9 @@ enum Optimizer {
 
 pub type DistroResults = Vec<DistroResult>;
 
+#[derive(Debug)]
 pub struct TrainOutput {
+    pub batch_id: BatchId,
     pub trainer: Trainer,
     pub loss: f32,
     pub step: u32,
@@ -55,9 +52,10 @@ pub struct TrainOutput {
 
 enum ParallelAssignment {
     Train {
-        data: Batch,
+        batch: Batch,
         step: u32,
         rollback: Vec<(u32, Vec<DistroResults>)>,
+        cancel_training: CancellationToken,
     },
     Optimize {
         distro_results: Option<Vec<DistroResults>>,
@@ -68,7 +66,7 @@ enum ParallelAssignment {
         labels: Option<Tensor>,
         num_logits_to_keep: Option<i64>,
     },
-    Extract {},
+    Extract,
 }
 
 #[derive(Debug)]
@@ -87,6 +85,7 @@ enum ParallelResult {
     },
 }
 
+#[derive(Debug)]
 pub struct Trainer {
     models: Vec<(
         mpsc::Sender<ParallelAssignment>,
@@ -96,13 +95,24 @@ pub struct Trainer {
     barrier: Arc<CancellableBarrier>,
 }
 
+#[derive(Debug, Error)]
+pub enum TrainerThreadCommunicationError {
+    #[error("Failed to send command to trainer thread; thread has dropped RX")]
+    SendCommand,
+
+    #[error("Failed to recv result from trainer thread; thread has dropped TX")]
+    RecvResult,
+
+    #[error("Got unexpected result from trainer thread: {0}")]
+    UnexpectedResult(String),
+}
+
 impl Trainer {
     pub fn new(
         models: ParallelModels,
         lr_scheduler: AnyLearningRateScheduler,
         optimizer: model::Optimizer,
         micro_batch_size: usize,
-        run_state: Arc<AtomicUsize>,
         stats: Option<u32>,
         grad_accum_in_fp32: bool,
         warmup_starting_at_step: Option<u32>,
@@ -164,7 +174,6 @@ impl Trainer {
                 },
             };
 
-            let run_state = run_state.clone();
             let lr_scheduler = lr_scheduler.clone();
             let barrier = barrier.clone();
             let lr_warmup = warmup_starting_at_step.map(|step| {
@@ -186,7 +195,6 @@ impl Trainer {
                     optimizer,
                     index,
                     micro_batch_size,
-                    run_state,
                     lr_scheduler,
                     barrier,
                     stats,
@@ -236,19 +244,19 @@ impl Trainer {
         labels: Option<&Tensor>,
         barrier: &Arc<CancellableBarrier>,
         num_logits_to_keeep: Option<i64>,
-    ) -> Result<Option<(Tensor, Option<Tensor>)>> {
+    ) -> Option<(Tensor, Option<Tensor>)> {
         let _guard = tch::no_grad_guard();
         let device = model.device();
         let inputs = data.to(device);
         let labels = labels.map(|x| x.to(device));
         if barrier.wait().is_err() {
-            return Ok(None);
+            return None;
         }
         let (logits, loss) = model.forward(&inputs, labels.as_ref(), num_logits_to_keeep);
         if barrier.wait().is_err() {
-            return Ok(None);
+            return None;
         }
-        Ok(Some((logits, loss)))
+        Some((logits, loss))
     }
 
     pub fn train(
@@ -256,7 +264,8 @@ impl Trainer {
         step: u32,
         data: Batch,
         rollback: Vec<(u32, Vec<DistroResults>)>,
-    ) -> Result<TrainOutput> {
+        cancel_training: CancellationToken,
+    ) -> Result<TrainOutput, TrainerThreadCommunicationError> {
         if !rollback.is_empty() {
             error!(
                 "we have not implemented getting data from previous rounds. this should be impossible to hit.. this step is {step}, rollback passed is {:?}",
@@ -265,17 +274,21 @@ impl Trainer {
         self.barrier.reset();
         for (tx, _) in &self.models {
             tx.send(ParallelAssignment::Train {
-                data: data.clone(),
+                batch: data.clone(),
                 step,
                 rollback: rollback.clone(),
+                cancel_training: cancel_training.clone(),
             })
-            .map_err(|err| Error::msg(format!("Error sending batch to trainer thread: {err}")))?;
+            .map_err(|_| TrainerThreadCommunicationError::SendCommand)?;
         }
         let mut final_loss = 0.0;
         let mut final_distro_results = None;
         let mut final_cancelled = false;
         for (_, rx) in &self.models {
-            match rx.recv()? {
+            match rx
+                .recv()
+                .map_err(|_| TrainerThreadCommunicationError::RecvResult)?
+            {
                 ParallelResult::Train {
                     loss,
                     distro_results,
@@ -287,11 +300,17 @@ impl Trainer {
                     final_cancelled = cancelled;
                     final_loss += loss;
                 }
-                _ => bail!("Got unexpected ParallelResult in train()"),
+                weird => {
+                    return Err(TrainerThreadCommunicationError::UnexpectedResult(format!(
+                        "{:?}",
+                        weird
+                    )))
+                }
             }
         }
         final_loss /= self.models.len() as f32;
         Ok(TrainOutput {
+            batch_id: data.id,
             trainer: self,
             loss: final_loss,
             step,
@@ -332,25 +351,32 @@ impl Trainer {
         Ok(self)
     }
 
-    pub fn extract(self) -> Result<(HashMap<String, Tensor>, Self)> {
+    pub fn extract(&mut self) -> Result<HashMap<String, Tensor>, TrainerThreadCommunicationError> {
         self.barrier.reset();
         for (tx, _) in &self.models {
-            tx.send(ParallelAssignment::Extract {}).map_err(|err| {
-                Error::msg(format!("Error sending extraction to trainer thread: {err}"))
-            })?;
+            tx.send(ParallelAssignment::Extract)
+                .map_err(|_| TrainerThreadCommunicationError::SendCommand)?;
         }
         let mut extracted = HashMap::new();
         for (_, rx) in &self.models {
-            match rx.recv()? {
+            match rx
+                .recv()
+                .map_err(|_| TrainerThreadCommunicationError::RecvResult)?
+            {
                 ParallelResult::Extract { variables } => {
                     if extracted.is_empty() && !variables.is_empty() {
                         extracted = variables;
                     }
                 }
-                _ => bail!("Got unexpected ParallelResult in extract()"),
+                result => {
+                    return Err(TrainerThreadCommunicationError::UnexpectedResult(format!(
+                        "{:?}",
+                        result
+                    )))
+                }
             }
         }
-        Ok((extracted, self))
+        Ok(extracted)
     }
 
     // todo: refactor args into a struct
@@ -362,10 +388,9 @@ impl Trainer {
         mut optimizer: Optimizer,
         index: usize,
         micro_batch_size: usize,
-        run_state: Arc<AtomicUsize>,
         lr_scheduler: AnyLearningRateScheduler,
         barrier: Arc<CancellableBarrier>,
-        stats: Option<u32>,
+        optim_stats_every_n_steps: Option<u32>,
         grad_accum_in_fp32: bool,
         lr_warmup: Option<(psyche_core::ConstantLR, u32)>,
     ) {
@@ -377,9 +402,10 @@ impl Trainer {
         loop {
             match assignment.recv() {
                 Ok(ParallelAssignment::Train {
-                    data,
+                    batch,
                     step,
                     rollback,
+                    cancel_training,
                 }) => {
                     for (step, result) in rollback.iter().rev() {
                         // TODO freeze the optimizer and prevent this from modifying its internal state, methinks, right? or maybe save it and restore it later?
@@ -390,12 +416,12 @@ impl Trainer {
                         };
                     }
 
-                    if micro_batch_size > 0 && data.len() % micro_batch_size != 0 {
+                    if micro_batch_size > 0 && batch.data.len() % micro_batch_size != 0 {
                         error!("Micro batch size doesn't evenly divide batch size");
                         return;
                     }
 
-                    let grad_accum_steps = data.len() / micro_batch_size;
+                    let grad_accum_steps = batch.data.len() / micro_batch_size;
                     if grad_accum_in_fp32 && grad_accum_steps != 1 && grad_accum.is_none() {
                         debug!("Allocating FP32 gradient accumulator");
                         let parameters = match &mut optimizer {
@@ -405,7 +431,7 @@ impl Trainer {
                         grad_accum = Some(Fp32GradientAccumulator::new(&parameters, model.device()))
                     }
                     let grad_accum_divisor = grad_accum_steps as f64;
-                    let micro_batches = data.chunks_exact(micro_batch_size);
+                    let micro_batches = batch.data.chunks_exact(micro_batch_size);
                     assert_eq!(micro_batches.len(), grad_accum_steps);
 
                     if let Some(grad_accum) = &mut grad_accum {
@@ -419,12 +445,10 @@ impl Trainer {
                     let mut loss = 0f32;
                     let mut cancelled = false;
                     for micro_batch in micro_batches {
-                        if RunState::try_from(run_state.load(Ordering::SeqCst)).unwrap()
-                            != RunState::RoundTrain
-                        {
+                        if cancel_training.is_cancelled() {
                             cancelled = true;
                             barrier.cancel();
-                            warn!("Aborting training, run state changed");
+                            warn!("Aborting training upon request");
                             break;
                         }
                         match Self::forward_backward(
@@ -502,8 +526,8 @@ impl Trainer {
                                             false => *compression_topk,
                                         },
                                         *quantize,
-                                        stats
-                                            .and_then(|stats| Some(step % stats == 0))
+                                        optim_stats_every_n_steps
+                                            .map(|stats| step % stats == 0)
                                             .unwrap_or(false),
                                     );
                                     // just need results from one of the ranks
@@ -565,20 +589,13 @@ impl Trainer {
                     labels,
                     num_logits_to_keep,
                 }) => {
-                    let logits_and_loss = match Self::forward(
+                    let logits_and_loss = Self::forward(
                         &mut model,
                         &data,
                         labels.as_ref(),
                         &barrier,
                         num_logits_to_keep,
-                    ) {
-                        Ok(Some(logits_and_loss)) => Some(logits_and_loss),
-                        Ok(None) => None,
-                        Err(err) => {
-                            error!("Unexpected error in forward: {err}");
-                            return;
-                        }
-                    };
+                    );
                     if submission
                         .send(ParallelResult::Forward { logits_and_loss })
                         .is_err()
@@ -620,6 +637,9 @@ pub enum ApplyDistroResultError {
 
     #[error("recieved wrong result type from trainer thread. expected Optimize, got {0:?}")]
     RecievedWrongResultType(String),
+
+    #[error("apply thread crashed")]
+    ThreadCrashed,
 }
 
 impl CausalLM for Trainer {

@@ -1,4 +1,7 @@
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClosedInterval<T> {
@@ -21,9 +24,46 @@ impl<T: Ord> ClosedInterval<T> {
     }
 }
 
+impl<T: fmt::Display + PartialEq> fmt::Display for ClosedInterval<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.start == self.end {
+            write!(f, "{}", self.start)
+        } else {
+            write!(f, "[{}, {}]", self.start, self.end)
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct IntervalTree<T, V> {
     tree: BTreeMap<T, (ClosedInterval<T>, V)>,
+}
+
+impl<T: fmt::Display + Ord, V: fmt::Display + Eq + std::hash::Hash> fmt::Display
+    for IntervalTree<T, V>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.tree.is_empty() {
+            return write!(f, "IntervalTree {{}}");
+        }
+
+        // Group intervals by value
+        let mut value_to_intervals: HashMap<&V, Vec<&ClosedInterval<T>>> = HashMap::new();
+        for (interval, value) in self.tree.values() {
+            value_to_intervals.entry(value).or_default().push(interval);
+        }
+
+        write!(f, "IntervalTree {{ ")?;
+        let entries: Vec<_> = value_to_intervals
+            .iter()
+            .map(|(value, intervals)| {
+                let intervals_str: Vec<_> = intervals.iter().map(|i| i.to_string()).collect();
+                format!("{}: {}", value, intervals_str.join(", "))
+            })
+            .collect();
+        write!(f, "{}", entries.join(", "))?;
+        write!(f, " }}")
+    }
 }
 
 impl<T: Copy + Ord, V> Default for IntervalTree<T, V> {

@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
-use psyche_client::{BroadcastMessage, Payload, NC};
+use psyche_client::{TrainingResult, TransmittableDistroResult, NC};
 use psyche_coordinator::model::{
     self, Checkpoint, LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM,
 };
@@ -284,7 +284,6 @@ impl App {
                 } => {}
                 else => break,
             }
-
         }
         Ok(())
     }
@@ -303,12 +302,9 @@ impl App {
         Ok(())
     }
 
-    fn on_network_event(&mut self, event: NetworkEvent<BroadcastMessage, Payload>) {
-        if let NetworkEvent::MessageReceived((_, message)) = event {
-            match message {
-                BroadcastMessage::TrainingResult(_) => {}
-                BroadcastMessage::PeerAnnouncement(_) => {}
-            }
+    fn on_network_event(&mut self, event: NetworkEvent<TrainingResult, TransmittableDistroResult>) {
+        if let NetworkEvent::MessageReceived((_, _)) = event {
+            // we're the coordinator, why are we even in the p2p? lol
         }
     }
 
@@ -349,7 +345,7 @@ impl App {
                         id: from,
                         dropping_at_end_of_round: false,
                     },
-                    witness,
+                    *witness,
                     Self::get_timestamp(),
                 ) {
                     warn!("Error when processing witness: {error}");

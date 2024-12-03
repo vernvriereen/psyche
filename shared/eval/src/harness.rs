@@ -4,16 +4,10 @@ use psyche_core::RunningAverage;
 use psyche_modeling::CausalLM;
 use rand::{seq::SliceRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use std::{
-    collections::HashMap,
-    fmt::Display,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
+use std::{collections::HashMap, fmt::Display, sync::Arc};
 use tch::{Kind, Tensor};
 use tokenizers::Tokenizer;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 pub enum TaskType {
@@ -46,6 +40,7 @@ impl Display for Task {
     }
 }
 
+#[derive(Debug)]
 enum PreparedTaskType {
     LogLikelihood {
         docs: Vec<TokenizedLLHDocument>,
@@ -53,6 +48,7 @@ enum PreparedTaskType {
     },
 }
 
+#[derive(Debug)]
 pub struct PreparedTask {
     prepared_task_type: PreparedTaskType,
     name: String,
@@ -65,6 +61,7 @@ pub struct PreparedTaskResult {
     pub cancelled: bool,
 }
 
+#[derive(Debug)]
 struct TokenizedLLHDocument {
     text: Vec<i64>,
     choices: Vec<Vec<i64>>,
@@ -165,7 +162,7 @@ pub struct EvalTaskOptions<'a, M: CausalLM> {
     pub model: &'a mut M,
     pub skip_and_step_by: Option<(usize, usize)>,
     pub live_results: Option<Arc<RunningAverage>>,
-    pub cancel: Option<Arc<AtomicBool>>,
+    pub cancel: Option<CancellationToken>,
     pub limit: Option<usize>,
     pub loop_if_empty: bool,
 }
@@ -222,7 +219,7 @@ impl PreparedTask {
         {
             next_index = doc_index;
             if let Some(cancel) = options.cancel.as_ref() {
-                if cancel.load(Ordering::SeqCst) {
+                if cancel.is_cancelled() {
                     cancelled = true;
                     break;
                 }

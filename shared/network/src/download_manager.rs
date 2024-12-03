@@ -1,4 +1,3 @@
-
 use crate::{util::convert_bytes, Networkable};
 
 use anyhow::{bail, Context, Error, Result};
@@ -7,47 +6,39 @@ use futures_util::future::select_all;
 use iroh::base::ticket::BlobTicket;
 use iroh::blobs::get::db::DownloadProgress;
 use iroh::net::key::PublicKey;
+use std::{fmt::Debug, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 use tokio::{
     sync::{mpsc, oneshot, Mutex},
     task::JoinHandle,
 };
-use std::{fmt::Debug, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 use tracing::{debug, error, info, warn};
 
 #[derive(Debug)]
 struct Download {
-    from: PublicKey,
-    hash: iroh::blobs::Hash,
+    blob_ticket: BlobTicket,
     download: mpsc::Receiver<Result<DownloadProgress>>,
     last_offset: u64,
     total_size: u64,
 }
 
 struct ReadingFinishedDownload {
-    from: PublicKey,
-    hash: iroh::blobs::Hash,
+    blob_ticket: BlobTicket,
     download: Result<oneshot::Receiver<Bytes>>,
 }
 
 impl Debug for ReadingFinishedDownload {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ReadingFinishedDownload")
-            .field("from", &self.from)
-            .field("hash", &self.hash)
+            .field("blob_ticket", &self.blob_ticket)
             .field("reading", &"...")
             .finish()
     }
 }
 
 impl Download {
-    fn new(
-        from: PublicKey,
-        blob_ticket: BlobTicket,
-        download: mpsc::Receiver<Result<DownloadProgress>>,
-    ) -> Self {
+    fn new(blob_ticket: BlobTicket, download: mpsc::Receiver<Result<DownloadProgress>>) -> Self {
         Self {
-            from,
-            hash: blob_ticket.hash(),
+            blob_ticket,
             download,
             last_offset: 0,
             total_size: 0,
@@ -55,24 +46,9 @@ impl Download {
     }
 }
 
-impl ReadingFinishedDownload {
-    fn new(
-        from: PublicKey,
-        hash: iroh::blobs::Hash,
-        download: Result<oneshot::Receiver<Bytes>>,
-    ) -> Self {
-        Self {
-            download,
-            from,
-            hash,
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct DownloadUpdate {
-    pub hash: iroh::blobs::Hash,
-    pub from: PublicKey,
+    pub blob_ticket: BlobTicket,
     pub downloaded_size_delta: u64,
     pub downloaded_size: u64,
     pub total_size: u64,
@@ -88,8 +64,7 @@ pub struct DownloadComplete<D: Networkable> {
 
 #[derive(Debug)]
 pub struct DownloadFailed {
-    pub hash: iroh::blobs::Hash,
-    pub from: PublicKey,
+    pub blob_ticket: BlobTicket,
     pub error: anyhow::Error,
 }
 
@@ -190,7 +165,6 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
 
     pub fn add(
         &mut self,
-        from: PublicKey,
         blob_ticket: BlobTicket,
         progress: mpsc::Receiver<Result<DownloadProgress>>,
     ) {
@@ -201,26 +175,21 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
             downloads
                 .lock()
                 .await
-                .push(Download::new(from, blob_ticket, progress));
+                .push(Download::new(blob_ticket, progress));
             if let Err(e) = sender.send(()).await {
                 error!("{}", e);
             }
         });
     }
 
-    pub fn read(
-        &mut self,
-        from: PublicKey,
-        hash: iroh::blobs::Hash,
-        download: Result<oneshot::Receiver<Bytes>>,
-    ) {
+    pub fn read(&mut self, blob_ticket: BlobTicket, download: Result<oneshot::Receiver<Bytes>>) {
         let reading = self.reading.clone();
         let sender = self.tx_new_item.clone();
         tokio::spawn(async move {
-            reading
-                .lock()
-                .await
-                .push(ReadingFinishedDownload::new(from, hash, download));
+            reading.lock().await.push(ReadingFinishedDownload {
+                blob_ticket,
+                download,
+            });
             if let Err(e) = sender.send(()).await {
                 error!("{}", e);
             }
@@ -265,7 +234,8 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                         Ok(download) => download.await.map_err(|e| e.into()),
                         Err(err) => Err(Error::msg(format!(
                             "Error downloading {}: {}",
-                            read.hash, err
+                            read.blob_ticket.hash(),
+                            err
                         ))),
                     },
                 )
@@ -295,8 +265,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                 let update = match progress {
                     DownloadProgress::InitialState(_) => None,
                     DownloadProgress::FoundLocal { size, .. } => Some(DownloadUpdate {
-                        hash: download.hash,
-                        from: download.from,
+                        blob_ticket: download.blob_ticket.clone(),
                         downloaded_size_delta: 0,
                         downloaded_size: size.value(),
                         total_size: size.value(),
@@ -307,8 +276,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                     DownloadProgress::Found { size, .. } => {
                         download.total_size = size;
                         Some(DownloadUpdate {
-                            hash: download.hash,
-                            from: download.from,
+                            blob_ticket: download.blob_ticket.clone(),
                             downloaded_size_delta: 0,
                             downloaded_size: 0,
                             total_size: size,
@@ -321,8 +289,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                         let delta = offset - download.last_offset;
                         download.last_offset = offset;
                         Some(DownloadUpdate {
-                            hash: download.hash,
-                            from: download.from,
+                            blob_ticket: download.blob_ticket.clone(),
                             downloaded_size_delta: delta,
                             downloaded_size: offset,
                             total_size: download.total_size,
@@ -334,12 +301,11 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                     DownloadProgress::AllDone(stats) => {
                         debug!(
                             "Downloaded (index {index}) {}, {} ",
-                            download.hash.clone(),
+                            download.blob_ticket.hash(),
                             convert_bytes(stats.bytes_read as f64)
                         );
                         Some(DownloadUpdate {
-                            hash: download.hash,
-                            from: download.from,
+                            blob_ticket: download.blob_ticket.clone(),
                             downloaded_size_delta: 0,
                             downloaded_size: download.total_size,
                             total_size: download.total_size,
@@ -350,8 +316,8 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                     DownloadProgress::Abort(err) => {
                         warn!("Download aborted: {:?}", err);
                         Some(DownloadUpdate {
-                            hash: download.hash,
-                            from: download.from,
+                            blob_ticket: download.blob_ticket.clone(),
+
                             downloaded_size_delta: 0,
                             downloaded_size: 0,
                             total_size: 0,
@@ -389,13 +355,12 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                     .with_context(|| "Failed to decode downloaded data")?;
                 Ok(Some(DownloadManagerEvent::Complete(DownloadComplete {
                     data: decoded,
-                    from: downloader.from,
-                    hash: downloader.hash,
+                    from: downloader.blob_ticket.node_addr().node_id,
+                    hash: downloader.blob_ticket.hash(),
                 })))
             }
             Err(e) => Ok(Some(DownloadManagerEvent::Failed(DownloadFailed {
-                hash: downloader.hash,
-                from: downloader.from,
+                blob_ticket: downloader.blob_ticket,
                 error: e,
             }))),
         }

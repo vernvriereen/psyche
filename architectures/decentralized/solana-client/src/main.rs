@@ -6,7 +6,6 @@ use anchor_client::{
 };
 use anyhow::Result;
 use backend::SolanaBackend;
-use tokio;
 
 #[tokio::main]
 pub async fn main() -> Result<()> {

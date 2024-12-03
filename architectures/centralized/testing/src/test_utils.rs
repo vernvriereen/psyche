@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use psyche_centralized_client::app::{AppBuilder, AppParams};
 use psyche_centralized_server::app::DataServerInfo;
-use psyche_client::BatchShuffleType;
 use psyche_data_provider::TokenSize;
 use psyche_network::SecretKey;
 use tokio_util::sync::CancellationToken;
@@ -49,7 +48,6 @@ pub fn client_app_params_default_for_testing() -> AppParams {
         checkpoint_upload_info: None,
         hub_read_token: None,
         wandb_info: None,
-        batch_shuffle_type: BatchShuffleType::Fixed([0; 32]),
         optim_stats: None,
         grad_accum_in_fp32: false,
     }
