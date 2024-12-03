@@ -284,7 +284,6 @@ impl App {
                 } => {}
                 else => break,
             }
-
         }
         Ok(())
     }
@@ -319,6 +318,10 @@ impl App {
         });
 
         self.coordinator.clients.retain(|client| client.id != from);
+        self.coordinator.dropped_clients.push(Client {
+            id: from,
+            dropping_at_end_of_round: true,
+        });
     }
     async fn on_client_message(&mut self, from: ClientId, event: ClientToServerMessage) {
         let broadcast = match event {
