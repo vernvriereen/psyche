@@ -102,7 +102,21 @@ pub struct App {
     original_min_clients: u32,
 }
 
-#[derive(Serialize, Deserialize)]
+/// Methods intended for testing purposes only.
+///
+/// These methods provide access to internal App parameters
+/// to facilitate testing and debugging.
+impl App {
+    pub fn get_pending_clients_len(&self) -> usize {
+        self.backend.pending_clients.len()
+    }
+
+    pub fn get_run_state(&self) -> RunState {
+        self.coordinator.run_state
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DataServerInfo {
     pub dir: PathBuf,
     pub token_size: TokenSize,
@@ -169,9 +183,9 @@ impl App {
             let server_port = server_addr.port();
             let DataServerInfo {
                 dir,
-               seq_len,
-               shuffle_seed,
-               token_size
+                seq_len,
+                shuffle_seed,
+                token_size
             } = data_server_config.ok_or_else(|| anyhow!("Coordinator state requires we host training data, but no --data-config passed."))?;
             let local_data_provider = LocalDataProvider::new_from_directory(
                 dir,
@@ -264,10 +278,13 @@ impl App {
                 _ = async {
                     if let Some((_, server))  = &mut self.training_data_server {
                         server.poll().await
+                    } else {
+                        tokio::task::yield_now().await;
                     }
                 } => {}
                 else => break,
             }
+
         }
         Ok(())
     }

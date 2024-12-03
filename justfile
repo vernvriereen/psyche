@@ -22,6 +22,10 @@ docker-push-centralized-client: docker-build-centralized-client
 local-testnet +args:
 	cargo run -p local-testnet -- {{args}}
 
+# run integration tests
+integration-test:
+    cargo test --test integration_tests -- --test-threads=1
+
 # build solana coordinator
 deploy-local-solana-coordinator:
     cd architectures/decentralized/solana-coordinator && anchor build && anchor deploy
