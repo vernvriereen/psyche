@@ -1,14 +1,14 @@
-use std::ops::Deref;
-
 use anchor_lang::prelude::*;
 
 mod client_id;
-
 pub use client_id::ClientId;
 use psyche_coordinator::{Coordinator, MAX_STRING_LEN};
-use psyche_core::NodeIdentity;
 
 declare_id!("2mQJR6fyjAJwoevxzZVLW6ReLenK1dxPzDmVTVMW5AKx");
+
+#[account]
+#[derive(Debug, InitSpace)]
+pub struct SolanaCoordinator(Coordinator<ClientId>);
 
 #[program]
 pub mod solana_coordinator {
@@ -22,12 +22,12 @@ pub mod solana_coordinator {
         warmup_time: u64,
         cooldown_time: u64,
     ) -> Result<()> {
-        let mut coordinator = &mut ctx.accounts.coordinator;
+        let coordinator = &mut ctx.accounts.coordinator;
+        // let coordinator = &mut ctx.accounts.coordinator;
 
-        *coordinator = Coordinator::default();
-        coordinator.run_id = run_id;
-        coordinator.warmup_time = warmup_time;
-        coordinator.cooldown_time = cooldown_time;
+        coordinator.0.run_id = String::from_utf8(run_id.to_vec()).unwrap();
+        coordinator.0.warmup_time = warmup_time;
+        coordinator.0.cooldown_time = cooldown_time;
 
         msg!("Coordinator: {:?}", coordinator);
         Ok(())
@@ -39,9 +39,9 @@ pub struct InitializeCoordinator<'info> {
     #[account(
         init,
         payer = signer,
-        space = 8 + Coordinator::<ClientId>::INIT_SPACE // Add space calculation below
+        space = 8 + SolanaCoordinator::INIT_SPACE,
     )]
-    pub coordinator: Account<'info, Coordinator<ClientId>>,
+    pub coordinator: Account<'info, SolanaCoordinator>,
 
     #[account(mut)]
     pub signer: Signer<'info>,

@@ -3,7 +3,7 @@ use psyche_core::NodeIdentity;
 
 #[account(zero_copy)]
 #[repr(C)]
-#[derive(Debug, InitSpace)]
+#[derive(Debug, InitSpace, AnchorSerialize, AnchorDeserialize)]
 pub struct ClientId {
     pub owner: Pubkey,
     pub p2p_identity: [u8; 32],

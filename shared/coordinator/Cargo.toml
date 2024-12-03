@@ -9,9 +9,10 @@ psyche-serde.workspace = true
 async-trait.workspace = true
 tracing.workspace = true
 anchor-lang.workspace = true
+bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
 
 [target.'cfg(target_os = "solana")'.dependencies]
-anchor-lang.workspace = true
+anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "020a3046582944030f17b6524006eeaf26951cb8" }
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
 serde.workspace = true
