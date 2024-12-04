@@ -1,4 +1,6 @@
-use anchor_client::{solana_sdk::signature::Keypair, Client, Cluster, Program};
+use anchor_client::{
+    anchor_lang::system_program, solana_sdk::signature::Keypair, Client, Cluster, Program,
+};
 use anyhow::Result;
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_watcher::Backend as WatcherBackend;
@@ -47,9 +49,17 @@ impl SolanaBackend {
         let signature = self
             .program
             .request()
-            .accounts(solana_coordinator::accounts::Initialize {})
-            .args(solana_coordinator::instruction::Initialize {
+            .accounts(solana_coordinator::accounts::InitializeCoordinator {
+                coordinator: solana_coordinator::accounts::CoordinatorManager {
+                    coordinator: Coordinator::default(),
+                },
+                signer: self.program.payer(),
+                system_program: system_program::ID,
+            })
+            .args(solana_coordinator::instruction::InitializeCoordinator {
                 run_id: "Test".to_string(),
+                warmup_time: 0,
+                cooldown_time: 0,
             })
             .send()
             .await?;
