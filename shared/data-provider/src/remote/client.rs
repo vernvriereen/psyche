@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use psyche_core::BatchId;
 use psyche_network::{NetworkableNodeIdentity, TcpClient};
 use tracing::debug;
 
@@ -25,7 +26,7 @@ impl<T: NetworkableNodeIdentity> DataProviderTcpClient<T> {
         })
     }
 
-    async fn receive_training_data(&mut self, data_ids: &[usize]) -> Result<Vec<Vec<i32>>> {
+    async fn receive_training_data(&mut self, data_ids: &[BatchId]) -> Result<Vec<Vec<i32>>> {
         self.tcp_client
             .send(ClientToServerMessage::RequestTrainingData {
                 data_ids: data_ids.into(),
@@ -54,7 +55,7 @@ impl<T: NetworkableNodeIdentity> DataProviderTcpClient<T> {
 }
 
 impl<T: NetworkableNodeIdentity> TokenizedDataProvider for DataProviderTcpClient<T> {
-    async fn get_samples(&mut self, data_ids: &[usize]) -> Result<Vec<Vec<i32>>> {
+    async fn get_samples(&mut self, data_ids: &[BatchId]) -> Result<Vec<Vec<i32>>> {
         debug!("[{:?}] get samples..", self.tcp_client.get_identity());
         self.receive_training_data(data_ids).await
     }

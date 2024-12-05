@@ -28,6 +28,7 @@ wandb = { git = "https://github.com/NousResearch/wandb-rs.git", rev = "ed65ecdc7
 rand_chacha.workspace = true
 thiserror = "2.0.0"
 time.workspace = true
+hf-hub.workspace = true
 
 [features]
 parallelism = ["psyche-modeling/parallelism"]

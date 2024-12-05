@@ -1,5 +1,6 @@
 use crate::{peer_list::PeerList, util::convert_bytes, NetworkConnection, Networkable};
 
+use iroh::net::{endpoint::ConnectionType, key::PublicKey};
 use psyche_tui::ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
@@ -10,7 +11,6 @@ use psyche_tui::ratatui::{
         Widget, Wrap,
     },
 };
-use iroh::net::{endpoint::ConnectionType, key::PublicKey};
 use std::{
     collections::{HashMap, VecDeque},
     ops::Sub,
@@ -243,7 +243,6 @@ where
                 upload_hashes: s
                     .currently_sharing_blobs
                     .iter()
-                    .rev()
                     .map(|blob| blob.to_string())
                     .collect(),
             }),

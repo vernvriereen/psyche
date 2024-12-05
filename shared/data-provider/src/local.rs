@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Result};
+use psyche_core::BatchId;
 use rand::seq::SliceRandom;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -111,18 +112,21 @@ impl LocalDataProvider {
         })
     }
 
-    fn internal_get_samples(&self, data_ids: &[usize]) -> Result<Vec<Vec<i32>>> {
+    fn internal_get_samples(&self, data_ids: &[BatchId]) -> Result<Vec<Vec<i32>>> {
         let mut ret: Vec<_> = Vec::new();
         for data_id in data_ids {
             let SequencePointer {
                 byte_offset,
                 file_index,
-            } = self.sequences.get(*data_id).ok_or_else(|| {
-                anyhow!(
-                    "index {data_id} is out of bounds, we only have {} samples.",
-                    self.sequences.len()
-                )
-            })?;
+            } = self
+                .sequences
+                .get(u64::from(*data_id) as usize)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "index {data_id} is out of bounds, we only have {} samples.",
+                        self.sequences.len()
+                    )
+                })?;
 
             let file = &self.data_files[*file_index];
             let data_len = usize::from(self.token_size_in_bytes) * (self.seq_len + 1);
@@ -145,7 +149,7 @@ impl LocalDataProvider {
 }
 
 impl TokenizedDataProvider for LocalDataProvider {
-    async fn get_samples(&mut self, data_ids: &[usize]) -> Result<Vec<Vec<i32>>> {
+    async fn get_samples(&mut self, data_ids: &[BatchId]) -> Result<Vec<Vec<i32>>> {
         self.internal_get_samples(data_ids)
     }
 }
@@ -162,7 +166,7 @@ impl Iterator for LocalDataProviderIter {
         if self.current_index < self.provider.len() {
             let result = self
                 .provider
-                .internal_get_samples(&[self.current_index])
+                .internal_get_samples(&[BatchId::from_u64(self.current_index as u64)])
                 .unwrap()
                 .pop()
                 .unwrap();

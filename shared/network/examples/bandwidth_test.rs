@@ -162,7 +162,11 @@ impl App {
                 )
             }
             NetworkEvent::DownloadFailed(result) => {
-                info!("Download failed: {}! Reason: {}", result.hash, result.error)
+                info!(
+                    "Download failed: {}! Reason: {}",
+                    result.blob_ticket.hash(),
+                    result.error
+                )
             }
         }
     }

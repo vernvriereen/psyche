@@ -34,6 +34,13 @@ impl Communicator {
 }
 
 #[cfg(not(feature = "parallelism"))]
+impl Default for CommunicatorId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(not(feature = "parallelism"))]
 impl CommunicatorId {
     pub fn new() -> Self {
         unimplemented!()
@@ -222,7 +229,7 @@ impl Module for ColumnParallelLinear {
                 device.cuda_synchronize();
                 ret
             }
-            None => self.linear.forward(&input),
+            None => self.linear.forward(input),
         }
     }
 }

@@ -2,10 +2,9 @@ use crate::{
     llama::{Cache, Config, Llama, Llama3RopeConfig, LlamaEosToks},
     safetensor_utils::load_safetensors_into_variables,
     tensor_parallelism::Communicator,
-    CausalLM, CommunicatorId,
+    CausalLM, CommunicatorId, LoadSafetensorsError,
 };
-use anyhow::{bail, Error, Result};
-use std::{path::PathBuf, sync::Arc};
+use std::{io, path::PathBuf, sync::Arc};
 use tch::{
     nn::{self, Module, VarStore},
     Device, Kind, Tensor,
@@ -13,6 +12,7 @@ use tch::{
 
 #[cfg(feature = "parallelism")]
 use tch::CNCCL;
+use thiserror::Error;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct LlamaConfig {
@@ -100,6 +100,35 @@ pub struct LlamaForCausalLM {
     pub comm: Option<Arc<Communicator>>,
 }
 
+#[derive(Debug, Error)]
+pub enum LoadLlamaForCausalLMError {
+    #[error("missing config.json")]
+    MissingConfigJSON,
+
+    #[error("failed to read file config.json")]
+    FailedToReadConfig(#[from] io::Error),
+
+    #[error("could not parse config.json")]
+    FailedToParseConfig(#[from] serde_json::Error),
+
+    #[error("this model uses tied embeddings, which aren't supported.")]
+    ModelHasTiedEmbeddings,
+
+    #[error(
+        "Directly setting attention implementation to FlashAttention-2 is unsupported for now"
+    )]
+    ModelExplicitlyUsesFA2,
+
+    #[error("Failed to initialize CNCCL for tensor parallelism {0}")]
+    TensorParallelismFailedInit(tch::TchError),
+
+    #[error("Tried to use tensor parallelism with feature \"parallelism\" disabled")]
+    TensorParallelismNotEnabled,
+
+    #[error("Failed to load safetensors from disk: {0}")]
+    LoadSafetensorsError(#[from] LoadSafetensorsError),
+}
+
 impl LlamaForCausalLM {
     pub fn from_pretrained(
         repo_files: &[PathBuf],
@@ -108,45 +137,51 @@ impl LlamaForCausalLM {
         device: Option<Device>,
         tensor_parallelism_world: Option<(Arc<CommunicatorId>, usize, usize)>,
         override_max_position_embeddings: Option<usize>,
-    ) -> Result<Self> {
-        let llama_config: LlamaConfig = serde_json::from_str(&String::from_utf8(std::fs::read(
+    ) -> Result<Self, LoadLlamaForCausalLMError> {
+        let config_file = std::fs::read_to_string(
             repo_files
                 .iter()
                 .find(|x| x.ends_with("config.json"))
-                .ok_or(Error::msg("missing config.json"))?
+                .ok_or(LoadLlamaForCausalLMError::MissingConfigJSON)?
                 .as_path(),
-        )?)?)?;
+        )?;
+        let llama_config: LlamaConfig = serde_json::from_str(&config_file)?;
+
         if llama_config.tie_word_embeddings {
-            bail!("Tied embeddings not supported");
+            return Err(LoadLlamaForCausalLMError::ModelHasTiedEmbeddings);
         }
-        let mut config: Config = llama_config.into_config(match attn_implementation.unwrap_or(AttentionImplementation::Sdpa) {
-            AttentionImplementation::Eager => false,
-            AttentionImplementation::Sdpa => true,
-            AttentionImplementation::FlashAttention2 => { bail!("Directly setting attention implementation to FlashAttention-2 unsupported for now"); }
-        });
+
+        let mut config: Config = llama_config.into_config(
+            match attn_implementation.unwrap_or(AttentionImplementation::Sdpa) {
+                AttentionImplementation::Eager => false,
+                AttentionImplementation::Sdpa => true,
+                AttentionImplementation::FlashAttention2 => {
+                    return Err(LoadLlamaForCausalLMError::ModelExplicitlyUsesFA2)
+                }
+            },
+        );
+
         if let Some(override_max_position_embeddings) = override_max_position_embeddings {
             config.max_position_embeddings = override_max_position_embeddings;
         }
-        let device = device.unwrap_or(Device::Cuda(0));
+
+        let device = device.unwrap_or(Device::cuda_if_available());
         #[cfg(feature = "parallelism")]
         let comm = match tensor_parallelism_world {
             // TODO: CNCCL is not Sync, though it is Send.
             // since we can't safely use it on two threads at once,
             // we should either wrap it in a Mutex, or just switch to Rc if we don't need mutability.
             #[allow(clippy::arc_with_non_send_sync)]
-            Some((id, rank, world_size)) => Some(Arc::new(CNCCL::new(
-                id,
-                rank as i64,
-                world_size as i64,
-                device,
-            )?)),
+            Some((id, rank, world_size)) => Some(Arc::new(
+                CNCCL::new(id, rank as i64, world_size as i64, device)
+                    .map_err(LoadLlamaForCausalLMError::TensorParallelismFailedInit)?,
+            )),
             None => None,
         };
+
         #[cfg(not(feature = "parallelism"))]
         let comm = match tensor_parallelism_world {
-            Some(_) => {
-                bail!("Parallelism feature not enabled")
-            }
+            Some(_) => return Err(LoadLlamaForCausalLMError::TensorParallelismNotEnabled),
             None => None,
         };
         let mut variables: nn::VarStore = nn::VarStore::new(device);

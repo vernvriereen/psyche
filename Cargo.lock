@@ -2941,7 +2941,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 [[package]]
 name = "hf-hub"
 version = "0.3.2"
-source = "git+https://github.com/NousResearch/hf-hub.git?rev=7764fac569bb20ba0a84cb2d0685fbd607834005#7764fac569bb20ba0a84cb2d0685fbd607834005"
+source = "git+https://github.com/NousResearch/hf-hub.git?rev=269dc3df4e194f9071ddbdbd25ed90d4990f9262#269dc3df4e194f9071ddbdbd25ed90d4990f9262"
 dependencies = [
  "base64 0.22.1",
  "dirs",
@@ -5672,6 +5672,7 @@ dependencies = [
  "anyhow",
  "futures",
  "hex",
+ "hf-hub",
  "lazy_static",
  "postcard",
  "psyche-coordinator",
@@ -5720,6 +5721,8 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "sha2 0.10.8",
+ "thiserror 2.0.3",
+ "tokio",
 ]
 
 [[package]]
@@ -5732,6 +5735,7 @@ dependencies = [
  "hf-hub",
  "memmap2 0.9.5",
  "parquet",
+ "postcard",
  "pretty_assertions",
  "psyche-coordinator",
  "psyche-core",
@@ -5741,6 +5745,7 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "serde",
+ "thiserror 2.0.3",
  "tokenizers",
  "tokio",
  "tokio-util",
@@ -5762,6 +5767,7 @@ dependencies = [
  "regex",
  "tch",
  "tokenizers",
+ "tokio-util",
  "tracing",
 ]
 
@@ -5780,6 +5786,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tch",
+ "thiserror 2.0.3",
  "tokenizers",
  "torch-sys",
  "tracing",
@@ -5801,6 +5808,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "sha2 0.10.8",
+ "thiserror 2.0.3",
  "tokio",
  "tokio-stream",
  "tokio-util",

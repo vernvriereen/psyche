@@ -1,5 +1,6 @@
 #![allow(unexpected_cfgs)]
 
+mod batch_id;
 mod bloom;
 mod bounded_queue;
 mod cancellable_barrier;
@@ -14,6 +15,7 @@ mod sha256;
 mod similarity;
 mod swap_or_not;
 
+pub use batch_id::BatchId;
 pub use bloom::Bloom;
 pub use bounded_queue::BoundedQueue;
 pub use cancellable_barrier::{CancellableBarrier, CancelledBarrier};
