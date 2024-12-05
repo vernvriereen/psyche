@@ -41,10 +41,6 @@ struct Args {
         )]
     tui: bool,
 
-    /// Force listed clients to use the same random data shuffle, causing them to train on duplicate data.
-    #[clap(long, value_delimiter = ',', default_values_t = &[])]
-    force_same_shuffle: Vec<usize>,
-
     /// Kill N clients randomly every <RANDOM_KILL_INTERVAL> seconds
     #[clap(long)]
     random_kill_num: Option<usize>,
@@ -79,8 +75,11 @@ struct Args {
     #[clap(long, env)]
     wandb_entity: Option<String>,
 
-    #[clap(long, default_value_t = false)]
-    optim_stats: bool,
+    #[clap(long, env)]
+    optim_stats: Option<u32>,
+
+    #[clap(long, env)]
+    eval_tasks: Option<String>,
 }
 
 fn validate_num_clients(s: &str) -> Result<usize> {
@@ -215,11 +214,12 @@ fn main() -> Result<()> {
 
     // Start server
     let server_cmd = format!(
-        "RUST_LOG={} cargo run -p psyche-centralized-server -- --state {} --data-config {} --server-port {}",
+        "RUST_LOG={} cargo run -p psyche-centralized-server -- --state {} --data-config {} --server-port {} --tui {}",
         args.log,
         state_path.display(),
         data_path.display(),
-        args.server_port
+        args.server_port,
+        args.tui
     );
 
     println!("starting server: {server_cmd:?}");
@@ -364,10 +364,6 @@ fn start_client(args: &Args, i: usize, run_id: &String, print: bool, start_time:
         cmd.push(dir);
     }
 
-    if args.force_same_shuffle.contains(&(i - 1)) {
-        cmd.push(" --fixed-batch-shuffle 0000000000000000000000000000000000000000000000000000000000000001");
-    }
-
     if let Some(repo) = &args.first_client_checkpoint {
         if i == 2 {
             cmd.push(format!(" --checkpoint-dir ./checkpoints --hub-repo {repo}"));
@@ -397,8 +393,12 @@ fn start_client(args: &Args, i: usize, run_id: &String, print: bool, start_time:
         cmd.push(format!(" --write-log {log_dir}/client-{}.txt", i - 1))
     }
 
-    if args.optim_stats {
-        cmd.push(" --optim-stats")
+    if let Some(s) = args.optim_stats {
+        cmd.push(format!(" --optim-stats {s}"));
+    }
+
+    if let Some(evals) = &args.eval_tasks {
+        cmd.push(format!(" --eval-tasks {evals}"))
     }
 
     if print {

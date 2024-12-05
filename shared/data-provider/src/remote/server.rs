@@ -1,5 +1,6 @@
 use anyhow::Result;
 use psyche_coordinator::Coordinator;
+use psyche_core::BatchId;
 use psyche_network::{ClientNotification, NetworkableNodeIdentity, TcpServer};
 use psyche_watcher::Backend;
 use std::collections::{HashMap, HashSet};
@@ -116,7 +117,7 @@ where
     async fn try_send_data(
         &mut self,
         to: T,
-        data_ids: Vec<usize>,
+        data_ids: Vec<BatchId>,
     ) -> Result<Vec<Vec<i32>>, RejectionReason> {
         if !self.in_round.contains(&to) {
             return Err(RejectionReason::NotInThisRound);

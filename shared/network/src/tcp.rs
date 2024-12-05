@@ -1,15 +1,19 @@
 use crate::{Networkable, NetworkableNodeIdentity};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail};
 use futures_util::{future::join_all, SinkExt, StreamExt};
 use psyche_core::NodeIdentity;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt::Debug, marker::PhantomData, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, io, marker::PhantomData, net::SocketAddr, sync::Arc};
+use thiserror::Error;
 use tokio::{
     net::{TcpListener, TcpStream},
     select,
-    sync::{mpsc, Mutex},
+    sync::{
+        mpsc::{self, error::SendError},
+        Mutex,
+    },
 };
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::{debug, error, info};
@@ -48,15 +52,23 @@ where
     disconnected_rx: mpsc::Receiver<I>,
 }
 
+#[derive(Error, Debug)]
+pub enum ConnectError {
+    #[error("failed to bind to socket: {0}")]
+    Bind(io::Error),
+    #[error("failed to get local addr: {0}")]
+    GetLocalAddr(io::Error),
+}
+
 impl<I, ToServer, ToClient> TcpServer<I, ToServer, ToClient>
 where
     I: NetworkableNodeIdentity,
     ToServer: Networkable + Clone + Debug + Send + Sync + 'static,
     ToClient: Networkable + Clone + Debug + Send + Sync + 'static,
 {
-    pub async fn start(addr: SocketAddr) -> Result<Self> {
-        let listener = TcpListener::bind(addr).await?;
-        let local_addr = listener.local_addr()?;
+    pub async fn start(addr: SocketAddr) -> Result<Self, ConnectError> {
+        let listener = TcpListener::bind(addr).await.map_err(ConnectError::Bind)?;
+        let local_addr = listener.local_addr().map_err(ConnectError::GetLocalAddr)?;
         info!("Server listening on: {}", local_addr);
 
         let (incoming_tx, incoming_rx) = mpsc::channel(100);
@@ -116,7 +128,7 @@ where
         clients: Arc<Mutex<HashMap<I, mpsc::Sender<ToClient>>>>,
         incoming_tx: mpsc::Sender<(I, ToServer)>,
         disconnected_tx: mpsc::Sender<I>,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
 
         // Generate and send challenge
@@ -204,11 +216,11 @@ where
         }
     }
 
-    pub async fn send_to(&mut self, to: I, msg: ToClient) -> Result<()> {
-        self.send_msg.send((to, msg)).await.map_err(|e| e.into())
+    pub async fn send_to(&mut self, to: I, msg: ToClient) -> Result<(), SendError<(I, ToClient)>> {
+        self.send_msg.send((to, msg)).await
     }
 
-    pub async fn broadcast(&mut self, msg: ToClient) -> Result<()> {
+    pub async fn broadcast(&mut self, msg: ToClient) -> Result<(), SendError<(I, ToClient)>> {
         let clients = self.get_connected_clients().await;
         let mut v = vec![];
         for to in clients {
@@ -217,8 +229,7 @@ where
         join_all(v)
             .await
             .into_iter()
-            .map(|v| v.map_err(|e| e.into()))
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>, SendError<(I, ToClient)>>>()?;
         Ok(())
     }
 }
@@ -240,7 +251,11 @@ where
     ToServer: Networkable + Debug + Send + Sync + 'static,
     ToClient: Networkable + Debug + Send + Sync + 'static,
 {
-    pub async fn connect(addr: &str, identity: I, private_key: I::PrivateKey) -> Result<Self> {
+    pub async fn connect(
+        addr: &str,
+        identity: I,
+        private_key: I::PrivateKey,
+    ) -> anyhow::Result<Self> {
         let stream = TcpStream::connect(addr).await?;
         info!("Connected to server at: {}", addr);
 
@@ -273,7 +288,7 @@ where
 
     async fn receive_message(
         framed: &mut Framed<TcpStream, LengthDelimitedCodec>,
-    ) -> Result<ServerToClientMessage<ToClient>> {
+    ) -> anyhow::Result<ServerToClientMessage<ToClient>> {
         let bytes = framed
             .next()
             .await
@@ -281,11 +296,11 @@ where
         ServerToClientMessage::from_bytes(&bytes)
     }
 
-    pub async fn send(&mut self, message: ToServer) -> Result<()> {
-        self.framed
+    pub async fn send(&mut self, message: ToServer) -> anyhow::Result<()> {
+        Ok(self
+            .framed
             .send(ClientToServerMessage::Else(message).to_bytes().into())
-            .await
-            .map_err(|e| e.into())
+            .await?)
     }
 
     /// # Cancel safety
@@ -293,9 +308,10 @@ where
     /// This method is cancel safe. If `receive` is used as the event in a
     /// [`tokio::select!`](crate::select) statement and some other branch
     /// completes first, it is guaranteed that no messages were received.
-    pub async fn receive(&mut self) -> Result<ToClient> {
+    pub async fn receive(&mut self) -> anyhow::Result<ToClient> {
         match Self::receive_message(&mut self.framed).await? {
             ServerToClientMessage::Else(message) => Ok(message),
+            // TODO errors here
             ServerToClientMessage::Challenge(_) => Err(anyhow!("Unexpected challenge message")),
         }
     }

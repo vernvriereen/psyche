@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use pretty_assertions::assert_eq;
+use psyche_core::BatchId;
 use psyche_data_provider::{LocalDataProvider, Shuffle, TokenSize, TokenizedDataProvider};
 use tokenizers::Tokenizer;
 use tokio::fs::read_to_string;
@@ -27,7 +28,10 @@ async fn loads_dolma_subset() {
         Shuffle::Seeded(SEED),
     )
     .unwrap();
-    let samples = data_loader.get_samples(&[0, 1]).await.unwrap();
+    let samples = data_loader
+        .get_samples(&[BatchId::from_u64(0), BatchId::from_u64(1)])
+        .await
+        .unwrap();
 
     let tokenizer = Tokenizer::from_file(test_path(&["resources", "llama2_tokenizer.json"]))
         .expect("tokenizer json exists");
@@ -62,7 +66,10 @@ async fn loads_fineweb_subset() {
         Shuffle::Seeded(SEED),
     )
     .unwrap();
-    let samples = data_loader.get_samples(&[0, 1]).await.unwrap();
+    let samples = data_loader
+        .get_samples(&[BatchId::from_u64(0), BatchId::from_u64(1)])
+        .await
+        .unwrap();
 
     let tokenizer = Tokenizer::from_file(test_path(&["resources", "llama2_tokenizer.json"]))
         .expect("tokenizer json exists");

@@ -9,15 +9,17 @@ anyhow.workspace = true
 fast-math.workspace = true
 fnv = "1.0.7"
 rand = { workspace = true, optional = true }
+thiserror = "2.0.3"
+tokio.workspace = true
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
-bitvec = { version="1",  features = ["serde", "std"] }
+bitvec = { version = "1", features = ["serde", "std"] }
 serde.workspace = true
 sha2.workspace = true
 
 [target.'cfg(target_os = "solana")'.dependencies]
 anchor-lang.workspace = true
-bitvec = { version="1",  features = ["std"] }
+bitvec = { version = "1", features = ["std"] }
 
 [features]
 rand = ["dep:rand"]

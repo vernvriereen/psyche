@@ -1,0 +1,199 @@
+use std::path::PathBuf;
+
+use psyche_coordinator::{
+    model::{self, HubRepo},
+    Coordinator,
+};
+use psyche_core::NodeIdentity;
+use psyche_data_provider::{upload_model_repo_async, UploadModelError};
+use psyche_modeling::{save_tensors_into_safetensors, SaveSafetensorsError};
+use thiserror::Error;
+use tokio::{sync::mpsc, task::JoinHandle};
+use tracing::{info, info_span, Instrument};
+
+use crate::{
+    trainer::{Trainer, TrainerThreadCommunicationError},
+    HubUploadInfo,
+};
+
+use super::{
+    evals::{EvalRunner, RunningEvals},
+    CheckpointConfig,
+};
+
+#[derive(Error, Debug)]
+pub enum CooldownError {
+    #[error("no trainers available for checkpointing!")]
+    NoTrainers,
+
+    #[error("checkpointing thread crashed")]
+    CheckpointThreadCrashed,
+
+    #[error("error while checkpointing: {0}")]
+    Checkpoint(#[from] CheckpointError),
+}
+
+pub struct CooldownStepMetadata {
+    tx_checkpoint: mpsc::Sender<model::Checkpoint>,
+    checkpoint_info: Option<CheckpointConfig>,
+    checkpoint_extra_files: Vec<PathBuf>,
+
+    eval_runner: EvalRunner,
+}
+
+impl CooldownStepMetadata {
+    pub fn new(
+        tx_checkpoint: mpsc::Sender<model::Checkpoint>,
+        checkpoint_info: Option<CheckpointConfig>,
+        checkpoint_extra_files: Vec<PathBuf>,
+        eval_runner: EvalRunner,
+    ) -> Self {
+        Self {
+            tx_checkpoint,
+            checkpoint_info,
+            checkpoint_extra_files,
+            eval_runner,
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum CheckpointError {
+    #[error("Extract thread crashed")]
+    ExtractThreadCrashed,
+
+    #[error("Trainer extract error: {0}")]
+    Extract(#[from] TrainerThreadCommunicationError),
+
+    #[error("Write thread crashed")]
+    WriteThreadCrashed,
+
+    #[error("Writing safetensors to disk failed: {0}")]
+    WriteSafetensors(#[from] SaveSafetensorsError),
+
+    #[error("Writing extra file to disk failed: {0}")]
+    WriteExtraFile(#[from] tokio::io::Error),
+
+    #[error("Couldn't upload model to huggingface: {0}")]
+    UploadError(#[from] UploadModelError),
+
+    #[error("Couldn't send checkpoint - channel closed")]
+    SendCheckpoint,
+}
+
+impl CooldownStepMetadata {
+    pub fn start<T: NodeIdentity>(
+        &self,
+        mut trainers: Vec<Trainer>,
+        state: &Coordinator<T>,
+    ) -> Result<CooldownStep, CooldownError> {
+        if trainers.is_empty() {
+            return Err(CooldownError::NoTrainers);
+        }
+        let step = state.step - 1;
+        let run_id = state.run_id.clone();
+        let checkpoint_extra_files = self.checkpoint_extra_files.clone();
+        let checkpoint_info = self.checkpoint_info.clone();
+        let tx_checkpoint = self.tx_checkpoint.clone();
+        let eval_runner = self.eval_runner.clone();
+
+        let checkpointing_and_evals = tokio::task::spawn(
+            async move {
+                // we extract the vars from the trainer, then start evals right away before trying to upload to HF / write to disk
+                // to give us some more eval time.
+                let (checkpoint, checkpoint_trainers) = if let Some(checkpoint) = checkpoint_info {
+                    let mut trainer = trainers
+                        .pop()
+                        .expect("we checked trainers emptiness earlier, this is infallible.");
+
+                    info!("Extracting full model for save");
+                    tokio::task::spawn_blocking::<_, Result<_, CheckpointError>>(|| {
+                        let variables = trainer.extract()?;
+                        Ok((Some((checkpoint, variables)), vec![trainer]))
+                    })
+                    .await
+                    .map_err(|_| CheckpointError::ExtractThreadCrashed)??
+                } else {
+                    (None, vec![])
+                };
+
+                let all_trainers: Vec<_> =
+                    trainers.into_iter().chain(checkpoint_trainers).collect();
+
+                let evals = eval_runner.start(all_trainers);
+
+                if let Some((
+                    CheckpointConfig {
+                        hub_upload,
+                        checkpoint_dir,
+                    },
+                    variables,
+                )) = checkpoint
+                {
+                    let path = checkpoint_dir.join(format!("{run_id}-step{step}"));
+                    info!("Saving to {}", path.display());
+
+                    let mut local = tokio::task::spawn_blocking({
+                        let path = path.clone();
+                        move || save_tensors_into_safetensors(variables, path)
+                    })
+                    .await
+                    .map_err(|_| CheckpointError::WriteThreadCrashed)??;
+
+                    for extra in checkpoint_extra_files {
+                        let to = path.join(extra.file_name().unwrap());
+                        tokio::fs::copy(extra.clone(), to.clone())
+                            .await
+                            .map_err(CheckpointError::WriteExtraFile)?;
+                        local.push(to);
+                    }
+
+                    if let Some(HubUploadInfo {
+                        hub_repo,
+                        hub_token,
+                    }) = hub_upload
+                    {
+                        info!("Uploading to {}", hub_repo);
+                        let revision = upload_model_repo_async(
+                            hub_repo.clone(),
+                            local,
+                            hub_token.clone(),
+                            Some(format!("step {step}")),
+                            None,
+                        )
+                        .await?;
+
+                        tx_checkpoint
+                            .send(model::Checkpoint::Hub(HubRepo {
+                                repo_id: hub_repo,
+                                revision: Some(revision),
+                            }))
+                            .await
+                            .map_err(|_| CheckpointError::SendCheckpoint)?;
+                    }
+                }
+                Ok(evals)
+            }
+            .instrument(info_span!("checkpointing")),
+        );
+        Ok(CooldownStep {
+            checkpointing_and_evals,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct CooldownStep {
+    checkpointing_and_evals: JoinHandle<Result<RunningEvals, CheckpointError>>,
+}
+
+impl CooldownStep {
+    pub async fn finish(self) -> Result<RunningEvals, CooldownError> {
+        let running_evals = self
+            .checkpointing_and_evals
+            .await
+            .map_err(|_| CooldownError::CheckpointThreadCrashed)??;
+
+        Ok(running_evals)
+    }
+}

@@ -1,8 +1,6 @@
 use anyhow::{Error, Result};
 use bytes::Bytes;
-use download_manager::{
-    DownloadComplete, DownloadFailed, DownloadManager, DownloadManagerEvent, DownloadUpdate,
-};
+use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
 use futures_util::{future::join_all, Sink, SinkExt, Stream, StreamExt};
 use iroh::{
     blobs::BlobFormat,
@@ -12,6 +10,7 @@ use iroh::{
 };
 use state::State;
 use std::{
+    collections::HashSet,
     fmt::Debug,
     future::IntoFuture,
     marker::PhantomData,
@@ -38,6 +37,7 @@ mod tcp;
 mod tui;
 mod util;
 
+pub use download_manager::{DownloadComplete, DownloadFailed};
 pub use iroh::{
     base::ticket::BlobTicket,
     blobs::Hash,
@@ -47,7 +47,7 @@ pub use iroh::{
         NodeId,
     },
 };
-pub use networkable_node_identity::NetworkableNodeIdentity;
+pub use networkable_node_identity::{FromSignedBytesError, NetworkableNodeIdentity};
 pub use peer_list::PeerList;
 pub use serde::Networkable;
 pub use signed_message::SignedMessage;
@@ -152,6 +152,7 @@ where
         join_all(
             peers
                 .iter()
+                .filter(|p| p.node_id != self.node.node_id())
                 .map(|peer| self.node.net().add_node_addr(peer.clone())),
         )
         .await
@@ -159,7 +160,11 @@ where
         .collect::<Result<Vec<_>>>()?;
         self.gossip_tx
             .send(Command::JoinPeers(
-                peers.into_iter().map(|i| i.node_id).collect(),
+                peers
+                    .into_iter()
+                    .map(|i| i.node_id)
+                    .filter(|p| p != &self.node.node_id())
+                    .collect(),
             ))
             .await?;
         Ok(())
@@ -192,7 +197,7 @@ where
             .blobs()
             .download(ticket.hash(), ticket.node_addr().clone())
             .await?;
-        self.state.currently_sharing_blobs.push(ticket.hash());
+        self.state.currently_sharing_blobs.insert(ticket.hash());
 
         let (tx, rx) = mpsc::channel(10);
 
@@ -209,8 +214,7 @@ where
             }
         });
 
-        self.download_manager
-            .add(ticket.node_addr().node_id, ticket, rx);
+        self.download_manager.add(ticket, rx);
 
         Ok(())
     }
@@ -224,25 +228,20 @@ where
             .share(blob_res.hash, blob_res.format, Default::default())
             .await?;
 
-        self.state.currently_sharing_blobs.push(blob_ticket.hash());
+        self.state
+            .currently_sharing_blobs
+            .insert(blob_ticket.hash());
 
         Ok(blob_ticket)
     }
 
     pub async fn remove_downloadable(&mut self, hash: Hash) -> Result<()> {
         self.node.blobs().delete_blob(hash).await?;
-        if let Some(index) = self
-            .state
-            .currently_sharing_blobs
-            .iter()
-            .position(|x| x == &hash)
-        {
-            self.state.currently_sharing_blobs.remove(index);
-        }
+        self.state.currently_sharing_blobs.remove(&hash);
         Ok(())
     }
 
-    pub fn currently_sharing_blobs(&self) -> &Vec<Hash> {
+    pub fn currently_sharing_blobs(&self) -> &HashSet<Hash> {
         &self.state.currently_sharing_blobs
     }
 
@@ -309,20 +308,23 @@ where
     }
 
     fn on_download_update(&mut self, update: DownloadUpdate) -> Result<()> {
-        self.state
-            .bandwidth_tracker
-            .add_event(update.from, update.downloaded_size_delta);
+        self.state.bandwidth_tracker.add_event(
+            update.blob_ticket.node_addr().node_id,
+            update.downloaded_size_delta,
+        );
+
+        let hash = update.blob_ticket.hash();
 
         if update.all_done {
-            self.state.download_progesses.remove(&update.hash);
+            self.state.download_progesses.remove(&hash);
 
             let download = match update.error {
-                Some(err) => Err(Error::msg(format!("{}", err))),
+                Some(err) => Err(Error::msg(err.to_string())),
                 None => {
                     let node = self.node.clone();
                     let (send, recv) = oneshot::channel();
                     tokio::spawn(async move {
-                        let blob_bytes = match node.blobs().read_to_bytes(update.hash).await {
+                        let blob_bytes = match node.blobs().read_to_bytes(hash).await {
                             Ok(b) => b,
                             Err(e) => {
                                 error!("Failed to read bytes: {e}");
@@ -337,10 +339,9 @@ where
                     Ok(recv)
                 }
             };
-            self.download_manager
-                .read(update.from, update.hash, download);
+            self.download_manager.read(update.blob_ticket, download);
         } else {
-            self.state.download_progesses.insert(update.hash, update);
+            self.state.download_progesses.insert(hash, update);
         }
         Ok(())
     }

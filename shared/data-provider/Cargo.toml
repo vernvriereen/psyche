@@ -21,6 +21,8 @@ rand.workspace = true
 tokio-util.workspace = true
 futures.workspace = true
 serde.workspace = true
+thiserror = "2.0.3"
+postcard.workspace = true
 
 [dev-dependencies]
 psyche-tui.workspace = true
