@@ -81,21 +81,26 @@ impl TryFrom<&SerializedDistroResult> for DistroResult {
     type Error = tch::TchError;
 
     fn try_from(value: &SerializedDistroResult) -> std::result::Result<Self, Self::Error> {
-        Ok(Self {
+        let mut distro_result = Self {
             sparse_idx: Tensor::load_from_stream_with_device(
                 Cursor::new(&value.sparse_idx),
                 Device::Cpu,
-            )?
-            .pin_memory(Device::cuda_if_available()),
+            )?,
             sparse_val: Tensor::load_from_stream_with_device(
                 Cursor::new(&value.sparse_val),
                 Device::Cpu,
-            )?
-            .pin_memory(Device::cuda_if_available()),
+            )?,
             xshape: value.xshape.iter().map(|x| *x as i64).collect(),
             totalk: value.totalk,
             stats: None,
-        })
+        };
+        // don't pin - we can run on cpu if we don't!
+        if Device::cuda_if_available().is_cuda() {
+            // idx doesn't matter here
+            distro_result.sparse_idx = distro_result.sparse_idx.pin_memory(Device::Cuda(0));
+            distro_result.sparse_val = distro_result.sparse_val.pin_memory(Device::Cuda(0));
+        }
+        Ok(distro_result)
     }
 }
 
