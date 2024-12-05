@@ -344,17 +344,21 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
             PayloadState::Downloading((from_client_id.clone(), batch_id, ticket.clone()));
         round_state.downloads.insert(hash, download_state);
 
-        debug!(
-            "Requesting download of step {} batch {}: {}",
-            step,
-            batch_id,
-            ticket.hash()
-        );
+        // start downloading the payload unless this is a self-message
+        // (assuming the caller will put our payload in the proper place)
+        if from_client_id != self.identity {
+            debug!(
+                "Requesting download of step {} batch {}: {}",
+                step,
+                batch_id,
+                ticket.hash()
+            );
 
-        self.tx_request_download
-            .send(ticket)
-            .await
-            .map_err(|_| ApplyMessageError::StartDownloadBlob)?;
+            self.tx_request_download
+                .send(ticket)
+                .await
+                .map_err(|_| ApplyMessageError::StartDownloadBlob)?;
+        }
 
         Ok(())
     }

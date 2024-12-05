@@ -14,7 +14,7 @@ use tokio::{
     task::{JoinError, JoinHandle},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, span, trace, Level};
+use tracing::{debug, error, info, span, trace, Level};
 
 use crate::trainer::Trainer;
 
@@ -175,7 +175,7 @@ impl EvalRunner {
 
     pub fn start(&self, trainers: Vec<Trainer>) -> RunningEvals {
         let cancel = CancellationToken::new();
-        info!("Starting evals!");
+        debug!("Starting evals!");
 
         RunningEvals {
             cancel: cancel.clone(),

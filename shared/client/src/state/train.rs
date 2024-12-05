@@ -556,12 +556,15 @@ fn start_sending_health_checks<T: NetworkableNodeIdentity>(
                 }
             }
 
-            info!("Sending health check for following indicies: {:?}", checks);
-
-            tx_health_check
-                .send(checks)
-                .await
-                .map_err(|_| TrainError::SendHealthChecks)
+            if !checks.is_empty() {
+                info!("Sending health check for following indicies: {:?}", checks);
+                tx_health_check
+                    .send(checks)
+                    .await
+                    .map_err(|_| TrainError::SendHealthChecks)
+            } else {
+                Ok(())
+            }
         }))
     } else {
         None
