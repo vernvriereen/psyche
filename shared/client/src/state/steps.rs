@@ -563,10 +563,11 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
                     evals_or_trainers,
                     round_losses,
                     optim_stats,
+                    round_duration,
                 } = training.finish().await?;
-                let loss = self
-                    .stats_logger
-                    .push_round_stats(&round_losses, optim_stats);
+                let loss =
+                    self.stats_logger
+                        .push_round_stats(&round_losses, round_duration, optim_stats);
                 info!("Step {} loss: {}", state.step, loss);
                 self.stats_logger
                     .publish_round_stats(&state, &self.node_info);
@@ -832,6 +833,7 @@ impl<T: NetworkableNodeIdentity> From<&RunManager<T>> for ClientTUIState {
                     .as_ref()
                     .map(|x| x.0.committee);
                 let stats = run.stats();
+
                 ClientTUIState {
                     step: coordinator.step,
                     committee,

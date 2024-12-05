@@ -10,7 +10,7 @@ use psyche_coordinator::{
     assign_data_for_state, get_batch_ids_for_round, Commitment, Committee, CommitteeSelection,
     Coordinator, HealthChecks, RunState, BLOOM_FALSE_RATE,
 };
-use psyche_core::{sha256, BatchId, Bloom, BoundedQueue, NodeIdentity};
+use psyche_core::{sha256, BatchId, Bloom, NodeIdentity};
 use psyche_modeling::DistroResult;
 use psyche_network::NetworkableNodeIdentity;
 use thiserror::Error;
@@ -41,6 +41,7 @@ pub struct FinishedTrainers {
     pub evals_or_trainers: MaybeRunningEvals,
     pub round_losses: Vec<f32>,
     pub optim_stats: HashMap<String, f64>,
+    pub round_duration: Duration,
 }
 
 #[derive(Error, Debug)]
@@ -87,9 +88,6 @@ pub struct TrainingStepMetadata<T: NetworkableNodeIdentity> {
     pub data_fetcher: DataFetcher<T>,
     pub tx_health_check: mpsc::Sender<HealthChecks>,
     pub tx_distro_result: mpsc::Sender<DistroBroadcastAndPayload>,
-
-    pub round_start: Option<Instant>,
-    pub round_durations: BoundedQueue<Duration, 16>,
 
     pub write_gradients_dir: Option<PathBuf>,
 
@@ -150,11 +148,7 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
 
         debug!("Transitioning to train step {}", state.step);
 
-        let now = Instant::now();
-        if let Some(last_round_start) = self.round_start {
-            self.round_durations.push(now - last_round_start);
-        }
-        self.round_start = Some(Instant::now());
+        let round_start = Instant::now();
 
         *previous_round = std::mem::take(current_round);
         if previous_round.height == 0 && state.overlapped {
@@ -352,10 +346,12 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
                     // we finished before getting cancelled, have some time to start evals.
                     MaybeRunningEvals::Running(eval_runner.start(available_trainers))
                 };
+                let round_duration = Instant::now() - round_start;
                 Ok(FinishedTrainers {
                     evals_or_trainers: evals,
                     round_losses,
                     optim_stats,
+                    round_duration,
                 })
             })
         };
