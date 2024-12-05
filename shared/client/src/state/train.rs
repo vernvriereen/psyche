@@ -212,7 +212,10 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
             data_assignments,
             blooms,
             committee_info: Some((committee_proof, witness_proof, committee_selection)),
-            batch_ids_not_yet_trained_on: Some(batch_ids_not_yet_trained_on.clone()),
+            batch_ids_not_yet_trained_on: Some((
+                num_batch_ids_for_this_round,
+                batch_ids_not_yet_trained_on.clone(),
+            )),
         };
 
         info!(
