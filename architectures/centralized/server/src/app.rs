@@ -106,6 +106,7 @@ pub struct App {
 ///
 /// These methods provide access to internal App parameters
 /// to facilitate testing and debugging.
+#[allow(dead_code)]
 impl App {
     pub fn get_pending_clients_len(&self) -> usize {
         self.backend.pending_clients.len()
