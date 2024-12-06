@@ -6,10 +6,23 @@ use psyche_centralized_client::app::{AppBuilder, AppParams};
 use psyche_centralized_server::app::DataServerInfo;
 use psyche_data_provider::TokenSize;
 use psyche_network::SecretKey;
+use std::env;
+use std::path::Path;
 use tokio_util::sync::CancellationToken;
 
 use crate::RUN_ID;
 use crate::SERVER_PORT;
+
+pub fn repo_path() -> String {
+    let cargo_manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    std::path::Path::new(&cargo_manifest_dir)
+        .ancestors()
+        .nth(3)
+        .expect("Failed to determine repository root")
+        .to_str()
+        .unwrap()
+        .to_string()
+}
 
 pub async fn assert_with_retries<T, F, Fut>(mut function: F, y: T)
 where

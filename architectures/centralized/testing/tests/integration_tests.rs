@@ -1,7 +1,10 @@
+use std::time::Duration;
+
 use psyche_coordinator::RunState;
 use testing::{
     server::CoordinatorServerHandle,
     test_utils::{assert_with_retries, client_app_builder_default_for_testing},
+    WARMUP_TIME,
 };
 
 #[tokio::test(flavor = "multi_thread")]
@@ -86,4 +89,34 @@ async fn assert_state_change_warmup_to_waiting_for_members() {
         RunState::WaitingForMembers,
     )
     .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn assert_state_change_warmup_to_round_train() {
+    let server_handle = CoordinatorServerHandle::new_with_model(2).await;
+
+    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
+
+    tokio::spawn(async {
+        let client_app_builder_1 = client_app_builder_default_for_testing();
+        client_app_builder_1.run().await.unwrap();
+    });
+    tokio::spawn(async {
+        let client_app_builder_2 = client_app_builder_default_for_testing();
+        client_app_builder_2.run().await.unwrap();
+    });
+
+    assert_with_retries(|| server_handle.get_clients_len(), 2).await;
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+
+    // warmup time
+    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+
+    assert_with_retries(|| server_handle.get_clients_len(), 2).await;
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 }
