@@ -6,6 +6,7 @@ use psyche_modeling::{
     unsharded_cpu_variables, CausalLM, Distro, DistroResult, Fp32GradientAccumulator,
     LlamaForCausalLM,
 };
+use std::time::Duration;
 use std::{
     collections::HashMap,
     ops::ControlFlow,
@@ -14,7 +15,7 @@ use std::{
 };
 use tch::{
     nn::{self, OptimizerConfig},
-    Device, Tensor,
+    Device, Kind, Tensor,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -36,6 +37,7 @@ enum Optimizer {
         compression_topk_startup_steps: u32,
         quantize: bool,
     },
+    Null,
 }
 
 pub type DistroResults = Vec<DistroResult>;
@@ -172,6 +174,7 @@ impl Trainer {
                     compression_topk_startup_steps,
                     quantize,
                 },
+                model::Optimizer::Null => Optimizer::Null,
             };
 
             let lr_scheduler = lr_scheduler.clone();
@@ -427,6 +430,7 @@ impl Trainer {
                         let parameters = match &mut optimizer {
                             Optimizer::AdamW { optimizer, .. } => optimizer.trainable_variables(),
                             Optimizer::Distro { optimizer, .. } => optimizer.trainable_variables(),
+                            Optimizer::Null => Vec::new(),
                         };
                         grad_accum = Some(Fp32GradientAccumulator::new(&parameters, model.device()))
                     }
@@ -440,6 +444,7 @@ impl Trainer {
                     match &mut optimizer {
                         Optimizer::AdamW { optimizer, .. } => optimizer.zero_grad(),
                         Optimizer::Distro { optimizer, .. } => optimizer.zero_grad(),
+                        _ => (),
                     };
 
                     let mut loss = 0f32;
@@ -540,6 +545,7 @@ impl Trainer {
                                     None
                                 }
                             }
+                            Optimizer::Null => None,
                         },
                         true => None,
                     };
@@ -719,6 +725,26 @@ fn optimize_step(
                 return ControlFlow::Break(());
             }
         },
+        Optimizer::Null => (),
     };
     ControlFlow::Continue(())
+}
+
+impl Trainer {
+    pub fn dummy_train(
+        self,
+        step: u32,
+        data: Batch,
+        training_time: Duration,
+    ) -> Result<TrainOutput, TrainerThreadCommunicationError> {
+        std::thread::sleep(training_time);
+        Ok(TrainOutput {
+            step,
+            batch_id: data.id,
+            loss: 42.0,
+            distro_results: Vec::new(),
+            cancelled: false,
+            trainer: self,
+        })
+    }
 }

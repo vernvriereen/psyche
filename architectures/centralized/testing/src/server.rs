@@ -32,10 +32,11 @@ struct CoordinatorServer {
 
 impl CoordinatorServer {
     pub async fn default(query_chan_receiver: Receiver<TestingQueryMsg>) -> Self {
-        let coordinator: Coordinator<ClientId> = Coordinator {
+        let mut coordinator: Coordinator<ClientId> = Coordinator {
             run_id: RUN_ID.to_string(),
             ..Default::default()
         };
+        coordinator.set_testing_optimizer();
 
         let server = ServerApp::new(
             false,

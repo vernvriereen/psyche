@@ -188,12 +188,14 @@ impl App {
                 shuffle_seed,
                 token_size
             } = data_server_config.ok_or_else(|| anyhow!("Coordinator state requires we host training data, but no --data-config passed."))?;
+
             let local_data_provider = LocalDataProvider::new_from_directory(
                 dir,
                 token_size,
                 seq_len,
                 Shuffle::Seeded(shuffle_seed),
             )?;
+
             let (tx, backend) = ChannelCoordinatorBackend::new();
             let data_server =
                 DataProviderTcpServer::start(local_data_provider, backend, server_port).await?;

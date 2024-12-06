@@ -1,7 +1,10 @@
 use std::hash::Hash;
 
 use crate::{
-    model::{self, Checkpoint, Model},
+    model::{
+        self, Checkpoint, CosineLR, HubRepo, LLMArchitecture, LLMTrainingDataLocation,
+        LLMTrainingDataType, LearningRateSchedule, Model, Optimizer, LLM,
+    },
     traits::Backend,
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
@@ -722,5 +725,32 @@ impl Round {
             random_seed: 0,
             witnesses: Vec::new(),
         }
+    }
+}
+
+/// These functions are intended to use only for testing
+impl<T: NodeIdentity> Coordinator<T> {
+    pub fn set_testing_optimizer(&mut self) {
+        let llm_params = LLM {
+            architecture: LLMArchitecture::HfLlama,
+            checkpoint: Checkpoint::Hub(HubRepo {
+                repo_id: String::from("emozilla/llama2-20m-init"),
+                revision: None,
+            }),
+            max_seq_len: 2048,
+            data_type: LLMTrainingDataType::Pretraining,
+            data_location: LLMTrainingDataLocation::Server(String::from("127.0.0.1:20001")),
+            lr_schedule: LearningRateSchedule::Cosine(CosineLR::default()),
+            optimizer: Optimizer::Null,
+        };
+
+        self.model = Some(Model::LLM(llm_params));
+    }
+
+    pub fn testing_context(&self) -> bool {
+        let Some(Model::LLM(llm)) = self.model.as_ref() else {
+            return false;
+        };
+        matches!(llm.optimizer, model::Optimizer::Null)
     }
 }

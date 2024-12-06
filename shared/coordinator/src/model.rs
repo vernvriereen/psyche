@@ -53,7 +53,7 @@ pub struct LinearLR {
 }
 
 #[derive_serialize]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct CosineLR {
     base_lr: f32,
     warmup_steps: u32,
@@ -89,6 +89,7 @@ pub enum Optimizer {
         compression_chunk: u16,
         quantize: bool,
     },
+    Null,
 }
 
 #[derive_serialize]
