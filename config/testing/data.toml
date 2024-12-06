@@ -1,4 +1,4 @@
-dir = "/home/ubuntu/model_data/dolma/"
+dir = "/home/ubuntu/psyche/config/testing/dolma/"
 token_size = "TwoBytes"
 seq_len = 2048
 shuffle_seed = [

@@ -2,6 +2,7 @@ use psyche_centralized_server::app::{App as ServerApp, DataServerInfo};
 use psyche_centralized_shared::ClientId;
 use psyche_coordinator::{Coordinator, RunState};
 use psyche_network::Networkable;
+use std::fs::File;
 use tokio::{
     select,
     sync::{
@@ -99,6 +100,13 @@ impl CoordinatorServer {
         let data_toml_string = std::str::from_utf8(&data_toml_bytes).unwrap();
 
         let data_server_info: DataServerInfo = toml::from_str(data_toml_string).unwrap();
+
+        // Assert Dolma data is present:
+        let dolma_path =
+            repo_path + "/config/testing/dolma/dolma-v1_7-30B-tokenized-llama2-nanoset.npy";
+        let _dolma_data = File::open(dolma_path).expect(
+            "Failed to read Dolma data. Please ensure the Dolma data file is located at /config/testing/dolma/.",
+        );
 
         let server = ServerApp::new(
             false,
