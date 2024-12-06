@@ -10,6 +10,7 @@ async-trait.workspace = true
 tracing.workspace = true
 anchor-lang.workspace = true
 bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
+serde_with.workspace = true
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
 serde.workspace = true

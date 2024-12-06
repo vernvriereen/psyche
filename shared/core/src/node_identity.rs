@@ -3,8 +3,11 @@ use std::{
     hash::Hash,
 };
 
+use bytemuck::Pod;
+
 pub trait NodeIdentity:
     Display
+    + Copy
     + Debug
     + PartialEq
     + Eq
@@ -14,6 +17,7 @@ pub trait NodeIdentity:
     + Send
     + Sync
     + anchor_lang::Space
+    + Default
     + 'static
 {
 }

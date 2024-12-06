@@ -1,40 +1,56 @@
 use crate::SOLANA_MAX_STRING_LEN;
 
 use anchor_lang::prelude::*;
+use bytemuck::{Zeroable, ZeroableInOption};
 use psyche_core::LearningRateScheduler;
 use psyche_serde::derive_serialize;
 
 #[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 
+#[derive(Zeroable)]
 #[derive_serialize]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
+#[repr(C)]
 pub enum Model {
     LLM(LLM),
 }
 
+unsafe impl ZeroableInOption for Model {}
+
 #[derive_serialize]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Zeroable)]
+#[repr(C)]
 pub enum LLMArchitecture {
     HfLlama,
 }
 
 #[derive_serialize]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Zeroable)]
+#[repr(C)]
 pub enum LLMTrainingDataType {
     Pretraining,
     Finetuning,
 }
 
+#[cfg_attr(not(target_os = "solana"), serde_as)]
 #[derive_serialize]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Zeroable, Copy)]
+#[repr(C)]
 pub enum LLMTrainingDataLocation {
-    Server(#[max_len(SOLANA_MAX_STRING_LEN)] String),
-    Local(#[max_len(SOLANA_MAX_STRING_LEN)] String),
+    Server(
+        #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_STRING_LEN]"))]
+        [u8; SOLANA_MAX_STRING_LEN]
+    ),
+    Local(
+        #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_STRING_LEN]"))]
+        [u8; SOLANA_MAX_STRING_LEN]
+    ),
 }
 
 #[derive_serialize]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Zeroable)]
 pub struct ConstantLR {
     base_lr: f32,
     warmup_steps: u32,
@@ -62,7 +78,8 @@ pub struct CosineLR {
 }
 
 #[derive_serialize]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Zeroable)]
+#[repr(C)]
 pub enum LearningRateSchedule {
     Constant(ConstantLR),
     Linear(LinearLR),
@@ -70,13 +87,14 @@ pub enum LearningRateSchedule {
 }
 
 #[derive_serialize]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Zeroable)]
+#[repr(C)]
 pub enum Optimizer {
     AdamW {
         betas: [f32; 2],
         weight_decay: f32,
         eps: f32,
-        clip_grad_norm: Option<f32>,
+        clip_grad_norm: f32,
     },
     Distro {
         clip_grad_norm: Option<f32>,
@@ -91,7 +109,7 @@ pub enum Optimizer {
 }
 
 #[derive_serialize]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Zeroable, Copy)]
 pub struct LLM {
     pub architecture: LLMArchitecture,
     pub checkpoint: Checkpoint,
@@ -102,17 +120,19 @@ pub struct LLM {
     pub optimizer: Optimizer,
 }
 
+#[cfg_attr(not(target_os = "solana"), serde_as)]
 #[derive_serialize]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub struct HubRepo {
-    #[max_len(SOLANA_MAX_STRING_LEN)]
-    pub repo_id: String,
-    #[max_len(SOLANA_MAX_STRING_LEN)]
-    pub revision: Option<String>,
+    #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_STRING_LEN]"))]
+    pub repo_id: [u8; SOLANA_MAX_STRING_LEN],
+    #[cfg_attr(not(target_os = "solana"), serde_as(as = "Option<[_; SOLANA_MAX_STRING_LEN]>"))]
+    pub revision: Option<[u8; SOLANA_MAX_STRING_LEN]>,
 }
 
 #[derive_serialize]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Zeroable, Copy)]
+#[repr(C)]
 pub enum Checkpoint {
     Ephemeral,
     Hub(HubRepo),

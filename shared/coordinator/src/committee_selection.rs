@@ -1,6 +1,7 @@
 use crate::{Client, Coordinator, CoordinatorError};
 
 use anchor_lang::prelude::*;
+use bytemuck::Zeroable;
 use psyche_core::{compute_shuffled_index, sha256, sha256v, NodeIdentity};
 use psyche_serde::derive_serialize;
 
@@ -35,7 +36,7 @@ pub struct CommitteeProof {
     pub index: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Zeroable, Default)]
 #[derive_serialize]
 pub struct WitnessProof {
     pub witness: bool,

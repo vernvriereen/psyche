@@ -7,7 +7,7 @@ use psyche_coordinator::Coordinator;
 declare_id!("2mQJR6fyjAJwoevxzZVLW6ReLenK1dxPzDmVTVMW5AKx");
 
 #[derive(Debug, InitSpace)]
-#[account]
+#[account(zero_copy)]
 pub struct CoordinatorManager {
     pub coordinator: Coordinator<ClientId>,
 }
@@ -22,9 +22,15 @@ pub mod solana_coordinator {
         warmup_time: u64,
         cooldown_time: u64,
     ) -> Result<()> {
-        let coordinator = &mut ctx.accounts.coordinator;
+        let coordinator = &mut ctx.accounts.coordinator.load_init()?;
 
-        coordinator.coordinator.run_id = run_id;
+        let mut array = [0u8; 64]; 
+        let bytes = run_id.as_bytes(); 
+
+        let len = 64.min(bytes.len());
+        array[..len].copy_from_slice(&bytes[..len]);
+
+        coordinator.coordinator.run_id = array;
         coordinator.coordinator.warmup_time = warmup_time;
         coordinator.coordinator.cooldown_time = cooldown_time;
 
@@ -38,12 +44,11 @@ pub struct InitializeCoordinator<'info> {
     #[account(
         init,
         payer = signer,
-        space = 8 + CoordinatorManager::INIT_SPACE,
+        space = 10 * (1024 as usize)
     )]
-    pub coordinator: Account<'info, CoordinatorManager>,
-
+    pub coordinator: AccountLoader<'info, CoordinatorManager>,
     #[account(mut)]
     pub signer: Signer<'info>,
-
+    
     pub system_program: Program<'info, System>,
 }

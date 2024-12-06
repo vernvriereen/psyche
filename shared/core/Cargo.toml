@@ -10,6 +10,7 @@ anchor-lang.workspace = true
 fast-math.workspace = true
 fnv = "1.0.7"
 rand = { workspace = true, optional = true }
+bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
 bitvec = { version = "1", features = ["serde", "std"] }

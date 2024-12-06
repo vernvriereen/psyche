@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
 use bitvec::array::BitArray;
+use bytemuck::Zeroable;
 use fnv::FnvHasher;
 use std::{fmt, hash::Hasher};
 
@@ -14,10 +15,24 @@ pub trait BloomHashIndex {
     fn hash_at_index(&self, hash_index: u64) -> u64;
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Copy, Zeroable)]
 pub struct Bloom<const U: usize, const K: usize> {
     pub keys: [u64; K],
-    pub bits: BitArray<[u64; U]>,
+    pub bits: BitArrayWrapper<U>,
+}
+
+#[derive(Clone, PartialEq, Eq, Copy, Default)]
+#[cfg_attr(not(target_os = "solana"), derive(Serialize, Deserialize))]
+pub struct BitArrayWrapper<const U: usize>(BitArray<[u64; U]>);
+
+unsafe impl<const U: usize> Zeroable for BitArrayWrapper<U> {}
+
+impl<const U: usize> BitArrayWrapper<U> {
+    pub fn new(bits_data: [u64; U]) -> Self {
+        Self (
+            BitArray::new(bits_data)
+        )
+    }
 }
 
 impl<const U: usize, const K: usize> Default for Bloom<U, K> {
@@ -52,7 +67,7 @@ impl<'de, const U: usize, const K: usize> Deserialize<'de> for Bloom<U, K> {
         #[derive(Deserialize)]
         struct BloomHelper<const U: usize> {
             keys: Vec<u64>,
-            bits: BitArray<[u64; U]>,
+            bits: BitArrayWrapper<U>,
         }
 
         let helper = BloomHelper::deserialize(deserializer)?;
@@ -70,7 +85,7 @@ impl<'de, const U: usize, const K: usize> Deserialize<'de> for Bloom<U, K> {
 
         Ok(Bloom {
             keys,
-            bits: helper.bits,
+            bits: helper.bits
         })
     }
 }
@@ -81,7 +96,7 @@ impl<const U: usize, const K: usize> AnchorSerialize for Bloom<U, K> {
             AnchorSerialize::serialize(&key, writer)?;
         }
 
-        let bits_data = self.bits.as_raw_slice();
+        let bits_data = self.bits.0.as_raw_slice();
         for bit in bits_data {
             AnchorSerialize::serialize(&bit, writer)?;
         }
@@ -101,7 +116,7 @@ impl<const U: usize, const K: usize> AnchorDeserialize for Bloom<U, K> {
         for bit in &mut bits_data {
             *bit = u64::deserialize_reader(reader)?;
         }
-        let bits = BitArray::new(bits_data);
+        let bits = BitArrayWrapper::new(bits_data);
 
         Ok(Bloom { keys, bits })
     }
@@ -118,7 +133,7 @@ impl<const U: usize, const K: usize> fmt::Debug for Bloom<U, K> {
         if Self::max_bits() <= MAX_PRINT_BITS {
             // Print individual bits for small filters
             for i in 0..Self::max_bits() {
-                match self.bits.get(i) {
+                match self.bits.0.get(i) {
                     Some(x) => write!(f, "{}", *x as u8)?,
 
                     None => write!(f, "X")?,
@@ -127,7 +142,7 @@ impl<const U: usize, const K: usize> fmt::Debug for Bloom<U, K> {
         } else {
             // Print byte array for larger filters
             write!(f, "[")?;
-            let words = self.bits.as_raw_slice();
+            let words = self.bits.0.as_raw_slice();
             for byte in words.iter() {
                 write!(f, "{:016x}", byte)?; // full u64 output
             }
@@ -147,8 +162,9 @@ impl<const U: usize, const K: usize> Bloom<U, K> {
         assert!(num_bits <= Self::max_bits());
         assert!(keys_slice.len() == K);
         let mut keys = [0u64; K];
+        let keys_2 = [0u64; U];
         keys.copy_from_slice(keys_slice);
-        let bits = BitArray::ZERO;
+        let bits = BitArrayWrapper::new(keys_2);
         Bloom { keys, bits }
     }
 
@@ -189,19 +205,21 @@ impl<const U: usize, const K: usize> Bloom<U, K> {
 
     fn pos<T: BloomHashIndex>(&self, key: &T, k: u64) -> u64 {
         key.hash_at_index(k)
-            .checked_rem(self.bits.len() as u64)
+            .checked_rem(self.bits.0.len() as u64)
             .unwrap_or(0)
     }
 
     pub fn clear(&mut self) {
-        self.bits = BitArray::ZERO;
+        let keys_2 = [0u64; U];
+        let bits = BitArrayWrapper::new(keys_2);
+        self.bits = bits;
     }
 
     pub fn add<T: BloomHashIndex>(&mut self, key: &T) {
         for k in &self.keys {
             let pos = self.pos(key, *k) as usize;
-            if !*self.bits.get(pos).unwrap() {
-                self.bits.set(pos, true);
+            if !*self.bits.0.get(pos).unwrap() {
+                self.bits.0.set(pos, true);
             }
         }
     }
@@ -209,7 +227,7 @@ impl<const U: usize, const K: usize> Bloom<U, K> {
     pub fn contains<T: BloomHashIndex>(&self, key: &T) -> bool {
         for k in &self.keys {
             let pos = self.pos(key, *k) as usize;
-            if !*self.bits.get(pos).unwrap() {
+            if !*self.bits.0.get(pos).unwrap() {
                 return false;
             }
         }
