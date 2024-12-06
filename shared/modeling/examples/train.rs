@@ -3,7 +3,7 @@ use clap::Parser;
 use psyche_core::{CosineLR, LearningRateScheduler};
 use psyche_data_provider::{download_model_repo_sync, LocalDataProvider, Shuffle};
 use psyche_modeling::{
-    Batcher, CausalLM, CommunicatorId, Fp32GradientAccumulator, LlamaForCausalLM
+    Batcher, CausalLM, CommunicatorId, Fp32GradientAccumulator, LlamaForCausalLM,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -67,6 +67,9 @@ struct Args {
 
     #[arg(long, default_value_t = false)]
     print_tensors: bool,
+
+    #[arg(long, default_value_t = false)]
+    grad_accum_in_fp32: bool,
 }
 
 fn train(
@@ -75,7 +78,7 @@ fn train(
     args: Args,
 ) -> Result<()> {
     println!(
-        "starting training run: model {}, data_path {}, sequence_length {}, token_size {}, micro_batch {}, total_batch {}, beta1 {:.9}, beta2 {:.9}, weight_decay {:.9}, eps {:.9}, learning_rate {:.9}, warmup_steps {}, total_steps {}, max_grad_norm {:.9}, print_tensors {}",
+        "starting training run: model {}, data_path {}, sequence_length {}, token_size {}, micro_batch {}, total_batch {}, beta1 {:.9}, beta2 {:.9}, weight_decay {:.9}, eps {:.9}, learning_rate {:.9}, warmup_steps {}, total_steps {}, max_grad_norm {:.9}, print_tensors {}, grad_accum_in_fp32 {}",
         args.model,
         args.data_path,
         args.sequence_length,
@@ -90,7 +93,8 @@ fn train(
         args.warmup_steps,
         args.total_steps,
         args.max_grad_norm,
-        args.print_tensors
+        args.print_tensors,
+        args.grad_accum_in_fp32
     );
 
     let dataset = LocalDataProvider::new_from_directory(
@@ -110,7 +114,7 @@ fn train(
         args.cpu
             .then_some(Device::Cpu)
             .or(tensor_parallelism.as_ref().map(|_| Device::Cuda(rank))),
-            tensor_parallelism
+        tensor_parallelism
             .as_ref()
             .map(|(id, rank, size, _)| (id.clone(), *rank, *size)),
         None,
@@ -156,7 +160,13 @@ fn train(
     println!("Done loading, starting training.");
     let grad_accum_steps = args.total_batch / args.micro_batch;
     let grad_accum_divisor = grad_accum_steps as f64;
-    let mut grad_accum = Fp32GradientAccumulator::new(&opt.trainable_variables(), device);
+    let mut grad_accum = match args.grad_accum_in_fp32 {
+        true => Some(Fp32GradientAccumulator::new(
+            &opt.trainable_variables(),
+            device,
+        )),
+        false => None,
+    };
     for step in 0..args.total_steps {
         let start_time = SystemTime::now();
         let lr = schedule.get_lr(step + 1);
@@ -186,9 +196,13 @@ fn train(
             let loss_value: f32 = loss.try_into()?;
             avg_loss += loss_value;
 
-            grad_accum.accumulate_gradients();
+            if let Some(grad_accum) = &mut grad_accum {
+                grad_accum.accumulate_gradients();
+            }
         }
-        grad_accum.apply_accumulation();
+        if let Some(grad_accum) = &mut grad_accum {
+            grad_accum.apply_accumulation();
+        }
 
         if args.print_tensors || (rank == 0 && args.optim_stats) {
             let mut variables = opt.trainable_variables_with_sharding();
@@ -221,7 +235,9 @@ fn train(
         opt.clip_grad_norm(args.max_grad_norm);
         opt.step();
         opt.zero_grad();
-        grad_accum.zero_grad();
+        if let Some(grad_accum) = &mut grad_accum {
+            grad_accum.zero_grad();
+        }
         let duration = SystemTime::now()
             .duration_since(start_time)
             .unwrap()
