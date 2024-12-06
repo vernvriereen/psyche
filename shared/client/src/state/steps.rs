@@ -52,9 +52,6 @@ pub struct StepStateMachine<T: NetworkableNodeIdentity> {
 
     coordinator_state: Coordinator<T>,
 
-    // don't use me for real logic, this is only used for the TUI.
-    _num_batches_left_to_train_on_this_round: usize,
-
     node_info: HashMap<String, DataValue>,
 }
 
@@ -133,7 +130,6 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
 
             coordinator_state,
 
-            _num_batches_left_to_train_on_this_round: 0,
             node_info: HashMap::new(),
         }
     }
@@ -428,7 +424,7 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
         // we only care to add this to consensus & track it in batch IDs if we have any batch IDs that haven't yet been voted for.
         // TODO: how do we do witnessing for verifiers that might be training on data that's not in the normal remaining batch IDs?
         // TODO: also we want ALL those from everyone, right?
-        let just_finished = if let Some(batch_ids_not_yet_trained_on) =
+        let just_finished = if let Some((num_batch_ids_left, batch_ids_not_yet_trained_on)) =
             &mut round_state.batch_ids_not_yet_trained_on
         {
             let mut remaining_batch_ids = batch_ids_not_yet_trained_on.lock().await;
@@ -461,6 +457,9 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
                 "Remaining batches to download for step {}: {:?}",
                 distro_result.step, remaining_batch_ids
             );
+
+            *num_batch_ids_left = remaining_batch_ids.len();
+
             remaining_batch_ids.is_empty()
         } else {
             debug!("All batches already trained on, discarding batch {batch_id}");
@@ -563,10 +562,11 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
                     evals_or_trainers,
                     round_losses,
                     optim_stats,
+                    round_duration,
                 } = training.finish().await?;
-                let loss = self
-                    .stats_logger
-                    .push_round_stats(&round_losses, optim_stats);
+                let loss =
+                    self.stats_logger
+                        .push_round_stats(&round_losses, round_duration, optim_stats);
                 info!("Step {} loss: {}", state.step, loss);
                 self.stats_logger
                     .publish_round_stats(&state, &self.node_info);
@@ -832,12 +832,18 @@ impl<T: NetworkableNodeIdentity> From<&RunManager<T>> for ClientTUIState {
                     .as_ref()
                     .map(|x| x.0.committee);
                 let stats = run.stats();
+
                 ClientTUIState {
                     step: coordinator.step,
                     committee,
                     run_state: coordinator.into(),
                     loss: stats.map(|s| s.losses().to_vec()).unwrap_or_default(),
-                    batches_left: state_machine._num_batches_left_to_train_on_this_round,
+                    batches_left: state_machine
+                        .current_round
+                        .batch_ids_not_yet_trained_on
+                        .as_ref()
+                        .map(|x| x.0)
+                        .unwrap_or_default(),
                     global_tokens_per_second: stats
                         .map(|s| s.global_tokens_per_second(coordinator))
                         .unwrap_or_default(),

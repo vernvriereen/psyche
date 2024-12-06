@@ -18,7 +18,7 @@ pub struct RoundState<T: NodeIdentity> {
     pub data_assignments: IntervalTree<BatchId, T>,
     pub blooms: Option<(WitnessBloom, WitnessBloom, WitnessBloom)>,
     pub committee_info: Option<(CommitteeProof, WitnessProof, CommitteeSelection)>,
-    pub batch_ids_not_yet_trained_on: Option<Arc<Mutex<BatchIdSet>>>,
+    pub batch_ids_not_yet_trained_on: Option<(usize, Arc<Mutex<BatchIdSet>>)>,
 }
 
 impl<T: NodeIdentity> RoundState<T> {
