@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 mod client_id;
 pub use client_id::ClientId;
-use psyche_coordinator::{Coordinator, MAX_STRING_LEN};
+use psyche_coordinator::Coordinator;
 
 declare_id!("2mQJR6fyjAJwoevxzZVLW6ReLenK1dxPzDmVTVMW5AKx");
 

@@ -1,22 +1,20 @@
-use std::hash::Hash;
-
 use crate::{
     model::{Checkpoint, Model},
     traits::Backend,
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
+
+use anchor_lang::prelude::*;
 use psyche_core::{sha256, Bloom, NodeIdentity};
 use psyche_serde::derive_serialize;
+use std::hash::Hash;
 
 #[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
 
-#[cfg(target_os = "solana")]
-use anchor_lang::prelude::*;
-
-pub const MAX_STRING_LEN: usize = 64;
-pub const MAX_NUM_CLIENTS: usize = 64;
-pub const MAX_NUM_WITNESSES: usize = 16;
+pub const SOLANA_MAX_STRING_LEN: usize = 64;
+pub const SOLANA_MAX_NUM_CLIENTS: usize = 64;
+pub const SOLANA_MAX_NUM_WITNESSES: usize = 16;
 
 pub const BLOOM_FALSE_RATE: f64 = 0.01f64;
 
@@ -56,7 +54,7 @@ pub struct Round {
     pub tie_breaker_tasks: u32,
     pub data_index: u64,
     pub random_seed: u64,
-    #[cfg_attr(target_os = "solana", max_len(MAX_NUM_WITNESSES))]
+    #[max_len(SOLANA_MAX_NUM_WITNESSES)]
     pub witnesses: Vec<Witness>,
 }
 
@@ -90,7 +88,7 @@ pub const NUM_STORED_ROUNDS: usize = 4;
 #[derive(Clone, Debug)]
 #[derive_serialize]
 pub struct Coordinator<T: NodeIdentity> {
-    #[cfg_attr(target_os = "solana", max_len(MAX_STRING_LEN))]
+    #[max_len(SOLANA_MAX_STRING_LEN)]
     pub run_id: String,
     pub run_state: RunState,
 
@@ -112,10 +110,10 @@ pub struct Coordinator<T: NodeIdentity> {
 
     pub min_clients: u32,
 
-    #[cfg_attr(target_os = "solana", max_len(MAX_NUM_CLIENTS))]
+    #[max_len(SOLANA_MAX_NUM_CLIENTS)]
     #[cfg_attr(not(target_os = "solana"), serde(default = "Vec::new"))]
     pub clients: Vec<Client<T>>,
-    #[cfg_attr(target_os = "solana", max_len(MAX_NUM_CLIENTS))]
+    #[max_len(SOLANA_MAX_NUM_CLIENTS)]
     #[cfg_attr(not(target_os = "solana"), serde(default = "Vec::new"))]
     pub dropped_clients: Vec<Client<T>>,
 
@@ -132,7 +130,7 @@ pub struct Coordinator<T: NodeIdentity> {
     pub witness_nodes: u32,
     pub witness_quorum: u32,
 
-    #[cfg_attr(target_os = "solana", max_len(MAX_NUM_CLIENTS))]
+    #[max_len(SOLANA_MAX_NUM_CLIENTS)]
     #[cfg_attr(not(target_os = "solana"), serde(default = "Vec::new"))]
     pub checkpointers: Vec<T>,
 

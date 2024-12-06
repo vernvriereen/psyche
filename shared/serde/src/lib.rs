@@ -9,7 +9,7 @@ pub fn derive_serialize(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         #[cfg_attr(target_os = "solana", derive(AnchorSerialize, AnchorDeserialize, InitSpace))]
-        #[cfg_attr(not(target_os = "solana"), derive(Serialize, Deserialize))]
+        #[cfg_attr(not(target_os = "solana"), derive(AnchorSerialize, AnchorDeserialize, InitSpace, Serialize, Deserialize))]
         #input
     };
 

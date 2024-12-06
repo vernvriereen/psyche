@@ -1,9 +1,8 @@
 use crate::sha256::sha256v;
 
+use anchor_lang::prelude::*;
 use psyche_serde::derive_serialize;
 
-#[cfg(target_os = "solana")]
-use anchor_lang::prelude::*;
 #[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
 
@@ -15,9 +14,8 @@ use serde::{Deserialize, Serialize};
 const LEAF_PREFIX: &[u8] = &[0];
 const INTERMEDIATE_PREFIX: &[u8] = &[1];
 
-#[cfg(target_os = "solana")]
 // TODO: We should rethink this constant when merkle tree gets used.
-const MAX_PROOFS_LEN: usize = 100;
+const SOLANA_MAX_PROOFS_LEN: usize = 100;
 
 macro_rules! hash_leaf {
     {$d:ident} => {
@@ -32,8 +30,7 @@ macro_rules! hash_intermediate {
 }
 
 /// This wrapper is used to implement the `Space` trait for the actual hash.
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
-#[cfg_attr(target_os = "solana", derive(AnchorSerialize, AnchorDeserialize))]
+#[derive(AnchorSerialize, AnchorDeserialize, Debug, PartialEq, Eq, Clone, Default)]
 #[cfg_attr(not(target_os = "solana"), derive(Serialize, Deserialize))]
 pub struct HashWrapper {
     pub inner: [u8; 32],
@@ -51,7 +48,6 @@ impl AsRef<[u8]> for HashWrapper {
     }
 }
 
-#[cfg(target_os = "solana")]
 impl Space for HashWrapper {
     const INIT_SPACE: usize = 32;
 }
@@ -104,7 +100,7 @@ pub struct Proof<'a>(Vec<ProofEntry<'a>>);
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 #[derive_serialize]
 pub struct OwnedProof {
-    #[cfg_attr(target_os = "solana", max_len(MAX_PROOFS_LEN))]
+    #[max_len(SOLANA_MAX_PROOFS_LEN)]
     entries: Vec<OwnedProofEntry>,
 }
 

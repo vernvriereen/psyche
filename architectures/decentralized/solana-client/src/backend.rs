@@ -1,5 +1,7 @@
 use anchor_client::{
-    anchor_lang::system_program, solana_sdk::signature::Keypair, Client, Cluster, Program,
+    anchor_lang::system_program,
+    solana_sdk::{signature::Keypair, signer::Signer},
+    Client, Cluster, Program,
 };
 use anyhow::Result;
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
@@ -46,13 +48,13 @@ impl WatcherBackend<ClientId> for SolanaBackend {
 
 impl SolanaBackend {
     pub async fn send_transacion_test(&mut self) -> Result<()> {
+        let coordinator_keypair = Keypair::new();
+
         let signature = self
             .program
             .request()
             .accounts(solana_coordinator::accounts::InitializeCoordinator {
-                coordinator: solana_coordinator::accounts::CoordinatorManager {
-                    coordinator: Coordinator::default(),
-                },
+                coordinator: coordinator_keypair.pubkey(),
                 signer: self.program.payer(),
                 system_program: system_program::ID,
             })
@@ -61,6 +63,7 @@ impl SolanaBackend {
                 warmup_time: 0,
                 cooldown_time: 0,
             })
+            .signer(coordinator_keypair)
             .send()
             .await?;
         println!("Transaction confirmed with signature: {}", signature);

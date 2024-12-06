@@ -1,3 +1,4 @@
+use anchor_lang::prelude::*;
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use futures::future::try_join_all;
@@ -76,6 +77,22 @@ impl AsRef<[u8]> for DummyNodeIdentity {
     fn as_ref(&self) -> &[u8] {
         self.0.as_bytes()
     }
+}
+
+impl AnchorSerialize for DummyNodeIdentity {
+    fn serialize<W: std::io::Write>(&self, _: &mut W) -> std::io::Result<()> {
+        unimplemented!()
+    }
+}
+
+impl AnchorDeserialize for DummyNodeIdentity {
+    fn deserialize_reader<R: std::io::Read>(_: &mut R) -> std::io::Result<Self> {
+        unimplemented!()
+    }
+}
+
+impl anchor_lang::Space for DummyNodeIdentity {
+    const INIT_SPACE: usize = 0;
 }
 
 struct DummyDataProvider;

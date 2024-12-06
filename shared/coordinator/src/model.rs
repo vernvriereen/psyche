@@ -1,10 +1,9 @@
-#[cfg(target_os = "solana")]
-use crate::MAX_STRING_LEN;
+use crate::SOLANA_MAX_STRING_LEN;
+
+use anchor_lang::prelude::*;
 use psyche_core::LearningRateScheduler;
 use psyche_serde::derive_serialize;
 
-#[cfg(target_os = "solana")]
-use anchor_lang::prelude::*;
 #[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
 
@@ -30,8 +29,8 @@ pub enum LLMTrainingDataType {
 #[derive_serialize]
 #[derive(Clone, Debug)]
 pub enum LLMTrainingDataLocation {
-    Server(#[cfg_attr(target_os = "solana", max_len(MAX_STRING_LEN))] String),
-    Local(#[cfg_attr(target_os = "solana", max_len(MAX_STRING_LEN))] String),
+    Server(#[max_len(SOLANA_MAX_STRING_LEN)] String),
+    Local(#[max_len(SOLANA_MAX_STRING_LEN)] String),
 }
 
 #[derive_serialize]
@@ -106,9 +105,9 @@ pub struct LLM {
 #[derive_serialize]
 #[derive(Clone, Debug)]
 pub struct HubRepo {
-    #[cfg_attr(target_os = "solana", max_len(MAX_STRING_LEN))]
+    #[max_len(SOLANA_MAX_STRING_LEN)]
     pub repo_id: String,
-    #[cfg_attr(target_os = "solana", max_len(MAX_STRING_LEN))]
+    #[max_len(SOLANA_MAX_STRING_LEN)]
     pub revision: Option<String>,
 }
 

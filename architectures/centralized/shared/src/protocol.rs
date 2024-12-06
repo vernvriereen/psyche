@@ -1,10 +1,12 @@
-use std::fmt::Display;
-
+use anchor_lang::prelude::*;
 use anyhow::anyhow;
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_core::NodeIdentity;
-use psyche_network::{NetworkableNodeIdentity, NodeId, PeerList, PublicKey, SecretKey, SignedMessage};
+use psyche_network::{
+    NetworkableNodeIdentity, NodeId, PeerList, PublicKey, SecretKey, SignedMessage,
+};
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ClientToServerMessage {
@@ -30,8 +32,7 @@ impl Display for ClientId {
     }
 }
 
-impl NodeIdentity for ClientId {
-}
+impl NodeIdentity for ClientId {}
 
 impl NetworkableNodeIdentity for ClientId {
     type PrivateKey = SecretKey;
@@ -69,4 +70,20 @@ impl AsRef<[u8]> for ClientId {
     fn as_ref(&self) -> &[u8] {
         self.0.as_bytes()
     }
+}
+
+impl AnchorSerialize for ClientId {
+    fn serialize<W: std::io::Write>(&self, _: &mut W) -> std::io::Result<()> {
+        unimplemented!()
+    }
+}
+
+impl AnchorDeserialize for ClientId {
+    fn deserialize_reader<R: std::io::Read>(_: &mut R) -> std::io::Result<Self> {
+        unimplemented!()
+    }
+}
+
+impl anchor_lang::Space for ClientId {
+    const INIT_SPACE: usize = 0;
 }

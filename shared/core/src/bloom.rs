@@ -1,9 +1,8 @@
+use anchor_lang::prelude::*;
 use bitvec::array::BitArray;
 use fnv::FnvHasher;
 use std::{fmt, hash::Hasher};
 
-#[cfg(target_os = "solana")]
-use anchor_lang::prelude::*;
 #[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -32,7 +31,7 @@ impl<const U: usize, const K: usize> Default for Bloom<U, K> {
 
 #[cfg(not(target_os = "solana"))]
 impl<const M: usize, const K: usize> Serialize for Bloom<M, K> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
@@ -46,7 +45,7 @@ impl<const M: usize, const K: usize> Serialize for Bloom<M, K> {
 
 #[cfg(not(target_os = "solana"))]
 impl<'de, const U: usize, const K: usize> Deserialize<'de> for Bloom<U, K> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -76,23 +75,21 @@ impl<'de, const U: usize, const K: usize> Deserialize<'de> for Bloom<U, K> {
     }
 }
 
-#[cfg(target_os = "solana")]
 impl<const U: usize, const K: usize> AnchorSerialize for Bloom<U, K> {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         for key in &self.keys {
-            key.serialize(writer)?;
+            AnchorSerialize::serialize(&key, writer)?;
         }
 
         let bits_data = self.bits.as_raw_slice();
         for bit in bits_data {
-            bit.serialize(writer)?;
+            AnchorSerialize::serialize(&bit, writer)?;
         }
 
         Ok(())
     }
 }
 
-#[cfg(target_os = "solana")]
 impl<const U: usize, const K: usize> AnchorDeserialize for Bloom<U, K> {
     fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
         let mut keys = [0u64; K];
@@ -110,7 +107,6 @@ impl<const U: usize, const K: usize> AnchorDeserialize for Bloom<U, K> {
     }
 }
 
-#[cfg(target_os = "solana")]
 impl<const U: usize, const K: usize> Space for Bloom<U, K> {
     const INIT_SPACE: usize = U * std::mem::size_of::<u64>() + K * std::mem::size_of::<u64>();
 }

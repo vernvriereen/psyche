@@ -1,9 +1,9 @@
 use crate::{Client, Coordinator, CoordinatorError};
+
+use anchor_lang::prelude::*;
 use psyche_core::{compute_shuffled_index, sha256, sha256v, NodeIdentity};
 use psyche_serde::derive_serialize;
 
-#[cfg(target_os = "solana")]
-use anchor_lang::prelude::*;
 #[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
 

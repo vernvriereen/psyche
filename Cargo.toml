@@ -68,8 +68,8 @@ torch-sys = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "e8b64d8de
 pretty_assertions = "1.4.1"
 time = { version = "0.3.36", features = ["formatting", "macros"] }
 
-anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "020a3046582944030f17b6524006eeaf26951cb8" }
-anchor-client = { git = "https://github.com/coral-xyz/anchor.git", rev = "020a3046582944030f17b6524006eeaf26951cb8", features = ["async"] }
+anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea308440a9fa9cb79cee7bddd30ab163d5" }
+anchor-client = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea308440a9fa9cb79cee7bddd30ab163d5", features = ["async"] }
 
 
 [profile.release]
