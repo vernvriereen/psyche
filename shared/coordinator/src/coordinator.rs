@@ -1,5 +1,5 @@
 use crate::{
-    model::{Checkpoint, Model},
+    model::{self, Checkpoint, Model},
     traits::Backend,
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
@@ -11,6 +11,7 @@ use std::hash::Hash;
 
 #[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 pub const SOLANA_MAX_STRING_LEN: usize = 64;
 pub const SOLANA_MAX_NUM_CLIENTS: usize = 64;
@@ -124,7 +125,6 @@ pub struct Coordinator<T: NodeIdentity> {
 
     pub batches_per_round: u32,
     pub data_indicies_per_batch: u32,
-    pub max_batches_per_client: u32,
 
     pub verification_percent: u8,
     pub witness_nodes: u32,
@@ -219,7 +219,6 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             last_tick_unix_timestamp: Default::default(),
             batches_per_round: Default::default(),
             data_indicies_per_batch: Default::default(),
-            max_batches_per_client: Default::default(),
             verification_percent: Default::default(),
             witness_nodes: Default::default(),
             witness_quorum: Default::default(),
@@ -297,7 +296,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             return Err(CoordinatorError::Disabled);
         }
         if !CommitteeSelection::from_coordinator(self, self.overlapped && !self.first_round)?
-            .verify_witness_for_client(from, &witness.proof, &self.clients)
+            .verify_witness_for_client(&from.id, &witness.proof, &self.clients)
         {
             return Err(CoordinatorError::InvalidWitness);
         }
@@ -319,7 +318,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 witness_nodes => witness_nodes as usize,
             }
         {
-            // enough witnesses have early voted, go to witness state
+            debug!("enough witnesses have early voted, go to witness state");
             self.change_state(unix_timestamp, RunState::RoundWitness);
         }
         Ok(())
@@ -389,7 +388,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                     return false;
                 }
             };
-            if !selection.verify_committee_for_client(client, proof, &self.clients) {
+            if !selection.verify_committee_for_client(&client.id, proof, &self.clients) {
                 return false;
             }
             match proof.committee {
@@ -522,10 +521,6 @@ impl<T: NodeIdentity> Coordinator<T> {
         )
     }
 
-    pub fn is_greedy_data(&self) -> bool {
-        self.max_batches_per_client != 0
-    }
-
     pub fn get_client_at_historical_index(&self, n: usize, clients_len: u32) -> Option<&Client<T>> {
         if n < self.clients.len() {
             Some(&self.clients[n])
@@ -566,11 +561,9 @@ impl<T: NodeIdentity> Coordinator<T> {
     ) -> std::result::Result<(), CoordinatorError> {
         if (self.clients.len() as u32) < self.min_clients {
             self.start_waiting_for_members(unix_timestamp);
-        } else {
-            if self.check_timeout(unix_timestamp, self.warmup_time) {
-                self.first_round = true;
-                self.start_round_train(unix_timestamp, random_seed, 0);
-            }
+        } else if self.check_timeout(unix_timestamp, self.warmup_time) {
+            self.first_round = true;
+            self.start_round_train(unix_timestamp, random_seed, 0);
         }
         Ok(())
     }
@@ -580,12 +573,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         unix_timestamp: u64,
     ) -> std::result::Result<(), CoordinatorError> {
         if self.check_timeout(unix_timestamp, self.max_round_train_time) {
-            if self.is_greedy_data() {
-                // if we take longer than our max round train time, abandon the epoch and start over (assume too many people left)
-                self.start_waiting_for_members(unix_timestamp);
-            } else {
-                self.change_state(unix_timestamp, RunState::RoundWitness);
-            }
+            self.change_state(unix_timestamp, RunState::RoundWitness);
         }
         Ok(())
     }
@@ -696,6 +684,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     fn change_state(&mut self, unix_timestamp: u64, new_state: RunState) {
+        debug!("changing state from {} to {}", self.run_state, new_state);
         self.run_state_start_unix_timestamp = unix_timestamp;
         self.run_state = new_state;
     }
@@ -706,6 +695,19 @@ impl<T: NodeIdentity> Coordinator<T> {
         data_indicies_per_batch: u32,
     ) -> u64 {
         data_index + (batches_per_round * data_indicies_per_batch) as u64
+    }
+
+    pub fn total_tokens(&self) -> u64 {
+        self.current_round()
+            .map(|y| y.data_index)
+            .unwrap_or_default()
+            * match &self.model {
+                Some(model::Model::LLM(llm)) => match llm.data_type {
+                    model::LLMTrainingDataType::Pretraining => llm.max_seq_len as u64,
+                    model::LLMTrainingDataType::Finetuning => todo!(),
+                },
+                None => 0,
+            }
     }
 }
 

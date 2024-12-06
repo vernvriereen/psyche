@@ -1,17 +1,15 @@
-use anchor_lang::prelude::*;
-use anyhow::anyhow;
+use anchor_lang::{AnchorDeserialize, AnchorSerialize};
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_core::NodeIdentity;
 use psyche_network::{
-    NetworkableNodeIdentity, NodeId, PeerList, PublicKey, SecretKey, SignedMessage,
-};
-use serde::{Deserialize, Serialize};
+    FromSignedBytesError, NetworkableNodeIdentity, NodeId, PeerList, PublicKey, SecretKey, SignedMessage};
 use std::fmt::Display;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ClientToServerMessage {
     Join { run_id: String },
-    Witness(Witness),
+    Witness(Box<Witness>),
     HealthCheck(HealthChecks),
     Checkpoint(model::Checkpoint),
 }
@@ -36,13 +34,13 @@ impl NodeIdentity for ClientId {}
 
 impl NetworkableNodeIdentity for ClientId {
     type PrivateKey = SecretKey;
-    fn from_signed_bytes(bytes: &[u8], challenge: [u8; 32]) -> anyhow::Result<Self> {
-        let (key, decoded_challenge) = SignedMessage::<[u8; 32]>::verify_and_decode(bytes)?;
+    fn from_signed_bytes(bytes: &[u8], challenge: [u8; 32]) -> Result<Self, FromSignedBytesError> {
+        let (key, decoded_challenge) = SignedMessage::<[u8; 32]>::verify_and_decode(bytes)
+            .map_err(|_| FromSignedBytesError::Deserialize)?;
         if decoded_challenge != challenge {
-            return Err(anyhow!(
-                "Mismatch in decoded challenge {:?} != {:?}",
-                decoded_challenge,
-                challenge
+            return Err(FromSignedBytesError::MismatchedChallenge(
+                challenge,
+                decoded_challenge.into(),
             ));
         }
         Ok(Self(key))

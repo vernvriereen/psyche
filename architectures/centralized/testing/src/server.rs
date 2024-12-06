@@ -1,0 +1,138 @@
+use psyche_centralized_server::app::App as ServerApp;
+use psyche_centralized_shared::ClientId;
+use psyche_coordinator::{Coordinator, RunState};
+use tokio::{
+    select,
+    sync::{
+        mpsc::{self, Receiver},
+        oneshot,
+    },
+};
+
+use crate::{test_utils::data_server_info_default_for_testing, RUN_ID, SERVER_PORT};
+
+enum TestingQueryMsg {
+    QueryClients {
+        respond_to: oneshot::Sender<usize>,
+    },
+    QueryRunState {
+        respond_to: oneshot::Sender<RunState>,
+    },
+}
+
+struct CoordinatorServer {
+    inner: ServerApp,
+    query_chan_receiver: Receiver<TestingQueryMsg>,
+}
+
+impl CoordinatorServer {
+    pub async fn default(query_chan_receiver: Receiver<TestingQueryMsg>) -> Self {
+        let coordinator: Coordinator<ClientId> = Coordinator {
+            run_id: RUN_ID.to_string(),
+            ..Default::default()
+        };
+
+        let server = ServerApp::new(
+            false,
+            coordinator,
+            Some(data_server_info_default_for_testing()),
+            None,
+            Some(SERVER_PORT),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        Self {
+            inner: server,
+            query_chan_receiver,
+        }
+    }
+
+    pub async fn new(
+        query_chan_receiver: Receiver<TestingQueryMsg>,
+        init_min_clients: Option<u32>,
+    ) -> Self {
+        let coordinator: Coordinator<ClientId> = Coordinator {
+            run_id: RUN_ID.to_string(),
+            ..Default::default()
+        };
+
+        let server = ServerApp::new(
+            false,
+            coordinator,
+            Some(data_server_info_default_for_testing()),
+            None,
+            Some(SERVER_PORT),
+            None,
+            Some(30),
+            init_min_clients,
+        )
+        .await
+        .unwrap();
+
+        Self {
+            inner: server,
+            query_chan_receiver,
+        }
+    }
+
+    pub async fn handle_message(&mut self, msg: TestingQueryMsg) {
+        match msg {
+            TestingQueryMsg::QueryClients { respond_to } => {
+                let clients_len = self.inner.get_pending_clients_len();
+                respond_to.send(clients_len).unwrap();
+            }
+            TestingQueryMsg::QueryRunState { respond_to } => {
+                let run_state = self.inner.get_run_state();
+                respond_to.send(run_state).unwrap();
+            }
+        }
+    }
+
+    pub async fn run(&mut self) {
+        loop {
+            select! {
+                res = self.inner.run() => res.unwrap(),
+                Some(client_msg) = self.query_chan_receiver.recv() => self.handle_message(client_msg).await
+            }
+        }
+    }
+}
+
+pub struct CoordinatorServerHandle {
+    query_chan_sender: mpsc::Sender<TestingQueryMsg>,
+}
+
+impl CoordinatorServerHandle {
+    pub async fn default() -> Self {
+        let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
+        let mut server = CoordinatorServer::default(query_chan_receiver).await;
+        tokio::spawn(async move { server.run().await });
+
+        Self { query_chan_sender }
+    }
+
+    pub async fn new(init_min_clients: u32) -> Self {
+        let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
+        let mut server = CoordinatorServer::new(query_chan_receiver, Some(init_min_clients)).await;
+        tokio::spawn(async move { server.run().await });
+        Self { query_chan_sender }
+    }
+
+    pub async fn get_clients_len(&self) -> usize {
+        let (send, recv) = oneshot::channel();
+        let msg = TestingQueryMsg::QueryClients { respond_to: send };
+        let _ = self.query_chan_sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+
+    pub async fn get_run_state(&self) -> RunState {
+        let (send, recv) = oneshot::channel::<RunState>();
+        let msg = TestingQueryMsg::QueryRunState { respond_to: send };
+        let _ = self.query_chan_sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+}

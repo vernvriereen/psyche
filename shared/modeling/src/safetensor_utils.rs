@@ -1,8 +1,8 @@
-use anyhow::{bail, Result};
 use safetensors::{slice::TensorIndexer, SafeTensors};
 use serde_json::json;
 use std::{
     collections::{HashMap, HashSet},
+    io,
     ops::Bound,
     path::PathBuf,
 };
@@ -10,10 +10,40 @@ use tch::{
     nn::{Shard, VarStore},
     Device, Kind, Tensor,
 };
+use thiserror::Error;
 
 const MAX_SAFETENSOR_PART_SIZE: usize = 1024 * 1024 * 1024 * 5;
 
-pub fn load_safetensors_into_variables(vs: &mut VarStore, repo_files: &[PathBuf]) -> Result<()> {
+#[derive(Error, Debug)]
+pub enum LoadSafetensorsError {
+    #[error("Failed to open safetensors file: {0}")]
+    OpenFile(#[from] io::Error),
+
+    #[error("Failed to deserialize safetensors: {0}")]
+    Deserialize(#[from] safetensors::SafeTensorError),
+
+    #[error("failed to perform tensor operation: {0}")]
+    TchError(#[from] tch::TchError),
+
+    #[error("Cannot shard tensor {name} of shape {size:?} along dimension {dim} into {world_size} parts")]
+    CantShard {
+        name: String,
+        size: Vec<i64>,
+        dim: usize,
+        world_size: usize,
+    },
+
+    #[error("Failed to slice tensor {0}")]
+    FailedToSlice(String),
+
+    #[error("Checkpoint missing the following variables: {0:?}")]
+    MissingVariables(HashSet<String>),
+}
+
+pub fn load_safetensors_into_variables(
+    vs: &mut VarStore,
+    repo_files: &[PathBuf],
+) -> Result<(), LoadSafetensorsError> {
     let _no_grad = tch::no_grad_guard();
     let mut unmatched = vs.variables().keys().cloned().collect::<HashSet<_>>();
     for path in repo_files.iter().filter(|x| {
@@ -39,13 +69,12 @@ pub fn load_safetensors_into_variables(vs: &mut VarStore, repo_files: &[PathBuf]
                     let (dim, rank, world_size) = (*dim, *rank, *world_size);
                     let total_size = size[dim];
                     if total_size % (world_size as i64) != 0 {
-                        bail!(
-                            "Cannot shard tensor {} of shape {:?} along dimension {} into {} parts",
-                            name,
+                        return Err(LoadSafetensorsError::CantShard {
+                            name: name.clone(),
                             size,
                             dim,
-                            world_size
-                        );
+                            world_size,
+                        });
                     }
                     let block_size = total_size / (world_size as i64);
                     let start = (rank as i64) * block_size;
@@ -63,12 +92,9 @@ pub fn load_safetensors_into_variables(vs: &mut VarStore, repo_files: &[PathBuf]
                             }
                         })
                         .collect();
-                    let data_iterator = match view.sliced_data(&slices) {
-                        Ok(data_iterator) => data_iterator,
-                        Err(_) => {
-                            bail!("safetenors slice error");
-                        }
-                    };
+                    let data_iterator = view
+                        .sliced_data(&slices)
+                        .map_err(|_| LoadSafetensorsError::FailedToSlice(name.clone()))?;
                     let data: Vec<u8> = data_iterator.flatten().cloned().collect();
                     size[dim] = block_size;
                     let src_tensor =
@@ -85,10 +111,7 @@ pub fn load_safetensors_into_variables(vs: &mut VarStore, repo_files: &[PathBuf]
         }
     }
     if !unmatched.is_empty() {
-        bail!(
-            "Checkpoint missing the following variables: {:?}",
-            unmatched
-        );
+        return Err(LoadSafetensorsError::MissingVariables(unmatched));
     }
     Ok(())
 }
@@ -99,21 +122,40 @@ struct FilePart {
     size: usize,
 }
 
+#[derive(Error, Debug)]
+pub enum SaveSafetensorsError {
+    #[error("No tensors to save")]
+    NoTensors,
+
+    #[error("Failed to create directory {0}: {1}")]
+    CreateDir(PathBuf, io::Error),
+
+    #[error("Tensor {name} too big to save to file -- it's {size} bytes while we have a max of {MAX_SAFETENSOR_PART_SIZE} bytes")]
+    TensorTooBig { name: String, size: usize },
+
+    #[error("Torch error: {0}")]
+    TchError(#[from] tch::TchError),
+
+    #[error("Failed to write: {0}")]
+    Write(#[from] io::Error),
+}
+
 pub fn save_tensors_into_safetensors(
     tensors: HashMap<String, Tensor>,
     dir: PathBuf,
-) -> Result<Vec<PathBuf>> {
+) -> Result<Vec<PathBuf>, SaveSafetensorsError> {
     if tensors.is_empty() {
-        bail!("No tensors to save");
+        return Err(SaveSafetensorsError::NoTensors);
     }
-    std::fs::create_dir_all(dir.clone())?;
+    std::fs::create_dir_all(dir.clone())
+        .map_err(|e| SaveSafetensorsError::CreateDir(dir.clone(), e))?;
     let mut file_parts = vec![FilePart::default()];
     let mut tensors = tensors.into_iter().collect::<Vec<_>>();
     tensors.sort_by(|a, b| a.0.cmp(&b.0)); // sort so we have stable ordering for chunking
     for (name, tensor) in tensors {
         let size = tensor.numel() * tensor.kind().elt_size_in_bytes();
         if size > MAX_SAFETENSOR_PART_SIZE {
-            bail!("Tensor {name} too big to save to file -- it's {size} bytes while we have a max of {MAX_SAFETENSOR_PART_SIZE} bytes");
+            return Err(SaveSafetensorsError::TensorTooBig { name, size });
         }
         if size + file_parts.last().unwrap().size > MAX_SAFETENSOR_PART_SIZE {
             file_parts.push(FilePart::default());

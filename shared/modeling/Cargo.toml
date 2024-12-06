@@ -17,6 +17,7 @@ tokenizers.workspace = true
 tracing.workspace = true
 byteorder = "1.4.3"
 safetensors = "0.3.0"
+thiserror = "2.0.3"
 
 # for examples
 [dev-dependencies]

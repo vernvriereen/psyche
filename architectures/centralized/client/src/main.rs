@@ -1,8 +1,8 @@
 use crate::app::{AppBuilder, AppParams, Tabs, TAB_NAMES};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use clap::{ArgAction, Parser, Subcommand};
-use psyche_client::{BatchShuffleType, CheckpointSaveInfo, HubUploadInfo, WandBInfo};
+use psyche_client::{CheckpointConfig, HubUploadInfo, WandBInfo};
 use psyche_eval::tasktype_from_name;
 use psyche_network::SecretKey;
 use psyche_tui::{maybe_start_render_loop, LogOutput};
@@ -92,10 +92,6 @@ enum Commands {
         #[clap(long, env)]
         wandb_entity: Option<String>,
 
-        /// a 32-byte long hex string. WARNING: providing the same shuffle to two nodes will result in a LOT of duplicated & discarded training work.
-        #[clap(long, env)]
-        fixed_batch_shuffle: Option<String>,
-
         #[clap(long, env)]
         write_log: Option<PathBuf>,
 
@@ -139,7 +135,6 @@ async fn async_main() -> Result<()> {
             wandb_entity,
             wandb_group,
             wandb_project,
-            fixed_batch_shuffle,
             write_log,
             optim_stats_steps,
             grad_accum_in_fp32,
@@ -164,19 +159,10 @@ async fn async_main() -> Result<()> {
                 );
             }
 
-            let batch_shuffle_type = match fixed_batch_shuffle {
-                None => BatchShuffleType::Random,
-                Some(seed) => BatchShuffleType::Fixed(
-                    hex::decode(seed)?
-                        .try_into()
-                        .map_err(|_| anyhow!("batch shuffle seed is not valid 32 bytes!"))?,
-                ),
-            };
-
             let hub_read_token = std::env::var("HF_TOKEN").ok();
 
             let checkpoint_upload_info = match (&hub_read_token, hub_repo, checkpoint_dir) {
-                (Some(token), Some(repo), Some(dir)) => Some(CheckpointSaveInfo {
+                (Some(token), Some(repo), Some(dir)) => Some(CheckpointConfig {
                     checkpoint_dir: dir,
                     hub_upload: Some(HubUploadInfo {
                         hub_repo: repo,
@@ -189,7 +175,7 @@ async fn async_main() -> Result<()> {
                 (_, Some(_), None) => {
                     bail!("--hub-repo was set, but no --checkpoint-dir was passed!")
                 }
-                (_, None, Some(dir)) => Some(CheckpointSaveInfo {
+                (_, None, Some(dir)) => Some(CheckpointConfig {
                     checkpoint_dir: dir,
                     hub_upload: None,
                 }),
@@ -278,7 +264,6 @@ async fn async_main() -> Result<()> {
                 checkpoint_upload_info,
                 hub_read_token,
                 wandb_info,
-                batch_shuffle_type,
                 optim_stats: optim_stats_steps,
                 grad_accum_in_fp32,
             })

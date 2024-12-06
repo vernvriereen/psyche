@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     fmt::Debug,
     time::{Duration, Instant},
 };
@@ -19,7 +19,7 @@ pub struct State {
     pub bandwidth_history: VecDeque<f64>,
     pub download_progesses: HashMap<Hash, DownloadUpdate>,
 
-    pub currently_sharing_blobs: Vec<Hash>,
+    pub currently_sharing_blobs: HashSet<Hash>,
 }
 
 impl State {

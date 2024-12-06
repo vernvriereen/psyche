@@ -110,26 +110,30 @@ impl<const U: usize, const K: usize> AnchorDeserialize for Bloom<U, K> {
 impl<const U: usize, const K: usize> Space for Bloom<U, K> {
     const INIT_SPACE: usize = U * std::mem::size_of::<u64>() + K * std::mem::size_of::<u64>();
 }
-
 impl<const U: usize, const K: usize> fmt::Debug for Bloom<U, K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Bloom {{ keys.len: {} bits: ", self.keys.len(),)?;
+        write!(f, "Bloom {{ keys.len: {} bits: ", self.keys.len())?;
         const MAX_PRINT_BITS: usize = 10;
-        for i in 0..std::cmp::min(MAX_PRINT_BITS, Self::max_bits()) {
-            match self.bits.get(i) {
-                Some(x) => {
-                    if *x {
-                        write!(f, "1")?;
-                    } else {
-                        write!(f, "0")?;
-                    }
+
+        if Self::max_bits() <= MAX_PRINT_BITS {
+            // Print individual bits for small filters
+            for i in 0..Self::max_bits() {
+                match self.bits.get(i) {
+                    Some(x) => write!(f, "{}", *x as u8)?,
+
+                    None => write!(f, "X")?,
                 }
-                None => write!(f, "X")?,
             }
+        } else {
+            // Print byte array for larger filters
+            write!(f, "[")?;
+            let words = self.bits.as_raw_slice();
+            for byte in words.iter() {
+                write!(f, "{:016x}", byte)?; // full u64 output
+            }
+            write!(f, "]")?;
         }
-        if self.bits.len() > MAX_PRINT_BITS {
-            write!(f, "..")?;
-        }
+
         write!(f, " }}")
     }
 }

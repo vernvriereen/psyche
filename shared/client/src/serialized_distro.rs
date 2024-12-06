@@ -23,45 +23,45 @@ fn serialize_tensor(tensor: &Tensor) -> std::result::Result<Vec<u8>, tch::TchErr
 }
 
 #[derive(Debug)]
-pub enum DeserializeDistroResultError {
+pub enum SerializeDistroResultError {
     Tch(tch::TchError),
     ShapeInt(TryFromIntError),
 }
 
-impl fmt::Display for DeserializeDistroResultError {
+impl fmt::Display for SerializeDistroResultError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DeserializeDistroResultError::Tch(err) => write!(f, "Torch error: {}", err),
-            DeserializeDistroResultError::ShapeInt(err) => {
+            SerializeDistroResultError::Tch(err) => write!(f, "Torch error: {}", err),
+            SerializeDistroResultError::ShapeInt(err) => {
                 write!(f, "Shape had invalid u16: {}", err)
             }
         }
     }
 }
 
-impl Error for DeserializeDistroResultError {
+impl Error for SerializeDistroResultError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            DeserializeDistroResultError::Tch(err) => Some(err),
-            DeserializeDistroResultError::ShapeInt(err) => Some(err),
+            SerializeDistroResultError::Tch(err) => Some(err),
+            SerializeDistroResultError::ShapeInt(err) => Some(err),
         }
     }
 }
 
-impl From<tch::TchError> for DeserializeDistroResultError {
+impl From<tch::TchError> for SerializeDistroResultError {
     fn from(err: tch::TchError) -> Self {
-        DeserializeDistroResultError::Tch(err)
+        SerializeDistroResultError::Tch(err)
     }
 }
 
-impl From<TryFromIntError> for DeserializeDistroResultError {
+impl From<TryFromIntError> for SerializeDistroResultError {
     fn from(err: TryFromIntError) -> Self {
-        DeserializeDistroResultError::ShapeInt(err)
+        SerializeDistroResultError::ShapeInt(err)
     }
 }
 
 impl TryFrom<&DistroResult> for SerializedDistroResult {
-    type Error = DeserializeDistroResultError;
+    type Error = SerializeDistroResultError;
 
     fn try_from(value: &DistroResult) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
@@ -81,25 +81,30 @@ impl TryFrom<&SerializedDistroResult> for DistroResult {
     type Error = tch::TchError;
 
     fn try_from(value: &SerializedDistroResult) -> std::result::Result<Self, Self::Error> {
-        Ok(Self {
+        let mut distro_result = Self {
             sparse_idx: Tensor::load_from_stream_with_device(
                 Cursor::new(&value.sparse_idx),
                 Device::Cpu,
-            )?
-            .pin_memory(Device::Cuda(0)), // index not actually used, just to know backend
+            )?,
             sparse_val: Tensor::load_from_stream_with_device(
                 Cursor::new(&value.sparse_val),
                 Device::Cpu,
-            )?
-            .pin_memory(Device::Cuda(0)), // index not actually used, just to know backend
+            )?,
             xshape: value.xshape.iter().map(|x| *x as i64).collect(),
             totalk: value.totalk,
             stats: None,
-        })
+        };
+        // don't pin - we can run on cpu if we don't!
+        if Device::cuda_if_available().is_cuda() {
+            // idx doesn't matter here
+            distro_result.sparse_idx = distro_result.sparse_idx.pin_memory(Device::Cuda(0));
+            distro_result.sparse_val = distro_result.sparse_val.pin_memory(Device::Cuda(0));
+        }
+        Ok(distro_result)
     }
 }
 
-pub fn disto_results_to_bytes(
+pub fn distro_results_to_bytes(
     results: &[SerializedDistroResult],
 ) -> Result<Vec<u8>, postcard::Error> {
     let mut buf = Vec::new();

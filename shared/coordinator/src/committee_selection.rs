@@ -127,29 +127,24 @@ impl CommitteeSelection {
 
     pub fn verify_committee_for_client<T: NodeIdentity>(
         &self,
-        client: &Client<T>,
+        client_id: &T,
         proof: &CommitteeProof,
         clients: &[Client<T>],
     ) -> bool {
-        Self::verify_client(client, proof.index, clients) && self.verify_committee(proof)
+        Self::verify_client(client_id, proof.index, clients) && self.verify_committee(proof)
     }
 
     pub fn verify_witness_for_client<T: NodeIdentity>(
         &self,
-        client: &Client<T>,
+        client_id: &T,
         proof: &WitnessProof,
         clients: &[Client<T>],
     ) -> bool {
-        Self::verify_client(client, proof.index, clients) && self.verify_witness(proof)
+        Self::verify_client(client_id, proof.index, clients) && self.verify_witness(proof)
     }
 
-    fn verify_client<T: NodeIdentity>(
-        client: &Client<T>,
-        index: u64,
-        clients: &[Client<T>],
-    ) -> bool {
-        let index = index as usize;
-        index < clients.len() && clients[index] == *client
+    fn verify_client<T: NodeIdentity>(client_id: &T, index: u64, clients: &[Client<T>]) -> bool {
+        clients.get(index as usize).map(|c| &c.id) == Some(client_id)
     }
 
     fn verify_committee(&self, proof: &CommitteeProof) -> bool {

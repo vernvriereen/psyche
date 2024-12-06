@@ -7,13 +7,11 @@ mod trainer;
 mod tui;
 
 pub use client::Client;
-pub use protocol::{
-    BroadcastMessage, DistroResult, Payload, PeerAnnouncement, TrainingResult, NC,
-};
+pub use protocol::{TrainingResult, TransmittableDistroResult, NC};
 pub use serialized_distro::{
-    disto_results_to_bytes, distro_results_from_reader, SerializedDistroResult,
+    distro_results_from_reader, distro_results_to_bytes, SerializedDistroResult,
 };
-pub use state::{BatchShuffleType, CheckpointSaveInfo, HubUploadInfo, StateOptions};
+pub use state::{CheckpointConfig, HubUploadInfo, RunInitConfig, RunInitConfigAndIO};
 pub use tui::{ClientTUI, ClientTUIState};
 
 #[derive(Clone)]

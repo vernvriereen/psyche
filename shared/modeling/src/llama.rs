@@ -335,8 +335,7 @@ impl CausalSelfAttention {
                 .reshape([b, t, local_n_head * self.head_dim])
         };
 
-        let output = self.o_proj.forward(&y);
-        output
+        self.o_proj.forward(&y)
     }
 }
 
