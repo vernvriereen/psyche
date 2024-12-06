@@ -2,14 +2,23 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use psyche_centralized_client::app::{AppBuilder, AppParams};
+use psyche_centralized_client::app::AppParams;
 use psyche_centralized_server::app::DataServerInfo;
 use psyche_data_provider::TokenSize;
 use psyche_network::SecretKey;
 use tokio_util::sync::CancellationToken;
 
+use crate::client::ClientHandle;
 use crate::RUN_ID;
 use crate::SERVER_PORT;
+
+pub async fn spawn_clients(num_clients: usize) -> Vec<ClientHandle> {
+    let mut client_handles = Vec::new();
+    for _ in 0..num_clients {
+        client_handles.push(ClientHandle::default().await)
+    }
+    client_handles
+}
 
 pub async fn assert_with_retries<T, F, Fut>(mut function: F, y: T)
 where
@@ -51,10 +60,6 @@ pub fn client_app_params_default_for_testing() -> AppParams {
         optim_stats: None,
         grad_accum_in_fp32: false,
     }
-}
-
-pub fn client_app_builder_default_for_testing() -> AppBuilder {
-    AppBuilder::new(client_app_params_default_for_testing())
 }
 
 pub fn data_server_info_default_for_testing() -> DataServerInfo {
