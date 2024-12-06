@@ -101,11 +101,11 @@ impl CoordinatorServer {
 
         let data_server_info: DataServerInfo = toml::from_str(data_toml_string).unwrap();
 
-        // Assert Dolma data is present:
+        // Assert dolma data is present:
         let dolma_path =
             repo_path + "/config/testing/dolma/dolma-v1_7-30B-tokenized-llama2-nanoset.npy";
         let _dolma_data = File::open(dolma_path).expect(
-            "Failed to read Dolma data. Please ensure the Dolma data file is located at /config/testing/dolma/.",
+            "Failed to read dolma data. Please ensure the dolma data file is located at /config/testing/dolma/.",
         );
 
         let server = ServerApp::new(
