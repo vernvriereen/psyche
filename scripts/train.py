@@ -7,7 +7,7 @@ import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 from torch.distributed.fsdp import (
-    FullyShardedDataParallel as FSDP,
+    FullyShardedDataParallel as FSDPv2,
     MixedPrecision,
 )
 from torch.distributed.fsdp.wrap import (
@@ -80,7 +80,7 @@ def get_model(args):
                 transformer_layer_cls={LlamaDecoderLayer},
             )
 
-        model = FSDP(
+        model = FSDPv2(
             model,
             mixed_precision=mixed_precision_policy,
             auto_wrap_policy=wrap_policy,
