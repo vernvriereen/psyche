@@ -4,8 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-psyche-core.workspace = true
-psyche-data-provider.workspace = true
 tch.workspace = true
 torch-sys.workspace = true
 rand.workspace = true
@@ -21,7 +19,9 @@ thiserror = "2.0.3"
 
 # for examples
 [dev-dependencies]
-clap = { workspace = true }
+clap.workspace = true
+psyche-core.workspace = true
+psyche-data-provider.workspace = true
 
 [features]
 parallelism = ["tch/nccl", "torch-sys/nccl"]

@@ -1,13 +1,13 @@
 use anyhow::Result;
 use clap::Parser;
-use psyche_core::{CosineLR, LearningRateScheduler};
+use psyche_core::{CancellableBarrier, CosineLR, LearningRateScheduler};
 use psyche_data_provider::{download_model_repo_sync, LocalDataProvider, Shuffle};
 use psyche_modeling::{
     Batcher, CausalLM, CommunicatorId, Fp32GradientAccumulator, LlamaForCausalLM,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Barrier};
+use std::sync::Arc;
 use std::time::SystemTime;
 use tch::nn::{self, OptimizerConfig};
 use tch::{Device, Kind, Tensor};
@@ -74,7 +74,7 @@ struct Args {
 
 fn train(
     repo_files: Vec<PathBuf>,
-    tensor_parallelism: Option<(Arc<CommunicatorId>, usize, usize, Arc<Barrier>)>,
+    tensor_parallelism: Option<(Arc<CommunicatorId>, usize, usize, Arc<CancellableBarrier>)>,
     args: Args,
 ) -> Result<()> {
     println!(
@@ -175,13 +175,13 @@ fn train(
         for i in 0..grad_accum_steps {
             let (inputs, targets) = batch_iter.next().unwrap()?;
             if let Some((_, _, _, barrier)) = tensor_parallelism.as_ref() {
-                barrier.wait();
+                barrier.wait().expect("barrier fail");
             }
             let (_, loss) = model.forward(&inputs, Some(&targets), None);
+            let loss = loss.expect("no loss!") / grad_accum_divisor;
             if let Some((_, _, _, barrier)) = tensor_parallelism.as_ref() {
-                barrier.wait();
+                barrier.wait().expect("barrier fail");
             }
-            let loss = loss.unwrap() / grad_accum_divisor;
             if args.print_tensors {
                 println!(
                     "step {step} grad accum step {i} causal LM forward loss: {}",
@@ -190,7 +190,7 @@ fn train(
             }
             loss.backward();
             if let Some((_, _, _, barrier)) = tensor_parallelism.as_ref() {
-                barrier.wait();
+                barrier.wait().expect("barrier fail");
             }
 
             let loss_value: f32 = loss.try_into()?;
@@ -260,7 +260,7 @@ fn main() -> Result<()> {
         Some(0) | Some(1) | None => train(repo_files, None, args)?,
         Some(world_size) => {
             let id = Arc::new(CommunicatorId::new());
-            let barrier = Arc::new(Barrier::new(world_size));
+            let barrier = CancellableBarrier::new(world_size);
             let threads = (0..world_size)
                 .map(|rank| {
                     let repo_files = repo_files.clone();
