@@ -34,7 +34,7 @@ async fn connect_multiple_nodes() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn assert_state_change_waiting_for_members_to_warmup() {
+async fn state_change_waiting_for_members_to_warmup() {
     let init_min_clients = 2;
 
     let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
@@ -56,7 +56,7 @@ async fn assert_state_change_waiting_for_members_to_warmup() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn assert_state_change_warmup_to_waiting_for_members() {
+async fn state_change_shutdown_node_in_warmup() {
     let server_handle = CoordinatorServerHandle::new(2).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
@@ -90,7 +90,7 @@ async fn assert_state_change_warmup_to_waiting_for_members() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn assert_state_change_warmup_to_round_train() {
+async fn state_change_waiting_for_members_to_round_train() {
     let server_handle = CoordinatorServerHandle::new_with_model(2).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
@@ -120,7 +120,7 @@ async fn assert_state_change_warmup_to_round_train() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn assert_state_change_round_train_to_round_witness() {
+async fn state_change_waiting_for_members_to_round_witness() {
     let server_handle = CoordinatorServerHandle::new_with_model(2).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
