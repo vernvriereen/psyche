@@ -643,7 +643,14 @@ impl Distro {
                         variable.device(),
                     ));
 
-                    (sparse_idx, sparse_val, xshape, totalk, transmit_grad, delta)
+                    (
+                        sparse_idx,
+                        sparse_val,
+                        xshape,
+                        totalk,
+                        transmit_grad,
+                        delta.shallow_clone(),
+                    )
                 }
             };
 
