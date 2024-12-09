@@ -88,13 +88,12 @@ pub type HealthChecks = Vec<CommitteeProof>;
 
 pub const NUM_STORED_ROUNDS: usize = 4;
 
-#[cfg_attr(not(target_os = "solana"), serde_as)]
-#[cfg_attr(target_os = "solana", derive(AnchorSerialize, AnchorDeserialize, InitSpace))]
-#[cfg_attr(not(target_os = "solana"), derive(AnchorSerialize, AnchorDeserialize, InitSpace))]
+#[serde_as]
+#[derive_serialize]
 #[derive(Clone, Debug, Zeroable, Copy)]
 #[repr(C)]
 pub struct Coordinator<T: NodeIdentity> {
-    #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_STRING_LEN]"))]
+    #[serde_as(as = "[_; SOLANA_MAX_STRING_LEN]")]
     pub run_id: [u8; SOLANA_MAX_STRING_LEN],
     pub run_state: RunState,
 
@@ -113,9 +112,9 @@ pub struct Coordinator<T: NodeIdentity> {
 
     pub min_clients: u32,
 
-    #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_NUM_CLIENTS]"))]
+    #[serde_as(as = "[_; SOLANA_MAX_NUM_CLIENTS]")]
     pub clients: [Client<T>; SOLANA_MAX_NUM_CLIENTS],
-    #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_NUM_CLIENTS]"))]
+    #[serde_as(as = "[Client::<T>::default; SOLANA_MAX_STRING_LEN]")]
     pub dropped_clients: [Client<T>; SOLANA_MAX_NUM_CLIENTS],
 
     // #[cfg_attr(not(target_os = "solana"), serde(default))]
@@ -130,8 +129,8 @@ pub struct Coordinator<T: NodeIdentity> {
     pub witness_nodes: u32,
     pub witness_quorum: u32,
 
-    #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_NUM_CLIENTS]"))]
-    pub checkpointers: [Client<T>; SOLANA_MAX_NUM_CLIENTS],
+    #[serde_as(as = "[_; SOLANA_MAX_STRING_LEN]")]
+    pub checkpointers: [T; SOLANA_MAX_NUM_CLIENTS],
 
     // #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub epoch: u32,
@@ -231,7 +230,7 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             overlapped: Default::default(),
             total_steps: Default::default(),
             cooldown_time: Default::default(),
-            checkpointers: [Client::<T>::default(); 64],
+            checkpointers: [T::default(); 64],
         }
     }
 }

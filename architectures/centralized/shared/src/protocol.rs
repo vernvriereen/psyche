@@ -20,8 +20,15 @@ pub enum ServerToClientMessage {
     Coordinator(Box<Coordinator<ClientId>>),
 }
 
-#[derive(Serialize, Deserialize, Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Hash, PartialEq, Eq, Debug, Copy)]
 pub struct ClientId(NodeId);
+
+impl Default for ClientId {
+    fn default() -> Self {
+        let node_id = NodeId::from_bytes(&[0; 32]).unwrap();
+        Self(node_id)
+    }
+}
 
 impl Display for ClientId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
