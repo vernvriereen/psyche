@@ -23,7 +23,7 @@ pub struct Bloom<const U: usize, const K: usize> {
 
 #[derive(Clone, PartialEq, Eq, Copy, Default)]
 #[cfg_attr(not(target_os = "solana"), derive(Serialize, Deserialize))]
-pub struct BitArrayWrapper<const U: usize>(BitArray<[u64; U]>);
+pub struct BitArrayWrapper<const U: usize>(pub BitArray<[u64; U]>);
 
 unsafe impl<const U: usize> Zeroable for BitArrayWrapper<U> {}
 

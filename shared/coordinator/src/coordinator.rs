@@ -10,9 +10,7 @@ use psyche_core::{sha256, Bloom, NodeIdentity};
 use psyche_serde::derive_serialize;
 use std::hash::Hash;
 
-#[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
-#[cfg(not(target_os = "solana"))]
 use serde_with::serde_as;
 use tracing::debug;
 
@@ -91,7 +89,8 @@ pub type HealthChecks = Vec<CommitteeProof>;
 pub const NUM_STORED_ROUNDS: usize = 4;
 
 #[cfg_attr(not(target_os = "solana"), serde_as)]
-#[derive_serialize]
+#[cfg_attr(target_os = "solana", derive(AnchorSerialize, AnchorDeserialize, InitSpace))]
+#[cfg_attr(not(target_os = "solana"), derive(AnchorSerialize, AnchorDeserialize, InitSpace))]
 #[derive(Clone, Debug, Zeroable, Copy)]
 #[repr(C)]
 pub struct Coordinator<T: NodeIdentity> {
@@ -99,7 +98,7 @@ pub struct Coordinator<T: NodeIdentity> {
     pub run_id: [u8; SOLANA_MAX_STRING_LEN],
     pub run_state: RunState,
 
-    #[cfg_attr(not(target_os = "solana"), serde(default))]
+    // #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub run_state_start_unix_timestamp: u64,
 
     pub warmup_time: u64,
@@ -119,9 +118,9 @@ pub struct Coordinator<T: NodeIdentity> {
     #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_NUM_CLIENTS]"))]
     pub dropped_clients: [Client<T>; SOLANA_MAX_NUM_CLIENTS],
 
-    #[cfg_attr(not(target_os = "solana"), serde(default))]
+    // #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub tick: u64,
-    #[cfg_attr(not(target_os = "solana"), serde(default))]
+    // #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub last_tick_unix_timestamp: u64,
 
     pub batches_per_round: u32,
@@ -134,18 +133,18 @@ pub struct Coordinator<T: NodeIdentity> {
     #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_NUM_CLIENTS]"))]
     pub checkpointers: [Client<T>; SOLANA_MAX_NUM_CLIENTS],
 
-    #[cfg_attr(not(target_os = "solana"), serde(default))]
+    // #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub epoch: u32,
     pub rounds_per_epoch: u32,
 
-    #[cfg_attr(not(target_os = "solana"), serde(default = "default_init_step"))]
+    // #[cfg_attr(not(target_os = "solana"), serde(default = "default_init_step"))]
     pub step: u32,
     pub total_steps: u32,
 
-    #[cfg_attr(not(target_os = "solana"), serde(default))]
+    // #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub last_step_unix_timestamp: u64,
 
-    #[cfg_attr(not(target_os = "solana"), serde(default))]
+    // #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub epoch_start_data_index: u64,
 
     pub overlapped: bool,

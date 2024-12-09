@@ -185,17 +185,17 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
                 let order_bloom = Bloom::random(num_batch_ids_for_this_round, BLOOM_FALSE_RATE);
                 debug!(
                     "Commit bloom size: {} bits, {} keys",
-                    commit_bloom.bits.len(),
+                    commit_bloom.bits.0.len(),
                     commit_bloom.keys.len()
                 );
                 debug!(
                     "Participant bloom size: {} bits, {} keys",
-                    participant_bloom.bits.len(),
+                    participant_bloom.bits.0.len(),
                     participant_bloom.keys.len()
                 );
                 debug!(
                     "Order bloom size: {} bits, {} keys",
-                    order_bloom.bits.len(),
+                    order_bloom.bits.0.len(),
                     order_bloom.keys.len()
                 );
                 Some((commit_bloom, participant_bloom, order_bloom))

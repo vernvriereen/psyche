@@ -5,7 +5,6 @@ use bytemuck::{Zeroable, ZeroableInOption};
 use psyche_core::LearningRateScheduler;
 use psyche_serde::derive_serialize;
 
-#[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -34,17 +33,16 @@ pub enum LLMTrainingDataType {
     Finetuning,
 }
 
-#[cfg_attr(not(target_os = "solana"), serde_as)]
-#[derive_serialize]
-#[derive(Clone, Debug, Zeroable, Copy)]
+#[serde_as]
+#[derive(AnchorSerialize, AnchorDeserialize, InitSpace, Serialize, Deserialize, Clone, Debug, Zeroable, Copy)]
 #[repr(C)]
 pub enum LLMTrainingDataLocation {
     Server(
-        #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_STRING_LEN]"))]
+        #[serde_as(as = "serde_with::Bytes")]
         [u8; SOLANA_MAX_STRING_LEN]
     ),
     Local(
-        #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_STRING_LEN]"))]
+        #[serde_as(as = "serde_with::Bytes")]
         [u8; SOLANA_MAX_STRING_LEN]
     ),
 }
@@ -120,13 +118,13 @@ pub struct LLM {
     pub optimizer: Optimizer,
 }
 
-#[cfg_attr(not(target_os = "solana"), serde_as)]
-#[derive_serialize]
+#[serde_as]
+#[derive(AnchorSerialize, AnchorDeserialize, InitSpace, Serialize, Deserialize)]
 #[derive(Clone, Debug, Copy)]
 pub struct HubRepo {
-    #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_STRING_LEN]"))]
+    #[serde_as(as = "serde_with::Bytes")]
     pub repo_id: [u8; SOLANA_MAX_STRING_LEN],
-    #[cfg_attr(not(target_os = "solana"), serde_as(as = "Option<[_; SOLANA_MAX_STRING_LEN]>"))]
+    #[serde_as(as = "Option<serde_with::Bytes>")]
     pub revision: Option<[u8; SOLANA_MAX_STRING_LEN]>,
 }
 

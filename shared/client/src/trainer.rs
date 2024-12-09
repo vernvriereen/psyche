@@ -145,7 +145,7 @@ impl Trainer {
                     }
                     .build(&model.variables, 1.0e-1)
                     .unwrap(),
-                    clip_grad_norm,
+                    clip_grad_norm: Some(clip_grad_norm),
                 },
                 model::Optimizer::Distro {
                     clip_grad_norm,

@@ -167,7 +167,7 @@ pub struct CoordinatorTuiState {
 impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
     fn from(value: &Coordinator<T>) -> Self {
         Self {
-            run_id: value.run_id.clone(),
+            run_id: String::from_utf8(value.run_id.clone().to_vec()).unwrap(),
             run_state: value.into(),
             height: value.rounds[value.rounds_head as usize].height,
             clients: value
