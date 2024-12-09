@@ -200,7 +200,11 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                                 futures.push(tokio::task::spawn_blocking(move || {
                                     // let this run on CPU if tp is 1
                                     let device = if init_config.tensor_parallelism == 1 {
-                                        Device::cuda_if_available()
+                                        if dp == 0 {
+                                            Device::cuda_if_available()
+                                        } else {
+                                            Device::Cuda(dp)
+                                        }
                                     } else {
                                         Device::Cuda(dp * init_config.tensor_parallelism + tp)
                                     };
