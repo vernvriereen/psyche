@@ -766,8 +766,8 @@ impl<T: NetworkableNodeIdentity> RunManager<T> {
             }
             InitStage::Initializing(..) if state.run_state != RunState::Warmup => {
 
-                // a client left the network and rollback to RunState::WaitingForMembers
-                // just keep waiting for clients to join
+                // a client has left the network, transitioning back to RunState::WaitingForMembers.
+                // wait for new clients to join the network.
                 if state.run_state == RunState::WaitingForMembers{
                     return Ok(());
                 }
