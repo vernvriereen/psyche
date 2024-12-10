@@ -5869,7 +5869,6 @@ dependencies = [
  "bytemuck",
  "psyche-coordinator",
  "psyche-core",
- "serde",
 ]
 
 [[package]]

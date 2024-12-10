@@ -125,7 +125,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
 
         let data_future = match &llm.data_location {
             model::LLMTrainingDataLocation::Server(data_server) => DataProviderTcpClient::connect(
-                String::from_utf8(data_server.to_vec()).unwrap(),
+                data_server,
                 init_config.identity.clone(),
                 init_config.private_key,
             ),
@@ -138,7 +138,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                 model::Checkpoint::Hub(hub_repo) => {
                     let hub_repo = hub_repo.clone();
                     tokio::spawn(async move {
-                        let potential_local_path = PathBuf::from(String::from_utf8(hub_repo.repo_id.clone().to_vec()).unwrap());
+                        let potential_local_path = PathBuf::from(hub_repo.repo_id.clone());
                         let model_is_local = match hub_repo.revision.is_none()
                             && tokio::fs::try_exists(potential_local_path.clone())
                                 .await
@@ -154,10 +154,10 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                                 ret
                             }
                             false => {
-                                info!("Downloading {:?}", hub_repo.repo_id);
+                                info!("Downloading {}", hub_repo.repo_id);
                                 download_model_repo_async(
-                                    String::from_utf8(hub_repo.repo_id.clone().to_vec()).unwrap(),
-                                    hub_repo.revision.map(|bytes| String::from_utf8(bytes.to_vec()).unwrap()),
+                                    hub_repo.repo_id.clone(),
+                                    hub_repo.revision,
                                     None,
                                     init_config.hub_read_token,
                                     None,
@@ -178,7 +178,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                             })
                             .cloned()
                             .collect();
-                        info!("Loading {:?}", hub_repo.repo_id);
+                        info!("Loading {}", hub_repo.repo_id);
                         let mut futures = Vec::with_capacity(
                             init_config.data_parallelism * init_config.tensor_parallelism,
                         );
@@ -232,7 +232,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                             );
                         }
                         info!(
-                            "Loaded {:?} onto {} gpu(s) (dp={},tp={})",
+                            "Loaded {} onto {} gpu(s) (dp={},tp={})",
                             hub_repo.repo_id,
                             init_config.data_parallelism * init_config.tensor_parallelism,
                             init_config.data_parallelism,
@@ -264,7 +264,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                                 ("batches_per_round", state.batches_per_round),
                                 ("total_steps", state.total_steps),
                                 ("rounds_per_epoch", state.rounds_per_epoch),
-                                ("run_id", String::from_utf8(run_id.to_vec()).unwrap()),
+                                ("run_id", run_id),
                             ));
                         if let Some(entity) = wandb_info.entity {
                             run_info = run_info.entity(entity);

@@ -21,4 +21,3 @@ anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea
 bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
 psyche-core = { path = "../../../../../shared/core" }
 psyche-coordinator = { path = "../../../../../shared/coordinator" }
-serde = { version = "1.0.209", features = ["derive"] }

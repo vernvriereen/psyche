@@ -1,6 +1,5 @@
 use anchor_lang::prelude::*;
 use psyche_core::NodeIdentity;
-use serde::{Deserialize, Serialize};
 
 #[account(zero_copy)]
 #[repr(C)]
@@ -37,19 +36,3 @@ impl std::fmt::Display for ClientId {
 }
 
 impl NodeIdentity for ClientId {}
-
-impl Serialize for ClientId {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer {
-        unimplemented!()
-    }
-}
-
-impl Deserialize for ClientId {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de> {
-        unimplemented!()
-    }
-}

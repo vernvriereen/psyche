@@ -4,7 +4,6 @@ use std::{
 };
 
 use bytemuck::Pod;
-use serde::{Deserialize, Serialize};
 
 pub trait NodeIdentity:
     Display
@@ -19,8 +18,6 @@ pub trait NodeIdentity:
     + Sync
     + anchor_lang::Space
     + Default
-    + Serialize
-    + for<'a> Deserialize<'a>
     + 'static
 {
 }
