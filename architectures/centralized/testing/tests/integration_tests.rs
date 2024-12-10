@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use psyche_coordinator::RunState;
 use testing::{
-    server::CoordinatorServerHandle, test_utils::{assert_with_retries, client_app_builder_default_for_testing}, MAX_ROUND_TRAIN_TIME, WARMUP_TIME
+    server::CoordinatorServerHandle, test_utils::{assert_with_retries, client_app_builder_default_for_testing}, MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME
 };
 
 #[tokio::test(flavor = "multi_thread")]
@@ -150,8 +150,15 @@ async fn state_change_waiting_for_members_to_round_witness() {
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 
     // train time
-    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME - 1)).await;
+    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
+
+    // Wait for the RoundWitness process to finish.
+    // Skipping this wait may cause a deadlock.
+    // Issue: https://github.com/NousResearch/psyche/issues/76
+    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
+
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 }
