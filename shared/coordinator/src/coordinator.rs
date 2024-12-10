@@ -10,7 +10,8 @@ use psyche_core::{sha256, Bloom, NodeIdentity};
 use psyche_serde::derive_serialize;
 use std::hash::Hash;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Deserializer, Serializer};
+use serde::de;
 use serde_with::serde_as;
 use tracing::debug;
 
@@ -35,11 +36,34 @@ pub enum RunState {
     Cooldown = 4,
 }
 
-#[derive_serialize]
 #[derive(Clone, Debug, Zeroable, Default, Copy)]
 pub struct Client<I: NodeIdentity> {
     pub id: I,
     pub dropping_at_end_of_round: bool,
+}
+
+impl<I: NodeIdentity> anchor_lang::Space for Client<I> {
+    const INIT_SPACE: usize = 1;
+}
+
+impl<I: NodeIdentity> Serialize for Client<I> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Err(serde::ser::Error::custom(
+                "Required field should not be present",
+            ))
+    }
+}
+
+impl<'de, I: NodeIdentity> Deserialize<'de> for Client<I> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Client<I>, <D as Deserializer<'de>>::Error>
+    where D: Deserializer<'de> {
+        Err(serde::de::Error::custom(
+                "Required field should not be present",
+            ))
+    }
 }
 
 impl<I: NodeIdentity> Hash for Client<I> {
@@ -88,13 +112,12 @@ pub type HealthChecks = Vec<CommitteeProof>;
 
 pub const NUM_STORED_ROUNDS: usize = 4;
 
-#[cfg_attr(not(target_os = "solana"), serde_as)]
-#[cfg_attr(target_os = "solana", derive(AnchorSerialize, AnchorDeserialize, InitSpace))]
-#[cfg_attr(not(target_os = "solana"), derive(AnchorSerialize, AnchorDeserialize, InitSpace))]
+#[cfg_attr(not(target_os = "solana"), cfg_eval::cfg_eval, serde_as)]
+#[derive_serialize]
 #[derive(Clone, Debug, Zeroable, Copy)]
 #[repr(C)]
 pub struct Coordinator<T: NodeIdentity> {
-    #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_STRING_LEN]"))]
+    #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_NUM_CLIENTS]"))]
     pub run_id: [u8; SOLANA_MAX_STRING_LEN],
     pub run_state: RunState,
 
@@ -106,7 +129,7 @@ pub struct Coordinator<T: NodeIdentity> {
 
     pub max_round_train_time: u64,
     pub round_witness_time: u64,
-    
+
     pub rounds: [Round; NUM_STORED_ROUNDS],
     pub rounds_head: u32,
     pub first_round: bool,

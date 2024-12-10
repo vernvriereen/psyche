@@ -22,3 +22,7 @@ pub struct WandBInfo {
     pub entity: Option<String>,
     pub api_key: String,
 }
+
+pub fn u8_to_string(slice: &[u8; 64]) -> String {
+    String::from_utf8(slice.to_vec()).unwrap()
+}

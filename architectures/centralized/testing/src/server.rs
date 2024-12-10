@@ -28,7 +28,7 @@ struct CoordinatorServer {
 impl CoordinatorServer {
     pub async fn default(query_chan_receiver: Receiver<TestingQueryMsg>) -> Self {
         let coordinator: Coordinator<ClientId> = Coordinator {
-            run_id: RUN_ID.to_string(),
+            run_id: RUN_ID.to_string().as_bytes()[0..64].try_into().unwrap(),
             ..Default::default()
         };
 
@@ -56,7 +56,7 @@ impl CoordinatorServer {
         init_min_clients: Option<u32>,
     ) -> Self {
         let coordinator: Coordinator<ClientId> = Coordinator {
-            run_id: RUN_ID.to_string(),
+            run_id: RUN_ID.to_string().as_bytes()[0..64].try_into().unwrap(),
             ..Default::default()
         };
 

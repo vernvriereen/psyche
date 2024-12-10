@@ -25,6 +25,7 @@ use tokio::time::interval;
 use tokio::{select, time::Interval};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
+use psyche_client::u8_to_string;
 
 use crate::dashboard::{DashboardState, DashboardTui};
 
@@ -136,8 +137,9 @@ impl App {
         init_warmup_time: Option<u64>,
         init_min_clients: Option<u32>,
     ) -> Result<Self> {
+        let run_id = u8_to_string(&coordinator.run_id);
         let p2p = NC::init(
-            &coordinator.run_id,
+            &run_id,
             p2p_port,
             RelayMode::Default,
             vec![],
@@ -159,14 +161,22 @@ impl App {
             }
 
             if let Checkpoint::Hub(hub_repo) = checkpoint {
+                let repo_id = u8_to_string(&hub_repo.repo_id);
                 if hub_repo.revision.is_some()
-                    || !tokio::fs::try_exists(PathBuf::from(hub_repo.repo_id.clone()))
+                    || !tokio::fs::try_exists(PathBuf::from(repo_id))
                         .await
                         .unwrap_or_default()
                 {
+                    let repo_id = u8_to_string(&hub_repo.repo_id);
+                    let revision = if let Some(rev) = hub_repo.revision {
+                        Some(u8_to_string(&rev))
+                    } else {
+                        None
+                    };
+
                     download_model_repo_async(
-                        hub_repo.repo_id.clone(),
-                        hub_repo.revision.clone(),
+                        &repo_id,
+                        revision,
                         None,
                         None,
                         None,
@@ -178,9 +188,9 @@ impl App {
                 bail!("Cannot start without a Hub checkpoint");
             }
 
-            let server_addr: SocketAddr = url
+            let server_addr: SocketAddr = u8_to_string(url)
                 .parse()
-                .map_err(|e| anyhow!("Failed to parse training data server URL {url}: {e}"))?;
+                .map_err(|e| anyhow!("Failed to parse training data server URL {:?}: {}", url, e))?;
             let server_port = server_addr.port();
             let DataServerInfo {
                 dir,
@@ -319,7 +329,8 @@ impl App {
         let broadcast = match event {
             ClientToServerMessage::Join { run_id } => {
                 // TODO: check whitelist
-                if self.coordinator.run_id == run_id {
+                let coord_run_id = u8_to_string(&self.coordinator.run_id);
+                if coord_run_id == run_id {
                     self.backend.pending_clients.insert(Client {
                         id: from.clone(),
                         dropping_at_end_of_round: false,
@@ -418,7 +429,7 @@ impl App {
                         match toml::to_string_pretty(&state) {
                             Ok(toml) => {
                                 let filename = format!(
-                                    "{}-step{}.toml",
+                                    "{:?}-step{}.toml",
                                     self.coordinator.run_id,
                                     self.coordinator.step - 1
                                 );
@@ -459,8 +470,8 @@ impl App {
 
     fn reset_ephemeral(coordinator: &mut Coordinator<ClientId>) {
         coordinator.run_state = RunState::WaitingForMembers;
-        coordinator.clients.clear();
-        coordinator.dropped_clients.clear();
+        for elem in coordinator.clients.iter_mut() { *elem = Client::<ClientId>::default(); }
+        for elem in coordinator.dropped_clients.iter_mut() { *elem = Client::<ClientId>::default(); }
     }
 }
 

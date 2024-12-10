@@ -3,8 +3,6 @@ use std::{
     hash::Hash,
 };
 
-use bytemuck::Pod;
-
 pub trait NodeIdentity:
     Display
     + Copy

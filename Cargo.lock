@@ -5723,6 +5723,7 @@ dependencies = [
  "anchor-lang",
  "async-trait",
  "bytemuck",
+ "cfg_eval",
  "psyche-core",
  "psyche-serde",
  "serde",

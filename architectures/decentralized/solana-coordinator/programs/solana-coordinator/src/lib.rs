@@ -4,7 +4,7 @@ mod client_id;
 pub use client_id::ClientId;
 use psyche_coordinator::Coordinator;
 
-declare_id!("2mQJR6fyjAJwoevxzZVLW6ReLenK1dxPzDmVTVMW5AKx");
+declare_id!("5RfSkScUH2mTdiBGAAVmfBVSXpVYs2r4GnWsQjDyZrG7");
 
 #[derive(Debug, InitSpace)]
 #[account(zero_copy)]
@@ -22,17 +22,17 @@ pub mod solana_coordinator {
         warmup_time: u64,
         cooldown_time: u64,
     ) -> Result<()> {
-        let coordinator = &mut ctx.accounts.coordinator.load_init()?;
+        let coordinator = &mut ctx.accounts.coordinator.load_mut()?;
 
-        let mut array = [0u8; 64]; 
-        let bytes = run_id.as_bytes(); 
+        // let mut array = [0u8; 64]; 
+        // let bytes = run_id.as_bytes(); 
 
-        let len = 64.min(bytes.len());
-        array[..len].copy_from_slice(&bytes[..len]);
+        // let len = 64.min(bytes.len());
+        // array[..len].copy_from_slice(&bytes[..len]);
 
-        coordinator.coordinator.run_id = array;
-        coordinator.coordinator.warmup_time = warmup_time;
-        coordinator.coordinator.cooldown_time = cooldown_time;
+        // coordinator.coordinator.run_id = array;
+        // coordinator.coordinator.warmup_time = warmup_time;
+        // coordinator.coordinator.cooldown_time = cooldown_time;
 
         msg!("Coordinator: {:?}", coordinator);
         Ok(())
