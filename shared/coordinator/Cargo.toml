@@ -12,4 +12,5 @@ anchor-lang.workspace = true
 bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
 serde_with.workspace = true
 serde.workspace = true
+cfg_eval = "0.1.2"
 
