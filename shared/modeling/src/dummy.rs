@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use tch::{nn::VarStore, Device, Kind};
 
 use crate::{CausalLM, ConcreteCausalLM};
@@ -5,12 +7,6 @@ use crate::{CausalLM, ConcreteCausalLM};
 #[derive(Debug)]
 pub struct DummyModel {
     var_store: VarStore,
-}
-
-impl Default for DummyModel {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl DummyModel {
@@ -32,6 +28,8 @@ impl CausalLM for DummyModel {
         let loss = tch::Tensor::zeros([1], (Kind::BFloat16, x.device()));
         let loss = loss.set_requires_grad(true);
         let loss = loss.g_add_scalar(1.0);
+        // sleep some time just to simulate training
+        std::thread::sleep(Duration::from_secs(5));
         (result, Some(loss))
     }
 

@@ -14,3 +14,4 @@ psyche-network.workspace = true
 tokio-util.workspace = true
 tokio.workspace = true
 toml = "0.8.19"
+console-subscriber = "0.1.5"

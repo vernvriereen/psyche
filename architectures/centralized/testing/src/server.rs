@@ -37,13 +37,15 @@ impl CoordinatorServer {
         let coordinator: Coordinator<ClientId> = Coordinator {
             run_id: RUN_ID.to_string(),
             model: Model::LLM(LLM::dummy()),
+            data_indicies_per_batch: 1,
             ..Default::default()
         };
 
         let server = ServerApp::new(
             false,
             coordinator,
-            Some(data_server_info_default_for_testing()),
+            // Some(data_server_info_default_for_testing()),
+            None,
             None,
             Some(SERVER_PORT),
             None,
@@ -65,13 +67,21 @@ impl CoordinatorServer {
     ) -> Self {
         let coordinator: Coordinator<ClientId> = Coordinator {
             run_id: RUN_ID.to_string(),
+            model: Model::LLM(LLM::dummy()),
+            data_indicies_per_batch: 1,
             ..Default::default()
         };
+
+        println!(
+            "DATA INDICIES PER BATCH (TEST): {}",
+            coordinator.data_indicies_per_batch
+        );
 
         let server = ServerApp::new(
             false,
             coordinator,
             Some(data_server_info_default_for_testing()),
+            // None,
             None,
             Some(SERVER_PORT),
             None,

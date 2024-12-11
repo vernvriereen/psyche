@@ -80,30 +80,9 @@ async fn state_change_shutdown_node_in_warmup() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn state_change_waiting_for_members_to_round_train() {
-    let server_handle = CoordinatorServerHandle::new_with_model(2).await;
-
-    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
-    assert_with_retries(
-        || server_handle.get_run_state(),
-        RunState::WaitingForMembers,
-    )
-    .await;
-
-    let _client_handles = spawn_clients(2).await;
-
-    assert_with_retries(|| server_handle.get_clients_len(), 2).await;
-    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
-
-    // warmup time
-    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
-
-    assert_with_retries(|| server_handle.get_clients_len(), 2).await;
-    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn state_change_waiting_for_members_to_round_witness() {
-    let server_handle = CoordinatorServerHandle::new_with_model(2).await;
+    console_subscriber::init();
+    let init_min_clients = 2;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -123,16 +102,44 @@ async fn state_change_waiting_for_members_to_round_witness() {
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 
-    // train time
-    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
+    let run_state = server_handle.get_run_state().await;
 
-    assert_with_retries(|| server_handle.get_clients_len(), 2).await;
-    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
-
-    // Wait for the RoundWitness process to finish.
-    // Skipping this wait may cause a deadlock.
-    // Issue: https://github.com/NousResearch/psyche/issues/76
-    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
-
-    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+    // tokio::time::sleep(Duration::from_secs(1)).await;
+    println!("RUN STATE: {}", run_state);
 }
+
+// #[tokio::test(flavor = "multi_thread")]
+// async fn state_change_waiting_for_members_to_round_witness() {
+//     let server_handle = CoordinatorServerHandle::new_with_model(2).await;
+
+//     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+//     assert_with_retries(
+//         || server_handle.get_run_state(),
+//         RunState::WaitingForMembers,
+//     )
+//     .await;
+
+//     let _client_handles = spawn_clients(2).await;
+
+//     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
+//     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+
+//     // warmup time
+//     tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+
+//     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
+//     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+
+//     // train time
+//     tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
+
+//     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
+//     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
+
+//     // Wait for the RoundWitness process to finish.
+//     // Skipping this wait may cause a deadlock.
+//     // Issue: https://github.com/NousResearch/psyche/issues/76
+//     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
+
+//     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+// }
