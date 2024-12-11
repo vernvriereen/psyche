@@ -28,3 +28,6 @@ integration-test:
 # build solana coordinator. Some errors are happening trying to build the `idl` since we are not using it, we disabled it for now.
 deploy-local-solana-coordinator:
     cd architectures/decentralized/solana-coordinator && anchor build --no-idl && anchor deploy
+
+solana-client-tests:
+	cargo test --package psyche-solana-client

@@ -1,8 +1,4 @@
-use anchor_client::{
-    anchor_lang::system_program,
-    solana_sdk::{signature::Keypair, signer::Signer},
-    Client, Cluster, Program,
-};
+use anchor_client::{solana_sdk::signature::Keypair, Client, Cluster, Program};
 use anyhow::Result;
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_watcher::Backend as WatcherBackend;
@@ -46,27 +42,123 @@ impl WatcherBackend<ClientId> for SolanaBackend {
     }
 }
 
-impl SolanaBackend {
-    pub async fn send_transacion_test(&mut self) -> Result<()> {
-        let coordinator_keypair = Keypair::new();
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
 
-        let signature = self
+    use anchor_client::{
+        anchor_lang::system_program,
+        solana_sdk::{
+            signature::Keypair,
+            signer::{EncodableKey, Signer},
+        },
+        Cluster,
+    };
+
+    use crate::SolanaBackend;
+
+    #[tokio::test]
+    pub async fn test_set_coordinator_run_id() {
+        let coordinator_keypair = Arc::new(Keypair::new());
+        let key_pair =
+            Keypair::read_from_file(home::home_dir().unwrap().join(".config/solana/id.json"))
+                .unwrap();
+        let backend = SolanaBackend::new(Cluster::Localnet, key_pair)
+            .expect("Failed to create Solana client backend");
+
+        // Intitilize the coordinator on-chain
+        backend
             .program
             .request()
             .accounts(solana_coordinator::accounts::InitializeCoordinator {
                 coordinator: coordinator_keypair.pubkey(),
-                signer: self.program.payer(),
+                signer: backend.program.payer(),
                 system_program: system_program::ID,
             })
-            .args(solana_coordinator::instruction::InitializeCoordinator {
-                run_id: "Test".to_string(),
-                warmup_time: 0,
-                cooldown_time: 0,
-            })
-            .signer(coordinator_keypair)
+            .args(solana_coordinator::instruction::InitializeCoordinator {})
+            .signer(coordinator_keypair.clone())
             .send()
-            .await?;
-        println!("Transaction confirmed with signature: {}", signature);
-        Ok(())
+            .await
+            .unwrap();
+
+        // The coordinator has size > 52000 so we need to resize it to 55000 to be able to load it on-chain.
+        // All the instructions increase the size by 10240 because is the max size for a transaction.
+        backend
+            .program
+            .request()
+            .accounts(solana_coordinator::accounts::IncreaseCoordinator {
+                coordinator: coordinator_keypair.pubkey(),
+                signer: backend.program.payer(),
+                system_program: system_program::ID,
+            })
+            .args(solana_coordinator::instruction::IncreaseCoordinator { len: 20480 })
+            .send()
+            .await
+            .unwrap();
+
+        backend
+            .program
+            .request()
+            .accounts(solana_coordinator::accounts::IncreaseCoordinator {
+                coordinator: coordinator_keypair.pubkey(),
+                signer: backend.program.payer(),
+                system_program: system_program::ID,
+            })
+            .args(solana_coordinator::instruction::IncreaseCoordinator { len: 30720 })
+            .send()
+            .await
+            .unwrap();
+
+        backend
+            .program
+            .request()
+            .accounts(solana_coordinator::accounts::IncreaseCoordinator {
+                coordinator: coordinator_keypair.pubkey(),
+                signer: backend.program.payer(),
+                system_program: system_program::ID,
+            })
+            .args(solana_coordinator::instruction::IncreaseCoordinator { len: 40960 })
+            .send()
+            .await
+            .unwrap();
+
+        backend
+            .program
+            .request()
+            .accounts(solana_coordinator::accounts::IncreaseCoordinator {
+                coordinator: coordinator_keypair.pubkey(),
+                signer: backend.program.payer(),
+                system_program: system_program::ID,
+            })
+            .args(solana_coordinator::instruction::IncreaseCoordinator { len: 51200 })
+            .send()
+            .await
+            .unwrap();
+
+        backend
+            .program
+            .request()
+            .accounts(solana_coordinator::accounts::IncreaseCoordinator {
+                coordinator: coordinator_keypair.pubkey(),
+                signer: backend.program.payer(),
+                system_program: system_program::ID,
+            })
+            .args(solana_coordinator::instruction::IncreaseCoordinator { len: 55000 })
+            .send()
+            .await
+            .unwrap();
+
+        backend
+            .program
+            .request()
+            .accounts(solana_coordinator::accounts::SetRunID {
+                coordinator: coordinator_keypair.pubkey(),
+            })
+            .args(solana_coordinator::instruction::SetRunId {
+                run_id: "Test".to_string(),
+            })
+            .send()
+            .await
+            .unwrap();
     }
 }

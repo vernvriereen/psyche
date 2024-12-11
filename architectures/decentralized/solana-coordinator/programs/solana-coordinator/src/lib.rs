@@ -1,4 +1,4 @@
-use anchor_lang::prelude::*;
+use anchor_lang::{prelude::*, system_program};
 
 mod client_id;
 pub use client_id::ClientId;
@@ -8,6 +8,7 @@ declare_id!("5RfSkScUH2mTdiBGAAVmfBVSXpVYs2r4GnWsQjDyZrG7");
 
 #[derive(Debug, InitSpace)]
 #[account(zero_copy)]
+#[repr(C)]
 pub struct CoordinatorManager {
     pub coordinator: Coordinator<ClientId>,
 }
@@ -16,25 +17,26 @@ pub struct CoordinatorManager {
 pub mod solana_coordinator {
     use super::*;
 
-    pub fn initialize_coordinator(
-        ctx: Context<InitializeCoordinator>,
-        run_id: String,
-        warmup_time: u64,
-        cooldown_time: u64,
-    ) -> Result<()> {
+    pub fn initialize_coordinator(_ctx: Context<InitializeCoordinator>) -> Result<()> {
+        msg!("Initialized!");
+        Ok(())
+    }
+
+    pub fn set_run_id(ctx: Context<SetRunID>, run_id: String) -> Result<()> {
         let coordinator = &mut ctx.accounts.coordinator.load_mut()?;
+        let mut array = [0u8; 64];
+        let bytes = run_id.as_bytes();
 
-        // let mut array = [0u8; 64]; 
-        // let bytes = run_id.as_bytes(); 
+        let len = 64.min(bytes.len());
+        array[..len].copy_from_slice(&bytes[..len]);
 
-        // let len = 64.min(bytes.len());
-        // array[..len].copy_from_slice(&bytes[..len]);
+        coordinator.coordinator.run_id = array;
+        let new_run_id = String::from_utf8(coordinator.coordinator.run_id.to_vec()).unwrap();
+        msg!("New run ID: {}", new_run_id);
+        Ok(())
+    }
 
-        // coordinator.coordinator.run_id = array;
-        // coordinator.coordinator.warmup_time = warmup_time;
-        // coordinator.coordinator.cooldown_time = cooldown_time;
-
-        msg!("Coordinator: {:?}", coordinator);
+    pub fn increase_coordinator(_ctx: Context<IncreaseCoordinator>, len: u16) -> Result<()> {
         Ok(())
     }
 }
@@ -49,6 +51,26 @@ pub struct InitializeCoordinator<'info> {
     pub coordinator: AccountLoader<'info, CoordinatorManager>,
     #[account(mut)]
     pub signer: Signer<'info>,
-    
+    #[account(address = system_program::ID)]
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct SetRunID<'info> {
+    #[account(mut)]
+    pub coordinator: AccountLoader<'info, CoordinatorManager>,
+}
+
+#[derive(Accounts)]
+#[instruction(len: u16)]
+pub struct IncreaseCoordinator<'info> {
+    #[account(mut,
+        realloc = len as usize,
+        realloc::zero = true,
+        realloc::payer=signer)]
+    pub coordinator: AccountLoader<'info, CoordinatorManager>,
+    #[account(mut)]
+    pub signer: Signer<'info>,
+    #[account(address = system_program::ID)]
     pub system_program: Program<'info, System>,
 }
