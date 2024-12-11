@@ -129,17 +129,16 @@ async fn state_change_waiting_for_members_to_round_witness() {
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
 
-    // Wait for the RoundWitness process to finish.
-    // Skipping this wait may cause a deadlock.
-    // Issue: https://github.com/NousResearch/psyche/issues/76
+    // wait for the RoundWitness process to finish.
+    // skipping this wait may cause a deadlock.
+    // issue: https://github.com/NousResearch/psyche/issues/76
     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
 
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 }
 
-
 #[tokio::test(flavor = "multi_thread")]
-async fn peter() {
+async fn witness_participant_bloom() {
     let server_handle = CoordinatorServerHandle::new_with_model(2).await;
 
     assert_with_retries(
@@ -150,37 +149,38 @@ async fn peter() {
 
     let _client_handles = spawn_clients(2).await;
 
-
+    // assert that we start in the fisrst round
     assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
+    // witnesses should be empty
     assert!(server_handle.get_rounds().await[0].witnesses.is_empty());
 
-
+    // execute round 0
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
     dbg!(server_handle.get_rounds().await);
-
-
-    // warmup time
+    // warmup
     tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
-
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
-
+    // train
     tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
-    
-    println!("Empezo  Witness");
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
-    
+    // witness
     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
-    
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
-    println!("Termino  Witness");
+
+    // assert round 0 finished
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
 
-    assert!(!server_handle.get_rounds().await[0].witnesses.is_empty());
+    // assert witness was send
+    let witnesses = &server_handle.get_rounds().await[0].witnesses;
+    assert!(!witnesses.is_empty());
 
-    
-    dbg!(server_handle.get_rounds().await);
-    dbg!("Fin");
+    // assert that the witness listened all the clients commits
+    let mut score = 0;
+    let clients = server_handle.get_clients().await;
 
-
-
+    clients.iter().for_each(|client| {
+        score +=
+            psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(client, witnesses);
+    });
+    assert_eq!(score, clients.len() as u32);
 }
