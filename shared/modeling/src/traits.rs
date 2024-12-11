@@ -1,6 +1,14 @@
-use tch::{Device, Tensor};
+use std::sync::Arc;
 
-pub trait CausalLM {
+use tch::{nn::VarStore, Device, Tensor};
+
+use crate::Communicator;
+
+/// This trait is for any Causal Language Model that can be inferred,
+/// and thus can have backprop run on it.
+/// Its internal implementation is completely hidden, so this can be impl'd
+/// for a wrapper struct that does something like data parallelism.
+pub trait CausalLM: Send + std::fmt::Debug {
     fn forward(
         &mut self,
         x: &Tensor,
@@ -9,4 +17,11 @@ pub trait CausalLM {
     ) -> (Tensor, Option<Tensor>);
     fn bos_token_id(&self) -> Option<i64>;
     fn device(&self) -> Device;
+}
+
+/// This trait is only for Causal Language models that are concretely instatiated -
+/// i.e. they have a VarStore that holds parameters, and they may have a Communicator for inter-gpu communication.
+pub trait ConcreteCausalLM: CausalLM {
+    fn variables(&self) -> &VarStore;
+    fn communicator(&self) -> Option<Arc<Communicator>>;
 }

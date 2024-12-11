@@ -2,7 +2,7 @@ use crate::{
     llama::{Cache, Config, Llama, Llama3RopeConfig, LlamaEosToks},
     safetensor_utils::load_safetensors_into_variables,
     tensor_parallelism::Communicator,
-    CausalLM, CommunicatorId, LoadSafetensorsError,
+    CausalLM, CommunicatorId, LoadSafetensorsError, ConcreteCausalLM,
 };
 use std::{io, path::PathBuf, sync::Arc};
 use tch::{
@@ -90,6 +90,7 @@ fn default_rope() -> f32 {
     10_000.0
 }
 
+#[derive(Debug)]
 pub struct LlamaForCausalLM {
     pub model: Llama,
     pub config: Config,
@@ -260,6 +261,16 @@ impl CausalLM for LlamaForCausalLM {
 
     fn device(&self) -> Device {
         self.device
+    }
+}
+
+impl ConcreteCausalLM for LlamaForCausalLM {
+    fn variables(&self) -> &VarStore {
+        &self.variables
+    }
+
+    fn communicator(&self) -> Option<Arc<Communicator>> {
+        self.comm.clone()
     }
 }
 

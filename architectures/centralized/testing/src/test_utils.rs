@@ -7,7 +7,6 @@ use psyche_centralized_server::app::DataServerInfo;
 use psyche_data_provider::TokenSize;
 use psyche_network::SecretKey;
 use std::env;
-use std::path::Path;
 use tokio_util::sync::CancellationToken;
 
 use crate::client::ClientHandle;
@@ -39,7 +38,7 @@ where
     Fut: Future<Output = T>,
     F: FnMut() -> Fut,
 {
-    let retry_attempts: u64 = 15;
+    let retry_attempts: u64 = 10;
     let mut result;
     for attempt in 1..=retry_attempts {
         result = function().await;

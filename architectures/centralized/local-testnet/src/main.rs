@@ -143,9 +143,8 @@ fn main() -> Result<()> {
         .and_then(|s| s.success().then_some(()))
         .expect("Failed to build client");
 
-    // Validate config
-    Command::new("cargo")
-        .args([
+    let validate_cmd = if data_path.exists() {
+        vec![
             "run",
             "-p",
             "psyche-centralized-server",
@@ -155,7 +154,21 @@ fn main() -> Result<()> {
             "--data-config",
             data_path.to_str().unwrap(),
             "validate-config",
-        ])
+        ]
+    } else {
+        vec![
+            "run",
+            "-p",
+            "psyche-centralized-server",
+            "--",
+            "--state",
+            state_path.to_str().unwrap(),
+            "validate-config",
+        ]
+    };
+    // Validate config
+    Command::new("cargo")
+        .args(validate_cmd)
         .status()
         .ok()
         .and_then(|s| s.success().then_some(()))
@@ -213,14 +226,16 @@ fn main() -> Result<()> {
     let start_time = OffsetDateTime::now_utc();
 
     // Start server
-    let server_cmd = format!(
-        "RUST_LOG={} cargo run -p psyche-centralized-server -- --state {} --data-config {} --server-port {} --tui {}",
+    let mut server_cmd = format!(
+        "RUST_LOG={} cargo run -p psyche-centralized-server -- --state {} --server-port {} --tui {}",
         args.log,
         state_path.display(),
-        data_path.display(),
         args.server_port,
         args.tui
     );
+    if data_path.exists() {
+        server_cmd.push_str(&format!("--data-config {}", data_path.display()));
+    }
 
     println!("starting server: {server_cmd:?}");
 

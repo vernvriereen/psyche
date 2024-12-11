@@ -147,35 +147,41 @@ impl App {
 
         Self::reset_ephemeral(&mut coordinator);
 
-        let training_data_server = if let Some(Model::LLM(LLM {
+        let training_data_server = if let Model::LLM(LLM {
             data_location: LLMTrainingDataLocation::Server(url),
             data_type,
             checkpoint,
             ..
-        })) = &coordinator.model
+        }) = &coordinator.model
         {
             if let LLMTrainingDataType::Finetuning = data_type {
                 panic!("Finetuning is not supported yet.")
             }
 
-            if let Checkpoint::Hub(hub_repo) = checkpoint {
-                if hub_repo.revision.is_some()
-                    || !tokio::fs::try_exists(PathBuf::from(hub_repo.repo_id.clone()))
-                        .await
-                        .unwrap_or_default()
-                {
-                    download_model_repo_async(
-                        hub_repo.repo_id.clone(),
-                        hub_repo.revision.clone(),
-                        None,
-                        None,
-                        None,
-                        true,
-                    )
-                    .await?;
+            match checkpoint {
+                Checkpoint::Hub(hub_repo) => {
+                    if hub_repo.revision.is_some()
+                        || !tokio::fs::try_exists(PathBuf::from(hub_repo.repo_id.clone()))
+                            .await
+                            .unwrap_or_default()
+                    {
+                        download_model_repo_async(
+                            hub_repo.repo_id.clone(),
+                            hub_repo.revision.clone(),
+                            None,
+                            None,
+                            None,
+                            true,
+                        )
+                        .await?;
+                    }
                 }
-            } else {
-                bail!("Cannot start without a Hub checkpoint");
+                Checkpoint::Ephemeral => {
+                    bail!("Can't start up a run with an Ephemeral checkpoint.")
+                }
+                Checkpoint::Dummy => {
+                    // ok!
+                }
             }
 
             let server_addr: SocketAddr = url
@@ -188,12 +194,14 @@ impl App {
                 shuffle_seed,
                 token_size
             } = data_server_config.ok_or_else(|| anyhow!("Coordinator state requires we host training data, but no --data-config passed."))?;
+
             let local_data_provider = LocalDataProvider::new_from_directory(
                 dir,
                 token_size,
                 seq_len,
                 Shuffle::Seeded(shuffle_seed),
             )?;
+
             let (tx, backend) = ChannelCoordinatorBackend::new();
             let data_server =
                 DataProviderTcpServer::start(local_data_provider, backend, server_port).await?;

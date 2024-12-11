@@ -1,7 +1,9 @@
 use psyche_centralized_server::app::{App as ServerApp, DataServerInfo};
 use psyche_centralized_shared::ClientId;
-use psyche_coordinator::{Coordinator, RunState};
-use psyche_network::Networkable;
+use psyche_coordinator::{
+    model::{Model, LLM},
+    Coordinator, RunState,
+};
 use std::fs::File;
 use tokio::{
     select,
@@ -34,6 +36,7 @@ impl CoordinatorServer {
     pub async fn default(query_chan_receiver: Receiver<TestingQueryMsg>) -> Self {
         let coordinator: Coordinator<ClientId> = Coordinator {
             run_id: RUN_ID.to_string(),
+            model: Model::LLM(LLM::dummy()),
             ..Default::default()
         };
 

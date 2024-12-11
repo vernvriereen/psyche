@@ -28,7 +28,7 @@ async fn connect_multiple_nodes() {
     let connected_clients = || server_handle.get_clients_len();
     let run_state = || server_handle.get_run_state();
 
-    assert_with_retries(connected_clients, number_of_nodes as usize).await;
+    assert_with_retries(connected_clients, number_of_nodes).await;
     assert_with_retries(run_state, RunState::WaitingForMembers).await;
 }
 

@@ -46,6 +46,7 @@ pub struct Config {
     pub use_sdpa: bool,
 }
 
+#[derive(Debug)]
 pub struct Cache {
     cos: Tensor,
     sin: Tensor,
