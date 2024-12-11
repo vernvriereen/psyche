@@ -765,6 +765,13 @@ impl<T: NetworkableNodeIdentity> RunManager<T> {
                 unreachable!("Once we take the init state, we move to initializing.");
             }
             InitStage::Initializing(..) if state.run_state != RunState::Warmup => {
+
+                // a client has left the network, transitioning back to RunState::WaitingForMembers.
+                // wait for new clients to join the network.
+                if state.run_state == RunState::WaitingForMembers{
+                    return Ok(());
+                }
+
                 unimplemented!(
                     "we missed warmup while warming up! abort. maybe handle this gracefully?"
                 )

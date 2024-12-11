@@ -176,24 +176,12 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
                 .map(|c| format!("{:?}", c.id))
                 .collect(),
             tick: value.tick,
-            data_source: value
-                .model
-                .as_ref()
-                .and_then(|m| match m {
-                    Model::LLM(l) => Some(format!("{:?}", l.data_type)),
-                    #[allow(unreachable_patterns)] // can happen later! remove when there's >1 lol
-                    _ => None,
-                })
-                .unwrap_or("no llm data source...".to_owned()),
-            model_checkpoint: value
-                .model
-                .as_ref()
-                .and_then(|m| match m {
-                    Model::LLM(l) => Some(format!("{:?}", l.checkpoint)),
-                    #[allow(unreachable_patterns)] // can happen later! remove when there's >1 lol
-                    _ => None,
-                })
-                .unwrap_or("no llm data source...".to_owned()),
+            data_source: match &value.model {
+                Model::LLM(l) => format!("{:?}", l.data_type),
+            },
+            model_checkpoint: match &value.model {
+                Model::LLM(l) => format!("{:?}", l.checkpoint),
+            },
             dropped_clients: value.dropped_clients.len(),
         }
     }

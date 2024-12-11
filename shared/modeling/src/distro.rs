@@ -626,12 +626,9 @@ impl Distro {
                 #[cfg(not(feature = "parallelism"))]
                 Some(_) => panic!("Sharded tensor without parallelism feature?"),
                 None => {
-                    // add delta to new gradient
-                    let delta = delta.g_add_(&variable.grad().multiply_scalar(lr));
-
                     // Compress delta
                     let (sparse_idx, sparse_val, xshape, totalk) = CompressDCT::compress(
-                        &self.transform.encode(&delta),
+                        &self.transform.encode(delta),
                         compression_topk,
                         quantization,
                     );
@@ -646,7 +643,14 @@ impl Distro {
                         variable.device(),
                     ));
 
-                    (sparse_idx, sparse_val, xshape, totalk, transmit_grad, delta)
+                    (
+                        sparse_idx,
+                        sparse_val,
+                        xshape,
+                        totalk,
+                        transmit_grad,
+                        delta.shallow_clone(),
+                    )
                 }
             };
 

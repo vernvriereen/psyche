@@ -129,7 +129,7 @@ impl StatsLogger {
         match self.round_durations.is_empty() {
             true => 0.,
             false => match &state.model {
-                Some(model::Model::LLM(llm)) => match llm.data_type {
+                model::Model::LLM(llm) => match llm.data_type {
                     model::LLMTrainingDataType::Pretraining => {
                         let tokens = state.batches_per_round
                             * state.data_indicies_per_batch
@@ -142,7 +142,6 @@ impl StatsLogger {
                     }
                     model::LLMTrainingDataType::Finetuning => todo!(),
                 },
-                None => 0.,
             },
         }
     }
@@ -181,11 +180,10 @@ fn total_tokens<T: NodeIdentity>(state: &Coordinator<T>) -> u64 {
         .map(|y| y.data_index)
         .unwrap_or_default()
         * match &state.model {
-            Some(model::Model::LLM(llm)) => match llm.data_type {
+            model::Model::LLM(llm) => match llm.data_type {
                 model::LLMTrainingDataType::Pretraining => llm.max_seq_len as u64,
                 model::LLMTrainingDataType::Finetuning => todo!(),
             },
-            None => 0,
         }
 }
 

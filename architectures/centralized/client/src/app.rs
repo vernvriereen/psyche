@@ -94,7 +94,7 @@ impl AppBuilder {
         Self(params)
     }
 
-    pub async fn run(self) -> Result<()> {
+    pub async fn build(self) -> Result<(App, NC, RunInitConfig<ClientId>)> {
         let p = self.0;
 
         let server_conn =
@@ -114,7 +114,7 @@ impl AppBuilder {
         )
         .await?;
 
-        let mut app = App {
+        let app = App {
             cancel: p.cancel,
             tx_tui_state: p.tx_tui_state,
             update_tui_interval: interval(Duration::from_millis(150)),
@@ -137,7 +137,8 @@ impl AppBuilder {
             optim_stats_every_n_steps: p.optim_stats,
             grad_accum_in_fp32: p.grad_accum_in_fp32,
         };
-        app.run(p2p, state_options).await
+
+        Ok((app, p2p, state_options))
     }
 }
 
@@ -164,6 +165,7 @@ impl App {
                 run_id: self.run_id.clone(),
             })
             .await?;
+
         loop {
             select! {
                 _ = self.cancel.cancelled() => {

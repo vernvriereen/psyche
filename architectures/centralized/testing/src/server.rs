@@ -1,6 +1,10 @@
-use psyche_centralized_server::app::App as ServerApp;
+use psyche_centralized_server::app::{App as ServerApp, DataServerInfo};
 use psyche_centralized_shared::ClientId;
-use psyche_coordinator::{Coordinator, RunState};
+use psyche_coordinator::{
+    model::{Model, LLM},
+    Coordinator, RunState,
+};
+use std::fs::File;
 use tokio::{
     select,
     sync::{
@@ -9,7 +13,10 @@ use tokio::{
     },
 };
 
-use crate::{test_utils::data_server_info_default_for_testing, RUN_ID, SERVER_PORT};
+use crate::{
+    test_utils::{data_server_info_default_for_testing, repo_path},
+    RUN_ID, SERVER_PORT, WARMUP_TIME,
+};
 
 enum TestingQueryMsg {
     QueryClients {
@@ -29,6 +36,7 @@ impl CoordinatorServer {
     pub async fn default(query_chan_receiver: Receiver<TestingQueryMsg>) -> Self {
         let coordinator: Coordinator<ClientId> = Coordinator {
             run_id: RUN_ID.to_string().as_bytes()[0..64].try_into().unwrap(),
+            model: Model::LLM(LLM::dummy()),
             ..Default::default()
         };
 
@@ -67,7 +75,50 @@ impl CoordinatorServer {
             None,
             Some(SERVER_PORT),
             None,
-            Some(30),
+            Some(WARMUP_TIME),
+            init_min_clients,
+        )
+        .await
+        .unwrap();
+
+        Self {
+            inner: server,
+            query_chan_receiver,
+        }
+    }
+
+    pub async fn new_with_model(
+        query_chan_receiver: Receiver<TestingQueryMsg>,
+        init_min_clients: Option<u32>,
+    ) -> Self {
+        let repo_path = repo_path();
+
+        let state_path = std::path::Path::new(&repo_path).join("config/testing/state.toml");
+        let state_toml_bytes = std::fs::read(state_path).unwrap();
+        let state_toml_string = std::str::from_utf8(&state_toml_bytes).unwrap();
+        let coordinator: Coordinator<ClientId> = toml::from_str(state_toml_string).unwrap();
+
+        let data_path = std::path::Path::new(&repo_path).join("config/testing/data.toml");
+        let data_toml_bytes = std::fs::read(data_path).unwrap();
+        let data_toml_string = std::str::from_utf8(&data_toml_bytes).unwrap();
+
+        let data_server_info: DataServerInfo = toml::from_str(data_toml_string).unwrap();
+
+        // Assert dolma data is present:
+        let dolma_path =
+            repo_path + "/config/testing/dolma/dolma-v1_7-30B-tokenized-llama2-nanoset.npy";
+        let _dolma_data = File::open(dolma_path).expect(
+            "Failed to read dolma data. Please ensure the dolma data file is located at /config/testing/dolma/.",
+        );
+
+        let server = ServerApp::new(
+            false,
+            coordinator,
+            Some(data_server_info),
+            None,
+            Some(SERVER_PORT),
+            None,
+            Some(WARMUP_TIME),
             init_min_clients,
         )
         .await
@@ -118,6 +169,14 @@ impl CoordinatorServerHandle {
     pub async fn new(init_min_clients: u32) -> Self {
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
         let mut server = CoordinatorServer::new(query_chan_receiver, Some(init_min_clients)).await;
+        tokio::spawn(async move { server.run().await });
+        Self { query_chan_sender }
+    }
+
+    pub async fn new_with_model(init_min_clients: u32) -> Self {
+        let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
+        let mut server =
+            CoordinatorServer::new_with_model(query_chan_receiver, Some(init_min_clients)).await;
         tokio::spawn(async move { server.run().await });
         Self { query_chan_sender }
     }

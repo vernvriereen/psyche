@@ -248,7 +248,7 @@ async fn async_main() -> Result<()> {
             let (cancel, tx_tui_state) =
                 maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;
 
-            AppBuilder::new(AppParams {
+            let (mut app, p2p, state_options) = AppBuilder::new(AppParams {
                 cancel,
                 private_key,
                 server_addr,
@@ -267,8 +267,11 @@ async fn async_main() -> Result<()> {
                 optim_stats: optim_stats_steps,
                 grad_accum_in_fp32,
             })
-            .run()
+            .build()
             .await
+            .unwrap();
+
+            app.run(p2p, state_options).await
         }
     }
 }

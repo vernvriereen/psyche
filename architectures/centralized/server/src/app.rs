@@ -149,43 +149,41 @@ impl App {
 
         Self::reset_ephemeral(&mut coordinator);
 
-        let training_data_server = if let Some(Model::LLM(LLM {
+        let training_data_server = if let Model::LLM(LLM {
             data_location: LLMTrainingDataLocation::Server(url),
             data_type,
             checkpoint,
             ..
-        })) = &coordinator.model
+        }) = &coordinator.model
         {
             if let LLMTrainingDataType::Finetuning = data_type {
                 panic!("Finetuning is not supported yet.")
             }
 
-            if let Checkpoint::Hub(hub_repo) = checkpoint {
-                let repo_id = u8_to_string(&hub_repo.repo_id);
-                if hub_repo.revision.is_some()
-                    || !tokio::fs::try_exists(PathBuf::from(repo_id))
-                        .await
-                        .unwrap_or_default()
-                {
-                    let repo_id = u8_to_string(&hub_repo.repo_id);
-                    let revision = if let Some(rev) = hub_repo.revision {
-                        Some(u8_to_string(&rev))
-                    } else {
-                        None
-                    };
-
-                    download_model_repo_async(
-                        &repo_id,
-                        revision,
-                        None,
-                        None,
-                        None,
-                        true,
-                    )
-                    .await?;
+            match checkpoint {
+                Checkpoint::Hub(hub_repo) => {
+                    if hub_repo.revision.is_some()
+                        || !tokio::fs::try_exists(PathBuf::from(u8_to_string(&hub_repo.repo_id)))
+                            .await
+                            .unwrap_or_default()
+                    {
+                        download_model_repo_async(
+                            &u8_to_string(&hub_repo.repo_id),
+                            hub_repo.revision.map(|revision_bytes| u8_to_string(&revision_bytes)),
+                            None,
+                            None,
+                            None,
+                            true,
+                        )
+                        .await?;
+                    }
                 }
-            } else {
-                bail!("Cannot start without a Hub checkpoint");
+                Checkpoint::Ephemeral => {
+                    bail!("Can't start up a run with an Ephemeral checkpoint.")
+                }
+                Checkpoint::Dummy => {
+                    // ok!
+                }
             }
 
             let server_addr: SocketAddr = u8_to_string(url)
@@ -198,12 +196,14 @@ impl App {
                 shuffle_seed,
                 token_size
             } = data_server_config.ok_or_else(|| anyhow!("Coordinator state requires we host training data, but no --data-config passed."))?;
+
             let local_data_provider = LocalDataProvider::new_from_directory(
                 dir,
                 token_size,
                 seq_len,
                 Shuffle::Seeded(shuffle_seed),
             )?;
+
             let (tx, backend) = ChannelCoordinatorBackend::new();
             let data_server =
                 DataProviderTcpServer::start(local_data_provider, backend, server_port).await?;
@@ -321,9 +321,16 @@ impl App {
 
     fn on_disconnect(&mut self, from: ClientId) {
         self.backend.pending_clients.remove(&Client {
-            id: from,
+            id: from.clone(),
             dropping_at_end_of_round: true,
         });
+
+        // TODO: Fix dropout with new arrays.
+        // self.coordinator.clients.retain(|client| client.id != from);
+        // self.coordinator.dropped_clients.push(Client {
+        //     id: from,
+        //     dropping_at_end_of_round: true,
+        // });
     }
     async fn on_client_message(&mut self, from: ClientId, event: ClientToServerMessage) {
         let broadcast = match event {

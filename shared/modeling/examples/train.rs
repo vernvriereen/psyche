@@ -1,13 +1,13 @@
 use anyhow::Result;
 use clap::Parser;
-use psyche_core::{CosineLR, LearningRateScheduler};
+use psyche_core::{CancellableBarrier, CosineLR, LearningRateScheduler};
 use psyche_data_provider::{download_model_repo_sync, LocalDataProvider, Shuffle};
 use psyche_modeling::{
-    Batcher, CausalLM, CommunicatorId, Fp32GradientAccumulator, LlamaForCausalLM
+    Batcher, CausalLM, CommunicatorId, Distro, Fp32GradientAccumulator, LlamaForCausalLM,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Barrier};
+use std::sync::Arc;
 use std::time::SystemTime;
 use tch::nn::{self, OptimizerConfig};
 use tch::{Device, Kind, Tensor};
@@ -67,15 +67,30 @@ struct Args {
 
     #[arg(long, default_value_t = false)]
     print_tensors: bool,
+
+    #[arg(long, default_value_t = false)]
+    grad_accum_in_fp32: bool,
+
+    #[arg(long, default_value_t = 64)]
+    compression_chunk: i64,
+
+    #[arg(long, default_value_t = 4)]
+    compression_topk: i64,
+
+    #[arg(long, default_value_t = 0.999)]
+    compression_decay: f64,
+
+    #[arg(long, default_value_t = false)]
+    distro: bool,
 }
 
 fn train(
     repo_files: Vec<PathBuf>,
-    tensor_parallelism: Option<(Arc<CommunicatorId>, usize, usize, Arc<Barrier>)>,
+    tensor_parallelism: Option<(Arc<CommunicatorId>, usize, usize, Arc<CancellableBarrier>)>,
     args: Args,
 ) -> Result<()> {
     println!(
-        "starting training run: model {}, data_path {}, sequence_length {}, token_size {}, micro_batch {}, total_batch {}, beta1 {:.9}, beta2 {:.9}, weight_decay {:.9}, eps {:.9}, learning_rate {:.9}, warmup_steps {}, total_steps {}, max_grad_norm {:.9}, print_tensors {}",
+        "starting training run: model {}, data_path {}, sequence_length {}, token_size {}, micro_batch {}, total_batch {}, beta1 {:.9}, beta2 {:.9}, weight_decay {:.9}, eps {:.9}, learning_rate {:.9}, warmup_steps {}, total_steps {}, max_grad_norm {:.9}, print_tensors {}, grad_accum_in_fp32 {}, compression_chunk {}, compression_topk {}, compression_decay {}, distro {}",
         args.model,
         args.data_path,
         args.sequence_length,
@@ -90,7 +105,12 @@ fn train(
         args.warmup_steps,
         args.total_steps,
         args.max_grad_norm,
-        args.print_tensors
+        args.print_tensors,
+        args.grad_accum_in_fp32,
+        args.compression_chunk,
+        args.compression_topk,
+        args.compression_decay,
+        args.distro,
     );
 
     let dataset = LocalDataProvider::new_from_directory(
@@ -110,7 +130,7 @@ fn train(
         args.cpu
             .then_some(Device::Cpu)
             .or(tensor_parallelism.as_ref().map(|_| Device::Cuda(rank))),
-            tensor_parallelism
+        tensor_parallelism
             .as_ref()
             .map(|(id, rank, size, _)| (id.clone(), *rank, *size)),
         None,
@@ -130,20 +150,42 @@ fn train(
         args.total_steps,
         args.learning_rate / 10.0,
     );
-    let adamw: nn::AdamW = nn::AdamW {
-        beta1: args.beta1,
-        beta2: args.beta2,
-        wd: args.weight_decay,
-        eps: args.eps,
-        amsgrad: false,
+
+    let mut adamw = match args.distro {
+        false => {
+            let adamw: nn::AdamW = nn::AdamW {
+                beta1: args.beta1,
+                beta2: args.beta2,
+                wd: args.weight_decay,
+                eps: args.eps,
+                amsgrad: false,
+            };
+
+            Some(adamw.build(&model.variables, args.learning_rate)?)
+        }
+        true => None,
     };
 
-    let mut opt = adamw.build(&model.variables, args.learning_rate)?;
+    let mut distro = match args.distro {
+        true => Some(Distro::new(
+            &model.variables,
+            args.compression_decay,
+            args.compression_chunk,
+            0.0,
+            model.comm.clone(),
+        )),
+        false => None,
+    };
+
+    let mut variables = match &adamw {
+        Some(adamw) => adamw.trainable_variables_with_sharding(),
+        None => distro.as_ref().unwrap().trainable_variables_with_sharding(),
+    };
 
     let mut index_to_name = HashMap::new();
     let named_variables = model.variables.variables().into_iter().collect::<Vec<_>>();
 
-    for (index, variable) in opt.trainable_variables().iter().enumerate() {
+    for (index, (variable, _)) in variables.iter().enumerate() {
         if let Some(var) = named_variables
             .iter()
             .find(|x| x.1.is_set_to(variable))
@@ -156,22 +198,33 @@ fn train(
     println!("Done loading, starting training.");
     let grad_accum_steps = args.total_batch / args.micro_batch;
     let grad_accum_divisor = grad_accum_steps as f64;
-    let mut grad_accum = Fp32GradientAccumulator::new(&opt.trainable_variables(), device);
+    let mut grad_accum = match args.grad_accum_in_fp32 {
+        true => Some(Fp32GradientAccumulator::new(
+            &variables
+                .iter()
+                .map(|(variable, _)| variable.shallow_clone())
+                .collect::<Vec<_>>(),
+            device,
+        )),
+        false => None,
+    };
     for step in 0..args.total_steps {
         let start_time = SystemTime::now();
         let lr = schedule.get_lr(step + 1);
-        opt.set_lr(lr);
+        if let Some(adamw) = &mut adamw {
+            adamw.set_lr(lr);
+        }
         let mut avg_loss: f32 = 0.0;
         for i in 0..grad_accum_steps {
             let (inputs, targets) = batch_iter.next().unwrap()?;
             if let Some((_, _, _, barrier)) = tensor_parallelism.as_ref() {
-                barrier.wait();
+                barrier.wait().expect("barrier fail");
             }
             let (_, loss) = model.forward(&inputs, Some(&targets), None);
+            let loss = loss.expect("no loss!") / grad_accum_divisor;
             if let Some((_, _, _, barrier)) = tensor_parallelism.as_ref() {
-                barrier.wait();
+                barrier.wait().expect("barrier fail");
             }
-            let loss = loss.unwrap() / grad_accum_divisor;
             if args.print_tensors {
                 println!(
                     "step {step} grad accum step {i} causal LM forward loss: {}",
@@ -180,18 +233,21 @@ fn train(
             }
             loss.backward();
             if let Some((_, _, _, barrier)) = tensor_parallelism.as_ref() {
-                barrier.wait();
+                barrier.wait().expect("barrier fail");
             }
 
             let loss_value: f32 = loss.try_into()?;
             avg_loss += loss_value;
 
-            grad_accum.accumulate_gradients();
+            if let Some(grad_accum) = &mut grad_accum {
+                grad_accum.accumulate_gradients();
+            }
         }
-        grad_accum.apply_accumulation();
+        if let Some(grad_accum) = &mut grad_accum {
+            grad_accum.apply_accumulation();
+        }
 
         if args.print_tensors || (rank == 0 && args.optim_stats) {
-            let mut variables = opt.trainable_variables_with_sharding();
             let mut outputs: Vec<(&String, &mut Tensor)> = Vec::new();
             for (index, (variable, _shard)) in variables.iter_mut().enumerate() {
                 if let Some(name) = index_to_name.get(&index) {
@@ -218,10 +274,22 @@ fn train(
             }
         }
 
-        opt.clip_grad_norm(args.max_grad_norm);
-        opt.step();
-        opt.zero_grad();
-        grad_accum.zero_grad();
+        if let Some(adamw) = &mut adamw {
+            adamw.clip_grad_norm(args.max_grad_norm);
+            adamw.step();
+            adamw.zero_grad();
+        };
+
+        if let Some(distro) = &mut distro {
+            distro.clip_grad_norm(args.max_grad_norm);
+            let results = distro.generate(lr, 1.0, args.compression_topk, false, args.optim_stats);
+            distro.apply(&[results], lr);
+            distro.zero_grad();
+        }
+
+        if let Some(grad_accum) = &mut grad_accum {
+            grad_accum.zero_grad();
+        }
         let duration = SystemTime::now()
             .duration_since(start_time)
             .unwrap()
@@ -244,7 +312,7 @@ fn main() -> Result<()> {
         Some(0) | Some(1) | None => train(repo_files, None, args)?,
         Some(world_size) => {
             let id = Arc::new(CommunicatorId::new());
-            let barrier = Arc::new(Barrier::new(world_size));
+            let barrier = CancellableBarrier::new(world_size);
             let threads = (0..world_size)
                 .map(|rank| {
                     let repo_files = repo_files.clone();

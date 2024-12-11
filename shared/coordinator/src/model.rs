@@ -37,6 +37,7 @@ pub enum LLMTrainingDataType {
 #[derive(AnchorSerialize, AnchorDeserialize, InitSpace, Serialize, Deserialize, Clone, Debug, Zeroable, Copy)]
 #[repr(C)]
 pub enum LLMTrainingDataLocation {
+    Dummy,
     Server(
         #[serde_as(as = "serde_with::Bytes")]
         [u8; SOLANA_MAX_STRING_LEN]
@@ -48,7 +49,7 @@ pub enum LLMTrainingDataLocation {
 }
 
 #[derive_serialize]
-#[derive(Copy, Clone, Debug, Zeroable)]
+#[derive(Copy, Clone, Debug, Zeroable, Default)]
 pub struct ConstantLR {
     base_lr: f32,
     warmup_steps: u32,
@@ -56,7 +57,7 @@ pub struct ConstantLR {
 }
 
 #[derive_serialize]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct LinearLR {
     base_lr: f32,
     warmup_steps: u32,
@@ -66,7 +67,7 @@ pub struct LinearLR {
 }
 
 #[derive_serialize]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct CosineLR {
     base_lr: f32,
     warmup_steps: u32,
@@ -104,6 +105,7 @@ pub enum Optimizer {
         compression_chunk: u16,
         quantize: bool,
     },
+    Dummy,
 }
 
 #[derive_serialize]
@@ -118,9 +120,22 @@ pub struct LLM {
     pub optimizer: Optimizer,
 }
 
+impl LLM {
+    pub fn dummy() -> Self {
+        Self {
+            architecture: LLMArchitecture::HfLlama,
+            checkpoint: Checkpoint::Dummy,
+            data_location: LLMTrainingDataLocation::Dummy,
+            data_type: LLMTrainingDataType::Pretraining,
+            lr_schedule: LearningRateSchedule::Constant(ConstantLR::default()),
+            max_seq_len: 512,
+            optimizer: Optimizer::Dummy,
+        }
+    }
+}
+
 #[serde_as]
-#[derive(AnchorSerialize, AnchorDeserialize, InitSpace, Serialize, Deserialize)]
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, AnchorDeserialize, AnchorSerialize, InitSpace, Deserialize, Serialize)]
 pub struct HubRepo {
     #[serde_as(as = "serde_with::Bytes")]
     pub repo_id: [u8; SOLANA_MAX_STRING_LEN],
@@ -132,6 +147,7 @@ pub struct HubRepo {
 #[derive(Clone, Debug, Zeroable, Copy)]
 #[repr(C)]
 pub enum Checkpoint {
+    Dummy,
     Ephemeral,
     Hub(HubRepo),
 }

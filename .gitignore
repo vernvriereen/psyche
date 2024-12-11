@@ -12,6 +12,9 @@ target/
 *.pdb
 .cargo/
 
+### Python ###
+__pycache__
+
 ### Windows ###
 Thumbs.db
 Thumbs.db:encryptable
@@ -38,6 +41,7 @@ slurm*
 checkpoints/
 logs/
 txt/
+config/testing/dolma/
 
 ### Solana ###
 test-ledger

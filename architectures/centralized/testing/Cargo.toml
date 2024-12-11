@@ -12,5 +12,5 @@ psyche-coordinator.workspace = true
 psyche-data-provider.workspace = true
 psyche-network.workspace = true
 tokio-util.workspace = true
-
 tokio.workspace = true
+toml = "0.8.19"

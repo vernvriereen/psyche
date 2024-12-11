@@ -1,5 +1,5 @@
 use crate::{
-    model::{self, Checkpoint, Model},
+    model::{self, Checkpoint, Model, LLM},
     traits::Backend,
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
@@ -172,7 +172,7 @@ pub struct Coordinator<T: NodeIdentity> {
 
     pub overlapped: bool,
 
-    pub model: Option<Model>,
+    pub model: Model,
 }
 
 unsafe impl<T: NodeIdentity + Zeroable> Pod for Coordinator<T> {}
@@ -222,7 +222,6 @@ impl<T: NodeIdentity> PartialEq for Client<T> {
 }
 
 impl<T: NodeIdentity> Eq for Client<T> {}
-
 impl<T: NodeIdentity> Default for Coordinator<T> {
     fn default() -> Self {
         Self {
@@ -249,7 +248,7 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             step: Default::default(),
             last_step_unix_timestamp: Default::default(),
             epoch: Default::default(),
-            model: Default::default(),
+            model: Model::LLM(LLM::dummy()),
             epoch_start_data_index: Default::default(),
             overlapped: Default::default(),
             total_steps: Default::default(),
@@ -381,8 +380,10 @@ impl<T: NodeIdentity> Coordinator<T> {
     ) -> std::result::Result<(), CoordinatorError> {
         // TODO: Fix this
         // if self.checkpointers.iter().any(|x| *x == from.id) {
-        //     if let Some(Model::LLM(llm)) = &mut self.model {
-        //         llm.checkpoint = checkpoint;
+        //     match &mut self.model {
+        //         Model::LLM(llm) => {
+        //             llm.checkpoint = checkpoint;
+        //         }
         //     }
         //     self.finish_cooldown(unix_timestamp);
         //     Ok(())
@@ -700,8 +701,10 @@ impl<T: NodeIdentity> Coordinator<T> {
             self.data_indicies_per_batch,
         );
 
-        if let Some(Model::LLM(llm)) = &mut self.model {
-            llm.checkpoint = Checkpoint::Ephemeral;
+        match &mut self.model {
+            Model::LLM(llm) => {
+                llm.checkpoint = Checkpoint::Ephemeral;
+            }
         }
         self.change_state(unix_timestamp, RunState::Cooldown);
     }
@@ -730,11 +733,10 @@ impl<T: NodeIdentity> Coordinator<T> {
             .map(|y| y.data_index)
             .unwrap_or_default()
             * match &self.model {
-                Some(model::Model::LLM(llm)) => match llm.data_type {
+                Model::LLM(llm) => match llm.data_type {
                     model::LLMTrainingDataType::Pretraining => llm.max_seq_len as u64,
                     model::LLMTrainingDataType::Finetuning => todo!(),
                 },
-                None => 0,
             }
     }
 }
