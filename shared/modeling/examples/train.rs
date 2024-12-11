@@ -169,8 +169,8 @@ fn train(
     let mut distro = match args.distro {
         true => Some(Distro::new(
             &model.variables,
-            args.compression_decay as f64,
-            args.compression_chunk as i64,
+            args.compression_decay,
+            args.compression_chunk,
             0.0,
             model.comm.clone(),
         )),

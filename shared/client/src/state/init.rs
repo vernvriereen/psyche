@@ -127,9 +127,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
             tx_request_download,
         } = self;
 
-        let llm = match state.model.clone() {
-            model::Model::LLM(llm) => llm,
-        };
+        let model::Model::LLM(llm) = state.model.clone();
 
         let data_future = async {
             let data_provider = match &llm.data_location {

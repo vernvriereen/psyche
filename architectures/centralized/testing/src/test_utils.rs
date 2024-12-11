@@ -7,7 +7,6 @@ use psyche_centralized_server::app::DataServerInfo;
 use psyche_data_provider::TokenSize;
 use psyche_network::SecretKey;
 use std::env;
-use std::path::Path;
 use tokio_util::sync::CancellationToken;
 
 use crate::client::ClientHandle;

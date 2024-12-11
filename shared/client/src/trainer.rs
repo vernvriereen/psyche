@@ -608,7 +608,7 @@ impl Trainer {
                     }
                 }
                 Ok(ParallelAssignment::Extract {}) => {
-                    match unsharded_cpu_variables(&model.variables(), model.communicator()) {
+                    match unsharded_cpu_variables(model.variables(), model.communicator()) {
                         Ok(variables) => {
                             if submission
                                 .send(ParallelResult::Extract { variables })

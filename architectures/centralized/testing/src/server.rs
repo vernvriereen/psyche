@@ -4,7 +4,6 @@ use psyche_coordinator::{
     model::{Model, LLM},
     Coordinator, RunState,
 };
-use psyche_network::Networkable;
 use std::fs::File;
 use tokio::{
     select,
