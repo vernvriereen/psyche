@@ -61,15 +61,8 @@ async fn state_change_shutdown_node_in_warmup() {
     )
     .await;
 
-    let [_client_1_task, client_2_task] = spawn_clients(2).await.try_into().unwrap();
-    // let _client_1_task = tokio::spawn(async {
-    //     let client_app_builder_1 = client_app_builder_default_for_testing();
-    //     client_app_builder_1.run().await.unwrap();
-    // });
-    // let client_2_task = tokio::spawn(async {
-    //     let client_app_builder_2 = client_app_builder_default_for_testing();
-    //     client_app_builder_2.run().await.unwrap();
-    // });
+    let [_client_1_task, client_2_task]: [ClientHandle; 2] =
+        spawn_clients(2).await.try_into().unwrap();
 
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
