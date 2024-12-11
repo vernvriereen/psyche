@@ -91,10 +91,14 @@ impl StatsLogger {
     pub fn push_round_stats(
         &mut self,
         round_losses: &[f32],
+        round_duration: Duration,
         optim_stats: HashMap<String, f64>,
     ) -> f32 {
         let loss = round_losses.iter().sum::<f32>() / round_losses.len() as f32;
         self.losses.push(loss);
+
+        self.round_durations.push(round_duration);
+
         self.last_optim_stats = optim_stats;
         loss
     }

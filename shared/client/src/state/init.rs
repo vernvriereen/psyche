@@ -1,7 +1,6 @@
 use std::{path::PathBuf, sync::Arc};
 
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
-use psyche_core::BoundedQueue;
 use psyche_data_provider::{download_model_repo_async, DataProviderTcpClient};
 use psyche_modeling::{
     auto_tokenizer, AutoTokenizerError, CommunicatorId, LlamaForCausalLM, LoadLlamaForCausalLMError,
@@ -201,7 +200,11 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                                 futures.push(tokio::task::spawn_blocking(move || {
                                     // let this run on CPU if tp is 1
                                     let device = if init_config.tensor_parallelism == 1 {
-                                        Device::cuda_if_available()
+                                        if dp == 0 {
+                                            Device::cuda_if_available()
+                                        } else {
+                                            Device::Cuda(dp)
+                                        }
                                     } else {
                                         Device::Cuda(dp * init_config.tensor_parallelism + tp)
                                     };
@@ -333,8 +336,6 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
             data_fetcher,
             identity: init_config.identity.clone(),
             write_gradients_dir: init_config.write_gradients_dir,
-            round_start: None,
-            round_durations: BoundedQueue::default(),
             tx_health_check,
             tx_distro_result,
 
