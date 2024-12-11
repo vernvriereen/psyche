@@ -53,3 +53,37 @@ async fn assert_state_change_waiting_for_members_to_warmup() {
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn assert_state_change_warmup_to_waiting_for_members() {
+    let server_handle = CoordinatorServerHandle::new(2).await;
+
+    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
+
+    let _client_1_task = tokio::spawn(async {
+        let client_app_builder_1 = client_app_builder_default_for_testing();
+        client_app_builder_1.run().await.unwrap();
+    });
+    let client_2_task = tokio::spawn(async {
+        let client_app_builder_2 = client_app_builder_default_for_testing();
+        client_app_builder_2.run().await.unwrap();
+    });
+
+    assert_with_retries(|| server_handle.get_clients_len(), 2).await;
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+
+    // shutdown client 2
+    client_2_task.abort();
+
+    assert_with_retries(|| server_handle.get_clients_len(), 1).await;
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
+}
