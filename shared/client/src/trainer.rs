@@ -172,7 +172,7 @@ impl Trainer {
                     compression_topk_startup_steps,
                     quantize,
                 },
-                model::Optimizer::Null => Optimizer::Null,
+                model::Optimizer::Dummy => Optimizer::Null,
             };
 
             let lr_scheduler = lr_scheduler.clone();
@@ -726,23 +726,4 @@ fn optimize_step(
         Optimizer::Null => (),
     };
     ControlFlow::Continue(())
-}
-
-impl Trainer {
-    pub fn dummy_train(
-        self,
-        step: u32,
-        data: Batch,
-        training_time: Duration,
-    ) -> Result<TrainOutput, TrainerThreadCommunicationError> {
-        std::thread::sleep(training_time);
-        Ok(TrainOutput {
-            step,
-            batch_id: data.id,
-            loss: 42.0,
-            distro_results: Vec::new(),
-            cancelled: false,
-            trainer: self,
-        })
-    }
 }

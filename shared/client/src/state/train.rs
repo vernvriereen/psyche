@@ -231,7 +231,6 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
             let write_gradients_dir = self.write_gradients_dir.clone();
             let tx_distro_result = self.tx_distro_result.clone();
 
-            let is_testing_context = state.testing_context();
             tokio::task::spawn(async move {
                 let mut round_losses: Vec<f32> = Vec::new();
                 let mut optim_stats: HashMap<String, f64> = HashMap::new();
@@ -248,15 +247,6 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
                             // try to give it some data!
                             match next_sample.recv().await {
                                 Some(data) => {
-                                    // If we are calling this function from a testing context, just
-                                    // use a dummy training that sleeps for some time and does nothing.
-                                    if is_testing_context {
-                                        in_progress.push(tokio::task::spawn_blocking(move || {
-                                            trainer.dummy_train(step, data, Duration::from_secs(3))
-                                        }));
-                                        continue;
-                                    }
-
                                     let cancel_training = cancel_training.clone();
                                     in_progress.push(tokio::task::spawn_blocking(move || {
                                         trainer.train(step, data, Vec::new(), cancel_training)

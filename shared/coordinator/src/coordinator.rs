@@ -1,10 +1,7 @@
 use std::hash::Hash;
 
 use crate::{
-    model::{
-        self, Checkpoint, CosineLR, HubRepo, LLMArchitecture, LLMTrainingDataLocation,
-        LLMTrainingDataType, LearningRateSchedule, Model, Optimizer, LLM,
-    },
+    model::{self, Checkpoint, Model, LLM},
     traits::Backend,
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
@@ -154,7 +151,7 @@ pub struct Coordinator<T: NodeIdentity> {
 
     pub overlapped: bool,
 
-    pub model: Option<Model>,
+    pub model: Model,
 }
 
 #[allow(dead_code)]
@@ -202,7 +199,6 @@ impl<T: NodeIdentity> PartialEq for Client<T> {
 }
 
 impl<T: NodeIdentity> Eq for Client<T> {}
-
 impl<T: NodeIdentity> Default for Coordinator<T> {
     fn default() -> Self {
         Self {
@@ -229,7 +225,7 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             step: Default::default(),
             last_step_unix_timestamp: Default::default(),
             epoch: Default::default(),
-            model: Default::default(),
+            model: Model::LLM(LLM::dummy()),
             epoch_start_data_index: Default::default(),
             overlapped: Default::default(),
             total_steps: Default::default(),
@@ -360,8 +356,10 @@ impl<T: NodeIdentity> Coordinator<T> {
         unix_timestamp: u64,
     ) -> std::result::Result<(), CoordinatorError> {
         if self.checkpointers.iter().any(|x| *x == from.id) {
-            if let Some(Model::LLM(llm)) = &mut self.model {
-                llm.checkpoint = checkpoint;
+            match &mut self.model {
+                Model::LLM(llm) => {
+                    llm.checkpoint = checkpoint;
+                }
             }
             self.finish_cooldown(unix_timestamp);
             Ok(())
@@ -676,8 +674,10 @@ impl<T: NodeIdentity> Coordinator<T> {
             self.data_indicies_per_batch,
         );
 
-        if let Some(Model::LLM(llm)) = &mut self.model {
-            llm.checkpoint = Checkpoint::Ephemeral;
+        match &mut self.model {
+            Model::LLM(llm) => {
+                llm.checkpoint = Checkpoint::Ephemeral;
+            }
         }
         self.change_state(unix_timestamp, RunState::Cooldown);
     }
@@ -706,11 +706,10 @@ impl<T: NodeIdentity> Coordinator<T> {
             .map(|y| y.data_index)
             .unwrap_or_default()
             * match &self.model {
-                Some(model::Model::LLM(llm)) => match llm.data_type {
+                Model::LLM(llm) => match llm.data_type {
                     model::LLMTrainingDataType::Pretraining => llm.max_seq_len as u64,
                     model::LLMTrainingDataType::Finetuning => todo!(),
                 },
-                None => 0,
             }
     }
 }
@@ -725,32 +724,5 @@ impl Round {
             random_seed: 0,
             witnesses: Vec::new(),
         }
-    }
-}
-
-/// These functions are intended to use only for testing
-impl<T: NodeIdentity> Coordinator<T> {
-    pub fn set_testing_optimizer(&mut self) {
-        let llm_params = LLM {
-            architecture: LLMArchitecture::HfLlama,
-            checkpoint: Checkpoint::Hub(HubRepo {
-                repo_id: String::from("emozilla/llama2-20m-init"),
-                revision: None,
-            }),
-            max_seq_len: 2048,
-            data_type: LLMTrainingDataType::Pretraining,
-            data_location: LLMTrainingDataLocation::Server(String::from("127.0.0.1:20001")),
-            lr_schedule: LearningRateSchedule::Cosine(CosineLR::default()),
-            optimizer: Optimizer::Null,
-        };
-
-        self.model = Some(Model::LLM(llm_params));
-    }
-
-    pub fn testing_context(&self) -> bool {
-        let Some(Model::LLM(llm)) = self.model.as_ref() else {
-            return false;
-        };
-        matches!(llm.optimizer, model::Optimizer::Null)
     }
 }

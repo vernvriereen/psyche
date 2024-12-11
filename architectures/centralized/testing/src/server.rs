@@ -1,6 +1,9 @@
 use psyche_centralized_server::app::{App as ServerApp, DataServerInfo};
 use psyche_centralized_shared::ClientId;
-use psyche_coordinator::{Coordinator, RunState};
+use psyche_coordinator::{
+    model::{Model, LLM},
+    Coordinator, RunState,
+};
 use psyche_network::Networkable;
 use std::fs::File;
 use tokio::{
@@ -32,11 +35,11 @@ struct CoordinatorServer {
 
 impl CoordinatorServer {
     pub async fn default(query_chan_receiver: Receiver<TestingQueryMsg>) -> Self {
-        let mut coordinator: Coordinator<ClientId> = Coordinator {
+        let coordinator: Coordinator<ClientId> = Coordinator {
             run_id: RUN_ID.to_string(),
+            model: Model::LLM(LLM::dummy()),
             ..Default::default()
         };
-        coordinator.set_testing_optimizer();
 
         let server = ServerApp::new(
             false,

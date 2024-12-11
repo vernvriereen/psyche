@@ -30,12 +30,13 @@ pub enum LLMTrainingDataType {
 #[derive_serialize]
 #[derive(Clone, Debug)]
 pub enum LLMTrainingDataLocation {
+    Dummy,
     Server(#[cfg_attr(target_os = "solana", max_len(MAX_STRING_LEN))] String),
     Local(#[cfg_attr(target_os = "solana", max_len(MAX_STRING_LEN))] String),
 }
 
 #[derive_serialize]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct ConstantLR {
     base_lr: f32,
     warmup_steps: u32,
@@ -43,7 +44,7 @@ pub struct ConstantLR {
 }
 
 #[derive_serialize]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct LinearLR {
     base_lr: f32,
     warmup_steps: u32,
@@ -89,7 +90,7 @@ pub enum Optimizer {
         compression_chunk: u16,
         quantize: bool,
     },
-    Null,
+    Dummy,
 }
 
 #[derive_serialize]
@@ -104,6 +105,20 @@ pub struct LLM {
     pub optimizer: Optimizer,
 }
 
+impl LLM {
+    pub fn dummy() -> Self {
+        Self {
+            architecture: LLMArchitecture::HfLlama,
+            checkpoint: Checkpoint::Dummy,
+            data_location: LLMTrainingDataLocation::Dummy,
+            data_type: LLMTrainingDataType::Pretraining,
+            lr_schedule: LearningRateSchedule::Constant(ConstantLR::default()),
+            max_seq_len: 512,
+            optimizer: Optimizer::Dummy,
+        }
+    }
+}
+
 #[derive_serialize]
 #[derive(Clone, Debug)]
 pub struct HubRepo {
@@ -116,6 +131,7 @@ pub struct HubRepo {
 #[derive_serialize]
 #[derive(Clone, Debug)]
 pub enum Checkpoint {
+    Dummy,
     Ephemeral,
     Hub(HubRepo),
 }

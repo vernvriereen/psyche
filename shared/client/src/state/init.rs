@@ -1,7 +1,12 @@
 use std::{path::PathBuf, sync::Arc};
 
-use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
-use psyche_data_provider::{download_model_repo_async, DataProviderTcpClient};
+use psyche_coordinator::{
+    model::{self, LLMTrainingDataLocation},
+    Coordinator, HealthChecks, Witness,
+};
+use psyche_data_provider::{
+    download_model_repo_async, DataProvider, DataProviderTcpClient, DummyDataProvider,
+};
 use psyche_modeling::{
     auto_tokenizer, AutoTokenizerError, CommunicatorId, ConcreteCausalLM, DummyModel,
     LlamaForCausalLM, LoadLlamaForCausalLMError,
@@ -9,7 +14,7 @@ use psyche_modeling::{
 use psyche_network::{BlobTicket, NetworkableNodeIdentity};
 use tch::{Device, Kind};
 use thiserror::Error;
-use tokenizers::Tokenizer;
+use tokenizers::{models::wordlevel::WordLevel, ModelWrapper, Tokenizer};
 use tokio::{
     io,
     sync::mpsc::Sender,
@@ -122,20 +127,46 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
             tx_request_download,
         } = self;
 
-        let model::Model::LLM(llm) = state.model.clone().ok_or(InitRunError::NoModel)?;
+        let llm = match state.model.clone() {
+            model::Model::LLM(llm) => llm,
+        };
 
-        let data_future = match &llm.data_location {
-            model::LLMTrainingDataLocation::Server(data_server) => DataProviderTcpClient::connect(
-                data_server,
-                init_config.identity.clone(),
-                init_config.private_key,
-            ),
-            model::LLMTrainingDataLocation::Local(_) => todo!(),
+        let data_future = async {
+            let data_provider = match &llm.data_location {
+                LLMTrainingDataLocation::Server(data_server) => DataProvider::Server(
+                    DataProviderTcpClient::connect(
+                        data_server,
+                        init_config.identity.clone(),
+                        init_config.private_key,
+                    )
+                    .await?,
+                ),
+                LLMTrainingDataLocation::Local(_) => todo!(),
+                LLMTrainingDataLocation::Dummy => DataProvider::Dummy(DummyDataProvider::new(
+                    psyche_data_provider::TokenSize::TwoBytes,
+                    2048,
+                )),
+            };
+            Ok(data_provider)
         };
 
         let model_future: JoinHandle<Result<RawLoadedModel, InitRunError>> = match &llm.architecture
         {
             model::LLMArchitecture::HfLlama => match &llm.checkpoint {
+                model::Checkpoint::Dummy => tokio::spawn(async move {
+                    let tokenizer = Arc::new(Tokenizer::new(ModelWrapper::WordLevel(
+                        WordLevel::builder().build().unwrap(),
+                    )));
+                    Ok(RawLoadedModel {
+                        models: (0..(init_config.data_parallelism
+                            * init_config.tensor_parallelism))
+                            .map(|_| Box::new(DummyModel::new()) as Box<dyn ConcreteCausalLM>)
+                            .collect(),
+                        tokenizer: tokenizer.clone(),
+                        checkpoint_extra_files: vec![],
+                        eval_runner: EvalRunner::new(vec![], tokenizer, None, 0),
+                    })
+                }),
                 model::Checkpoint::Hub(hub_repo) => {
                     let hub_repo = hub_repo.clone();
                     tokio::spawn(async move {
