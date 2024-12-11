@@ -1,6 +1,6 @@
 use psyche_centralized_server::app::{App as ServerApp, DataServerInfo};
 use psyche_centralized_shared::ClientId;
-use psyche_coordinator::{Coordinator, RunState};
+use psyche_coordinator::{Coordinator, Round, RunState};
 use psyche_network::Networkable;
 use std::fs::File;
 use tokio::{
@@ -22,6 +22,12 @@ enum TestingQueryMsg {
     },
     QueryRunState {
         respond_to: oneshot::Sender<RunState>,
+    },
+    QueryRounds {
+        respond_to: oneshot::Sender<[Round; 4]>,
+    },
+    QueryRoundsHead {
+        respond_to: oneshot::Sender<u32>,
     },
 }
 
@@ -137,6 +143,16 @@ impl CoordinatorServer {
                 let run_state = self.inner.get_run_state();
                 respond_to.send(run_state).unwrap();
             }
+            TestingQueryMsg::QueryRounds { respond_to } => {
+                let rounds = self.inner.get_rounds();
+                respond_to.send(rounds).unwrap();
+
+            },
+            TestingQueryMsg::QueryRoundsHead { respond_to } => {
+                let rounds = self.inner.get_rounds_head();
+                respond_to.send(rounds).unwrap();
+
+            },
         }
     }
 
@@ -188,6 +204,20 @@ impl CoordinatorServerHandle {
     pub async fn get_run_state(&self) -> RunState {
         let (send, recv) = oneshot::channel::<RunState>();
         let msg = TestingQueryMsg::QueryRunState { respond_to: send };
+        let _ = self.query_chan_sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+
+    pub async fn get_rounds(&self) -> [Round; 4] {
+        let (send, recv) = oneshot::channel::<[Round; 4]>();
+        let msg = TestingQueryMsg::QueryRounds { respond_to: send };
+        let _ = self.query_chan_sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+
+    pub async fn get_rounds_head(&self) -> u32 {
+        let (send, recv) = oneshot::channel::<u32>();
+        let msg = TestingQueryMsg::QueryRoundsHead { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
         recv.await.expect("Actor task has been killed")
     }

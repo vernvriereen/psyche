@@ -136,3 +136,51 @@ async fn state_change_waiting_for_members_to_round_witness() {
 
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 }
+
+
+#[tokio::test(flavor = "multi_thread")]
+async fn peter() {
+    let server_handle = CoordinatorServerHandle::new_with_model(2).await;
+
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
+
+    let _client_handles = spawn_clients(2).await;
+
+
+    assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
+    assert!(server_handle.get_rounds().await[0].witnesses.is_empty());
+
+
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+    dbg!(server_handle.get_rounds().await);
+
+
+    // warmup time
+    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+
+    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
+    
+    println!("Empezo  Witness");
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
+    
+    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
+    
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+    println!("Termino  Witness");
+    assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
+
+    assert!(!server_handle.get_rounds().await[0].witnesses.is_empty());
+
+    
+    dbg!(server_handle.get_rounds().await);
+    dbg!("Fin");
+
+
+
+}

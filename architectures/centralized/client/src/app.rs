@@ -209,7 +209,9 @@ impl App {
                 }
                 Some(to_send) = rx_to_server_message.recv() => {
                     match to_send {
-                        ToSend::Witness(witness) => self.server_conn.send(ClientToServerMessage::Witness(witness)).await?,
+                        ToSend::Witness(witness) => {
+                            dbg!("Client send Witness", witness.index);
+                            self.server_conn.send(ClientToServerMessage::Witness(witness)).await?},
                         ToSend::HealthCheck(health_checks) => self.server_conn.send(ClientToServerMessage::HealthCheck(health_checks)).await?,
                         ToSend::Checkpoint(checkpoint) => self.server_conn.send(ClientToServerMessage::Checkpoint(checkpoint)).await?,
                     };
