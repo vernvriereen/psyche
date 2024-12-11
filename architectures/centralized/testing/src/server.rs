@@ -1,6 +1,6 @@
 use psyche_centralized_server::app::{App as ServerApp, DataServerInfo};
 use psyche_centralized_shared::ClientId;
-use psyche_coordinator::{Coordinator, Round, RunState};
+use psyche_coordinator::{Client, Coordinator, Round, RunState};
 use psyche_network::Networkable;
 use std::fs::File;
 use tokio::{
@@ -19,6 +19,9 @@ use crate::{
 enum TestingQueryMsg {
     QueryClients {
         respond_to: oneshot::Sender<usize>,
+    },
+    QueryClientsId {
+        respond_to: oneshot::Sender<Vec<Client<ClientId>>>,
     },
     QueryRunState {
         respond_to: oneshot::Sender<RunState>,
@@ -146,13 +149,15 @@ impl CoordinatorServer {
             TestingQueryMsg::QueryRounds { respond_to } => {
                 let rounds = self.inner.get_rounds();
                 respond_to.send(rounds).unwrap();
-
-            },
+            }
             TestingQueryMsg::QueryRoundsHead { respond_to } => {
                 let rounds = self.inner.get_rounds_head();
                 respond_to.send(rounds).unwrap();
-
-            },
+            }
+            TestingQueryMsg::QueryClientsId { respond_to } => {
+                let rounds = self.inner.get_clients();
+                respond_to.send(rounds).unwrap();
+            }
         }
     }
 
@@ -218,6 +223,13 @@ impl CoordinatorServerHandle {
     pub async fn get_rounds_head(&self) -> u32 {
         let (send, recv) = oneshot::channel::<u32>();
         let msg = TestingQueryMsg::QueryRoundsHead { respond_to: send };
+        let _ = self.query_chan_sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+
+    pub async fn get_clients(&self) -> Vec<Client<ClientId>> {
+        let (send, recv) = oneshot::channel::<Vec<Client<ClientId>>>();
+        let msg = TestingQueryMsg::QueryClientsId { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
         recv.await.expect("Actor task has been killed")
     }
