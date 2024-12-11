@@ -1,6 +1,5 @@
 use crate::{Committee, CommitteeSelection, Coordinator, Round};
 use psyche_core::{deterministic_shuffle, BatchId, ClosedInterval, IntervalTree, NodeIdentity};
-use tracing::info;
 
 pub fn assign_data_for_state<T: NodeIdentity>(
     state: &Coordinator<T>,

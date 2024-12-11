@@ -29,7 +29,7 @@ impl CausalLM for DummyModel {
         let loss = loss.set_requires_grad(true);
         let loss = loss.g_add_scalar(1.0);
         // sleep some time just to simulate training
-        std::thread::sleep(Duration::from_secs(5));
+        std::thread::sleep(Duration::from_secs(2));
         (result, Some(loss))
     }
 

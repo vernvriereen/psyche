@@ -1,10 +1,7 @@
 use std::future::Future;
-use std::path::PathBuf;
 use std::time::Duration;
 
 use psyche_centralized_client::app::AppParams;
-use psyche_centralized_server::app::DataServerInfo;
-use psyche_data_provider::TokenSize;
 use psyche_network::SecretKey;
 use std::env;
 use tokio_util::sync::CancellationToken;
@@ -71,14 +68,5 @@ pub fn client_app_params_default_for_testing() -> AppParams {
         wandb_info: None,
         optim_stats: None,
         grad_accum_in_fp32: false,
-    }
-}
-
-pub fn data_server_info_default_for_testing() -> DataServerInfo {
-    DataServerInfo {
-        dir: PathBuf::from("./"),
-        token_size: TokenSize::TwoBytes,
-        seq_len: 2048,
-        shuffle_seed: [1; 32],
     }
 }
