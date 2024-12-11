@@ -1,0 +1,41 @@
+run_id = "test"
+run_state = "WaitingForMembers"
+warmup_time = 3
+cooldown_time = 10
+checkpointers = []
+rounds_per_epoch = 20
+max_round_train_time = 3
+round_witness_time = 2
+round_apply_time = 4
+min_clients = 2
+batches_per_round = 8
+data_indicies_per_batch = 1
+max_batches_per_client = 10000
+verification_percent = 0
+witness_nodes = 1
+witness_quorum = 1
+total_steps = 25000
+overlapped = false
+
+[model.LLM]
+architecture = "HfLlama"
+data_type = "Pretraining"
+max_seq_len = 2048
+[model.LLM.data_location]
+Server = "127.0.0.1:20001"
+[model.LLM.checkpoint.Hub]
+repo_id = "emozilla/llama2-20m-init"
+[model.LLM.lr_schedule.Cosine]
+base_lr = 4.0e-4
+warmup_steps = 500
+warmup_init_lr = 0.0
+total_steps = 25000
+final_lr = 4.0e-5
+[model.LLM.optimizer.Distro]
+compression_decay = 0.999
+compression_chunk = 64
+compression_topk = 8
+compression_topk_startup = 8
+compression_topk_startup_steps = 20
+compression_decay_warmup_steps = 0
+quantize = true

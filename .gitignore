@@ -41,6 +41,7 @@ slurm*
 checkpoints/
 logs/
 txt/
+config/testing/dolma/
 
 ### Solana ###
 test-ledger

@@ -35,8 +35,9 @@ impl Client {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct ClientHandle {
-    client_handle: JoinHandle<()>,
+    pub client_handle: JoinHandle<()>,
 }
 
 impl ClientHandle {
