@@ -26,4 +26,4 @@ pub use tensor_parallelism::{
     CudaSynchronize, RowParallelLinear,
 };
 pub use token_output_stream::TokenOutputStream;
-pub use traits::CausalLM;
+pub use traits::{CausalLM, ConcreteCausalLM};

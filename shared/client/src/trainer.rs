@@ -3,10 +3,8 @@ use anyhow::{Error, Result};
 use psyche_coordinator::model::{self, AnyLearningRateScheduler};
 use psyche_core::{BatchId, CancellableBarrier, LearningRateScheduler};
 use psyche_modeling::{
-    unsharded_cpu_variables, CausalLM, Distro, DistroResult, Fp32GradientAccumulator,
-    LlamaForCausalLM,
+    unsharded_cpu_variables, CausalLM, Distro, DistroResult, Fp32GradientAccumulator, ConcreteCausalLM,
 };
-use std::time::Duration;
 use std::{
     collections::HashMap,
     ops::ControlFlow,
@@ -15,13 +13,13 @@ use std::{
 };
 use tch::{
     nn::{self, OptimizerConfig},
-    Device, Kind, Tensor,
+    Device, Tensor,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
 
-pub type ParallelModels = Vec<LlamaForCausalLM>;
+pub type ParallelModels = Vec<Box<dyn ConcreteCausalLM>>;
 
 enum Optimizer {
     AdamW {
@@ -145,7 +143,7 @@ impl Trainer {
                         eps: eps as f64,
                         amsgrad: false,
                     }
-                    .build(&model.variables, 1.0e-1)
+                    .build(model.variables(), 1.0e-1)
                     .unwrap(),
                     clip_grad_norm,
                 },
@@ -160,11 +158,11 @@ impl Trainer {
                     quantize,
                 } => Optimizer::Distro {
                     optimizer: Distro::new(
-                        &model.variables,
+                        model.variables(),
                         compression_decay as f64,
                         compression_chunk as i64,
                         0.0,
-                        model.comm.clone(),
+                        model.communicator(),
                     )
                     .into(),
                     clip_grad_norm,
@@ -215,7 +213,7 @@ impl Trainer {
     }
 
     fn forward_backward(
-        model: &mut LlamaForCausalLM,
+        model: &mut dyn ConcreteCausalLM,
         data: &[Vec<i32>],
         barrier: &Arc<CancellableBarrier>,
         loss_scale: Option<f64>,
@@ -242,7 +240,7 @@ impl Trainer {
     }
 
     fn forward(
-        model: &mut LlamaForCausalLM,
+        model: &mut dyn ConcreteCausalLM,
         data: &Tensor,
         labels: Option<&Tensor>,
         barrier: &Arc<CancellableBarrier>,
@@ -385,7 +383,7 @@ impl Trainer {
     // todo: refactor args into a struct
     #[allow(clippy::too_many_arguments)]
     fn model_thread(
-        mut model: LlamaForCausalLM,
+        mut model: Box<dyn ConcreteCausalLM>,
         assignment: mpsc::Receiver<ParallelAssignment>,
         submission: mpsc::Sender<ParallelResult>,
         mut optimizer: Optimizer,
@@ -457,7 +455,7 @@ impl Trainer {
                             break;
                         }
                         match Self::forward_backward(
-                            &mut model,
+                            &mut *model,
                             micro_batch,
                             &barrier,
                             Some(grad_accum_divisor),
@@ -596,7 +594,7 @@ impl Trainer {
                     num_logits_to_keep,
                 }) => {
                     let logits_and_loss = Self::forward(
-                        &mut model,
+                        &mut *model,
                         &data,
                         labels.as_ref(),
                         &barrier,
@@ -610,7 +608,7 @@ impl Trainer {
                     }
                 }
                 Ok(ParallelAssignment::Extract {}) => {
-                    match unsharded_cpu_variables(&model.variables, model.comm.clone()) {
+                    match unsharded_cpu_variables(&model.variables(), model.communicator()) {
                         Ok(variables) => {
                             if submission
                                 .send(ParallelResult::Extract { variables })

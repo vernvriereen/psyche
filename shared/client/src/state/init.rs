@@ -3,7 +3,8 @@ use std::{path::PathBuf, sync::Arc};
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_data_provider::{download_model_repo_async, DataProviderTcpClient};
 use psyche_modeling::{
-    auto_tokenizer, AutoTokenizerError, CommunicatorId, LlamaForCausalLM, LoadLlamaForCausalLMError,
+    auto_tokenizer, AutoTokenizerError, CommunicatorId, ConcreteCausalLM, DummyModel,
+    LlamaForCausalLM, LoadLlamaForCausalLMError,
 };
 use psyche_network::{BlobTicket, NetworkableNodeIdentity};
 use tch::{Device, Kind};
@@ -90,7 +91,7 @@ pub enum InitRunError {
 }
 
 struct RawLoadedModel {
-    models: Vec<LlamaForCausalLM>,
+    models: Vec<Box<dyn ConcreteCausalLM>>,
     tokenizer: Arc<Tokenizer>,
     eval_runner: EvalRunner,
     checkpoint_extra_files: Vec<PathBuf>,
@@ -227,13 +228,13 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                             init_config.data_parallelism,
                         );
 
-                        let mut models = Vec::new();
+                        let mut models: Vec<Box<dyn ConcreteCausalLM>> = Vec::new();
                         for future in futures {
-                            models.push(
+                            models.push(Box::new(
                                 future
                                     .await
                                     .map_err(InitRunError::ModelLoadingThreadCrashed)??,
-                            );
+                            ));
                         }
                         info!(
                             "Loaded {} onto {} gpu(s) (dp={},tp={})",
@@ -291,7 +292,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
             eval_runner,
         } = models.map_err(InitRunError::ModelLoadingThreadCrashed)??;
 
-        let mut tp_models = Vec::new();
+        let mut tp_models: Vec<Vec<Box<dyn ConcreteCausalLM>>> = Vec::new();
         for model in models {
             if tp_models
                 .last()
@@ -302,6 +303,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
             }
             tp_models.last_mut().unwrap().push(model);
         }
+
         // TODO add data fetching for verifying, too..
         let data_provider = data.map_err(InitRunError::DataProviderConnect)?;
 
