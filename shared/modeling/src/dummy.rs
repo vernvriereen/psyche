@@ -9,6 +9,12 @@ pub struct DummyModel {
     var_store: VarStore,
 }
 
+impl Default for DummyModel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DummyModel {
     pub fn new() -> Self {
         Self {
