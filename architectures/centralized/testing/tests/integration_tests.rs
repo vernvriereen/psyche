@@ -170,7 +170,6 @@ async fn witness_participant_bloom() {
 
     // execute round 0
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
-    dbg!(server_handle.get_rounds().await);
     // warmup
     tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;

@@ -1,0 +1,30 @@
+// Folder-specific settings
+//
+// For a full list of overridable settings, and general information on folder-specific settings,
+// see the documentation: https://zed.dev/docs/configuring-zed#settings-files
+
+{
+  "ui_font_size": 16,
+  "buffer_font_size": 16,
+  "format_on_save": "off",
+  "editor_width": "prefered_line_length",
+  "theme": {
+    "mode": "system",
+    "light": "Gruvbox Dark Soft",
+    "dark": "One Dark"
+  },
+  "language_overrides": {
+    "Rust": {
+      "inlay_hints": {
+        "enabled": true,
+
+        "show_type_hints": true,
+
+        "show_parameter_hints": true,
+
+        "show_other_hints": true,
+
+      }
+    }
+  }
+}
