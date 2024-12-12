@@ -177,7 +177,6 @@ async fn witness_participant_bloom() {
     // assert that the witness listened all the clients commits
     let mut score = 0;
     let clients = server_handle.get_clients().await;
-
     clients.iter().for_each(|client| {
         score +=
             psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(client, witnesses);
