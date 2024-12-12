@@ -4,16 +4,13 @@ use crate::{
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
 
-use anchor_lang::prelude::*;
+use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Pod, Zeroable};
-use psyche_core::{sha256, Bloom, NodeIdentity};
-use psyche_serde::derive_serialize;
+use psyche_core::{
+    serde_deserialize_string, serde_deserialize_vec_to_array, serde_serialize_array_as_vec, serde_serialize_string, sha256, Bloom, FixedVec, NodeIdentity
+};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::hash::Hash;
-
-use serde::{Deserialize, Serialize, Deserializer, Serializer};
-use serde::de;
-use serde_with::serde_as;
-use tracing::debug;
 
 pub const SOLANA_MAX_STRING_LEN: usize = 64;
 pub const SOLANA_MAX_NUM_CLIENTS: usize = 64;
@@ -25,8 +22,19 @@ pub const BLOOM_FALSE_RATE: f64 = 0.01f64;
 pub type WitnessBloom = Bloom<16, 8>;
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Zeroable)]
-#[derive_serialize]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Zeroable,
+    AnchorDeserialize,
+    AnchorSerialize,
+    Serialize,
+    Deserialize,
+    InitSpace,
+)]
 pub enum RunState {
     #[default]
     WaitingForMembers = 0,
@@ -51,18 +59,30 @@ impl<I: NodeIdentity> Serialize for Client<I> {
     where
         S: Serializer,
     {
-        Err(serde::ser::Error::custom(
-                "Required field should not be present",
-            ))
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("Client", 2)?;
+        state.serialize_field("id", &self.id)?;
+        state.serialize_field("dropping_at_end_of_round", &self.dropping_at_end_of_round)?;
+        state.end()
     }
 }
 
 impl<'de, I: NodeIdentity> Deserialize<'de> for Client<I> {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Client<I>, <D as Deserializer<'de>>::Error>
-    where D: Deserializer<'de> {
-        Err(serde::de::Error::custom(
-                "Required field should not be present",
-            ))
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Client<I>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct ClientHelper<I> {
+            id: I,
+            dropping_at_end_of_round: bool,
+        }
+
+        let helper = ClientHelper::deserialize(deserializer)?;
+        Ok(Client {
+            id: helper.id,
+            dropping_at_end_of_round: helper.dropping_at_end_of_round,
+        })
     }
 }
 
@@ -72,21 +92,45 @@ impl<I: NodeIdentity> Hash for Client<I> {
     }
 }
 
-#[derive(Clone, Default, Debug, Zeroable, Copy)]
-#[cfg_attr(not(target_os = "solana"), serde_as)]
-#[derive_serialize]
+#[derive(
+    Clone,
+    Default,
+    Debug,
+    Zeroable,
+    Copy,
+    AnchorDeserialize,
+    AnchorSerialize,
+    Serialize,
+    Deserialize,
+    InitSpace,
+)]
+#[repr(C)]
 pub struct Round {
     pub height: u32,
     pub clients_len: u32,
     pub tie_breaker_tasks: u32,
     pub data_index: u64,
     pub random_seed: u64,
-    #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_NUM_WITNESSES]"))]
+    #[serde(
+        serialize_with = "serde_serialize_array_as_vec",
+        deserialize_with = "serde_deserialize_vec_to_array"
+    )]
     pub witnesses: [Witness; SOLANA_MAX_NUM_WITNESSES],
 }
 
-#[derive_serialize]
-#[derive(Clone, Debug, Zeroable, Default, Copy)]
+#[derive(
+    Clone,
+    Debug,
+    Zeroable,
+    Default,
+    Copy,
+    AnchorDeserialize,
+    AnchorSerialize,
+    Serialize,
+    Deserialize,
+    InitSpace,
+)]
+#[repr(C)]
 pub struct Witness {
     pub index: u64,
     pub proof: WitnessProof,
@@ -112,12 +156,23 @@ pub type HealthChecks = Vec<CommitteeProof>;
 
 pub const NUM_STORED_ROUNDS: usize = 4;
 
-#[cfg_attr(not(target_os = "solana"), cfg_eval::cfg_eval, serde_as)]
-#[derive_serialize]
-#[derive(Clone, Debug, Zeroable, Copy)]
+#[derive(
+    Clone,
+    Debug,
+    Zeroable,
+    Copy,
+    Serialize,
+    Deserialize,
+    AnchorDeserialize,
+    AnchorSerialize,
+    InitSpace,
+)]
 #[repr(C)]
 pub struct Coordinator<T: NodeIdentity> {
-    #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_NUM_CLIENTS]"))]
+    #[serde(
+        serialize_with = "serde_serialize_string",
+        deserialize_with = "serde_deserialize_string"
+    )]
     pub run_id: [u8; SOLANA_MAX_STRING_LEN],
     pub run_state: RunState,
 
@@ -130,16 +185,14 @@ pub struct Coordinator<T: NodeIdentity> {
     pub max_round_train_time: u64,
     pub round_witness_time: u64,
 
-    pub rounds: [Round; NUM_STORED_ROUNDS],
+    pub rounds: FixedVec<Round, NUM_STORED_ROUNDS>,
     pub rounds_head: u32,
     pub first_round: bool,
 
     pub min_clients: u32,
 
-    #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_NUM_CLIENTS]"))]
-    pub clients: [Client<T>; SOLANA_MAX_NUM_CLIENTS],
-    #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_NUM_CLIENTS]"))]
-    pub dropped_clients: [Client<T>; SOLANA_MAX_NUM_CLIENTS],
+    pub clients: FixedVec<Client<T>, SOLANA_MAX_NUM_CLIENTS>,
+    pub dropped_clients: FixedVec<Client<T>, SOLANA_MAX_NUM_CLIENTS>,
 
     // #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub tick: u64,
@@ -153,8 +206,7 @@ pub struct Coordinator<T: NodeIdentity> {
     pub witness_nodes: u32,
     pub witness_quorum: u32,
 
-    #[cfg_attr(not(target_os = "solana"), serde_as(as = "[_; SOLANA_MAX_NUM_CLIENTS]"))]
-    pub checkpointers: [Client<T>; SOLANA_MAX_NUM_CLIENTS],
+    pub checkpointers: FixedVec<T, SOLANA_MAX_NUM_CLIENTS>,
 
     // #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub epoch: u32,
@@ -225,7 +277,7 @@ impl<T: NodeIdentity> Eq for Client<T> {}
 impl<T: NodeIdentity> Default for Coordinator<T> {
     fn default() -> Self {
         Self {
-            run_id: [0; 64],
+            run_id: [0; SOLANA_MAX_STRING_LEN],
             run_state: Default::default(),
             run_state_start_unix_timestamp: Default::default(),
             warmup_time: Default::default(),
@@ -236,8 +288,8 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             rounds_head: Default::default(),
             first_round: Default::default(),
             min_clients: Default::default(),
-            clients: [Client::<T>::default(); 64],
-            dropped_clients: [Client::<T>::default(); 64],
+            clients: Default::default(),
+            dropped_clients: Default::default(),
             tick: Default::default(),
             last_tick_unix_timestamp: Default::default(),
             batches_per_round: Default::default(),
@@ -253,7 +305,7 @@ impl<T: NodeIdentity> Default for Coordinator<T> {
             overlapped: Default::default(),
             total_steps: Default::default(),
             cooldown_time: Default::default(),
-            checkpointers: [Client::<T>::default(); 64],
+            checkpointers: Default::default(),
         }
     }
 }
@@ -327,7 +379,8 @@ impl<T: NodeIdentity> Coordinator<T> {
             return Err(CoordinatorError::InvalidRunState);
         }
 
-        for witness in &self.current_round().unwrap().witnesses {
+        let round = self.current_round().unwrap();
+        for witness in &round.witnesses{
             if self.clients[witness.index as usize] == *from {
                 return Err(CoordinatorError::DuplicateWitness);
             }
@@ -338,10 +391,9 @@ impl<T: NodeIdentity> Coordinator<T> {
         if round.witnesses.len()
             == match self.witness_nodes {
                 0 => self.clients.len(),
-                witness_nodes => witness_nodes as usize,
+                witness_nodes => witness_nodes,
             }
         {
-            debug!("enough witnesses have early voted, go to witness state");
             self.change_state(unix_timestamp, RunState::RoundWitness);
         }
         Ok(())
@@ -423,7 +475,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 Committee::Verifier => todo!(),
                 Committee::Trainer => Self::trainer_healthy_by_witnesses(
                     client,
-                    &round.witnesses,
+                    &round.witnesses[0..round.witnesses_len as usize],
                     self.witness_quorum,
                 ),
             }
@@ -548,11 +600,15 @@ impl<T: NodeIdentity> Coordinator<T> {
         )
     }
 
-    pub fn get_client_at_historical_index(&self, n: usize, clients_len: u32) -> Option<&Client<T>> {
+    pub fn get_client_at_historical_index(
+        &self,
+        n: usize,
+        prev_clients_len: u32,
+    ) -> Option<&Client<T>> {
         if n < self.clients.len() {
             Some(&self.clients[n])
-        } else if n < clients_len as usize {
-            let offset = clients_len as usize - n - 1;
+        } else if n < prev_clients_len as usize {
+            let offset: usize = prev_clients_len as usize - n - 1;
             self.dropped_clients.iter().rev().nth(offset)
         } else {
             None
@@ -575,8 +631,11 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
         let clients = backend.select_new_clients();
         if clients.len() as u32 >= self.min_clients {
-            let clients: Box<[Client<T>; 64]> = clients.into_boxed_slice().try_into().unwrap();
-            self.clients = *clients;
+            self.clients_len = 0;
+            for client in clients {
+                self.clients[self.clients_len as usize] = client;
+                self.clients_len += 1;
+            }
             self.start_warmup(unix_timestamp);
         }
         Ok(())
@@ -616,16 +675,18 @@ impl<T: NodeIdentity> Coordinator<T> {
             self.first_round = false;
             self.step += 1;
 
-            // TODO: Reimplement this
-            // // WARNING: O(n) on number of clients, need to refactor
-            // self.clients.retain(|x| {
-            //     if x.dropping_at_end_of_round {
-            //         self.dropped_clients.push(x.clone());
-            //         false
-            //     } else {
-            //         true
-            //     }
-            // });
+            // WARNING: O(n) on number of clients, need to refactor
+            let old_clients = self.clients;
+            self.clients_len = 0;
+            for client in old_clients {
+                if client.dropping_at_end_of_round {
+                    self.dropped_clients[self.dropped_clients_len as usize] = client;
+                    self.dropped_clients_len += 1;
+                } else {
+                    self.clients[self.clients_len as usize] = client;
+                    self.clients_len += 1;
+                }
+            }
 
             let (height, data_index) = self
                 .current_round()
@@ -675,7 +736,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         };
         let round = &mut self.rounds[next_rounds_head];
         self.rounds_head = next_rounds_head as u32;
-        round.clients_len = self.clients.len() as u32;
+        round.clients_len = self.clients.len();
         round.height = next_height;
         round.data_index = next_data_index;
         round.tie_breaker_tasks = tie_breaker_tasks;
@@ -690,7 +751,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     fn start_waiting_for_members(&mut self, unix_timestamp: u64) {
-        self.dropped_clients.fill(Client::default());
+        self.dropped_clients.clear();
         self.change_state(unix_timestamp, RunState::WaitingForMembers);
     }
 
@@ -715,7 +776,6 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     fn change_state(&mut self, unix_timestamp: u64, new_state: RunState) {
-        debug!("changing state from {} to {}", self.run_state, new_state);
         self.run_state_start_unix_timestamp = unix_timestamp;
         self.run_state = new_state;
     }
@@ -743,14 +803,13 @@ impl<T: NodeIdentity> Coordinator<T> {
 
 impl Round {
     pub fn empty() -> Self {
-        let witnesses: [Witness; SOLANA_MAX_NUM_WITNESSES] = [Witness::default(); SOLANA_MAX_NUM_WITNESSES];
         Self {
             height: 0,
-            clients_len: 0,
             tie_breaker_tasks: 0,
             data_index: 0,
             random_seed: 0,
-            witnesses,
+            witnesses: Default::default(),
+
         }
     }
 }

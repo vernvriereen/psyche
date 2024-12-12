@@ -6,6 +6,7 @@ use psyche_coordinator::model::{
     self, Checkpoint, LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM,
 };
 use psyche_coordinator::{Client, Coordinator, CoordinatorError, HealthChecks, RunState, Witness};
+use psyche_core::u8_to_string;
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider, Shuffle,
     TokenSize,
@@ -25,7 +26,6 @@ use tokio::time::interval;
 use tokio::{select, time::Interval};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
-use psyche_client::u8_to_string;
 
 use crate::dashboard::{DashboardState, DashboardTui};
 
@@ -138,14 +138,7 @@ impl App {
         init_min_clients: Option<u32>,
     ) -> Result<Self> {
         let run_id = u8_to_string(&coordinator.run_id);
-        let p2p = NC::init(
-            &run_id,
-            p2p_port,
-            RelayMode::Default,
-            vec![],
-            None,
-        )
-        .await?;
+        let p2p = NC::init(&run_id, p2p_port, RelayMode::Default, vec![], None).await?;
 
         Self::reset_ephemeral(&mut coordinator);
 
@@ -162,14 +155,24 @@ impl App {
 
             match checkpoint {
                 Checkpoint::Hub(hub_repo) => {
-                    if hub_repo.revision.is_some()
-                        || !tokio::fs::try_exists(PathBuf::from(u8_to_string(&hub_repo.repo_id)))
+                    let repo_id = u8_to_string(&hub_repo.repo_id);
+                    let revision = u8_to_string(&hub_repo.revision);
+                    if !revision.is_empty()
+                        || !tokio::fs::try_exists(PathBuf::from(repo_id.clone()))
                             .await
                             .unwrap_or_default()
                     {
+                        println!(
+                            "model len: {}, revision len: {}",
+                            repo_id.len(),
+                            revision.len()
+                        );
                         download_model_repo_async(
-                            &u8_to_string(&hub_repo.repo_id),
-                            hub_repo.revision.map(|revision_bytes| u8_to_string(&revision_bytes)),
+                            &repo_id,
+                            match revision.is_empty() {
+                                true => None,
+                                false => Some(revision),
+                            },
                             None,
                             None,
                             None,
@@ -186,9 +189,9 @@ impl App {
                 }
             }
 
-            let server_addr: SocketAddr = u8_to_string(url)
-                .parse()
-                .map_err(|e| anyhow!("Failed to parse training data server URL {:?}: {}", url, e))?;
+            let server_addr: SocketAddr = u8_to_string(url).parse().map_err(|e| {
+                anyhow!("Failed to parse training data server URL {:?}: {}", url, e)
+            })?;
             let server_port = server_addr.port();
             let DataServerInfo {
                 dir,
@@ -477,8 +480,12 @@ impl App {
 
     fn reset_ephemeral(coordinator: &mut Coordinator<ClientId>) {
         coordinator.run_state = RunState::WaitingForMembers;
-        for elem in coordinator.clients.iter_mut() { *elem = Client::<ClientId>::default(); }
-        for elem in coordinator.dropped_clients.iter_mut() { *elem = Client::<ClientId>::default(); }
+        for elem in coordinator.clients.iter_mut() {
+            *elem = Client::<ClientId>::default();
+        }
+        for elem in coordinator.dropped_clients.iter_mut() {
+            *elem = Client::<ClientId>::default();
+        }
     }
 }
 

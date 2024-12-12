@@ -1,18 +1,25 @@
 use crate::{Client, Coordinator, CoordinatorError};
 
-use anchor_lang::prelude::*;
+use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::Zeroable;
 use psyche_core::{compute_shuffled_index, sha256, sha256v, NodeIdentity};
-use psyche_serde::derive_serialize;
-
-#[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
 
 pub const COMMITTEE_SALT: &str = "committee";
 pub const WITNESS_SALT: &str = "witness";
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[derive_serialize]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Zeroable,
+    AnchorDeserialize,
+    AnchorSerialize,
+    Serialize,
+    Deserialize,
+)]
+#[repr(C)]
 pub enum Committee {
     TieBreaker,
     Verifier,
@@ -28,16 +35,38 @@ pub struct CommitteeSelection {
     seed: [u8; 32],
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[derive_serialize]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Zeroable,
+    AnchorDeserialize,
+    AnchorSerialize,
+    Serialize,
+    Deserialize,
+)]
+#[repr(C)]
 pub struct CommitteeProof {
     pub committee: Committee,
     pub position: u64,
     pub index: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Zeroable, Default)]
-#[derive_serialize]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Zeroable,
+    Default,
+    AnchorDeserialize,
+    AnchorSerialize,
+    Serialize,
+    Deserialize,
+    InitSpace,
+)]
+#[repr(C)]
 pub struct WitnessProof {
     pub witness: bool,
     pub position: u64,

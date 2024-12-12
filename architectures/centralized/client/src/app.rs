@@ -16,7 +16,6 @@ use tokio::time::interval;
 use tokio::{select, sync::mpsc, time::Interval};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-use psyche_client::u8_to_string;
 
 pub(super) type Tabs = TabbedWidget<(ClientTUI, CoordinatorTui, NetworkTui, LoggerWidget)>;
 pub const TAB_NAMES: [&str; 4] = ["Client", "Coordinator", "Network", "Logger"];

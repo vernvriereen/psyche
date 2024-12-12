@@ -15,6 +15,8 @@ pub struct CoordinatorManager {
 
 #[program]
 pub mod solana_coordinator {
+    use psyche_coordinator::SOLANA_MAX_STRING_LEN;
+
     use super::*;
 
     pub fn initialize_coordinator(_ctx: Context<InitializeCoordinator>) -> Result<()> {
@@ -24,10 +26,10 @@ pub mod solana_coordinator {
 
     pub fn set_run_id(ctx: Context<SetRunID>, run_id: String) -> Result<()> {
         let coordinator = &mut ctx.accounts.coordinator.load_mut()?;
-        let mut array = [0u8; 64];
+        let mut array = [0u8; SOLANA_MAX_STRING_LEN];
         let bytes = run_id.as_bytes();
 
-        let len = 64.min(bytes.len());
+        let len = SOLANA_MAX_STRING_LEN.min(bytes.len());
         array[..len].copy_from_slice(&bytes[..len]);
 
         coordinator.coordinator.run_id = array;

@@ -1,9 +1,14 @@
-use std::{path::PathBuf, sync::Arc};
+use crate::{
+    fetch_data::DataFetcher,
+    trainer::{ParallelModels, Trainer},
+    WandBInfo,
+};
 
 use psyche_coordinator::{
     model::{self, LLMTrainingDataLocation},
     Coordinator, HealthChecks, Witness,
 };
+use psyche_core::u8_to_string;
 use psyche_data_provider::{
     download_model_repo_async, DataProvider, DataProviderTcpClient, DummyDataProvider,
 };
@@ -12,6 +17,7 @@ use psyche_modeling::{
     LlamaForCausalLM, LoadLlamaForCausalLMError,
 };
 use psyche_network::{BlobTicket, NetworkableNodeIdentity};
+use std::{path::PathBuf, sync::Arc};
 use tch::{Device, Kind};
 use thiserror::Error;
 use tokenizers::{models::wordlevel::WordLevel, ModelWrapper, Tokenizer};
@@ -21,13 +27,6 @@ use tokio::{
     task::{JoinError, JoinHandle},
 };
 use tracing::info;
-
-use crate::{
-    fetch_data::DataFetcher,
-    trainer::{ParallelModels, Trainer},
-    WandBInfo,
-};
-use crate::u8_to_string;
 
 use super::{
     cooldown::CooldownStepMetadata, evals::EvalRunner, stats::StatsLogger, steps::StepStateMachine,
@@ -171,7 +170,8 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                     tokio::spawn(async move {
                         let repo_id = u8_to_string(&hub_repo.repo_id);
                         let potential_local_path = PathBuf::from(repo_id.clone());
-                        let model_is_local = match hub_repo.revision.is_none()
+                        let revision = u8_to_string(&hub_repo.revision);
+                        let model_is_local = match revision.is_empty()
                             && tokio::fs::try_exists(potential_local_path.clone())
                                 .await
                                 .unwrap_or_default()
@@ -186,11 +186,11 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                                 ret
                             }
                             false => {
-                                info!("Downloading {:?}", hub_repo.repo_id);
-                                let revision = if let Some(rev) = hub_repo.revision {
-                                    Some(u8_to_string(&rev))
-                                } else {
-                                    None
+                                info!("Downloading {:?}", u8_to_string(&hub_repo.repo_id));
+                                let revision = u8_to_string(&hub_repo.revision);
+                                let revision = match revision.is_empty() {
+                                    true => None,
+                                    false => Some(revision),
                                 };
                                 download_model_repo_async(
                                     &repo_id,
@@ -215,7 +215,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                             })
                             .cloned()
                             .collect();
-                        info!("Loading {:?}", hub_repo.repo_id);
+                        info!("Loading {}", u8_to_string(&hub_repo.repo_id));
                         let mut futures = Vec::with_capacity(
                             init_config.data_parallelism * init_config.tensor_parallelism,
                         );
@@ -273,8 +273,8 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                             ));
                         }
                         info!(
-                            "Loaded {:?} onto {} gpu(s) (dp={},tp={})",
-                            hub_repo.repo_id,
+                            "Loaded {} onto {} gpu(s) (dp={},tp={})",
+                            u8_to_string(&hub_repo.repo_id),
                             init_config.data_parallelism * init_config.tensor_parallelism,
                             init_config.data_parallelism,
                             init_config.tensor_parallelism

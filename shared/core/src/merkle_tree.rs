@@ -1,9 +1,6 @@
 use crate::sha256::sha256v;
 
-use anchor_lang::prelude::*;
-use psyche_serde::derive_serialize;
-
-#[cfg(not(target_os = "solana"))]
+use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use serde::{Deserialize, Serialize};
 
 // from https://github.com/solana-labs/solana/blob/27eff8408b7223bb3c4ab70523f8a8dca3ca6645/merkle-tree/src/merkle_tree.rs
@@ -48,7 +45,7 @@ impl AsRef<[u8]> for HashWrapper {
     }
 }
 
-impl Space for HashWrapper {
+impl anchor_lang::Space for HashWrapper {
     const INIT_SPACE: usize = 32;
 }
 
@@ -65,8 +62,17 @@ pub struct ProofEntry<'a>(
     Option<&'a HashWrapper>,
 );
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-#[derive_serialize]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Serialize,
+    Deserialize,
+    AnchorDeserialize,
+    AnchorSerialize,
+    InitSpace,
+)]
 pub struct OwnedProofEntry {
     target: HashWrapper,
     left_sibling: Option<HashWrapper>,
@@ -97,8 +103,18 @@ impl<'a> From<ProofEntry<'a>> for OwnedProofEntry {
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Proof<'a>(Vec<ProofEntry<'a>>);
 
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
-#[derive_serialize]
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Clone,
+    AnchorDeserialize,
+    AnchorSerialize,
+    Deserialize,
+    Serialize,
+    InitSpace,
+)]
 pub struct OwnedProof {
     #[max_len(SOLANA_MAX_PROOFS_LEN)]
     entries: Vec<OwnedProofEntry>,

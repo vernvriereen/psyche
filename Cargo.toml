@@ -20,7 +20,6 @@ psyche-client = { path = "./shared/client" }
 psyche-data-provider = { path = "./shared/data-provider" }
 psyche-eval = { path = "./shared/eval" }
 psyche-network = { path = "./shared/network" }
-psyche-serde = { path = "./shared/serde" }
 psyche-modeling = { path = "./shared/modeling" }
 psyche-tui = { path = "./shared/tui" }
 psyche-watcher = { path = "./shared/watcher" }
@@ -68,6 +67,7 @@ torch-sys = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "e8b64d8de
 pretty_assertions = "1.4.1"
 time = { version = "0.3.36", features = ["formatting", "macros"] }
 serde_with = {version = "3.11.0", features = ["macros"]}
+bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
 
 anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea308440a9fa9cb79cee7bddd30ab163d5" }
 anchor-client = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea308440a9fa9cb79cee7bddd30ab163d5", features = ["async"] }

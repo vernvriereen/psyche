@@ -5,12 +5,12 @@ edition = "2021"
 
 [dependencies]
 psyche-core.workspace = true
-psyche-serde.workspace = true
 async-trait.workspace = true
 tracing.workspace = true
 anchor-lang.workspace = true
-bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
-serde_with.workspace = true
-serde.workspace = true
+bytemuck.workspace = true
 cfg_eval = "0.1.2"
 
+[target.'cfg(not(target_os = "solana"))'.dependencies]
+serde_with.workspace = true
+serde.workspace = true

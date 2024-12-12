@@ -1,12 +1,23 @@
 use std::fmt;
 
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
-use psyche_serde::derive_serialize;
-#[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, PartialOrd, Ord)]
-#[derive_serialize]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    Clone,
+    Copy,
+    PartialOrd,
+    Ord,
+    AnchorDeserialize,
+    AnchorSerialize,
+    Serialize,
+    Deserialize,
+    InitSpace
+)]
 pub struct BatchId(u64);
 
 impl fmt::Display for BatchId {

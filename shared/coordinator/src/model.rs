@@ -1,16 +1,25 @@
+use std::path::Display;
+
 use crate::SOLANA_MAX_STRING_LEN;
 
-use anchor_lang::prelude::*;
+use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Zeroable, ZeroableInOption};
-use psyche_core::LearningRateScheduler;
-use psyche_serde::derive_serialize;
-
+use psyche_core::{
+    serde_deserialize_string, serde_serialize_string, u8_to_string, LearningRateScheduler,
+};
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
 
-#[derive(Zeroable)]
-#[derive_serialize]
-#[derive(Clone, Debug, Copy)]
+#[derive(
+    Clone,
+    Debug,
+    Copy,
+    Zeroable,
+    AnchorDeserialize,
+    AnchorSerialize,
+    Serialize,
+    Deserialize,
+    InitSpace,
+)]
 #[repr(C)]
 pub enum Model {
     LLM(LLM),
@@ -18,46 +27,100 @@ pub enum Model {
 
 unsafe impl ZeroableInOption for Model {}
 
-#[derive_serialize]
-#[derive(Copy, Clone, Debug, Zeroable)]
+#[derive(
+    Clone,
+    Debug,
+    Copy,
+    Zeroable,
+    AnchorDeserialize,
+    AnchorSerialize,
+    Serialize,
+    Deserialize,
+    InitSpace,
+)]
 #[repr(C)]
 pub enum LLMArchitecture {
     HfLlama,
 }
 
-#[derive_serialize]
-#[derive(Copy, Clone, Debug, Zeroable)]
+#[derive(
+    Clone,
+    Debug,
+    Copy,
+    Zeroable,
+    AnchorDeserialize,
+    AnchorSerialize,
+    Serialize,
+    Deserialize,
+    InitSpace,
+)]
 #[repr(C)]
 pub enum LLMTrainingDataType {
     Pretraining,
     Finetuning,
 }
 
-#[serde_as]
-#[derive(AnchorSerialize, AnchorDeserialize, InitSpace, Serialize, Deserialize, Clone, Debug, Zeroable, Copy)]
+#[derive(
+    AnchorSerialize,
+    AnchorDeserialize,
+    InitSpace,
+    Serialize,
+    Deserialize,
+    Clone,
+    Debug,
+    Zeroable,
+    Copy,
+)]
 #[repr(C)]
 pub enum LLMTrainingDataLocation {
     Dummy,
     Server(
-        #[serde_as(as = "serde_with::Bytes")]
-        [u8; SOLANA_MAX_STRING_LEN]
+        #[serde(
+            serialize_with = "serde_serialize_string",
+            deserialize_with = "serde_deserialize_string"
+        )]
+        [u8; SOLANA_MAX_STRING_LEN],
     ),
     Local(
-        #[serde_as(as = "serde_with::Bytes")]
-        [u8; SOLANA_MAX_STRING_LEN]
+        #[serde(
+            serialize_with = "serde_serialize_string",
+            deserialize_with = "serde_deserialize_string"
+        )]
+        [u8; SOLANA_MAX_STRING_LEN],
     ),
 }
 
-#[derive_serialize]
-#[derive(Copy, Clone, Debug, Zeroable, Default)]
+#[derive(
+    AnchorSerialize,
+    Default,
+    AnchorDeserialize,
+    InitSpace,
+    Serialize,
+    Deserialize,
+    Clone,
+    Debug,
+    Zeroable,
+    Copy,
+)]
+#[repr(C)]
 pub struct ConstantLR {
     base_lr: f32,
     warmup_steps: u32,
     warmup_init_lr: f32,
 }
 
-#[derive_serialize]
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(
+    AnchorSerialize,
+    AnchorDeserialize,
+    InitSpace,
+    Serialize,
+    Deserialize,
+    Clone,
+    Debug,
+    Zeroable,
+    Copy,
+)]
+#[repr(C)]
 pub struct LinearLR {
     base_lr: f32,
     warmup_steps: u32,
@@ -66,8 +129,18 @@ pub struct LinearLR {
     final_lr: f32,
 }
 
-#[derive_serialize]
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(
+    AnchorSerialize,
+    AnchorDeserialize,
+    InitSpace,
+    Serialize,
+    Deserialize,
+    Clone,
+    Debug,
+    Zeroable,
+    Copy,
+)]
+#[repr(C)]
 pub struct CosineLR {
     base_lr: f32,
     warmup_steps: u32,
@@ -76,8 +149,17 @@ pub struct CosineLR {
     final_lr: f32,
 }
 
-#[derive_serialize]
-#[derive(Copy, Clone, Debug, Zeroable)]
+#[derive(
+    AnchorSerialize,
+    AnchorDeserialize,
+    InitSpace,
+    Serialize,
+    Deserialize,
+    Clone,
+    Debug,
+    Zeroable,
+    Copy,
+)]
 #[repr(C)]
 pub enum LearningRateSchedule {
     Constant(ConstantLR),
@@ -85,8 +167,17 @@ pub enum LearningRateSchedule {
     Cosine(CosineLR),
 }
 
-#[derive_serialize]
-#[derive(Copy, Clone, Debug, Zeroable)]
+#[derive(
+    AnchorSerialize,
+    AnchorDeserialize,
+    InitSpace,
+    Serialize,
+    Deserialize,
+    Clone,
+    Debug,
+    Zeroable,
+    Copy,
+)]
 #[repr(C)]
 pub enum Optimizer {
     AdamW {
@@ -108,8 +199,18 @@ pub enum Optimizer {
     Dummy,
 }
 
-#[derive_serialize]
-#[derive(Clone, Debug, Zeroable, Copy)]
+#[derive(
+    AnchorSerialize,
+    AnchorDeserialize,
+    InitSpace,
+    Serialize,
+    Deserialize,
+    Clone,
+    Debug,
+    Zeroable,
+    Copy,
+)]
+#[repr(C)]
 pub struct LLM {
     pub architecture: LLMArchitecture,
     pub checkpoint: Checkpoint,
@@ -134,22 +235,48 @@ impl LLM {
     }
 }
 
-#[serde_as]
-#[derive(Clone, Debug, Copy, AnchorDeserialize, AnchorSerialize, InitSpace, Deserialize, Serialize)]
+#[derive(
+    Clone, Debug, Copy, AnchorDeserialize, AnchorSerialize, InitSpace, Serialize, Deserialize,
+)]
 pub struct HubRepo {
-    #[serde_as(as = "serde_with::Bytes")]
+    #[serde(
+        serialize_with = "serde_serialize_string",
+        deserialize_with = "serde_deserialize_string"
+    )]
     pub repo_id: [u8; SOLANA_MAX_STRING_LEN],
-    #[serde_as(as = "Option<serde_with::Bytes>")]
-    pub revision: Option<[u8; SOLANA_MAX_STRING_LEN]>,
+    #[serde(
+        serialize_with = "serde_serialize_string",
+        deserialize_with = "serde_deserialize_string"
+    )]
+    pub revision: [u8; SOLANA_MAX_STRING_LEN],
 }
 
-#[derive_serialize]
-#[derive(Clone, Debug, Zeroable, Copy)]
+#[derive(
+    AnchorSerialize,
+    AnchorDeserialize,
+    InitSpace,
+    Serialize,
+    Deserialize,
+    Clone,
+    Debug,
+    Zeroable,
+    Copy,
+)]
 #[repr(C)]
 pub enum Checkpoint {
     Dummy,
     Ephemeral,
     Hub(HubRepo),
+}
+
+impl std::fmt::Display for Checkpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Checkpoint::Dummy => write!(f, "Dummy"),
+            Checkpoint::Ephemeral => write!(f, "Ephemeral"),
+            Checkpoint::Hub(hub_repo) => write!(f, "{}", u8_to_string(&hub_repo.repo_id)),
+        }
+    }
 }
 
 impl From<ConstantLR> for psyche_core::ConstantLR {

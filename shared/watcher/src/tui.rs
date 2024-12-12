@@ -4,7 +4,7 @@ use std::{
 };
 
 use psyche_coordinator::{model::Model, Coordinator, RunState};
-use psyche_core::NodeIdentity;
+use psyche_core::{u8_to_string, NodeIdentity};
 use psyche_tui::ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
@@ -167,12 +167,13 @@ pub struct CoordinatorTuiState {
 impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
     fn from(value: &Coordinator<T>) -> Self {
         Self {
-            run_id: String::from_utf8(value.run_id.clone().to_vec()).unwrap(),
+            run_id: u8_to_string(&value.run_id),
             run_state: value.into(),
             height: value.rounds[value.rounds_head as usize].height,
             clients: value
                 .clients
                 .iter()
+                .take(value.clients_len as usize)
                 .map(|c| format!("{:?}", c.id))
                 .collect(),
             tick: value.tick,
@@ -180,9 +181,9 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
                 Model::LLM(l) => format!("{:?}", l.data_type),
             },
             model_checkpoint: match &value.model {
-                Model::LLM(l) => format!("{:?}", l.checkpoint),
+                Model::LLM(l) => format!("{}", l.checkpoint),
             },
-            dropped_clients: value.dropped_clients.len(),
+            dropped_clients: value.dropped_clients_len as usize,
         }
     }
 }

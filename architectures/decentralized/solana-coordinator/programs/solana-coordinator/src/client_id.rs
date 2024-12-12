@@ -1,9 +1,21 @@
 use anchor_lang::prelude::*;
+use bytemuck::Zeroable;
 use psyche_core::NodeIdentity;
+use serde::{Deserialize, Serialize};
 
-#[account(zero_copy)]
 #[repr(C)]
-#[derive(Debug, InitSpace, AnchorSerialize, AnchorDeserialize, Default)]
+#[derive(
+    Debug,
+    InitSpace,
+    Copy,
+    Clone,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    Default,
+    Zeroable
+)]
 pub struct ClientId {
     pub owner: Pubkey,
     pub p2p_identity: [u8; 32],

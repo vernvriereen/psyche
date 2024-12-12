@@ -3,6 +3,9 @@ use std::{
     hash::Hash,
 };
 
+use anchor_lang::{AnchorDeserialize, AnchorSerialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+
 pub trait NodeIdentity:
     Display
     + Copy
@@ -16,6 +19,10 @@ pub trait NodeIdentity:
     + Sync
     + anchor_lang::Space
     + Default
+    + Serialize
+    + AnchorDeserialize
+    + AnchorSerialize
+    + DeserializeOwned
     + 'static
 {
 }
