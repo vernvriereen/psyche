@@ -12,7 +12,9 @@ use testing::{
 async fn connect_single_node() {
     let server_handle = CoordinatorServerHandle::default().await;
 
-    let _client_handle = ClientHandle::default().await;
+    let server_port = server_handle.server_port;
+
+    let _client_handle = ClientHandle::new(server_port).await;
     let connected_clients = || server_handle.get_clients_len();
 
     assert_with_retries(connected_clients, 1).await;
@@ -23,7 +25,9 @@ async fn connect_multiple_nodes() {
     let number_of_nodes = 10;
     let server_handle = CoordinatorServerHandle::default().await;
 
-    let _client_handles = spawn_clients(number_of_nodes).await;
+    let server_port = server_handle.server_port;
+
+    let _client_handles = spawn_clients(number_of_nodes, server_port).await;
 
     let connected_clients = || server_handle.get_clients_len();
     let run_state = || server_handle.get_run_state();
@@ -37,6 +41,7 @@ async fn state_change_waiting_for_members_to_warmup() {
     let init_min_clients = 2;
 
     let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
+    let server_port = server_handle.server_port;
 
     let run_state = || server_handle.get_run_state();
     let connected_clients = || server_handle.get_clients_len();
@@ -44,7 +49,7 @@ async fn state_change_waiting_for_members_to_warmup() {
     assert_with_retries(connected_clients, 0).await;
     assert_with_retries(run_state, RunState::WaitingForMembers).await;
 
-    let _client_handles = spawn_clients(init_min_clients as usize).await;
+    let _client_handles = spawn_clients(init_min_clients as usize, server_port).await;
 
     assert_with_retries(connected_clients, 2).await;
     assert_with_retries(run_state, RunState::Warmup).await;
@@ -53,6 +58,7 @@ async fn state_change_waiting_for_members_to_warmup() {
 #[tokio::test(flavor = "multi_thread")]
 async fn state_change_shutdown_node_in_warmup() {
     let server_handle = CoordinatorServerHandle::new(2).await;
+    let server_port = server_handle.server_port;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -62,7 +68,7 @@ async fn state_change_shutdown_node_in_warmup() {
     .await;
 
     let [_client_1_task, client_2_task]: [ClientHandle; 2] =
-        spawn_clients(2).await.try_into().unwrap();
+        spawn_clients(2, server_port).await.try_into().unwrap();
 
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
@@ -80,7 +86,9 @@ async fn state_change_shutdown_node_in_warmup() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn state_change_waiting_for_members_to_round_train() {
-    let server_handle = CoordinatorServerHandle::new_with_model(2).await;
+    let init_min_clients = 2;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
+    let server_port = server_handle.server_port;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -89,7 +97,7 @@ async fn state_change_waiting_for_members_to_round_train() {
     )
     .await;
 
-    let _client_handles = spawn_clients(2).await;
+    let _client_handles = spawn_clients(2, server_port).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
@@ -103,7 +111,9 @@ async fn state_change_waiting_for_members_to_round_train() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn state_change_waiting_for_members_to_round_witness() {
-    let server_handle = CoordinatorServerHandle::new_with_model(2).await;
+    let init_min_clients = 2;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
+    let server_port = server_handle.server_port;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -112,7 +122,7 @@ async fn state_change_waiting_for_members_to_round_witness() {
     )
     .await;
 
-    let _client_handles = spawn_clients(2).await;
+    let _client_handles = spawn_clients(2, server_port).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;

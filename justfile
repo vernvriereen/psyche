@@ -24,9 +24,9 @@ local-testnet +args:
 # run integration tests
 integration-test test_name="":
     if [ "{{test_name}}" = "" ]; then \
-        cargo test --test integration_tests -- --test-threads=1; \
+        cargo test --test integration_tests; \
     else \
-        cargo test --test integration_tests -- --test-threads=1 --nocapture "{{test_name}}"; \
+        cargo test --test integration_tests -- --nocapture "{{test_name}}"; \
     fi
 
 # build solana coordinator. Some errors are happening trying to build the `idl` since we are not using it, we disabled it for now.

@@ -1,17 +1,14 @@
 use std::future::Future;
-use std::path::PathBuf;
+use std::net::TcpListener;
 use std::time::Duration;
 
 use psyche_centralized_client::app::AppParams;
-use psyche_centralized_server::app::DataServerInfo;
-use psyche_data_provider::TokenSize;
 use psyche_network::SecretKey;
 use std::env;
 use tokio_util::sync::CancellationToken;
 
 use crate::client::ClientHandle;
 use crate::RUN_ID;
-use crate::SERVER_PORT;
 
 pub fn repo_path() -> String {
     let cargo_manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
@@ -24,10 +21,10 @@ pub fn repo_path() -> String {
         .to_string()
 }
 
-pub async fn spawn_clients(num_clients: usize) -> Vec<ClientHandle> {
+pub async fn spawn_clients(num_clients: usize, server_port: u16) -> Vec<ClientHandle> {
     let mut client_handles = Vec::new();
     for _ in 0..num_clients {
-        client_handles.push(ClientHandle::default().await)
+        client_handles.push(ClientHandle::new(server_port).await)
     }
     client_handles
 }
@@ -52,11 +49,18 @@ where
     }
 }
 
-pub fn client_app_params_default_for_testing() -> AppParams {
+pub fn get_free_port() -> u16 {
+    // Get a free port by binding to "0.0.0.0:0"
+    let listener = TcpListener::bind("0.0.0.0:0").unwrap();
+    // Retrieve the assigned port number
+    listener.local_addr().unwrap().port()
+}
+
+pub fn client_app_params_default_for_testing(server_port: u16) -> AppParams {
     AppParams {
         cancel: CancellationToken::default(),
         private_key: SecretKey::generate(),
-        server_addr: format!("localhost:{}", SERVER_PORT).to_string(),
+        server_addr: format!("localhost:{}", server_port).to_string(),
         tx_tui_state: None,
         run_id: RUN_ID.to_string(),
         data_parallelism: 1,
@@ -71,14 +75,5 @@ pub fn client_app_params_default_for_testing() -> AppParams {
         wandb_info: None,
         optim_stats: None,
         grad_accum_in_fp32: false,
-    }
-}
-
-pub fn data_server_info_default_for_testing() -> DataServerInfo {
-    DataServerInfo {
-        dir: PathBuf::from("./"),
-        token_size: TokenSize::TwoBytes,
-        seq_len: 2048,
-        shuffle_seed: [1; 32],
     }
 }

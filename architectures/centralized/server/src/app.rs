@@ -109,8 +109,8 @@ pub struct App {
 /// to facilitate testing and debugging.
 #[allow(dead_code)]
 impl App {
-    pub fn get_pending_clients_len(&self) -> usize {
-        self.backend.pending_clients.len()
+    pub fn get_pending_clients(&self) -> HashSet<Client<ClientId>> {
+        self.backend.pending_clients.clone()
     }
 
     pub fn get_run_state(&self) -> RunState {
