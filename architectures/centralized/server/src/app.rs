@@ -112,12 +112,6 @@ impl App {
         self.backend.pending_clients.clone()
     }
 
-    pub fn get_clients(&self) -> Vec<Client<ClientId>> {
-        self.coordinator
-            .clients
-            .clone()
-    }
-
     pub fn get_run_state(&self) -> RunState {
         self.coordinator.run_state
     }

@@ -24,9 +24,6 @@ enum TestingQueryMsg {
     QueryClientsLen {
         respond_to: oneshot::Sender<usize>,
     },
-    QueryClientsId {
-        respond_to: oneshot::Sender<Vec<Client<ClientId>>>,
-    },
     QueryRunState {
         respond_to: oneshot::Sender<RunState>,
     },
@@ -138,10 +135,6 @@ impl CoordinatorServer {
                 let rounds = self.inner.get_rounds_head();
                 respond_to.send(rounds).unwrap();
             }
-            TestingQueryMsg::QueryClientsId { respond_to } => {
-                let rounds = self.inner.get_clients();
-                respond_to.send(rounds).unwrap();
-            }
         }
     }
 
@@ -218,11 +211,4 @@ impl CoordinatorServerHandle {
         let _ = self.query_chan_sender.send(msg).await;
         recv.await.expect("Actor task has been killed")
     }
-
-    // pub async fn get_clients(&self) -> Vec<Client<ClientId>> {
-    //     let (send, recv) = oneshot::channel::<Vec<Client<ClientId>>>();
-    //     let msg = TestingQueryMsg::QueryClientsId { respond_to: send };
-    //     let _ = self.query_chan_sender.send(msg).await;
-    //     recv.await.expect("Actor task has been killed")
-    // }
 }
