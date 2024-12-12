@@ -13,8 +13,8 @@ struct Client {
 }
 
 impl Client {
-    pub async fn new() -> (Self, NC, RunInitConfig<ClientId>) {
-        let client_app_params = client_app_params_default_for_testing();
+    pub async fn new(server_port: u16) -> (Self, NC, RunInitConfig<ClientId>) {
+        let client_app_params = client_app_params_default_for_testing(server_port);
         let (client_app, p2p, state_options) = ClientAppBuilder::new(client_app_params)
             .build()
             .await
@@ -41,8 +41,8 @@ pub struct ClientHandle {
 }
 
 impl ClientHandle {
-    pub async fn default() -> Self {
-        let (mut client, p2p, state_options) = Client::new().await;
+    pub async fn new(server_port: u16) -> Self {
+        let (mut client, p2p, state_options) = Client::new(server_port).await;
         let client_handle = tokio::spawn(async move { client.run(p2p, state_options).await });
         Self { client_handle }
     }

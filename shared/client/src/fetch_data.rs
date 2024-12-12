@@ -1,6 +1,6 @@
 use psyche_coordinator::{get_batch_ids_for_round, Coordinator};
 use psyche_core::{BatchId, IntervalTree};
-use psyche_data_provider::{DataProviderTcpClient, TokenizedDataProvider};
+use psyche_data_provider::{DataProvider, TokenizedDataProvider};
 use psyche_network::NetworkableNodeIdentity;
 use std::{collections::HashSet, sync::Arc};
 use tokio::{
@@ -19,13 +19,13 @@ pub struct Batch {
 }
 
 pub struct DataFetcher<T: NetworkableNodeIdentity> {
-    data_provider: Arc<Mutex<DataProviderTcpClient<T>>>,
+    data_provider: Arc<Mutex<DataProvider<T>>>,
     active_fetch_task: Option<(BatchStep, JoinHandle<()>)>,
     buffer_size: usize,
 }
 
 impl<T: NetworkableNodeIdentity> DataFetcher<T> {
-    pub fn new(data_provider: DataProviderTcpClient<T>, buffer_size: usize) -> Self {
+    pub fn new(data_provider: DataProvider<T>, buffer_size: usize) -> Self {
         Self {
             data_provider: Arc::new(Mutex::new(data_provider)),
             active_fetch_task: None,

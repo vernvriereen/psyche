@@ -45,6 +45,7 @@ def parse_args():
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
     parser.add_argument("--use_fsdp", action="store_true")
     parser.add_argument("--cpu", action="store_true")
+    parser.add_argument("--attn_implementation", default="flash_attention_2")
     return parser.parse_args()
 
 
@@ -63,6 +64,7 @@ def get_model(args):
         args.model,
         torch_dtype=torch.bfloat16,
         device_map=f"cuda:{int(os.environ['LOCAL_RANK'])}" if not args.cpu else "cpu",
+        attn_implementation=args.attn_implementation,
     )
 
     if args.use_fsdp:
