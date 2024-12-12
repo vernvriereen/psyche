@@ -14,7 +14,8 @@ use tokio::{
     },
 };
 
-use crate::{RUN_ID, SERVER_PORT, WARMUP_TIME};
+use crate::test_utils::get_free_port;
+use crate::{RUN_ID, WARMUP_TIME};
 
 enum TestingQueryMsg {
     QueryClients {
@@ -31,6 +32,7 @@ enum TestingQueryMsg {
 struct CoordinatorServer {
     inner: ServerApp,
     query_chan_receiver: Receiver<TestingQueryMsg>,
+    port: u16,
 }
 
 impl CoordinatorServer {
@@ -42,12 +44,13 @@ impl CoordinatorServer {
             ..Default::default()
         };
 
+        let server_port = get_free_port();
         let server = ServerApp::new(
             false,
             coordinator,
             None,
             None,
-            Some(SERVER_PORT),
+            Some(server_port),
             None,
             None,
             None,
@@ -58,6 +61,7 @@ impl CoordinatorServer {
         Self {
             inner: server,
             query_chan_receiver,
+            port: server_port,
         }
     }
 
@@ -82,12 +86,13 @@ impl CoordinatorServer {
             ..Default::default()
         };
 
+        let server_port = get_free_port();
         let server = ServerApp::new(
             false,
             coordinator,
             None,
             None,
-            Some(SERVER_PORT),
+            Some(server_port),
             None,
             Some(WARMUP_TIME),
             init_min_clients,
@@ -98,6 +103,7 @@ impl CoordinatorServer {
         Self {
             inner: server,
             query_chan_receiver,
+            port: server_port,
         }
     }
 
@@ -130,22 +136,31 @@ impl CoordinatorServer {
 
 pub struct CoordinatorServerHandle {
     query_chan_sender: mpsc::Sender<TestingQueryMsg>,
+    pub server_port: u16,
 }
 
 impl CoordinatorServerHandle {
     pub async fn default() -> Self {
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
         let mut server = CoordinatorServer::default(query_chan_receiver).await;
+        let server_port = server.port;
         tokio::spawn(async move { server.run().await });
 
-        Self { query_chan_sender }
+        Self {
+            query_chan_sender,
+            server_port,
+        }
     }
 
     pub async fn new(init_min_clients: u32) -> Self {
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
         let mut server = CoordinatorServer::new(query_chan_receiver, Some(init_min_clients)).await;
+        let server_port = server.port;
         tokio::spawn(async move { server.run().await });
-        Self { query_chan_sender }
+        Self {
+            query_chan_sender,
+            server_port,
+        }
     }
 
     pub async fn get_clients(&self) -> HashSet<Client<ClientId>> {
