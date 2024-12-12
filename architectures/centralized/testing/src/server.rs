@@ -1,10 +1,10 @@
 use psyche_centralized_server::app::App as ServerApp;
 use psyche_centralized_shared::ClientId;
-use psyche_coordinator::{Client, Round};
 use psyche_coordinator::{
     model::{Model, LLM},
     Coordinator, RunState,
 };
+use psyche_coordinator::{Client, Round};
 use std::collections::HashSet;
 use tokio::{
     select,
@@ -15,7 +15,7 @@ use tokio::{
 };
 
 use crate::test_utils::get_free_port;
-use crate::{RUN_ID, WARMUP_TIME};
+use crate::{MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, RUN_ID, WARMUP_TIME};
 
 enum TestingQueryMsg {
     QueryClients {
@@ -73,22 +73,23 @@ impl CoordinatorServer {
 
     pub async fn new(
         query_chan_receiver: Receiver<TestingQueryMsg>,
-        init_min_clients: Option<u32>,
+        init_min_clients: u32,
     ) -> Self {
         let coordinator: Coordinator<ClientId> = Coordinator {
             run_id: RUN_ID.to_string(),
             model: Model::LLM(LLM::dummy()),
             data_indicies_per_batch: 1,
             rounds_per_epoch: 20,
-            max_round_train_time: 3,
-            round_witness_time: 2,
-            min_clients: 2,
+            max_round_train_time: MAX_ROUND_TRAIN_TIME,
+            round_witness_time: ROUND_WITNESS_TIME,
+            min_clients: init_min_clients,
             batches_per_round: 4,
             witness_nodes: 1,
             witness_quorum: 1,
             total_steps: 10,
             overlapped: false,
             cooldown_time: 5,
+            warmup_time: WARMUP_TIME,
             ..Default::default()
         };
 
@@ -101,7 +102,7 @@ impl CoordinatorServer {
             Some(server_port),
             None,
             Some(WARMUP_TIME),
-            init_min_clients,
+            Some(init_min_clients),
         )
         .await
         .unwrap();
@@ -168,7 +169,7 @@ impl CoordinatorServerHandle {
 
     pub async fn new(init_min_clients: u32) -> Self {
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
-        let mut server = CoordinatorServer::new(query_chan_receiver, Some(init_min_clients)).await;
+        let mut server = CoordinatorServer::new(query_chan_receiver, init_min_clients).await;
         let server_port = server.port;
         tokio::spawn(async move { server.run().await });
         Self {

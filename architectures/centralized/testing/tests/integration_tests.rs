@@ -160,8 +160,7 @@ async fn witness_participant_bloom() {
     )
     .await;
 
-    let _client_handles = spawn_clients(2, server_port).await;
-
+    let _client_handles = spawn_clients(init_min_clients.try_into().unwrap(), server_port).await;
 
     // assert that we start in the round 0
     assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
@@ -177,6 +176,7 @@ async fn witness_participant_bloom() {
     tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
     // witness
+    println!("start RoundWitness");
     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 
@@ -184,17 +184,16 @@ async fn witness_participant_bloom() {
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
 
     // assert witness were send
-    let max_retries = 3;
+    let max_retries = 2;
     for attempt in 0..=max_retries {
         let witnesses = &server_handle.get_rounds().await[0].witnesses;
-        if !witnesses.is_empty(){
+        if !witnesses.is_empty() {
             break;
         }
-        if attempt == max_retries{
+        if attempt == max_retries {
             panic!("witnesses are empty")
         }
-        tokio::time::sleep(Duration::from_millis(150)).await;
-
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
     // assert that the witness listened all the clients commits
@@ -202,17 +201,24 @@ async fn witness_participant_bloom() {
         let witnesses = &server_handle.get_rounds().await[0].witnesses;
         let mut score = 0;
         let clients = server_handle.get_clients().await;
+        // println!("Total Clients: {:?}", &clients);
         clients.iter().for_each(|client| {
-            score +=
-                psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(client, witnesses);
+            score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
+                client, witnesses,
+            );
+            if psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
+                client, witnesses,
+            ) == 0
+            {
+                println!("Client {:?} not present in witnesses", &client.id);
+            }
         });
-        if score == clients.len() as u32{
-            break
+        if score == clients.len() as u32 {
+            break;
         }
-        if attempt == max_retries{
+        if attempt == max_retries {
             panic!("missing clients in witnesses: {}", score);
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
-
-}
+    }
 }

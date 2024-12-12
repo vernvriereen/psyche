@@ -176,6 +176,13 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
 
         let committee_proof = committee_selection.get_committee(client_index);
         let witness_proof = committee_selection.get_witness(client_index);
+        // println!("Client witness: {:?}", client_index);
+        let client_id = state.clients[client_index as usize].clone().id;
+        println!("Cantidad de clientes: {:?}", state.clients.len());
+        println!(
+            "Client with ID {client_id} is witness? {}",
+            witness_proof.witness
+        );
 
         let blooms = match witness_proof.witness {
             true => {
