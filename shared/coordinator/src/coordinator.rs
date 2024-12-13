@@ -9,7 +9,7 @@ use bytemuck::{Pod, Zeroable};
 use psyche_core::{
     serde_deserialize_string, serde_serialize_string, sha256, Bloom, FixedVec, NodeIdentity,
 };
-use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::hash::Hash;
 
 pub const SOLANA_MAX_STRING_LEN: usize = 64;
@@ -44,7 +44,18 @@ pub enum RunState {
     Cooldown = 4,
 }
 
-#[derive(Clone, Debug, Zeroable, Default, Copy)]
+#[derive(
+    Clone,
+    Debug,
+    Zeroable,
+    Default,
+    Copy,
+    Serialize,
+    Deserialize,
+    AnchorDeserialize,
+    AnchorSerialize,
+)]
+#[serde(bound = "I: Serialize + DeserializeOwned")]
 pub struct Client<I: NodeIdentity> {
     pub id: I,
     pub dropping_at_end_of_round: bool,
@@ -52,38 +63,6 @@ pub struct Client<I: NodeIdentity> {
 
 impl<I: NodeIdentity> anchor_lang::Space for Client<I> {
     const INIT_SPACE: usize = 1;
-}
-
-impl<I: NodeIdentity> Serialize for Client<I> {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("Client", 2)?;
-        state.serialize_field("id", &self.id)?;
-        state.serialize_field("dropping_at_end_of_round", &self.dropping_at_end_of_round)?;
-        state.end()
-    }
-}
-
-impl<'de, I: NodeIdentity> Deserialize<'de> for Client<I> {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Client<I>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct ClientHelper<I> {
-            id: I,
-            dropping_at_end_of_round: bool,
-        }
-
-        let helper = ClientHelper::deserialize(deserializer)?;
-        Ok(Client {
-            id: helper.id,
-            dropping_at_end_of_round: helper.dropping_at_end_of_round,
-        })
-    }
 }
 
 impl<I: NodeIdentity> Hash for Client<I> {
@@ -174,7 +153,6 @@ pub struct Coordinator<T: NodeIdentity> {
     pub run_id: [u8; SOLANA_MAX_STRING_LEN],
     pub run_state: RunState,
 
-    // #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub run_state_start_unix_timestamp: u64,
 
     pub warmup_time: u64,

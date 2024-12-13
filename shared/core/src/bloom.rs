@@ -2,10 +2,8 @@ use anchor_lang::prelude::*;
 use bitvec::array::BitArray;
 use bytemuck::Zeroable;
 use fnv::FnvHasher;
-use std::{fmt, hash::Hasher};
-
-#[cfg(not(target_os = "solana"))]
 use serde::{Deserialize, Deserializer, Serialize};
+use std::{fmt, hash::Hasher};
 
 // Modified from https://github.com/solana-labs/solana/blob/27eff8408b7223bb3c4ab70523f8a8dca3ca6645/bloom/src/bloom.rs
 
@@ -21,17 +19,14 @@ pub struct Bloom<const U: usize, const K: usize> {
     pub bits: BitArrayWrapper<U>,
 }
 
-#[derive(Clone, PartialEq, Eq, Copy, Default)]
-#[cfg_attr(not(target_os = "solana"), derive(Serialize, Deserialize))]
+#[derive(Clone, PartialEq, Eq, Copy, Default, Serialize, Deserialize)]
 pub struct BitArrayWrapper<const U: usize>(pub BitArray<[u64; U]>);
 
 unsafe impl<const U: usize> Zeroable for BitArrayWrapper<U> {}
 
 impl<const U: usize> BitArrayWrapper<U> {
     pub fn new(bits_data: [u64; U]) -> Self {
-        Self (
-            BitArray::new(bits_data)
-        )
+        Self(BitArray::new(bits_data))
     }
 }
 
@@ -44,7 +39,6 @@ impl<const U: usize, const K: usize> Default for Bloom<U, K> {
     }
 }
 
-#[cfg(not(target_os = "solana"))]
 impl<const M: usize, const K: usize> Serialize for Bloom<M, K> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
@@ -58,7 +52,6 @@ impl<const M: usize, const K: usize> Serialize for Bloom<M, K> {
     }
 }
 
-#[cfg(not(target_os = "solana"))]
 impl<'de, const U: usize, const K: usize> Deserialize<'de> for Bloom<U, K> {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -85,7 +78,7 @@ impl<'de, const U: usize, const K: usize> Deserialize<'de> for Bloom<U, K> {
 
         Ok(Bloom {
             keys,
-            bits: helper.bits
+            bits: helper.bits,
         })
     }
 }
