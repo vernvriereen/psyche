@@ -151,6 +151,7 @@ async fn state_change_waiting_for_members_to_round_witness() {
 /// In rare cases, it may fail due to a bug where the client does not receive
 /// the initial peer list from the coordinator, causing it to remain inactive and never start training.
 /// If the test fails, it is recommended to rerun it as the issue occurs infrequently.
+/// Issue: https://github.com/NousResearch/psyche/issues/89
 #[tokio::test(flavor = "multi_thread")]
 async fn validate_all_clients_participate_in_witness_bloom() {
     let init_min_clients = 3;
@@ -211,8 +212,11 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     assert_eq!(score, clients.len() as u32)
 }
 
+/// As in the validate_all_clients_participate_in_witness_bloom
+/// if the test fails, it is recommended to rerun
+/// Issue: https://github.com/NousResearch/psyche/issues/89
 #[tokio::test(flavor = "multi_thread")]
-async fn round_with_iddle_node() {
+async fn complete_round_with_shutdowm_node() {
     let init_min_clients = 2;
     let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
     let server_port = server_handle.server_port;
