@@ -4,7 +4,7 @@ use std::{
 };
 
 use anchor_lang::{AnchorDeserialize, AnchorSerialize};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
 
 pub trait NodeIdentity:
     Display

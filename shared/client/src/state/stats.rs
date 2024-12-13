@@ -55,7 +55,7 @@ impl StatsLogger {
         round_log.insert("train/total_tokens", total_tokens(state));
         round_log.insert("train/tokens_per_sec", self.global_tokens_per_second(state));
 
-        round_log.insert("coordinator/num_clients", state.clients_len);
+        round_log.insert("coordinator/num_clients", state.clients.len());
         round_log.insert("coordinator/epoch", state.epoch);
         round_log.insert(
             "coordinator/round",

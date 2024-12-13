@@ -173,7 +173,6 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
             clients: value
                 .clients
                 .iter()
-                .take(value.clients_len as usize)
                 .map(|c| format!("{:?}", c.id))
                 .collect(),
             tick: value.tick,
@@ -183,7 +182,7 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
             model_checkpoint: match &value.model {
                 Model::LLM(l) => format!("{}", l.checkpoint),
             },
-            dropped_clients: value.dropped_clients_len as usize,
+            dropped_clients: value.dropped_clients.len(),
         }
     }
 }

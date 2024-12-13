@@ -1,5 +1,3 @@
-use std::path::Display;
-
 use crate::SOLANA_MAX_STRING_LEN;
 
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};

@@ -7,9 +7,9 @@ use crate::{
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Pod, Zeroable};
 use psyche_core::{
-    serde_deserialize_string, serde_deserialize_vec_to_array, serde_serialize_array_as_vec, serde_serialize_string, sha256, Bloom, FixedVec, NodeIdentity
+    serde_deserialize_string, serde_serialize_string, sha256, Bloom, FixedVec, NodeIdentity,
 };
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
 use std::hash::Hash;
 
 pub const SOLANA_MAX_STRING_LEN: usize = 64;
@@ -111,11 +111,7 @@ pub struct Round {
     pub tie_breaker_tasks: u32,
     pub data_index: u64,
     pub random_seed: u64,
-    #[serde(
-        serialize_with = "serde_serialize_array_as_vec",
-        deserialize_with = "serde_deserialize_vec_to_array"
-    )]
-    pub witnesses: [Witness; SOLANA_MAX_NUM_WITNESSES],
+    pub witnesses: FixedVec<Witness, SOLANA_MAX_NUM_WITNESSES>,
 }
 
 #[derive(
@@ -149,6 +145,7 @@ pub enum CoordinatorError {
     Disabled,
     Finished,
     InvalidCheckpoint,
+    WitnessesFull,
 }
 
 pub type Commitment = [u8; 32];
@@ -167,6 +164,7 @@ pub const NUM_STORED_ROUNDS: usize = 4;
     AnchorSerialize,
     InitSpace,
 )]
+#[serde(bound = "T: DeserializeOwned")]
 #[repr(C)]
 pub struct Coordinator<T: NodeIdentity> {
     #[serde(
@@ -185,7 +183,7 @@ pub struct Coordinator<T: NodeIdentity> {
     pub max_round_train_time: u64,
     pub round_witness_time: u64,
 
-    pub rounds: FixedVec<Round, NUM_STORED_ROUNDS>,
+    pub rounds: [Round; NUM_STORED_ROUNDS],
     pub rounds_head: u32,
     pub first_round: bool,
 
@@ -194,9 +192,7 @@ pub struct Coordinator<T: NodeIdentity> {
     pub clients: FixedVec<Client<T>, SOLANA_MAX_NUM_CLIENTS>,
     pub dropped_clients: FixedVec<Client<T>, SOLANA_MAX_NUM_CLIENTS>,
 
-    // #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub tick: u64,
-    // #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub last_tick_unix_timestamp: u64,
 
     pub batches_per_round: u32,
@@ -208,18 +204,13 @@ pub struct Coordinator<T: NodeIdentity> {
 
     pub checkpointers: FixedVec<T, SOLANA_MAX_NUM_CLIENTS>,
 
-    // #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub epoch: u32,
     pub rounds_per_epoch: u32,
 
-    // #[cfg_attr(not(target_os = "solana"), serde(default = "default_init_step"))]
     pub step: u32,
     pub total_steps: u32,
 
-    // #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub last_step_unix_timestamp: u64,
-
-    // #[cfg_attr(not(target_os = "solana"), serde(default))]
     pub epoch_start_data_index: u64,
 
     pub overlapped: bool,
@@ -321,6 +312,7 @@ impl std::fmt::Display for CoordinatorError {
             CoordinatorError::Disabled => write!(f, "Disabled"),
             CoordinatorError::Finished => write!(f, "Finished"),
             CoordinatorError::InvalidCheckpoint => write!(f, "Invalid checkpoint"),
+            CoordinatorError::WitnessesFull => write!(f, "Witnesses full"),
         }
     }
 }
@@ -380,18 +372,21 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
 
         let round = self.current_round().unwrap();
-        for witness in &round.witnesses{
+        for witness in round.witnesses.iter() {
             if self.clients[witness.index as usize] == *from {
                 return Err(CoordinatorError::DuplicateWitness);
             }
         }
         let round = self.current_round_mut_unchecked();
-        round.witnesses[witness.index as usize] = witness.clone();
+        round
+            .witnesses
+            .push(witness)
+            .map_err(|_| CoordinatorError::WitnessesFull)?;
 
         if round.witnesses.len()
             == match self.witness_nodes {
                 0 => self.clients.len(),
-                witness_nodes => witness_nodes,
+                witness_nodes => witness_nodes as usize,
             }
         {
             self.change_state(unix_timestamp, RunState::RoundWitness);
@@ -430,19 +425,17 @@ impl<T: NodeIdentity> Coordinator<T> {
         checkpoint: Checkpoint,
         unix_timestamp: u64,
     ) -> std::result::Result<(), CoordinatorError> {
-        // TODO: Fix this
-        // if self.checkpointers.iter().any(|x| *x == from.id) {
-        //     match &mut self.model {
-        //         Model::LLM(llm) => {
-        //             llm.checkpoint = checkpoint;
-        //         }
-        //     }
-        //     self.finish_cooldown(unix_timestamp);
-        //     Ok(())
-        // } else {
-        //     Err(CoordinatorError::InvalidCheckpoint)
-        // }
-        Ok(())
+        if self.checkpointers.iter().any(|x| *x == from.id) {
+            match &mut self.model {
+                Model::LLM(llm) => {
+                    llm.checkpoint = checkpoint;
+                }
+            }
+            self.finish_cooldown(unix_timestamp);
+            Ok(())
+        } else {
+            Err(CoordinatorError::InvalidCheckpoint)
+        }
     }
 
     pub fn healthy(&self, proof: &CommitteeProof) -> bool {
@@ -475,7 +468,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 Committee::Verifier => todo!(),
                 Committee::Trainer => Self::trainer_healthy_by_witnesses(
                     client,
-                    &round.witnesses[0..round.witnesses_len as usize],
+                    &round.witnesses,
                     self.witness_quorum,
                 ),
             }
@@ -631,11 +624,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
         let clients = backend.select_new_clients();
         if clients.len() as u32 >= self.min_clients {
-            self.clients_len = 0;
-            for client in clients {
-                self.clients[self.clients_len as usize] = client;
-                self.clients_len += 1;
-            }
+            self.clients = FixedVec::from_iter(clients.into_iter().take(SOLANA_MAX_NUM_CLIENTS));
             self.start_warmup(unix_timestamp);
         }
         Ok(())
@@ -676,17 +665,14 @@ impl<T: NodeIdentity> Coordinator<T> {
             self.step += 1;
 
             // WARNING: O(n) on number of clients, need to refactor
-            let old_clients = self.clients;
-            self.clients_len = 0;
-            for client in old_clients {
-                if client.dropping_at_end_of_round {
-                    self.dropped_clients[self.dropped_clients_len as usize] = client;
-                    self.dropped_clients_len += 1;
+            self.clients.retain(|x| {
+                if x.dropping_at_end_of_round {
+                    let _ = self.dropped_clients.push(x.clone());
+                    false
                 } else {
-                    self.clients[self.clients_len as usize] = client;
-                    self.clients_len += 1;
+                    true
                 }
-            }
+            });
 
             let (height, data_index) = self
                 .current_round()
@@ -736,12 +722,12 @@ impl<T: NodeIdentity> Coordinator<T> {
         };
         let round = &mut self.rounds[next_rounds_head];
         self.rounds_head = next_rounds_head as u32;
-        round.clients_len = self.clients.len();
+        round.clients_len = self.clients.len() as u32;
         round.height = next_height;
         round.data_index = next_data_index;
         round.tie_breaker_tasks = tie_breaker_tasks;
         round.random_seed = random_seed;
-        round.witnesses.fill(Witness::default());
+        round.witnesses.clear();
         self.change_state(unix_timestamp, RunState::RoundTrain);
     }
 
@@ -805,11 +791,11 @@ impl Round {
     pub fn empty() -> Self {
         Self {
             height: 0,
+            clients_len: 0,
             tie_breaker_tasks: 0,
             data_index: 0,
             random_seed: 0,
             witnesses: Default::default(),
-
         }
     }
 }

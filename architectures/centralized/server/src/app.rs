@@ -162,11 +162,6 @@ impl App {
                             .await
                             .unwrap_or_default()
                     {
-                        println!(
-                            "model len: {}, revision len: {}",
-                            repo_id.len(),
-                            revision.len()
-                        );
                         download_model_repo_async(
                             &repo_id,
                             match revision.is_empty() {

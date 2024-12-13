@@ -159,7 +159,7 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
             round.tie_breaker_tasks as usize,
             state.witness_nodes as usize,
             state.verification_percent,
-            state.clients_len as usize,
+            state.clients.len(),
             round.random_seed,
         );
 
@@ -181,7 +181,7 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
             true => {
                 let commit_bloom =
                     Bloom::random(num_batch_ids_for_this_round * 2, BLOOM_FALSE_RATE);
-                let participant_bloom = Bloom::random(state.clients_len as usize, BLOOM_FALSE_RATE);
+                let participant_bloom = Bloom::random(state.clients.len(), BLOOM_FALSE_RATE);
                 let order_bloom = Bloom::random(num_batch_ids_for_this_round, BLOOM_FALSE_RATE);
                 debug!(
                     "Commit bloom size: {} bits, {} keys",
@@ -412,10 +412,7 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         assert!(!payloads.is_empty());
         assert!(!commitments.is_empty());
 
-        let witnesses = round.witnesses[0..round.witnesses_len as usize]
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>();
+        let witnesses = round.witnesses.clone();
         let batch_ids = get_batch_ids_for_round(
             // coordinator has already advanced to the next round but we haven't started ours yet.
             // our current_round corresponds to the coordinator's previous_round
@@ -529,11 +526,11 @@ fn start_sending_health_checks<T: NetworkableNodeIdentity>(
         .as_ref()
         .ok_or(TrainError::NoCommitteeInfo)?;
     Ok(if !state.first_round && witness_proof.witness {
-        let previous_round = state.previous_round().ok_or(TrainError::NoActiveRound)?;
-        let witnesses = previous_round.witnesses[0..previous_round.witnesses_len as usize]
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>();
+        let witnesses = state
+            .previous_round()
+            .ok_or(TrainError::NoActiveRound)?
+            .witnesses
+            .clone();
         let witness_quorum = state.witness_quorum;
         let clients = state.clients.clone();
         let committee_selection = committee_selection.clone();
