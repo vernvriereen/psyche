@@ -24,7 +24,7 @@ pub fn repo_path() -> String {
 pub async fn spawn_clients(num_clients: usize, server_port: u16) -> Vec<ClientHandle> {
     let mut client_handles = Vec::new();
     for _ in 0..num_clients {
-        client_handles.push(ClientHandle::new(server_port).await)
+        client_handles.push(ClientHandle::new_with_training_delay(server_port, 2).await)
     }
     client_handles
 }
@@ -56,7 +56,10 @@ pub fn get_free_port() -> u16 {
     listener.local_addr().unwrap().port()
 }
 
-pub fn client_app_params_default_for_testing(server_port: u16) -> AppParams {
+pub fn dummy_client_app_params_with_training_delay(
+    server_port: u16,
+    training_delay_secs: u64,
+) -> AppParams {
     AppParams {
         cancel: CancellationToken::default(),
         private_key: SecretKey::generate(),
@@ -75,5 +78,29 @@ pub fn client_app_params_default_for_testing(server_port: u16) -> AppParams {
         wandb_info: None,
         optim_stats: None,
         grad_accum_in_fp32: false,
+        dummy_training_delay_secs: Some(training_delay_secs),
+    }
+}
+
+pub fn dummy_client_app_params_default(server_port: u16) -> AppParams {
+    AppParams {
+        cancel: CancellationToken::default(),
+        private_key: SecretKey::generate(),
+        server_addr: format!("localhost:{}", server_port).to_string(),
+        tx_tui_state: None,
+        run_id: RUN_ID.to_string(),
+        data_parallelism: 1,
+        tensor_parallelism: 1,
+        micro_batch_size: None,
+        write_gradients_dir: None,
+        p2p_port: None,
+        eval_tasks: Vec::new(),
+        eval_task_max_docs: None,
+        checkpoint_upload_info: None,
+        hub_read_token: None,
+        wandb_info: None,
+        optim_stats: None,
+        grad_accum_in_fp32: false,
+        dummy_training_delay_secs: None,
     }
 }

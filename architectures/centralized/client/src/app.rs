@@ -86,6 +86,7 @@ pub struct AppParams {
     pub wandb_info: Option<WandBInfo>,
     pub optim_stats: Option<u32>,
     pub grad_accum_in_fp32: bool,
+    pub dummy_training_delay_secs: Option<u64>,
 }
 
 impl AppBuilder {
@@ -135,6 +136,7 @@ impl AppBuilder {
             private_key: p.private_key,
             optim_stats_every_n_steps: p.optim_stats,
             grad_accum_in_fp32: p.grad_accum_in_fp32,
+            dummy_training_delay_secs: p.dummy_training_delay_secs,
         };
 
         Ok((app, p2p, state_options))
