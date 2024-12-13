@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt, future::Future, pin::Pin};
+use std::{collections::HashMap, fmt, future::Future, pin::Pin, sync::Arc};
 
 use psyche_coordinator::{Committee, Coordinator, RunState, Witness};
 use psyche_core::{sha256, BatchId};
@@ -6,7 +6,10 @@ use psyche_modeling::DistroResult;
 use psyche_network::{BlobTicket, Hash, NetworkableNodeIdentity};
 use tch::TchError;
 use thiserror::Error;
-use tokio::sync::mpsc::{self};
+use tokio::sync::{
+    mpsc::{self},
+    Notify,
+};
 use tracing::{debug, error, info, info_span, trace, warn, Instrument};
 use wandb::DataValue;
 
@@ -41,11 +44,10 @@ pub struct StepStateMachine<T: NetworkableNodeIdentity> {
 
     active_step: ActiveStep,
 
-    tx_request_download: mpsc::Sender<BlobTicket>,
-    tx_witness: mpsc::Sender<Witness>,
+    tx_request_download: mpsc::UnboundedSender<BlobTicket>,
+    tx_witness: mpsc::UnboundedSender<Witness>,
 
-    tx_try_opportunistic_witness: mpsc::Sender<()>,
-    rx_try_opportunistic_witness: mpsc::Receiver<()>,
+    notify_try_opportunistic_witness: Arc<Notify>,
 
     current_round: RoundState<T>,
     previous_round: RoundState<T>,
@@ -83,12 +85,6 @@ pub enum ApplyMessageError {
 }
 
 #[derive(Error, Debug)]
-pub enum ApplyDistroResultError {
-    #[error("Failed to queue opportinistic witness check")]
-    TryOpportunisticWitness,
-}
-
-#[derive(Error, Debug)]
 pub enum OpportunisticWitnessError {
     #[error("Failed to send opportunistic witness, channel must be closed")]
     Send,
@@ -103,12 +99,12 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
         cooldown: CooldownStepMetadata,
         trainers: Vec<Trainer>,
         coordinator_state: Coordinator<T>,
-        tx_request_download: mpsc::Sender<BlobTicket>,
-        tx_witness: mpsc::Sender<Witness>,
+        tx_request_download: mpsc::UnboundedSender<BlobTicket>,
+        tx_witness: mpsc::UnboundedSender<Witness>,
         stats_logger: StatsLogger,
     ) -> Self {
         let active_step = ActiveStep::Warmup(warmup.start(trainers));
-        let (tx_try_opportunistic_witness, rx_try_opportunistic_witness) = mpsc::channel(10);
+        let notify_try_opportunistic_witness = Arc::new(Notify::new());
         Self {
             identity,
 
@@ -125,8 +121,7 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
 
             tx_request_download,
             tx_witness,
-            tx_try_opportunistic_witness,
-            rx_try_opportunistic_witness,
+            notify_try_opportunistic_witness,
 
             coordinator_state,
 
@@ -191,7 +186,6 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
             {
                 self.tx_witness
                     .send(witness)
-                    .await
                     .map_err(|_| OpportunisticWitnessError::Send)?;
             }
         }
@@ -352,7 +346,6 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
 
             self.tx_request_download
                 .send(ticket)
-                .await
                 .map_err(|_| ApplyMessageError::StartDownloadBlob)?;
         }
 
@@ -363,14 +356,14 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
         &mut self,
         hash: Hash,
         distro_result: TransmittableDistroResult,
-    ) -> Result<(), ApplyDistroResultError> {
+    ) {
         let round_state = if self.current_round.downloads.contains_key(&hash) {
             &mut self.current_round
         } else if self.previous_round.downloads.contains_key(&hash) {
             &mut self.previous_round
         } else {
             debug!("Unknown download {}", hash);
-            return Ok(());
+            return;
         };
 
         debug!(
@@ -382,11 +375,11 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
             Some(PayloadState::Downloading(x)) => x,
             Some(PayloadState::Deserializing(_)) => {
                 debug!("Duplicate download of {}", hash);
-                return Ok(());
+                return;
             }
             None => {
                 debug!("Unknown download {}", hash);
-                return Ok(());
+                return;
             }
         };
 
@@ -397,7 +390,7 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
                     "No commitment for payload from {} for batch {}",
                     from, batch_id
                 );
-                return Ok(());
+                return;
             }
         };
         let commitment = match commitments
@@ -407,7 +400,7 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
             Some(commitment) => &commitment.1,
             None => {
                 info!("No commitment for payload from {}", from);
-                return Ok(());
+                return;
             }
         };
 
@@ -415,7 +408,7 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
             Some((_, witness_proof, _)) => witness_proof,
             None => {
                 warn!("Got a commitment for a round without a committee. wtf?");
-                return Ok(());
+                return;
             }
         };
         // TODO: verify payload matches commitment
@@ -468,15 +461,12 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
 
         if just_finished {
             round_state.batch_ids_not_yet_trained_on = None;
-            self.tx_try_opportunistic_witness
-                .send(())
-                .await
-                .map_err(|_| ApplyDistroResultError::TryOpportunisticWitness)?;
+            self.notify_try_opportunistic_witness.notify_one();
         }
 
         // we unconditionally store every seen payload, since we're not yet sure what consensus will be on whether it's included.
         let deserializing = tokio::task::spawn({
-            let tx_try_witness = self.tx_try_opportunistic_witness.clone();
+            let notify_try_opportunistic_witness = self.notify_try_opportunistic_witness.clone();
             async move {
                 let maybe_results = tokio::task::spawn_blocking(move || {
                     distro_result
@@ -487,10 +477,7 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
                 })
                 .await
                 .map_err(|_| DeserializeError::DeserializeThreadCrashed)??;
-                tx_try_witness
-                    .send(())
-                    .await
-                    .map_err(|_| DeserializeError::NotifyDone)?;
+                notify_try_opportunistic_witness.notify_one();
                 Ok(maybe_results)
             }
         });
@@ -498,8 +485,6 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
         round_state
             .downloads
             .insert(hash, PayloadState::Deserializing(deserializing));
-
-        Ok(())
     }
 
     async fn apply_state(&mut self, state: Coordinator<T>) -> Result<(), StepError> {
@@ -687,10 +672,13 @@ impl<T: NetworkableNodeIdentity> RunManager<T> {
 
     /// # async safety:
     /// this will wait forever if not running - you must use this in a select! that can also apply a new state.
-    pub async fn opportunistic_witness_try_ready(&mut self) -> Option<()> {
+    pub async fn opportunistic_witness_wait_notified(&mut self) {
         match &mut self.0 {
             InitStage::Running(state_machine) => {
-                state_machine.rx_try_opportunistic_witness.recv().await
+                state_machine
+                    .notify_try_opportunistic_witness
+                    .notified()
+                    .await;
             }
             _ => {
                 // wait forever - this will get pre-empted by a state change in select that moves us to a running stage.
@@ -735,19 +723,15 @@ impl<T: NetworkableNodeIdentity> RunManager<T> {
         &mut self,
         hash: psyche_network::Hash,
         distro_result: TransmittableDistroResult,
-    ) -> Result<(), ApplyDistroResultError> {
+    ) {
         match &mut self.0 {
             InitStage::Running(state_machine) => {
-                state_machine
-                    .apply_distro_result(hash, distro_result)
-                    .await?;
+                state_machine.apply_distro_result(hash, distro_result).await;
             }
             _ => {
                 // not yet warmed up, ignore any p2p messages.
             }
         }
-
-        Ok(())
     }
 
     pub async fn apply_state(&mut self, state: Coordinator<T>) -> Result<(), ApplyStateError> {
@@ -765,10 +749,9 @@ impl<T: NetworkableNodeIdentity> RunManager<T> {
                 unreachable!("Once we take the init state, we move to initializing.");
             }
             InitStage::Initializing(..) if state.run_state != RunState::Warmup => {
-
                 // a client has left the network, transitioning back to RunState::WaitingForMembers.
                 // wait for new clients to join the network.
-                if state.run_state == RunState::WaitingForMembers{
+                if state.run_state == RunState::WaitingForMembers {
                     return Ok(());
                 }
 

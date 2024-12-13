@@ -34,7 +34,7 @@ pub enum CooldownError {
 }
 
 pub struct CooldownStepMetadata {
-    tx_checkpoint: mpsc::Sender<model::Checkpoint>,
+    tx_checkpoint: mpsc::UnboundedSender<model::Checkpoint>,
     checkpoint_info: Option<CheckpointConfig>,
     checkpoint_extra_files: Vec<PathBuf>,
 
@@ -43,7 +43,7 @@ pub struct CooldownStepMetadata {
 
 impl CooldownStepMetadata {
     pub fn new(
-        tx_checkpoint: mpsc::Sender<model::Checkpoint>,
+        tx_checkpoint: mpsc::UnboundedSender<model::Checkpoint>,
         checkpoint_info: Option<CheckpointConfig>,
         checkpoint_extra_files: Vec<PathBuf>,
         eval_runner: EvalRunner,
@@ -168,7 +168,6 @@ impl CooldownStepMetadata {
                                 repo_id: hub_repo,
                                 revision: Some(revision),
                             }))
-                            .await
                             .map_err(|_| CheckpointError::SendCheckpoint)?;
                     }
                 }

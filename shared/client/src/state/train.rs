@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    ops::ControlFlow,
     path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
@@ -87,8 +86,8 @@ pub enum TrainError {
 pub struct TrainingStepMetadata<T: NetworkableNodeIdentity> {
     pub identity: T,
     pub data_fetcher: DataFetcher<T>,
-    pub tx_health_check: mpsc::Sender<HealthChecks>,
-    pub tx_distro_result: mpsc::Sender<DistroBroadcastAndPayload>,
+    pub tx_health_check: mpsc::UnboundedSender<HealthChecks>,
+    pub tx_distro_result: mpsc::UnboundedSender<DistroBroadcastAndPayload>,
 
     pub write_gradients_dir: Option<PathBuf>,
 
@@ -348,7 +347,6 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
                                     proof: committee_proof,
                                     distro_result,
                                 })
-                                .await
                                 .map_err(|_| TrainError::SendDistroResult)?;
                             trace!("successfully queued tx distro result");
                             Ok(())
@@ -535,7 +533,7 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
 fn start_sending_health_checks<T: NetworkableNodeIdentity>(
     current_round: &mut RoundState<T>,
     state: &Coordinator<T>,
-    tx_health_check: mpsc::Sender<HealthChecks>,
+    tx_health_check: mpsc::UnboundedSender<HealthChecks>,
 ) -> Result<Option<JoinHandle<Result<(), TrainError>>>, TrainError> {
     // we won't have any information to health check with until at least one round of training has finished
     if state.first_round {
@@ -579,7 +577,6 @@ fn start_sending_health_checks<T: NetworkableNodeIdentity>(
                 info!("Sending health check for following indicies: {:?}", checks);
                 tx_health_check
                     .send(checks)
-                    .await
                     .map_err(|_| TrainError::SendHealthChecks)
             } else {
                 Ok(())
