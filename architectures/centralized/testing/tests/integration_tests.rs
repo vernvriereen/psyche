@@ -210,3 +210,71 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     });
     assert_eq!(score, clients.len() as u32)
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn round_with_iddle_node() {
+    let init_min_clients = 2;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
+    let server_port = server_handle.server_port;
+
+    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
+
+    let [client_1_task,_client_2_task,_client_3_task] = spawn_clients(3, server_port).await.try_into().unwrap();
+
+    assert_with_retries(|| server_handle.get_clients_len(), 3).await;
+
+    client_1_task.client_handle.abort();
+
+
+    // assert that we start in the round 0
+    assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
+    // witnesses should be empty
+    assert!(server_handle.get_rounds().await[0].witnesses.is_empty());
+
+    // execute round 0
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+    // warmup
+    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+    // train
+    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
+    // witness
+    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+
+    // assert round 0 finished
+    assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
+
+    // assert witness were send
+    let max_retries = 2;
+    for attempt in 0..=max_retries {
+        let witnesses = &server_handle.get_rounds().await[0].witnesses;
+        if !witnesses.is_empty() {
+            break;
+        }
+        if attempt == max_retries {
+            panic!("witnesses are empty")
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+
+    // assert that the witness listened all the clients commits
+    let witnesses = &server_handle.get_rounds().await[0].witnesses;
+    let mut score = 0;
+    let clients = server_handle.get_clients().await;
+
+    assert_eq!(clients.len(), 2);
+    clients.iter().for_each(|client| {
+        score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
+            client, witnesses,
+        );
+    });
+    assert_eq!(score, clients.len() as u32)
+}
