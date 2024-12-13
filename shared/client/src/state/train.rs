@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    ops::ControlFlow,
     path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
@@ -19,7 +20,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, debug_span, error, info, warn, Instrument};
+use tracing::{debug, debug_span, error, info, trace, warn, Instrument};
 
 use crate::{
     distro_results_to_bytes,
@@ -281,64 +282,83 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
                             distro_results,
                             cancelled,
                         } = completed_trainer.map_err(|_| TrainError::TrainCrashed)??;
-                        available_trainers.push(trainer);
 
-                        if cancelled {
-                            // we're throwing away this result.
-                            continue;
-                        }
+                        let res: Result<(), TrainError> = async {
+                            trace!(
+                                "trainer on device {:?} finished training",
+                                trainer.device(),
+                            );
 
-                        let distro_result = TransmittableDistroResult {
-                            step,
-                            batch_id,
-                            distro_results: distro_results
-                                .iter()
-                                .map(SerializedDistroResult::try_from)
-                                .collect::<std::result::Result<Vec<_>, _>>()
-                                .map_err(TrainError::SerializeDistroResult)?,
-                        };
-                        if let Some(dir) = &write_gradients_dir {
-                            let distro_result = distro_result.clone();
-                            let dir = dir.clone();
-                            let identity = identity.clone();
-                            tokio::spawn(async move {
-                                if let Err(e) =
-                                    write_gradients_to_disk(dir, identity, distro_result).await
-                                {
-                                    error!("Failed to write gradients to disk: {e}");
-                                }
-                            });
-                        }
+                            available_trainers.push(trainer);
 
-                        for result in distro_results {
-                            if let Some(stats) = result.stats {
-                                for (name, value) in stats {
-                                    // a rolling average for this step :)
-                                    optim_stats
-                                        .entry(name)
-                                        .and_modify(|e| *e = (*e + value) / 2.0)
-                                        .or_insert(value);
-                                }
+                            if cancelled {
+                                trace!("however, we were cancelled, so we're throwing away this result.");
+                                // we're throwing away this result.
+                                return Ok(());
                             }
-                        }
 
-                        round_losses.push(loss);
-
-                        let mut committment = Vec::with_capacity(40);
-                        committment.extend_from_slice(identity.as_ref());
-                        committment.extend_from_slice(&u64::from(batch_id).to_be_bytes());
-                        let commitment = sha256(&committment);
-
-                        tx_distro_result
-                            .send(DistroBroadcastAndPayload {
+                            let distro_result = TransmittableDistroResult {
                                 step,
                                 batch_id,
-                                commitment,
-                                proof: committee_proof,
-                                distro_result,
-                            })
-                            .await
-                            .map_err(|_| TrainError::SendDistroResult)?;
+                                distro_results: distro_results
+                                    .iter()
+                                    .map(SerializedDistroResult::try_from)
+                                    .collect::<std::result::Result<Vec<_>, _>>()
+                                    .map_err(TrainError::SerializeDistroResult)?,
+                            };
+
+                            if let Some(dir) = &write_gradients_dir {
+                                let distro_result = distro_result.clone();
+                                let dir = dir.clone();
+                                let identity = identity.clone();
+                                tokio::spawn(async move {
+                                    if let Err(e) =
+                                        write_gradients_to_disk(dir, identity, distro_result).await
+                                    {
+                                        error!("Failed to write gradients to disk: {e}");
+                                    }
+                                });
+                            }
+
+                            for result in distro_results {
+                                if let Some(stats) = result.stats {
+                                    for (name, value) in stats {
+                                        // a rolling average for this step :)
+                                        optim_stats
+                                            .entry(name)
+                                            .and_modify(|e| *e = (*e + value) / 2.0)
+                                            .or_insert(value);
+                                    }
+                                }
+                            }
+
+                            round_losses.push(loss);
+
+                            let mut committment = Vec::with_capacity(40);
+                            committment.extend_from_slice(identity.as_ref());
+                            committment.extend_from_slice(&u64::from(batch_id).to_be_bytes());
+                            let commitment = sha256(&committment);
+
+                            trace!("trying to queue tx distro result...");
+                            tx_distro_result
+                                .send(DistroBroadcastAndPayload {
+                                    step,
+                                    batch_id,
+                                    commitment,
+                                    proof: committee_proof,
+                                    distro_result,
+                                })
+                                .await
+                                .map_err(|_| TrainError::SendDistroResult)?;
+                            trace!("successfully queued tx distro result");
+                            Ok(())
+                        }.instrument(
+                            tracing::debug_span!(
+                                "train_done",
+                                batch_id = format!("{batch_id}")
+                            )
+                        ).await;
+                        res?;
                     }
                 }
 
