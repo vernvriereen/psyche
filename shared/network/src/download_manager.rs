@@ -3,9 +3,8 @@ use crate::{util::convert_bytes, Networkable};
 use anyhow::{bail, Context, Error, Result};
 use bytes::Bytes;
 use futures_util::future::select_all;
-use iroh::base::ticket::BlobTicket;
-use iroh::blobs::get::db::DownloadProgress;
-use iroh::net::key::PublicKey;
+use iroh::PublicKey;
+use iroh_blobs::{get::db::DownloadProgress, ticket::BlobTicket};
 use std::{fmt::Debug, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 use tokio::{
     sync::{mpsc, oneshot, Mutex},
@@ -60,7 +59,7 @@ pub struct DownloadUpdate {
 }
 
 pub struct DownloadComplete<D: Networkable> {
-    pub hash: iroh::blobs::Hash,
+    pub hash: iroh_blobs::Hash,
     pub from: PublicKey,
     pub data: D,
 }

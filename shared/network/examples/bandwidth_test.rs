@@ -1,12 +1,9 @@
 use anyhow::{bail, Result};
 use chrono::{Local, Timelike};
 use clap::{ArgAction, Parser};
-use iroh::{
-    base::{base32, ticket::BlobTicket},
-    net::relay::{RelayMap, RelayMode, RelayUrl},
-};
+use iroh::{PublicKey, RelayMap, RelayMode, RelayUrl};
 use psyche_network::{
-    NetworkConnection, NetworkEvent, NetworkTUIState, NetworkTui, PeerList, PublicKey,
+    BlobTicket, NetworkConnection, NetworkEvent, NetworkTUIState, NetworkTui, PeerList,
 };
 use psyche_tui::{
     logging::LoggerWidget,
@@ -232,7 +229,8 @@ async fn main() -> Result<()> {
         .peer_list
         .map(|p| {
             PeerList::from_str(&p).unwrap_or_else(|_| {
-                let single_node_id = base32::parse_vec(&p)
+                let single_node_id = data_encoding::HEXLOWER
+                    .decode(p.as_bytes())
                     .map(|b| PublicKey::try_from(&b as &[u8]))
                     .expect("failed to parse peer list or node addr from arg")
                     .expect("failed to parse peer list or node addr from arg");

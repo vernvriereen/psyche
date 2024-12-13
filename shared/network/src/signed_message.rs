@@ -2,7 +2,7 @@ use crate::Networkable;
 
 use anyhow::Result;
 use bytes::Bytes;
-use iroh::net::key::{PublicKey, SecretKey, Signature};
+use iroh::{PublicKey, SecretKey};
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 pub struct SignedMessage<T: Networkable> {
     from: PublicKey,
     data: Bytes,
-    signature: Signature,
+    signature: ed25519::Signature,
     _t: PhantomData<T>,
 }
 
