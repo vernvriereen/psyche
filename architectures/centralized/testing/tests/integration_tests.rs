@@ -147,6 +147,10 @@ async fn state_change_waiting_for_members_to_round_witness() {
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 }
 
+/// This test verifies that all clients are included in the witness bloom filters.
+/// In rare cases, it may fail due to a bug where the client does not receive
+/// the initial peer list from the coordinator, causing it to remain inactive and never start training.
+/// If the test fails, it is recommended to rerun it as the issue occurs infrequently.
 #[tokio::test(flavor = "multi_thread")]
 async fn validate_all_clients_participate_in_witness_bloom() {
     let init_min_clients = 3;
