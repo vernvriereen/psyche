@@ -234,7 +234,7 @@ fn main() -> Result<()> {
         args.tui
     );
     if data_path.exists() {
-        server_cmd.push_str(&format!("--data-config {}", data_path.display()));
+        server_cmd.push_str(&format!(" --data-config {}", data_path.display()));
     }
 
     println!("starting server: {server_cmd:?}");

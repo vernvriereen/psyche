@@ -94,6 +94,27 @@ cargo install --git https://github.com/coral-xyz/anchor --rev a7a23eea308440a9fa
 
 `nix develop` to enter a development shell
 
+### Windows
+
+1. Install CUDA libraries: https://developer.nvidia.com/cuda-12-4-1-download-archive?target_os=Windows&target_arch=x86_64&target_version=11
+
+2. Download libtorch & extract: https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.4.1%2Bcu124.zip
+
+3. Download OpenSSL: https://slproweb.com/download/Win64OpenSSL-3_3_2.exe
+
+4. Install Perl: https://github.com/StrawberryPerl/Perl-Dist-Strawberry/releases/download/SP_53822_64bit/strawberry-perl-5.38.2.2-64bit.msi
+
+5. Create a `.cargo/config.toml` file to set environment variables
+
+**NOTE**: Building may take several minutes the first time as `openssl-sys` takes a long time (for some reason)
+
+```
+[env]
+LIBTORCH = <path_to_libtorch>
+OPENSSL_LIB_DIR = <path_to_openssl>/lib/VC/x64/MT
+OPENSSL_INCLUDE_DIR <path_to_openssl>/include
+```
+
 ## Lints & Checks
 
 `$ just check`

@@ -3,7 +3,8 @@ use anyhow::{Error, Result};
 use psyche_coordinator::model::{self, AnyLearningRateScheduler};
 use psyche_core::{BatchId, CancellableBarrier, LearningRateScheduler};
 use psyche_modeling::{
-    unsharded_cpu_variables, CausalLM, Distro, DistroResult, Fp32GradientAccumulator, ConcreteCausalLM,
+    unsharded_cpu_variables, CausalLM, ConcreteCausalLM, Distro, DistroResult,
+    Fp32GradientAccumulator,
 };
 use std::{
     collections::HashMap,
@@ -628,6 +629,10 @@ impl Trainer {
                 }
             }
         }
+    }
+
+    pub fn device(&self) -> &Device {
+        &self.first_model_device
     }
 }
 

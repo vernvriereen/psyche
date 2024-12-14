@@ -35,9 +35,6 @@ pub enum DeserializeError {
 
     #[error("Deserialize error: {0}")]
     Deserialize(#[from] TchError),
-
-    #[error("Failed to notify completion of deserialize")]
-    NotifyDone,
 }
 
 pub struct DistroBroadcastAndPayload {
