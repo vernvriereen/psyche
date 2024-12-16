@@ -162,15 +162,8 @@ impl App {
                             .await
                             .unwrap_or_default()
                     {
-                        download_model_repo_async(
-                            &repo_id,
-                            revision,
-                            None,
-                            None,
-                            None,
-                            true,
-                        )
-                        .await?;
+                        download_model_repo_async(&repo_id, revision, None, None, None, true)
+                            .await?;
                     }
                 }
                 Checkpoint::Ephemeral => {
@@ -271,7 +264,7 @@ impl App {
                             self.on_client_message(from, message).await;
                         }
                         ClientNotification::Disconnected(from) => {
-                            self.on_disconnect(from);
+                            self.on_disconnect(from)?;
                         }
                     }
                 }
@@ -314,18 +307,20 @@ impl App {
         }
     }
 
-    fn on_disconnect(&mut self, from: ClientId) {
+    fn on_disconnect(&mut self, from: ClientId) -> Result<()> {
         self.backend.pending_clients.remove(&Client {
             id: from.clone(),
             dropping_at_end_of_round: true,
         });
 
-        // TODO: Fix dropout with new arrays.
-        // self.coordinator.clients.retain(|client| client.id != from);
-        // self.coordinator.dropped_clients.push(Client {
-        //     id: from,
-        //     dropping_at_end_of_round: true,
-        // });
+        self.coordinator.clients.retain(|client| client.id != from);
+        self.coordinator
+            .dropped_clients
+            .push(Client {
+                id: from,
+                dropping_at_end_of_round: true,
+            })
+            .map_err(|e| anyhow!(e))
     }
     async fn on_client_message(&mut self, from: ClientId, event: ClientToServerMessage) {
         let broadcast = match event {
