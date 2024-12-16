@@ -2,7 +2,7 @@
 
 ## Centralized
 
-The coordinator is a part of the server app and it's the structure that handles the round state and keeps the advancing through the rounds, also deciding each witness for the round.
+The coordinator is a part of the server app and it's the structure that handles the round state and manages progression through the rounds, also deciding each witness for the round.
 
 The server it first created in the `main.rs` file of the server App. It's loaded using the configuration file `data.toml`.
 
@@ -18,11 +18,11 @@ flowchart LR
 
 The coordinator shares information about the model and the data server location to run the server app along with some info about the run itself, like the id, the warmup and the min clients to start training.
 
-Every a certain period of time the server calls a tick function that just checks the state of the run and update all the correct parameters, the tick function on the server just calls the tick function on the coordinator under and then broadcast the coordinator to all the connected clients to check for the actual state of the round. The coordinator checks the actual state of the run and acts in consequence.
+At certain intervals the server calls a tick function that checks the state of the run and updates all the correct parameters, the tick function on the server calls the underlying tick function in the coordinator and then broadcasts the coordinator to all the connected clients to check for the actual state of the round. The coordinator checks the actual state of the run and acts in consequence.
 
-When a new client joins the run it has to communicate the `run_id` that wants to join. The server try to match it with the one in the coordinator to correctly join to the run. After processing the joining message the client gets added to the pending clients of the server and runs a new tick on the coordinator.
+When a new client joins the run it has to communicate the `run_id` that wants to join. The server tries to match it with the one in the coordinator in order to correctly join the run. After processing the joining message the client gets added to the pending clients of the server and runs a new tick on the coordinator.
 
-At first it will be on `WaitingForMembers` state. In this state the coordinator will ask the server for the pending clients that join previously to this tick in the round. In case the coordinator already receives enough clients to advance then it starts the warmup state and saves it in its internal data.
+At first it will be on `WaitingForMembers` state. In this state the coordinator will ask the server for those pending clients which have joined prior to this tick in the round. If the coordinator has already received enough clients to advance, then it starts the warmup state and saves it in its internal data.
 
 ```mermaid
 sequenceDiagram
@@ -47,7 +47,7 @@ sequenceDiagram
     Coordinator->>Coordinator: start_warmup
 ```
 
-Once the coordinator update its state to `Warmup` it starts checking for the warmup time to pass. If a client dropped while waiting for this warmup time, the server app removes the client from the coordinator clients list and go back to the `WaitingForMembers` state.
+Once the coordinator has updated its state to `Warmup` it starts to check for the warmup time to pass. If a client has dropped whilst waiting for the warmup time, the server app then removes the client from the coordinator clients list and goes back to the `WaitingForMembers` state.
 
 Once the warmup time passes, the coordinator, loads all the information for the next training round and change its state to `RoundTrain`. The app server will broadcast the coordinator state that is now indicating that we have to train and the clients will check the information of the round from the coordinator.
 
