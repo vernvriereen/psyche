@@ -2,10 +2,7 @@ use std::time::Duration;
 
 use psyche_coordinator::RunState;
 use testing::{
-    client::ClientHandle,
-    server::CoordinatorServerHandle,
-    test_utils::{assert_with_retries, spawn_clients},
-    MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME,
+    client::ClientHandle, server::CoordinatorServerHandle, test_utils::{assert_with_retries, spawn_clients}, COOLDOWN_TIME, MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME
 };
 
 #[tokio::test(flavor = "multi_thread")]
@@ -328,14 +325,14 @@ async fn finish_epoch() {
 
     // Cooldown
     assert_with_retries(|| server_handle.get_run_state(), RunState::Cooldown).await;
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
-    // assert round 1 finished
-    dbg!( server_handle.get_run_state().await);
-    dbg!( server_handle.get_rounds_head().await);
-
+    tokio::time::sleep(Duration::from_secs(COOLDOWN_TIME)).await;
+    // wait for the WarmUp process to finish.
+    // skipping this wait may cause a deadlock.
+    // issue: https://github.com/NousResearch/psyche/issues/76
+    // warmup
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
 
-
-
+    // train
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 }

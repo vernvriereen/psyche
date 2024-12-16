@@ -14,7 +14,7 @@ use tokio::{
     },
 };
 
-use crate::test_utils::get_free_port;
+use crate::{test_utils::get_free_port, COOLDOWN_TIME};
 use crate::{MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, RUN_ID, WARMUP_TIME};
 
 enum TestingQueryMsg {
@@ -88,7 +88,7 @@ impl CoordinatorServer {
             witness_quorum: 1,
             total_steps: 10,
             overlapped: false,
-            cooldown_time: 5,
+            cooldown_time: COOLDOWN_TIME,
             warmup_time: WARMUP_TIME,
             ..Default::default()
         };
