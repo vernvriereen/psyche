@@ -125,23 +125,23 @@ async fn state_change_waiting_for_members_to_round_witness() {
     let _client_handles = spawn_clients(2, server_port).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
-    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
 
     // warmup time
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
     tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
-    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 
     // train time
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
     tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
-
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
-    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
+
 
     // wait for the RoundWitness process to finish.
     // skipping this wait may cause a deadlock.
     // issue: https://github.com/NousResearch/psyche/issues/76
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
 
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
@@ -173,16 +173,15 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     assert!(server_handle.get_rounds().await[0].witnesses.is_empty());
 
     // execute round 0
-    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
     // warmup
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
     tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
-    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
     // train
-    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
-    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
-    // witness
-    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
+    // witness
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
+    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
 
     // assert round 0 finished
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
@@ -243,16 +242,15 @@ async fn complete_round_with_shutdowm_node() {
     assert!(server_handle.get_rounds().await[0].witnesses.is_empty());
 
     // execute round 0
-    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
     // warmup
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
     tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
-    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
     // train
-    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
-    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
-    // witness
-    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
+    // witness
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
+    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
 
     // assert round 0 finished
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
