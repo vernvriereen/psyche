@@ -218,6 +218,7 @@ async fn validate_all_clients_participate_in_witness_bloom() {
 #[tokio::test(flavor = "multi_thread")]
 async fn complete_round_with_shutdowm_node() {
     let init_min_clients = 2;
+    let amount_of_clients = init_min_clients as usize + 1;
     let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
     let server_port = server_handle.server_port;
 
@@ -228,10 +229,11 @@ async fn complete_round_with_shutdowm_node() {
     )
     .await;
 
-    let [client_1_task,_client_2_task,_client_3_task] = spawn_clients(3, server_port).await.try_into().unwrap();
+    let [client_1_task,_client_2_task,_client_3_task] = spawn_clients(amount_of_clients, server_port).await.try_into().unwrap();
 
     assert_with_retries(|| server_handle.get_clients_len(), 3).await;
 
+    // shutdown node 1
     client_1_task.client_handle.abort();
 
 
@@ -269,7 +271,7 @@ async fn complete_round_with_shutdowm_node() {
     }
 
 
-    // assert that the witness listened all the clients commits
+    // assert that the witness listened all the up clients commits
     let witnesses = &server_handle.get_rounds().await[0].witnesses;
     let mut score = 0;
     let clients = server_handle.get_clients().await;
