@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
     Serialize,
     Deserialize,
     Default,
-    Zeroable
+    Zeroable,
 )]
 pub struct ClientId {
     pub owner: Pubkey,

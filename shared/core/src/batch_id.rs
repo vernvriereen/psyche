@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
     AnchorSerialize,
     Serialize,
     Deserialize,
-    InitSpace
+    InitSpace,
 )]
 pub struct BatchId(u64);
 

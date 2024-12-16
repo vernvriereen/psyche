@@ -2,7 +2,7 @@ use crate::{
     llama::{Cache, Config, Llama, Llama3RopeConfig, LlamaEosToks},
     safetensor_utils::load_safetensors_into_variables,
     tensor_parallelism::Communicator,
-    CausalLM, CommunicatorId, LoadSafetensorsError, ConcreteCausalLM,
+    CausalLM, CommunicatorId, ConcreteCausalLM, LoadSafetensorsError,
 };
 use std::{io, path::PathBuf, sync::Arc};
 use tch::{

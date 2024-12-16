@@ -38,7 +38,8 @@ pub mod solana_coordinator {
         Ok(())
     }
 
-    pub fn increase_coordinator(_ctx: Context<IncreaseCoordinator>, _len: u16) -> Result<()> {
+    pub fn increase_coordinator(_ctx: Context<IncreaseCoordinator>, len: u16) -> Result<()> {
+        msg!("Coordinator size increased to: {}", len);
         Ok(())
     }
 }

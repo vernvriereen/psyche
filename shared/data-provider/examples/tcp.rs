@@ -39,7 +39,7 @@ impl<T: NetworkableNodeIdentity> WatcherBackend<T> for DummyBackend<T> {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq, Default, Copy)]
 struct DummyNodeIdentity(u64);
 
 impl Display for DummyNodeIdentity {
@@ -131,7 +131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut clients = try_join_all(
         clients
             .into_iter()
-            .map(|i| DataProviderTcpClient::connect("localhost:5740", i, ())),
+            .map(|i| DataProviderTcpClient::connect("localhost:5740".to_string(), i, ())),
     )
     .await?;
     info!("clients initialized successfully");

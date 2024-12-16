@@ -27,7 +27,9 @@ macro_rules! hash_intermediate {
 }
 
 /// This wrapper is used to implement the `Space` trait for the actual hash.
-#[derive(AnchorSerialize, AnchorDeserialize, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
+#[derive(
+    AnchorSerialize, AnchorDeserialize, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default,
+)]
 pub struct HashWrapper {
     pub inner: [u8; 32],
 }

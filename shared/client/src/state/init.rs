@@ -170,38 +170,29 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                     tokio::spawn(async move {
                         let repo_id = u8_to_string(&hub_repo.repo_id);
                         let potential_local_path = PathBuf::from(repo_id.clone());
-                        let revision = u8_to_string(&hub_repo.revision);
-                        let model_is_local = match revision.is_empty()
+                        let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
+                        let model_is_local = if revision.is_none()
                             && tokio::fs::try_exists(potential_local_path.clone())
                                 .await
                                 .unwrap_or_default()
                         {
-                            true => {
-                                let mut ret = Vec::new();
-                                let mut read_dir =
-                                    tokio::fs::read_dir(potential_local_path).await?;
-                                while let Some(dir_entry) = read_dir.next_entry().await? {
-                                    ret.push(dir_entry.path())
-                                }
-                                ret
+                            let mut ret = Vec::new();
+                            let mut read_dir = tokio::fs::read_dir(potential_local_path).await?;
+                            while let Some(dir_entry) = read_dir.next_entry().await? {
+                                ret.push(dir_entry.path())
                             }
-                            false => {
-                                info!("Downloading {:?}", u8_to_string(&hub_repo.repo_id));
-                                let revision = u8_to_string(&hub_repo.revision);
-                                let revision = match revision.is_empty() {
-                                    true => None,
-                                    false => Some(revision),
-                                };
-                                download_model_repo_async(
-                                    &repo_id,
-                                    revision,
-                                    None,
-                                    init_config.hub_read_token,
-                                    None,
-                                    false,
-                                )
-                                .await?
-                            }
+                            ret
+                        } else {
+                            info!("Downloading {:?}", u8_to_string(&hub_repo.repo_id));
+                            download_model_repo_async(
+                                &repo_id,
+                                revision,
+                                None,
+                                init_config.hub_read_token,
+                                None,
+                                false,
+                            )
+                            .await?
                         };
                         let repo_files = model_is_local;
                         let checkpoint_extra_files = repo_files

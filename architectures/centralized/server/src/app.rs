@@ -156,18 +156,15 @@ impl App {
             match checkpoint {
                 Checkpoint::Hub(hub_repo) => {
                     let repo_id = u8_to_string(&hub_repo.repo_id);
-                    let revision = u8_to_string(&hub_repo.revision);
-                    if !revision.is_empty()
+                    let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
+                    if !revision.is_none()
                         || !tokio::fs::try_exists(PathBuf::from(repo_id.clone()))
                             .await
                             .unwrap_or_default()
                     {
                         download_model_repo_async(
                             &repo_id,
-                            match revision.is_empty() {
-                                true => None,
-                                false => Some(revision),
-                            },
+                            revision,
                             None,
                             None,
                             None,
