@@ -281,6 +281,7 @@ fn main() -> Result<()> {
         .enable_io()
         .enable_time()
         .max_blocking_threads(8192)
+        .thread_stack_size(10 * 1024 * 1024)
         .build()
         .unwrap();
     runtime.block_on(async_main())
