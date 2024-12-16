@@ -284,3 +284,60 @@ async fn complete_round_with_shutdowm_node() {
     });
     assert_eq!(score, clients.len() as u32)
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn finish_epoch() {
+    let init_min_clients = 2;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
+    let server_port = server_handle.server_port;
+
+    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
+
+    let _client_handles = spawn_clients(init_min_clients.try_into().unwrap(), server_port).await;
+
+    // assert that we start in the round 0
+    assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
+    // witnesses should be empty
+    assert!(server_handle.get_rounds().await[0].witnesses.is_empty());
+
+    // execute round 0
+    // warmup
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+
+    // train
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
+    // witness
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
+    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
+
+    // execute round 1
+    assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
+
+    // train
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
+
+    // witness
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
+    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
+
+    // Cooldown
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Cooldown).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    // assert round 1 finished
+    dbg!( server_handle.get_run_state().await);
+    dbg!( server_handle.get_rounds_head().await);
+
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+
+
+
+}
