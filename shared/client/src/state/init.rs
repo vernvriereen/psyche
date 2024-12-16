@@ -17,7 +17,7 @@ use thiserror::Error;
 use tokenizers::{models::wordlevel::WordLevel, ModelWrapper, Tokenizer};
 use tokio::{
     io,
-    sync::mpsc::Sender,
+    sync::mpsc::UnboundedSender,
     task::{JoinError, JoinHandle},
 };
 use tracing::info;
@@ -108,11 +108,11 @@ struct RawLoadedModel {
 pub struct RunInitConfigAndIO<T: NetworkableNodeIdentity> {
     pub init_config: RunInitConfig<T>,
 
-    pub tx_witness: Sender<Witness>,
-    pub tx_health_check: Sender<HealthChecks>,
-    pub tx_checkpoint: Sender<model::Checkpoint>,
-    pub tx_distro_result: Sender<DistroBroadcastAndPayload>,
-    pub tx_request_download: Sender<BlobTicket>,
+    pub tx_witness: UnboundedSender<Witness>,
+    pub tx_health_check: UnboundedSender<HealthChecks>,
+    pub tx_checkpoint: UnboundedSender<model::Checkpoint>,
+    pub tx_distro_result: UnboundedSender<DistroBroadcastAndPayload>,
+    pub tx_request_download: UnboundedSender<BlobTicket>,
 }
 
 impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
