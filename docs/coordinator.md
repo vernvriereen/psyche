@@ -47,14 +47,51 @@ sequenceDiagram
 
 Once the coordinator update its state to `Warmup` it starts checking for the warmup time to pass. If a client dropped while waiting for this warmup time, the server app removes the client from the coordinator clients list and go back to the `WaitingForMembers` state.
 
-Once the warmup time passes, the coordinator, loads all the information for the next training round and change its state to `RoundTrain`. The app server will broadcast the coordinator state that is now indicating that is we have to train and the clients will check the information of the round from the coordinator
+Once the warmup time passes, the coordinator, loads all the information for the next training round and change its state to `RoundTrain`. The app server will broadcast the coordinator state that is now indicating that we have to train and the clients will check the information of the round from the coordinator.
 
-Once a certain time passes defined by the `max_round_train_time` parameter, then the coordinator change its state to the `RoundWitness` indicating that the round of training is finished and the coordinator will wait to check that all the nodes calculated the results correctly. While the coordinator keeps being in the training round the server will keep receiving Witness messages from the clients that will be passed to the coordinator calling the `witness()` function where the coordinator will validate the witness for a client and add it to the witnesses of the round.
+From here, there are two possibilities for the coordinator to go to the next state that is `RoundWitness`. There's the usual way that is after some time defined by `max_round_train_time` the state will update and the coordinator will automatically now wait in the `RoundWitness` state and the other way is known as the optimistic witness.
+The optimistic witness is basically a way to go to the next state faster if we get a majority of witnesses that we need to go on with the round without waiting for the limit time.
 
-Once the time for the witness round ends the coordinator will search for any clients that have to be dropped, because they died and did not sent a healthcheck or simply disconnects while training, and remove it from the list of active clients. Depending on which step of the training we are, the coordinator will:
+The witness for each round is elected randomly among all the clients, and is assinged in the `start` function for the `TrainingStepMetadata` struct. The `CommitteeSelection` is the struct that will define and select the different participants for this round and has the function `get_witness` that will elect the witness for the round using a seed comming from the coordinator in the `random_seed` field. The `WitnessProof` basicaully contains if the client is the witness of this round and its position and index in the vector of clients. The witness will create the bloom filters and then will be the one that has to send those bloom filters to the coordinator.
+
+The witness will try to send an oportunistic witness once it finishes to train its assigned data and all the batches are taken to train by the other clients, this happens in the `apply_distro_result` function. The server will receive a `Witness` message from client that will pass it out to the coordinator with the necessary data calling the `witness()` function.
+The coordinator will validate that the received message came from the actual witness of the round and will push the result to the `witnesses` vector, if we receive enough witnesses responses then we can asume that its safe to go to the new state `RoundWitness`. The tick in this state will only check for a timeout using the `round_witness_time` time and when is ready the coordinator will search for any clients that have to be dropped, because they died and did not sent a healthcheck or simply disconnects while training, and remove it from the list of active clients. Depending on which step of the training we are, the coordinator will:
 - Go back to waiting for members if the last step was reached.
-- Go to cooldown state if the height of the round reached the limit of the rounds per epoch.
+- Go to cooldown state if the height of the round reached the limit of the rounds per epoch. After the cooldown time passes the coordinator waits for clients to start training again.
 - Go back to round train and get the round info for the upcoming round.
+
+```mermaid
+sequenceDiagram
+    Server app->>Coordinator: tick
+    Coordinator->>Server app: Change state to `RoundTrain`
+    Server app->>Client1: New state
+    Server app->>Client2: New state
+    par Start training
+        Client1->>Client1: Start training
+        Client2->>Client2: Start training
+    end
+    Client1->>Committee: get_witness
+    Client2->>Committee: new
+    Client1->>Server app: Join(run_id)
+    Server app->>Coordinator: Check run_id
+    Coordinator->>Server app: OK
+    Server app->>Server app: Add to pending clients
+    Coordinator->>Server app: select_new_clients()
+    Server app->>Coordinator: Pending clients
+    Note over Server app,Coordinator: Minimum not reached
+    Client2->>Server app: Join(run_id)
+    Server app->>Coordinator: Check run_id
+    Coordinator->>Server app: OK
+    Server app->>Server app: Add to pending clients
+    Coordinator->>Server app: select_new_clients()
+    Server app->>Coordinator: Pending clients
+    Coordinator->>Coordinator: start_warmup
+```
+
+In the `start` of the client it will also spawn a new task to repeteadly sent healthchecks to the server. The nodes also known as trainers in this state, will be have an associated score that will be determined by the coordinator using the `trainer_healthy_score_by_witnesses`, the score will increase while the clients send the correspondent data to add to the participants bloom filters, that will the coordinator will know that the clients is effectively participating in the training. The node will send all the other nodes that are not consider healthy to the server with the `HealthCheck` message. The coordinator will handle that and determined if that node is healthy and it will mark them to drop in the next round if they are no consider alive or participating.
+
+
+
 
 
 
