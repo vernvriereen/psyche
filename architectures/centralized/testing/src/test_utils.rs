@@ -24,7 +24,7 @@ pub fn repo_path() -> String {
 pub async fn spawn_clients(num_clients: usize, server_port: u16) -> Vec<ClientHandle> {
     let mut client_handles = Vec::new();
     for _ in 0..num_clients {
-        client_handles.push(ClientHandle::new_with_training_delay(server_port, 2).await)
+        client_handles.push(ClientHandle::default(server_port).await)
     }
     client_handles
 }
