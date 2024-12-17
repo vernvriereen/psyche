@@ -336,3 +336,59 @@ async fn finish_epoch() {
     // train
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn client_join_in_training() {
+    let init_min_clients = 2;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
+    let server_port = server_handle.server_port;
+
+    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
+
+
+    spawn_clients(2, server_port).await;
+
+    assert_with_retries(|| server_handle.get_clients_len(), init_min_clients as usize).await;
+
+
+    // assert that we start in the round 0
+    assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
+
+    // execute round 0
+    // warmup
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+    // train
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
+
+    // spawn new client
+    let binding = spawn_clients(1, server_port).await;
+    let x = binding.get(0).unwrap();
+
+
+
+    assert_with_retries(|| server_handle.get_clients_len(), init_min_clients as usize).await;
+
+
+    // witness
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
+    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
+
+    assert_with_retries(|| server_handle.get_clients_len(), init_min_clients as usize).await;
+
+    // assert round 0 finished
+    // assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
+
+   println!("Rounds: {:?}", server_handle.get_rounds_head().await);
+   println!("Clients: {:?}", server_handle.get_clients_len().await);
+   dbg!("end");
+
+
+
+}
