@@ -49,7 +49,7 @@ pub struct InitializeCoordinator<'info> {
     #[account(
         init,
         payer = signer,
-        space = 10 * (1024 as usize)
+        space = 10 * (1024_usize)
     )]
     pub coordinator: AccountLoader<'info, CoordinatorManager>,
     #[account(mut)]

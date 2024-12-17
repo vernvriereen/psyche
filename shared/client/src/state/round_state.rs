@@ -55,7 +55,7 @@ impl<T: NodeIdentity> RoundState<T> {
             return None;
         }
 
-        let blooms = self.blooms.clone();
+        let blooms = self.blooms;
         let (commit_bloom, participant_bloom, order_bloom) = blooms?;
 
         info!("Submitting witness blooms");

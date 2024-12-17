@@ -127,14 +127,14 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
             tx_request_download,
         } = self;
 
-        let model::Model::LLM(llm) = state.model.clone();
+        let model::Model::LLM(llm) = state.model;
 
         let data_future = async {
             let data_provider = match &llm.data_location {
                 LLMTrainingDataLocation::Server(data_server) => DataProvider::Server(
                     DataProviderTcpClient::connect(
                         u8_to_string(data_server),
-                        init_config.identity.clone(),
+                        init_config.identity,
                         init_config.private_key,
                     )
                     .await?,
@@ -166,7 +166,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                     })
                 }),
                 model::Checkpoint::Hub(hub_repo) => {
-                    let hub_repo = hub_repo.clone();
+                    let hub_repo = *hub_repo;
                     tokio::spawn(async move {
                         let repo_id = u8_to_string(&hub_repo.repo_id);
                         let potential_local_path = PathBuf::from(repo_id.clone());
@@ -363,7 +363,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
 
         let training = TrainingStepMetadata {
             data_fetcher,
-            identity: init_config.identity.clone(),
+            identity: init_config.identity,
             write_gradients_dir: init_config.write_gradients_dir,
             tx_health_check,
             tx_distro_result,
@@ -373,7 +373,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
 
         let witness = WitnessStepMetadata {
             eval_runner: eval_runner.clone(),
-            identity: init_config.identity.clone(),
+            identity: init_config.identity,
             tx_witness: tx_witness.clone(),
         };
 

@@ -67,16 +67,16 @@ where
     pub async fn handle_client_message(&mut self, from: T, message: ClientToServerMessage) {
         match message {
             ClientToServerMessage::RequestTrainingData { data_ids } => {
-                let result = self.try_send_data(from.clone(), data_ids.clone()).await;
+                let result = self.try_send_data(from, data_ids.clone()).await;
                 match result {
                     Ok(data) => {
                         let old_count = *self.provided_sequences.get(&from).unwrap_or(&0);
                         self.provided_sequences
-                            .insert(from.clone(), old_count + data_ids.len());
+                            .insert(from, old_count + data_ids.len());
                         match self
                             .tcp_server
                             .send_to(
-                                from.clone(),
+                                from,
                                 ServerToClientMessage::TrainingData {
                                     data_ids,
                                     raw_data: data,
@@ -96,7 +96,7 @@ where
                         match self
                             .tcp_server
                             .send_to(
-                                from.clone(),
+                                from,
                                 ServerToClientMessage::RequestRejected { data_ids, reason },
                             )
                             .await
@@ -142,7 +142,7 @@ where
 
     fn handle_new_state(&mut self, state: Coordinator<T>) {
         self.state = state;
-        self.in_round = self.state.clients.iter().map(|x| x.id.clone()).collect();
+        self.in_round = self.state.clients.iter().map(|x| x.id).collect();
         // self.selected_data = match self.state.current_round() {
         //     Ok(round) => {
         //         let committee = CommitteeSelection::new(

@@ -326,9 +326,7 @@ impl<'de, T: Deserialize<'de> + Default + Copy + Space, const N: usize> Deserial
 
         let mut fixed_vec = FixedVec::new();
         for item in vec {
-            fixed_vec
-                .push(item)
-                .map_err(|e| serde::de::Error::custom(e))?;
+            fixed_vec.push(item).map_err(serde::de::Error::custom)?;
         }
 
         Ok(fixed_vec)

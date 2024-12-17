@@ -157,7 +157,7 @@ impl App {
                 Checkpoint::Hub(hub_repo) => {
                     let repo_id = u8_to_string(&hub_repo.repo_id);
                     let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
-                    if !revision.is_none()
+                    if revision.is_some()
                         || !tokio::fs::try_exists(PathBuf::from(repo_id.clone()))
                             .await
                             .unwrap_or_default()
@@ -309,7 +309,7 @@ impl App {
 
     fn on_disconnect(&mut self, from: ClientId) -> Result<()> {
         self.backend.pending_clients.remove(&Client {
-            id: from.clone(),
+            id: from,
             dropping_at_end_of_round: true,
         });
 
@@ -329,7 +329,7 @@ impl App {
                 let coord_run_id = u8_to_string(&self.coordinator.run_id);
                 if coord_run_id == run_id {
                     self.backend.pending_clients.insert(Client {
-                        id: from.clone(),
+                        id: from,
                         dropping_at_end_of_round: false,
                     });
                     let client_joined = self
@@ -421,7 +421,7 @@ impl App {
             if let Some(last_sync_step) = self.last_sync_step {
                 if last_sync_step < self.coordinator.step {
                     if let Some(save_state_dir) = &self.save_state_dir {
-                        let mut state = self.coordinator.clone();
+                        let mut state = self.coordinator;
                         Self::reset_ephemeral(&mut state);
                         match toml::to_string_pretty(&state) {
                             Ok(toml) => {
@@ -453,14 +453,14 @@ impl App {
                 .backend
                 .net_server
                 .broadcast(ServerToClientMessage::Coordinator(Box::new(
-                    self.coordinator.clone(),
+                    self.coordinator,
                 )))
                 .await
             {
                 warn!("Error in on_tick: {err}");
             }
             if let Some((ref sender, _)) = self.training_data_server {
-                sender.send(self.coordinator.clone()).await.unwrap();
+                sender.send(self.coordinator).await.unwrap();
             }
         }
     }

@@ -45,7 +45,6 @@ fn to_fixed_size_array(s: &str) -> [u8; 64] {
 
 impl CoordinatorServer {
     pub async fn default(query_chan_receiver: Receiver<TestingQueryMsg>) -> Self {
-        dbg!(RUN_ID.to_string());
         let coordinator: Coordinator<ClientId> = Coordinator {
             run_id: to_fixed_size_array(RUN_ID),
             model: Model::LLM(LLM::dummy()),

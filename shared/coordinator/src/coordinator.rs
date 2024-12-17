@@ -658,7 +658,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             // WARNING: O(n) on number of clients, need to refactor
             self.clients.retain(|x| {
                 if x.dropping_at_end_of_round {
-                    let _ = self.dropped_clients.push(x.clone());
+                    let _ = self.dropped_clients.push(*x);
                     false
                 } else {
                     true
