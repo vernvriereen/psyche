@@ -12,7 +12,7 @@ async fn connect_single_node() {
     let server_port = server_handle.server_port;
 
     let _client_handle = ClientHandle::new(server_port).await;
-    let connected_clients = || server_handle.get_clients_len();
+    let connected_clients = || server_handle.get_pending_clients_len();
 
     assert_with_retries(connected_clients, 1).await;
 }
@@ -26,7 +26,7 @@ async fn connect_multiple_nodes() {
 
     let _client_handles = spawn_clients(number_of_nodes, server_port).await;
 
-    let connected_clients = || server_handle.get_clients_len();
+    let connected_clients = || server_handle.get_pending_clients_len();
     let run_state = || server_handle.get_run_state();
 
     assert_with_retries(connected_clients, number_of_nodes).await;
@@ -155,7 +155,7 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
     let server_port = server_handle.server_port;
 
-    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+    assert_with_retries(|| server_handle.get_pending_clients_len(), 0).await;
     assert_with_retries(
         || server_handle.get_run_state(),
         RunState::WaitingForMembers,
@@ -218,7 +218,7 @@ async fn complete_round_with_shutdowm_node() {
     let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
     let server_port = server_handle.server_port;
 
-    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+    assert_with_retries(|| server_handle.get_pending_clients_len(), 0).await;
     assert_with_retries(
         || server_handle.get_run_state(),
         RunState::WaitingForMembers,
@@ -248,6 +248,7 @@ async fn complete_round_with_shutdowm_node() {
     // witness
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 
     // assert round 0 finished
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
