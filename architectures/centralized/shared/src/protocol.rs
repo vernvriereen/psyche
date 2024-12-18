@@ -2,9 +2,11 @@ use anchor_lang::{AnchorDeserialize, AnchorSerialize};
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_core::NodeIdentity;
 use psyche_network::{
-    FromSignedBytesError, NetworkableNodeIdentity, NodeId, PeerList, PublicKey, SecretKey, SignedMessage};
-use std::fmt::Display;
+    FromSignedBytesError, NetworkableNodeIdentity, NodeId, PeerList, PublicKey, SecretKey,
+    SignedMessage,
+};
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ClientToServerMessage {

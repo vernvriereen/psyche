@@ -35,10 +35,18 @@ struct CoordinatorServer {
     port: u16,
 }
 
+fn to_fixed_size_array(s: &str) -> [u8; 64] {
+    let mut array = [0u8; 64];
+    let bytes = s.as_bytes();
+    let len = bytes.len().min(64);
+    array[..len].copy_from_slice(&bytes[..len]);
+    array
+}
+
 impl CoordinatorServer {
     pub async fn default(query_chan_receiver: Receiver<TestingQueryMsg>) -> Self {
         let coordinator: Coordinator<ClientId> = Coordinator {
-            run_id: RUN_ID.to_string().as_bytes()[0..64].try_into().unwrap(),
+            run_id: to_fixed_size_array(RUN_ID),
             model: Model::LLM(LLM::dummy()),
             data_indicies_per_batch: 1,
             ..Default::default()
@@ -70,7 +78,7 @@ impl CoordinatorServer {
         init_min_clients: Option<u32>,
     ) -> Self {
         let coordinator: Coordinator<ClientId> = Coordinator {
-            run_id: RUN_ID.to_string().as_bytes()[0..64].try_into().unwrap(),
+            run_id: to_fixed_size_array(RUN_ID),
             model: Model::LLM(LLM::dummy()),
             data_indicies_per_batch: 1,
             rounds_per_epoch: 20,

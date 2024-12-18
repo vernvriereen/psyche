@@ -153,6 +153,7 @@ pub struct Coordinator<T: NodeIdentity> {
     pub run_id: [u8; SOLANA_MAX_STRING_LEN],
     pub run_state: RunState,
 
+    #[serde(default)]
     pub run_state_start_unix_timestamp: u64,
 
     pub warmup_time: u64,
@@ -161,16 +162,23 @@ pub struct Coordinator<T: NodeIdentity> {
     pub max_round_train_time: u64,
     pub round_witness_time: u64,
 
+    #[serde(default)]
     pub rounds: [Round; NUM_STORED_ROUNDS],
+    #[serde(default)]
     pub rounds_head: u32,
+    #[serde(default)]
     pub first_round: bool,
 
     pub min_clients: u32,
 
+    #[serde(default)]
     pub clients: FixedVec<Client<T>, SOLANA_MAX_NUM_CLIENTS>,
+    #[serde(default)]
     pub dropped_clients: FixedVec<Client<T>, SOLANA_MAX_NUM_CLIENTS>,
 
+    #[serde(default)]
     pub tick: u64,
+    #[serde(default)]
     pub last_tick_unix_timestamp: u64,
 
     pub batches_per_round: u32,
@@ -180,15 +188,20 @@ pub struct Coordinator<T: NodeIdentity> {
     pub witness_nodes: u32,
     pub witness_quorum: u32,
 
+    #[serde(default)]
     pub checkpointers: FixedVec<T, SOLANA_MAX_NUM_CLIENTS>,
 
+    #[serde(default)]
     pub epoch: u32,
     pub rounds_per_epoch: u32,
 
+    #[serde(default)]
     pub step: u32,
     pub total_steps: u32,
 
+    #[serde(default)]
     pub last_step_unix_timestamp: u64,
+    #[serde(default)]
     pub epoch_start_data_index: u64,
 
     pub overlapped: bool,
@@ -645,7 +658,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             // WARNING: O(n) on number of clients, need to refactor
             self.clients.retain(|x| {
                 if x.dropping_at_end_of_round {
-                    let _ = self.dropped_clients.push(x.clone());
+                    let _ = self.dropped_clients.push(*x);
                     false
                 } else {
                     true

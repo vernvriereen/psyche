@@ -38,7 +38,8 @@ pub mod solana_coordinator {
         Ok(())
     }
 
-    pub fn increase_coordinator(_ctx: Context<IncreaseCoordinator>, _len: u16) -> Result<()> {
+    pub fn increase_coordinator(_ctx: Context<IncreaseCoordinator>, len: u16) -> Result<()> {
+        msg!("Coordinator size increased to: {}", len);
         Ok(())
     }
 }
@@ -48,7 +49,7 @@ pub struct InitializeCoordinator<'info> {
     #[account(
         init,
         payer = signer,
-        space = 10 * (1024 as usize)
+        space = 10 * (1024_usize)
     )]
     pub coordinator: AccountLoader<'info, CoordinatorManager>,
     #[account(mut)]

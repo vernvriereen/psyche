@@ -174,7 +174,7 @@ impl CooldownStepMetadata {
                         tx_checkpoint
                             .send(model::Checkpoint::Hub(HubRepo {
                                 repo_id: hub_repo_bytes,
-                                revision: revision_bytes,
+                                revision: Some(revision_bytes),
                             }))
                             .map_err(|_| CheckpointError::SendCheckpoint)?;
                     }

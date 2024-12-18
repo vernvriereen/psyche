@@ -127,14 +127,14 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
             tx_request_download,
         } = self;
 
-        let model::Model::LLM(llm) = state.model.clone();
+        let model::Model::LLM(llm) = state.model;
 
         let data_future = async {
             let data_provider = match &llm.data_location {
                 LLMTrainingDataLocation::Server(data_server) => DataProvider::Server(
                     DataProviderTcpClient::connect(
                         u8_to_string(data_server),
-                        init_config.identity.clone(),
+                        init_config.identity,
                         init_config.private_key,
                     )
                     .await?,
@@ -166,42 +166,33 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                     })
                 }),
                 model::Checkpoint::Hub(hub_repo) => {
-                    let hub_repo = hub_repo.clone();
+                    let hub_repo = *hub_repo;
                     tokio::spawn(async move {
                         let repo_id = u8_to_string(&hub_repo.repo_id);
                         let potential_local_path = PathBuf::from(repo_id.clone());
-                        let revision = u8_to_string(&hub_repo.revision);
-                        let model_is_local = match revision.is_empty()
+                        let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
+                        let model_is_local = if revision.is_none()
                             && tokio::fs::try_exists(potential_local_path.clone())
                                 .await
                                 .unwrap_or_default()
                         {
-                            true => {
-                                let mut ret = Vec::new();
-                                let mut read_dir =
-                                    tokio::fs::read_dir(potential_local_path).await?;
-                                while let Some(dir_entry) = read_dir.next_entry().await? {
-                                    ret.push(dir_entry.path())
-                                }
-                                ret
+                            let mut ret = Vec::new();
+                            let mut read_dir = tokio::fs::read_dir(potential_local_path).await?;
+                            while let Some(dir_entry) = read_dir.next_entry().await? {
+                                ret.push(dir_entry.path())
                             }
-                            false => {
-                                info!("Downloading {:?}", u8_to_string(&hub_repo.repo_id));
-                                let revision = u8_to_string(&hub_repo.revision);
-                                let revision = match revision.is_empty() {
-                                    true => None,
-                                    false => Some(revision),
-                                };
-                                download_model_repo_async(
-                                    &repo_id,
-                                    revision,
-                                    None,
-                                    init_config.hub_read_token,
-                                    None,
-                                    false,
-                                )
-                                .await?
-                            }
+                            ret
+                        } else {
+                            info!("Downloading {:?}", u8_to_string(&hub_repo.repo_id));
+                            download_model_repo_async(
+                                &repo_id,
+                                revision,
+                                None,
+                                init_config.hub_read_token,
+                                None,
+                                false,
+                            )
+                            .await?
                         };
                         let repo_files = model_is_local;
                         let checkpoint_extra_files = repo_files
@@ -372,7 +363,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
 
         let training = TrainingStepMetadata {
             data_fetcher,
-            identity: init_config.identity.clone(),
+            identity: init_config.identity,
             write_gradients_dir: init_config.write_gradients_dir,
             tx_health_check,
             tx_distro_result,
@@ -382,7 +373,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
 
         let witness = WitnessStepMetadata {
             eval_runner: eval_runner.clone(),
-            identity: init_config.identity.clone(),
+            identity: init_config.identity,
             tx_witness: tx_witness.clone(),
         };
 

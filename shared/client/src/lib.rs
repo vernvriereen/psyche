@@ -22,5 +22,3 @@ pub struct WandBInfo {
     pub entity: Option<String>,
     pub api_key: String,
 }
-
-

@@ -10,7 +10,7 @@ pub fn assign_data_for_state<T: NodeIdentity>(
     let mut ret = IntervalTree::new();
     let mut sum = round.data_index;
     let mut remaining = (state.batches_per_round * state.data_indicies_per_batch) as u64;
-    let mut client_shuffle = (0..state.clients.len() as usize)
+    let mut client_shuffle = (0..state.clients.len())
         .map(|i| {
             (
                 &state.clients[i],
@@ -53,7 +53,7 @@ pub fn assign_data_for_state<T: NodeIdentity>(
                                 BatchId::from_u64(sum),
                                 BatchId::from_u64(sum + num - 1),
                             ),
-                            client.id.clone(),
+                            client.id,
                         )
                         .unwrap();
                         sum += num;

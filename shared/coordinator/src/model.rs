@@ -3,7 +3,8 @@ use crate::SOLANA_MAX_STRING_LEN;
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Zeroable, ZeroableInOption};
 use psyche_core::{
-    serde_deserialize_string, serde_serialize_string, u8_to_string, LearningRateScheduler,
+    serde_deserialize_optional_string, serde_deserialize_string, serde_serialize_optional_string,
+    serde_serialize_string, u8_to_string, LearningRateScheduler,
 };
 use serde::{Deserialize, Serialize};
 
@@ -243,10 +244,11 @@ pub struct HubRepo {
     )]
     pub repo_id: [u8; SOLANA_MAX_STRING_LEN],
     #[serde(
-        serialize_with = "serde_serialize_string",
-        deserialize_with = "serde_deserialize_string"
+        serialize_with = "serde_serialize_optional_string",
+        deserialize_with = "serde_deserialize_optional_string",
+        default
     )]
-    pub revision: [u8; SOLANA_MAX_STRING_LEN],
+    pub revision: Option<[u8; SOLANA_MAX_STRING_LEN]>,
 }
 
 #[derive(
