@@ -5,7 +5,9 @@ use psyche_client::{TrainingResult, TransmittableDistroResult, NC};
 use psyche_coordinator::model::{
     self, Checkpoint, LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM,
 };
-use psyche_coordinator::{Client, Coordinator, CoordinatorError, HealthChecks, Round, RunState, Witness};
+use psyche_coordinator::{
+    Client, Coordinator, CoordinatorError, HealthChecks, Round, RunState, Witness,
+};
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider, Shuffle,
     TokenSize,
@@ -122,6 +124,10 @@ impl App {
 
     pub fn get_rounds_head(&self) -> u32 {
         self.coordinator.rounds_head
+    }
+
+    pub fn get_current_epoch(&self) -> u32 {
+        self.coordinator.epoch
     }
 }
 
