@@ -506,3 +506,36 @@ impl From<&App> for DashboardState {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use psyche_network::SecretKey;
+    use tokio::time::timeout;
+
+    #[tokio::test]
+    async fn test_get_all_peers() {
+        let p2p = NC::init("test", None, RelayMode::Default, vec![], None)
+            .await
+            .unwrap();
+
+        let client_secret_key = SecretKey::generate();
+        let node = Node::memory()
+            .secret_key(client_secret_key)
+            .relay_mode(relay_mode)
+            .bind_addr_v4(SocketAddrV4::new(
+                Ipv4Addr::new(0, 0, 0, 0),
+                port.unwrap_or(0),
+            ))
+            .spawn()
+            .await?;
+
+        for i in 0..100 {
+            let get_all_peers = p2p.get_all_peers();
+            if let Err(_) = timeout(Duration::from_millis(200), get_all_peers).await {
+                println!("did not receive value within 10 ms");
+                panic!("get_all_peers timed out in iteration {i}");
+            }
+        }
+    }
+}
