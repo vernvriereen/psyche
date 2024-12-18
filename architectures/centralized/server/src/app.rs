@@ -108,6 +108,10 @@ pub struct App {
 /// to facilitate testing and debugging.
 #[allow(dead_code)]
 impl App {
+    pub fn get_clients(&self) -> Vec<Client<ClientId>> {
+        self.coordinator.clients.clone()
+    }
+
     pub fn get_pending_clients(&self) -> HashSet<Client<ClientId>> {
         self.backend.pending_clients.clone()
     }

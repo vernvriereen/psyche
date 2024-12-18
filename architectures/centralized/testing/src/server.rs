@@ -19,9 +19,15 @@ use crate::{MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, RUN_ID, WARMUP_TIME};
 
 enum TestingQueryMsg {
     QueryClients {
-        respond_to: oneshot::Sender<HashSet<Client<ClientId>>>,
+        respond_to: oneshot::Sender<Vec<Client<ClientId>>>,
     },
     QueryClientsLen {
+        respond_to: oneshot::Sender<usize>,
+    },
+    QueryPendingClients {
+        respond_to: oneshot::Sender<HashSet<Client<ClientId>>>,
+    },
+    QueryPendingClientsLen {
         respond_to: oneshot::Sender<usize>,
     },
     QueryRunState {
@@ -117,12 +123,20 @@ impl CoordinatorServer {
     pub async fn handle_message(&mut self, msg: TestingQueryMsg) {
         match msg {
             TestingQueryMsg::QueryClients { respond_to } => {
-                let clients = self.inner.get_pending_clients();
+                let clients = self.inner.get_clients();
                 respond_to.send(clients).unwrap();
             }
             TestingQueryMsg::QueryClientsLen { respond_to } => {
-                let clients = self.inner.get_pending_clients();
+                let clients = self.inner.get_clients();
                 respond_to.send(clients.len()).unwrap();
+            }
+            TestingQueryMsg::QueryPendingClients { respond_to } => {
+                let pending_clients = self.inner.get_pending_clients();
+                respond_to.send(pending_clients).unwrap();
+            }
+            TestingQueryMsg::QueryPendingClientsLen { respond_to } => {
+                let pending_clients = self.inner.get_pending_clients();
+                respond_to.send(pending_clients.len()).unwrap();
             }
             TestingQueryMsg::QueryRunState { respond_to } => {
                 let run_state = self.inner.get_run_state();
@@ -178,7 +192,7 @@ impl CoordinatorServerHandle {
         }
     }
 
-    pub async fn get_clients(&self) -> HashSet<Client<ClientId>> {
+    pub async fn get_clients(&self) -> Vec<Client<ClientId>> {
         let (send, recv) = oneshot::channel();
         let msg = TestingQueryMsg::QueryClients { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
@@ -188,6 +202,20 @@ impl CoordinatorServerHandle {
     pub async fn get_clients_len(&self) -> usize {
         let (send, recv) = oneshot::channel();
         let msg = TestingQueryMsg::QueryClientsLen { respond_to: send };
+        let _ = self.query_chan_sender.send(msg).await;
+        recv.await.expect("Coordinator actor task has been killed")
+    }
+
+    pub async fn get_pending_clients(&self) -> HashSet<Client<ClientId>> {
+        let (send, recv) = oneshot::channel();
+        let msg = TestingQueryMsg::QueryPendingClients { respond_to: send };
+        let _ = self.query_chan_sender.send(msg).await;
+        recv.await.expect("Coordinator actor task has been killed")
+    }
+
+    pub async fn get_pending_clients_len(&self) -> usize {
+        let (send, recv) = oneshot::channel();
+        let msg = TestingQueryMsg::QueryPendingClientsLen { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
         recv.await.expect("Coordinator actor task has been killed")
     }
