@@ -480,6 +480,8 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
     }
 
+    /// Computes the health score of a client based on witness confirmations.
+    /// The score increases for each witness whose participant bloom filter contains the client's hashed ID.
     pub fn trainer_healthy_score_by_witnesses(client: &Client<T>, witnesses: &[Witness]) -> u32 {
         let hash = sha256(client.id.as_ref());
         let mut score = 0u32;
