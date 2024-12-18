@@ -34,8 +34,6 @@ pub fn serde_serialize_optional_string<S, const N: usize>(
 where
     S: Serializer,
 {
-    println!("Serializing");
-    // Convert bytes to string, trimming null bytes
     if let Some(run_id) = run_id {
         let s = String::from_utf8_lossy(run_id)
             .trim_matches(char::from(0))
