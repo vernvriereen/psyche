@@ -57,6 +57,7 @@ mod test {
 
     use crate::SolanaBackend;
 
+    #[cfg(feature = "solana-tests")]
     #[tokio::test]
     pub async fn test_set_coordinator_run_id() {
         let coordinator_keypair = Arc::new(Keypair::new());
