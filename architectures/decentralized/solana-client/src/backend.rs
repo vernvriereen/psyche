@@ -58,7 +58,7 @@ mod test {
 
     use crate::SolanaBackend;
 
-    //#[cfg(feature = "solana-tests")]
+    #[cfg(feature = "solana-tests")]
     #[tokio::test]
     pub async fn test_create_and_initialize() {
         let key_pair =
