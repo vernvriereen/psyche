@@ -1,3 +1,4 @@
+use bytemuck::Zeroable;
 use psyche_centralized_server::app::App as ServerApp;
 use psyche_centralized_shared::ClientId;
 use psyche_coordinator::{
@@ -55,7 +56,7 @@ impl CoordinatorServer {
             run_id: to_fixed_size_array(RUN_ID),
             model: Model::LLM(LLM::dummy()),
             data_indicies_per_batch: 1,
-            ..Default::default()
+            ..Coordinator::zeroed()
         };
 
         let server_port = get_free_port();
@@ -98,7 +99,7 @@ impl CoordinatorServer {
             overlapped: false,
             cooldown_time: COOLDOWN_TIME,
             warmup_time: WARMUP_TIME,
-            ..Default::default()
+            ..Coordinator::<ClientId>::zeroed()
         };
 
         let server_port = get_free_port();

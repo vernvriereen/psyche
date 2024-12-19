@@ -9,5 +9,6 @@ psyche-core.workspace = true
 psyche-network.workspace = true
 psyche-client.workspace = true
 anchor-lang.workspace = true
+bytemuck.workspace = true
 anyhow.workspace = true
 serde.workspace = true

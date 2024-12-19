@@ -1,4 +1,5 @@
 use anyhow::Result;
+use bytemuck::Zeroable;
 use psyche_coordinator::Coordinator;
 use psyche_core::BatchId;
 use psyche_network::{ClientNotification, NetworkableNodeIdentity, TcpServer};
@@ -43,7 +44,7 @@ where
             in_round: HashSet::new(),
             provided_sequences: HashMap::new(),
             backend,
-            state: Coordinator::default(),
+            state: Coordinator::zeroed(),
         })
     }
 

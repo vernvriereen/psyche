@@ -1,18 +1,16 @@
-use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace, Space};
+use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize};
 use bytemuck::Zeroable;
 use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut, Range, RangeFrom, RangeFull, RangeTo};
 
-#[derive(Debug, Clone, Copy, Zeroable, InitSpace, AnchorSerialize, AnchorDeserialize)]
+#[derive(Debug, Clone, Copy, Zeroable, AnchorSerialize, AnchorDeserialize)]
 pub struct FixedVec<T, const N: usize>
-where
-    T: Space,
 {
     data: [T; N],
     len: u64,
 }
 
-impl<T: Default + Copy + Space, const N: usize> FixedVec<T, N> {
+impl<T: Default + Copy, const N: usize> FixedVec<T, N> {
     pub fn new() -> Self {
         Self {
             data: [T::default(); N],
@@ -159,7 +157,7 @@ impl<T: Default + Copy + Space, const N: usize> FixedVec<T, N> {
     }
 }
 
-impl<T: Default + Copy + Space, const N: usize> std::ops::Index<usize> for FixedVec<T, N> {
+impl<T: Default + Copy, const N: usize> std::ops::Index<usize> for FixedVec<T, N> {
     type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -167,19 +165,19 @@ impl<T: Default + Copy + Space, const N: usize> std::ops::Index<usize> for Fixed
     }
 }
 
-impl<T: Default + Copy + Space, const N: usize> std::ops::IndexMut<usize> for FixedVec<T, N> {
+impl<T: Default + Copy, const N: usize> std::ops::IndexMut<usize> for FixedVec<T, N> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         self.get_mut(index).expect("Index out of bounds")
     }
 }
 
-impl<T: Default + Copy + Space, const N: usize> Default for FixedVec<T, N> {
+impl<T: Default + Copy, const N: usize> Default for FixedVec<T, N> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: Default + Copy + Space, const N: usize> std::ops::Index<Range<usize>> for FixedVec<T, N> {
+impl<T: Default + Copy, const N: usize> std::ops::Index<Range<usize>> for FixedVec<T, N> {
     type Output = [T];
 
     fn index(&self, range: Range<usize>) -> &Self::Output {
@@ -190,7 +188,7 @@ impl<T: Default + Copy + Space, const N: usize> std::ops::Index<Range<usize>> fo
     }
 }
 
-impl<T: Default + Copy + Space, const N: usize> std::ops::Index<RangeFull> for FixedVec<T, N> {
+impl<T: Default + Copy, const N: usize> std::ops::Index<RangeFull> for FixedVec<T, N> {
     type Output = [T];
 
     fn index(&self, _: RangeFull) -> &Self::Output {
@@ -198,7 +196,7 @@ impl<T: Default + Copy + Space, const N: usize> std::ops::Index<RangeFull> for F
     }
 }
 
-impl<T: Default + Copy + Space, const N: usize> std::ops::Index<RangeFrom<usize>>
+impl<T: Default + Copy, const N: usize> std::ops::Index<RangeFrom<usize>>
     for FixedVec<T, N>
 {
     type Output = [T];
@@ -211,7 +209,7 @@ impl<T: Default + Copy + Space, const N: usize> std::ops::Index<RangeFrom<usize>
     }
 }
 
-impl<T: Default + Copy + Space, const N: usize> std::ops::Index<RangeTo<usize>> for FixedVec<T, N> {
+impl<T: Default + Copy, const N: usize> std::ops::Index<RangeTo<usize>> for FixedVec<T, N> {
     type Output = [T];
 
     fn index(&self, range: RangeTo<usize>) -> &Self::Output {
@@ -222,7 +220,7 @@ impl<T: Default + Copy + Space, const N: usize> std::ops::Index<RangeTo<usize>> 
     }
 }
 
-impl<T: Default + Copy + Space, const N: usize> std::ops::IndexMut<Range<usize>>
+impl<T: Default + Copy, const N: usize> std::ops::IndexMut<Range<usize>>
     for FixedVec<T, N>
 {
     fn index_mut(&mut self, range: Range<usize>) -> &mut Self::Output {
@@ -233,13 +231,13 @@ impl<T: Default + Copy + Space, const N: usize> std::ops::IndexMut<Range<usize>>
     }
 }
 
-impl<T: Default + Copy + Space, const N: usize> std::ops::IndexMut<RangeFull> for FixedVec<T, N> {
+impl<T: Default + Copy, const N: usize> std::ops::IndexMut<RangeFull> for FixedVec<T, N> {
     fn index_mut(&mut self, _: RangeFull) -> &mut Self::Output {
         &mut self.data[..self.len as usize]
     }
 }
 
-impl<T: Default + Copy + Space, const N: usize> std::ops::IndexMut<RangeFrom<usize>>
+impl<T: Default + Copy, const N: usize> std::ops::IndexMut<RangeFrom<usize>>
     for FixedVec<T, N>
 {
     fn index_mut(&mut self, range: RangeFrom<usize>) -> &mut Self::Output {
@@ -250,7 +248,7 @@ impl<T: Default + Copy + Space, const N: usize> std::ops::IndexMut<RangeFrom<usi
     }
 }
 
-impl<T: Default + Copy + Space, const N: usize> std::ops::IndexMut<RangeTo<usize>>
+impl<T: Default + Copy, const N: usize> std::ops::IndexMut<RangeTo<usize>>
     for FixedVec<T, N>
 {
     fn index_mut(&mut self, range: RangeTo<usize>) -> &mut Self::Output {
@@ -261,7 +259,7 @@ impl<T: Default + Copy + Space, const N: usize> std::ops::IndexMut<RangeTo<usize
     }
 }
 
-impl<T: Default + Copy + Space, const N: usize> Deref for FixedVec<T, N> {
+impl<T: Default + Copy, const N: usize> Deref for FixedVec<T, N> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
@@ -269,13 +267,13 @@ impl<T: Default + Copy + Space, const N: usize> Deref for FixedVec<T, N> {
     }
 }
 
-impl<T: Default + Copy + Space, const N: usize> DerefMut for FixedVec<T, N> {
+impl<T: Default + Copy, const N: usize> DerefMut for FixedVec<T, N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.data[..self.len as usize]
     }
 }
 
-impl<T: Default + Copy + Space, const N: usize> FixedVec<T, N> {
+impl<T: Default + Copy, const N: usize> FixedVec<T, N> {
     pub fn try_from_iter<I: IntoIterator<Item = T>>(iter: I) -> Result<Self, &'static str> {
         let mut vec = Self::new();
         vec.extend(iter)?;
@@ -283,13 +281,13 @@ impl<T: Default + Copy + Space, const N: usize> FixedVec<T, N> {
     }
 }
 
-impl<T: Default + Copy + Space, const N: usize> FromIterator<T> for FixedVec<T, N> {
+impl<T: Default + Copy, const N: usize> FromIterator<T> for FixedVec<T, N> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         Self::try_from_iter(iter).expect("Iterator too long for FixedVec capacity")
     }
 }
 
-impl<T: Default + Copy + Space, const N: usize> TryFrom<&[T]> for FixedVec<T, N> {
+impl<T: Default + Copy, const N: usize> TryFrom<&[T]> for FixedVec<T, N> {
     type Error = &'static str;
 
     fn try_from(slice: &[T]) -> Result<Self, Self::Error> {
@@ -297,7 +295,7 @@ impl<T: Default + Copy + Space, const N: usize> TryFrom<&[T]> for FixedVec<T, N>
     }
 }
 
-impl<T: Default + Copy + Space, const N: usize, const M: usize> TryFrom<[T; M]> for FixedVec<T, N> {
+impl<T: Default + Copy, const N: usize, const M: usize> TryFrom<[T; M]> for FixedVec<T, N> {
     type Error = &'static str;
 
     fn try_from(array: [T; M]) -> Result<Self, Self::Error> {
@@ -305,7 +303,7 @@ impl<T: Default + Copy + Space, const N: usize, const M: usize> TryFrom<[T; M]> 
     }
 }
 
-impl<T: Serialize + Default + Copy + Space, const N: usize> Serialize for FixedVec<T, N> {
+impl<T: Serialize + Default + Copy, const N: usize> Serialize for FixedVec<T, N> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -315,7 +313,7 @@ impl<T: Serialize + Default + Copy + Space, const N: usize> Serialize for FixedV
     }
 }
 
-impl<'de, T: Deserialize<'de> + Default + Copy + Space, const N: usize> Deserialize<'de>
+impl<'de, T: Deserialize<'de> + Default + Copy, const N: usize> Deserialize<'de>
     for FixedVec<T, N>
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>

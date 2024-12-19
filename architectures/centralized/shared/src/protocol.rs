@@ -1,4 +1,5 @@
 use anchor_lang::{AnchorDeserialize, AnchorSerialize};
+use bytemuck::Zeroable;
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_core::NodeIdentity;
 use psyche_network::{
@@ -39,6 +40,12 @@ impl Display for ClientId {
 }
 
 impl NodeIdentity for ClientId {}
+
+unsafe impl Zeroable for ClientId {
+    fn zeroed() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
 
 impl NetworkableNodeIdentity for ClientId {
     type PrivateKey = SecretKey;

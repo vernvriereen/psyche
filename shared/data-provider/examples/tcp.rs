@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use anyhow::{bail, Result};
 use async_trait::async_trait;
+use bytemuck::Zeroable;
 use futures::future::try_join_all;
 use parquet::data_type::AsBytes;
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
@@ -23,7 +24,7 @@ struct DummyBackend<T: NetworkableNodeIdentity>(Vec<T>);
 #[async_trait]
 impl<T: NetworkableNodeIdentity> WatcherBackend<T> for DummyBackend<T> {
     async fn wait_for_new_state(&mut self) -> anyhow::Result<Coordinator<T>> {
-        Ok(Coordinator::default())
+        Ok(Coordinator::zeroed())
     }
 
     async fn send_witness(&mut self, _witness: Witness) -> anyhow::Result<()> {
@@ -39,7 +40,7 @@ impl<T: NetworkableNodeIdentity> WatcherBackend<T> for DummyBackend<T> {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq, Default, Copy)]
+#[derive(Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq, Default, Copy, Zeroable)]
 struct DummyNodeIdentity(u64);
 
 impl Display for DummyNodeIdentity {

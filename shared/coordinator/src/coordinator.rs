@@ -1,5 +1,5 @@
 use crate::{
-    model::{self, Checkpoint, Model, LLM},
+    model::{self, Checkpoint, Model},
     traits::Backend,
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
@@ -81,7 +81,6 @@ impl<I: NodeIdentity> Hash for Client<I> {
     AnchorSerialize,
     Serialize,
     Deserialize,
-    InitSpace,
 )]
 #[repr(C)]
 pub struct Round {
@@ -103,7 +102,6 @@ pub struct Round {
     AnchorSerialize,
     Serialize,
     Deserialize,
-    InitSpace,
 )]
 #[repr(C)]
 pub struct Witness {
@@ -141,7 +139,6 @@ pub const NUM_STORED_ROUNDS: usize = 4;
     Deserialize,
     AnchorDeserialize,
     AnchorSerialize,
-    InitSpace,
 )]
 #[serde(bound = "T: DeserializeOwned")]
 #[repr(C)]
@@ -256,41 +253,6 @@ impl<T: NodeIdentity> PartialEq for Client<T> {
 }
 
 impl<T: NodeIdentity> Eq for Client<T> {}
-impl<T: NodeIdentity> Default for Coordinator<T> {
-    fn default() -> Self {
-        Self {
-            run_id: [0; SOLANA_MAX_STRING_LEN],
-            run_state: Default::default(),
-            run_state_start_unix_timestamp: Default::default(),
-            warmup_time: Default::default(),
-            rounds_per_epoch: Default::default(),
-            max_round_train_time: Default::default(),
-            round_witness_time: Default::default(),
-            rounds: Default::default(),
-            rounds_head: Default::default(),
-            first_round: Default::default(),
-            min_clients: Default::default(),
-            clients: Default::default(),
-            dropped_clients: Default::default(),
-            tick: Default::default(),
-            last_tick_unix_timestamp: Default::default(),
-            batches_per_round: Default::default(),
-            data_indicies_per_batch: Default::default(),
-            verification_percent: Default::default(),
-            witness_nodes: Default::default(),
-            witness_quorum: Default::default(),
-            step: Default::default(),
-            last_step_unix_timestamp: Default::default(),
-            epoch: Default::default(),
-            model: Model::LLM(LLM::dummy()),
-            epoch_start_data_index: Default::default(),
-            overlapped: Default::default(),
-            total_steps: Default::default(),
-            cooldown_time: Default::default(),
-            checkpointers: Default::default(),
-        }
-    }
-}
 
 impl std::fmt::Display for CoordinatorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
