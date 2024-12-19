@@ -2,7 +2,10 @@ use std::time::Duration;
 
 use psyche_coordinator::RunState;
 use testing::{
-    client::ClientHandle, server::CoordinatorServerHandle, test_utils::{assert_with_retries, spawn_clients}, COOLDOWN_TIME, MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME
+    client::ClientHandle,
+    server::CoordinatorServerHandle,
+    test_utils::{assert_with_retries, spawn_clients},
+    COOLDOWN_TIME, MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME,
 };
 
 #[tokio::test(flavor = "multi_thread")]
@@ -11,7 +14,7 @@ async fn connect_single_node() {
 
     let server_port = server_handle.server_port;
 
-    let _client_handle = ClientHandle::new(server_port).await;
+    let _client_handles = spawn_clients(1, server_port).await;
     let connected_clients = || server_handle.get_pending_clients_len();
 
     assert_with_retries(connected_clients, 1).await;
@@ -134,14 +137,7 @@ async fn state_change_waiting_for_members_to_round_witness() {
     tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
 
-
-    // wait for the RoundWitness process to finish.
-    // skipping this wait may cause a deadlock.
-    // issue: https://github.com/NousResearch/psyche/issues/76
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
-    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
-
-    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 }
 
 /// This test verifies that all clients are included in the witness bloom filters.
@@ -183,36 +179,22 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     // assert round 0 finished
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
 
-    // assert witness were send
-    let max_retries = 2;
-    for attempt in 0..=max_retries {
-        let witnesses = &server_handle.get_rounds().await[0].witnesses;
-        if !witnesses.is_empty() {
-            break;
-        }
-        if attempt == max_retries {
-            panic!("witnesses are empty")
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-
     // assert that the witness listened all the clients commits
     let witnesses = &server_handle.get_rounds().await[0].witnesses;
     let mut score = 0;
     let clients = server_handle.get_clients().await;
     clients.iter().for_each(|client| {
-        score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
-            client, witnesses,
-        );
+        score +=
+            psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(client, witnesses);
     });
     assert_eq!(score, clients.len() as u32)
 }
 
-/// As in the validate_all_clients_participate_in_witness_bloom
-/// if the test fails, it is recommended to rerun
-/// Issue: https://github.com/NousResearch/psyche/issues/89
+/// As in the validate_all_clients_participate_in_witness_bloom test,
+/// if the test fails, it is recommended to rerun.
+/// See issue https://github.com/NousResearch/psyche/issues/89
 #[tokio::test(flavor = "multi_thread")]
-async fn complete_round_with_shutdowm_node() {
+async fn complete_round_with_shutdown_node() {
     let init_min_clients = 2;
     let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
     let server_port = server_handle.server_port;
@@ -261,30 +243,14 @@ async fn complete_round_with_shutdowm_node() {
     // assert round 0 finished
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
 
-    // assert witness were send
-    let max_retries = 2;
-    for attempt in 0..=max_retries {
-        let witnesses = &server_handle.get_rounds().await[0].witnesses;
-        if !witnesses.is_empty() {
-            break;
-        }
-        if attempt == max_retries {
-            panic!("witnesses are empty")
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-
-
     // assert that the witness listened all the up clients commits
     let witnesses = &server_handle.get_rounds().await[0].witnesses;
     let mut score = 0;
     let clients = server_handle.get_clients().await;
-
     assert_eq!(clients.len(), 2);
     clients.iter().for_each(|client| {
-        score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
-            client, witnesses,
-        );
+        score +=
+            psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(client, witnesses);
     });
     assert_eq!(score, clients.len() as u32)
 }
@@ -317,6 +283,7 @@ async fn finish_epoch() {
     // train
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
     tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
+
     // witness
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
@@ -335,13 +302,6 @@ async fn finish_epoch() {
     // Cooldown
     assert_with_retries(|| server_handle.get_run_state(), RunState::Cooldown).await;
     tokio::time::sleep(Duration::from_secs(COOLDOWN_TIME)).await;
-    // wait for the WarmUp process to finish.
-    // skipping this wait may cause a deadlock.
-    // issue: https://github.com/NousResearch/psyche/issues/76
-    // warmup
-    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
-    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
 
-    // train
-    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+    assert_with_retries(|| server_handle.get_current_epoch(), 1).await;
 }

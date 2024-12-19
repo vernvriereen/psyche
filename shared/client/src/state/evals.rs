@@ -135,7 +135,12 @@ impl EvalRunner {
             {
                 let state = tasks.state.read().await;
                 match &*state {
-                    LoadingStateInner::Done(tasks) => return Some(tasks.clone()),
+                    LoadingStateInner::Done(tasks) => {
+                        if tasks.is_empty() {
+                            return None;
+                        }
+                        return Some(tasks.clone());
+                    }
                     LoadingStateInner::Failed(e) => {
                         error!("Failed to load eval tasks: {}", e);
                         return None;

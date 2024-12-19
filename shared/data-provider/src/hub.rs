@@ -66,7 +66,7 @@ async fn download_repo_async(
 }
 
 pub async fn download_model_repo_async(
-    repo_id: String,
+    repo_id: &str,
     revision: Option<String>,
     cache: Option<PathBuf>,
     token: Option<String>,
@@ -75,8 +75,8 @@ pub async fn download_model_repo_async(
 ) -> Result<Vec<PathBuf>, ApiError> {
     download_repo_async(
         match revision {
-            Some(revision) => Repo::with_revision(repo_id, RepoType::Model, revision),
-            None => Repo::model(repo_id),
+            Some(revision) => Repo::with_revision(repo_id.to_string(), RepoType::Model, revision),
+            None => Repo::model(repo_id.to_string()),
         },
         cache,
         token,

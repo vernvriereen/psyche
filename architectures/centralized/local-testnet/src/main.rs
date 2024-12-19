@@ -227,7 +227,7 @@ fn main() -> Result<()> {
 
     // Start server
     let mut server_cmd = format!(
-        "RUST_LOG={} cargo run -p psyche-centralized-server -- --state {} --server-port {} --tui {}",
+        "RUST_LOG={} cargo run -p psyche-centralized-server -- --state {} --server-port {} --tui {} ",
         args.log,
         state_path.display(),
         args.server_port,

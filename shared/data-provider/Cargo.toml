@@ -12,6 +12,7 @@ psyche-network.workspace = true
 hf-hub.workspace = true
 parquet = "51.0.0"
 tokio.workspace = true
+anchor-lang.workspace = true
 async-trait.workspace = true
 tracing.workspace = true
 anyhow.workspace = true
@@ -23,6 +24,7 @@ futures.workspace = true
 serde.workspace = true
 thiserror = "2.0.3"
 postcard.workspace = true
+bytemuck.workspace = true
 
 [dev-dependencies]
 psyche-tui.workspace = true

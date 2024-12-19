@@ -100,6 +100,9 @@ enum Commands {
 
         #[clap(long, default_value_t = false, env)]
         grad_accum_in_fp32: bool,
+
+        #[clap(long, env)]
+        dummy_training_delay_secs: Option<u64>,
     },
 }
 
@@ -138,6 +141,7 @@ async fn async_main() -> Result<()> {
             write_log,
             optim_stats_steps,
             grad_accum_in_fp32,
+            dummy_training_delay_secs,
         } => {
             #[cfg(target_os = "windows")]
             {
@@ -266,6 +270,7 @@ async fn async_main() -> Result<()> {
                 wandb_info,
                 optim_stats: optim_stats_steps,
                 grad_accum_in_fp32,
+                dummy_training_delay_secs,
             })
             .build()
             .await
@@ -281,6 +286,7 @@ fn main() -> Result<()> {
         .enable_io()
         .enable_time()
         .max_blocking_threads(8192)
+        .thread_stack_size(10 * 1024 * 1024)
         .build()
         .unwrap();
     runtime.block_on(async_main())

@@ -73,15 +73,14 @@ sudo snap install just --edge --classic
 
 Install Solana
 ```bash
-sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+sh -c "$(curl -sSfL https://release.anza.xyz/beta/install)"
 ```
 
 After installation, follow the instructions to add the Solana tools to PATH.
 
 Install Anchor
 ```bash
-cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
-avm install latest
+cargo install --git https://github.com/coral-xyz/anchor --rev a7a23eea308440a9fa9cb79cee7bddd30ab163d5 anchor-cli
 ```
 
 ### Nix

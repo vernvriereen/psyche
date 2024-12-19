@@ -3,9 +3,13 @@ use std::{
     hash::Hash,
 };
 
-#[cfg(target_os = "solana")]
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, Space};
+use bytemuck::Zeroable;
+use serde::{de::DeserializeOwned, Serialize};
+
 pub trait NodeIdentity:
     Display
+    + Copy
     + Debug
     + PartialEq
     + Eq
@@ -14,13 +18,13 @@ pub trait NodeIdentity:
     + Clone
     + Send
     + Sync
-    + anchor_lang::Space
+    + Space
+    + Zeroable
+    + Default
+    + Serialize
+    + AnchorDeserialize
+    + AnchorSerialize
+    + DeserializeOwned
     + 'static
-{
-}
-
-#[cfg(not(target_os = "solana"))]
-pub trait NodeIdentity:
-    Display + Debug + PartialEq + Eq + Hash + AsRef<[u8]> + Clone + Send + Sync + 'static
 {
 }
