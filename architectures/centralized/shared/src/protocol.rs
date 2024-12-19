@@ -1,5 +1,5 @@
-use std::fmt::Display;
-
+use anchor_lang::{AnchorDeserialize, AnchorSerialize};
+use bytemuck::Zeroable;
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_core::NodeIdentity;
 use psyche_network::{
@@ -7,6 +7,7 @@ use psyche_network::{
     SignedMessage,
 };
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ClientToServerMessage {
@@ -22,8 +23,14 @@ pub enum ServerToClientMessage {
     Coordinator(Box<Coordinator<ClientId>>),
 }
 
-#[derive(Serialize, Deserialize, Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Hash, PartialEq, Eq, Debug, Copy)]
 pub struct ClientId(NodeId);
+
+impl Default for ClientId {
+    fn default() -> Self {
+        Self(PublicKey::from_bytes(&[0u8; 32]).unwrap())
+    }
+}
 
 impl Display for ClientId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -33,6 +40,12 @@ impl Display for ClientId {
 }
 
 impl NodeIdentity for ClientId {}
+
+unsafe impl Zeroable for ClientId {
+    fn zeroed() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
 
 impl NetworkableNodeIdentity for ClientId {
     type PrivateKey = SecretKey;
@@ -70,4 +83,20 @@ impl AsRef<[u8]> for ClientId {
     fn as_ref(&self) -> &[u8] {
         self.0.as_bytes()
     }
+}
+
+impl AnchorSerialize for ClientId {
+    fn serialize<W: std::io::Write>(&self, _: &mut W) -> std::io::Result<()> {
+        unimplemented!()
+    }
+}
+
+impl AnchorDeserialize for ClientId {
+    fn deserialize_reader<R: std::io::Read>(_: &mut R) -> std::io::Result<Self> {
+        unimplemented!()
+    }
+}
+
+impl anchor_lang::Space for ClientId {
+    const INIT_SPACE: usize = 0;
 }

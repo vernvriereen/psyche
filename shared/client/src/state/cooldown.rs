@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use psyche_coordinator::{
     model::{self, HubRepo},
-    Coordinator,
+    Coordinator, SOLANA_MAX_STRING_LEN,
 };
 use psyche_core::NodeIdentity;
 use psyche_data_provider::{upload_model_repo_async, UploadModelError};
@@ -91,7 +91,7 @@ impl CooldownStepMetadata {
             return Err(CooldownError::NoTrainers);
         }
         let step = state.step - 1;
-        let run_id = state.run_id.clone();
+        let run_id = String::from_utf8(state.run_id.clone().to_vec()).unwrap();
         let checkpoint_extra_files = self.checkpoint_extra_files.clone();
         let checkpoint_info = self.checkpoint_info.clone();
         let tx_checkpoint = self.tx_checkpoint.clone();
@@ -154,6 +154,10 @@ impl CooldownStepMetadata {
                     }) = hub_upload
                     {
                         info!("Uploading to {}", hub_repo);
+                        let mut hub_repo_bytes = [0u8; SOLANA_MAX_STRING_LEN]; // Initialize an array with zeros
+                        let bytes = hub_repo.as_bytes(); // Convert the string to bytes
+                        let len = bytes.len().min(SOLANA_MAX_STRING_LEN); // Limit to 64 bytes if the input is too long
+                        hub_repo_bytes[..len].copy_from_slice(&bytes[..len]); // Copy the bytes into the array
                         let revision = upload_model_repo_async(
                             hub_repo.clone(),
                             local,
@@ -162,11 +166,15 @@ impl CooldownStepMetadata {
                             None,
                         )
                         .await?;
+                        let mut revision_bytes = [0u8; SOLANA_MAX_STRING_LEN]; // Initialize an array with zeros
+                        let bytes = revision.as_bytes(); // Convert the string to bytes
+                        let len = bytes.len().min(SOLANA_MAX_STRING_LEN); // Limit to 64 bytes if the input is too long
+                        revision_bytes[..len].copy_from_slice(&bytes[..len]); // Copy the bytes into the array
 
                         tx_checkpoint
                             .send(model::Checkpoint::Hub(HubRepo {
-                                repo_id: hub_repo,
-                                revision: Some(revision),
+                                repo_id: hub_repo_bytes,
+                                revision: Some(revision_bytes),
                             }))
                             .map_err(|_| CheckpointError::SendCheckpoint)?;
                     }

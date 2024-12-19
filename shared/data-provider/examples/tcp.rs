@@ -1,5 +1,7 @@
-use anyhow::bail;
+use anchor_lang::prelude::*;
+use anyhow::{bail, Result};
 use async_trait::async_trait;
+use bytemuck::Zeroable;
 use futures::future::try_join_all;
 use parquet::data_type::AsBytes;
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
@@ -22,7 +24,7 @@ struct DummyBackend<T: NetworkableNodeIdentity>(Vec<T>);
 #[async_trait]
 impl<T: NetworkableNodeIdentity> WatcherBackend<T> for DummyBackend<T> {
     async fn wait_for_new_state(&mut self) -> anyhow::Result<Coordinator<T>> {
-        Ok(Coordinator::default())
+        Ok(Coordinator::zeroed())
     }
 
     async fn send_witness(&mut self, _witness: Witness) -> anyhow::Result<()> {
@@ -38,7 +40,7 @@ impl<T: NetworkableNodeIdentity> WatcherBackend<T> for DummyBackend<T> {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq, Default, Copy, Zeroable)]
 struct DummyNodeIdentity(u64);
 
 impl Display for DummyNodeIdentity {
@@ -79,6 +81,22 @@ impl AsRef<[u8]> for DummyNodeIdentity {
     }
 }
 
+impl AnchorSerialize for DummyNodeIdentity {
+    fn serialize<W: std::io::Write>(&self, _: &mut W) -> std::io::Result<()> {
+        unimplemented!()
+    }
+}
+
+impl AnchorDeserialize for DummyNodeIdentity {
+    fn deserialize_reader<R: std::io::Read>(_: &mut R) -> std::io::Result<Self> {
+        unimplemented!()
+    }
+}
+
+impl anchor_lang::Space for DummyNodeIdentity {
+    const INIT_SPACE: usize = 0;
+}
+
 struct DummyDataProvider;
 impl TokenizedDataProvider for DummyDataProvider {
     async fn get_samples(&mut self, _data_ids: &[BatchId]) -> anyhow::Result<Vec<Vec<i32>>> {
@@ -114,7 +132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut clients = try_join_all(
         clients
             .into_iter()
-            .map(|i| DataProviderTcpClient::connect("localhost:5740", i, ())),
+            .map(|i| DataProviderTcpClient::connect("localhost:5740".to_string(), i, ())),
     )
     .await?;
     info!("clients initialized successfully");

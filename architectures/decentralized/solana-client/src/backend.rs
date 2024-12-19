@@ -22,36 +22,113 @@ impl SolanaBackend {
 #[async_trait::async_trait]
 impl WatcherBackend<ClientId> for SolanaBackend {
     async fn wait_for_new_state(&mut self) -> Result<Coordinator<ClientId>> {
-        // TODO: implement
-        Ok(Coordinator::default())
+        unimplemented!();
     }
 
     async fn send_witness(&mut self, _witness: Witness) -> Result<()> {
-        // TODO: implement
-        Ok(())
+        unimplemented!();
     }
 
     async fn send_health_check(&mut self, _health_checks: HealthChecks) -> Result<()> {
-        // TODO: implement
-        Ok(())
+        unimplemented!();
     }
 
     async fn send_checkpoint(&mut self, _checkpoint: model::Checkpoint) -> Result<()> {
-        // TODO: implement
-        Ok(())
+        unimplemented!();
     }
 }
 
-impl SolanaBackend {
-    pub async fn send_transacion_test(&mut self) -> Result<()> {
-        let signature = self
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use anchor_client::{
+        anchor_lang::{system_program, Space},
+        solana_client::rpc_config::RpcSendTransactionConfig,
+        solana_sdk::{
+            commitment_config::CommitmentConfig,
+            pubkey::Pubkey,
+            signature::{Keypair, Signer},
+            signer::EncodableKey,
+            system_instruction,
+        },
+        Cluster,
+    };
+    use solana_coordinator::CoordinatorAccount;
+
+    use crate::SolanaBackend;
+
+    //#[cfg(feature = "solana-tests")]
+    #[tokio::test]
+    pub async fn test_create_and_initialize() {
+        let key_pair =
+            Keypair::read_from_file(home::home_dir().unwrap().join(".config/solana/id.json"))
+                .unwrap();
+        let backend = SolanaBackend::new(Cluster::Localnet, key_pair)
+            .expect("Failed to create Solana client backend");
+
+        let coordinator_keypair = Arc::new(Keypair::new());
+        let space = 8 + std::mem::size_of::<CoordinatorAccount>();
+        let rent = backend
+            .program
+            .rpc()
+            .get_minimum_balance_for_rent_exemption(space)
+            .await
+            .unwrap();
+
+        let run_id = "test_run".to_string();
+        let seeds = &[b"coordinator", run_id.as_bytes()];
+        let (instance_pda, _bump) = Pubkey::find_program_address(seeds, &backend.program.id());
+
+        // Build the transaction
+        let tx = backend
             .program
             .request()
-            .accounts(solana_coordinator::accounts::Initialize {})
-            .args(solana_coordinator::instruction::Initialize)
-            .send()
-            .await?;
-        println!("Transaction confirmed with signature: {}", signature);
-        Ok(())
+            .instruction(system_instruction::transfer(
+                &backend.program.payer(),
+                &coordinator_keypair.pubkey(),
+                rent,
+            ))
+            .instruction(system_instruction::allocate(
+                &coordinator_keypair.pubkey(),
+                space as u64,
+            ))
+            .instruction(system_instruction::assign(
+                &coordinator_keypair.pubkey(),
+                &backend.program.id(),
+            ))
+            .instruction(
+                backend
+                    .program
+                    .request()
+                    .accounts(solana_coordinator::accounts::InitializeCoordinator {
+                        instance: instance_pda,
+                        coordinator: coordinator_keypair.pubkey(),
+                        payer: backend.program.payer(),
+                        system_program: system_program::ID,
+                    })
+                    .args(solana_coordinator::instruction::InitializeCoordinator { run_id })
+                    .instructions()
+                    .unwrap()[0]
+                    .clone(),
+            )
+            .signer(coordinator_keypair)
+            .signed_transaction()
+            .await
+            .expect("transaction not builts");
+
+        let signature = backend
+            .program
+            .rpc()
+            .send_transaction(&tx)
+            .await
+            .expect("transaction not sent");
+
+        let confirmed = backend
+            .program
+            .rpc()
+            .confirm_transaction_with_commitment(&signature, CommitmentConfig::confirmed())
+            .await
+            .expect("transaction not confirmed");
     }
 }

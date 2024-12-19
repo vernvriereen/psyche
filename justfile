@@ -24,11 +24,14 @@ local-testnet +args:
 # run integration tests
 integration-test test_name="":
     if [ "{{test_name}}" = "" ]; then \
-        cargo test --test integration_tests; \
+        cargo test --release --test integration_tests; \
     else \
-        cargo test --test integration_tests -- --nocapture "{{test_name}}"; \
+        cargo test --release --test integration_tests -- --nocapture "{{test_name}}"; \
     fi
 
-# build solana coordinator
+# build solana coordinator. Some errors are happening trying to build the `idl` since we are not using it, we disabled it for now.
 deploy-local-solana-coordinator:
-    cd architectures/decentralized/solana-coordinator && anchor build && anchor deploy
+    cd architectures/decentralized/solana-coordinator && anchor build --no-idl && anchor deploy
+
+solana-client-tests:
+	cargo test --package psyche-solana-client

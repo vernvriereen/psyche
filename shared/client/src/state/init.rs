@@ -1,9 +1,14 @@
-use std::{path::PathBuf, sync::Arc};
+use crate::{
+    fetch_data::DataFetcher,
+    trainer::{ParallelModels, Trainer},
+    WandBInfo,
+};
 
 use psyche_coordinator::{
     model::{self, LLMTrainingDataLocation},
     Coordinator, HealthChecks, Witness,
 };
+use psyche_core::u8_to_string;
 use psyche_data_provider::{
     download_model_repo_async, DataProvider, DataProviderTcpClient, DummyDataProvider,
 };
@@ -12,6 +17,7 @@ use psyche_modeling::{
     LlamaForCausalLM, LoadLlamaForCausalLMError,
 };
 use psyche_network::{BlobTicket, NetworkableNodeIdentity};
+use std::{path::PathBuf, sync::Arc};
 use tch::{Device, Kind};
 use thiserror::Error;
 use tokenizers::{models::wordlevel::WordLevel, ModelWrapper, Tokenizer};
@@ -21,12 +27,6 @@ use tokio::{
     task::{JoinError, JoinHandle},
 };
 use tracing::info;
-
-use crate::{
-    fetch_data::DataFetcher,
-    trainer::{ParallelModels, Trainer},
-    WandBInfo,
-};
 
 use super::{
     cooldown::CooldownStepMetadata, evals::EvalRunner, stats::StatsLogger, steps::StepStateMachine,
@@ -127,14 +127,14 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
             tx_request_download,
         } = self;
 
-        let model::Model::LLM(llm) = state.model.clone();
+        let model::Model::LLM(llm) = state.model;
 
         let data_future = async {
             let data_provider = match &llm.data_location {
                 LLMTrainingDataLocation::Server(data_server) => DataProvider::Server(
                     DataProviderTcpClient::connect(
-                        data_server,
-                        init_config.identity.clone(),
+                        u8_to_string(data_server),
+                        init_config.identity,
                         init_config.private_key,
                     )
                     .await?,
@@ -166,35 +166,33 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                     })
                 }),
                 model::Checkpoint::Hub(hub_repo) => {
-                    let hub_repo = hub_repo.clone();
+                    let hub_repo = *hub_repo;
                     tokio::spawn(async move {
-                        let potential_local_path = PathBuf::from(hub_repo.repo_id.clone());
-                        let model_is_local = match hub_repo.revision.is_none()
+                        let repo_id = u8_to_string(&hub_repo.repo_id);
+                        let potential_local_path = PathBuf::from(repo_id.clone());
+                        let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
+                        let model_is_local = if revision.is_none()
                             && tokio::fs::try_exists(potential_local_path.clone())
                                 .await
                                 .unwrap_or_default()
                         {
-                            true => {
-                                let mut ret = Vec::new();
-                                let mut read_dir =
-                                    tokio::fs::read_dir(potential_local_path).await?;
-                                while let Some(dir_entry) = read_dir.next_entry().await? {
-                                    ret.push(dir_entry.path())
-                                }
-                                ret
+                            let mut ret = Vec::new();
+                            let mut read_dir = tokio::fs::read_dir(potential_local_path).await?;
+                            while let Some(dir_entry) = read_dir.next_entry().await? {
+                                ret.push(dir_entry.path())
                             }
-                            false => {
-                                info!("Downloading {}", hub_repo.repo_id);
-                                download_model_repo_async(
-                                    hub_repo.repo_id.clone(),
-                                    hub_repo.revision,
-                                    None,
-                                    init_config.hub_read_token,
-                                    None,
-                                    false,
-                                )
-                                .await?
-                            }
+                            ret
+                        } else {
+                            info!("Downloading {:?}", u8_to_string(&hub_repo.repo_id));
+                            download_model_repo_async(
+                                &repo_id,
+                                revision,
+                                None,
+                                init_config.hub_read_token,
+                                None,
+                                false,
+                            )
+                            .await?
                         };
                         let repo_files = model_is_local;
                         let checkpoint_extra_files = repo_files
@@ -208,7 +206,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                             })
                             .cloned()
                             .collect();
-                        info!("Loading {}", hub_repo.repo_id);
+                        info!("Loading {}", u8_to_string(&hub_repo.repo_id));
                         let mut futures = Vec::with_capacity(
                             init_config.data_parallelism * init_config.tensor_parallelism,
                         );
@@ -267,7 +265,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                         }
                         info!(
                             "Loaded {} onto {} gpu(s) (dp={},tp={})",
-                            hub_repo.repo_id,
+                            u8_to_string(&hub_repo.repo_id),
                             init_config.data_parallelism * init_config.tensor_parallelism,
                             init_config.data_parallelism,
                             init_config.tensor_parallelism
@@ -285,7 +283,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
         };
 
         let wandb_future: JoinHandle<Result<Option<wandb::Run>, wandb::ApiError>> = tokio::spawn({
-            let run_id = state.run_id.clone();
+            let run_id = u8_to_string(&state.run_id);
             async move {
                 match init_config.wandb_info {
                     Some(wandb_info) => {
@@ -365,7 +363,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
 
         let training = TrainingStepMetadata {
             data_fetcher,
-            identity: init_config.identity.clone(),
+            identity: init_config.identity,
             write_gradients_dir: init_config.write_gradients_dir,
             tx_health_check,
             tx_distro_result,
@@ -375,7 +373,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
 
         let witness = WitnessStepMetadata {
             eval_runner: eval_runner.clone(),
-            identity: init_config.identity.clone(),
+            identity: init_config.identity,
             tx_witness: tx_witness.clone(),
         };
 

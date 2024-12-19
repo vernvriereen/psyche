@@ -1,11 +1,9 @@
-use bitvec::array::BitArray;
-use fnv::FnvHasher;
-use std::{fmt, hash::Hasher};
-
-#[cfg(target_os = "solana")]
 use anchor_lang::prelude::*;
-#[cfg(not(target_os = "solana"))]
+use bitvec::array::BitArray;
+use bytemuck::Zeroable;
+use fnv::FnvHasher;
 use serde::{Deserialize, Deserializer, Serialize};
+use std::{fmt, hash::Hasher};
 
 // Modified from https://github.com/solana-labs/solana/blob/27eff8408b7223bb3c4ab70523f8a8dca3ca6645/bloom/src/bloom.rs
 
@@ -15,10 +13,21 @@ pub trait BloomHashIndex {
     fn hash_at_index(&self, hash_index: u64) -> u64;
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Copy, Zeroable)]
 pub struct Bloom<const U: usize, const K: usize> {
     pub keys: [u64; K],
-    pub bits: BitArray<[u64; U]>,
+    pub bits: BitArrayWrapper<U>,
+}
+
+#[derive(Clone, PartialEq, Eq, Copy, Default, Serialize, Deserialize)]
+pub struct BitArrayWrapper<const U: usize>(pub BitArray<[u64; U]>);
+
+unsafe impl<const U: usize> Zeroable for BitArrayWrapper<U> {}
+
+impl<const U: usize> BitArrayWrapper<U> {
+    pub fn new(bits_data: [u64; U]) -> Self {
+        Self(BitArray::new(bits_data))
+    }
 }
 
 impl<const U: usize, const K: usize> Default for Bloom<U, K> {
@@ -30,9 +39,8 @@ impl<const U: usize, const K: usize> Default for Bloom<U, K> {
     }
 }
 
-#[cfg(not(target_os = "solana"))]
 impl<const M: usize, const K: usize> Serialize for Bloom<M, K> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
@@ -44,16 +52,15 @@ impl<const M: usize, const K: usize> Serialize for Bloom<M, K> {
     }
 }
 
-#[cfg(not(target_os = "solana"))]
 impl<'de, const U: usize, const K: usize> Deserialize<'de> for Bloom<U, K> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
         struct BloomHelper<const U: usize> {
             keys: Vec<u64>,
-            bits: BitArray<[u64; U]>,
+            bits: BitArrayWrapper<U>,
         }
 
         let helper = BloomHelper::deserialize(deserializer)?;
@@ -76,23 +83,21 @@ impl<'de, const U: usize, const K: usize> Deserialize<'de> for Bloom<U, K> {
     }
 }
 
-#[cfg(target_os = "solana")]
 impl<const U: usize, const K: usize> AnchorSerialize for Bloom<U, K> {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         for key in &self.keys {
-            key.serialize(writer)?;
+            AnchorSerialize::serialize(&key, writer)?;
         }
 
-        let bits_data = self.bits.as_raw_slice();
+        let bits_data = self.bits.0.as_raw_slice();
         for bit in bits_data {
-            bit.serialize(writer)?;
+            AnchorSerialize::serialize(&bit, writer)?;
         }
 
         Ok(())
     }
 }
 
-#[cfg(target_os = "solana")]
 impl<const U: usize, const K: usize> AnchorDeserialize for Bloom<U, K> {
     fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
         let mut keys = [0u64; K];
@@ -104,13 +109,12 @@ impl<const U: usize, const K: usize> AnchorDeserialize for Bloom<U, K> {
         for bit in &mut bits_data {
             *bit = u64::deserialize_reader(reader)?;
         }
-        let bits = BitArray::new(bits_data);
+        let bits = BitArrayWrapper::new(bits_data);
 
         Ok(Bloom { keys, bits })
     }
 }
 
-#[cfg(target_os = "solana")]
 impl<const U: usize, const K: usize> Space for Bloom<U, K> {
     const INIT_SPACE: usize = U * std::mem::size_of::<u64>() + K * std::mem::size_of::<u64>();
 }
@@ -122,7 +126,7 @@ impl<const U: usize, const K: usize> fmt::Debug for Bloom<U, K> {
         if Self::max_bits() <= MAX_PRINT_BITS {
             // Print individual bits for small filters
             for i in 0..Self::max_bits() {
-                match self.bits.get(i) {
+                match self.bits.0.get(i) {
                     Some(x) => write!(f, "{}", *x as u8)?,
 
                     None => write!(f, "X")?,
@@ -131,7 +135,7 @@ impl<const U: usize, const K: usize> fmt::Debug for Bloom<U, K> {
         } else {
             // Print byte array for larger filters
             write!(f, "[")?;
-            let words = self.bits.as_raw_slice();
+            let words = self.bits.0.as_raw_slice();
             for byte in words.iter() {
                 write!(f, "{:016x}", byte)?; // full u64 output
             }
@@ -151,8 +155,9 @@ impl<const U: usize, const K: usize> Bloom<U, K> {
         assert!(num_bits <= Self::max_bits());
         assert!(keys_slice.len() == K);
         let mut keys = [0u64; K];
+        let keys_2 = [0u64; U];
         keys.copy_from_slice(keys_slice);
-        let bits = BitArray::ZERO;
+        let bits = BitArrayWrapper::new(keys_2);
         Bloom { keys, bits }
     }
 
@@ -193,19 +198,21 @@ impl<const U: usize, const K: usize> Bloom<U, K> {
 
     fn pos<T: BloomHashIndex>(&self, key: &T, k: u64) -> u64 {
         key.hash_at_index(k)
-            .checked_rem(self.bits.len() as u64)
+            .checked_rem(self.bits.0.len() as u64)
             .unwrap_or(0)
     }
 
     pub fn clear(&mut self) {
-        self.bits = BitArray::ZERO;
+        let keys_2 = [0u64; U];
+        let bits = BitArrayWrapper::new(keys_2);
+        self.bits = bits;
     }
 
     pub fn add<T: BloomHashIndex>(&mut self, key: &T) {
         for k in &self.keys {
             let pos = self.pos(key, *k) as usize;
-            if !*self.bits.get(pos).unwrap() {
-                self.bits.set(pos, true);
+            if !*self.bits.0.get(pos).unwrap() {
+                self.bits.0.set(pos, true);
             }
         }
     }
@@ -213,7 +220,7 @@ impl<const U: usize, const K: usize> Bloom<U, K> {
     pub fn contains<T: BloomHashIndex>(&self, key: &T) -> bool {
         for k in &self.keys {
             let pos = self.pos(key, *k) as usize;
-            if !*self.bits.get(pos).unwrap() {
+            if !*self.bits.0.get(pos).unwrap() {
                 return false;
             }
         }

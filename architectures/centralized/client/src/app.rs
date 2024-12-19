@@ -1,7 +1,5 @@
-use std::path::PathBuf;
-use std::time::Duration;
-
 use anyhow::{Error, Result};
+use bytemuck::Zeroable;
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{
     CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
@@ -11,6 +9,7 @@ use psyche_network::{NetworkTUIState, NetworkTui, RelayMode, SecretKey, TcpClien
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
 use psyche_watcher::{Backend as WatcherBackend, CoordinatorTui};
+use std::{path::PathBuf, time::Duration};
 use tokio::sync::mpsc::Sender;
 use tokio::time::interval;
 use tokio::{select, sync::mpsc, time::Interval};
@@ -117,7 +116,7 @@ impl AppBuilder {
             cancel: p.cancel,
             tx_tui_state: p.tx_tui_state,
             update_tui_interval: interval(Duration::from_millis(150)),
-            coordinator_state: Coordinator::default(),
+            coordinator_state: Coordinator::zeroed(),
             server_conn,
             run_id: p.run_id,
         };
@@ -246,7 +245,7 @@ impl App {
                 info!("Got peer list from server, but already connected");
             }
             ServerToClientMessage::Coordinator(state) => {
-                self.coordinator_state = (*state).clone();
+                self.coordinator_state = *state;
                 let _ = tx.send(*state).await;
             }
         }

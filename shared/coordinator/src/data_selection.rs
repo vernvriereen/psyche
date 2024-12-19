@@ -53,7 +53,7 @@ pub fn assign_data_for_state<T: NodeIdentity>(
                                 BatchId::from_u64(sum),
                                 BatchId::from_u64(sum + num - 1),
                             ),
-                            client.id.clone(),
+                            client.id,
                         )
                         .unwrap();
                         sum += num;
