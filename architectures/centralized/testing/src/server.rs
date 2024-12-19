@@ -95,7 +95,7 @@ impl CoordinatorServer {
             max_round_train_time: MAX_ROUND_TRAIN_TIME,
             round_witness_time: ROUND_WITNESS_TIME,
             min_clients: init_min_clients,
-            batches_per_round: 4,
+            batches_per_round: 20,
             witness_nodes: 1,
             witness_quorum: 1,
             total_steps: 10,

@@ -10,10 +10,10 @@ use testing::{
 
 #[tokio::test(flavor = "multi_thread")]
 async fn connect_single_node() {
-    let server_handle = CoordinatorServerHandle::default().await;
+    let init_min_clients = 2;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
 
     let server_port = server_handle.server_port;
-
     let _client_handle = ClientHandle::default(server_port).await;
     let connected_clients = || server_handle.get_clients_len();
 
@@ -23,10 +23,10 @@ async fn connect_single_node() {
 #[tokio::test(flavor = "multi_thread")]
 async fn connect_multiple_nodes() {
     let number_of_nodes = 10;
-    let server_handle = CoordinatorServerHandle::default().await;
+    let init_min_clients = 15;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
 
     let server_port = server_handle.server_port;
-
     let _client_handles = spawn_clients(number_of_nodes, server_port).await;
 
     let connected_clients = || server_handle.get_clients_len();
@@ -57,7 +57,8 @@ async fn state_change_waiting_for_members_to_warmup() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn state_change_shutdown_node_in_warmup() {
-    let server_handle = CoordinatorServerHandle::new(2).await;
+    let init_min_clients = 2;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
     let server_port = server_handle.server_port;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
@@ -147,7 +148,8 @@ async fn state_change_waiting_for_members_to_round_witness() {
 /// Issue: https://github.com/NousResearch/psyche/issues/89
 #[tokio::test(flavor = "multi_thread")]
 async fn validate_all_clients_participate_in_witness_bloom() {
-    let init_min_clients = 3;
+    // console_subscriber::init();
+    let init_min_clients = 10;
     let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
     let server_port = server_handle.server_port;
 
