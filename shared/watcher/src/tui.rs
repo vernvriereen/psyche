@@ -118,7 +118,10 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for TuiRunState {
         match c.run_state {
             RunState::Uninitialized => TuiRunState::Uninitialized,
             RunState::WaitingForMembers => TuiRunState::WaitingForMembers {
-                need: c.min_clients.saturating_sub(c.clients.len() as u32),
+                need: c
+                    .config
+                    .min_clients
+                    .saturating_sub(c.epoch_state.clients.len() as u32),
             },
             RunState::Warmup => {
                 let time_since_epoch = SystemTime::now()
@@ -127,14 +130,16 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for TuiRunState {
 
                 TuiRunState::Warmup {
                     end_time: Instant::now()
-                        + Duration::from_secs(c.warmup_time + c.run_state_start_unix_timestamp)
+                        + Duration::from_secs(
+                            c.config.warmup_time + c.run_state_start_unix_timestamp,
+                        )
                         - time_since_epoch,
                 }
             }
             RunState::RoundTrain => TuiRunState::RoundTrain,
             RunState::RoundWitness => TuiRunState::RoundWitness,
             RunState::Cooldown => TuiRunState::Cooldown {
-                end_time: match c.cooldown_time {
+                end_time: match c.config.cooldown_time {
                     0 => None,
                     cooldown_time => {
                         let time_since_epoch = SystemTime::now()
@@ -173,8 +178,9 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
         Self {
             run_id: u8_to_string(&value.run_id),
             run_state: value.into(),
-            height: value.rounds[value.rounds_head as usize].height,
+            height: value.epoch_state.rounds[value.epoch_state.rounds_head as usize].height,
             clients: value
+                .epoch_state
                 .clients
                 .iter()
                 .map(|c| format!("{:?}", c.id))
@@ -186,7 +192,7 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
             model_checkpoint: match &value.model {
                 Model::LLM(l) => format!("{}", l.checkpoint),
             },
-            dropped_clients: value.dropped_clients.len(),
+            dropped_clients: value.epoch_state.dropped_clients.len(),
         }
     }
 }

@@ -53,7 +53,7 @@ impl<T: NodeIdentity> WitnessStepMetadata<T> {
 
         let evals = self.eval_runner.start_if_not_running(trainers);
 
-        let round_to_witness = if state.overlapped {
+        let round_to_witness = if state.config.overlapped {
             previous_round
         } else {
             current_round

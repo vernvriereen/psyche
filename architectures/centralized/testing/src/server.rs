@@ -2,8 +2,7 @@ use bytemuck::Zeroable;
 use psyche_centralized_server::app::App as ServerApp;
 use psyche_centralized_shared::ClientId;
 use psyche_coordinator::{
-    model::{Model, LLM},
-    Coordinator, RunState,
+    model::{Model, LLM}, CoodinatorConfig, Coordinator, RunState
 };
 use psyche_coordinator::{Client, Round};
 use std::collections::HashSet;
@@ -55,7 +54,10 @@ impl CoordinatorServer {
         let coordinator: Coordinator<ClientId> = Coordinator {
             run_id: to_fixed_size_array(RUN_ID),
             model: Model::LLM(LLM::dummy()),
-            data_indicies_per_batch: 1,
+            config: CoodinatorConfig {
+                data_indicies_per_batch: 1,
+                ..CoodinatorConfig::zeroed()
+            },
             ..Coordinator::zeroed()
         };
 
@@ -87,18 +89,21 @@ impl CoordinatorServer {
         let coordinator: Coordinator<ClientId> = Coordinator {
             run_id: to_fixed_size_array(RUN_ID),
             model: Model::LLM(LLM::dummy()),
-            data_indicies_per_batch: 1,
-            rounds_per_epoch: 2,
-            max_round_train_time: MAX_ROUND_TRAIN_TIME,
-            round_witness_time: ROUND_WITNESS_TIME,
-            min_clients: init_min_clients,
-            batches_per_round: 4,
-            witness_nodes: 1,
-            witness_quorum: 1,
-            total_steps: 10,
-            overlapped: false,
-            cooldown_time: COOLDOWN_TIME,
-            warmup_time: WARMUP_TIME,
+            config: CoodinatorConfig {
+                data_indicies_per_batch: 1,
+                rounds_per_epoch: 2,
+                max_round_train_time: MAX_ROUND_TRAIN_TIME,
+                round_witness_time: ROUND_WITNESS_TIME,
+                min_clients: init_min_clients,
+                batches_per_round: 4,
+                witness_nodes: 1,
+                witness_quorum: 1,
+                total_steps: 10,
+                overlapped: false,
+                cooldown_time: COOLDOWN_TIME,
+                warmup_time: WARMUP_TIME,
+                ..CoodinatorConfig::zeroed()
+            },
             ..Coordinator::<ClientId>::zeroed()
         };
 

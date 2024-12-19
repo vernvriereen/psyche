@@ -90,7 +90,7 @@ impl CooldownStepMetadata {
         if trainers.is_empty() {
             return Err(CooldownError::NoTrainers);
         }
-        let step = state.step - 1;
+        let step = state.progress.step - 1;
         let run_id = String::from_utf8(state.run_id.clone().to_vec()).unwrap();
         let checkpoint_extra_files = self.checkpoint_extra_files.clone();
         let checkpoint_info = self.checkpoint_info.clone();
