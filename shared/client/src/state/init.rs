@@ -59,6 +59,9 @@ pub struct RunInitConfig<T: NetworkableNodeIdentity> {
 
     // checkpointing
     pub checkpoint_config: Option<CheckpointConfig>,
+
+    // configurable dummy training time (in seconds) for this client - relevant just for testing
+    pub dummy_training_delay_secs: Option<u64>,
 }
 
 #[derive(Debug, Error)]
@@ -155,10 +158,19 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                     let tokenizer = Arc::new(Tokenizer::new(ModelWrapper::WordLevel(
                         WordLevel::builder().build().unwrap(),
                     )));
+
                     Ok(RawLoadedModel {
                         models: (0..(init_config.data_parallelism
                             * init_config.tensor_parallelism))
-                            .map(|_| Box::new(DummyModel::new()) as Box<dyn ConcreteCausalLM>)
+                            .map(|_| {
+                                if let Some(training_delay) = init_config.dummy_training_delay_secs
+                                {
+                                    Box::new(DummyModel::new(training_delay))
+                                        as Box<dyn ConcreteCausalLM>
+                                } else {
+                                    Box::new(DummyModel::default()) as Box<dyn ConcreteCausalLM>
+                                }
+                            })
                             .collect(),
                         tokenizer: tokenizer.clone(),
                         checkpoint_extra_files: vec![],

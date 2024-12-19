@@ -11,7 +11,7 @@ async fn connect_single_node() {
 
     let server_port = server_handle.server_port;
 
-    let _client_handle = ClientHandle::new(server_port).await;
+    let _client_handle = ClientHandle::default(server_port).await;
     let connected_clients = || server_handle.get_clients_len();
 
     assert_with_retries(connected_clients, 1).await;
