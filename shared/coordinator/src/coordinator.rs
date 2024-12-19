@@ -1,22 +1,20 @@
-use std::hash::Hash;
-
 use crate::{
-    model::{self, Checkpoint, Model, LLM},
+    model::{self, Checkpoint, Model},
     traits::Backend,
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
-use psyche_core::{sha256, Bloom, NodeIdentity};
-use psyche_serde::derive_serialize;
 
-#[cfg(target_os = "solana")]
-use anchor_lang::prelude::*;
-#[cfg(not(target_os = "solana"))]
-use serde::{Deserialize, Serialize};
-use tracing::debug;
+use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
+use bytemuck::{Pod, Zeroable};
+use psyche_core::{
+    serde_deserialize_string, serde_serialize_string, sha256, Bloom, FixedVec, NodeIdentity,
+};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::hash::Hash;
 
-pub const MAX_STRING_LEN: usize = 64;
-pub const MAX_NUM_CLIENTS: usize = 64;
-pub const MAX_NUM_WITNESSES: usize = 16;
+pub const SOLANA_MAX_STRING_LEN: usize = 64;
+pub const SOLANA_MAX_NUM_CLIENTS: usize = 64;
+pub const SOLANA_MAX_NUM_WITNESSES: usize = 16;
 
 pub const BLOOM_FALSE_RATE: f64 = 0.01f64;
 
@@ -24,19 +22,42 @@ pub const BLOOM_FALSE_RATE: f64 = 0.01f64;
 pub type WitnessBloom = Bloom<16, 8>;
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-#[derive_serialize]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Zeroable,
+    AnchorDeserialize,
+    AnchorSerialize,
+    Serialize,
+    Deserialize,
+    InitSpace,
+)]
 pub enum RunState {
     #[default]
-    WaitingForMembers = 0,
-    Warmup = 1,
-    RoundTrain = 2,
-    RoundWitness = 3,
-    Cooldown = 4,
+    Uninitialized = 0,
+    WaitingForMembers = 1,
+    Warmup = 2,
+    RoundTrain = 3,
+    RoundWitness = 4,
+    Cooldown = 5,
+    Finished = 6,
 }
 
-#[derive_serialize]
-#[derive(Clone, Debug)]
+#[derive(
+    Clone,
+    Debug,
+    Zeroable,
+    Default,
+    Copy,
+    Serialize,
+    Deserialize,
+    AnchorDeserialize,
+    AnchorSerialize,
+)]
+#[serde(bound = "I: Serialize + DeserializeOwned")]
 pub struct Client<I: NodeIdentity> {
     pub id: I,
     pub dropping_at_end_of_round: bool,
@@ -48,20 +69,39 @@ impl<I: NodeIdentity> Hash for Client<I> {
     }
 }
 
-#[derive(Clone, Default, Debug)]
-#[derive_serialize]
+#[derive(
+    Clone,
+    Default,
+    Debug,
+    Zeroable,
+    Copy,
+    AnchorDeserialize,
+    AnchorSerialize,
+    Serialize,
+    Deserialize,
+)]
+#[repr(C)]
 pub struct Round {
     pub height: u32,
     pub clients_len: u32,
     pub tie_breaker_tasks: u32,
     pub data_index: u64,
     pub random_seed: u64,
-    #[cfg_attr(target_os = "solana", max_len(MAX_NUM_WITNESSES))]
-    pub witnesses: Vec<Witness>,
+    pub witnesses: FixedVec<Witness, SOLANA_MAX_NUM_WITNESSES>,
 }
 
-#[derive_serialize]
-#[derive(Clone, Debug)]
+#[derive(
+    Clone,
+    Debug,
+    Zeroable,
+    Default,
+    Copy,
+    AnchorDeserialize,
+    AnchorSerialize,
+    Serialize,
+    Deserialize,
+)]
+#[repr(C)]
 pub struct Witness {
     pub index: u64,
     pub proof: WitnessProof,
@@ -80,6 +120,7 @@ pub enum CoordinatorError {
     Disabled,
     Finished,
     InvalidCheckpoint,
+    WitnessesFull,
 }
 
 pub type Commitment = [u8; 32];
@@ -87,14 +128,20 @@ pub type HealthChecks = Vec<CommitteeProof>;
 
 pub const NUM_STORED_ROUNDS: usize = 4;
 
-#[derive_serialize]
-#[derive(Clone, Debug)]
+#[derive(
+    Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorDeserialize, AnchorSerialize,
+)]
+#[serde(bound = "T: DeserializeOwned")]
+#[repr(C)]
 pub struct Coordinator<T: NodeIdentity> {
-    #[cfg_attr(target_os = "solana", max_len(MAX_STRING_LEN))]
-    pub run_id: String,
+    #[serde(
+        serialize_with = "serde_serialize_string",
+        deserialize_with = "serde_deserialize_string"
+    )]
+    pub run_id: [u8; SOLANA_MAX_STRING_LEN],
     pub run_state: RunState,
 
-    #[cfg_attr(not(target_os = "solana"), serde(default))]
+    #[serde(default)]
     pub run_state_start_unix_timestamp: u64,
 
     pub warmup_time: u64,
@@ -103,25 +150,23 @@ pub struct Coordinator<T: NodeIdentity> {
     pub max_round_train_time: u64,
     pub round_witness_time: u64,
 
-    #[cfg_attr(not(target_os = "solana"), serde(default))]
+    #[serde(default)]
     pub rounds: [Round; NUM_STORED_ROUNDS],
-    #[cfg_attr(not(target_os = "solana"), serde(default))]
+    #[serde(default)]
     pub rounds_head: u32,
-    #[cfg_attr(not(target_os = "solana"), serde(default))]
+    #[serde(default)]
     pub first_round: bool,
 
     pub min_clients: u32,
 
-    #[cfg_attr(target_os = "solana", max_len(MAX_NUM_CLIENTS))]
-    #[cfg_attr(not(target_os = "solana"), serde(default = "Vec::new"))]
-    pub clients: Vec<Client<T>>,
-    #[cfg_attr(target_os = "solana", max_len(MAX_NUM_CLIENTS))]
-    #[cfg_attr(not(target_os = "solana"), serde(default = "Vec::new"))]
-    pub dropped_clients: Vec<Client<T>>,
+    #[serde(default)]
+    pub clients: FixedVec<Client<T>, SOLANA_MAX_NUM_CLIENTS>,
+    #[serde(default)]
+    pub dropped_clients: FixedVec<Client<T>, SOLANA_MAX_NUM_CLIENTS>,
 
-    #[cfg_attr(not(target_os = "solana"), serde(default))]
+    #[serde(default)]
     pub tick: u64,
-    #[cfg_attr(not(target_os = "solana"), serde(default))]
+    #[serde(default)]
     pub last_tick_unix_timestamp: u64,
 
     pub batches_per_round: u32,
@@ -131,28 +176,28 @@ pub struct Coordinator<T: NodeIdentity> {
     pub witness_nodes: u32,
     pub witness_quorum: u32,
 
-    #[cfg_attr(target_os = "solana", max_len(MAX_NUM_CLIENTS))]
-    #[cfg_attr(not(target_os = "solana"), serde(default = "Vec::new"))]
-    pub checkpointers: Vec<T>,
+    #[serde(default)]
+    pub checkpointers: FixedVec<T, SOLANA_MAX_NUM_CLIENTS>,
 
-    #[cfg_attr(not(target_os = "solana"), serde(default))]
+    #[serde(default)]
     pub epoch: u32,
     pub rounds_per_epoch: u32,
 
-    #[cfg_attr(not(target_os = "solana"), serde(default = "default_init_step"))]
+    #[serde(default)]
     pub step: u32,
     pub total_steps: u32,
 
-    #[cfg_attr(not(target_os = "solana"), serde(default))]
+    #[serde(default)]
     pub last_step_unix_timestamp: u64,
-
-    #[cfg_attr(not(target_os = "solana"), serde(default))]
+    #[serde(default)]
     pub epoch_start_data_index: u64,
 
     pub overlapped: bool,
 
     pub model: Model,
 }
+
+unsafe impl<T: NodeIdentity + Zeroable> Pod for Coordinator<T> {}
 
 #[allow(dead_code)]
 fn default_init_step() -> u32 {
@@ -164,11 +209,13 @@ impl TryFrom<usize> for RunState {
 
     fn try_from(value: usize) -> std::result::Result<Self, Self::Error> {
         match value {
-            0 => Ok(RunState::WaitingForMembers),
-            1 => Ok(RunState::Warmup),
-            2 => Ok(RunState::RoundTrain),
-            3 => Ok(RunState::RoundWitness),
-            4 => Ok(RunState::Cooldown),
+            0 => Ok(RunState::Uninitialized),
+            1 => Ok(RunState::WaitingForMembers),
+            2 => Ok(RunState::Warmup),
+            3 => Ok(RunState::RoundTrain),
+            4 => Ok(RunState::RoundWitness),
+            5 => Ok(RunState::Cooldown),
+            6 => Ok(RunState::Finished),
             _ => Err(CoordinatorError::InvalidRunState),
         }
     }
@@ -177,11 +224,13 @@ impl TryFrom<usize> for RunState {
 impl From<RunState> for usize {
     fn from(val: RunState) -> Self {
         match val {
-            RunState::WaitingForMembers => 0,
-            RunState::Warmup => 1,
-            RunState::RoundTrain => 2,
-            RunState::RoundWitness => 3,
-            RunState::Cooldown => 4,
+            RunState::Uninitialized => 0,
+            RunState::WaitingForMembers => 1,
+            RunState::Warmup => 2,
+            RunState::RoundTrain => 3,
+            RunState::RoundWitness => 4,
+            RunState::Cooldown => 5,
+            RunState::Finished => 6,
         }
     }
 }
@@ -199,41 +248,6 @@ impl<T: NodeIdentity> PartialEq for Client<T> {
 }
 
 impl<T: NodeIdentity> Eq for Client<T> {}
-impl<T: NodeIdentity> Default for Coordinator<T> {
-    fn default() -> Self {
-        Self {
-            run_id: Default::default(),
-            run_state: Default::default(),
-            run_state_start_unix_timestamp: Default::default(),
-            warmup_time: Default::default(),
-            rounds_per_epoch: Default::default(),
-            max_round_train_time: Default::default(),
-            round_witness_time: Default::default(),
-            rounds: Default::default(),
-            rounds_head: Default::default(),
-            first_round: Default::default(),
-            min_clients: Default::default(),
-            clients: Default::default(),
-            dropped_clients: Default::default(),
-            tick: Default::default(),
-            last_tick_unix_timestamp: Default::default(),
-            batches_per_round: Default::default(),
-            data_indicies_per_batch: Default::default(),
-            verification_percent: Default::default(),
-            witness_nodes: Default::default(),
-            witness_quorum: Default::default(),
-            step: Default::default(),
-            last_step_unix_timestamp: Default::default(),
-            epoch: Default::default(),
-            model: Model::LLM(LLM::dummy()),
-            epoch_start_data_index: Default::default(),
-            overlapped: Default::default(),
-            total_steps: Default::default(),
-            cooldown_time: Default::default(),
-            checkpointers: Default::default(),
-        }
-    }
-}
 
 impl std::fmt::Display for CoordinatorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -246,6 +260,7 @@ impl std::fmt::Display for CoordinatorError {
             CoordinatorError::Disabled => write!(f, "Disabled"),
             CoordinatorError::Finished => write!(f, "Finished"),
             CoordinatorError::InvalidCheckpoint => write!(f, "Invalid checkpoint"),
+            CoordinatorError::WitnessesFull => write!(f, "Witnesses full"),
         }
     }
 }
@@ -255,11 +270,13 @@ impl std::error::Error for CoordinatorError {}
 impl std::fmt::Display for RunState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            RunState::Uninitialized => write!(f, "Uninitialized"),
             RunState::WaitingForMembers => write!(f, "Waiting for members"),
             RunState::Warmup => write!(f, "Warmup"),
             RunState::RoundTrain => write!(f, "Training"),
             RunState::RoundWitness => write!(f, "Witness"),
             RunState::Cooldown => write!(f, "Cooldown"),
+            RunState::Finished => write!(f, "Finished"),
         }
     }
 }
@@ -271,10 +288,8 @@ impl<T: NodeIdentity> Coordinator<T> {
         unix_timestamp: u64,
         random_seed: u64,
     ) -> std::result::Result<(), CoordinatorError> {
-        if self.min_clients == 0 {
-            return Err(CoordinatorError::Disabled);
-        }
         match self.run_state {
+            RunState::Uninitialized | RunState::Finished => Err(CoordinatorError::Disabled),
             RunState::WaitingForMembers => self.tick_waiting_for_members(backend, unix_timestamp),
             RunState::Warmup => self.tick_warmup(unix_timestamp, random_seed),
             RunState::RoundTrain => self.tick_round_train(unix_timestamp),
@@ -292,7 +307,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         witness: Witness,
         unix_timestamp: u64,
     ) -> std::result::Result<(), CoordinatorError> {
-        if self.min_clients == 0 {
+        if self.disabled() {
             return Err(CoordinatorError::Disabled);
         }
         if !CommitteeSelection::from_coordinator(self, self.overlapped && !self.first_round)?
@@ -300,17 +315,24 @@ impl<T: NodeIdentity> Coordinator<T> {
         {
             return Err(CoordinatorError::InvalidWitness);
         }
-        if self.run_state != RunState::RoundWitness && self.run_state != RunState::RoundTrain {
+        if !matches!(
+            self.run_state,
+            RunState::RoundWitness | RunState::RoundTrain,
+        ) {
             return Err(CoordinatorError::InvalidRunState);
         }
 
-        for witness in &self.current_round().unwrap().witnesses {
+        let round = self.current_round().unwrap();
+        for witness in round.witnesses.iter() {
             if self.clients[witness.index as usize] == *from {
                 return Err(CoordinatorError::DuplicateWitness);
             }
         }
         let round = self.current_round_mut_unchecked();
-        round.witnesses.push(witness);
+        round
+            .witnesses
+            .push(witness)
+            .map_err(|_| CoordinatorError::WitnessesFull)?;
 
         if round.witnesses.len()
             == match self.witness_nodes {
@@ -318,7 +340,6 @@ impl<T: NodeIdentity> Coordinator<T> {
                 witness_nodes => witness_nodes as usize,
             }
         {
-            debug!("enough witnesses have early voted, go to witness state");
             self.change_state(unix_timestamp, RunState::RoundWitness);
         }
         Ok(())
@@ -329,7 +350,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         _from: &Client<T>,
         checks: HealthChecks,
     ) -> std::result::Result<u32, CoordinatorError> {
-        if self.min_clients == 0 {
+        if self.disabled() {
             return Err(CoordinatorError::Disabled);
         }
         for proof in &checks {
@@ -519,17 +540,26 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     pub fn active(&self) -> bool {
-        !matches!(
-            self.run_state,
-            RunState::WaitingForMembers | RunState::Warmup
-        )
+        !self.disabled()
+            && !matches!(
+                self.run_state,
+                RunState::WaitingForMembers | RunState::Warmup
+            )
     }
 
-    pub fn get_client_at_historical_index(&self, n: usize, clients_len: u32) -> Option<&Client<T>> {
+    pub fn disabled(&self) -> bool {
+        matches!(self.run_state, RunState::Uninitialized | RunState::Finished)
+    }
+
+    pub fn get_client_at_historical_index(
+        &self,
+        n: usize,
+        prev_clients_len: u32,
+    ) -> Option<&Client<T>> {
         if n < self.clients.len() {
             Some(&self.clients[n])
-        } else if n < clients_len as usize {
-            let offset = clients_len as usize - n - 1;
+        } else if n < prev_clients_len as usize {
+            let offset: usize = prev_clients_len as usize - n - 1;
             self.dropped_clients.iter().rev().nth(offset)
         } else {
             None
@@ -552,7 +582,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
         let clients = backend.select_new_clients();
         if clients.len() as u32 >= self.min_clients {
-            self.clients = clients;
+            self.clients = FixedVec::from_iter(clients.into_iter().take(SOLANA_MAX_NUM_CLIENTS));
             self.start_warmup(unix_timestamp);
         }
         Ok(())
@@ -595,7 +625,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             // WARNING: O(n) on number of clients, need to refactor
             self.clients.retain(|x| {
                 if x.dropping_at_end_of_round {
-                    self.dropped_clients.push(x.clone());
+                    let _ = self.dropped_clients.push(*x);
                     false
                 } else {
                     true
@@ -606,9 +636,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 .current_round()
                 .map(|x| (x.height, x.data_index))
                 .unwrap();
-            if self.step > self.total_steps {
-                self.start_waiting_for_members(unix_timestamp);
-            } else if height == self.rounds_per_epoch - 1 {
+            if height == self.rounds_per_epoch - 1 {
                 self.start_cooldown(unix_timestamp, data_index);
             } else {
                 self.start_round_train(unix_timestamp, random_seed, 0);
@@ -666,7 +694,14 @@ impl<T: NodeIdentity> Coordinator<T> {
 
     fn start_waiting_for_members(&mut self, unix_timestamp: u64) {
         self.dropped_clients.clear();
-        self.change_state(unix_timestamp, RunState::WaitingForMembers);
+        self.change_state(
+            unix_timestamp,
+            if self.step < self.total_steps {
+                RunState::WaitingForMembers
+            } else {
+                RunState::Finished
+            },
+        );
     }
 
     fn start_cooldown(&mut self, unix_timestamp: u64, data_index: u64) {
@@ -690,7 +725,6 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     fn change_state(&mut self, unix_timestamp: u64, new_state: RunState) {
-        debug!("changing state from {} to {}", self.run_state, new_state);
         self.run_state_start_unix_timestamp = unix_timestamp;
         self.run_state = new_state;
     }
@@ -724,7 +758,7 @@ impl Round {
             tie_breaker_tasks: 0,
             data_index: 0,
             random_seed: 0,
-            witnesses: Vec::new(),
+            witnesses: Default::default(),
         }
     }
 }

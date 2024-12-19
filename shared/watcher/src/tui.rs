@@ -4,7 +4,7 @@ use std::{
 };
 
 use psyche_coordinator::{model::Model, Coordinator, RunState};
-use psyche_core::NodeIdentity;
+use psyche_core::{u8_to_string, NodeIdentity};
 use psyche_tui::ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
@@ -75,7 +75,7 @@ impl psyche_tui::CustomWidget for CoordinatorTui {
 #[derive(Default, Debug, Clone)]
 pub enum TuiRunState {
     #[default]
-    Unknown,
+    Uninitialized,
     WaitingForMembers {
         need: u32,
     },
@@ -87,12 +87,13 @@ pub enum TuiRunState {
     Cooldown {
         end_time: Option<Instant>,
     },
+    Finished,
 }
 
 impl Display for TuiRunState {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            TuiRunState::Unknown => write!(f, "Unknown"),
+            TuiRunState::Uninitialized => write!(f, "Uninitialized"),
             TuiRunState::WaitingForMembers { need } => write!(f, "Waiting for {} members", need),
             TuiRunState::Warmup { end_time } => {
                 let remaining = end_time.duration_since(Instant::now());
@@ -107,6 +108,7 @@ impl Display for TuiRunState {
                 }
                 None => write!(f, "Cooldown"),
             },
+            TuiRunState::Finished => write!(f, "Finished"),
         }
     }
 }
@@ -114,6 +116,7 @@ impl Display for TuiRunState {
 impl<T: NodeIdentity> From<&Coordinator<T>> for TuiRunState {
     fn from(c: &Coordinator<T>) -> Self {
         match c.run_state {
+            RunState::Uninitialized => TuiRunState::Uninitialized,
             RunState::WaitingForMembers => TuiRunState::WaitingForMembers {
                 need: c.min_clients.saturating_sub(c.clients.len() as u32),
             },
@@ -148,6 +151,7 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for TuiRunState {
                     }
                 },
             },
+            RunState::Finished => TuiRunState::Finished,
         }
     }
 }
@@ -167,7 +171,7 @@ pub struct CoordinatorTuiState {
 impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
     fn from(value: &Coordinator<T>) -> Self {
         Self {
-            run_id: value.run_id.clone(),
+            run_id: u8_to_string(&value.run_id),
             run_state: value.into(),
             height: value.rounds[value.rounds_head as usize].height,
             clients: value
@@ -180,7 +184,7 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
                 Model::LLM(l) => format!("{:?}", l.data_type),
             },
             model_checkpoint: match &value.model {
-                Model::LLM(l) => format!("{:?}", l.checkpoint),
+                Model::LLM(l) => format!("{}", l.checkpoint),
             },
             dropped_clients: value.dropped_clients.len(),
         }

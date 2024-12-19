@@ -294,7 +294,7 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
 
         round_state
             .commitments_per_client
-            .insert(from_client_id.clone(), client_commitments + 1);
+            .insert(from_client_id, client_commitments + 1);
 
         let total_commitments = round_state
             .commitments_per_client
@@ -329,9 +329,8 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
             .results
             .get_mut(&training_result.batch_id)
             .unwrap()
-            .push((from_client_id.clone(), training_result));
-        let download_state =
-            PayloadState::Downloading((from_client_id.clone(), batch_id, ticket.clone()));
+            .push((from_client_id, training_result));
+        let download_state = PayloadState::Downloading((from_client_id, batch_id, ticket.clone()));
         round_state.downloads.insert(hash, download_state);
 
         // start downloading the payload unless this is a self-message
@@ -494,11 +493,7 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
                 trace!(
                     "saw new step, but we're not one of the clients. our id: {}, all clients: {:?}",
                     self.identity,
-                    &state
-                        .clients
-                        .iter()
-                        .map(|c| c.id.clone())
-                        .collect::<Vec<_>>()
+                    &state.clients.iter().map(|c| c.id).collect::<Vec<_>>()
                 );
                 let new_step = match std::mem::take(&mut self.active_step) {
                     ActiveStep::Intermediate => {
@@ -741,9 +736,7 @@ impl<T: NetworkableNodeIdentity> RunManager<T> {
             {
                 // Take ownership of init_info using std::mem::take
                 let init_info = init_info.take().unwrap();
-                Some(InitStage::Initializing(Box::pin(
-                    init_info.init_run(state.clone()),
-                )))
+                Some(InitStage::Initializing(Box::pin(init_info.init_run(state))))
             }
             InitStage::NotYetInitialized(None) => {
                 unreachable!("Once we take the init state, we move to initializing.");

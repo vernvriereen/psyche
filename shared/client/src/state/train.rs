@@ -185,17 +185,17 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
                 let order_bloom = Bloom::random(num_batch_ids_for_this_round, BLOOM_FALSE_RATE);
                 debug!(
                     "Commit bloom size: {} bits, {} keys",
-                    commit_bloom.bits.len(),
+                    commit_bloom.bits.0.len(),
                     commit_bloom.keys.len()
                 );
                 debug!(
                     "Participant bloom size: {} bits, {} keys",
-                    participant_bloom.bits.len(),
+                    participant_bloom.bits.0.len(),
                     participant_bloom.keys.len()
                 );
                 debug!(
                     "Order bloom size: {} bits, {} keys",
-                    order_bloom.bits.len(),
+                    order_bloom.bits.0.len(),
                     order_bloom.keys.len()
                 );
                 Some((commit_bloom, participant_bloom, order_bloom))
@@ -226,7 +226,7 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         let eval_runner = self.eval_runner.clone();
 
         let applying_and_training: JoinHandle<Result<FinishedTrainers, TrainError>> = {
-            let identity = self.identity.clone();
+            let identity = self.identity;
             let cancel_training = cancel_training.clone();
             let write_gradients_dir = self.write_gradients_dir.clone();
             let tx_distro_result = self.tx_distro_result.clone();
@@ -309,7 +309,6 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
                             if let Some(dir) = &write_gradients_dir {
                                 let distro_result = distro_result.clone();
                                 let dir = dir.clone();
-                                let identity = identity.clone();
                                 tokio::spawn(async move {
                                     if let Err(e) =
                                         write_gradients_to_disk(dir, identity, distro_result).await
@@ -430,7 +429,7 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         assert!(!payloads.is_empty());
         assert!(!commitments.is_empty());
 
-        let witnesses = round.witnesses.clone();
+        let witnesses = round.witnesses;
         let batch_ids = get_batch_ids_for_round(
             // coordinator has already advanced to the next round but we haven't started ours yet.
             // our current_round corresponds to the coordinator's previous_round
@@ -547,23 +546,22 @@ fn start_sending_health_checks<T: NetworkableNodeIdentity>(
         let witnesses = state
             .previous_round()
             .ok_or(TrainError::NoActiveRound)?
-            .witnesses
-            .clone();
+            .witnesses;
         let witness_quorum = state.witness_quorum;
-        let clients = state.clients.clone();
+        let clients = state.clients;
         let committee_selection = committee_selection.clone();
         Some(tokio::task::spawn(async move {
             let mut checks = HealthChecks::new();
-            for (index, client) in clients.into_iter().enumerate() {
+            for (index, client) in clients.iter().enumerate() {
                 let proof = committee_selection.get_committee(index as u64);
                 if proof.committee == Committee::Trainer {
                     debug!(
                         "Trainer {:?} health score: {}",
                         client,
-                        Coordinator::trainer_healthy_score_by_witnesses(&client, &witnesses)
+                        Coordinator::trainer_healthy_score_by_witnesses(client, &witnesses)
                     );
                     if !Coordinator::trainer_healthy_by_witnesses(
-                        &client,
+                        client,
                         &witnesses,
                         witness_quorum,
                     ) {

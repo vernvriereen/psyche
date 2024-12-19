@@ -162,7 +162,7 @@ where
         let identity = I::from_signed_bytes(&challenge_response, challenge)?;
         debug!("Challenge response accepted! welcome, {:?}!", identity);
         let (client_tx, mut client_rx) = mpsc::channel(32);
-        clients.lock().await.insert(identity.clone(), client_tx);
+        clients.lock().await.insert(identity, client_tx);
 
         loop {
             tokio::select! {
@@ -177,7 +177,7 @@ where
                                bail!("Unexpected challenge message");
                             }
                             ClientToServerMessage::Else(m) => {
-                                incoming_tx.send((identity.clone(), m)).await?;
+                                incoming_tx.send((identity, m)).await?;
                             }
                         }
                     }
@@ -191,7 +191,7 @@ where
         }
 
         clients.lock().await.remove(&identity);
-        disconnected_tx.send(identity.clone()).await?;
+        disconnected_tx.send(identity).await?;
         Ok(())
     }
 
@@ -200,7 +200,7 @@ where
             .lock()
             .await
             .iter()
-            .map(|(identity, _)| identity.clone())
+            .map(|(identity, _)| *identity)
             .collect()
     }
 

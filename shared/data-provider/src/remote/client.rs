@@ -13,9 +13,9 @@ pub struct DataProviderTcpClient<T: NetworkableNodeIdentity> {
 }
 
 impl<T: NetworkableNodeIdentity> DataProviderTcpClient<T> {
-    pub async fn connect(addr: &str, identity: T, private_key: T::PrivateKey) -> Result<Self> {
+    pub async fn connect(addr: String, identity: T, private_key: T::PrivateKey) -> Result<Self> {
         let tcp_client = TcpClient::<T, ClientToServerMessage, ServerToClientMessage>::connect(
-            addr,
+            &addr,
             identity,
             private_key,
         )

@@ -42,7 +42,7 @@ impl<T: NetworkableNodeIdentity, B: Backend<T> + 'static> Client<T, B> {
         let (tx, rx) = watch::channel::<TUIStates>(Default::default());
         let req_tui_state = Arc::new(Notify::new());
 
-        let identity = init_config.identity.clone();
+        let identity = init_config.identity;
         let join = tokio::spawn({
             let cancel = cancel.clone();
             let req_tui_state = req_tui_state.clone();
@@ -88,7 +88,7 @@ impl<T: NetworkableNodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                                 let p2p_info = get_p2p_info(&p2p).await?;
                                 run.set_node_info(p2p_info);
                             }
-                            run.apply_state(new_state.clone()).await?;
+                            run.apply_state(*new_state).await?;
                         }
 
                         res = p2p.poll_next() => {
@@ -97,7 +97,7 @@ impl<T: NetworkableNodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                                     NetworkEvent::MessageReceived((from, training_result)) => {
                                         trace!("Got gossip message from {from}: step {} batch id {}", training_result.step, training_result.batch_id);
                                         if let Some(client) = watcher.get_client_for_p2p_public_key(from.as_bytes()) {
-                                            run.apply_message(client.id.clone(), training_result).await?;
+                                            run.apply_message(client.id, training_result).await?;
                                         } else {
                                             warn!("Got broadcast from unknown client {}", from);
                                         }
@@ -141,7 +141,7 @@ impl<T: NetworkableNodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                             // simulate us recving it & apply like anyone else's
                             {
                                 run.apply_message(
-                                    identity.clone(), training_result
+                                    identity, training_result
                                 ).await?;
 
                                 run.apply_distro_result(hash, distro_result).await;

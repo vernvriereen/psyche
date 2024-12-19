@@ -1,3 +1,4 @@
+use bytemuck::Zeroable;
 use psyche_centralized_server::app::App as ServerApp;
 use psyche_centralized_shared::ClientId;
 use psyche_coordinator::{
@@ -44,13 +45,21 @@ struct CoordinatorServer {
     port: u16,
 }
 
+fn to_fixed_size_array(s: &str) -> [u8; 64] {
+    let mut array = [0u8; 64];
+    let bytes = s.as_bytes();
+    let len = bytes.len().min(64);
+    array[..len].copy_from_slice(&bytes[..len]);
+    array
+}
+
 impl CoordinatorServer {
     pub async fn default(query_chan_receiver: Receiver<TestingQueryMsg>) -> Self {
         let coordinator: Coordinator<ClientId> = Coordinator {
-            run_id: RUN_ID.to_string(),
+            run_id: to_fixed_size_array(RUN_ID),
             model: Model::LLM(LLM::dummy()),
             data_indicies_per_batch: 1,
-            ..Default::default()
+            ..Coordinator::zeroed()
         };
 
         let server_port = get_free_port();
@@ -79,7 +88,7 @@ impl CoordinatorServer {
         init_min_clients: u32,
     ) -> Self {
         let coordinator: Coordinator<ClientId> = Coordinator {
-            run_id: RUN_ID.to_string(),
+            run_id: to_fixed_size_array(RUN_ID),
             model: Model::LLM(LLM::dummy()),
             data_indicies_per_batch: 1,
             rounds_per_epoch: 2,
@@ -93,7 +102,7 @@ impl CoordinatorServer {
             overlapped: false,
             cooldown_time: COOLDOWN_TIME,
             warmup_time: WARMUP_TIME,
-            ..Default::default()
+            ..Coordinator::<ClientId>::zeroed()
         };
 
         let server_port = get_free_port();
