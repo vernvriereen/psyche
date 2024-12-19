@@ -148,7 +148,6 @@ async fn state_change_waiting_for_members_to_round_witness() {
 /// Issue: https://github.com/NousResearch/psyche/issues/89
 #[tokio::test(flavor = "multi_thread")]
 async fn validate_all_clients_participate_in_witness_bloom() {
-    // console_subscriber::init();
     let init_min_clients = 10;
     let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
     let server_port = server_handle.server_port;
