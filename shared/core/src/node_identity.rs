@@ -3,7 +3,7 @@ use std::{
     hash::Hash,
 };
 
-use anchor_lang::{AnchorDeserialize, AnchorSerialize};
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, Space};
 use bytemuck::Zeroable;
 use serde::{de::DeserializeOwned, Serialize};
 
@@ -18,6 +18,7 @@ pub trait NodeIdentity:
     + Clone
     + Send
     + Sync
+    + Space
     + Zeroable
     + Default
     + Serialize
