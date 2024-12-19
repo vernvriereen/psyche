@@ -75,7 +75,7 @@ impl psyche_tui::CustomWidget for CoordinatorTui {
 #[derive(Default, Debug, Clone)]
 pub enum TuiRunState {
     #[default]
-    Unknown,
+    Uninitialized,
     WaitingForMembers {
         need: u32,
     },
@@ -87,12 +87,13 @@ pub enum TuiRunState {
     Cooldown {
         end_time: Option<Instant>,
     },
+    Finished,
 }
 
 impl Display for TuiRunState {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            TuiRunState::Unknown => write!(f, "Unknown"),
+            TuiRunState::Uninitialized => write!(f, "Uninitialized"),
             TuiRunState::WaitingForMembers { need } => write!(f, "Waiting for {} members", need),
             TuiRunState::Warmup { end_time } => {
                 let remaining = end_time.duration_since(Instant::now());
@@ -107,6 +108,7 @@ impl Display for TuiRunState {
                 }
                 None => write!(f, "Cooldown"),
             },
+            TuiRunState::Finished => write!(f, "Finished"),
         }
     }
 }
@@ -114,6 +116,7 @@ impl Display for TuiRunState {
 impl<T: NodeIdentity> From<&Coordinator<T>> for TuiRunState {
     fn from(c: &Coordinator<T>) -> Self {
         match c.run_state {
+            RunState::Uninitialized => TuiRunState::Uninitialized,
             RunState::WaitingForMembers => TuiRunState::WaitingForMembers {
                 need: c.min_clients.saturating_sub(c.clients.len() as u32),
             },
@@ -148,6 +151,7 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for TuiRunState {
                     }
                 },
             },
+            RunState::Finished => TuiRunState::Finished,
         }
     }
 }

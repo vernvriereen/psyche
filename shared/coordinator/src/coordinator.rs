@@ -37,11 +37,13 @@ pub type WitnessBloom = Bloom<16, 8>;
 )]
 pub enum RunState {
     #[default]
-    WaitingForMembers = 0,
-    Warmup = 1,
-    RoundTrain = 2,
-    RoundWitness = 3,
-    Cooldown = 4,
+    Uninitialized = 0,
+    WaitingForMembers = 1,
+    Warmup = 2,
+    RoundTrain = 3,
+    RoundWitness = 4,
+    Cooldown = 5,
+    Finished = 6,
 }
 
 #[derive(
@@ -59,10 +61,6 @@ pub enum RunState {
 pub struct Client<I: NodeIdentity> {
     pub id: I,
     pub dropping_at_end_of_round: bool,
-}
-
-impl<I: NodeIdentity> anchor_lang::Space for Client<I> {
-    const INIT_SPACE: usize = 1;
 }
 
 impl<I: NodeIdentity> Hash for Client<I> {
@@ -131,14 +129,7 @@ pub type HealthChecks = Vec<CommitteeProof>;
 pub const NUM_STORED_ROUNDS: usize = 4;
 
 #[derive(
-    Clone,
-    Debug,
-    Zeroable,
-    Copy,
-    Serialize,
-    Deserialize,
-    AnchorDeserialize,
-    AnchorSerialize,
+    Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorDeserialize, AnchorSerialize,
 )]
 #[serde(bound = "T: DeserializeOwned")]
 #[repr(C)]
@@ -218,11 +209,13 @@ impl TryFrom<usize> for RunState {
 
     fn try_from(value: usize) -> std::result::Result<Self, Self::Error> {
         match value {
-            0 => Ok(RunState::WaitingForMembers),
-            1 => Ok(RunState::Warmup),
-            2 => Ok(RunState::RoundTrain),
-            3 => Ok(RunState::RoundWitness),
-            4 => Ok(RunState::Cooldown),
+            0 => Ok(RunState::Uninitialized),
+            1 => Ok(RunState::WaitingForMembers),
+            2 => Ok(RunState::Warmup),
+            3 => Ok(RunState::RoundTrain),
+            4 => Ok(RunState::RoundWitness),
+            5 => Ok(RunState::Cooldown),
+            6 => Ok(RunState::Finished),
             _ => Err(CoordinatorError::InvalidRunState),
         }
     }
@@ -231,11 +224,13 @@ impl TryFrom<usize> for RunState {
 impl From<RunState> for usize {
     fn from(val: RunState) -> Self {
         match val {
-            RunState::WaitingForMembers => 0,
-            RunState::Warmup => 1,
-            RunState::RoundTrain => 2,
-            RunState::RoundWitness => 3,
-            RunState::Cooldown => 4,
+            RunState::Uninitialized => 0,
+            RunState::WaitingForMembers => 1,
+            RunState::Warmup => 2,
+            RunState::RoundTrain => 3,
+            RunState::RoundWitness => 4,
+            RunState::Cooldown => 5,
+            RunState::Finished => 6,
         }
     }
 }
@@ -275,11 +270,13 @@ impl std::error::Error for CoordinatorError {}
 impl std::fmt::Display for RunState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            RunState::Uninitialized => write!(f, "Uninitialized"),
             RunState::WaitingForMembers => write!(f, "Waiting for members"),
             RunState::Warmup => write!(f, "Warmup"),
             RunState::RoundTrain => write!(f, "Training"),
             RunState::RoundWitness => write!(f, "Witness"),
             RunState::Cooldown => write!(f, "Cooldown"),
+            RunState::Finished => write!(f, "Finished"),
         }
     }
 }
@@ -291,10 +288,8 @@ impl<T: NodeIdentity> Coordinator<T> {
         unix_timestamp: u64,
         random_seed: u64,
     ) -> std::result::Result<(), CoordinatorError> {
-        if self.min_clients == 0 {
-            return Err(CoordinatorError::Disabled);
-        }
         match self.run_state {
+            RunState::Uninitialized | RunState::Finished => Err(CoordinatorError::Disabled),
             RunState::WaitingForMembers => self.tick_waiting_for_members(backend, unix_timestamp),
             RunState::Warmup => self.tick_warmup(unix_timestamp, random_seed),
             RunState::RoundTrain => self.tick_round_train(unix_timestamp),
@@ -312,7 +307,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         witness: Witness,
         unix_timestamp: u64,
     ) -> std::result::Result<(), CoordinatorError> {
-        if self.min_clients == 0 {
+        if self.disabled() {
             return Err(CoordinatorError::Disabled);
         }
         if !CommitteeSelection::from_coordinator(self, self.overlapped && !self.first_round)?
@@ -320,7 +315,10 @@ impl<T: NodeIdentity> Coordinator<T> {
         {
             return Err(CoordinatorError::InvalidWitness);
         }
-        if self.run_state != RunState::RoundWitness && self.run_state != RunState::RoundTrain {
+        if !matches!(
+            self.run_state,
+            RunState::RoundWitness | RunState::RoundTrain,
+        ) {
             return Err(CoordinatorError::InvalidRunState);
         }
 
@@ -352,7 +350,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         _from: &Client<T>,
         checks: HealthChecks,
     ) -> std::result::Result<u32, CoordinatorError> {
-        if self.min_clients == 0 {
+        if self.disabled() {
             return Err(CoordinatorError::Disabled);
         }
         for proof in &checks {
@@ -542,10 +540,15 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     pub fn active(&self) -> bool {
-        !matches!(
-            self.run_state,
-            RunState::WaitingForMembers | RunState::Warmup
-        )
+        !self.disabled()
+            && !matches!(
+                self.run_state,
+                RunState::WaitingForMembers | RunState::Warmup
+            )
+    }
+
+    pub fn disabled(&self) -> bool {
+        matches!(self.run_state, RunState::Uninitialized | RunState::Finished)
     }
 
     pub fn get_client_at_historical_index(
@@ -633,9 +636,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 .current_round()
                 .map(|x| (x.height, x.data_index))
                 .unwrap();
-            if self.step > self.total_steps {
-                self.start_waiting_for_members(unix_timestamp);
-            } else if height == self.rounds_per_epoch - 1 {
+            if height == self.rounds_per_epoch - 1 {
                 self.start_cooldown(unix_timestamp, data_index);
             } else {
                 self.start_round_train(unix_timestamp, random_seed, 0);
@@ -693,7 +694,14 @@ impl<T: NodeIdentity> Coordinator<T> {
 
     fn start_waiting_for_members(&mut self, unix_timestamp: u64) {
         self.dropped_clients.clear();
-        self.change_state(unix_timestamp, RunState::WaitingForMembers);
+        self.change_state(
+            unix_timestamp,
+            if self.step < self.total_steps {
+                RunState::WaitingForMembers
+            } else {
+                RunState::Finished
+            },
+        );
     }
 
     fn start_cooldown(&mut self, unix_timestamp: u64, data_index: u64) {
