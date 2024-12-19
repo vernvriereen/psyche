@@ -214,7 +214,6 @@ async fn validate_all_clients_participate_in_witness_bloom() {
 #[tokio::test(flavor = "multi_thread")]
 async fn complete_round_with_shutdowm_node() {
     let init_min_clients = 2;
-    let amount_of_clients = init_min_clients as usize + 1;
     let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
     let server_port = server_handle.server_port;
 
@@ -225,13 +224,22 @@ async fn complete_round_with_shutdowm_node() {
     )
     .await;
 
-    let [client_1_task,_client_2_task,_client_3_task] = spawn_clients(amount_of_clients, server_port).await.try_into().unwrap();
+    // Spawn two clients
+    let [client_1_task,_client_2_task] = spawn_clients(init_min_clients as usize, server_port).await.try_into().unwrap();
 
-    assert_with_retries(|| server_handle.get_clients_len(), 3).await;
+    assert_with_retries(|| server_handle.get_clients_len(), 2).await;
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
 
-    // shutdown node 1
+    // spawn one more client
+    let [_client_3_task] = spawn_clients(1, server_port).await.try_into().unwrap();
+
+    assert_with_retries(|| server_handle.get_pending_clients_len(), 3).await;
+
+
+    // shutdown client 1
     client_1_task.client_handle.abort();
 
+    // client 3 should replace client 1 a finish the round execution
 
     // assert that we start in the round 0
     assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
