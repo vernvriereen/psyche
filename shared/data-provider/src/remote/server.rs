@@ -143,7 +143,13 @@ where
 
     fn handle_new_state(&mut self, state: Coordinator<T>) {
         self.state = state;
-        self.in_round = self.state.clients.iter().map(|x| x.id).collect();
+        self.in_round = self
+            .state
+            .epoch_state
+            .clients
+            .iter()
+            .map(|x| x.id)
+            .collect();
         // self.selected_data = match self.state.current_round() {
         //     Ok(round) => {
         //         let committee = CommitteeSelection::new(

@@ -27,8 +27,8 @@ pub enum ToSend {
 }
 
 struct Backend {
-    rx: mpsc::Receiver<Coordinator<ClientId>>,
-    tx: mpsc::Sender<ToSend>,
+    rx: mpsc::UnboundedReceiver<Coordinator<ClientId>>,
+    tx: mpsc::UnboundedSender<ToSend>,
 }
 
 #[async_trait::async_trait]
@@ -41,17 +41,17 @@ impl WatcherBackend<ClientId> for Backend {
     }
 
     async fn send_witness(&mut self, witness: Witness) -> Result<()> {
-        self.tx.send(ToSend::Witness(Box::new(witness))).await?;
+        self.tx.send(ToSend::Witness(Box::new(witness)))?;
         Ok(())
     }
 
     async fn send_health_check(&mut self, health_checks: HealthChecks) -> Result<()> {
-        self.tx.send(ToSend::HealthCheck(health_checks)).await?;
+        self.tx.send(ToSend::HealthCheck(health_checks))?;
         Ok(())
     }
 
     async fn send_checkpoint(&mut self, checkpoint: model::Checkpoint) -> Result<()> {
-        self.tx.send(ToSend::Checkpoint(checkpoint)).await?;
+        self.tx.send(ToSend::Checkpoint(checkpoint))?;
         Ok(())
     }
 }
@@ -182,8 +182,8 @@ impl App {
                 }
             }
         }
-        let (tx_from_server_message, rx_from_server_message) = mpsc::channel(128);
-        let (tx_to_server_message, mut rx_to_server_message) = mpsc::channel(128);
+        let (tx_from_server_message, rx_from_server_message) = mpsc::unbounded_channel();
+        let (tx_to_server_message, mut rx_to_server_message) = mpsc::unbounded_channel();
         let mut client = Client::new(
             Backend {
                 rx: rx_from_server_message,
@@ -199,7 +199,7 @@ impl App {
                    break;
                 }
                 message = self.server_conn.receive() => {
-                    self.on_server_message(message?, &tx_from_server_message).await;
+                    self.on_server_message(message?, &tx_from_server_message);
                 }
                 _ = self.update_tui_interval.tick() => {
                     let (client_tui_state, network_tui_state) = client.tui_states().await;
@@ -237,10 +237,10 @@ impl App {
         Ok(())
     }
 
-    async fn on_server_message(
+    fn on_server_message(
         &mut self,
         message: ServerToClientMessage,
-        tx: &mpsc::Sender<Coordinator<ClientId>>,
+        tx: &mpsc::UnboundedSender<Coordinator<ClientId>>,
     ) {
         match message {
             ServerToClientMessage::P2PConnect(_peers) => {
@@ -248,7 +248,7 @@ impl App {
             }
             ServerToClientMessage::Coordinator(state) => {
                 self.coordinator_state = *state;
-                let _ = tx.send(*state).await;
+                let _ = tx.send(*state);
             }
         }
     }

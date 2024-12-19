@@ -132,7 +132,8 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
     pub async fn try_send_opportunistic_witness(
         &mut self,
     ) -> Result<(), OpportunisticWitnessError> {
-        let prev_round = self.coordinator_state.overlapped && !self.coordinator_state.first_round;
+        let prev_round = self.coordinator_state.config.overlapped
+            && !self.coordinator_state.epoch_state.first_round;
         let opportunistic_witness_round = match prev_round {
             true => &mut self.previous_round,
             false => &mut self.current_round,
@@ -149,7 +150,7 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
             // TODO maybe explicitly encode this in the coordinator state, so there's no weirdness about
             // signing off on a weird witness proof?
             let skip_ready_check =
-                self.coordinator_state.overlapped && opportunistic_witness_round.height <= 1;
+                self.coordinator_state.config.overlapped && opportunistic_witness_round.height <= 1;
             if !skip_ready_check {
                 // check that we've seen a payload for every batch ID
                 if opportunistic_witness_round
@@ -197,10 +198,10 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
         from_client_id: T,
         training_result: TrainingResult,
     ) -> Result<(), ApplyMessageError> {
-        let state_step = self.coordinator_state.step;
+        let state_step = self.coordinator_state.progress.step;
         let result_step = training_result.step;
         let batch_id = training_result.batch_id;
-        let round_state = if self.coordinator_state.overlapped {
+        let round_state = if self.coordinator_state.config.overlapped {
             if training_result.step == state_step {
                 debug!(
                     "Got result gossip for current step {} batch {batch_id}",
@@ -241,7 +242,7 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
                     if !committee_info.verify_committee_for_client(
                         &from_client_id,
                         &training_result.proof,
-                        &self.coordinator_state.clients,
+                        &self.coordinator_state.epoch_state.clients,
                     ) {
                         debug!("Committee verification failed for commitment 0x{} (step={},batch_id={}) received from {}", hex::encode(training_result.commitment),                              training_result.step,
                                 training_result.batch_id,
@@ -276,7 +277,7 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
 
         let first_data_id = BatchId::from_u64(
             u64::from(training_result.batch_id)
-                * self.coordinator_state.data_indicies_per_batch as u64,
+                * self.coordinator_state.config.data_indicies_per_batch as u64,
         );
         let correct_assignee = match round_state.data_assignments.get(first_data_id) {
             Some(assignee) => from_client_id == *assignee,
@@ -303,7 +304,7 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
 
         debug!(
             "Total commitments for step {}: {}",
-            self.coordinator_state.step, total_commitments
+            self.coordinator_state.progress.step, total_commitments
         );
 
         if let Some((_, witness_proof, _)) = round_state.committee_info.as_ref() {
@@ -487,13 +488,23 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
     }
 
     async fn apply_state(&mut self, state: Coordinator<T>) -> Result<(), StepError> {
-        let client_index = match state.clients.iter().position(|x| x.id == self.identity) {
+        let client_index = match state
+            .epoch_state
+            .clients
+            .iter()
+            .position(|x| x.id == self.identity)
+        {
             Some(index) => index as u64,
             None => {
                 trace!(
                     "saw new step, but we're not one of the clients. our id: {}, all clients: {:?}",
                     self.identity,
-                    &state.clients.iter().map(|c| c.id).collect::<Vec<_>>()
+                    &state
+                        .epoch_state
+                        .clients
+                        .iter()
+                        .map(|c| c.id)
+                        .collect::<Vec<_>>()
                 );
                 let new_step = match std::mem::take(&mut self.active_step) {
                     ActiveStep::Intermediate => {
@@ -547,7 +558,7 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
                 let loss =
                     self.stats_logger
                         .push_round_stats(&round_losses, round_duration, optim_stats);
-                info!("Step {} loss: {}", state.step, loss);
+                info!("Step {} loss: {}", state.progress.step, loss);
                 self.stats_logger
                     .publish_round_stats(&state, &self.node_info);
                 ActiveStep::Witness(self.witness.start(
@@ -817,7 +828,7 @@ impl<T: NetworkableNodeIdentity> From<&RunManager<T>> for ClientTUIState {
                 let stats = run.stats();
 
                 ClientTUIState {
-                    step: coordinator.step,
+                    step: coordinator.progress.step,
                     committee,
                     run_state: coordinator.into(),
                     loss: stats.map(|s| s.losses().to_vec()).unwrap_or_default(),

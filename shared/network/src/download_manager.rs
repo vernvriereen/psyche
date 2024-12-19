@@ -16,7 +16,7 @@ use tracing::{debug, error, info, warn};
 #[derive(Debug)]
 struct Download {
     blob_ticket: BlobTicket,
-    download: mpsc::Receiver<Result<DownloadProgress>>,
+    download: mpsc::UnboundedReceiver<Result<DownloadProgress>>,
     last_offset: u64,
     total_size: u64,
 }
@@ -36,7 +36,7 @@ impl Debug for ReadingFinishedDownload {
 }
 
 impl Download {
-    fn new(blob_ticket: BlobTicket, download: mpsc::Receiver<Result<DownloadProgress>>) -> Self {
+    fn new(blob_ticket: BlobTicket, download: mpsc::UnboundedReceiver<Result<DownloadProgress>>) -> Self {
         Self {
             blob_ticket,
             download,
@@ -99,8 +99,8 @@ pub struct DownloadManager<D: Networkable> {
     reading: Arc<Mutex<Vec<ReadingFinishedDownload>>>,
     _download_type: PhantomData<D>,
     task_handle: Option<JoinHandle<()>>,
-    event_receiver: mpsc::Receiver<DownloadManagerEvent<D>>,
-    tx_new_item: mpsc::Sender<()>,
+    event_receiver: mpsc::UnboundedReceiver<DownloadManagerEvent<D>>,
+    tx_new_item: mpsc::UnboundedSender<()>,
 }
 
 impl<D: Networkable> Debug for DownloadManager<D> {
@@ -114,8 +114,8 @@ impl<D: Networkable> Debug for DownloadManager<D> {
 
 impl<D: Networkable + Send + 'static> DownloadManager<D> {
     pub fn new() -> Result<Self> {
-        let (event_sender, event_receiver) = mpsc::channel(100);
-        let (tx_new_item, mut rx_new_item) = mpsc::channel(100);
+        let (event_sender, event_receiver) = mpsc::unbounded_channel();
+        let (tx_new_item, mut rx_new_item) = mpsc::unbounded_channel();
 
         let downloads = Arc::new(Mutex::new(Vec::new()));
         let reading = Arc::new(Mutex::new(Vec::new()));
@@ -146,7 +146,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                 .await
                 {
                     Ok(Some(event)) => {
-                        if event_sender.send(event).await.is_err() {
+                        if event_sender.send(event).is_err() {
                             break;
                         }
                     }
@@ -166,7 +166,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
     pub fn add(
         &mut self,
         blob_ticket: BlobTicket,
-        progress: mpsc::Receiver<Result<DownloadProgress>>,
+        progress: mpsc::UnboundedReceiver<Result<DownloadProgress>>,
     ) {
         let downloads = self.downloads.clone();
         let sender = self.tx_new_item.clone();
@@ -176,7 +176,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                 .lock()
                 .await
                 .push(Download::new(blob_ticket, progress));
-            if let Err(e) = sender.send(()).await {
+            if let Err(e) = sender.send(()) {
                 error!("{}", e);
             }
         });
@@ -190,7 +190,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                 blob_ticket,
                 download,
             });
-            if let Err(e) = sender.send(()).await {
+            if let Err(e) = sender.send(()) {
                 error!("{}", e);
             }
         });

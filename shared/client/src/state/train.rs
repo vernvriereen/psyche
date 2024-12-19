@@ -146,20 +146,20 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         let sending_health_checks =
             start_sending_health_checks(current_round, state, self.tx_health_check.clone())?;
 
-        debug!("Transitioning to train step {}", state.step);
+        debug!("Transitioning to train step {}", state.progress.step);
 
         let round_start = Instant::now();
 
         *previous_round = std::mem::take(current_round);
-        if previous_round.height == 0 && state.overlapped {
+        if previous_round.height == 0 && state.config.overlapped {
             previous_round.sent_witness = false; // we need to resend the witness from the first step again on real step
         }
 
         let committee_selection = CommitteeSelection::new(
             round.tie_breaker_tasks as usize,
-            state.witness_nodes as usize,
-            state.verification_percent,
-            state.clients.len(),
+            state.config.witness_nodes as usize,
+            state.config.verification_percent,
+            state.epoch_state.clients.len(),
             round.random_seed,
         );
 
@@ -181,7 +181,8 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
             true => {
                 let commit_bloom =
                     Bloom::random(num_batch_ids_for_this_round * 2, BLOOM_FALSE_RATE);
-                let participant_bloom = Bloom::random(state.clients.len(), BLOOM_FALSE_RATE);
+                let participant_bloom =
+                    Bloom::random(state.epoch_state.clients.len(), BLOOM_FALSE_RATE);
                 let order_bloom = Bloom::random(num_batch_ids_for_this_round, BLOOM_FALSE_RATE);
                 debug!(
                     "Commit bloom size: {} bits, {} keys",
@@ -220,7 +221,7 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
 
         info!(
             "Assignment for step {} (round {}/epoch {}): index={} committee position={} committee={} witness position={} witness={}",
-            state.step, round.height, state.epoch, client_index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness
+            state.progress.step, round.height, state.progress.epoch, client_index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness
         );
 
         let eval_runner = self.eval_runner.clone();
@@ -391,8 +392,8 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         previous_round: &mut RoundState<T>,
         current_round: &mut RoundState<T>,
     ) -> Result<JoinHandle<Result<Vec<Trainer>, ApplyError>>, ApplyError> {
-        if state.first_round
-            || (state.overlapped
+        if state.epoch_state.first_round
+            || (state.config.overlapped
                 && state.current_round().map(|x| x.height).unwrap_or_default() == 1)
         {
             // in overlapped mode the first training step of each epoch has no apply phase.
@@ -405,7 +406,10 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
 
         // coordinator has already advanced to the next round (unless we're in cooldown) but we haven't started ours yet.
         // so our current_round corresponds to the coordinator's previous_round
-        let round = match (state.overlapped, state.run_state == RunState::Cooldown) {
+        let round = match (
+            state.config.overlapped,
+            state.run_state == RunState::Cooldown,
+        ) {
             (true, false) => state.previous_previous_round(),
             (false, false) => state.previous_round(),
             (true, true) => state.previous_round(),
@@ -414,10 +418,10 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         .ok_or(ApplyError::NoActiveRound)?;
 
         let apply_start = Instant::now();
-        let step = state.step;
-        let witness_quorum = state.witness_quorum;
+        let step = state.progress.step;
+        let witness_quorum = state.config.witness_quorum;
 
-        let round_to_take_from = if state.overlapped {
+        let round_to_take_from = if state.config.overlapped {
             previous_round
         } else {
             current_round
@@ -433,7 +437,7 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         let batch_ids = get_batch_ids_for_round(
             // coordinator has already advanced to the next round but we haven't started ours yet.
             // our current_round corresponds to the coordinator's previous_round
-            match state.overlapped {
+            match state.config.overlapped {
                 true => state.previous_previous_round(),
                 false => state.previous_round(),
             }
@@ -535,20 +539,20 @@ fn start_sending_health_checks<T: NetworkableNodeIdentity>(
     tx_health_check: mpsc::UnboundedSender<HealthChecks>,
 ) -> Result<Option<JoinHandle<Result<(), TrainError>>>, TrainError> {
     // we won't have any information to health check with until at least one round of training has finished
-    if state.first_round {
+    if state.epoch_state.first_round {
         return Ok(None);
     }
     let (_, witness_proof, committee_selection) = current_round
         .committee_info
         .as_ref()
         .ok_or(TrainError::NoCommitteeInfo)?;
-    Ok(if !state.first_round && witness_proof.witness {
+    Ok(if !state.epoch_state.first_round && witness_proof.witness {
         let witnesses = state
             .previous_round()
             .ok_or(TrainError::NoActiveRound)?
             .witnesses;
-        let witness_quorum = state.witness_quorum;
-        let clients = state.clients;
+        let witness_quorum = state.config.witness_quorum;
+        let clients = state.epoch_state.clients;
         let committee_selection = committee_selection.clone();
         Some(tokio::task::spawn(async move {
             let mut checks = HealthChecks::new();
