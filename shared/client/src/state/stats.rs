@@ -44,7 +44,7 @@ impl StatsLogger {
     ) {
         let mut round_log = LogData::new();
 
-        round_log.insert("_step", state.step);
+        round_log.insert("_step", state.progress.step);
 
         if let Some(loss) = self.losses().last() {
             round_log.insert("train/loss", *loss);
@@ -55,8 +55,8 @@ impl StatsLogger {
         round_log.insert("train/total_tokens", total_tokens(state));
         round_log.insert("train/tokens_per_sec", self.global_tokens_per_second(state));
 
-        round_log.insert("coordinator/num_clients", state.clients.len());
-        round_log.insert("coordinator/epoch", state.epoch);
+        round_log.insert("coordinator/num_clients", state.epoch_state.clients.len());
+        round_log.insert("coordinator/epoch", state.progress.epoch);
         round_log.insert(
             "coordinator/round",
             state.current_round().map(|x| x.height).unwrap_or_default(),
@@ -131,8 +131,8 @@ impl StatsLogger {
             false => match &state.model {
                 model::Model::LLM(llm) => match llm.data_type {
                     model::LLMTrainingDataType::Pretraining => {
-                        let tokens = state.batches_per_round
-                            * state.data_indicies_per_batch
+                        let tokens = state.config.batches_per_round
+                            * state.config.data_indicies_per_batch
                             * llm.max_seq_len;
                         let seconds = self
                             .round_durations

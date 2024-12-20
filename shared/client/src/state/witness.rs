@@ -29,7 +29,7 @@ pub enum WitnessingError {
 pub struct WitnessStepMetadata<T: NodeIdentity> {
     pub identity: T,
     pub eval_runner: EvalRunner,
-    pub tx_witness: mpsc::Sender<Witness>,
+    pub tx_witness: mpsc::UnboundedSender<Witness>,
 }
 
 #[derive(Debug)]
@@ -53,7 +53,7 @@ impl<T: NodeIdentity> WitnessStepMetadata<T> {
 
         let evals = self.eval_runner.start_if_not_running(trainers);
 
-        let round_to_witness = if state.overlapped {
+        let round_to_witness = if state.config.overlapped {
             previous_round
         } else {
             current_round
@@ -62,10 +62,7 @@ impl<T: NodeIdentity> WitnessStepMetadata<T> {
             if let Some(witness) = round_to_witness.get_witness_to_send(client_index) {
                 let tx_witness = self.tx_witness.clone();
                 Some(tokio::task::spawn(async move {
-                    tx_witness
-                        .send(witness)
-                        .await
-                        .map_err(|_| WitnessingError::Send)
+                    tx_witness.send(witness).map_err(|_| WitnessingError::Send)
                 }))
             } else {
                 None

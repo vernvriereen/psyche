@@ -199,14 +199,14 @@ where
             .await?;
         self.state.currently_sharing_blobs.insert(ticket.hash());
 
-        let (tx, rx) = mpsc::channel(10);
+        let (tx, rx) = mpsc::unbounded_channel();
 
         tokio::spawn(async move {
             loop {
                 match progress.next().await {
                     None => break,
                     Some(val) => {
-                        if let Err(err) = tx.send(val).await {
+                        if let Err(err) = tx.send(val) {
                             panic!("Failed to send download progress: {err:?} {:?}", err.0);
                         }
                     }

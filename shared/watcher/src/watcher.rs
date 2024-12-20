@@ -37,9 +37,10 @@ where
         if new_state.run_state == RunState::Warmup {
             self.client_lookup = HashMap::from_iter(
                 new_state
+                    .epoch_state
                     .clients
                     .iter()
-                    .map(|client| (*client.id.get_p2p_public_key(), client.clone())),
+                    .map(|client| (*client.id.get_p2p_public_key(), *client)),
             );
         }
         let prev = replace(&mut self.state, Some(new_state));

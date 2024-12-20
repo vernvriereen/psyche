@@ -1,7 +1,7 @@
 use crate::{Networkable, NetworkableNodeIdentity};
 
 use anyhow::{anyhow, bail};
-use futures_util::{future::join_all, SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt};
 use psyche_core::NodeIdentity;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -43,13 +43,13 @@ where
     ToServerMessage: Networkable + Debug + Send + Sync + 'static,
     ToClientMessage: Networkable + Debug + Send + Sync + 'static,
 {
-    clients: Arc<Mutex<HashMap<I, mpsc::Sender<ToClientMessage>>>>,
+    clients: Arc<Mutex<HashMap<I, mpsc::UnboundedSender<ToClientMessage>>>>,
     _phantom: PhantomData<ToServerMessage>,
 
-    incoming_msg_stream: tokio_stream::wrappers::ReceiverStream<(I, ToServerMessage)>,
-    send_msg: mpsc::Sender<(I, ToClientMessage)>,
+    incoming_msg_stream: tokio_stream::wrappers::UnboundedReceiverStream<(I, ToServerMessage)>,
+    send_msg: mpsc::UnboundedSender<(I, ToClientMessage)>,
     local_addr: SocketAddr,
-    disconnected_rx: mpsc::Receiver<I>,
+    disconnected_rx: mpsc::UnboundedReceiver<I>,
 }
 
 #[derive(Error, Debug)]
@@ -71,9 +71,9 @@ where
         let local_addr = listener.local_addr().map_err(ConnectError::GetLocalAddr)?;
         info!("Server listening on: {}", local_addr);
 
-        let (incoming_tx, incoming_rx) = mpsc::channel(100);
-        let (send_msg, mut outgoing_rx) = mpsc::channel(100);
-        let (disconnected_tx, disconnected_rx) = mpsc::channel(100);
+        let (incoming_tx, incoming_rx) = mpsc::unbounded_channel();
+        let (send_msg, mut outgoing_rx) = mpsc::unbounded_channel();
+        let (disconnected_tx, disconnected_rx) = mpsc::unbounded_channel();
 
         let clients = Arc::new(Mutex::new(HashMap::new()));
 
@@ -101,7 +101,7 @@ where
             async move {
                 while let Some((id, message)) = outgoing_rx.recv().await {
                     if let Some(client) = clients.lock().await.get(&id) {
-                        if let Err(e) = client.send(message).await {
+                        if let Err(e) = client.send(message) {
                             error!("Failed to send message to client {:?}: {:?}", id, e);
                         }
                     }
@@ -112,7 +112,7 @@ where
         Ok(Self {
             _phantom: Default::default(),
             clients,
-            incoming_msg_stream: tokio_stream::wrappers::ReceiverStream::new(incoming_rx),
+            incoming_msg_stream: tokio_stream::wrappers::UnboundedReceiverStream::new(incoming_rx),
             send_msg,
             local_addr,
             disconnected_rx,
@@ -125,9 +125,9 @@ where
 
     async fn handle_connection(
         stream: TcpStream,
-        clients: Arc<Mutex<HashMap<I, mpsc::Sender<ToClient>>>>,
-        incoming_tx: mpsc::Sender<(I, ToServer)>,
-        disconnected_tx: mpsc::Sender<I>,
+        clients: Arc<Mutex<HashMap<I, mpsc::UnboundedSender<ToClient>>>>,
+        incoming_tx: mpsc::UnboundedSender<(I, ToServer)>,
+        disconnected_tx: mpsc::UnboundedSender<I>,
     ) -> anyhow::Result<()> {
         let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
 
@@ -161,8 +161,8 @@ where
         debug!("Got response for challenge {:?}", challenge);
         let identity = I::from_signed_bytes(&challenge_response, challenge)?;
         debug!("Challenge response accepted! welcome, {:?}!", identity);
-        let (client_tx, mut client_rx) = mpsc::channel(32);
-        clients.lock().await.insert(identity.clone(), client_tx);
+        let (client_tx, mut client_rx) = mpsc::unbounded_channel();
+        clients.lock().await.insert(identity, client_tx);
 
         loop {
             tokio::select! {
@@ -177,7 +177,7 @@ where
                                bail!("Unexpected challenge message");
                             }
                             ClientToServerMessage::Else(m) => {
-                                incoming_tx.send((identity.clone(), m)).await?;
+                                incoming_tx.send((identity, m))?;
                             }
                         }
                     }
@@ -191,7 +191,7 @@ where
         }
 
         clients.lock().await.remove(&identity);
-        disconnected_tx.send(identity.clone()).await?;
+        disconnected_tx.send(identity)?;
         Ok(())
     }
 
@@ -200,7 +200,7 @@ where
             .lock()
             .await
             .iter()
-            .map(|(identity, _)| identity.clone())
+            .map(|(identity, _)| *identity)
             .collect()
     }
 
@@ -217,19 +217,16 @@ where
     }
 
     pub async fn send_to(&mut self, to: I, msg: ToClient) -> Result<(), SendError<(I, ToClient)>> {
-        self.send_msg.send((to, msg)).await
+        self.send_msg.send((to, msg))
     }
 
     pub async fn broadcast(&mut self, msg: ToClient) -> Result<(), SendError<(I, ToClient)>> {
         let clients = self.get_connected_clients().await;
-        let mut v = vec![];
-        for to in clients {
-            v.push(self.send_msg.send((to, msg.clone())));
-        }
-        join_all(v)
-            .await
+        let v: Result<Vec<()>, _> = clients
             .into_iter()
-            .collect::<Result<Vec<_>, SendError<(I, ToClient)>>>()?;
+            .map(|client| self.send_msg.send((client, msg.clone())))
+            .collect();
+        v?;
         Ok(())
     }
 }

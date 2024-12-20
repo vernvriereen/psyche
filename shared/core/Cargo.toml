@@ -4,22 +4,18 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-psyche-serde.workspace = true
 anyhow.workspace = true
+anchor-lang.workspace = true
+bytemuck.workspace = true
 fast-math.workspace = true
-fnv = "1.0.7"
 rand = { workspace = true, optional = true }
-thiserror = "2.0.3"
-tokio.workspace = true
+serde.workspace = true
+fnv = "1.0.7"
+serde_arrays = "0.1.0"
+bitvec = { version = "1", features = ["serde", "std"] }
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
-bitvec = { version = "1", features = ["serde", "std"] }
-serde.workspace = true
 sha2.workspace = true
-
-[target.'cfg(target_os = "solana")'.dependencies]
-anchor-lang.workspace = true
-bitvec = { version = "1", features = ["std"] }
 
 [features]
 rand = ["dep:rand"]

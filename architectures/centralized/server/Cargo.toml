@@ -27,4 +27,5 @@ futures-util.workspace = true
 chrono.workspace = true
 clap.workspace = true
 futures.workspace = true
+bytemuck.workspace = true
 toml = "0.8.19"

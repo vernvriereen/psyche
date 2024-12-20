@@ -5,7 +5,10 @@ use psyche_client::{TrainingResult, TransmittableDistroResult, NC};
 use psyche_coordinator::model::{
     self, Checkpoint, LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM,
 };
-use psyche_coordinator::{Client, Coordinator, CoordinatorError, HealthChecks, Round, RunState, Witness};
+use psyche_coordinator::{
+    Client, Coordinator, CoordinatorError, HealthChecks, Round, RunState, Witness, SOLANA_MAX_NUM_CLIENTS,
+};
+use psyche_core::{u8_to_string, FixedVec};
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider, Shuffle,
     TokenSize,
@@ -21,7 +24,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::time::interval;
+use tokio::time::{interval, MissedTickBehavior};
 use tokio::{select, time::Interval};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -108,6 +111,10 @@ pub struct App {
 /// to facilitate testing and debugging.
 #[allow(dead_code)]
 impl App {
+    pub fn get_clients(&self) -> FixedVec<Client<ClientId>, SOLANA_MAX_NUM_CLIENTS> {
+        self.coordinator.epoch_state.clients.clone()
+    }
+
     pub fn get_pending_clients(&self) -> HashSet<Client<ClientId>> {
         self.backend.pending_clients.clone()
     }
@@ -117,11 +124,15 @@ impl App {
     }
 
     pub fn get_rounds(&self) -> [Round; 4] {
-        self.coordinator.rounds.clone()
+        self.coordinator.epoch_state.rounds.clone()
     }
 
     pub fn get_rounds_head(&self) -> u32 {
-        self.coordinator.rounds_head
+        self.coordinator.epoch_state.rounds_head
+    }
+
+    pub fn get_current_epoch(&self) -> u32 {
+        self.coordinator.progress.epoch
     }
 }
 
@@ -144,14 +155,8 @@ impl App {
         init_warmup_time: Option<u64>,
         init_min_clients: Option<u32>,
     ) -> Result<Self> {
-        let p2p = NC::init(
-            &coordinator.run_id,
-            p2p_port,
-            RelayMode::Default,
-            vec![],
-            None,
-        )
-        .await?;
+        let run_id = u8_to_string(&coordinator.run_id);
+        let p2p = NC::init(&run_id, p2p_port, RelayMode::Default, vec![], None).await?;
 
         Self::reset_ephemeral(&mut coordinator);
 
@@ -168,20 +173,15 @@ impl App {
 
             match checkpoint {
                 Checkpoint::Hub(hub_repo) => {
-                    if hub_repo.revision.is_some()
-                        || !tokio::fs::try_exists(PathBuf::from(hub_repo.repo_id.clone()))
+                    let repo_id = u8_to_string(&hub_repo.repo_id);
+                    let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
+                    if revision.is_some()
+                        || !tokio::fs::try_exists(PathBuf::from(repo_id.clone()))
                             .await
                             .unwrap_or_default()
                     {
-                        download_model_repo_async(
-                            hub_repo.repo_id.clone(),
-                            hub_repo.revision.clone(),
-                            None,
-                            None,
-                            None,
-                            true,
-                        )
-                        .await?;
+                        download_model_repo_async(&repo_id, revision, None, None, None, true)
+                            .await?;
                     }
                 }
                 Checkpoint::Ephemeral => {
@@ -192,9 +192,9 @@ impl App {
                 }
             }
 
-            let server_addr: SocketAddr = url
-                .parse()
-                .map_err(|e| anyhow!("Failed to parse training data server URL {url}: {e}"))?;
+            let server_addr: SocketAddr = u8_to_string(url).parse().map_err(|e| {
+                anyhow!("Failed to parse training data server URL {:?}: {}", url, e)
+            })?;
             let server_port = server_addr.port();
             let DataServerInfo {
                 dir,
@@ -221,9 +221,11 @@ impl App {
         let (cancel, tx_tui_state) =
             maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;
 
-        let tick_interval = interval(Duration::from_millis(500));
+        let mut tick_interval = interval(Duration::from_millis(500));
+        tick_interval.set_missed_tick_behavior(MissedTickBehavior::Skip); //important!
 
-        let update_tui_interval = interval(Duration::from_millis(150));
+        let mut update_tui_interval = interval(Duration::from_millis(150));
+        update_tui_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let net_server =
             TcpServer::<ClientId, ClientToServerMessage, ServerToClientMessage>::start(
@@ -234,14 +236,14 @@ impl App {
             )
             .await?;
 
-        let original_warmup_time = coordinator.warmup_time;
-        let original_min_clients = coordinator.min_clients;
+        let original_warmup_time = coordinator.config.warmup_time;
+        let original_min_clients = coordinator.config.min_clients;
 
         if let Some(init_warmup_time) = init_warmup_time {
-            coordinator.warmup_time = init_warmup_time;
+            coordinator.config.warmup_time = init_warmup_time;
         }
         if let Some(init_min_clients) = init_min_clients {
-            coordinator.min_clients = init_min_clients;
+            coordinator.config.min_clients = init_min_clients;
         }
 
         Ok(Self {
@@ -282,7 +284,7 @@ impl App {
                             self.on_client_message(from, message).await;
                         }
                         ClientNotification::Disconnected(from) => {
-                            self.on_disconnect(from);
+                            self.on_disconnect(from)?;
                         }
                     }
                 }
@@ -325,25 +327,35 @@ impl App {
         }
     }
 
-    fn on_disconnect(&mut self, from: ClientId) {
+    fn on_disconnect(&mut self, from: ClientId) -> Result<()> {
         self.backend.pending_clients.remove(&Client {
-            id: from.clone(),
-            dropping_at_end_of_round: true,
-        });
-
-        self.coordinator.clients.retain(|client| client.id != from);
-        self.coordinator.dropped_clients.push(Client {
             id: from,
             dropping_at_end_of_round: true,
         });
+
+        self.coordinator
+            .epoch_state
+            .clients
+            .retain(|client| client.id != from);
+
+        self.coordinator
+            .epoch_state
+            .dropped_clients
+            .push(Client {
+                id: from,
+                dropping_at_end_of_round: true,
+            })
+            .map_err(|e| anyhow!(e))
     }
+
     async fn on_client_message(&mut self, from: ClientId, event: ClientToServerMessage) {
         let broadcast = match event {
             ClientToServerMessage::Join { run_id } => {
                 // TODO: check whitelist
-                if self.coordinator.run_id == run_id {
+                let coord_run_id = u8_to_string(&self.coordinator.run_id);
+                if coord_run_id == run_id {
                     self.backend.pending_clients.insert(Client {
-                        id: from.clone(),
+                        id: from,
                         dropping_at_end_of_round: false,
                     });
                     let client_joined = self
@@ -433,16 +445,16 @@ impl App {
     async fn post_state_change(&mut self, broadcast: bool) {
         if !self.coordinator.active() {
             if let Some(last_sync_step) = self.last_sync_step {
-                if last_sync_step < self.coordinator.step {
+                if last_sync_step < self.coordinator.progress.step {
                     if let Some(save_state_dir) = &self.save_state_dir {
-                        let mut state = self.coordinator.clone();
+                        let mut state = self.coordinator;
                         Self::reset_ephemeral(&mut state);
                         match toml::to_string_pretty(&state) {
                             Ok(toml) => {
                                 let filename = format!(
-                                    "{}-step{}.toml",
+                                    "{:?}-step{}.toml",
                                     self.coordinator.run_id,
-                                    self.coordinator.step - 1
+                                    self.coordinator.progress.step - 1
                                 );
                                 info!("Saving state to {filename}");
                                 if let Err(err) =
@@ -456,33 +468,37 @@ impl App {
                     }
                 }
             }
-            self.last_sync_step = Some(self.coordinator.step);
+            self.last_sync_step = Some(self.coordinator.progress.step);
         } else {
             // reset to original values if we changed them to something special for init
-            self.coordinator.warmup_time = self.original_warmup_time;
-            self.coordinator.min_clients = self.original_min_clients;
+            self.coordinator.config.warmup_time = self.original_warmup_time;
+            self.coordinator.config.min_clients = self.original_min_clients;
         }
         if broadcast {
             if let Err(err) = self
                 .backend
                 .net_server
                 .broadcast(ServerToClientMessage::Coordinator(Box::new(
-                    self.coordinator.clone(),
+                    self.coordinator,
                 )))
                 .await
             {
                 warn!("Error in on_tick: {err}");
             }
             if let Some((ref sender, _)) = self.training_data_server {
-                sender.send(self.coordinator.clone()).await.unwrap();
+                sender.send(self.coordinator).await.unwrap();
             }
         }
     }
 
     fn reset_ephemeral(coordinator: &mut Coordinator<ClientId>) {
         coordinator.run_state = RunState::WaitingForMembers;
-        coordinator.clients.clear();
-        coordinator.dropped_clients.clear();
+        for elem in coordinator.epoch_state.clients.iter_mut() {
+            *elem = Client::<ClientId>::default();
+        }
+        for elem in coordinator.epoch_state.dropped_clients.iter_mut() {
+            *elem = Client::<ClientId>::default();
+        }
     }
 }
 

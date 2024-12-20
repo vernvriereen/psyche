@@ -19,7 +19,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, debug_span, error, info, warn, Instrument};
+use tracing::{debug, debug_span, error, info, trace, warn, Instrument};
 
 use crate::{
     distro_results_to_bytes,
@@ -86,8 +86,8 @@ pub enum TrainError {
 pub struct TrainingStepMetadata<T: NetworkableNodeIdentity> {
     pub identity: T,
     pub data_fetcher: DataFetcher<T>,
-    pub tx_health_check: mpsc::Sender<HealthChecks>,
-    pub tx_distro_result: mpsc::Sender<DistroBroadcastAndPayload>,
+    pub tx_health_check: mpsc::UnboundedSender<HealthChecks>,
+    pub tx_distro_result: mpsc::UnboundedSender<DistroBroadcastAndPayload>,
 
     pub write_gradients_dir: Option<PathBuf>,
 
@@ -146,20 +146,20 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         let sending_health_checks =
             start_sending_health_checks(current_round, state, self.tx_health_check.clone())?;
 
-        debug!("Transitioning to train step {}", state.step);
+        debug!("Transitioning to train step {}", state.progress.step);
 
         let round_start = Instant::now();
 
         *previous_round = std::mem::take(current_round);
-        if previous_round.height == 0 && state.overlapped {
+        if previous_round.height == 0 && state.config.overlapped {
             previous_round.sent_witness = false; // we need to resend the witness from the first step again on real step
         }
 
         let committee_selection = CommitteeSelection::new(
             round.tie_breaker_tasks as usize,
-            state.witness_nodes as usize,
-            state.verification_percent,
-            state.clients.len(),
+            state.config.witness_nodes as usize,
+            state.config.verification_percent,
+            state.epoch_state.clients.len(),
             round.random_seed,
         );
 
@@ -181,21 +181,22 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
             true => {
                 let commit_bloom =
                     Bloom::random(num_batch_ids_for_this_round * 2, BLOOM_FALSE_RATE);
-                let participant_bloom = Bloom::random(state.clients.len(), BLOOM_FALSE_RATE);
+                let participant_bloom =
+                    Bloom::random(state.epoch_state.clients.len(), BLOOM_FALSE_RATE);
                 let order_bloom = Bloom::random(num_batch_ids_for_this_round, BLOOM_FALSE_RATE);
                 debug!(
                     "Commit bloom size: {} bits, {} keys",
-                    commit_bloom.bits.len(),
+                    commit_bloom.bits.0.len(),
                     commit_bloom.keys.len()
                 );
                 debug!(
                     "Participant bloom size: {} bits, {} keys",
-                    participant_bloom.bits.len(),
+                    participant_bloom.bits.0.len(),
                     participant_bloom.keys.len()
                 );
                 debug!(
                     "Order bloom size: {} bits, {} keys",
-                    order_bloom.bits.len(),
+                    order_bloom.bits.0.len(),
                     order_bloom.keys.len()
                 );
                 Some((commit_bloom, participant_bloom, order_bloom))
@@ -220,13 +221,13 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
 
         info!(
             "Assignment for step {} (round {}/epoch {}): index={} committee position={} committee={} witness position={} witness={}",
-            state.step, round.height, state.epoch, client_index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness
+            state.progress.step, round.height, state.progress.epoch, client_index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness
         );
 
         let eval_runner = self.eval_runner.clone();
 
         let applying_and_training: JoinHandle<Result<FinishedTrainers, TrainError>> = {
-            let identity = self.identity.clone();
+            let identity = self.identity;
             let cancel_training = cancel_training.clone();
             let write_gradients_dir = self.write_gradients_dir.clone();
             let tx_distro_result = self.tx_distro_result.clone();
@@ -281,64 +282,81 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
                             distro_results,
                             cancelled,
                         } = completed_trainer.map_err(|_| TrainError::TrainCrashed)??;
-                        available_trainers.push(trainer);
 
-                        if cancelled {
-                            // we're throwing away this result.
-                            continue;
-                        }
+                        let res: Result<(), TrainError> = async {
+                            trace!(
+                                "trainer on device {:?} finished training",
+                                trainer.device(),
+                            );
 
-                        let distro_result = TransmittableDistroResult {
-                            step,
-                            batch_id,
-                            distro_results: distro_results
-                                .iter()
-                                .map(SerializedDistroResult::try_from)
-                                .collect::<std::result::Result<Vec<_>, _>>()
-                                .map_err(TrainError::SerializeDistroResult)?,
-                        };
-                        if let Some(dir) = &write_gradients_dir {
-                            let distro_result = distro_result.clone();
-                            let dir = dir.clone();
-                            let identity = identity.clone();
-                            tokio::spawn(async move {
-                                if let Err(e) =
-                                    write_gradients_to_disk(dir, identity, distro_result).await
-                                {
-                                    error!("Failed to write gradients to disk: {e}");
-                                }
-                            });
-                        }
+                            available_trainers.push(trainer);
 
-                        for result in distro_results {
-                            if let Some(stats) = result.stats {
-                                for (name, value) in stats {
-                                    // a rolling average for this step :)
-                                    optim_stats
-                                        .entry(name)
-                                        .and_modify(|e| *e = (*e + value) / 2.0)
-                                        .or_insert(value);
-                                }
+                            if cancelled {
+                                trace!("however, we were cancelled, so we're throwing away this result.");
+                                // we're throwing away this result.
+                                return Ok(());
                             }
-                        }
 
-                        round_losses.push(loss);
-
-                        let mut committment = Vec::with_capacity(40);
-                        committment.extend_from_slice(identity.as_ref());
-                        committment.extend_from_slice(&u64::from(batch_id).to_be_bytes());
-                        let commitment = sha256(&committment);
-
-                        tx_distro_result
-                            .send(DistroBroadcastAndPayload {
+                            let distro_result = TransmittableDistroResult {
                                 step,
                                 batch_id,
-                                commitment,
-                                proof: committee_proof,
-                                distro_result,
-                            })
-                            .await
-                            .map_err(|_| TrainError::SendDistroResult)?;
+                                distro_results: distro_results
+                                    .iter()
+                                    .map(SerializedDistroResult::try_from)
+                                    .collect::<std::result::Result<Vec<_>, _>>()
+                                    .map_err(TrainError::SerializeDistroResult)?,
+                            };
+
+                            if let Some(dir) = &write_gradients_dir {
+                                let distro_result = distro_result.clone();
+                                let dir = dir.clone();
+                                tokio::spawn(async move {
+                                    if let Err(e) =
+                                        write_gradients_to_disk(dir, identity, distro_result).await
+                                    {
+                                        error!("Failed to write gradients to disk: {e}");
+                                    }
+                                });
+                            }
+
+                            for result in distro_results {
+                                if let Some(stats) = result.stats {
+                                    for (name, value) in stats {
+                                        // a rolling average for this step :)
+                                        optim_stats
+                                            .entry(name)
+                                            .and_modify(|e| *e = (*e + value) / 2.0)
+                                            .or_insert(value);
+                                    }
+                                }
+                            }
+
+                            round_losses.push(loss);
+
+                            let mut committment = Vec::with_capacity(40);
+                            committment.extend_from_slice(identity.as_ref());
+                            committment.extend_from_slice(&u64::from(batch_id).to_be_bytes());
+                            let commitment = sha256(&committment);
+
+                            trace!("trying to queue tx distro result...");
+                            tx_distro_result
+                                .send(DistroBroadcastAndPayload {
+                                    step,
+                                    batch_id,
+                                    commitment,
+                                    proof: committee_proof,
+                                    distro_result,
+                                })
+                                .map_err(|_| TrainError::SendDistroResult)?;
+                            trace!("successfully queued tx distro result");
+                            Ok(())
+                        }.instrument(
+                            tracing::debug_span!(
+                                "train_done",
+                                batch_id = format!("{batch_id}")
+                            )
+                        ).await;
+                        res?;
                     }
                 }
 
@@ -374,8 +392,8 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         previous_round: &mut RoundState<T>,
         current_round: &mut RoundState<T>,
     ) -> Result<JoinHandle<Result<Vec<Trainer>, ApplyError>>, ApplyError> {
-        if state.first_round
-            || (state.overlapped
+        if state.epoch_state.first_round
+            || (state.config.overlapped
                 && state.current_round().map(|x| x.height).unwrap_or_default() == 1)
         {
             // in overlapped mode the first training step of each epoch has no apply phase.
@@ -388,7 +406,10 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
 
         // coordinator has already advanced to the next round (unless we're in cooldown) but we haven't started ours yet.
         // so our current_round corresponds to the coordinator's previous_round
-        let round = match (state.overlapped, state.run_state == RunState::Cooldown) {
+        let round = match (
+            state.config.overlapped,
+            state.run_state == RunState::Cooldown,
+        ) {
             (true, false) => state.previous_previous_round(),
             (false, false) => state.previous_round(),
             (true, true) => state.previous_round(),
@@ -397,10 +418,10 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         .ok_or(ApplyError::NoActiveRound)?;
 
         let apply_start = Instant::now();
-        let step = state.step;
-        let witness_quorum = state.witness_quorum;
+        let step = state.progress.step;
+        let witness_quorum = state.config.witness_quorum;
 
-        let round_to_take_from = if state.overlapped {
+        let round_to_take_from = if state.config.overlapped {
             previous_round
         } else {
             current_round
@@ -412,11 +433,11 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         assert!(!payloads.is_empty());
         assert!(!commitments.is_empty());
 
-        let witnesses = round.witnesses.clone();
+        let witnesses = round.witnesses;
         let batch_ids = get_batch_ids_for_round(
             // coordinator has already advanced to the next round but we haven't started ours yet.
             // our current_round corresponds to the coordinator's previous_round
-            match state.overlapped {
+            match state.config.overlapped {
                 true => state.previous_previous_round(),
                 false => state.previous_round(),
             }
@@ -515,37 +536,36 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
 fn start_sending_health_checks<T: NetworkableNodeIdentity>(
     current_round: &mut RoundState<T>,
     state: &Coordinator<T>,
-    tx_health_check: mpsc::Sender<HealthChecks>,
+    tx_health_check: mpsc::UnboundedSender<HealthChecks>,
 ) -> Result<Option<JoinHandle<Result<(), TrainError>>>, TrainError> {
     // we won't have any information to health check with until at least one round of training has finished
-    if state.first_round {
+    if state.epoch_state.first_round {
         return Ok(None);
     }
     let (_, witness_proof, committee_selection) = current_round
         .committee_info
         .as_ref()
         .ok_or(TrainError::NoCommitteeInfo)?;
-    Ok(if !state.first_round && witness_proof.witness {
+    Ok(if !state.epoch_state.first_round && witness_proof.witness {
         let witnesses = state
             .previous_round()
             .ok_or(TrainError::NoActiveRound)?
-            .witnesses
-            .clone();
-        let witness_quorum = state.witness_quorum;
-        let clients = state.clients.clone();
+            .witnesses;
+        let witness_quorum = state.config.witness_quorum;
+        let clients = state.epoch_state.clients;
         let committee_selection = committee_selection.clone();
         Some(tokio::task::spawn(async move {
             let mut checks = HealthChecks::new();
-            for (index, client) in clients.into_iter().enumerate() {
+            for (index, client) in clients.iter().enumerate() {
                 let proof = committee_selection.get_committee(index as u64);
                 if proof.committee == Committee::Trainer {
                     debug!(
                         "Trainer {:?} health score: {}",
                         client,
-                        Coordinator::trainer_healthy_score_by_witnesses(&client, &witnesses)
+                        Coordinator::trainer_healthy_score_by_witnesses(client, &witnesses)
                     );
                     if !Coordinator::trainer_healthy_by_witnesses(
-                        &client,
+                        client,
                         &witnesses,
                         witness_quorum,
                     ) {
@@ -559,7 +579,6 @@ fn start_sending_health_checks<T: NetworkableNodeIdentity>(
                 info!("Sending health check for following indicies: {:?}", checks);
                 tx_health_check
                     .send(checks)
-                    .await
                     .map_err(|_| TrainError::SendHealthChecks)
             } else {
                 Ok(())

@@ -1,14 +1,15 @@
-use std::path::{Path, PathBuf};
+mod app;
+mod dashboard;
 
 use anyhow::{bail, Context, Result};
 use app::{App, DataServerInfo};
+use bytemuck::Zeroable;
 use clap::{ArgAction, Parser};
+use psyche_centralized_shared::ClientId;
 use psyche_coordinator::Coordinator;
 use psyche_tui::LogOutput;
+use std::path::{Path, PathBuf};
 use tracing::{info, Level};
-
-mod app;
-mod dashboard;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -77,15 +78,15 @@ async fn main() -> Result<()> {
         None,
     );
 
-    let coordinator = match common_args.state {
+    let coordinator: Coordinator<ClientId> = match common_args.state {
         Some(state_path) => toml::from_str(std::str::from_utf8(&std::fs::read(&state_path)?)?)
             .with_context(|| {
                 format!("failed to parse coordinator state toml file {state_path:?}")
             })?,
-        None => Coordinator::default(),
+        None => Coordinator::<ClientId>::zeroed(),
     };
 
-    if coordinator.cooldown_time == 0 && coordinator.checkpointers.is_empty() {
+    if coordinator.config.cooldown_time == 0 && coordinator.config.checkpointers.is_empty() {
         bail!("cooldown time of 0 and no checkpointers will run forever. invalid coordinator state toml.")
     }
 

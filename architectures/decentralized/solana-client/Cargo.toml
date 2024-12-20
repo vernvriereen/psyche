@@ -13,3 +13,6 @@ psyche-client.workspace = true
 psyche-coordinator.workspace = true
 tokio.workspace = true
 home = "0.5.9"
+
+[features]
+solana-tests = []

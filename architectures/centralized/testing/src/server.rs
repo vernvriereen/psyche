@@ -1,8 +1,9 @@
+use bytemuck::Zeroable;
 use psyche_centralized_server::app::App as ServerApp;
 use psyche_centralized_shared::ClientId;
 use psyche_coordinator::{
     model::{Model, LLM},
-    Coordinator, RunState,
+    CoodinatorConfig, Coordinator, CoordinatorEpochState, RunState, SOLANA_MAX_NUM_CLIENTS
 };
 use psyche_coordinator::{Client, Round};
 use std::collections::HashSet;
@@ -16,12 +17,20 @@ use tokio::{
 
 use crate::{test_utils::get_free_port, COOLDOWN_TIME};
 use crate::{MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, RUN_ID, WARMUP_TIME};
+use psyche_core::FixedVec;
+
 
 enum TestingQueryMsg {
     QueryClients {
-        respond_to: oneshot::Sender<HashSet<Client<ClientId>>>,
+        respond_to: oneshot::Sender<FixedVec<Client<ClientId>, SOLANA_MAX_NUM_CLIENTS>>,
     },
     QueryClientsLen {
+        respond_to: oneshot::Sender<usize>,
+    },
+    QueryPendingClients {
+        respond_to: oneshot::Sender<HashSet<Client<ClientId>>>,
+    },
+    QueryPendingClientsLen {
         respond_to: oneshot::Sender<usize>,
     },
     QueryRunState {
@@ -33,6 +42,9 @@ enum TestingQueryMsg {
     QueryRoundsHead {
         respond_to: oneshot::Sender<u32>,
     },
+    QueryEpoch {
+        respond_to: oneshot::Sender<u32>,
+    },
 }
 
 struct CoordinatorServer {
@@ -41,13 +53,24 @@ struct CoordinatorServer {
     port: u16,
 }
 
+fn to_fixed_size_array(s: &str) -> [u8; 64] {
+    let mut array = [0u8; 64];
+    let bytes = s.as_bytes();
+    let len = bytes.len().min(64);
+    array[..len].copy_from_slice(&bytes[..len]);
+    array
+}
+
 impl CoordinatorServer {
     pub async fn default(query_chan_receiver: Receiver<TestingQueryMsg>) -> Self {
         let coordinator: Coordinator<ClientId> = Coordinator {
-            run_id: RUN_ID.to_string(),
+            run_id: to_fixed_size_array(RUN_ID),
             model: Model::LLM(LLM::dummy()),
-            data_indicies_per_batch: 1,
-            ..Default::default()
+            config: CoodinatorConfig {
+                data_indicies_per_batch: 1,
+                ..CoodinatorConfig::zeroed()
+            },
+            ..Coordinator::zeroed()
         };
 
         let server_port = get_free_port();
@@ -75,22 +98,33 @@ impl CoordinatorServer {
         query_chan_receiver: Receiver<TestingQueryMsg>,
         init_min_clients: u32,
     ) -> Self {
-        let coordinator: Coordinator<ClientId> = Coordinator {
-            run_id: RUN_ID.to_string(),
-            model: Model::LLM(LLM::dummy()),
+        let coordinator_config = CoodinatorConfig {
             data_indicies_per_batch: 1,
             rounds_per_epoch: 2,
             max_round_train_time: MAX_ROUND_TRAIN_TIME,
             round_witness_time: ROUND_WITNESS_TIME,
             min_clients: init_min_clients,
-            batches_per_round: 4,
+            batches_per_round: 20,
             witness_nodes: 1,
             witness_quorum: 1,
             total_steps: 10,
             overlapped: false,
             cooldown_time: COOLDOWN_TIME,
             warmup_time: WARMUP_TIME,
-            ..Default::default()
+            ..CoodinatorConfig::<ClientId>::zeroed()
+        };
+
+        let epoch_state = CoordinatorEpochState {
+            first_round: true,
+            ..CoordinatorEpochState::<ClientId>::zeroed()
+        };
+
+        let coordinator: Coordinator<ClientId> = Coordinator {
+            run_id: to_fixed_size_array(RUN_ID),
+            model: Model::LLM(LLM::dummy()),
+            config: coordinator_config,
+            epoch_state,
+            ..Coordinator::<ClientId>::zeroed()
         };
 
         let server_port = get_free_port();
@@ -117,12 +151,20 @@ impl CoordinatorServer {
     pub async fn handle_message(&mut self, msg: TestingQueryMsg) {
         match msg {
             TestingQueryMsg::QueryClients { respond_to } => {
-                let clients = self.inner.get_pending_clients();
+                let clients = self.inner.get_clients();
                 respond_to.send(clients).unwrap();
             }
             TestingQueryMsg::QueryClientsLen { respond_to } => {
-                let clients = self.inner.get_pending_clients();
+                let clients = self.inner.get_clients();
                 respond_to.send(clients.len()).unwrap();
+            }
+            TestingQueryMsg::QueryPendingClients { respond_to } => {
+                let pending_clients = self.inner.get_pending_clients();
+                respond_to.send(pending_clients).unwrap();
+            }
+            TestingQueryMsg::QueryPendingClientsLen { respond_to } => {
+                let pending_clients = self.inner.get_pending_clients();
+                respond_to.send(pending_clients.len()).unwrap();
             }
             TestingQueryMsg::QueryRunState { respond_to } => {
                 let run_state = self.inner.get_run_state();
@@ -135,6 +177,10 @@ impl CoordinatorServer {
             TestingQueryMsg::QueryRoundsHead { respond_to } => {
                 let rounds = self.inner.get_rounds_head();
                 respond_to.send(rounds).unwrap();
+            }
+            TestingQueryMsg::QueryEpoch { respond_to } => {
+                let current_epoch = self.inner.get_current_epoch();
+                respond_to.send(current_epoch).unwrap();
             }
         }
     }
@@ -178,7 +224,7 @@ impl CoordinatorServerHandle {
         }
     }
 
-    pub async fn get_clients(&self) -> HashSet<Client<ClientId>> {
+    pub async fn get_clients(&self) -> FixedVec<Client<ClientId>, SOLANA_MAX_NUM_CLIENTS> {
         let (send, recv) = oneshot::channel();
         let msg = TestingQueryMsg::QueryClients { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
@@ -188,6 +234,20 @@ impl CoordinatorServerHandle {
     pub async fn get_clients_len(&self) -> usize {
         let (send, recv) = oneshot::channel();
         let msg = TestingQueryMsg::QueryClientsLen { respond_to: send };
+        let _ = self.query_chan_sender.send(msg).await;
+        recv.await.expect("Coordinator actor task has been killed")
+    }
+
+    pub async fn get_pending_clients(&self) -> HashSet<Client<ClientId>> {
+        let (send, recv) = oneshot::channel();
+        let msg = TestingQueryMsg::QueryPendingClients { respond_to: send };
+        let _ = self.query_chan_sender.send(msg).await;
+        recv.await.expect("Coordinator actor task has been killed")
+    }
+
+    pub async fn get_pending_clients_len(&self) -> usize {
+        let (send, recv) = oneshot::channel();
+        let msg = TestingQueryMsg::QueryPendingClientsLen { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
         recv.await.expect("Coordinator actor task has been killed")
     }
@@ -203,13 +263,20 @@ impl CoordinatorServerHandle {
         let (send, recv) = oneshot::channel::<[Round; 4]>();
         let msg = TestingQueryMsg::QueryRounds { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
-        recv.await.expect("Actor task has been killed")
+        recv.await.expect("Coordinator actor task has been killed")
     }
 
     pub async fn get_rounds_head(&self) -> u32 {
         let (send, recv) = oneshot::channel::<u32>();
         let msg = TestingQueryMsg::QueryRoundsHead { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
-        recv.await.expect("Actor task has been killed")
+        recv.await.expect("Coordinator actor task has been killed")
+    }
+
+    pub async fn get_current_epoch(&self) -> u32 {
+        let (send, recv) = oneshot::channel::<u32>();
+        let msg = TestingQueryMsg::QueryEpoch { respond_to: send };
+        let _ = self.query_chan_sender.send(msg).await;
+        recv.await.expect("Coordinator actor task has been killed")
     }
 }

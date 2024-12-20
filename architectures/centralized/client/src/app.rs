@@ -1,7 +1,5 @@
-use std::path::PathBuf;
-use std::time::Duration;
-
 use anyhow::{Error, Result};
+use bytemuck::Zeroable;
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
 use psyche_client::{
     CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
@@ -11,6 +9,7 @@ use psyche_network::{NetworkTUIState, NetworkTui, RelayMode, SecretKey, TcpClien
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
 use psyche_watcher::{Backend as WatcherBackend, CoordinatorTui};
+use std::{path::PathBuf, time::Duration};
 use tokio::sync::mpsc::Sender;
 use tokio::time::interval;
 use tokio::{select, sync::mpsc, time::Interval};
@@ -28,8 +27,8 @@ pub enum ToSend {
 }
 
 struct Backend {
-    rx: mpsc::Receiver<Coordinator<ClientId>>,
-    tx: mpsc::Sender<ToSend>,
+    rx: mpsc::UnboundedReceiver<Coordinator<ClientId>>,
+    tx: mpsc::UnboundedSender<ToSend>,
 }
 
 #[async_trait::async_trait]
@@ -42,17 +41,17 @@ impl WatcherBackend<ClientId> for Backend {
     }
 
     async fn send_witness(&mut self, witness: Witness) -> Result<()> {
-        self.tx.send(ToSend::Witness(Box::new(witness))).await?;
+        self.tx.send(ToSend::Witness(Box::new(witness)))?;
         Ok(())
     }
 
     async fn send_health_check(&mut self, health_checks: HealthChecks) -> Result<()> {
-        self.tx.send(ToSend::HealthCheck(health_checks)).await?;
+        self.tx.send(ToSend::HealthCheck(health_checks))?;
         Ok(())
     }
 
     async fn send_checkpoint(&mut self, checkpoint: model::Checkpoint) -> Result<()> {
-        self.tx.send(ToSend::Checkpoint(checkpoint)).await?;
+        self.tx.send(ToSend::Checkpoint(checkpoint))?;
         Ok(())
     }
 }
@@ -86,6 +85,7 @@ pub struct AppParams {
     pub wandb_info: Option<WandBInfo>,
     pub optim_stats: Option<u32>,
     pub grad_accum_in_fp32: bool,
+    pub dummy_training_delay_secs: Option<u64>,
 }
 
 impl AppBuilder {
@@ -117,7 +117,7 @@ impl AppBuilder {
             cancel: p.cancel,
             tx_tui_state: p.tx_tui_state,
             update_tui_interval: interval(Duration::from_millis(150)),
-            coordinator_state: Coordinator::default(),
+            coordinator_state: Coordinator::zeroed(),
             server_conn,
             run_id: p.run_id,
         };
@@ -135,6 +135,7 @@ impl AppBuilder {
             private_key: p.private_key,
             optim_stats_every_n_steps: p.optim_stats,
             grad_accum_in_fp32: p.grad_accum_in_fp32,
+            dummy_training_delay_secs: p.dummy_training_delay_secs,
         };
 
         Ok((app, p2p, state_options))
@@ -181,8 +182,8 @@ impl App {
                 }
             }
         }
-        let (tx_from_server_message, rx_from_server_message) = mpsc::channel(128);
-        let (tx_to_server_message, mut rx_to_server_message) = mpsc::channel(128);
+        let (tx_from_server_message, rx_from_server_message) = mpsc::unbounded_channel();
+        let (tx_to_server_message, mut rx_to_server_message) = mpsc::unbounded_channel();
         let mut client = Client::new(
             Backend {
                 rx: rx_from_server_message,
@@ -198,7 +199,7 @@ impl App {
                    break;
                 }
                 message = self.server_conn.receive() => {
-                    self.on_server_message(message?, &tx_from_server_message).await;
+                    self.on_server_message(message?, &tx_from_server_message);
                 }
                 _ = self.update_tui_interval.tick() => {
                     let (client_tui_state, network_tui_state) = client.tui_states().await;
@@ -236,18 +237,18 @@ impl App {
         Ok(())
     }
 
-    async fn on_server_message(
+    fn on_server_message(
         &mut self,
         message: ServerToClientMessage,
-        tx: &mpsc::Sender<Coordinator<ClientId>>,
+        tx: &mpsc::UnboundedSender<Coordinator<ClientId>>,
     ) {
         match message {
             ServerToClientMessage::P2PConnect(_peers) => {
                 info!("Got peer list from server, but already connected");
             }
             ServerToClientMessage::Coordinator(state) => {
-                self.coordinator_state = (*state).clone();
-                let _ = tx.send(*state).await;
+                self.coordinator_state = *state;
+                let _ = tx.send(*state);
             }
         }
     }
