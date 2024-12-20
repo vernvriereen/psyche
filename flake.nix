@@ -74,10 +74,12 @@
           inherit env src;
           strictDeps = true;
 
-          # only kept in build environment
           nativeBuildInputs = with pkgs; [
-            pkg-config
-            alejandra
+            alejandra # nix fmtter
+
+            pkg-config # for Rust crates to find their native deps: CUDA, OpenSSL, etc.
+
+            perl # needed to build OpenSSL Rust crate
           ];
 
           # dynamicly linked, used at runtime
