@@ -79,10 +79,12 @@ async fn main() -> Result<()> {
     );
 
     let coordinator: Coordinator<ClientId> = match common_args.state {
-        Some(state_path) => toml::from_str(std::str::from_utf8(&std::fs::read(&state_path)?)?)
-            .with_context(|| {
-                format!("failed to parse coordinator state toml file {state_path:?}")
+        Some(state_path) => toml::from_str(std::str::from_utf8(
+            &std::fs::read(&state_path).with_context(|| {
+                format!("failed to read coordinator state toml file {state_path:?}")
             })?,
+        )?)
+        .with_context(|| format!("failed to parse coordinator state toml file {state_path:?}"))?,
         None => Coordinator::<ClientId>::zeroed(),
     };
 
@@ -92,10 +94,14 @@ async fn main() -> Result<()> {
 
     let data_server_config = match common_args.data_config {
         Some(config_path) => {
-            let mut data_config: DataServerInfo =
-                toml::from_str(std::str::from_utf8(&std::fs::read(&config_path)?)?).with_context(
-                    || format!("failed to parse data server config toml file {config_path:?}"),
-                )?;
+            let mut data_config: DataServerInfo = toml::from_str(std::str::from_utf8(
+                &std::fs::read(&config_path).with_context(|| {
+                    format!("failed to read data server config toml file {config_path:?}")
+                })?,
+            )?)
+            .with_context(|| {
+                format!("failed to parse data server config toml file {config_path:?}")
+            })?;
 
             // data dir, if relative, should be relative to the config's path.
             if !data_config.dir.is_absolute() {
