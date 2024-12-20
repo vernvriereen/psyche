@@ -1,13 +1,12 @@
-
 mod app;
 mod dashboard;
 
 use anyhow::{bail, Context, Result};
-use bytemuck::Zeroable;
 use app::{App, DataServerInfo};
+use bytemuck::Zeroable;
 use clap::{ArgAction, Parser};
-use psyche_coordinator::Coordinator;
 use psyche_centralized_shared::ClientId;
+use psyche_coordinator::Coordinator;
 use psyche_tui::LogOutput;
 use std::path::{Path, PathBuf};
 use tracing::{info, Level};
@@ -87,7 +86,7 @@ async fn main() -> Result<()> {
         None => Coordinator::<ClientId>::zeroed(),
     };
 
-    if coordinator.cooldown_time == 0 && coordinator.checkpointers.is_empty() {
+    if coordinator.config.cooldown_time == 0 && coordinator.config.checkpointers.is_empty() {
         bail!("cooldown time of 0 and no checkpointers will run forever. invalid coordinator state toml.")
     }
 

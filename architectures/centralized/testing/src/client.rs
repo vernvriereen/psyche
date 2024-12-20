@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use psyche_centralized_client::app::App as ClientApp;
 use psyche_centralized_client::app::AppBuilder as ClientAppBuilder;
 use psyche_centralized_shared::ClientId;
@@ -59,6 +61,7 @@ impl ClientHandle {
     pub async fn default(server_port: u16) -> Self {
         let (mut client, p2p, state_options) = Client::default(server_port).await;
         let client_handle = tokio::spawn(async move { client.run(p2p, state_options).await });
+        tokio::time::sleep(Duration::from_millis(100)).await;
         Self { client_handle }
     }
 
@@ -66,6 +69,7 @@ impl ClientHandle {
         let (mut client, p2p, state_options) =
             Client::new_with_training_delay(server_port, training_delay_secs).await;
         let client_handle = tokio::spawn(async move { client.run(p2p, state_options).await });
+        tokio::time::sleep(Duration::from_millis(100)).await;
         Self { client_handle }
     }
 }

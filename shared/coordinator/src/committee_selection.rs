@@ -111,8 +111,8 @@ impl CommitteeSelection {
         .ok_or(CoordinatorError::NoActiveRound)?;
         Ok(Self::new(
             round.tie_breaker_tasks as usize,
-            coordinator.witness_nodes as usize,
-            coordinator.verification_percent,
+            coordinator.config.witness_nodes as usize,
+            coordinator.config.verification_percent,
             round.clients_len as usize,
             round.random_seed,
         ))

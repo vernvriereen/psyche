@@ -24,7 +24,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::time::interval;
+use tokio::time::{interval, MissedTickBehavior};
 use tokio::{select, time::Interval};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -112,7 +112,7 @@ pub struct App {
 #[allow(dead_code)]
 impl App {
     pub fn get_clients(&self) -> FixedVec<Client<ClientId>, SOLANA_MAX_NUM_CLIENTS> {
-        self.coordinator.clients.clone()
+        self.coordinator.epoch_state.clients.clone()
     }
 
     pub fn get_pending_clients(&self) -> HashSet<Client<ClientId>> {
@@ -124,15 +124,15 @@ impl App {
     }
 
     pub fn get_rounds(&self) -> [Round; 4] {
-        self.coordinator.rounds.clone()
+        self.coordinator.epoch_state.rounds.clone()
     }
 
     pub fn get_rounds_head(&self) -> u32 {
-        self.coordinator.rounds_head
+        self.coordinator.epoch_state.rounds_head
     }
 
     pub fn get_current_epoch(&self) -> u32 {
-        self.coordinator.epoch
+        self.coordinator.progress.epoch
     }
 }
 
@@ -221,9 +221,11 @@ impl App {
         let (cancel, tx_tui_state) =
             maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;
 
-        let tick_interval = interval(Duration::from_millis(500));
+        let mut tick_interval = interval(Duration::from_millis(500));
+        tick_interval.set_missed_tick_behavior(MissedTickBehavior::Skip); //important!
 
-        let update_tui_interval = interval(Duration::from_millis(150));
+        let mut update_tui_interval = interval(Duration::from_millis(150));
+        update_tui_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let net_server =
             TcpServer::<ClientId, ClientToServerMessage, ServerToClientMessage>::start(
@@ -234,14 +236,14 @@ impl App {
             )
             .await?;
 
-        let original_warmup_time = coordinator.warmup_time;
-        let original_min_clients = coordinator.min_clients;
+        let original_warmup_time = coordinator.config.warmup_time;
+        let original_min_clients = coordinator.config.min_clients;
 
         if let Some(init_warmup_time) = init_warmup_time {
-            coordinator.warmup_time = init_warmup_time;
+            coordinator.config.warmup_time = init_warmup_time;
         }
         if let Some(init_min_clients) = init_min_clients {
-            coordinator.min_clients = init_min_clients;
+            coordinator.config.min_clients = init_min_clients;
         }
 
         Ok(Self {
@@ -331,8 +333,13 @@ impl App {
             dropping_at_end_of_round: true,
         });
 
-        self.coordinator.clients.retain(|client| client.id != from);
         self.coordinator
+            .epoch_state
+            .clients
+            .retain(|client| client.id != from);
+
+        self.coordinator
+            .epoch_state
             .dropped_clients
             .push(Client {
                 id: from,
@@ -340,6 +347,7 @@ impl App {
             })
             .map_err(|e| anyhow!(e))
     }
+
     async fn on_client_message(&mut self, from: ClientId, event: ClientToServerMessage) {
         let broadcast = match event {
             ClientToServerMessage::Join { run_id } => {
@@ -437,7 +445,7 @@ impl App {
     async fn post_state_change(&mut self, broadcast: bool) {
         if !self.coordinator.active() {
             if let Some(last_sync_step) = self.last_sync_step {
-                if last_sync_step < self.coordinator.step {
+                if last_sync_step < self.coordinator.progress.step {
                     if let Some(save_state_dir) = &self.save_state_dir {
                         let mut state = self.coordinator;
                         Self::reset_ephemeral(&mut state);
@@ -446,7 +454,7 @@ impl App {
                                 let filename = format!(
                                     "{:?}-step{}.toml",
                                     self.coordinator.run_id,
-                                    self.coordinator.step - 1
+                                    self.coordinator.progress.step - 1
                                 );
                                 info!("Saving state to {filename}");
                                 if let Err(err) =
@@ -460,11 +468,11 @@ impl App {
                     }
                 }
             }
-            self.last_sync_step = Some(self.coordinator.step);
+            self.last_sync_step = Some(self.coordinator.progress.step);
         } else {
             // reset to original values if we changed them to something special for init
-            self.coordinator.warmup_time = self.original_warmup_time;
-            self.coordinator.min_clients = self.original_min_clients;
+            self.coordinator.config.warmup_time = self.original_warmup_time;
+            self.coordinator.config.min_clients = self.original_min_clients;
         }
         if broadcast {
             if let Err(err) = self
@@ -485,10 +493,10 @@ impl App {
 
     fn reset_ephemeral(coordinator: &mut Coordinator<ClientId>) {
         coordinator.run_state = RunState::WaitingForMembers;
-        for elem in coordinator.clients.iter_mut() {
+        for elem in coordinator.epoch_state.clients.iter_mut() {
             *elem = Client::<ClientId>::default();
         }
-        for elem in coordinator.dropped_clients.iter_mut() {
+        for elem in coordinator.epoch_state.dropped_clients.iter_mut() {
             *elem = Client::<ClientId>::default();
         }
     }

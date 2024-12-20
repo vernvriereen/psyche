@@ -39,16 +39,16 @@ impl<T: NetworkableNodeIdentity> DataFetcher<T> {
         data_assignments: &IntervalTree<BatchId, T>,
         identity: &T,
     ) -> TrainingDataForStep {
-        let step = state.step;
-        let data_indicies_per_batch = state.data_indicies_per_batch;
+        let step = state.progress.step;
+        let data_indicies_per_batch = state.config.data_indicies_per_batch;
 
         let mut assigned_batch_ids: Vec<BatchId> = data_assignments
             .iter()
             .filter_map(|(key, value)| match value == identity {
                 true => {
                     let batch_interval = (u64::from(key.start)
-                        / state.data_indicies_per_batch as u64)
-                        ..=(u64::from(key.end) / state.data_indicies_per_batch as u64);
+                        / state.config.data_indicies_per_batch as u64)
+                        ..=(u64::from(key.end) / state.config.data_indicies_per_batch as u64);
                     Some(batch_interval)
                 }
                 false => None,

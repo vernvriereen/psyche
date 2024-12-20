@@ -304,10 +304,13 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                         let mut run_info = wandb::RunInfo::new(wandb_info.project)
                             .name(wandb_info.run)
                             .config((
-                                ("data_indicies_per_batch", state.data_indicies_per_batch),
-                                ("batches_per_round", state.batches_per_round),
-                                ("total_steps", state.total_steps),
-                                ("rounds_per_epoch", state.rounds_per_epoch),
+                                (
+                                    "data_indicies_per_batch",
+                                    state.config.data_indicies_per_batch,
+                                ),
+                                ("batches_per_round", state.config.batches_per_round),
+                                ("total_steps", state.config.total_steps),
+                                ("rounds_per_epoch", state.config.rounds_per_epoch),
                                 ("run_id", run_id),
                             ));
                         if let Some(entity) = wandb_info.entity {
@@ -357,10 +360,10 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                     llm.optimizer,
                     init_config
                         .micro_batch_size
-                        .unwrap_or(state.data_indicies_per_batch as usize),
+                        .unwrap_or(state.config.data_indicies_per_batch as usize),
                     init_config.optim_stats_every_n_steps,
                     init_config.grad_accum_in_fp32,
-                    Some(state.step),
+                    Some(state.progress.step),
                 )
             })
             .collect();
