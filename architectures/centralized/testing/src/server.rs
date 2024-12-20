@@ -2,7 +2,8 @@ use bytemuck::Zeroable;
 use psyche_centralized_server::app::App as ServerApp;
 use psyche_centralized_shared::ClientId;
 use psyche_coordinator::{
-    model::{Model, LLM}, CoodinatorConfig, Coordinator, RunState
+    model::{Model, LLM},
+    CoodinatorConfig, Coordinator, RunState,
 };
 use psyche_coordinator::{Client, Round};
 use std::collections::HashSet;

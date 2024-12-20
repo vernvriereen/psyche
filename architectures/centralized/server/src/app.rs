@@ -120,7 +120,7 @@ impl App {
     }
 
     pub fn get_rounds(&self) -> [Round; 4] {
-        self.coordinator.epoch_state.rounds.clone()
+        self.coordinator.epoch_state.rounds
     }
 
     pub fn get_rounds_head(&self) -> u32 {

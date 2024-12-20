@@ -36,7 +36,10 @@ impl Debug for ReadingFinishedDownload {
 }
 
 impl Download {
-    fn new(blob_ticket: BlobTicket, download: mpsc::UnboundedReceiver<Result<DownloadProgress>>) -> Self {
+    fn new(
+        blob_ticket: BlobTicket,
+        download: mpsc::UnboundedReceiver<Result<DownloadProgress>>,
+    ) -> Self {
         Self {
             blob_ticket,
             download,

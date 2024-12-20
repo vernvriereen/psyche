@@ -796,4 +796,3 @@ impl<T: NodeIdentity> Coordinator<T> {
             }
     }
 }
-
