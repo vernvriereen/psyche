@@ -69,6 +69,7 @@ impl ClientHandle {
         let (mut client, p2p, state_options) =
             Client::new_with_training_delay(server_port, training_delay_secs).await;
         let client_handle = tokio::spawn(async move { client.run(p2p, state_options).await });
+        tokio::time::sleep(Duration::from_millis(100)).await;
         Self { client_handle }
     }
 }

@@ -2,7 +2,8 @@ use bytemuck::Zeroable;
 use psyche_centralized_server::app::App as ServerApp;
 use psyche_centralized_shared::ClientId;
 use psyche_coordinator::{
-    model::{Model, LLM}, CoodinatorConfig, Coordinator, RunState
+    model::{Model, LLM},
+    CoodinatorConfig, Coordinator, CoordinatorEpochState, RunState,
 };
 use psyche_coordinator::{Client, Round};
 use std::collections::HashSet;
@@ -89,7 +90,7 @@ impl CoordinatorServer {
         query_chan_receiver: Receiver<TestingQueryMsg>,
         init_min_clients: u32,
     ) -> Self {
-        let coordinator_config = CoodinatorConfig{
+        let coordinator_config = CoodinatorConfig {
             data_indicies_per_batch: 1,
             rounds_per_epoch: 2,
             max_round_train_time: MAX_ROUND_TRAIN_TIME,
@@ -104,10 +105,17 @@ impl CoordinatorServer {
             warmup_time: WARMUP_TIME,
             ..CoodinatorConfig::<ClientId>::zeroed()
         };
+
+        let epoch_state = CoordinatorEpochState {
+            first_round: true,
+            ..CoordinatorEpochState::<ClientId>::zeroed()
+        };
+
         let coordinator: Coordinator<ClientId> = Coordinator {
             run_id: to_fixed_size_array(RUN_ID),
             model: Model::LLM(LLM::dummy()),
             config: coordinator_config,
+            epoch_state,
             ..Coordinator::<ClientId>::zeroed()
         };
 
