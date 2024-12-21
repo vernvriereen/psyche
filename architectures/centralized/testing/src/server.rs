@@ -1,11 +1,11 @@
 use bytemuck::Zeroable;
 use psyche_centralized_server::app::App as ServerApp;
 use psyche_centralized_shared::ClientId;
+use psyche_coordinator::Round;
 use psyche_coordinator::{
     model::{Model, LLM},
     CoodinatorConfig, Coordinator, CoordinatorEpochState, RunState,
 };
-use psyche_coordinator::{Client, Round};
 use std::collections::HashSet;
 use tokio::{
     select,
@@ -23,7 +23,7 @@ use crate::{MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME};
 
 enum TestingQueryMsg {
     Clients {
-        respond_to: oneshot::Sender<HashSet<Client<ClientId>>>,
+        respond_to: oneshot::Sender<HashSet<ClientId>>,
     },
     ClientsLen {
         respond_to: oneshot::Sender<usize>,
@@ -96,6 +96,7 @@ impl CoordinatorServer {
             None,
             Some(WARMUP_TIME),
             Some(init_min_clients),
+            true,
         )
         .await
         .unwrap();
@@ -168,7 +169,7 @@ impl CoordinatorServerHandle {
         }
     }
 
-    pub async fn get_clients(&self) -> HashSet<Client<ClientId>> {
+    pub async fn get_clients(&self) -> HashSet<ClientId> {
         let (send, recv) = oneshot::channel();
         let msg = TestingQueryMsg::Clients { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;

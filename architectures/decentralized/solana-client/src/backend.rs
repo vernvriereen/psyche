@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 #[allow(dead_code)]
 pub struct SolanaBackend {
+    #[allow(unused)]
     program: Program<Arc<Keypair>>,
 }
 
@@ -39,10 +40,10 @@ impl WatcherBackend<ClientId> for SolanaBackend {
     }
 }
 
+#[cfg(feature = "solana-tests")]
 #[cfg(test)]
 mod test {
 
-    #[cfg(feature = "solana-tests")]
     #[tokio::test]
     pub async fn test_create_and_initialize() {
         let key_pair =

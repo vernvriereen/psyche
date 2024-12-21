@@ -562,10 +562,10 @@ fn start_sending_health_checks<T: NetworkableNodeIdentity>(
                     debug!(
                         "Trainer {:?} health score: {}",
                         client,
-                        Coordinator::trainer_healthy_score_by_witnesses(client, &witnesses)
+                        Coordinator::trainer_healthy_score_by_witnesses(&client.id, &witnesses)
                     );
                     if !Coordinator::trainer_healthy_by_witnesses(
-                        client,
+                        &client.id,
                         &witnesses,
                         witness_quorum,
                     ) {

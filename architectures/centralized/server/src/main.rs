@@ -61,6 +61,16 @@ struct CommonArgs {
 
     #[clap(long)]
     init_min_clients: Option<u32>,
+
+    #[clap(
+        long,
+        action = ArgAction::Set,
+        default_value_t = true,
+        default_missing_value = "true",
+        num_args = 0..=1,
+        require_equals = false
+    )]
+    withdraw_on_disconnect: bool,
 }
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -127,6 +137,7 @@ async fn main() -> Result<()> {
                 common_args.save_state_dir,
                 common_args.init_warmup_time,
                 common_args.init_min_clients,
+                common_args.withdraw_on_disconnect,
             )
             .await?
             .run()
