@@ -29,6 +29,19 @@ pub async fn spawn_clients(num_clients: usize, server_port: u16) -> Vec<ClientHa
     client_handles
 }
 
+pub async fn spawn_clients_with_training_delay(
+    num_clients: usize,
+    server_port: u16,
+    training_delay_secs: u64,
+) -> Vec<ClientHandle> {
+    let mut client_handles = Vec::new();
+    for _ in 0..num_clients {
+        client_handles
+            .push(ClientHandle::new_with_training_delay(server_port, training_delay_secs).await)
+    }
+    client_handles
+}
+
 pub async fn assert_with_retries<T, F, Fut>(mut function: F, y: T)
 where
     T: PartialEq + std::fmt::Debug,

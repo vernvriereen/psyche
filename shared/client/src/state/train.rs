@@ -252,7 +252,6 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
                                     in_progress.push(tokio::task::spawn_blocking(move || {
                                         let output =
                                             trainer.train(step, data, Vec::new(), cancel_training);
-                                        println!("FINISHED TRAINING");
                                         output
                                     }));
                                 }
