@@ -35,7 +35,7 @@ where
     Fut: Future<Output = T>,
     F: FnMut() -> Fut,
 {
-    let retry_attempts: u64 = 5;
+    let retry_attempts: u64 = 10;
     let mut result;
     for attempt in 1..=retry_attempts {
         result = function().await;

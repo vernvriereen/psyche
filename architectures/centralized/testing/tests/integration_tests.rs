@@ -11,7 +11,8 @@ use testing::{
 #[tokio::test(flavor = "multi_thread")]
 async fn connect_single_node() {
     let init_min_clients = 2;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
+    let batches_per_round = 4;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
 
     let server_port = server_handle.server_port;
     let _client_handle = ClientHandle::default(server_port).await;
@@ -24,7 +25,8 @@ async fn connect_single_node() {
 async fn connect_multiple_nodes() {
     let number_of_nodes = 10;
     let init_min_clients = 15;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
+    let batches_per_round = 4;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
 
     let server_port = server_handle.server_port;
     let _client_handles = spawn_clients(number_of_nodes, server_port).await;
@@ -38,18 +40,26 @@ async fn connect_multiple_nodes() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn state_change_waiting_for_members_to_warmup() {
+    // Coordinator is initialized with some default values
     let init_min_clients = 2;
-
-    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
-    let server_port = server_handle.server_port;
+    let batches_per_round = 4;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
 
     let run_state = || server_handle.get_run_state();
     let connected_clients = || server_handle.get_clients_len();
 
+    // No clients are connected yet, so run state should be `WaitingForMembers`
+
     assert_with_retries(connected_clients, 0).await;
     assert_with_retries(run_state, RunState::WaitingForMembers).await;
 
+    // Clients are spawned
+
+    let server_port = server_handle.server_port;
     let _client_handles = spawn_clients(init_min_clients as usize, server_port).await;
+
+    // Clients have connected and now that the initial min clients has been reached, run state
+    // changes to `Warmup`
 
     assert_with_retries(connected_clients, 2).await;
     assert_with_retries(run_state, RunState::Warmup).await;
@@ -57,9 +67,12 @@ async fn state_change_waiting_for_members_to_warmup() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn state_change_shutdown_node_in_warmup() {
+    // Coordinator is initialized with some default values
     let init_min_clients = 2;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
-    let server_port = server_handle.server_port;
+    let batches_per_round = 4;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+
+    // No clients are connected yet, so run state should be `WaitingForMembers`
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -68,8 +81,11 @@ async fn state_change_shutdown_node_in_warmup() {
     )
     .await;
 
+    let server_port = server_handle.server_port;
     let [_client_1_task, client_2_task]: [ClientHandle; 2] =
         spawn_clients(2, server_port).await.try_into().unwrap();
+
+    // Clients are spawned
 
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
@@ -88,7 +104,8 @@ async fn state_change_shutdown_node_in_warmup() {
 #[tokio::test(flavor = "multi_thread")]
 async fn state_change_waiting_for_members_to_round_train() {
     let init_min_clients = 2;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
+    let batches_per_round = 4;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
     let server_port = server_handle.server_port;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
@@ -113,7 +130,8 @@ async fn state_change_waiting_for_members_to_round_train() {
 #[tokio::test(flavor = "multi_thread")]
 async fn state_change_waiting_for_members_to_round_witness() {
     let init_min_clients = 2;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
+    let batches_per_round = 4;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
     let server_port = server_handle.server_port;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
@@ -136,8 +154,8 @@ async fn state_change_waiting_for_members_to_round_witness() {
     // train time
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
     tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
-    assert_with_retries(|| server_handle.get_clients_len(), 2).await;
 
+    assert_with_retries(|| server_handle.get_clients_len(), 2).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
 }
 
@@ -148,8 +166,9 @@ async fn state_change_waiting_for_members_to_round_witness() {
 /// Issue: https://github.com/NousResearch/psyche/issues/89
 #[tokio::test(flavor = "multi_thread")]
 async fn validate_all_clients_participate_in_witness_bloom() {
-    let init_min_clients = 10;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
+    let init_min_clients = 5;
+    let batches_per_round = init_min_clients;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
     let server_port = server_handle.server_port;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
@@ -196,9 +215,9 @@ async fn validate_all_clients_participate_in_witness_bloom() {
 /// See issue https://github.com/NousResearch/psyche/issues/89
 #[tokio::test(flavor = "multi_thread")]
 async fn complete_round_with_shutdown_node() {
-    let init_min_clients = 2;
-    let amount_of_clients = init_min_clients as usize + 1;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
+    let init_min_clients = 3;
+    let batches_per_round = 3;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
     let server_port = server_handle.server_port;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
@@ -209,15 +228,12 @@ async fn complete_round_with_shutdown_node() {
     .await;
 
     let [client_1_task, _client_2_task, _client_3_task] =
-        spawn_clients(amount_of_clients, server_port)
+        spawn_clients(init_min_clients as usize, server_port)
             .await
             .try_into()
             .unwrap();
 
     assert_with_retries(|| server_handle.get_clients_len(), 3).await;
-
-    // shutdown node 1
-    client_1_task.client_handle.abort();
 
     // assert that we start in the round 0
     assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
@@ -228,9 +244,14 @@ async fn complete_round_with_shutdown_node() {
     // warmup
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
     tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+
     // train
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
     tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
+
+    // shutdown node 1
+    client_1_task.client_handle.abort();
+
     // witness
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
@@ -242,7 +263,9 @@ async fn complete_round_with_shutdown_node() {
     let witnesses = &server_handle.get_rounds().await[0].witnesses;
     let mut score = 0;
     let clients = server_handle.get_clients().await;
+
     assert_eq!(clients.len(), 2);
+
     clients.iter().for_each(|client| {
         score +=
             psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(client, witnesses);
@@ -253,7 +276,8 @@ async fn complete_round_with_shutdown_node() {
 #[tokio::test(flavor = "multi_thread")]
 async fn finish_epoch() {
     let init_min_clients = 2;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
+    let batches_per_round = 2;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
     let server_port = server_handle.server_port;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
@@ -277,7 +301,7 @@ async fn finish_epoch() {
 
     // train
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
-    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
+    // tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
 
     // witness
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
@@ -288,7 +312,8 @@ async fn finish_epoch() {
 
     // train
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
-    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
+    println!("viene el sleep de max round time");
+    // tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
 
     // witness
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;

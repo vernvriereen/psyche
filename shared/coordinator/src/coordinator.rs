@@ -379,7 +379,9 @@ impl<T: NodeIdentity> Coordinator<T> {
                 witness_nodes => witness_nodes as usize,
             }
         {
-            self.change_state(unix_timestamp, RunState::RoundWitness);
+            if !(self.run_state == RunState::RoundWitness) {
+                self.change_state(unix_timestamp, RunState::RoundWitness);
+            }
         }
         Ok(())
     }
@@ -771,6 +773,8 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     fn change_state(&mut self, unix_timestamp: u64, new_state: RunState) {
+        // tracing::info!("CHANGING STATE: {}", new_state);
+        println!("NEW STATE: {}", new_state);
         assert!(self.run_state != new_state);
         self.run_state_start_unix_timestamp = unix_timestamp;
         self.run_state = new_state;
@@ -796,4 +800,3 @@ impl<T: NodeIdentity> Coordinator<T> {
             }
     }
 }
-

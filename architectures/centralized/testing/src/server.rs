@@ -89,20 +89,22 @@ impl CoordinatorServer {
     pub async fn new(
         query_chan_receiver: Receiver<TestingQueryMsg>,
         init_min_clients: u32,
+        batches_per_round: u32,
     ) -> Self {
         let coordinator_config = CoodinatorConfig {
-            data_indicies_per_batch: 1,
+            warmup_time: WARMUP_TIME,
+            cooldown_time: COOLDOWN_TIME,
             rounds_per_epoch: 2,
             max_round_train_time: MAX_ROUND_TRAIN_TIME,
             round_witness_time: ROUND_WITNESS_TIME,
             min_clients: init_min_clients,
-            batches_per_round: 20,
+            batches_per_round,
+            data_indicies_per_batch: 1,
+            verification_percent: 0,
             witness_nodes: 1,
             witness_quorum: 1,
             total_steps: 10,
             overlapped: false,
-            cooldown_time: COOLDOWN_TIME,
-            warmup_time: WARMUP_TIME,
             ..CoodinatorConfig::<ClientId>::zeroed()
         };
 
@@ -197,9 +199,10 @@ impl CoordinatorServerHandle {
         }
     }
 
-    pub async fn new(init_min_clients: u32) -> Self {
+    pub async fn new(init_min_clients: u32, batches_per_round: u32) -> Self {
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
-        let mut server = CoordinatorServer::new(query_chan_receiver, init_min_clients).await;
+        let mut server =
+            CoordinatorServer::new(query_chan_receiver, init_min_clients, batches_per_round).await;
         let server_port = server.port;
         tokio::spawn(async move { server.run().await });
         Self {
