@@ -30,7 +30,7 @@ integration-test test_name="":
     fi
 
 integration-test-one-thread:
-    cargo test --release --test integration_tests -- --test-threads=1;
+    cargo test --release --test integration_tests -- --test-threads=1
 
 # build solana coordinator. Some errors are happening trying to build the `idl` since we are not using it, we disabled it for now.
 deploy-local-solana-coordinator:
