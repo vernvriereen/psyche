@@ -6,7 +6,6 @@ use psyche_coordinator::{
     CoodinatorConfig, Coordinator, CoordinatorEpochState, RunState,
 };
 use psyche_coordinator::{Client, Round};
-use rand::distributions::{Alphanumeric, DistString};
 use std::collections::HashSet;
 use tokio::{
     select,
@@ -16,7 +15,10 @@ use tokio::{
     },
 };
 
-use crate::{test_utils::get_free_port, COOLDOWN_TIME};
+use crate::{
+    test_utils::{get_free_port, sample_rand_run_id},
+    COOLDOWN_TIME,
+};
 use crate::{MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME};
 
 enum TestingQueryMsg {
@@ -47,14 +49,6 @@ struct CoordinatorServer {
     run_id: String,
 }
 
-fn to_fixed_size_array(s: &str) -> [u8; 64] {
-    let mut array = [0u8; 64];
-    let bytes = s.as_bytes();
-    let len = bytes.len().min(64);
-    array[..len].copy_from_slice(&bytes[..len]);
-    array
-}
-
 impl CoordinatorServer {
     pub async fn new(
         query_chan_receiver: Receiver<TestingQueryMsg>,
@@ -83,10 +77,9 @@ impl CoordinatorServer {
             ..CoordinatorEpochState::<ClientId>::zeroed()
         };
 
-        let run_id = Alphanumeric.sample_string(&mut rand::thread_rng(), 16);
-
+        let run_id = sample_rand_run_id();
         let coordinator: Coordinator<ClientId> = Coordinator {
-            run_id: to_fixed_size_array(&run_id),
+            run_id: psyche_core::to_fixed_size_array(&run_id),
             model: Model::LLM(LLM::dummy()),
             config: coordinator_config,
             epoch_state,

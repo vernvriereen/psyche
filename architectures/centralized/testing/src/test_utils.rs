@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use psyche_centralized_client::app::AppParams;
 use psyche_network::SecretKey;
+use rand::distributions::{Alphanumeric, DistString};
 use std::env;
 use tokio_util::sync::CancellationToken;
 
@@ -72,6 +73,10 @@ pub fn get_free_port() -> u16 {
     let listener = TcpListener::bind("0.0.0.0:0").unwrap();
     // Retrieve the assigned port number
     listener.local_addr().unwrap().port()
+}
+
+pub fn sample_rand_run_id() -> String {
+    Alphanumeric.sample_string(&mut rand::thread_rng(), 16)
 }
 
 pub fn dummy_client_app_params_with_training_delay(
