@@ -40,23 +40,6 @@ impl WatcherBackend<ClientId> for SolanaBackend {
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
-
-    use anchor_client::{
-        anchor_lang::{system_program, Space},
-        solana_client::rpc_config::RpcSendTransactionConfig,
-        solana_sdk::{
-            commitment_config::CommitmentConfig,
-            pubkey::Pubkey,
-            signature::{Keypair, Signer},
-            signer::EncodableKey,
-            system_instruction,
-        },
-        Cluster,
-    };
-    use solana_coordinator::CoordinatorAccount;
-
-    use crate::SolanaBackend;
 
     #[cfg(feature = "solana-tests")]
     #[tokio::test]

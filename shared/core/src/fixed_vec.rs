@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut, Range, RangeFrom, RangeFull, RangeTo};
 
 #[derive(Debug, Clone, Copy, Zeroable, AnchorSerialize, AnchorDeserialize)]
-pub struct FixedVec<T, const N: usize>
-{
+pub struct FixedVec<T, const N: usize> {
     data: [T; N],
     len: u64,
 }
@@ -196,9 +195,7 @@ impl<T: Default + Copy, const N: usize> std::ops::Index<RangeFull> for FixedVec<
     }
 }
 
-impl<T: Default + Copy, const N: usize> std::ops::Index<RangeFrom<usize>>
-    for FixedVec<T, N>
-{
+impl<T: Default + Copy, const N: usize> std::ops::Index<RangeFrom<usize>> for FixedVec<T, N> {
     type Output = [T];
 
     fn index(&self, range: RangeFrom<usize>) -> &Self::Output {
@@ -220,9 +217,7 @@ impl<T: Default + Copy, const N: usize> std::ops::Index<RangeTo<usize>> for Fixe
     }
 }
 
-impl<T: Default + Copy, const N: usize> std::ops::IndexMut<Range<usize>>
-    for FixedVec<T, N>
-{
+impl<T: Default + Copy, const N: usize> std::ops::IndexMut<Range<usize>> for FixedVec<T, N> {
     fn index_mut(&mut self, range: Range<usize>) -> &mut Self::Output {
         if range.start > range.end || range.end > self.len as usize {
             panic!("Index out of bounds");
@@ -237,9 +232,7 @@ impl<T: Default + Copy, const N: usize> std::ops::IndexMut<RangeFull> for FixedV
     }
 }
 
-impl<T: Default + Copy, const N: usize> std::ops::IndexMut<RangeFrom<usize>>
-    for FixedVec<T, N>
-{
+impl<T: Default + Copy, const N: usize> std::ops::IndexMut<RangeFrom<usize>> for FixedVec<T, N> {
     fn index_mut(&mut self, range: RangeFrom<usize>) -> &mut Self::Output {
         if range.start > self.len as usize {
             panic!("Index out of bounds");
@@ -248,9 +241,7 @@ impl<T: Default + Copy, const N: usize> std::ops::IndexMut<RangeFrom<usize>>
     }
 }
 
-impl<T: Default + Copy, const N: usize> std::ops::IndexMut<RangeTo<usize>>
-    for FixedVec<T, N>
-{
+impl<T: Default + Copy, const N: usize> std::ops::IndexMut<RangeTo<usize>> for FixedVec<T, N> {
     fn index_mut(&mut self, range: RangeTo<usize>) -> &mut Self::Output {
         if range.end > self.len as usize {
             panic!("Index out of bounds");
