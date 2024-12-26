@@ -91,6 +91,7 @@ pub enum OpportunisticWitnessError {
 }
 
 impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         identity: T,
         warmup: WarmupStepMetadata,

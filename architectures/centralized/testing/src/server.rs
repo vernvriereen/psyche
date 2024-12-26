@@ -22,22 +22,22 @@ use crate::{
 use crate::{MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME};
 
 enum TestingQueryMsg {
-    QueryClients {
+    Clients {
         respond_to: oneshot::Sender<HashSet<Client<ClientId>>>,
     },
-    QueryClientsLen {
+    ClientsLen {
         respond_to: oneshot::Sender<usize>,
     },
-    QueryRunState {
+    RunState {
         respond_to: oneshot::Sender<RunState>,
     },
-    QueryRounds {
+    Rounds {
         respond_to: oneshot::Sender<[Round; 4]>,
     },
-    QueryRoundsHead {
+    RoundsHead {
         respond_to: oneshot::Sender<u32>,
     },
-    QueryEpoch {
+    Epoch {
         respond_to: oneshot::Sender<u32>,
     },
 }
@@ -110,27 +110,27 @@ impl CoordinatorServer {
 
     pub async fn handle_message(&mut self, msg: TestingQueryMsg) {
         match msg {
-            TestingQueryMsg::QueryClients { respond_to } => {
+            TestingQueryMsg::Clients { respond_to } => {
                 let clients = self.inner.get_pending_clients();
                 respond_to.send(clients).unwrap();
             }
-            TestingQueryMsg::QueryClientsLen { respond_to } => {
+            TestingQueryMsg::ClientsLen { respond_to } => {
                 let clients = self.inner.get_pending_clients();
                 respond_to.send(clients.len()).unwrap();
             }
-            TestingQueryMsg::QueryRunState { respond_to } => {
+            TestingQueryMsg::RunState { respond_to } => {
                 let run_state = self.inner.get_run_state();
                 respond_to.send(run_state).unwrap();
             }
-            TestingQueryMsg::QueryRounds { respond_to } => {
+            TestingQueryMsg::Rounds { respond_to } => {
                 let rounds = self.inner.get_rounds();
                 respond_to.send(rounds).unwrap();
             }
-            TestingQueryMsg::QueryRoundsHead { respond_to } => {
+            TestingQueryMsg::RoundsHead { respond_to } => {
                 let rounds = self.inner.get_rounds_head();
                 respond_to.send(rounds).unwrap();
             }
-            TestingQueryMsg::QueryEpoch { respond_to } => {
+            TestingQueryMsg::Epoch { respond_to } => {
                 let current_epoch = self.inner.get_current_epoch();
                 respond_to.send(current_epoch).unwrap();
             }
@@ -170,42 +170,42 @@ impl CoordinatorServerHandle {
 
     pub async fn get_clients(&self) -> HashSet<Client<ClientId>> {
         let (send, recv) = oneshot::channel();
-        let msg = TestingQueryMsg::QueryClients { respond_to: send };
+        let msg = TestingQueryMsg::Clients { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
         recv.await.expect("Coordinator actor task has been killed")
     }
 
     pub async fn get_clients_len(&self) -> usize {
         let (send, recv) = oneshot::channel();
-        let msg = TestingQueryMsg::QueryClientsLen { respond_to: send };
+        let msg = TestingQueryMsg::ClientsLen { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
         recv.await.expect("Coordinator actor task has been killed")
     }
 
     pub async fn get_run_state(&self) -> RunState {
         let (send, recv) = oneshot::channel::<RunState>();
-        let msg = TestingQueryMsg::QueryRunState { respond_to: send };
+        let msg = TestingQueryMsg::RunState { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
         recv.await.expect("Coordinator actor task has been killed")
     }
 
     pub async fn get_rounds(&self) -> [Round; 4] {
         let (send, recv) = oneshot::channel::<[Round; 4]>();
-        let msg = TestingQueryMsg::QueryRounds { respond_to: send };
+        let msg = TestingQueryMsg::Rounds { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
         recv.await.expect("Coordinator actor task has been killed")
     }
 
     pub async fn get_rounds_head(&self) -> u32 {
         let (send, recv) = oneshot::channel::<u32>();
-        let msg = TestingQueryMsg::QueryRoundsHead { respond_to: send };
+        let msg = TestingQueryMsg::RoundsHead { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
         recv.await.expect("Coordinator actor task has been killed")
     }
 
     pub async fn get_current_epoch(&self) -> u32 {
         let (send, recv) = oneshot::channel::<u32>();
-        let msg = TestingQueryMsg::QueryEpoch { respond_to: send };
+        let msg = TestingQueryMsg::Epoch { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
         recv.await.expect("Coordinator actor task has been killed")
     }

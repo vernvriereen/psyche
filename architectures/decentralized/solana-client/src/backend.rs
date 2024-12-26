@@ -5,6 +5,7 @@ use psyche_watcher::Backend as WatcherBackend;
 use solana_coordinator::ClientId;
 use std::sync::Arc;
 
+#[allow(dead_code)]
 pub struct SolanaBackend {
     program: Program<Arc<Keypair>>,
 }

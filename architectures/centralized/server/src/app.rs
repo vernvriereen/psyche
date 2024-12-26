@@ -141,6 +141,7 @@ pub struct DataServerInfo {
 }
 
 impl App {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         tui: bool,
         mut coordinator: Coordinator<ClientId>,

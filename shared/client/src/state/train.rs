@@ -250,9 +250,7 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
                                 Some(data) => {
                                     let cancel_training = cancel_training.clone();
                                     in_progress.push(tokio::task::spawn_blocking(move || {
-                                        let output =
-                                            trainer.train(step, data, Vec::new(), cancel_training);
-                                        output
+                                        trainer.train(step, data, Vec::new(), cancel_training)
                                     }));
                                 }
                                 // but if we're out of data, then put it back, and don't try to assign anymore trainers.
