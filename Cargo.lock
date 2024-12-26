@@ -8990,6 +8990,7 @@ dependencies = [
  "psyche-coordinator",
  "psyche-data-provider",
  "psyche-network",
+ "rand 0.8.5",
  "tokio",
  "tokio-util",
  "toml 0.8.19",

@@ -15,7 +15,8 @@ async fn connect_single_node() {
     let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
 
     let server_port = server_handle.server_port;
-    let _client_handle = ClientHandle::default(server_port).await;
+    let run_id = &server_handle.run_id;
+    let _client_handle = ClientHandle::default(server_port, run_id).await;
     let connected_clients = || server_handle.get_clients_len();
 
     assert_with_retries(connected_clients, 1).await;
@@ -29,7 +30,8 @@ async fn connect_multiple_nodes() {
     let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
 
     let server_port = server_handle.server_port;
-    let _client_handles = spawn_clients(number_of_nodes, server_port).await;
+    let run_id = &server_handle.run_id;
+    let _client_handles = spawn_clients(number_of_nodes, server_port, run_id).await;
 
     let connected_clients = || server_handle.get_clients_len();
     let run_state = || server_handle.get_run_state();
@@ -56,7 +58,8 @@ async fn state_change_waiting_for_members_to_warmup() {
     // Clients are spawned
 
     let server_port = server_handle.server_port;
-    let _client_handles = spawn_clients(init_min_clients as usize, server_port).await;
+    let run_id = &server_handle.run_id;
+    let _client_handles = spawn_clients(init_min_clients as usize, server_port, run_id).await;
 
     // Clients have connected and now that the initial min clients has been reached, run state
     // changes to `Warmup`
@@ -84,8 +87,11 @@ async fn state_change_shutdown_node_in_warmup() {
     // Clients are spawned and state changes to `Warmup`
 
     let server_port = server_handle.server_port;
-    let [_client_1_task, client_2_task]: [ClientHandle; 2] =
-        spawn_clients(2, server_port).await.try_into().unwrap();
+    let run_id = &server_handle.run_id;
+    let [_client_1_task, client_2_task]: [ClientHandle; 2] = spawn_clients(2, server_port, run_id)
+        .await
+        .try_into()
+        .unwrap();
 
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
@@ -117,7 +123,8 @@ async fn state_change_waiting_for_members_to_round_train() {
     .await;
 
     let server_port = server_handle.server_port;
-    let _client_handles = spawn_clients(2, server_port).await;
+    let run_id = &server_handle.run_id;
+    let _client_handles = spawn_clients(2, server_port, run_id).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
@@ -134,7 +141,6 @@ async fn state_change_waiting_for_members_to_round_witness() {
     let init_min_clients = 2;
     let batches_per_round = 4;
     let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
-    let server_port = server_handle.server_port;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -143,7 +149,9 @@ async fn state_change_waiting_for_members_to_round_witness() {
     )
     .await;
 
-    let _client_handles = spawn_clients(2, server_port).await;
+    let server_port = server_handle.server_port;
+    let run_id = &server_handle.run_id;
+    let _client_handles = spawn_clients(2, server_port, run_id).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
 
@@ -171,11 +179,10 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     // We make sure that the number of clients and the batches per round are the same
     // It is important that the number of clients is not greater than the number of batches per round,
     // since if that is the case, there will be clients that will have no data to train in a given round
-    // and they won't appear in the bloom filters, making the test to fail
+    // and they won't appear in the bloom filters, making the test fail
     let init_min_clients = 5;
     let batches_per_round = init_min_clients;
     let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
-    let server_port = server_handle.server_port;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -184,7 +191,9 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     )
     .await;
 
-    let _client_handles = spawn_clients(init_min_clients as usize, server_port).await;
+    let server_port = server_handle.server_port;
+    let run_id = &server_handle.run_id;
+    let _client_handles = spawn_clients(init_min_clients as usize, server_port, run_id).await;
 
     // assert that we start in the round 0
     assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
@@ -241,11 +250,16 @@ async fn complete_round_with_shutdown_node() {
     .await;
 
     let server_port = server_handle.server_port;
-    let [client_1_task, _client_2_task] =
-        spawn_clients_with_training_delay(init_min_clients as usize, server_port, training_delay)
-            .await
-            .try_into()
-            .unwrap();
+    let run_id = &server_handle.run_id;
+    let [client_1_task, _client_2_task] = spawn_clients_with_training_delay(
+        init_min_clients as usize,
+        server_port,
+        run_id,
+        training_delay,
+    )
+    .await
+    .try_into()
+    .unwrap();
 
     // assert that we start in the round 0
     assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
@@ -258,7 +272,8 @@ async fn complete_round_with_shutdown_node() {
     // A new client is spawned, but since we are in `Warmup` state, it should wait for `WaitingForMembers`
     // to join the run
 
-    let _client_handle_3 = ClientHandle::new_with_training_delay(server_port, training_delay).await;
+    let _client_handle_3 =
+        ClientHandle::new_with_training_delay(server_port, run_id, training_delay).await;
 
     // A client is killed and the coordinator state returns to `WaitingForMembers`. Since client 3
     // was pending, the state immediately changes to `Warmup` again
@@ -295,9 +310,14 @@ async fn finish_epoch() {
 
     let training_delay = 2;
     let server_port = server_handle.server_port;
-    let _client_handles =
-        spawn_clients_with_training_delay(init_min_clients as usize, server_port, training_delay)
-            .await;
+    let run_id = &server_handle.run_id;
+    let _client_handles = spawn_clients_with_training_delay(
+        init_min_clients as usize,
+        server_port,
+        run_id,
+        training_delay,
+    )
+    .await;
 
     // assert that we start in the round 0
     assert_with_retries(|| server_handle.get_rounds_head(), 0).await;

@@ -8,7 +8,6 @@ use std::env;
 use tokio_util::sync::CancellationToken;
 
 use crate::client::ClientHandle;
-use crate::RUN_ID;
 
 pub fn repo_path() -> String {
     let cargo_manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
@@ -21,10 +20,14 @@ pub fn repo_path() -> String {
         .to_string()
 }
 
-pub async fn spawn_clients(num_clients: usize, server_port: u16) -> Vec<ClientHandle> {
+pub async fn spawn_clients(
+    num_clients: usize,
+    server_port: u16,
+    run_id: &str,
+) -> Vec<ClientHandle> {
     let mut client_handles = Vec::new();
     for _ in 0..num_clients {
-        client_handles.push(ClientHandle::default(server_port).await)
+        client_handles.push(ClientHandle::default(server_port, run_id).await)
     }
     client_handles
 }
@@ -32,12 +35,14 @@ pub async fn spawn_clients(num_clients: usize, server_port: u16) -> Vec<ClientHa
 pub async fn spawn_clients_with_training_delay(
     num_clients: usize,
     server_port: u16,
+    run_id: &str,
     training_delay_secs: u64,
 ) -> Vec<ClientHandle> {
     let mut client_handles = Vec::new();
     for _ in 0..num_clients {
-        client_handles
-            .push(ClientHandle::new_with_training_delay(server_port, training_delay_secs).await)
+        client_handles.push(
+            ClientHandle::new_with_training_delay(server_port, run_id, training_delay_secs).await,
+        )
     }
     client_handles
 }
@@ -71,6 +76,7 @@ pub fn get_free_port() -> u16 {
 
 pub fn dummy_client_app_params_with_training_delay(
     server_port: u16,
+    run_id: &str,
     training_delay_secs: u64,
 ) -> AppParams {
     AppParams {
@@ -78,7 +84,7 @@ pub fn dummy_client_app_params_with_training_delay(
         private_key: SecretKey::generate(),
         server_addr: format!("localhost:{}", server_port).to_string(),
         tx_tui_state: None,
-        run_id: RUN_ID.to_string(),
+        run_id: run_id.to_string(),
         data_parallelism: 1,
         tensor_parallelism: 1,
         micro_batch_size: None,
@@ -95,13 +101,13 @@ pub fn dummy_client_app_params_with_training_delay(
     }
 }
 
-pub fn dummy_client_app_params_default(server_port: u16) -> AppParams {
+pub fn dummy_client_app_params_default(server_port: u16, run_id: &str) -> AppParams {
     AppParams {
         cancel: CancellationToken::default(),
         private_key: SecretKey::generate(),
         server_addr: format!("localhost:{}", server_port).to_string(),
         tx_tui_state: None,
-        run_id: RUN_ID.to_string(),
+        run_id: run_id.to_string(),
         data_parallelism: 1,
         tensor_parallelism: 1,
         micro_batch_size: None,

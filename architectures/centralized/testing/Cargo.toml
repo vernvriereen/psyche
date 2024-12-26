@@ -13,5 +13,6 @@ psyche-data-provider.workspace = true
 psyche-network.workspace = true
 tokio-util.workspace = true
 tokio.workspace = true
-bytemuck.workspace  = true
+bytemuck.workspace = true
 toml = "0.8.19"
+rand = "0.8.5"

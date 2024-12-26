@@ -6,6 +6,7 @@ use psyche_coordinator::{
     CoodinatorConfig, Coordinator, CoordinatorEpochState, RunState,
 };
 use psyche_coordinator::{Client, Round};
+use rand::distributions::{Alphanumeric, DistString};
 use std::collections::HashSet;
 use tokio::{
     select,
@@ -16,7 +17,7 @@ use tokio::{
 };
 
 use crate::{test_utils::get_free_port, COOLDOWN_TIME};
-use crate::{MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, RUN_ID, WARMUP_TIME};
+use crate::{MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME};
 
 enum TestingQueryMsg {
     QueryClients {
@@ -43,6 +44,7 @@ struct CoordinatorServer {
     inner: ServerApp,
     query_chan_receiver: Receiver<TestingQueryMsg>,
     port: u16,
+    run_id: String,
 }
 
 fn to_fixed_size_array(s: &str) -> [u8; 64] {
@@ -54,38 +56,6 @@ fn to_fixed_size_array(s: &str) -> [u8; 64] {
 }
 
 impl CoordinatorServer {
-    pub async fn default(query_chan_receiver: Receiver<TestingQueryMsg>) -> Self {
-        let coordinator: Coordinator<ClientId> = Coordinator {
-            run_id: to_fixed_size_array(RUN_ID),
-            model: Model::LLM(LLM::dummy()),
-            config: CoodinatorConfig {
-                data_indicies_per_batch: 1,
-                ..CoodinatorConfig::zeroed()
-            },
-            ..Coordinator::zeroed()
-        };
-
-        let server_port = get_free_port();
-        let server = ServerApp::new(
-            false,
-            coordinator,
-            None,
-            None,
-            Some(server_port),
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
-
-        Self {
-            inner: server,
-            query_chan_receiver,
-            port: server_port,
-        }
-    }
-
     pub async fn new(
         query_chan_receiver: Receiver<TestingQueryMsg>,
         init_min_clients: u32,
@@ -113,8 +83,10 @@ impl CoordinatorServer {
             ..CoordinatorEpochState::<ClientId>::zeroed()
         };
 
+        let run_id = Alphanumeric.sample_string(&mut rand::thread_rng(), 16);
+
         let coordinator: Coordinator<ClientId> = Coordinator {
-            run_id: to_fixed_size_array(RUN_ID),
+            run_id: to_fixed_size_array(&run_id),
             model: Model::LLM(LLM::dummy()),
             config: coordinator_config,
             epoch_state,
@@ -139,6 +111,7 @@ impl CoordinatorServer {
             inner: server,
             query_chan_receiver,
             port: server_port,
+            run_id,
         }
     }
 
@@ -184,30 +157,33 @@ impl CoordinatorServer {
 pub struct CoordinatorServerHandle {
     query_chan_sender: mpsc::Sender<TestingQueryMsg>,
     pub server_port: u16,
+    pub run_id: String,
 }
 
 impl CoordinatorServerHandle {
-    pub async fn default() -> Self {
-        let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
-        let mut server = CoordinatorServer::default(query_chan_receiver).await;
-        let server_port = server.port;
-        tokio::spawn(async move { server.run().await });
+    // pub async fn default() -> Self {
+    //     let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
+    //     let mut server = CoordinatorServer::default(query_chan_receiver).await;
+    //     let server_port = server.port;
+    //     tokio::spawn(async move { server.run().await });
 
-        Self {
-            query_chan_sender,
-            server_port,
-        }
-    }
+    //     Self {
+    //         query_chan_sender,
+    //         server_port,
+    //     }
+    // }
 
     pub async fn new(init_min_clients: u32, batches_per_round: u32) -> Self {
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
         let mut server =
             CoordinatorServer::new(query_chan_receiver, init_min_clients, batches_per_round).await;
         let server_port = server.port;
+        let run_id = server.run_id.clone();
         tokio::spawn(async move { server.run().await });
         Self {
             query_chan_sender,
             server_port,
+            run_id,
         }
     }
 

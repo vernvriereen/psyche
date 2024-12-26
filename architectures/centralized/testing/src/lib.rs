@@ -1,7 +1,6 @@
 pub mod client;
 pub mod server;
 pub mod test_utils;
-pub const RUN_ID: &str = "test";
 
 // Model Parameters
 //
