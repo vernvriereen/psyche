@@ -58,7 +58,6 @@ pub enum RunState {
     AnchorSerialize,
 )]
 #[serde(bound = "I: Serialize + DeserializeOwned + NodeIdentity")]
-// pub struct Client<I: NodeIdentity> {
 pub struct Client<I> {
     pub id: I,
     pub dropping_at_end_of_round: bool,
@@ -134,7 +133,6 @@ pub const NUM_STORED_ROUNDS: usize = 4;
 )]
 #[repr(C)]
 #[serde(bound = "I: DeserializeOwned + NodeIdentity")]
-// pub struct CoodinatorConfig<I: NodeIdentity> {
 pub struct CoodinatorConfig<I> {
     pub warmup_time: u64,
     pub cooldown_time: u64,
@@ -166,7 +164,6 @@ pub struct CoodinatorConfig<I> {
 )]
 #[repr(C)]
 #[serde(bound = "T: DeserializeOwned + NodeIdentity")]
-// pub struct CoordinatorEpochState<T: NodeIdentity> {
 pub struct CoordinatorEpochState<T> {
     pub rounds: [Round; NUM_STORED_ROUNDS],
     pub rounds_head: u32,
@@ -191,7 +188,6 @@ pub struct CoordinatorProgress {
 #[serde(bound = "T: DeserializeOwned + NodeIdentity")]
 #[repr(C)]
 pub struct Coordinator<T> {
-    // pub struct Coordinator<T: NodeIdentity> {
     #[serde(
         serialize_with = "serde_serialize_string",
         deserialize_with = "serde_deserialize_string"
