@@ -161,18 +161,6 @@ pub struct CoordinatorServerHandle {
 }
 
 impl CoordinatorServerHandle {
-    // pub async fn default() -> Self {
-    //     let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
-    //     let mut server = CoordinatorServer::default(query_chan_receiver).await;
-    //     let server_port = server.port;
-    //     tokio::spawn(async move { server.run().await });
-
-    //     Self {
-    //         query_chan_sender,
-    //         server_port,
-    //     }
-    // }
-
     pub async fn new(init_min_clients: u32, batches_per_round: u32) -> Self {
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
         let mut server =
