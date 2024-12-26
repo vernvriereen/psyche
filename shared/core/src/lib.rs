@@ -44,3 +44,11 @@ pub fn u8_to_string(slice: &[u8]) -> String {
         .trim_matches(char::from(0))
         .to_string()
 }
+
+pub fn to_fixed_size_array(s: &str) -> [u8; 64] {
+    let mut array = [0u8; 64];
+    let bytes = s.as_bytes();
+    let len = bytes.len().min(64);
+    array[..len].copy_from_slice(&bytes[..len]);
+    array
+}
