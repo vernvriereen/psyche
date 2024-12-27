@@ -74,10 +74,12 @@
           inherit env src;
           strictDeps = true;
 
-          # only kept in build environment
           nativeBuildInputs = with pkgs; [
-            pkg-config
-            alejandra
+            alejandra # nix fmtter
+
+            pkg-config # for Rust crates to find their native deps: CUDA, OpenSSL, etc.
+
+            perl # needed to build OpenSSL Rust crate
           ];
 
           # dynamicly linked, used at runtime
@@ -186,8 +188,16 @@
               fi
 
               for f in $dir/*; do
-                  ${packages.psyche-centralized-server}/bin/psyche-centralized-server --state $f/state.toml --data-config $f/data.toml validate-config || exit 1
+                  if [ -f $f/data.toml ]; then
+                    ${packages.psyche-centralized-server}/bin/psyche-centralized-server --state $f/state.toml --data-config $f/data.toml validate-config || exit 1
+                    echo "config $f/data.toml and $f/state.toml ok!"
+                  else
+                    ${packages.psyche-centralized-server}/bin/psyche-centralized-server --state $f/state.toml validate-config || exit 1
+                    echo "config $f/state.toml ok!"
+                  fi
               done;
+
+              echo "all configs ok!"
 
               touch $out
             '';

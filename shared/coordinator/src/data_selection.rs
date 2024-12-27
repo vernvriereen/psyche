@@ -9,7 +9,8 @@ pub fn assign_data_for_state<T: NodeIdentity>(
     let round = coordinator.current_round().unwrap();
     let mut ret = IntervalTree::new();
     let mut sum = round.data_index;
-    let mut remaining = (coordinator.config.batches_per_round * coordinator.config.data_indicies_per_batch) as u64;
+    let mut remaining =
+        (coordinator.config.batches_per_round * coordinator.config.data_indicies_per_batch) as u64;
     let mut client_shuffle = (0..coordinator.epoch_state.clients.len())
         .map(|i| {
             (

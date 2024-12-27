@@ -6,7 +6,8 @@ use psyche_coordinator::model::{
     self, Checkpoint, LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM,
 };
 use psyche_coordinator::{
-    Client, Coordinator, CoordinatorError, HealthChecks, Round, RunState, Witness, SOLANA_MAX_NUM_CLIENTS,
+    Client, Coordinator, CoordinatorError, HealthChecks, Round, RunState, Witness,
+    SOLANA_MAX_NUM_CLIENTS,
 };
 use psyche_core::{u8_to_string, FixedVec};
 use psyche_data_provider::{
@@ -112,7 +113,7 @@ pub struct App {
 #[allow(dead_code)]
 impl App {
     pub fn get_clients(&self) -> FixedVec<Client<ClientId>, SOLANA_MAX_NUM_CLIENTS> {
-        self.coordinator.epoch_state.clients.clone()
+        self.coordinator.epoch_state.clients
     }
 
     pub fn get_pending_clients(&self) -> HashSet<Client<ClientId>> {
@@ -124,7 +125,7 @@ impl App {
     }
 
     pub fn get_rounds(&self) -> [Round; 4] {
-        self.coordinator.epoch_state.rounds.clone()
+        self.coordinator.epoch_state.rounds
     }
 
     pub fn get_rounds_head(&self) -> u32 {
@@ -145,6 +146,7 @@ pub struct DataServerInfo {
 }
 
 impl App {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         tui: bool,
         mut coordinator: Coordinator<ClientId>,
