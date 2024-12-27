@@ -388,19 +388,17 @@ impl<T: NodeIdentity> Coordinator<T> {
                     self.tick_waiting_for_members(backend, unix_timestamp)
                 } else if run_state == RunState::Cooldown {
                     self.tick_cooldown(unix_timestamp)
+                } else if (self.epoch_state.clients.len() as u32) < self.config.min_clients {
+                    self.start_waiting_for_members(unix_timestamp);
+                    Ok(TickResult::EpochAbandoned)
                 } else {
-                    if (self.epoch_state.clients.len() as u32) < self.config.min_clients {
-                        self.start_waiting_for_members(unix_timestamp);
-                        Ok(TickResult::EpochAbandoned)
-                    } else {
-                        match run_state {
-                            RunState::Warmup => self.tick_warmup(unix_timestamp, random_seed),
-                            RunState::RoundTrain => self.tick_round_train(unix_timestamp),
-                            RunState::RoundWitness => {
-                                self.tick_round_witness(unix_timestamp, random_seed)
-                            }
-                            _ => unreachable!(),
+                    match run_state {
+                        RunState::Warmup => self.tick_warmup(unix_timestamp, random_seed),
+                        RunState::RoundTrain => self.tick_round_train(unix_timestamp),
+                        RunState::RoundWitness => {
+                            self.tick_round_witness(unix_timestamp, random_seed)
                         }
+                        _ => unreachable!(),
                     }
                 }
             }
@@ -423,7 +421,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             self,
             self.config.overlapped && !self.epoch_state.first_round,
         )?
-        .verify_witness_for_client::<T>(&from, &witness.proof, &self.epoch_state.clients)
+        .verify_witness_for_client::<T>(from, &witness.proof, &self.epoch_state.clients)
         {
             return Err(CoordinatorError::InvalidWitness);
         }
