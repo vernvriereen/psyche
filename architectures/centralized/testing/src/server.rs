@@ -24,10 +24,10 @@ use crate::{
 use crate::{MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME};
 
 enum TestingQueryMsg {
-    QueryClients {
+    Clients {
         respond_to: oneshot::Sender<FixedVec<Client<ClientId>, SOLANA_MAX_NUM_CLIENTS>>,
     },
-    QueryClientsLen {
+    ClientsLen {
         respond_to: oneshot::Sender<usize>,
     },
     PendingClients {
@@ -118,11 +118,11 @@ impl CoordinatorServer {
 
     pub async fn handle_message(&mut self, msg: TestingQueryMsg) {
         match msg {
-            TestingQueryMsg::QueryClients { respond_to } => {
+            TestingQueryMsg::Clients { respond_to } => {
                 let clients = self.inner.get_clients();
                 respond_to.send(clients).unwrap();
             }
-            TestingQueryMsg::QueryClientsLen { respond_to } => {
+            TestingQueryMsg::ClientsLen { respond_to } => {
                 let clients = self.inner.get_clients();
                 respond_to.send(clients.len()).unwrap();
             }
@@ -186,14 +186,14 @@ impl CoordinatorServerHandle {
 
     pub async fn get_clients(&self) -> FixedVec<Client<ClientId>, SOLANA_MAX_NUM_CLIENTS> {
         let (send, recv) = oneshot::channel();
-        let msg = TestingQueryMsg::QueryClients { respond_to: send };
+        let msg = TestingQueryMsg::Clients { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
         recv.await.expect("Coordinator actor task has been killed")
     }
 
     pub async fn get_clients_len(&self) -> usize {
         let (send, recv) = oneshot::channel();
-        let msg = TestingQueryMsg::QueryClientsLen { respond_to: send };
+        let msg = TestingQueryMsg::ClientsLen { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
         recv.await.expect("Coordinator actor task has been killed")
     }

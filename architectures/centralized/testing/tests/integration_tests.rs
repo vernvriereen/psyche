@@ -179,7 +179,7 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     let batches_per_round = init_min_clients;
     let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
 
-    assert_with_retries(|| server_handle.get_pending_clients_len(), 0).await;
+    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
         || server_handle.get_run_state(),
         RunState::WaitingForMembers,
@@ -237,7 +237,7 @@ async fn complete_round_with_shutdown_node() {
     let training_delay = 2;
     let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
 
-    assert_with_retries(|| server_handle.get_pending_clients_len(), 0).await;
+    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
         || server_handle.get_run_state(),
         RunState::WaitingForMembers,
@@ -255,8 +255,6 @@ async fn complete_round_with_shutdown_node() {
     .await
     .try_into()
     .unwrap();
-
-    // client 3 should replace client 1 a finish the round execution
 
     // assert that we start in the round 0
     assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
