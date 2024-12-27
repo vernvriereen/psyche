@@ -126,6 +126,10 @@ impl App {
     pub fn get_rounds_head(&self) -> u32 {
         self.coordinator.epoch_state.rounds_head
     }
+
+    pub fn get_current_epoch(&self) -> u32 {
+        self.coordinator.progress.epoch
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -137,6 +141,7 @@ pub struct DataServerInfo {
 }
 
 impl App {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         tui: bool,
         mut coordinator: Coordinator<ClientId>,

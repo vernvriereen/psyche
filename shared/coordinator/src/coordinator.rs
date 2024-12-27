@@ -57,8 +57,8 @@ pub enum RunState {
     AnchorDeserialize,
     AnchorSerialize,
 )]
-#[serde(bound = "I: Serialize + DeserializeOwned")]
-pub struct Client<I: NodeIdentity> {
+#[serde(bound = "I: Serialize + DeserializeOwned + NodeIdentity")]
+pub struct Client<I> {
     pub id: I,
     pub dropping_at_end_of_round: bool,
 }
@@ -132,8 +132,8 @@ pub const NUM_STORED_ROUNDS: usize = 4;
     Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorDeserialize, AnchorSerialize,
 )]
 #[repr(C)]
-#[serde(bound = "T: DeserializeOwned")]
-pub struct CoodinatorConfig<T: NodeIdentity> {
+#[serde(bound = "I: DeserializeOwned + NodeIdentity")]
+pub struct CoodinatorConfig<I> {
     pub warmup_time: u64,
     pub cooldown_time: u64,
 
@@ -156,15 +156,15 @@ pub struct CoodinatorConfig<T: NodeIdentity> {
 
     // TODO: remove when we implement parameter sharing over p2p
     #[serde(default)]
-    pub checkpointers: FixedVec<T, SOLANA_MAX_NUM_CLIENTS>,
+    pub checkpointers: FixedVec<I, SOLANA_MAX_NUM_CLIENTS>,
 }
 
 #[derive(
     Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorDeserialize, AnchorSerialize,
 )]
 #[repr(C)]
-#[serde(bound = "T: DeserializeOwned")]
-pub struct CoordinatorEpochState<T: NodeIdentity> {
+#[serde(bound = "T: DeserializeOwned + NodeIdentity")]
+pub struct CoordinatorEpochState<T> {
     pub rounds: [Round; NUM_STORED_ROUNDS],
     pub rounds_head: u32,
     pub first_round: bool,
@@ -185,9 +185,9 @@ pub struct CoordinatorProgress {
 #[derive(
     Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorDeserialize, AnchorSerialize,
 )]
-#[serde(bound = "T: DeserializeOwned")]
+#[serde(bound = "T: DeserializeOwned + NodeIdentity")]
 #[repr(C)]
-pub struct Coordinator<T: NodeIdentity> {
+pub struct Coordinator<T> {
     #[serde(
         serialize_with = "serde_serialize_string",
         deserialize_with = "serde_deserialize_string"
@@ -354,12 +354,19 @@ impl<T: NodeIdentity> Coordinator<T> {
         {
             return Err(CoordinatorError::InvalidWitness);
         }
+
         if !matches!(
             self.run_state,
             RunState::RoundWitness | RunState::RoundTrain,
         ) {
             return Err(CoordinatorError::InvalidRunState);
         }
+
+        let witness_nodes = if self.config.witness_nodes == 0 {
+            self.epoch_state.clients.len()
+        } else {
+            self.config.witness_nodes as usize
+        };
 
         let round = self.current_round().unwrap();
         for witness in round.witnesses.iter() {
@@ -373,12 +380,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             .push(witness)
             .map_err(|_| CoordinatorError::WitnessesFull)?;
 
-        if round.witnesses.len()
-            == match self.config.witness_nodes {
-                0 => self.epoch_state.clients.len(),
-                witness_nodes => witness_nodes as usize,
-            }
-        {
+        if round.witnesses.len() == witness_nodes && !(self.run_state == RunState::RoundWitness) {
             self.change_state(unix_timestamp, RunState::RoundWitness);
         }
         Ok(())

@@ -7,7 +7,6 @@ checkpointers = []
 rounds_per_epoch = 20
 max_round_train_time = 5
 round_witness_time = 2
-round_apply_time = 4
 min_clients = 2
 batches_per_round = 4
 data_indicies_per_batch = 1

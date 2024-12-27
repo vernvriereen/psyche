@@ -91,6 +91,7 @@ pub enum OpportunisticWitnessError {
 }
 
 impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         identity: T,
         warmup: WarmupStepMetadata,
@@ -185,6 +186,7 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
             if let Some(witness) =
                 opportunistic_witness_round.get_witness_to_send(witness_proof.index)
             {
+                println!("Sending opportunistic WITNESS!!!");
                 self.tx_witness
                     .send(witness)
                     .map_err(|_| OpportunisticWitnessError::Send)?;
