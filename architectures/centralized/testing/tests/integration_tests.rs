@@ -373,29 +373,23 @@ async fn client_join_in_training() {
     )
     .await;
 
-    assert_with_retries(|| server_handle.get_clients_len(), init_min_clients as usize).await;
-
-
+    assert_with_retries(
+        || server_handle.get_clients_len(),
+        init_min_clients as usize,
+    )
+    .await;
     // execute round 0
     // warmup
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
     tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
     // train
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
-    // spawn new client
-    let _new_client_handles = spawn_clients_with_training_delay(
-        1,
-        server_port,
-        run_id,
-        training_delay,
-    )
-    .await;    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME - 1)).await;
 
+    // spawn new client
+    let _new_client_handles =
+        spawn_clients_with_training_delay(1, server_port, run_id, training_delay).await;
 
     // assert new client didnt join the round but is ready in peding clients
-    assert_with_retries(|| server_handle.get_clients_len(), 2).await;
     assert_with_retries(|| server_handle.get_pending_clients_len(), 3).await;
-
-
-
+    assert_with_retries(|| server_handle.get_clients_len(), 2).await;
 }
