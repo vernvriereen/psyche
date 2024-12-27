@@ -351,10 +351,9 @@ async fn finish_epoch() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn client_join_in_training() {
-    // console_subscriber::init();
     let init_min_clients = 2;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients).await;
-    let server_port = server_handle.server_port;
+    let batches_per_round = 2;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -363,8 +362,16 @@ async fn client_join_in_training() {
     )
     .await;
 
-
-    spawn_clients(2, server_port).await;
+    let training_delay = 2;
+    let server_port = server_handle.server_port;
+    let run_id = &server_handle.run_id;
+    let _client_handles = spawn_clients_with_training_delay(
+        init_min_clients as usize,
+        server_port,
+        run_id,
+        training_delay,
+    )
+    .await;
 
     assert_with_retries(|| server_handle.get_clients_len(), init_min_clients as usize).await;
 
@@ -376,18 +383,18 @@ async fn client_join_in_training() {
     // train
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
     // spawn new client
-    spawn_clients(1, server_port).await;
-    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME - 1)).await;
+    let _new_client_handles = spawn_clients_with_training_delay(
+        1,
+        server_port,
+        run_id,
+        training_delay,
+    )
+    .await;    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME - 1)).await;
 
 
-    // assert new client was not able to join the network
+    // assert new client didnt join the round but is ready in peding clients
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
-
-
-
-
-   println!("Rounds: {:?}", server_handle.get_rounds_head().await);
-   println!("Clients: {:?}", server_handle.get_clients_len().await);
+    assert_with_retries(|| server_handle.get_pending_clients_len(), 3).await;
 
 
 
