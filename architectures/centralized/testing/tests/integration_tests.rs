@@ -100,7 +100,7 @@ async fn state_change_shutdown_node_in_warmup() {
     // minimum for starting the round is not reached
 
     client_2_task.client_handle.abort();
-    assert_with_retries(|| server_handle.get_clients_len(), 1).await;
+    assert_with_retries(|| server_handle.get_pending_clients_len(), 1).await;
     assert_with_retries(
         || server_handle.get_run_state(),
         RunState::WaitingForMembers,
