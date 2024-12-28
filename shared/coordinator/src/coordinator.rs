@@ -759,6 +759,8 @@ impl<T: NodeIdentity> Coordinator<T> {
     ) -> std::result::Result<TickResult, CoordinatorError> {
         if self.check_timeout(unix_timestamp, self.config.warmup_time) {
             self.start_round_train(unix_timestamp, random_seed, 0);
+        } else {
+            self.move_clients_to_exited(0);
         }
         Ok(TickResult::Ticked)
     }
@@ -785,20 +787,7 @@ impl<T: NodeIdentity> Coordinator<T> {
 
             let height = self.current_round_unchecked().height;
 
-            // WARNING: O(n) on number of clients, need to refactor
-            self.epoch_state.clients.retain(|x| {
-                if x.state != ClientState::Healthy {
-                    self.epoch_state.exited_clients.push(*x).unwrap();
-                    self.epoch_state
-                        .exited_clients
-                        .last_mut()
-                        .unwrap()
-                        .exited_height = height;
-                    false
-                } else {
-                    true
-                }
-            });
+            self.move_clients_to_exited(height);
 
             if height == self.config.rounds_per_epoch - 1 {
                 match &mut self.model {
@@ -898,6 +887,23 @@ impl<T: NodeIdentity> Coordinator<T> {
         data_indicies_per_batch: u32,
     ) -> u64 {
         data_index + (batches_per_round * data_indicies_per_batch) as u64
+    }
+
+    fn move_clients_to_exited(&mut self, height: u32) {
+        // WARNING: O(n) on number of clients, need to refactor
+        self.epoch_state.clients.retain(|x| {
+            if x.state != ClientState::Healthy {
+                self.epoch_state.exited_clients.push(*x).unwrap();
+                self.epoch_state
+                    .exited_clients
+                    .last_mut()
+                    .unwrap()
+                    .exited_height = height;
+                false
+            } else {
+                true
+            }
+        });
     }
 
     pub fn total_tokens(&self) -> u64 {
