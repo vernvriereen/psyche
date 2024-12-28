@@ -63,9 +63,9 @@ impl CustomWidget for DashboardTui {
             Paragraph::new(
                 [
                     format!(
-                        "Clients: {} ({} dropped)",
+                        "Clients: {} ({} exited)",
                         state.coordinator_state.clients.len(),
-                        state.coordinator_state.dropped_clients
+                        state.coordinator_state.exited_clients
                     ),
                     format!("Height: {}", state.coordinator_state.height),
                     format!("Tick: {}", state.coordinator_state.tick),

@@ -44,6 +44,29 @@ pub enum RunState {
     RoundWitness = 4,
     Cooldown = 5,
     Finished = 6,
+    Paused = 7,
+}
+
+#[repr(u8)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Zeroable,
+    AnchorDeserialize,
+    AnchorSerialize,
+    Serialize,
+    Deserialize,
+    InitSpace,
+)]
+pub enum ClientState {
+    #[default]
+    Healthy = 0,
+    Dropped = 1,
+    Withdrawn = 2,
+    Ejected = 3,
 }
 
 #[derive(
@@ -60,7 +83,8 @@ pub enum RunState {
 #[serde(bound = "I: Serialize + DeserializeOwned + NodeIdentity")]
 pub struct Client<I> {
     pub id: I,
-    pub dropping_at_end_of_round: bool,
+    pub state: ClientState,
+    pub exited_height: u32,
 }
 
 impl<I: NodeIdentity> Hash for Client<I> {
@@ -117,10 +141,17 @@ pub enum CoordinatorError {
     InvalidRunState,
     DuplicateWitness,
     InvalidHealthCheck,
-    Disabled,
-    Finished,
+    Halted,
     InvalidCheckpoint,
     WitnessesFull,
+    CannotResume,
+    InvalidWithdraw,
+}
+
+pub enum TickResult {
+    Ticked,
+    EpochFinished,
+    EpochAbandoned,
 }
 
 pub type Commitment = [u8; 32];
@@ -168,8 +199,10 @@ pub struct CoordinatorEpochState<T> {
     pub rounds: [Round; NUM_STORED_ROUNDS],
     pub rounds_head: u32,
     pub first_round: bool,
+    pub checkpointed: bool,
+    pub pause: bool,
     pub clients: FixedVec<Client<T>, SOLANA_MAX_NUM_CLIENTS>,
-    pub dropped_clients: FixedVec<Client<T>, SOLANA_MAX_NUM_CLIENTS>,
+    pub exited_clients: FixedVec<Client<T>, SOLANA_MAX_NUM_CLIENTS>,
 }
 
 #[derive(
@@ -202,6 +235,8 @@ pub struct Coordinator<T> {
 
     #[serde(default)]
     pub progress: CoordinatorProgress,
+    #[serde(default)]
+    pub prev_epoch_progress: CoordinatorProgress,
 
     #[serde(default)]
     pub epoch_state: CoordinatorEpochState<T>,
@@ -230,6 +265,7 @@ impl TryFrom<usize> for RunState {
             4 => Ok(RunState::RoundWitness),
             5 => Ok(RunState::Cooldown),
             6 => Ok(RunState::Finished),
+            7 => Ok(RunState::Paused),
             _ => Err(CoordinatorError::InvalidRunState),
         }
     }
@@ -245,6 +281,7 @@ impl From<RunState> for usize {
             RunState::RoundWitness => 4,
             RunState::Cooldown => 5,
             RunState::Finished => 6,
+            RunState::Paused => 7,
         }
     }
 }
@@ -271,10 +308,11 @@ impl std::fmt::Display for CoordinatorError {
             CoordinatorError::InvalidRunState => write!(f, "Invalid run state"),
             CoordinatorError::DuplicateWitness => write!(f, "Duplicate witness"),
             CoordinatorError::InvalidHealthCheck => write!(f, "Invalid health check"),
-            CoordinatorError::Disabled => write!(f, "Disabled"),
-            CoordinatorError::Finished => write!(f, "Finished"),
+            CoordinatorError::Halted => write!(f, "Halted"),
             CoordinatorError::InvalidCheckpoint => write!(f, "Invalid checkpoint"),
             CoordinatorError::WitnessesFull => write!(f, "Witnesses full"),
+            CoordinatorError::CannotResume => write!(f, "Cannot resume"),
+            CoordinatorError::InvalidWithdraw => write!(f, "Invalid withdraw"),
         }
     }
 }
@@ -291,6 +329,7 @@ impl std::fmt::Display for RunState {
             RunState::RoundWitness => write!(f, "Witness"),
             RunState::Cooldown => write!(f, "Cooldown"),
             RunState::Finished => write!(f, "Finished"),
+            RunState::Paused => write!(f, "Paused"),
         }
     }
 }
@@ -301,8 +340,10 @@ impl<T: NodeIdentity> Default for CoordinatorEpochState<T> {
             rounds: Default::default(),
             rounds_head: Default::default(),
             first_round: true,
+            pause: false,
+            checkpointed: false,
             clients: Default::default(),
-            dropped_clients: Default::default(),
+            exited_clients: Default::default(),
         }
     }
 }
@@ -317,40 +358,70 @@ impl Default for CoordinatorProgress {
     }
 }
 
+impl<T: NodeIdentity> Client<T> {
+    pub fn new(id: T) -> Self {
+        Self {
+            id,
+            state: ClientState::Healthy,
+            exited_height: 0,
+        }
+    }
+}
+
 impl<T: NodeIdentity> Coordinator<T> {
     pub fn tick(
         &mut self,
         backend: &dyn Backend<T>,
         unix_timestamp: u64,
         random_seed: u64,
-    ) -> std::result::Result<(), CoordinatorError> {
-        match self.run_state {
-            RunState::Uninitialized | RunState::Finished => Err(CoordinatorError::Disabled),
-            RunState::WaitingForMembers => self.tick_waiting_for_members(backend, unix_timestamp),
-            RunState::Warmup => self.tick_warmup(unix_timestamp, random_seed),
-            RunState::RoundTrain => self.tick_round_train(unix_timestamp),
-            RunState::RoundWitness => self.tick_round_witness(unix_timestamp, random_seed),
-            RunState::Cooldown => self.tick_cooldown(unix_timestamp),
+    ) -> std::result::Result<TickResult, CoordinatorError> {
+        let ret = match self.run_state {
+            RunState::Uninitialized | RunState::Finished | RunState::Paused => {
+                Err(CoordinatorError::Halted)
+            }
+            run_state => {
+                if self.epoch_state.pause {
+                    self.epoch_state.pause = false;
+                    self.change_state(unix_timestamp, RunState::Paused);
+                    Ok(TickResult::EpochAbandoned)
+                } else if run_state == RunState::WaitingForMembers {
+                    self.tick_waiting_for_members(backend, unix_timestamp)
+                } else if run_state == RunState::Cooldown {
+                    self.tick_cooldown(unix_timestamp)
+                } else if (self.epoch_state.clients.len() as u32) < self.config.min_clients {
+                    self.start_waiting_for_members(unix_timestamp);
+                    Ok(TickResult::EpochAbandoned)
+                } else {
+                    match run_state {
+                        RunState::Warmup => self.tick_warmup(unix_timestamp, random_seed),
+                        RunState::RoundTrain => self.tick_round_train(unix_timestamp),
+                        RunState::RoundWitness => {
+                            self.tick_round_witness(unix_timestamp, random_seed)
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
         }?;
         self.tick += 1;
         self.last_tick_unix_timestamp = unix_timestamp;
-        Ok(())
+        Ok(ret)
     }
 
     pub fn witness(
         &mut self,
-        from: &Client<T>,
+        from: &T,
         witness: Witness,
         unix_timestamp: u64,
     ) -> std::result::Result<(), CoordinatorError> {
-        if self.disabled() {
-            return Err(CoordinatorError::Disabled);
+        if self.halted() {
+            return Err(CoordinatorError::Halted);
         }
         if !CommitteeSelection::from_coordinator(
             self,
             self.config.overlapped && !self.epoch_state.first_round,
         )?
-        .verify_witness_for_client(&from.id, &witness.proof, &self.epoch_state.clients)
+        .verify_witness_for_client::<T>(from, &witness.proof, &self.epoch_state.clients)
         {
             return Err(CoordinatorError::InvalidWitness);
         }
@@ -370,7 +441,7 @@ impl<T: NodeIdentity> Coordinator<T> {
 
         let round = self.current_round().unwrap();
         for witness in round.witnesses.iter() {
-            if self.epoch_state.clients[witness.index as usize] == *from {
+            if self.epoch_state.clients[witness.index as usize].id == *from {
                 return Err(CoordinatorError::DuplicateWitness);
             }
         }
@@ -388,11 +459,11 @@ impl<T: NodeIdentity> Coordinator<T> {
 
     pub fn health_check(
         &mut self,
-        _from: &Client<T>,
+        _from: &T,
         checks: HealthChecks,
     ) -> std::result::Result<u32, CoordinatorError> {
-        if self.disabled() {
-            return Err(CoordinatorError::Disabled);
+        if self.halted() {
+            return Err(CoordinatorError::Halted);
         }
         for proof in &checks {
             if self.healthy(proof) {
@@ -402,8 +473,9 @@ impl<T: NodeIdentity> Coordinator<T> {
         let mut dropped = 0;
         for proof in &checks {
             let index = proof.index as usize;
-            if !self.epoch_state.clients[index].dropping_at_end_of_round {
-                self.epoch_state.clients[index].dropping_at_end_of_round = true;
+            let client = &mut self.epoch_state.clients[index];
+            if client.state == ClientState::Healthy {
+                client.state = ClientState::Dropped;
                 dropped += 1;
             }
         }
@@ -413,21 +485,50 @@ impl<T: NodeIdentity> Coordinator<T> {
 
     pub fn checkpoint(
         &mut self,
-        from: &Client<T>,
+        from: &T,
         checkpoint: Checkpoint,
-        unix_timestamp: u64,
     ) -> std::result::Result<(), CoordinatorError> {
-        if self.config.checkpointers.iter().any(|x| *x == from.id) {
+        if self.run_state == RunState::Cooldown
+            && !self.epoch_state.checkpointed
+            && self.config.checkpointers.iter().any(|x| x == from)
+        {
             match &mut self.model {
                 Model::LLM(llm) => {
                     llm.checkpoint = checkpoint;
                 }
             }
-            self.finish_cooldown(unix_timestamp);
+            self.epoch_state.checkpointed = true;
             Ok(())
         } else {
             Err(CoordinatorError::InvalidCheckpoint)
         }
+    }
+
+    pub fn withdraw(&mut self, index: u64) -> std::result::Result<(), CoordinatorError> {
+        let index = index as usize;
+        if index < self.epoch_state.clients.len() {
+            let client = &mut self.epoch_state.clients[index];
+            if client.state == ClientState::Healthy {
+                client.state = ClientState::Withdrawn;
+                return Ok(());
+            }
+        }
+        Err(CoordinatorError::InvalidWithdraw)
+    }
+
+    pub fn pause(&mut self) -> std::result::Result<(), CoordinatorError> {
+        self.epoch_state.pause = true;
+        Ok(())
+    }
+
+    pub fn resume(&mut self, unix_timestamp: u64) -> std::result::Result<(), CoordinatorError> {
+        if self.run_state != RunState::Paused {
+            return Err(CoordinatorError::CannotResume);
+        }
+        // resume from previous epoch's progress
+        self.progress = self.prev_epoch_progress;
+        self.start_waiting_for_members(unix_timestamp);
+        Ok(())
     }
 
     pub fn healthy(&self, proof: &CommitteeProof) -> bool {
@@ -460,7 +561,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 Committee::TieBreaker => todo!(),
                 Committee::Verifier => todo!(),
                 Committee::Trainer => Self::trainer_healthy_by_witnesses(
-                    client,
+                    &client.id,
                     &round.witnesses,
                     self.config.witness_quorum,
                 ),
@@ -471,11 +572,11 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     pub fn trainer_healthy_by_witnesses(
-        client: &Client<T>,
+        id: &T,
         witnesses: &[Witness],
         witness_quorum: u32,
     ) -> bool {
-        let score: u32 = Self::trainer_healthy_score_by_witnesses(client, witnesses);
+        let score: u32 = Self::trainer_healthy_score_by_witnesses(id, witnesses);
         match witness_quorum {
             0 => score as usize == witnesses.len(),
             witness_quorum => score >= witness_quorum,
@@ -484,8 +585,8 @@ impl<T: NodeIdentity> Coordinator<T> {
 
     /// Computes the health score of a client based on witness confirmations.
     /// The score increases for each witness whose participant bloom filter contains the client's hashed ID.
-    pub fn trainer_healthy_score_by_witnesses(client: &Client<T>, witnesses: &[Witness]) -> u32 {
-        let hash = sha256(client.id.as_ref());
+    pub fn trainer_healthy_score_by_witnesses(id: &T, witnesses: &[Witness]) -> u32 {
+        let hash = sha256(id.as_ref());
         let mut score = 0u32;
         for witness in witnesses {
             if witness.participant_bloom.contains(&hash) {
@@ -552,6 +653,16 @@ impl<T: NodeIdentity> Coordinator<T> {
             .get(self.epoch_state.rounds_head as usize)
     }
 
+    pub fn current_round_mut(&mut self) -> Option<&mut Round> {
+        self.epoch_state
+            .rounds
+            .get_mut(self.epoch_state.rounds_head as usize)
+    }
+
+    pub fn current_round_unchecked(&self) -> &Round {
+        &self.epoch_state.rounds[self.epoch_state.rounds_head as usize]
+    }
+
     pub fn current_round_mut_unchecked(&mut self) -> &mut Round {
         &mut self.epoch_state.rounds[self.epoch_state.rounds_head as usize]
     }
@@ -586,15 +697,18 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     pub fn active(&self) -> bool {
-        !self.disabled()
+        !self.halted()
             && !matches!(
                 self.run_state,
                 RunState::WaitingForMembers | RunState::Warmup
             )
     }
 
-    pub fn disabled(&self) -> bool {
-        matches!(self.run_state, RunState::Uninitialized | RunState::Finished)
+    pub fn halted(&self) -> bool {
+        matches!(
+            self.run_state,
+            RunState::Uninitialized | RunState::Finished | RunState::Paused
+        )
     }
 
     pub fn get_client_at_historical_index(
@@ -606,7 +720,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             Some(&self.epoch_state.clients[n])
         } else if n < prev_clients_len as usize {
             let offset: usize = prev_clients_len as usize - n - 1;
-            self.epoch_state.dropped_clients.iter().rev().nth(offset)
+            self.epoch_state.exited_clients.iter().rev().nth(offset)
         } else {
             None
         }
@@ -622,85 +736,96 @@ impl<T: NodeIdentity> Coordinator<T> {
         &mut self,
         backend: &dyn Backend<T>,
         unix_timestamp: u64,
-    ) -> std::result::Result<(), CoordinatorError> {
-        if self.progress.step > self.config.total_steps {
-            return Err(CoordinatorError::Finished);
-        }
+    ) -> std::result::Result<TickResult, CoordinatorError> {
         let clients = backend.select_new_clients();
         if clients.len() as u32 >= self.config.min_clients {
-            self.epoch_state.clients =
-                FixedVec::from_iter(clients.into_iter().take(SOLANA_MAX_NUM_CLIENTS));
+            // set epoch_state to default
+            let _ = std::mem::take(&mut self.epoch_state);
+            self.epoch_state.clients = FixedVec::from_iter(
+                clients
+                    .into_iter()
+                    .take(SOLANA_MAX_NUM_CLIENTS)
+                    .map(|x| Client::new(x)),
+            );
             self.start_warmup(unix_timestamp);
         }
-        Ok(())
+        Ok(TickResult::Ticked)
     }
 
     fn tick_warmup(
         &mut self,
         unix_timestamp: u64,
         random_seed: u64,
-    ) -> std::result::Result<(), CoordinatorError> {
-        if (self.epoch_state.clients.len() as u32) < self.config.min_clients {
-            self.start_waiting_for_members(unix_timestamp);
-        } else if self.check_timeout(unix_timestamp, self.config.warmup_time) {
+    ) -> std::result::Result<TickResult, CoordinatorError> {
+        if self.check_timeout(unix_timestamp, self.config.warmup_time) {
             self.start_round_train(unix_timestamp, random_seed, 0);
+        } else {
+            self.move_clients_to_exited(0);
         }
-        Ok(())
+        Ok(TickResult::Ticked)
     }
 
     fn tick_round_train(
         &mut self,
         unix_timestamp: u64,
-    ) -> std::result::Result<(), CoordinatorError> {
+    ) -> std::result::Result<TickResult, CoordinatorError> {
         if self.check_timeout(unix_timestamp, self.config.max_round_train_time) {
             self.change_state(unix_timestamp, RunState::RoundWitness);
         }
-        Ok(())
+        Ok(TickResult::Ticked)
     }
 
     fn tick_round_witness(
         &mut self,
         unix_timestamp: u64,
         random_seed: u64,
-    ) -> std::result::Result<(), CoordinatorError> {
+    ) -> std::result::Result<TickResult, CoordinatorError> {
         if self.check_timeout(unix_timestamp, self.config.round_witness_time) {
             // TODO: Punish idle witnesses
             self.epoch_state.first_round = false;
             self.progress.step += 1;
 
-            // WARNING: O(n) on number of clients, need to refactor
-            self.epoch_state.clients.retain(|x| {
-                if x.dropping_at_end_of_round {
-                    let _ = self.epoch_state.dropped_clients.push(*x);
-                    false
-                } else {
-                    true
-                }
-            });
+            let height = self.current_round_unchecked().height;
 
-            let (height, data_index) = self
-                .current_round()
-                .map(|x| (x.height, x.data_index))
-                .unwrap();
+            self.move_clients_to_exited(height);
+
             if height == self.config.rounds_per_epoch - 1 {
-                self.start_cooldown(unix_timestamp, data_index);
+                match &mut self.model {
+                    Model::LLM(llm) => {
+                        llm.checkpoint = Checkpoint::Ephemeral;
+                    }
+                }
+                self.change_state(unix_timestamp, RunState::Cooldown);
             } else {
                 self.start_round_train(unix_timestamp, random_seed, 0);
             }
         }
-        Ok(())
+        Ok(TickResult::Ticked)
     }
 
-    fn tick_cooldown(&mut self, unix_timestamp: u64) -> std::result::Result<(), CoordinatorError> {
+    fn tick_cooldown(
+        &mut self,
+        unix_timestamp: u64,
+    ) -> std::result::Result<TickResult, CoordinatorError> {
         // cooldown_time == 0 means we never automatically advance to the next epoch,
         // so the only way to get there is through the checkpointing code.
         // this forces everything to wait on a valid checkpoint
-        if self.config.cooldown_time > 0
-            && self.check_timeout(unix_timestamp, self.config.cooldown_time)
+        if self.epoch_state.checkpointed
+            || (self.config.cooldown_time > 0
+                && self.check_timeout(unix_timestamp, self.config.cooldown_time))
         {
-            self.finish_cooldown(unix_timestamp);
+            self.prev_epoch_progress = self.progress;
+            self.progress.epoch_start_data_index = Self::get_next_round_data_index(
+                self.current_round_unchecked().data_index,
+                self.config.batches_per_round,
+                self.config.data_indicies_per_batch,
+            );
+            self.progress.epoch += 1;
+            self.start_waiting_for_members(unix_timestamp);
+            Ok(TickResult::EpochFinished)
+        } else {
+            Ok(TickResult::Ticked)
         }
-        Ok(())
     }
 
     fn check_timeout(&self, unix_timestamp: u64, duration: u64) -> bool {
@@ -740,8 +865,6 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     fn start_waiting_for_members(&mut self, unix_timestamp: u64) {
-        // set epoch_state to default
-        let _ = std::mem::take(&mut self.epoch_state);
         self.change_state(
             unix_timestamp,
             if self.progress.step < self.config.total_steps {
@@ -750,26 +873,6 @@ impl<T: NodeIdentity> Coordinator<T> {
                 RunState::Finished
             },
         );
-    }
-
-    fn start_cooldown(&mut self, unix_timestamp: u64, data_index: u64) {
-        self.progress.epoch_start_data_index = Self::get_next_round_data_index(
-            data_index,
-            self.config.batches_per_round,
-            self.config.data_indicies_per_batch,
-        );
-
-        match &mut self.model {
-            Model::LLM(llm) => {
-                llm.checkpoint = Checkpoint::Ephemeral;
-            }
-        }
-        self.change_state(unix_timestamp, RunState::Cooldown);
-    }
-
-    fn finish_cooldown(&mut self, unix_timestamp: u64) {
-        self.progress.epoch += 1;
-        self.start_waiting_for_members(unix_timestamp);
     }
 
     fn change_state(&mut self, unix_timestamp: u64, new_state: RunState) {
@@ -784,6 +887,23 @@ impl<T: NodeIdentity> Coordinator<T> {
         data_indicies_per_batch: u32,
     ) -> u64 {
         data_index + (batches_per_round * data_indicies_per_batch) as u64
+    }
+
+    fn move_clients_to_exited(&mut self, height: u32) {
+        // WARNING: O(n) on number of clients, need to refactor
+        self.epoch_state.clients.retain(|x| {
+            if x.state != ClientState::Healthy {
+                self.epoch_state.exited_clients.push(*x).unwrap();
+                self.epoch_state
+                    .exited_clients
+                    .last_mut()
+                    .unwrap()
+                    .exited_height = height;
+                false
+            } else {
+                true
+            }
+        });
     }
 
     pub fn total_tokens(&self) -> u64 {
