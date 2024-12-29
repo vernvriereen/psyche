@@ -417,12 +417,11 @@ impl<T: NodeIdentity> Coordinator<T> {
         if self.halted() {
             return Err(CoordinatorError::Halted);
         }
-        if !CommitteeSelection::from_coordinator(
-            self,
-            self.config.overlapped && !self.epoch_state.first_round,
-        )?
-        .verify_witness_for_client::<T>(from, &witness.proof, &self.epoch_state.clients)
-        {
+        if !CommitteeSelection::from_coordinator(self, false)?.verify_witness_for_client::<T>(
+            from,
+            &witness.proof,
+            &self.epoch_state.clients,
+        ) {
             return Err(CoordinatorError::InvalidWitness);
         }
 
