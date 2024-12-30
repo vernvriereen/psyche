@@ -350,8 +350,12 @@ async fn finish_epoch() {
     assert_with_retries(|| server_handle.get_current_epoch(), 1).await;
 }
 
+/// start a normal round
+/// spawn a client while network is in RoundTrain
+/// the new client should not join the network but should be ready in pending_clients
 #[tokio::test(flavor = "multi_thread")]
 async fn client_join_in_training() {
+    // start a normal run with 2 clients
     let init_min_clients = 2;
     let batches_per_round = 2;
     let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
@@ -379,6 +383,7 @@ async fn client_join_in_training() {
         init_min_clients as usize,
     )
     .await;
+
     // execute round 0
     // warmup
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
@@ -393,4 +398,19 @@ async fn client_join_in_training() {
     // assert new client didnt join the round but is ready in peding clients
     assert_with_retries(|| server_handle.get_pending_clients_len(), 3).await;
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
+
+    // train
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
+    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
+    let witnesses = &server_handle.get_rounds().await[0].witnesses;
+
+    let mut score = 0;
+    let clients = server_handle.get_clients().await;
+    clients.iter().for_each(|client| {
+        score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
+            &client.id, witnesses,
+        );
+    });
+    // clients spawned in RoundTrain state should not be present in the witnesses
+    assert_eq!(score, init_min_clients);
 }
