@@ -1,13 +1,3 @@
-use crate::{
-    load_dataset,
-    traits::{Document, LogLikelihoodTask},
-    TaskType,
-};
-use anyhow::Result;
-use psyche_data_provider::{Dataset, ListAccessor, Row, RowAccessor, Split};
-use regex::Regex;
-use std::fmt::Display;
-
 /**
    hf (pretrained=meta-llama/Meta-Llama-3.1-8B,dtype=bfloat16), gen_kwargs: (None), limit: None, num_fewshot: None, batch_size: 1
    |  Tasks  |Version|Filter|n-shot| Metric |   |Value |   |Stderr|
@@ -17,6 +7,16 @@ use std::fmt::Display;
 
    Hellaswag: {"acc": 0.59151566, "acc_norm": 0.76508665}
 */
+
+use crate::{
+    load_dataset,
+    traits::{Document, LogLikelihoodTask},
+    TaskType,
+};
+use anyhow::Result;
+use psyche_data_provider::{Dataset, ListAccessor, Row, RowAccessor, Split};
+use regex::Regex;
+use std::fmt::Display;
 
 fn preprocess(text: &str) -> String {
     let mut processed = text.trim().to_string();

@@ -229,7 +229,7 @@ pub struct DatasetIter<'a> {
     row_iter: RowIter<'a>,
 }
 
-impl<'a> Iterator for DatasetIter<'a> {
+impl Iterator for DatasetIter<'_> {
     type Item = Row;
 
     fn next(&mut self) -> Option<Self::Item> {

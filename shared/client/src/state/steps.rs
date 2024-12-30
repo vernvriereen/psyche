@@ -176,7 +176,6 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
         from_client_id: T,
         training_result: TrainingResult,
     ) -> Result<(), ApplyMessageError> {
-        let state_step = self.coordinator_state.progress.step;
         let result_step = training_result.step;
         let batch_id = training_result.batch_id;
         let round_state = {
@@ -419,8 +418,7 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
         // we unconditionally store every seen payload, since we're not yet sure what consensus will be on whether it's included.
         let deserializing = tokio::task::spawn({
             let notify_try_opportunistic_witness = self.notify_try_opportunistic_witness.clone();
-            let batch_id = batch_id.clone();
-            let hash = hash.clone();
+            let batch_id = *batch_id;
             async move {
                 let maybe_results = tokio::task::spawn_blocking(move || {
                     let r = distro_result

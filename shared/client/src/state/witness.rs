@@ -42,9 +42,9 @@ impl<T: NodeIdentity> WitnessStepMetadata<T> {
     pub fn start(
         &self,
         client_index: u64,
-        state: &Coordinator<T>,
+        _state: &Coordinator<T>,
         trainers: MaybeRunningEvals,
-        previous_round: &mut RoundState<T>,
+        _previous_round: &mut RoundState<T>,
         current_round: &mut RoundState<T>,
     ) -> Result<WitnessStep, WitnessingError> {
         if trainers.is_empty() {

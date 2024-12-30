@@ -386,7 +386,7 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         &mut self,
         trainers: Vec<Trainer>,
         state: &Coordinator<T>,
-        previous_round: &mut RoundState<T>,
+        _previous_round: &mut RoundState<T>,
         current_round: &mut RoundState<T>,
     ) -> Result<JoinHandle<Result<Vec<Trainer>, ApplyError>>, ApplyError> {
         if state.epoch_state.first_round {
