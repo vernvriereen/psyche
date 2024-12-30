@@ -1,8 +1,8 @@
-use anchor_lang::{prelude::*, system_program};
-
 mod client_id;
+
+use anchor_lang::{prelude::*, system_program};
 pub use client_id::ClientId;
-use psyche_coordinator::Coordinator;
+use psyche_coordinator::{CoodinatorConfig, Coordinator};
 
 declare_id!("5gKtdi6At7WEcLE22GmkSg94rVgc2hRRo3VvKhLnoJZP");
 
@@ -81,6 +81,13 @@ pub mod solana_coordinator {
 
         Ok(())
     }
+
+    pub fn update_coordinator_config(
+        _ctx: Context<UpdateCoordinatorConfig>,
+        _config: CoodinatorConfig<ClientId>,
+    ) -> Result<()> {
+        todo!()
+    }
 }
 
 #[derive(Accounts)]
@@ -90,6 +97,19 @@ pub struct InitializeCoordinator<'info> {
     pub instance: Account<'info, CoordinatorInstance>,
     #[account(mut)]
     pub coordinator: UncheckedAccount<'info>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(address = system_program::ID)]
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(run_id: String)]
+pub struct UpdateCoordinatorConfig<'info> {
+    #[account(seeds = [b"coordinator", bytes_from_string(&run_id)], bump = instance.bump, constraint = instance.owner == *payer.key && instance.coordinator == coordinator.key())]
+    pub instance: Account<'info, CoordinatorInstance>,
+    #[account(mut, owner = crate::ID)]
+    pub coordinator: AccountLoader<'info, CoordinatorAccount>,
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(address = system_program::ID)]

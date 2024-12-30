@@ -151,9 +151,6 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         let round_start = Instant::now();
 
         *previous_round = std::mem::take(current_round);
-        if previous_round.height == 0 && state.config.overlapped {
-            previous_round.sent_witness = false; // we need to resend the witness from the first step again on real step
-        }
 
         let committee_selection = CommitteeSelection::new(
             round.tie_breaker_tasks as usize,
@@ -389,31 +386,20 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         &mut self,
         trainers: Vec<Trainer>,
         state: &Coordinator<T>,
-        previous_round: &mut RoundState<T>,
+        _previous_round: &mut RoundState<T>,
         current_round: &mut RoundState<T>,
     ) -> Result<JoinHandle<Result<Vec<Trainer>, ApplyError>>, ApplyError> {
-        if state.epoch_state.first_round
-            || (state.config.overlapped
-                && state.current_round().map(|x| x.height).unwrap_or_default() == 1)
-        {
-            // in overlapped mode the first training step of each epoch has no apply phase.
-            // this is so that on the trainer we can we overlap the uploading
-            // of the last step's results while concurrently computing the next
-            // step. this skip "primes" the pump
+        if state.epoch_state.first_round {
+            // the first training step of each epoch has no apply phase.
             info!("Skipping early apply");
             return Ok(tokio::task::spawn(async move { Ok(trainers) }));
         }
 
         // coordinator has already advanced to the next round (unless we're in cooldown) but we haven't started ours yet.
         // so our current_round corresponds to the coordinator's previous_round
-        let round = match (
-            state.config.overlapped,
-            state.run_state == RunState::Cooldown,
-        ) {
-            (true, false) => state.previous_previous_round(),
-            (false, false) => state.previous_round(),
-            (true, true) => state.previous_round(),
-            (false, true) => state.current_round(),
+        let round = match state.run_state == RunState::Cooldown {
+            false => state.previous_round(),
+            true => state.current_round(),
         }
         .ok_or(ApplyError::NoActiveRound)?;
 
@@ -421,11 +407,7 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         let step = state.progress.step;
         let witness_quorum = state.config.witness_quorum;
 
-        let round_to_take_from = if state.config.overlapped {
-            previous_round
-        } else {
-            current_round
-        };
+        let round_to_take_from = current_round;
 
         let mut payloads = std::mem::take(&mut round_to_take_from.downloads);
         let commitments = std::mem::take(&mut round_to_take_from.results);
@@ -437,11 +419,7 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         let batch_ids = get_batch_ids_for_round(
             // coordinator has already advanced to the next round but we haven't started ours yet.
             // our current_round corresponds to the coordinator's previous_round
-            match state.config.overlapped {
-                true => state.previous_previous_round(),
-                false => state.previous_round(),
-            }
-            .ok_or(ApplyError::NoActiveRound)?,
+            state.previous_round().ok_or(ApplyError::NoActiveRound)?,
             state,
         );
 
@@ -562,10 +540,10 @@ fn start_sending_health_checks<T: NetworkableNodeIdentity>(
                     debug!(
                         "Trainer {:?} health score: {}",
                         client,
-                        Coordinator::trainer_healthy_score_by_witnesses(client, &witnesses)
+                        Coordinator::trainer_healthy_score_by_witnesses(&client.id, &witnesses)
                     );
                     if !Coordinator::trainer_healthy_by_witnesses(
-                        client,
+                        &client.id,
                         &witnesses,
                         witness_quorum,
                     ) {

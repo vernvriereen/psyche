@@ -90,7 +90,7 @@ impl psyche_tui::CustomWidget for ClientTUI {
                 .collect::<Vec<_>>();
             let y_min = 0f64.max(
                 data.iter()
-                    .min_by(|x, y| x.1.partial_cmp(&y.1).unwrap())
+                    .min_by(|x, y| x.1.partial_cmp(&y.1).unwrap_or(std::cmp::Ordering::Equal))
                     .unwrap_or(&(0., 0.))
                     .1
                     - 0.1f64,

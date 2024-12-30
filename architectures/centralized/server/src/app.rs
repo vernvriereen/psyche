@@ -6,9 +6,10 @@ use psyche_coordinator::model::{
     self, Checkpoint, LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM,
 };
 use psyche_coordinator::{
-    Client, Coordinator, CoordinatorError, HealthChecks, Round, RunState, Witness,
+    Client, Coordinator, CoordinatorError, HealthChecks, Round, RunState, TickResult, Witness,
     SOLANA_MAX_NUM_CLIENTS,
 };
+
 use psyche_core::{u8_to_string, FixedVec};
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider, Shuffle,
@@ -50,11 +51,11 @@ type TabsData = <Tabs as CustomWidget>::Data;
 
 struct Backend {
     net_server: TcpServer<ClientId, ClientToServerMessage, ServerToClientMessage>,
-    pending_clients: HashSet<Client<ClientId>>,
+    pending_clients: HashSet<ClientId>,
 }
 
 impl psyche_coordinator::Backend<ClientId> for Backend {
-    fn select_new_clients(&self) -> Vec<Client<ClientId>> {
+    fn select_new_clients(&self) -> Vec<ClientId> {
         self.pending_clients.iter().cloned().collect()
     }
 }
@@ -101,9 +102,9 @@ pub struct App {
     backend: Backend,
     training_data_server: Option<(Sender<Coordinator<ClientId>>, DataServer)>,
     save_state_dir: Option<PathBuf>,
-    last_sync_step: Option<u32>,
     original_warmup_time: u64,
     original_min_clients: u32,
+    withdraw_on_disconnect: bool,
 }
 
 /// Methods intended for testing purposes only.
@@ -116,7 +117,7 @@ impl App {
         self.coordinator.epoch_state.clients
     }
 
-    pub fn get_pending_clients(&self) -> HashSet<Client<ClientId>> {
+    pub fn get_pending_clients(&self) -> HashSet<ClientId> {
         self.backend.pending_clients.clone()
     }
 
@@ -156,6 +157,7 @@ impl App {
         save_state_dir: Option<PathBuf>,
         init_warmup_time: Option<u64>,
         init_min_clients: Option<u32>,
+        withdraw_on_disconnect: bool,
     ) -> Result<Self> {
         let run_id = u8_to_string(&coordinator.run_id);
         let p2p = NC::init(&run_id, p2p_port, RelayMode::Default, vec![], None).await?;
@@ -261,9 +263,9 @@ impl App {
                 pending_clients: HashSet::new(),
             },
             save_state_dir,
-            last_sync_step: None,
             original_warmup_time,
             original_min_clients,
+            withdraw_on_disconnect,
         })
     }
 
@@ -330,24 +332,25 @@ impl App {
     }
 
     fn on_disconnect(&mut self, from: ClientId) -> Result<()> {
-        self.backend.pending_clients.remove(&Client {
-            id: from,
-            dropping_at_end_of_round: true,
-        });
+        self.backend.pending_clients.remove(&from);
 
-        self.coordinator
-            .epoch_state
-            .clients
-            .retain(|client| client.id != from);
+        if self.withdraw_on_disconnect {
+            let position = self
+                .coordinator
+                .epoch_state
+                .clients
+                .iter()
+                .position(|x| x.id == from);
 
-        self.coordinator
-            .epoch_state
-            .dropped_clients
-            .push(Client {
-                id: from,
-                dropping_at_end_of_round: true,
-            })
-            .map_err(|e| anyhow!(e))
+            if let Some(index) = position {
+                match self.coordinator.withdraw(index as u64) {
+                    Ok(_) => info!("Withdrew {from}"),
+                    Err(err) => warn!("Coordinator withdraw error: {err}"),
+                }
+            }
+        }
+
+        Ok(())
     }
 
     async fn on_client_message(&mut self, from: ClientId, event: ClientToServerMessage) {
@@ -356,10 +359,7 @@ impl App {
                 // TODO: check whitelist
                 let coord_run_id = u8_to_string(&self.coordinator.run_id);
                 if coord_run_id == run_id {
-                    self.backend.pending_clients.insert(Client {
-                        id: from,
-                        dropping_at_end_of_round: false,
-                    });
+                    self.backend.pending_clients.insert(from);
                     let client_joined = self
                         .backend
                         .net_server
@@ -377,26 +377,16 @@ impl App {
             }
             ClientToServerMessage::Witness(witness) => {
                 let state_before = self.coordinator.run_state;
-                if let Err(error) = self.coordinator.witness(
-                    &Client {
-                        id: from,
-                        dropping_at_end_of_round: false,
-                    },
-                    *witness,
-                    Self::get_timestamp(),
-                ) {
+                if let Err(error) = self
+                    .coordinator
+                    .witness(&from, *witness, Self::get_timestamp())
+                {
                     warn!("Error when processing witness: {error}");
                 }
                 self.coordinator.run_state != state_before
             }
             ClientToServerMessage::HealthCheck(health_checks) => {
-                match self.coordinator.health_check(
-                    &Client {
-                        id: from,
-                        dropping_at_end_of_round: false,
-                    },
-                    health_checks,
-                ) {
+                match self.coordinator.health_check(&from, health_checks) {
                     Ok(dropped) => {
                         info!("Dropped {} clients from health check", dropped);
                         dropped > 0
@@ -409,14 +399,7 @@ impl App {
                 }
             }
             ClientToServerMessage::Checkpoint(checkpoint) => {
-                if let Err(error) = self.coordinator.checkpoint(
-                    &Client {
-                        id: from,
-                        dropping_at_end_of_round: false,
-                    },
-                    checkpoint,
-                    Self::get_timestamp(),
-                ) {
+                if let Err(error) = self.coordinator.checkpoint(&from, checkpoint) {
                     warn!("Error when processing checkpoint: {error}");
                 }
                 true
@@ -431,7 +414,31 @@ impl App {
             Self::get_timestamp(),
             rand::thread_rng().next_u64(),
         ) {
-            Ok(_) | Err(CoordinatorError::Disabled) => {}
+            Ok(TickResult::EpochFinished) => {
+                if let Some(save_state_dir) = &self.save_state_dir {
+                    let mut state = self.coordinator;
+                    print!("{:?}", state);
+                    Self::reset_ephemeral(&mut state);
+                    match toml::to_string_pretty(&state) {
+                        Ok(toml) => {
+                            let filename = format!(
+                                "{:?}-step{}.toml",
+                                self.coordinator.run_id,
+                                self.coordinator.progress.step - 1
+                            );
+                            info!("Saving state to {filename}");
+                            if let Err(err) = std::fs::write(save_state_dir.join(filename), toml) {
+                                tracing::error!("Error saving TOML: {}", err);
+                            }
+                        }
+                        Err(err) => tracing::error!("Error serialized to TOML: {err}"),
+                    }
+                }
+            }
+            Ok(TickResult::EpochAbandoned) => {
+                warn!("Epoch abandoned")
+            }
+            Ok(TickResult::Ticked) | Err(CoordinatorError::Halted) => {}
             Err(err) => warn!("Coordinator tick error: {err}"),
         }
         self.post_state_change(true).await;
@@ -445,33 +452,7 @@ impl App {
     }
 
     async fn post_state_change(&mut self, broadcast: bool) {
-        if !self.coordinator.active() {
-            if let Some(last_sync_step) = self.last_sync_step {
-                if last_sync_step < self.coordinator.progress.step {
-                    if let Some(save_state_dir) = &self.save_state_dir {
-                        let mut state = self.coordinator;
-                        Self::reset_ephemeral(&mut state);
-                        match toml::to_string_pretty(&state) {
-                            Ok(toml) => {
-                                let filename = format!(
-                                    "{:?}-step{}.toml",
-                                    self.coordinator.run_id,
-                                    self.coordinator.progress.step - 1
-                                );
-                                info!("Saving state to {filename}");
-                                if let Err(err) =
-                                    std::fs::write(save_state_dir.join(filename), toml)
-                                {
-                                    tracing::error!("Error saving TOML: {}", err);
-                                }
-                            }
-                            Err(err) => tracing::error!("Error serialized to TOML: {err}"),
-                        }
-                    }
-                }
-            }
-            self.last_sync_step = Some(self.coordinator.progress.step);
-        } else {
+        if self.coordinator.active() {
             // reset to original values if we changed them to something special for init
             self.coordinator.config.warmup_time = self.original_warmup_time;
             self.coordinator.config.min_clients = self.original_min_clients;
@@ -498,7 +479,7 @@ impl App {
         for elem in coordinator.epoch_state.clients.iter_mut() {
             *elem = Client::<ClientId>::default();
         }
-        for elem in coordinator.epoch_state.dropped_clients.iter_mut() {
+        for elem in coordinator.epoch_state.exited_clients.iter_mut() {
             *elem = Client::<ClientId>::default();
         }
     }
@@ -513,7 +494,7 @@ impl From<&App> for DashboardState {
                 .backend
                 .pending_clients
                 .iter()
-                .map(|c| c.id.to_string())
+                .map(|c| c.to_string())
                 .collect(),
         }
     }

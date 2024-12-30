@@ -220,8 +220,9 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     let mut score = 0;
     let clients = server_handle.get_clients().await;
     clients.iter().for_each(|client| {
-        score +=
-            psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(client, witnesses);
+        score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
+            &client.id, witnesses,
+        );
     });
 
     let number_of_sent_witnesses = witnesses.len();

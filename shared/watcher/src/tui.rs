@@ -76,6 +76,7 @@ impl psyche_tui::CustomWidget for CoordinatorTui {
 pub enum TuiRunState {
     #[default]
     Uninitialized,
+    Paused,
     WaitingForMembers {
         need: u32,
     },
@@ -94,6 +95,7 @@ impl Display for TuiRunState {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             TuiRunState::Uninitialized => write!(f, "Uninitialized"),
+            TuiRunState::Paused => write!(f, "Paused"),
             TuiRunState::WaitingForMembers { need } => write!(f, "Waiting for {} members", need),
             TuiRunState::Warmup { end_time } => {
                 let remaining = end_time.duration_since(Instant::now());
@@ -117,6 +119,7 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for TuiRunState {
     fn from(c: &Coordinator<T>) -> Self {
         match c.run_state {
             RunState::Uninitialized => TuiRunState::Uninitialized,
+            RunState::Paused => TuiRunState::Paused,
             RunState::WaitingForMembers => TuiRunState::WaitingForMembers {
                 need: c
                     .config
@@ -170,7 +173,7 @@ pub struct CoordinatorTuiState {
     pub tick: u64,
     pub data_source: String,
     pub model_checkpoint: String,
-    pub dropped_clients: usize,
+    pub exited_clients: usize,
 }
 
 impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
@@ -192,7 +195,7 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
             model_checkpoint: match &value.model {
                 Model::LLM(l) => format!("{}", l.checkpoint),
             },
-            dropped_clients: value.epoch_state.dropped_clients.len(),
+            exited_clients: value.epoch_state.exited_clients.len(),
         }
     }
 }
