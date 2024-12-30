@@ -30,7 +30,7 @@ enum TestingQueryMsg {
         respond_to: oneshot::Sender<usize>,
     },
     PendingClients {
-        respond_to: oneshot::Sender<HashSet<Client<ClientId>>>,
+        respond_to: oneshot::Sender<HashSet<ClientId>>,
     },
     PendingClientsLen {
         respond_to: oneshot::Sender<usize>,
@@ -103,6 +103,7 @@ impl CoordinatorServer {
             None,
             Some(WARMUP_TIME),
             Some(init_min_clients),
+            true,
         )
         .await
         .unwrap();
@@ -197,7 +198,7 @@ impl CoordinatorServerHandle {
         recv.await.expect("Coordinator actor task has been killed")
     }
 
-    pub async fn get_pending_clients(&self) -> HashSet<Client<ClientId>> {
+    pub async fn get_pending_clients(&self) -> HashSet<ClientId> {
         let (send, recv) = oneshot::channel();
         let msg = TestingQueryMsg::PendingClients { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;

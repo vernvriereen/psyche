@@ -42,9 +42,9 @@ impl<T: NodeIdentity> WitnessStepMetadata<T> {
     pub fn start(
         &self,
         client_index: u64,
-        state: &Coordinator<T>,
+        _state: &Coordinator<T>,
         trainers: MaybeRunningEvals,
-        previous_round: &mut RoundState<T>,
+        _previous_round: &mut RoundState<T>,
         current_round: &mut RoundState<T>,
     ) -> Result<WitnessStep, WitnessingError> {
         if trainers.is_empty() {
@@ -53,11 +53,7 @@ impl<T: NodeIdentity> WitnessStepMetadata<T> {
 
         let evals = self.eval_runner.start_if_not_running(trainers);
 
-        let round_to_witness = if state.config.overlapped {
-            previous_round
-        } else {
-            current_round
-        };
+        let round_to_witness = current_round;
         let sending_witness =
             if let Some(witness) = round_to_witness.get_witness_to_send(client_index) {
                 let tx_witness = self.tx_witness.clone();

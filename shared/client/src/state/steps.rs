@@ -133,60 +133,36 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
     pub async fn try_send_opportunistic_witness(
         &mut self,
     ) -> Result<(), OpportunisticWitnessError> {
-        let prev_round = self.coordinator_state.config.overlapped
-            && !self.coordinator_state.epoch_state.first_round;
-        let opportunistic_witness_round = match prev_round {
-            true => &mut self.previous_round,
-            false => &mut self.current_round,
-        };
+        let round = &mut self.current_round;
         if !matches!(self.active_step, ActiveStep::Training(..)) {
             // nothin to do, we're not training, so there's no reason to send an opportunistic witness.
             return Ok(());
         }
 
-        if let Some((_, witness_proof, _)) = opportunistic_witness_round.committee_info {
-            // if we're overlapped & on the first two rounds, we'll send a witness proof,
-            // even though it's not going to be full -
-            // this is so we don't stall on the first round, and wait the entire training round time.
-            // TODO maybe explicitly encode this in the coordinator state, so there's no weirdness about
-            // signing off on a weird witness proof?
-            let skip_ready_check =
-                self.coordinator_state.config.overlapped && opportunistic_witness_round.height <= 1;
-            if !skip_ready_check {
-                // check that we've seen a payload for every batch ID
-                if opportunistic_witness_round
-                    .batch_ids_not_yet_trained_on
-                    .is_some()
-                {
-                    // we're not done training yet, still some batch IDs to recv payloads for.
-                    return Ok(());
-                }
-                // check that all batches are done deserializing
-                for batch in &opportunistic_witness_round.downloads {
-                    match batch.1 {
-                        PayloadState::Deserializing(thread) if thread.is_finished() => {
-                            // this batch is done deserializing, we can witness on it now.
-                        }
+        if let Some((_, witness_proof, _)) = round.committee_info {
+            // check that we've seen a payload for every batch ID
+            if round.batch_ids_not_yet_trained_on.is_some() {
+                // we're not done training yet, still some batch IDs to recv payloads for.
+                return Ok(());
+            }
+            // check that all batches are done deserializing
+            for batch in &round.downloads {
+                match batch.1 {
+                    PayloadState::Deserializing(thread) if thread.is_finished() => {
+                        // this batch is done deserializing, we can witness on it now.
+                    }
 
-                        // we're still downloading or deserializing this batch, so we're not ready to send an opportunistic witness.
-                        // this function will get called again when a deserialize finishes.
-                        _ => {
-                            return Ok(());
-                        }
+                    // we're still downloading or deserializing this batch, so we're not ready to send an opportunistic witness.
+                    // this function will get called again when a deserialize finishes.
+                    _ => {
+                        return Ok(());
                     }
                 }
             }
 
-            debug!(
-                "Sending opportunistic witness for {} round. skipped ready check? {}",
-                if prev_round { "previous" } else { "current" },
-                skip_ready_check
-            );
+            if let Some(witness) = round.get_witness_to_send(witness_proof.index) {
+                debug!("Sending opportunistic witness",);
 
-            if let Some(witness) =
-                opportunistic_witness_round.get_witness_to_send(witness_proof.index)
-            {
-                println!("Sending opportunistic WITNESS!!!");
                 self.tx_witness
                     .send(witness)
                     .map_err(|_| OpportunisticWitnessError::Send)?;
@@ -200,36 +176,9 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
         from_client_id: T,
         training_result: TrainingResult,
     ) -> Result<(), ApplyMessageError> {
-        let state_step = self.coordinator_state.progress.step;
         let result_step = training_result.step;
         let batch_id = training_result.batch_id;
-        let round_state = if self.coordinator_state.config.overlapped {
-            if training_result.step == state_step {
-                debug!(
-                    "Got result gossip for current step {} batch {batch_id}",
-                    result_step
-                );
-                &mut self.current_round
-            } else if result_step == state_step - 1 {
-                debug!(
-                    "Got result gossip for previous step {} batch {batch_id}",
-                    result_step
-                );
-                &mut self.previous_round
-            } else {
-                debug!(
-                    "Ignoring result from step {} (current step is {})",
-                    result_step, state_step
-                );
-                return Ok(());
-            }
-        } else if training_result.step != state_step {
-            debug!(
-                "Ignoring result from step {} (current step is {})",
-                training_result.step, state_step
-            );
-            return Ok(());
-        } else {
+        let round_state = {
             debug!(
                 "Got result gossip for current step {} batch {batch_id}",
                 result_step
@@ -469,13 +418,19 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
         // we unconditionally store every seen payload, since we're not yet sure what consensus will be on whether it's included.
         let deserializing = tokio::task::spawn({
             let notify_try_opportunistic_witness = self.notify_try_opportunistic_witness.clone();
+            let batch_id = *batch_id;
             async move {
                 let maybe_results = tokio::task::spawn_blocking(move || {
-                    distro_result
+                    let r = distro_result
                         .distro_results
                         .iter()
                         .map(|x| x.try_into())
-                        .collect::<Result<Vec<DistroResult>, TchError>>()
+                        .collect::<Result<Vec<DistroResult>, TchError>>();
+                    debug!(
+                        "Finished deserializing payload {} for batch {}",
+                        hash, batch_id
+                    );
+                    r
                 })
                 .await
                 .map_err(|_| DeserializeError::DeserializeThreadCrashed)??;
