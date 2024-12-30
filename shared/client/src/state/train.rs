@@ -419,8 +419,7 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         let batch_ids = get_batch_ids_for_round(
             // coordinator has already advanced to the next round but we haven't started ours yet.
             // our current_round corresponds to the coordinator's previous_round
-            state.previous_round()
-            .ok_or(ApplyError::NoActiveRound)?,
+            state.previous_round().ok_or(ApplyError::NoActiveRound)?,
             state,
         );
 
