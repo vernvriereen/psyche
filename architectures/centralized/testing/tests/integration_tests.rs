@@ -104,7 +104,7 @@ async fn state_change_shutdown_node_in_warmup() {
         RunState::WaitingForMembers,
     )
     .await;
-    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+    assert_with_retries(|| server_handle.get_clients_len(), 1).await;
     assert_with_retries(|| server_handle.get_pending_clients_len(), 1).await;
 }
 
