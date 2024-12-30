@@ -7,8 +7,10 @@ use psyche_coordinator::model::{
 };
 use psyche_coordinator::{
     Client, Coordinator, CoordinatorError, HealthChecks, Round, RunState, TickResult, Witness,
+    SOLANA_MAX_NUM_CLIENTS,
 };
-use psyche_core::u8_to_string;
+
+use psyche_core::{u8_to_string, FixedVec};
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider, Shuffle,
     TokenSize,
@@ -111,6 +113,10 @@ pub struct App {
 /// to facilitate testing and debugging.
 #[allow(dead_code)]
 impl App {
+    pub fn get_clients(&self) -> FixedVec<Client<ClientId>, SOLANA_MAX_NUM_CLIENTS> {
+        self.coordinator.epoch_state.clients
+    }
+
     pub fn get_pending_clients(&self) -> HashSet<ClientId> {
         self.backend.pending_clients.clone()
     }

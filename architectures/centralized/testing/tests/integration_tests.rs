@@ -17,7 +17,7 @@ async fn connect_single_node() {
     let server_port = server_handle.server_port;
     let run_id = &server_handle.run_id;
     let _client_handle = ClientHandle::default(server_port, run_id).await;
-    let connected_clients = || server_handle.get_clients_len();
+    let connected_clients = || server_handle.get_pending_clients_len();
 
     assert_with_retries(connected_clients, 1).await;
 }
@@ -33,7 +33,7 @@ async fn connect_multiple_nodes() {
     let run_id = &server_handle.run_id;
     let _client_handles = spawn_clients(number_of_nodes, server_port, run_id).await;
 
-    let connected_clients = || server_handle.get_clients_len();
+    let connected_clients = || server_handle.get_pending_clients_len();
     let run_state = || server_handle.get_run_state();
 
     assert_with_retries(connected_clients, number_of_nodes).await;
@@ -98,14 +98,14 @@ async fn state_change_shutdown_node_in_warmup() {
 
     // One client is killed, and now state returns to `WaitingForMembers` since the
     // minimum for starting the round is not reached
-
     client_2_task.client_handle.abort();
-    assert_with_retries(|| server_handle.get_clients_len(), 1).await;
     assert_with_retries(
         || server_handle.get_run_state(),
         RunState::WaitingForMembers,
     )
     .await;
+    assert_with_retries(|| server_handle.get_clients_len(), 1).await;
+    assert_with_retries(|| server_handle.get_pending_clients_len(), 1).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -220,8 +220,9 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     let mut score = 0;
     let clients = server_handle.get_clients().await;
     clients.iter().for_each(|client| {
-        score +=
-            psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(client, witnesses);
+        score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
+            &client.id, witnesses,
+        );
     });
 
     let number_of_sent_witnesses = witnesses.len();

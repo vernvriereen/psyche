@@ -1,11 +1,12 @@
 use bytemuck::Zeroable;
 use psyche_centralized_server::app::App as ServerApp;
 use psyche_centralized_shared::ClientId;
-use psyche_coordinator::Round;
 use psyche_coordinator::{
     model::{Model, LLM},
-    CoodinatorConfig, Coordinator, CoordinatorEpochState, RunState,
+    CoodinatorConfig, Coordinator, CoordinatorEpochState, RunState, SOLANA_MAX_NUM_CLIENTS,
 };
+use psyche_coordinator::{Client, Round};
+use psyche_core::FixedVec;
 use std::collections::HashSet;
 use tokio::{
     select,
@@ -23,9 +24,15 @@ use crate::{MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME};
 
 enum TestingQueryMsg {
     Clients {
-        respond_to: oneshot::Sender<HashSet<ClientId>>,
+        respond_to: oneshot::Sender<FixedVec<Client<ClientId>, SOLANA_MAX_NUM_CLIENTS>>,
     },
     ClientsLen {
+        respond_to: oneshot::Sender<usize>,
+    },
+    PendingClients {
+        respond_to: oneshot::Sender<HashSet<ClientId>>,
+    },
+    PendingClientsLen {
         respond_to: oneshot::Sender<usize>,
     },
     RunState {
@@ -112,10 +119,18 @@ impl CoordinatorServer {
     pub async fn handle_message(&mut self, msg: TestingQueryMsg) {
         match msg {
             TestingQueryMsg::Clients { respond_to } => {
-                let clients = self.inner.get_pending_clients();
+                let clients = self.inner.get_clients();
                 respond_to.send(clients).unwrap();
             }
             TestingQueryMsg::ClientsLen { respond_to } => {
+                let clients = self.inner.get_clients();
+                respond_to.send(clients.len()).unwrap();
+            }
+            TestingQueryMsg::PendingClients { respond_to } => {
+                let clients = self.inner.get_pending_clients();
+                respond_to.send(clients).unwrap();
+            }
+            TestingQueryMsg::PendingClientsLen { respond_to } => {
                 let clients = self.inner.get_pending_clients();
                 respond_to.send(clients.len()).unwrap();
             }
@@ -169,7 +184,7 @@ impl CoordinatorServerHandle {
         }
     }
 
-    pub async fn get_clients(&self) -> HashSet<ClientId> {
+    pub async fn get_clients(&self) -> FixedVec<Client<ClientId>, SOLANA_MAX_NUM_CLIENTS> {
         let (send, recv) = oneshot::channel();
         let msg = TestingQueryMsg::Clients { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
@@ -179,6 +194,20 @@ impl CoordinatorServerHandle {
     pub async fn get_clients_len(&self) -> usize {
         let (send, recv) = oneshot::channel();
         let msg = TestingQueryMsg::ClientsLen { respond_to: send };
+        let _ = self.query_chan_sender.send(msg).await;
+        recv.await.expect("Coordinator actor task has been killed")
+    }
+
+    pub async fn get_pending_clients(&self) -> HashSet<ClientId> {
+        let (send, recv) = oneshot::channel();
+        let msg = TestingQueryMsg::PendingClients { respond_to: send };
+        let _ = self.query_chan_sender.send(msg).await;
+        recv.await.expect("Coordinator actor task has been killed")
+    }
+
+    pub async fn get_pending_clients_len(&self) -> usize {
+        let (send, recv) = oneshot::channel();
+        let msg = TestingQueryMsg::PendingClientsLen { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
         recv.await.expect("Coordinator actor task has been killed")
     }
