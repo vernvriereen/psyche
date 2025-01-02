@@ -392,8 +392,11 @@ async fn client_join_in_training() {
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 
     // spawn new client
-    let _new_client_handles =
-        spawn_clients_with_training_delay(1, server_port, run_id, training_delay).await;
+    let [new_client_handle] =
+        spawn_clients_with_training_delay(1, server_port, run_id, training_delay)
+            .await
+            .try_into()
+            .unwrap();
 
     // assert new client didnt join the round but is ready in peding clients
     assert_with_retries(|| server_handle.get_pending_clients_len(), 3).await;
@@ -413,4 +416,9 @@ async fn client_join_in_training() {
     });
     // clients spawned in RoundTrain state should not be present in the witnesses
     assert_eq!(score, init_min_clients);
+
+    let error = new_client_handle.client_handle.await.unwrap().unwrap_err();
+    assert!(error
+        .to_string()
+        .contains(&psyche_client::InitRunError::ModelIsEphemeral.to_string()));
 }
