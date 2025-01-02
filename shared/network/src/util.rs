@@ -1,4 +1,5 @@
-use iroh::{gossip::proto::TopicId, net::relay::RelayMode};
+use iroh::RelayMode;
+use iroh_gossip::proto::TopicId;
 use sha2::{Digest, Sha256};
 
 const GOSSIP_TOPIC: &str = "psyche gossip";

@@ -86,7 +86,7 @@ pub fn dummy_client_app_params_with_training_delay(
 ) -> AppParams {
     AppParams {
         cancel: CancellationToken::default(),
-        private_key: SecretKey::generate(),
+        private_key: SecretKey::generate(&mut rand::rngs::OsRng),
         server_addr: format!("localhost:{}", server_port).to_string(),
         tx_tui_state: None,
         run_id: run_id.to_string(),
@@ -109,7 +109,7 @@ pub fn dummy_client_app_params_with_training_delay(
 pub fn dummy_client_app_params_default(server_port: u16, run_id: &str) -> AppParams {
     AppParams {
         cancel: CancellationToken::default(),
-        private_key: SecretKey::generate(),
+        private_key: SecretKey::generate(&mut rand::rngs::OsRng),
         server_addr: format!("localhost:{}", server_port).to_string(),
         tx_tui_state: None,
         run_id: run_id.to_string(),
