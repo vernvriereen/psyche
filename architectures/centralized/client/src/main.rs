@@ -1,6 +1,6 @@
 use crate::app::{AppBuilder, AppParams, Tabs, TAB_NAMES};
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use clap::{ArgAction, Parser, Subcommand};
 use psyche_client::{CheckpointConfig, HubUploadInfo, WandBInfo};
 use psyche_eval::tasktype_from_name;
@@ -19,15 +19,25 @@ struct Args {
     command: Commands,
 }
 
+#[derive(Debug, clap::Args)]
+#[group(required = false, multiple = false)]
+pub struct SecretKeyLocation {
+    #[clap(long)]
+    secret_key: Option<PathBuf>,
+    #[clap(long)]
+    raw_secret_key: Option<String>,
+}
+
 #[allow(clippy::large_enum_variant)] // it's only used at startup, we don't care.
 #[derive(Subcommand, Debug)]
 enum Commands {
     ShowIdentity {
-        secret_key: PathBuf,
+        #[clap(flatten)]
+        key: SecretKeyLocation,
     },
     Train {
-        #[clap(long)]
-        secret_key: Option<PathBuf>,
+        #[clap(flatten)]
+        key: SecretKeyLocation,
 
         #[clap(short, long, env)]
         bind_p2p_port: Option<u16>,
@@ -106,20 +116,36 @@ enum Commands {
     },
 }
 
+fn read_key(key: SecretKeyLocation) -> Result<Option<SecretKey>> {
+    let bytes: [u8; 32] = match (key.raw_secret_key, key.secret_key) {
+        (None, None) => return Ok(None),
+        (Some(raw), None) => {
+            let vals = hex::decode(raw)?;
+            let l = vals.len();
+            vals.try_into()
+                .map_err(|_| anyhow!("invalid raw secret key, expected 32 bytes, got {}", l))?
+        }
+
+        (None, Some(key_file)) => std::fs::read(&key_file)?
+            .try_into()
+            .map_err(|_| anyhow!("key file {key_file:?} was not 32 bytes long."))?,
+
+        _ => unreachable!(),
+    };
+    Ok(Some(SecretKey::from_bytes(&bytes)))
+}
+
 async fn async_main() -> Result<()> {
     let args = Args::parse();
 
     match args.command {
-        Commands::ShowIdentity { secret_key } => {
-            println!(
-                "{}",
-                SecretKey::try_from_openssh(String::from_utf8(std::fs::read(secret_key)?)?)?
-                    .public()
-            );
+        Commands::ShowIdentity { key } => {
+            let key = read_key(key)?.ok_or_else(|| anyhow!("no key passed!"))?;
+            println!("{}", key.public());
             Ok(())
         }
         Commands::Train {
-            secret_key,
+            key,
             bind_p2p_port,
             tui,
             run_id,
@@ -216,14 +242,8 @@ async fn async_main() -> Result<()> {
                 OffsetDateTime::now_utc()
             );
 
-            let private_key: SecretKey = secret_key
-                .map(|k| {
-                    SecretKey::try_from_openssh(
-                        String::from_utf8(std::fs::read(k).unwrap()).unwrap(),
-                    )
-                    .unwrap()
-                })
-                .unwrap_or_else(SecretKey::generate);
+            let private_key: SecretKey =
+                read_key(key)?.unwrap_or_else(|| SecretKey::generate(&mut rand::rngs::OsRng));
 
             let wandb_info = match std::env::var("WANDB_API_KEY") {
                 Ok(wandb_api_key) => Some(WandBInfo {

@@ -196,7 +196,7 @@ where
     B: Networkable,
     D: Networkable,
 {
-    let remotes = p2p.remote_infos().await?;
+    let remotes = p2p.remote_infos();
     let node_addr = p2p.node_addr().await?;
     Ok(remotes
         .into_iter()
@@ -226,7 +226,6 @@ where
                     "ips",
                     DataValue::from(
                         node_addr
-                            .info
                             .direct_addresses
                             .iter()
                             .map(|x| x.to_string())

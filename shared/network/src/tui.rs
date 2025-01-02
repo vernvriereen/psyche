@@ -1,6 +1,6 @@
 use crate::{peer_list::PeerList, util::convert_bytes, NetworkConnection, Networkable};
 
-use iroh::net::{endpoint::ConnectionType, key::PublicKey};
+use iroh::{endpoint::ConnectionType, PublicKey};
 use psyche_tui::ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},

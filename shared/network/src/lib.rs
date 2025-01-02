@@ -1,18 +1,13 @@
 use anyhow::{Error, Result};
-use bytes::Bytes;
 use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
-use futures_util::{future::join_all, Sink, SinkExt, Stream, StreamExt};
-use iroh::{
-    blobs::BlobFormat,
-    gossip::net::{Command, Event, GossipEvent},
-    net::{endpoint::RemoteInfo, NodeAddr},
-    node::{MemNode, Node},
-};
+use futures_util::StreamExt;
+use iroh::{endpoint::RemoteInfo, protocol::Router, NodeAddr};
+use iroh_blobs::{net_protocol::Blobs, store::mem::Store, util::local_pool::LocalPool};
+use iroh_gossip::net::{Gossip, GossipEvent, GossipReceiver, GossipSender};
 use state::State;
 use std::{
     collections::HashSet,
     fmt::Debug,
-    future::IntoFuture,
     marker::PhantomData,
     net::{Ipv4Addr, SocketAddrV4},
     ops::Sub,
@@ -24,8 +19,12 @@ use tokio::{
     sync::mpsc,
     time::{interval, Interval},
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace};
 use util::{fmt_relay_mode, gossip_topic};
+
+pub use ed25519::Signature;
+pub use iroh::{NodeId, RelayMode};
+pub use iroh_blobs::{ticket::BlobTicket, Hash};
 
 mod download_manager;
 mod networkable_node_identity;
@@ -38,15 +37,7 @@ mod tui;
 mod util;
 
 pub use download_manager::{DownloadComplete, DownloadFailed};
-pub use iroh::{
-    base::ticket::BlobTicket,
-    blobs::Hash,
-    net::{
-        key::{PublicKey, SecretKey},
-        relay::RelayMode,
-        NodeId,
-    },
-};
+pub use iroh::{Endpoint, PublicKey, SecretKey};
 pub use networkable_node_identity::{FromSignedBytesError, NetworkableNodeIdentity};
 pub use peer_list::PeerList;
 pub use serde::Networkable;
@@ -59,10 +50,12 @@ where
     BroadcastMessage: Networkable,
     Download: Networkable,
 {
-    node: Arc<MemNode>,
+    router: Arc<Router>,
+    blobs_local_pool: LocalPool,
+    blobs: Blobs<Store>,
     state: State,
-    gossip_tx: Box<dyn Sink<Command, Error = Error> + Unpin + Send + Sync>,
-    gossip_rx: Box<dyn Stream<Item = std::result::Result<Event, Error>> + Unpin + Send + Sync>,
+    gossip_tx: GossipSender,
+    gossip_rx: GossipReceiver,
     download_manager: DownloadManager<Download>,
     _broadcast_message: PhantomData<BroadcastMessage>,
     _download: PhantomData<Download>,
@@ -76,7 +69,11 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NetworkConnection")
-            .field("node", &self.node)
+            .field("router", &self.router)
+            .field("blobs_local_pool", &self.blobs_local_pool)
+            .field("blobs", &self.blobs)
+            .field("gossip_tx", &self.gossip_tx)
+            .field("gossip_rx", &self.gossip_rx)
             .field("state", &self.state)
             .field("download_manager", &self.download_manager)
             .field("update_stats_interval", &self.update_stats_interval)
@@ -97,49 +94,75 @@ where
         secret_key: Option<SecretKey>,
     ) -> Result<Self> {
         let secret_key = match secret_key {
-            None => SecretKey::generate(),
+            None => SecretKey::generate(&mut rand::rngs::OsRng),
             Some(key) => key,
         };
         debug!("Using relay servers: {}", fmt_relay_mode(&relay_mode));
 
         // TODO add an allowlist of public keys, don't let any connections from people with keys not in that list.
-        let node = Node::memory()
+        let endpoint = Endpoint::builder()
             .secret_key(secret_key)
             .relay_mode(relay_mode)
             .bind_addr_v4(SocketAddrV4::new(
                 Ipv4Addr::new(0, 0, 0, 0),
                 port.unwrap_or(0),
             ))
-            .spawn()
+            .discovery_n0()
+            .bind()
             .await?;
 
-        info!("Our node addr: {}", node.node_id());
-        let me = node.endpoint().node_addr().await?;
-        let join_ticket = PeerList(vec![me]);
-        info!("our join ticket: {}", join_ticket);
-        let peer_ids: Vec<_> = bootstrap_peers.iter().map(|p| p.node_id).collect();
-        if bootstrap_peers.is_empty() {
-            info!("Waiting for peers to join us...");
-        } else {
-            info!("Trying to connect to {} peers...", bootstrap_peers.len());
-            // add the peer addrs from the ticket to our endpoint's addressbook so that they can be dialed
-            for peer in bootstrap_peers.into_iter() {
-                node.net().add_node_addr(peer).await?;
-            }
-        };
-        let (gossip_tx, gossip_rx) = node
-            .gossip()
-            .subscribe(gossip_topic(run_id), peer_ids)
-            .await?;
+        let node_addr = endpoint.node_addr().await?;
+
+        info!("Our node addr: {}", node_addr.node_id);
+
+        let blobs_local_pool = LocalPool::default();
+        let blobs = Blobs::memory().build(blobs_local_pool.handle(), &endpoint);
+
+        let gossip = Gossip::builder().spawn(endpoint.clone()).await?;
+
+        let router = Arc::new(
+            Router::builder(endpoint)
+                .accept(iroh_blobs::ALPN, blobs.clone())
+                .accept(iroh_gossip::ALPN, gossip.clone())
+                .spawn()
+                .await?,
+        );
+
+        // add any bootstrap peers
+        {
+            let me = router.endpoint().node_addr().await?;
+            let join_ticket = PeerList(vec![me]);
+            info!("our join ticket: {}", join_ticket);
+            if bootstrap_peers.is_empty() {
+                info!("Waiting for peers to join us...");
+            } else {
+                info!("Trying to connect to {} peers...", bootstrap_peers.len());
+                // add the peer addrs from the ticket to our endpoint's addressbook so that they can be dialed
+                for peer in &bootstrap_peers {
+                    router.endpoint().add_node_addr(peer.clone())?;
+                }
+            };
+        }
+
+        let (gossip_tx, gossip_rx) = gossip
+            .subscribe(
+                gossip_topic(run_id),
+                bootstrap_peers.iter().map(|p| p.node_id).collect(),
+            )?
+            .split();
         info!("Connected!");
 
         // if this is not 1s, the bandwidth chart will be wrong.
         let update_stats_interval = interval(Duration::from_secs(1));
 
         Ok(Self {
-            node: node.into(),
-            gossip_tx: Box::new(gossip_tx),
-            gossip_rx: Box::new(gossip_rx),
+            blobs_local_pool,
+            blobs,
+            gossip_rx,
+            gossip_tx,
+
+            router,
+
             update_stats_interval,
             state: State::new(15),
             download_manager: DownloadManager::new()?,
@@ -149,52 +172,33 @@ where
     }
 
     pub async fn add_peers(&mut self, peers: Vec<NodeAddr>) -> Result<()> {
-        join_all(
-            peers
-                .iter()
-                .filter(|p| p.node_id != self.node.node_id())
-                .map(|peer| self.node.net().add_node_addr(peer.clone())),
-        )
-        .await
-        .into_iter()
-        .collect::<Result<Vec<_>>>()?;
+        peers
+            .iter()
+            .filter(|p| p.node_id != self.router.endpoint().node_id())
+            .map(|peer| self.router.endpoint().add_node_addr(peer.clone()))
+            .collect::<Result<Vec<_>>>()?;
         self.gossip_tx
-            .send(Command::JoinPeers(
+            .join_peers(
                 peers
                     .into_iter()
                     .map(|i| i.node_id)
-                    .filter(|p| p != &self.node.node_id())
+                    .filter(|p| p != &self.router.endpoint().node_id())
                     .collect(),
-            ))
+            )
             .await?;
         Ok(())
     }
 
     pub async fn broadcast(&mut self, message: &BroadcastMessage) -> Result<()> {
         let encoded_message =
-            SignedMessage::sign_and_encode(self.node.endpoint().secret_key(), message)?;
-        self.gossip_tx
-            .send(Command::Broadcast(encoded_message))
-            .await
-    }
-
-    pub async fn broadcast_all(&mut self, messages: &[BroadcastMessage]) -> Result<()> {
-        let encoded_messages: Result<Vec<Bytes>, _> = messages
-            .iter()
-            .map(|message| {
-                SignedMessage::sign_and_encode(self.node.endpoint().secret_key(), message)
-            })
-            .collect();
-        let encoded_messages =
-            futures_util::stream::iter(encoded_messages?.into_iter().map(Command::Broadcast));
-
-        self.gossip_tx.send_all(&mut encoded_messages.map(Ok)).await
+            SignedMessage::sign_and_encode(self.router.endpoint().secret_key(), message)?;
+        self.gossip_tx.broadcast(encoded_message).await
     }
 
     pub async fn start_download(&mut self, ticket: BlobTicket) -> Result<()> {
         let mut progress = self
-            .node
-            .blobs()
+            .blobs
+            .client()
             .download(ticket.hash(), ticket.node_addr().clone())
             .await?;
         self.state.currently_sharing_blobs.insert(ticket.hash());
@@ -221,12 +225,15 @@ where
 
     pub async fn add_downloadable(&mut self, data: Download) -> Result<BlobTicket> {
         let bytes = postcard::to_allocvec(&data)?;
-        let blob_res = self.node.blobs().add_bytes(bytes).await?;
-        let blob_ticket = self
-            .node
-            .blobs()
-            .share(blob_res.hash, blob_res.format, Default::default())
-            .await?;
+        let blob_res = self.blobs.client().add_bytes(bytes).await?;
+        let addr = self.router.endpoint().node_addr().await?;
+        let blob_ticket = BlobTicket::new(addr, blob_res.hash, blob_res.format)?;
+
+        trace!(
+            "added downloadable hash {} size {}",
+            blob_res.hash,
+            blob_res.size
+        );
 
         self.state
             .currently_sharing_blobs
@@ -235,37 +242,30 @@ where
         Ok(blob_ticket)
     }
 
-    pub async fn remove_downloadable(&mut self, hash: Hash) -> Result<()> {
-        self.node.blobs().delete_blob(hash).await?;
+    pub async fn remove_downloadable(&mut self, hash: iroh_blobs::Hash) -> Result<()> {
+        self.blobs.client().delete_blob(hash).await?;
         self.state.currently_sharing_blobs.remove(&hash);
         Ok(())
     }
 
-    pub fn currently_sharing_blobs(&self) -> &HashSet<Hash> {
+    pub fn currently_sharing_blobs(&self) -> &HashSet<iroh_blobs::Hash> {
         &self.state.currently_sharing_blobs
     }
 
     pub async fn node_addr(&self) -> Result<NodeAddr> {
-        self.node.endpoint().node_addr().await
+        self.router.endpoint().node_addr().await
     }
 
     pub async fn join_ticket(&self) -> Result<String> {
-        let me = self.node_addr().await?;
+        let me = self.router.endpoint().node_addr().await?;
         Ok(PeerList(vec![me]).to_string())
     }
 
     /// RemoteInfo and bandwidth in bytes/s for a node
-    pub async fn remote_infos(&self) -> Result<Vec<(RemoteInfo, f64)>> {
-        Ok(self
-            .node
-            .net()
+    pub fn remote_infos(&self) -> Vec<(RemoteInfo, f64)> {
+        self.router
+            .endpoint()
             .remote_info_iter()
-            .await?
-            .collect::<Vec<_>>()
-            .into_future()
-            .await
-            .into_iter()
-            .filter_map(|x| x.ok())
             .map(|node_info| {
                 let bandwidth = self
                     .state
@@ -274,7 +274,7 @@ where
                     .unwrap_or_default();
                 (node_info, bandwidth)
             })
-            .collect())
+            .collect()
     }
 
     pub async fn poll_next(&mut self) -> Result<Option<NetworkEvent<BroadcastMessage, Download>>> {
@@ -300,7 +300,7 @@ where
                 }
             }
             _ = self.update_stats_interval.tick() => {
-                on_update_stats(&self.node, &mut self.state).await?;
+                on_update_stats(self.router.endpoint(), &mut self.state).await?;
             }
         };
 
@@ -321,10 +321,10 @@ where
             let download = match update.error {
                 Some(err) => Err(Error::msg(err.to_string())),
                 None => {
-                    let node = self.node.clone();
+                    let blobs = self.blobs.client().clone();
                     let (send, recv) = oneshot::channel();
                     tokio::spawn(async move {
-                        let blob_bytes = match node.blobs().read_to_bytes(hash).await {
+                        let blob_bytes = match blobs.read_to_bytes(hash).await {
                             Ok(b) => b,
                             Err(e) => {
                                 error!("Failed to read bytes: {e}");
@@ -347,26 +347,29 @@ where
     }
 
     pub async fn get_all_peers(&self) -> PeerList {
-        let nodes: Vec<Result<RemoteInfo, _>> = self
-            .node
-            .net()
-            .remote_info_iter()
-            .await
-            .unwrap()
-            .collect()
-            .await;
-        let mut all_nodes = vec![self.node_addr().await.expect("node addr works..")];
-        for node in nodes {
-            all_nodes.push(node.unwrap().into());
-        }
-        PeerList(all_nodes)
+        PeerList(
+            std::iter::once(
+                self.router
+                    .endpoint()
+                    .node_addr()
+                    .await
+                    .expect("node addr exists"),
+            )
+            .chain(
+                self.router
+                    .endpoint()
+                    .remote_info_iter()
+                    .map(NodeAddr::from),
+            )
+            .collect(),
+        )
     }
 }
 
 fn parse_gossip_event<BroadcastMessage: Networkable>(
-    event: Result<Event>,
+    event: Result<iroh_gossip::net::Event>,
 ) -> Option<(PublicKey, BroadcastMessage)> {
-    if let Ok(Event::Gossip(GossipEvent::Received(msg))) = event {
+    if let Ok(iroh_gossip::net::Event::Gossip(GossipEvent::Received(msg))) = event {
         if let Ok(result) = SignedMessage::<BroadcastMessage>::verify_and_decode(&msg.content) {
             return Some(result);
         }
@@ -386,16 +389,15 @@ where
     DownloadFailed(DownloadFailed),
 }
 
-async fn on_update_stats(node: &MemNode, stats: &mut State) -> Result<()> {
+async fn on_update_stats(endpoint: &Endpoint, stats: &mut State) -> Result<()> {
     let ticket = {
-        let me = node.endpoint().node_addr().await?;
+        let me = endpoint.node_addr().await?;
         PeerList(vec![me])
     };
 
     stats.join_ticket = ticket;
 
-    for (peer_id, conn_type, last_recvd) in node
-        .endpoint()
+    for (peer_id, conn_type, last_recvd) in endpoint
         .remote_info_iter()
         .filter_map(|i| i.last_received().map(|r| (i.node_id, i.conn_type, r)))
     {
@@ -418,13 +420,4 @@ async fn on_update_stats(node: &MemNode, stats: &mut State) -> Result<()> {
     }
 
     Ok(())
-}
-
-pub fn dummy_blob_ticket() -> BlobTicket {
-    BlobTicket::new(
-        NodeAddr::new(PublicKey::from_bytes(&Default::default()).unwrap()),
-        Hash::EMPTY,
-        BlobFormat::Raw,
-    )
-    .unwrap()
 }
