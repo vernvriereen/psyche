@@ -426,3 +426,71 @@ async fn client_join_in_training() {
         .to_string()
         .contains(&psyche_client::InitRunError::ModelIsEphemeral.to_string()));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn shutdown_node_in_training() {
+    let init_min_clients = 2;
+    let batches_per_round = 2;
+    let training_delay = 2;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+
+    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
+
+    let server_port = server_handle.server_port;
+    let run_id = &server_handle.run_id;
+    let [client_1_task, _client_2_task] = spawn_clients_with_training_delay(
+        init_min_clients as usize,
+        server_port,
+        run_id,
+        training_delay,
+    )
+    .await
+    .try_into()
+    .unwrap();
+
+    // warmup
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+
+    // A client is killed and the coordinator state returns to `WaitingForMembers`. Since client 3
+    // was pending, the state immediately changes to `Warmup` again
+
+    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+
+
+    // train
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+    let clients = server_handle.get_clients().await;
+
+
+    client_1_task.client_handle.abort();
+    // tokio::time::sleep(Duration::from_secs(training_delay)).await;
+
+    // witness
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
+    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
+
+    let witnesses = &server_handle.get_rounds().await[0].witnesses;
+
+    let mut score = 0;
+    // let clients = server_handle.get_clients().await;
+    clients.iter().for_each(|client| {
+        score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
+            &client.id, witnesses,
+        );
+    });
+
+    assert_eq!(score, 1);
+
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
+
+    println!("here");
+}
