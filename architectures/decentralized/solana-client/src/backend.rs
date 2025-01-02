@@ -7,7 +7,6 @@ use anchor_client::{
     Client, Cluster, Program,
 };
 use anyhow::{anyhow, bail, Result};
-use bytemuck::Zeroable;
 use futures_util::StreamExt;
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_watcher::Backend as WatcherBackend;
@@ -63,7 +62,7 @@ impl SolanaBackend {
                 }
             };
             while let Some(update) = notifications.next().await {
-                if let Err(_) = tx.send(update) {
+                if tx.send(update).is_err() {
                     break;
                 }
             }
