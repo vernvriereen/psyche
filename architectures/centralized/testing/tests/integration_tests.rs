@@ -350,9 +350,9 @@ async fn finish_epoch() {
     assert_with_retries(|| server_handle.get_current_epoch(), 1).await;
 }
 
-/// start a normal round
-/// spawn a client while network is in RoundTrain
-/// the new client should not join the network but should be ready in pending_clients
+/// A new client attempts to join the network during the RoundTrain phase.
+/// The new client should not participate in the current round
+/// and should attempt to join the network in the subsequent round.
 #[tokio::test(flavor = "multi_thread")]
 async fn client_join_in_training() {
     // start a normal run with 2 clients
@@ -385,6 +385,7 @@ async fn client_join_in_training() {
     .await;
 
     // execute round 0
+    assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
     // warmup
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
     tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
@@ -416,6 +417,7 @@ async fn client_join_in_training() {
     });
     assert_eq!(score, init_min_clients);
 
+    assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
     // the new client tries to join the network
     // but since the llm checkpoint is Ephemeral
     // it results in an InitRunError::ModelIsEphemeral error
