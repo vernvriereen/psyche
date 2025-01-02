@@ -5725,6 +5725,7 @@ name = "psyche-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "futures",
  "hex",
  "hf-hub",
@@ -5885,6 +5886,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bytemuck",
+ "clap",
  "futures-util",
  "home",
  "psyche-client",

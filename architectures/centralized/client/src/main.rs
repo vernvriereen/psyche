@@ -1,12 +1,10 @@
 use crate::app::{AppBuilder, AppParams, Tabs, TAB_NAMES};
 
-use anyhow::{anyhow, bail, Result};
-use clap::{ArgAction, Parser, Subcommand};
-use psyche_client::{CheckpointConfig, HubUploadInfo, WandBInfo};
-use psyche_eval::tasktype_from_name;
+use anyhow::{anyhow, Result};
+use clap::{Parser, Subcommand};
+use psyche_client::{read_secret_key, SecretKeyLocation, TrainArgs};
 use psyche_network::SecretKey;
 use psyche_tui::{maybe_start_render_loop, LogOutput};
-use std::path::PathBuf;
 use time::OffsetDateTime;
 use tokio::runtime::Builder;
 use tracing::{info, Level};
@@ -19,15 +17,6 @@ struct Args {
     command: Commands,
 }
 
-#[derive(Debug, clap::Args)]
-#[group(required = false, multiple = false)]
-pub struct SecretKeyLocation {
-    #[clap(long)]
-    secret_key: Option<PathBuf>,
-    #[clap(long)]
-    raw_secret_key: Option<String>,
-}
-
 #[allow(clippy::large_enum_variant)] // it's only used at startup, we don't care.
 #[derive(Subcommand, Debug)]
 enum Commands {
@@ -37,102 +26,8 @@ enum Commands {
     },
     Train {
         #[clap(flatten)]
-        key: SecretKeyLocation,
-
-        #[clap(short, long, env)]
-        bind_p2p_port: Option<u16>,
-
-        #[clap(
-            long,
-            action = ArgAction::Set,
-            default_value_t = true,
-            default_missing_value = "true",
-            num_args = 0..=1,
-            require_equals = false,
-            env
-        )]
-        tui: bool,
-
-        #[clap(long, env)]
-        run_id: String,
-
-        #[clap(long, env)]
-        server_addr: String,
-
-        #[clap(long, default_value_t = 1, env)]
-        data_parallelism: usize,
-
-        #[clap(long, default_value_t = 1, env)]
-        tensor_parallelism: usize,
-
-        #[clap(long, env)]
-        micro_batch_size: Option<usize>,
-
-        /// If provided, every shared gradient this client sees will be written to this directory.
-        #[clap(long, env)]
-        write_gradients_dir: Option<PathBuf>,
-
-        #[clap(long, env)]
-        eval_tasks: Option<String>,
-
-        #[clap(long, default_value_t = 0, env)]
-        eval_fewshot: usize,
-
-        #[clap(long, default_value_t = 42, env)]
-        eval_seed: u64,
-
-        #[clap(long, env)]
-        eval_task_max_docs: Option<usize>,
-
-        #[clap(long, env)]
-        checkpoint_dir: Option<PathBuf>,
-
-        #[clap(long, env)]
-        hub_repo: Option<String>,
-
-        #[clap(long, env)]
-        wandb_project: Option<String>,
-
-        #[clap(long, env)]
-        wandb_run: Option<String>,
-
-        #[clap(long, env)]
-        wandb_group: Option<String>,
-
-        #[clap(long, env)]
-        wandb_entity: Option<String>,
-
-        #[clap(long, env)]
-        write_log: Option<PathBuf>,
-
-        #[clap(long, env)]
-        optim_stats_steps: Option<u32>,
-
-        #[clap(long, default_value_t = false, env)]
-        grad_accum_in_fp32: bool,
-
-        #[clap(long, env)]
-        dummy_training_delay_secs: Option<u64>,
+        args: TrainArgs,
     },
-}
-
-fn read_key(key: SecretKeyLocation) -> Result<Option<SecretKey>> {
-    let bytes: [u8; 32] = match (key.raw_secret_key, key.secret_key) {
-        (None, None) => return Ok(None),
-        (Some(raw), None) => {
-            let vals = hex::decode(raw)?;
-            let l = vals.len();
-            vals.try_into()
-                .map_err(|_| anyhow!("invalid raw secret key, expected 32 bytes, got {}", l))?
-        }
-
-        (None, Some(key_file)) => std::fs::read(&key_file)?
-            .try_into()
-            .map_err(|_| anyhow!("key file {key_file:?} was not 32 bytes long."))?,
-
-        _ => unreachable!(),
-    };
-    Ok(Some(SecretKey::from_bytes(&bytes)))
 }
 
 async fn async_main() -> Result<()> {
@@ -140,35 +35,11 @@ async fn async_main() -> Result<()> {
 
     match args.command {
         Commands::ShowIdentity { key } => {
-            let key = read_key(key)?.ok_or_else(|| anyhow!("no key passed!"))?;
+            let key = read_secret_key(&key)?.ok_or_else(|| anyhow!("no key passed!"))?;
             println!("{}", key.public());
             Ok(())
         }
-        Commands::Train {
-            key,
-            bind_p2p_port,
-            tui,
-            run_id,
-            server_addr,
-            data_parallelism,
-            tensor_parallelism,
-            micro_batch_size,
-            write_gradients_dir,
-            eval_tasks,
-            eval_fewshot,
-            eval_seed,
-            eval_task_max_docs,
-            checkpoint_dir,
-            hub_repo,
-            wandb_run,
-            wandb_entity,
-            wandb_group,
-            wandb_project,
-            write_log,
-            optim_stats_steps,
-            grad_accum_in_fp32,
-            dummy_training_delay_secs,
-        } => {
+        Commands::Train { args } => {
             #[cfg(target_os = "windows")]
             {
                 // this is a gigantic hack to cover that called sdpa prints out
@@ -190,51 +61,17 @@ async fn async_main() -> Result<()> {
             }
 
             let hub_read_token = std::env::var("HF_TOKEN").ok();
-
-            let checkpoint_upload_info = match (&hub_read_token, hub_repo, checkpoint_dir) {
-                (Some(token), Some(repo), Some(dir)) => Some(CheckpointConfig {
-                    checkpoint_dir: dir,
-                    hub_upload: Some(HubUploadInfo {
-                        hub_repo: repo,
-                        hub_token: token.to_string(),
-                    }),
-                }),
-                (None, Some(_), Some(_)) => {
-                    bail!("hub-repo and checkpoint-dir set, but no HF_TOKEN env variable.")
-                }
-                (_, Some(_), None) => {
-                    bail!("--hub-repo was set, but no --checkpoint-dir was passed!")
-                }
-                (_, None, Some(dir)) => Some(CheckpointConfig {
-                    checkpoint_dir: dir,
-                    hub_upload: None,
-                }),
-                (_, None, _) => None,
-            };
-
-            let eval_tasks = match eval_tasks {
-                Some(eval_tasks) => {
-                    let result: Result<Vec<psyche_eval::Task>> = eval_tasks
-                        .split(",")
-                        .map(|eval_task| {
-                            tasktype_from_name(eval_task).map(|task_type| {
-                                psyche_eval::Task::new(task_type, eval_fewshot, eval_seed)
-                            })
-                        })
-                        .collect();
-                    result?
-                }
-                None => Vec::new(),
-            };
+            let checkpoint_upload_info = args.checkpoint_config()?;
+            let eval_tasks = args.eval_tasks()?;
 
             psyche_tui::init_logging(
-                if tui {
+                if args.tui {
                     LogOutput::TUI
                 } else {
                     LogOutput::Console
                 },
                 Level::INFO,
-                write_log,
+                args.write_log.clone(),
             );
 
             info!(
@@ -242,55 +79,38 @@ async fn async_main() -> Result<()> {
                 OffsetDateTime::now_utc()
             );
 
-            let private_key: SecretKey =
-                read_key(key)?.unwrap_or_else(|| SecretKey::generate(&mut rand::rngs::OsRng));
+            let private_key: SecretKey = read_secret_key(&args.key)?
+                .unwrap_or_else(|| SecretKey::generate(&mut rand::rngs::OsRng));
 
-            let wandb_info = match std::env::var("WANDB_API_KEY") {
-                Ok(wandb_api_key) => Some(WandBInfo {
-                    project: wandb_project.unwrap_or("psyche".to_string()),
-                    run: wandb_run.unwrap_or_else(|| {
-                        format!("{}-{}", run_id.clone(), private_key.public().fmt_short())
-                    }),
-                    entity: wandb_entity,
-                    api_key: wandb_api_key,
-                    group: wandb_group,
-                }),
-                Err(_) => {
-                    match wandb_entity.is_some()
-                        || wandb_run.is_some()
-                        || wandb_project.is_some()
-                        || wandb_group.is_some()
-                    {
-                        true => bail!(
-                            "WANDB_API_KEY environment variable must be set for wandb integration"
-                        ),
-                        false => None,
-                    }
-                }
-            };
+            let wandb_info = args.wandb_info(format!(
+                "{}-{}",
+                args.run_id.clone(),
+                private_key.public().fmt_short()
+            ))?;
 
-            let (cancel, tx_tui_state) =
-                maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;
+            let (cancel, tx_tui_state) = maybe_start_render_loop(
+                args.tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)),
+            )?;
 
             let (mut app, p2p, state_options) = AppBuilder::new(AppParams {
                 cancel,
                 private_key,
-                server_addr,
+                server_addr: args.server_addr,
                 tx_tui_state,
-                run_id,
-                p2p_port: bind_p2p_port,
-                data_parallelism,
-                tensor_parallelism,
-                micro_batch_size,
-                write_gradients_dir,
-                eval_task_max_docs,
+                run_id: args.run_id,
+                p2p_port: args.bind_p2p_port,
+                data_parallelism: args.data_parallelism,
+                tensor_parallelism: args.tensor_parallelism,
+                micro_batch_size: args.micro_batch_size,
+                write_gradients_dir: args.write_gradients_dir,
+                eval_task_max_docs: args.eval_task_max_docs,
                 eval_tasks,
                 checkpoint_upload_info,
                 hub_read_token,
                 wandb_info,
-                optim_stats: optim_stats_steps,
-                grad_accum_in_fp32,
-                dummy_training_delay_secs,
+                optim_stats: args.optim_stats_steps,
+                grad_accum_in_fp32: args.grad_accum_in_fp32,
+                dummy_training_delay_secs: args.dummy_training_delay_secs,
             })
             .build()
             .await

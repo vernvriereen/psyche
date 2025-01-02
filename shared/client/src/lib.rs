@@ -1,3 +1,4 @@
+mod cli;
 mod client;
 mod fetch_data;
 mod protocol;
@@ -6,6 +7,7 @@ mod state;
 mod trainer;
 mod tui;
 
+pub use cli::{read_secret_key, SecretKeyLocation, TrainArgs};
 pub use client::Client;
 pub use protocol::{TrainingResult, TransmittableDistroResult, NC};
 pub use serialized_distro::{
