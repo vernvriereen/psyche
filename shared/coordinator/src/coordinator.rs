@@ -792,6 +792,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 match &mut self.model {
                     Model::LLM(llm) => {
                         llm.checkpoint = Checkpoint::Ephemeral;
+                        // llm.checkpoint = Checkpoint::P2P;
                     }
                 }
                 self.change_state(unix_timestamp, RunState::Cooldown);

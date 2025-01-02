@@ -282,6 +282,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                             init_config.data_parallelism,
                             init_config.tensor_parallelism
                         );
+
                         Ok(RawLoadedModel {
                             models,
                             tokenizer,
@@ -291,6 +292,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                     })
                 }
                 model::Checkpoint::Ephemeral => return Err(InitRunError::ModelIsEphemeral),
+                model::Checkpoint::P2P => todo!(),
             },
         };
 

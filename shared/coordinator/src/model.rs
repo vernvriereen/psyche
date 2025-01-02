@@ -267,6 +267,7 @@ pub enum Checkpoint {
     Dummy,
     Ephemeral,
     Hub(HubRepo),
+    P2P,
 }
 
 impl std::fmt::Display for Checkpoint {
@@ -275,6 +276,7 @@ impl std::fmt::Display for Checkpoint {
             Checkpoint::Dummy => write!(f, "Dummy"),
             Checkpoint::Ephemeral => write!(f, "Ephemeral"),
             Checkpoint::Hub(hub_repo) => write!(f, "{}", u8_to_string(&hub_repo.repo_id)),
+            Checkpoint::P2P => write!(f, "P2P"),
         }
     }
 }
