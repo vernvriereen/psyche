@@ -17,3 +17,4 @@ tokio.workspace = true
 bytemuck.workspace = true
 toml = "0.8.19"
 rand = "0.8.5"
+anyhow.workspace = true
