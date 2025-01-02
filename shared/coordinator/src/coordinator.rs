@@ -15,6 +15,7 @@ use std::hash::Hash;
 pub const SOLANA_MAX_STRING_LEN: usize = 64;
 pub const SOLANA_MAX_NUM_CLIENTS: usize = 64;
 pub const SOLANA_MAX_NUM_WITNESSES: usize = 16;
+pub const SOLANA_MAX_NUM_CHECKPOINTERS: usize = 4;
 
 pub const BLOOM_FALSE_RATE: f64 = 0.01f64;
 
@@ -187,7 +188,7 @@ pub struct CoodinatorConfig<I> {
 
     // TODO: remove when we implement parameter sharing over p2p
     #[serde(default)]
-    pub checkpointers: FixedVec<I, SOLANA_MAX_NUM_CLIENTS>,
+    pub checkpointers: FixedVec<I, SOLANA_MAX_NUM_CHECKPOINTERS>,
 }
 
 #[derive(

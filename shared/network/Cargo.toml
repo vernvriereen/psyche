@@ -19,7 +19,7 @@ postcard.workspace = true
 sha2.workspace = true
 futures-util.workspace = true
 chrono.workspace = true
-thiserror = "2.0.3"
+thiserror.workspace = true
 
 # for examples
 [dev-dependencies]
