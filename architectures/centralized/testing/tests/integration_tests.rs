@@ -407,16 +407,18 @@ async fn client_join_in_training() {
     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
     let witnesses = &server_handle.get_rounds().await[0].witnesses;
 
-    let mut score = 0;
-    let clients = server_handle.get_clients().await;
-    clients.iter().for_each(|client| {
-        score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
-            &client.id, witnesses,
-        );
-    });
     // clients spawned in RoundTrain state should not be present in the witnesses
+    let mut score = 0;
+    let pending_clients = server_handle.get_pending_clients().await;
+    pending_clients.iter().for_each(|client| {
+        score +=
+            psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(client, witnesses);
+    });
     assert_eq!(score, init_min_clients);
 
+    // the new client tries to join the network
+    // but since the llm checkpoint is Ephemeral
+    // it results in an InitRunError::ModelIsEphemeral error
     let error = new_client_handle.client_handle.await.unwrap().unwrap_err();
     assert!(error
         .to_string()
