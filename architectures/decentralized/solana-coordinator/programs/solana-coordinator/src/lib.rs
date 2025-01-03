@@ -13,15 +13,12 @@ pub fn bytes_from_string(str: &str) -> &[u8] {
 pub fn coordinator_account_from_bytes(
     bytes: &[u8],
 ) -> std::result::Result<&CoordinatorAccount, ProgramError> {
-    if bytes.len()
-        != CoordinatorAccount::DISCRIMINATOR.len() + std::mem::size_of::<CoordinatorAccount>()
-    {
+    if bytes.len() != CoordinatorAccount::size_with_discriminator() {
         return Err(ProgramError::CoordinatorAccountIncorrectSize);
     }
-
     Ok(bytemuck::from_bytes(
         &bytes[CoordinatorAccount::DISCRIMINATOR.len()
-            ..std::mem::size_of::<CoordinatorAccount>() + CoordinatorAccount::DISCRIMINATOR.len()],
+            ..CoordinatorAccount::size_with_discriminator()],
     ))
 }
 
@@ -30,6 +27,11 @@ pub fn coordinator_account_from_bytes(
 #[repr(C)]
 pub struct CoordinatorAccount {
     pub coordinator: Coordinator<ClientId>,
+}
+impl CoordinatorAccount {
+    pub fn size_with_discriminator() -> usize {
+        CoordinatorAccount::DISCRIMINATOR.len() + std::mem::size_of::<CoordinatorAccount>()
+    }
 }
 
 #[derive(InitSpace)]
@@ -84,7 +86,7 @@ pub mod solana_coordinator {
                 return Err(ErrorCode::AccountDiscriminatorAlreadySet.into());
             }
 
-            if data.len() != disc.len() + std::mem::size_of::<CoordinatorAccount>() {
+            if data.len() != CoordinatorAccount::size_with_discriminator() {
                 return err!(ProgramError::CoordinatorAccountIncorrectSize);
             }
 
