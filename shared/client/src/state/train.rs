@@ -12,7 +12,7 @@ use psyche_coordinator::{
 };
 use psyche_core::{sha256, BatchId, Bloom, NodeIdentity};
 use psyche_modeling::DistroResult;
-use psyche_network::NetworkableNodeIdentity;
+use psyche_network::AuthenticatableIdentity;
 use thiserror::Error;
 use tokio::{
     sync::{mpsc, Mutex},
@@ -83,9 +83,9 @@ pub enum TrainError {
     HealthCheckCrashed,
 }
 
-pub struct TrainingStepMetadata<T: NetworkableNodeIdentity> {
+pub struct TrainingStepMetadata<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub identity: T,
-    pub data_fetcher: DataFetcher<T>,
+    pub data_fetcher: DataFetcher<T, A>,
     pub tx_health_check: mpsc::UnboundedSender<HealthChecks>,
     pub tx_distro_result: mpsc::UnboundedSender<DistroBroadcastAndPayload>,
 
@@ -124,7 +124,7 @@ impl TrainingStep {
     }
 }
 
-impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
+impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata<T, A> {
     pub fn start(
         &mut self,
         client_index: u64,
@@ -511,7 +511,7 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
     }
 }
 
-fn start_sending_health_checks<T: NetworkableNodeIdentity>(
+fn start_sending_health_checks<T: NodeIdentity>(
     current_round: &mut RoundState<T>,
     state: &Coordinator<T>,
     tx_health_check: mpsc::UnboundedSender<HealthChecks>,

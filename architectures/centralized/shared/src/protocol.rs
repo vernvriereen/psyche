@@ -3,7 +3,7 @@ use bytemuck::Zeroable;
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_core::NodeIdentity;
 use psyche_network::{
-    FromSignedBytesError, NetworkableNodeIdentity, NodeId, PeerList, PublicKey, SecretKey,
+    AuthenticatableIdentity, FromSignedBytesError, NodeId, PeerList, PublicKey, SecretKey,
     SignedMessage,
 };
 use serde::{Deserialize, Serialize};
@@ -39,7 +39,11 @@ impl Display for ClientId {
     }
 }
 
-impl NodeIdentity for ClientId {}
+impl NodeIdentity for ClientId {
+    fn get_p2p_public_key(&self) -> &[u8; 32] {
+        self.0.as_bytes()
+    }
+}
 
 unsafe impl Zeroable for ClientId {
     fn zeroed() -> Self {
@@ -47,7 +51,7 @@ unsafe impl Zeroable for ClientId {
     }
 }
 
-impl NetworkableNodeIdentity for ClientId {
+impl AuthenticatableIdentity for ClientId {
     type PrivateKey = SecretKey;
     fn from_signed_bytes(bytes: &[u8], challenge: [u8; 32]) -> Result<Self, FromSignedBytesError> {
         let (key, decoded_challenge) = SignedMessage::<[u8; 32]>::verify_and_decode(bytes)

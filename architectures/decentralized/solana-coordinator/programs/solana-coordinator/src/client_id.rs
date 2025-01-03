@@ -47,4 +47,17 @@ impl std::fmt::Display for ClientId {
     }
 }
 
-impl NodeIdentity for ClientId {}
+impl NodeIdentity for ClientId {
+    fn get_p2p_public_key(&self) -> &[u8; 32] {
+        &self.p2p_identity
+    }
+}
+
+impl ClientId {
+    pub fn new(owner: Pubkey, p2p_identity: [u8; 32]) -> Self {
+        Self {
+            owner,
+            p2p_identity,
+        }
+    }
+}

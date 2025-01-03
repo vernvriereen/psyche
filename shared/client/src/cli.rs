@@ -6,23 +6,21 @@ use psyche_eval::tasktype_from_name;
 use psyche_network::SecretKey;
 use std::path::PathBuf;
 
-#[derive(Debug, clap::Args)]
-#[group(required = false, multiple = false)]
-pub struct SecretKeyLocation {
-    #[clap(long)]
-    secret_key: Option<PathBuf>,
-    #[clap(long)]
-    raw_secret_key: Option<String>,
-}
-
-pub fn read_secret_key(key: &SecretKeyLocation) -> Result<Option<SecretKey>> {
-    let bytes: [u8; 32] = match (&key.raw_secret_key, &key.secret_key) {
+pub fn read_identity_secret_key(
+    identity_secret_key_path: Option<&PathBuf>,
+) -> Result<Option<SecretKey>> {
+    let raw_identity_secret_key = std::env::var("RAW_IDENTITY_SECRET_KEY").ok();
+    let bytes: [u8; 32] = match (raw_identity_secret_key, identity_secret_key_path) {
         (None, None) => return Ok(None),
         (Some(raw), None) => {
             let vals = hex::decode(raw)?;
             let l = vals.len();
-            vals.try_into()
-                .map_err(|_| anyhow!("invalid raw secret key, expected 32 bytes, got {}", l))?
+            vals.try_into().map_err(|_| {
+                anyhow!(
+                    "invalid raw identity secret key, expected 32 bytes, got {}",
+                    l
+                )
+            })?
         }
 
         (None, Some(key_file)) => std::fs::read(key_file)?
@@ -34,10 +32,17 @@ pub fn read_secret_key(key: &SecretKeyLocation) -> Result<Option<SecretKey>> {
     Ok(Some(SecretKey::from_bytes(&bytes)))
 }
 
+pub fn print_identity_keys(key: Option<&PathBuf>) -> Result<()> {
+    let key = read_identity_secret_key(key)?.ok_or_else(|| anyhow!("no key passed!"))?;
+    println!("Public key: {}", key.public());
+    println!("Secret key: {}", hex::encode(key.secret().as_bytes()));
+    Ok(())
+}
+
 #[derive(Args, Debug)]
 pub struct TrainArgs {
-    #[clap(flatten)]
-    pub key: SecretKeyLocation,
+    #[clap(short, long, env)]
+    pub identity_secret_key_path: Option<PathBuf>,
 
     #[clap(short, long, env)]
     pub bind_p2p_port: Option<u16>,
@@ -187,5 +192,27 @@ impl TrainArgs {
             None => Vec::new(),
         };
         Ok(eval_tasks)
+    }
+}
+
+pub fn exercise_sdpa_if_needed() {
+    #[cfg(target_os = "windows")]
+    {
+        // this is a gigantic hack to cover that called sdpa prints out
+        // "Torch was not compiled with flash attention." via TORCH_WARN
+        // on Windows, which screws with the TUI.
+        // it's done once (really TORCH_WARN_ONCE), so elicit that behavior
+        // before starting anything else
+        use tch::Tensor;
+        let device = tch::Device::Cuda(0);
+        let _ = Tensor::scaled_dot_product_attention::<Tensor>(
+            &Tensor::from_slice2(&[[0.]]).to(device),
+            &Tensor::from_slice2(&[[0.]]).to(device),
+            &Tensor::from_slice2(&[[0.]]).to(device),
+            None,
+            0.0,
+            false,
+            None,
+        );
     }
 }
