@@ -1,10 +1,13 @@
 use crate::app::{AppBuilder, AppParams, Tabs, TAB_NAMES};
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
-use psyche_client::{read_secret_key, SecretKeyLocation, TrainArgs};
+use psyche_client::{
+    exercise_sdpa_if_needed, print_identity_keys, read_identity_secret_key, TrainArgs,
+};
 use psyche_network::SecretKey;
 use psyche_tui::{maybe_start_render_loop, LogOutput};
+use std::path::PathBuf;
 use time::OffsetDateTime;
 use tokio::runtime::Builder;
 use tracing::{info, Level};
@@ -21,8 +24,8 @@ struct Args {
 #[derive(Subcommand, Debug)]
 enum Commands {
     ShowIdentity {
-        #[clap(flatten)]
-        key: SecretKeyLocation,
+        #[clap(long)]
+        identity_secret_key_path: Option<PathBuf>,
     },
     Train {
         #[clap(flatten)]
@@ -34,31 +37,11 @@ async fn async_main() -> Result<()> {
     let args = Args::parse();
 
     match args.command {
-        Commands::ShowIdentity { key } => {
-            let key = read_secret_key(&key)?.ok_or_else(|| anyhow!("no key passed!"))?;
-            println!("{}", key.public());
-            Ok(())
-        }
+        Commands::ShowIdentity {
+            identity_secret_key_path,
+        } => print_identity_keys(identity_secret_key_path.as_ref()),
         Commands::Train { args } => {
-            #[cfg(target_os = "windows")]
-            {
-                // this is a gigantic hack to cover that called sdpa prints out
-                // "Torch was not compiled with flash attention." via TORCH_WARN
-                // on Windows, which screws with the TUI.
-                // it's done once (really TORCH_WARN_ONCE), so elicit that behavior
-                // before starting anything else
-                use tch::Tensor;
-                let device = tch::Device::Cuda(0);
-                let _ = Tensor::scaled_dot_product_attention::<Tensor>(
-                    &Tensor::from_slice2(&[[0.]]).to(device),
-                    &Tensor::from_slice2(&[[0.]]).to(device),
-                    &Tensor::from_slice2(&[[0.]]).to(device),
-                    None,
-                    0.0,
-                    false,
-                    None,
-                );
-            }
+            exercise_sdpa_if_needed();
 
             let hub_read_token = std::env::var("HF_TOKEN").ok();
             let checkpoint_upload_info = args.checkpoint_config()?;
@@ -79,13 +62,14 @@ async fn async_main() -> Result<()> {
                 OffsetDateTime::now_utc()
             );
 
-            let private_key: SecretKey = read_secret_key(&args.key)?
-                .unwrap_or_else(|| SecretKey::generate(&mut rand::rngs::OsRng));
+            let identity_secret_key: SecretKey =
+                read_identity_secret_key(args.identity_secret_key_path.as_ref())?
+                    .unwrap_or_else(|| SecretKey::generate(&mut rand::rngs::OsRng));
 
             let wandb_info = args.wandb_info(format!(
                 "{}-{}",
                 args.run_id.clone(),
-                private_key.public().fmt_short()
+                identity_secret_key.public().fmt_short()
             ))?;
 
             let (cancel, tx_tui_state) = maybe_start_render_loop(
@@ -94,7 +78,7 @@ async fn async_main() -> Result<()> {
 
             let (mut app, p2p, state_options) = AppBuilder::new(AppParams {
                 cancel,
-                private_key,
+                identity_secret_key,
                 server_addr: args.server_addr,
                 tx_tui_state,
                 run_id: args.run_id,

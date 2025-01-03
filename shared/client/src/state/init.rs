@@ -8,7 +8,7 @@ use psyche_coordinator::{
     model::{self, LLMTrainingDataLocation},
     Coordinator, HealthChecks, Witness,
 };
-use psyche_core::u8_to_string;
+use psyche_core::{u8_to_string, NodeIdentity};
 use psyche_data_provider::{
     download_model_repo_async, DataProvider, DataProviderTcpClient, DummyDataProvider,
 };
@@ -16,7 +16,7 @@ use psyche_modeling::{
     auto_tokenizer, AutoTokenizerError, CommunicatorId, ConcreteCausalLM, DummyModel,
     LlamaForCausalLM, LoadLlamaForCausalLMError,
 };
-use psyche_network::{BlobTicket, NetworkableNodeIdentity};
+use psyche_network::{AuthenticatableIdentity, BlobTicket};
 use std::{path::PathBuf, sync::Arc};
 use tch::{Device, Kind};
 use thiserror::Error;
@@ -34,10 +34,11 @@ use super::{
     witness::WitnessStepMetadata, CheckpointConfig,
 };
 
-pub struct RunInitConfig<T: NetworkableNodeIdentity> {
+pub struct RunInitConfig<T: NodeIdentity, A: AuthenticatableIdentity> {
     // identity for connecting to the data server
     pub identity: T,
-    pub private_key: T::PrivateKey,
+    pub network_identity: A,
+    pub private_key: A::PrivateKey,
 
     // model & dataload
     pub hub_read_token: Option<String>,
@@ -105,8 +106,8 @@ struct RawLoadedModel {
     checkpoint_extra_files: Vec<PathBuf>,
 }
 
-pub struct RunInitConfigAndIO<T: NetworkableNodeIdentity> {
-    pub init_config: RunInitConfig<T>,
+pub struct RunInitConfigAndIO<T: NodeIdentity, A: AuthenticatableIdentity> {
+    pub init_config: RunInitConfig<T, A>,
 
     pub tx_witness: UnboundedSender<Witness>,
     pub tx_health_check: UnboundedSender<HealthChecks>,
@@ -115,12 +116,12 @@ pub struct RunInitConfigAndIO<T: NetworkableNodeIdentity> {
     pub tx_request_download: UnboundedSender<BlobTicket>,
 }
 
-impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
+impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T, A> {
     /// Call this on first warmup - when we need to enter the run, we have to load the model, conenct to the data server, etc
     pub async fn init_run(
         self,
         state: Coordinator<T>,
-    ) -> Result<StepStateMachine<T>, InitRunError> {
+    ) -> Result<StepStateMachine<T, A>, InitRunError> {
         let Self {
             init_config,
             tx_witness,
@@ -137,7 +138,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
                 LLMTrainingDataLocation::Server(data_server) => DataProvider::Server(
                     DataProviderTcpClient::connect(
                         u8_to_string(data_server),
-                        init_config.identity,
+                        init_config.network_identity,
                         init_config.private_key,
                     )
                     .await?,
@@ -349,7 +350,8 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
         // TODO add data fetching for verifying, too..
         let data_provider = data.map_err(InitRunError::DataProviderConnect)?;
 
-        let data_fetcher = DataFetcher::new(data_provider, init_config.data_parallelism * 2);
+        let data_fetcher =
+            DataFetcher::<T, A>::new(data_provider, init_config.data_parallelism * 2);
 
         let trainers = tp_models
             .into_iter()

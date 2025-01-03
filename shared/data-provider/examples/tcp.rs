@@ -9,7 +9,7 @@ use psyche_core::{BatchId, NodeIdentity};
 use psyche_data_provider::{
     DataProviderTcpClient, DataProviderTcpServer, LengthKnownDataProvider, TokenizedDataProvider,
 };
-use psyche_network::{FromSignedBytesError, Networkable, NetworkableNodeIdentity};
+use psyche_network::{AuthenticatableIdentity, FromSignedBytesError, Networkable};
 use psyche_tui::init_logging;
 use psyche_watcher::Backend as WatcherBackend;
 use rand::Rng;
@@ -19,10 +19,10 @@ use tracing::{info, Level};
 
 // Simulated backend for demonstration
 #[allow(dead_code)]
-struct DummyBackend<T: NetworkableNodeIdentity>(Vec<T>);
+struct DummyBackend<T: NodeIdentity>(Vec<T>);
 
 #[async_trait]
-impl<T: NetworkableNodeIdentity> WatcherBackend<T> for DummyBackend<T> {
+impl<T: NodeIdentity> WatcherBackend<T> for DummyBackend<T> {
     async fn wait_for_new_state(&mut self) -> anyhow::Result<Coordinator<T>> {
         Ok(Coordinator::zeroed())
     }
@@ -49,10 +49,15 @@ impl Display for DummyNodeIdentity {
         Ok(())
     }
 }
-impl NodeIdentity for DummyNodeIdentity {}
+impl NodeIdentity for DummyNodeIdentity {
+    fn get_p2p_public_key(&self) -> &[u8; 32] {
+        todo!()
+    }
+}
 
-impl NetworkableNodeIdentity for DummyNodeIdentity {
+impl AuthenticatableIdentity for DummyNodeIdentity {
     type PrivateKey = ();
+
     fn from_signed_bytes(bytes: &[u8], challenge: [u8; 32]) -> Result<Self, FromSignedBytesError> {
         let (serialized_challenge, bytes) = bytes.split_at(32);
         if challenge != serialized_challenge {
@@ -121,9 +126,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::spawn(async move {
         let local_data_provider = DummyDataProvider;
-        let mut server = DataProviderTcpServer::start(local_data_provider, backend, 5740)
-            .await
-            .unwrap();
+        let mut server = DataProviderTcpServer::<_, DummyNodeIdentity, _, _>::start(
+            local_data_provider,
+            backend,
+            5740,
+        )
+        .await
+        .unwrap();
         loop {
             server.poll().await;
         }

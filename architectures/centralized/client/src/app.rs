@@ -69,7 +69,7 @@ pub struct AppBuilder(AppParams);
 
 pub struct AppParams {
     pub cancel: CancellationToken,
-    pub private_key: SecretKey,
+    pub identity_secret_key: SecretKey,
     pub server_addr: String,
     pub tx_tui_state: Option<Sender<TabsData>>,
     pub run_id: String,
@@ -93,14 +93,14 @@ impl AppBuilder {
         Self(params)
     }
 
-    pub async fn build(self) -> Result<(App, NC, RunInitConfig<ClientId>)> {
+    pub async fn build(self) -> Result<(App, NC, RunInitConfig<ClientId, ClientId>)> {
         let p = self.0;
 
         let server_conn =
             TcpClient::<ClientId, ClientToServerMessage, ServerToClientMessage>::connect(
                 &p.server_addr,
-                p.private_key.public().into(),
-                p.private_key.clone(),
+                p.identity_secret_key.public().into(),
+                p.identity_secret_key.clone(),
             )
             .await?;
 
@@ -109,7 +109,7 @@ impl AppBuilder {
             p.p2p_port,
             RelayMode::Default,
             vec![],
-            Some(p.private_key.clone()),
+            Some(p.identity_secret_key.clone()),
         )
         .await?;
 
@@ -121,7 +121,7 @@ impl AppBuilder {
             server_conn,
             run_id: p.run_id,
         };
-        let state_options: RunInitConfig<ClientId> = RunInitConfig {
+        let state_options: RunInitConfig<ClientId, ClientId> = RunInitConfig {
             data_parallelism: p.data_parallelism,
             tensor_parallelism: p.tensor_parallelism,
             micro_batch_size: p.micro_batch_size,
@@ -131,8 +131,9 @@ impl AppBuilder {
             checkpoint_config: p.checkpoint_upload_info,
             hub_read_token: p.hub_read_token,
             wandb_info: p.wandb_info,
-            identity: p.private_key.public().into(),
-            private_key: p.private_key,
+            identity: p.identity_secret_key.public().into(),
+            network_identity: p.identity_secret_key.public().into(),
+            private_key: p.identity_secret_key,
             optim_stats_every_n_steps: p.optim_stats,
             grad_accum_in_fp32: p.grad_accum_in_fp32,
             dummy_training_delay_secs: p.dummy_training_delay_secs,
@@ -143,7 +144,11 @@ impl AppBuilder {
 }
 
 impl App {
-    pub async fn run(&mut self, mut p2p: NC, state_options: RunInitConfig<ClientId>) -> Result<()> {
+    pub async fn run(
+        &mut self,
+        mut p2p: NC,
+        state_options: RunInitConfig<ClientId, ClientId>,
+    ) -> Result<()> {
         // sanity checks
         // if let Some(CheckpointUploadInfo {
         //     hub_repo,
