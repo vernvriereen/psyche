@@ -45,7 +45,11 @@ impl Client {
         (Self { inner: client_app }, p2p, state_options)
     }
 
-    pub async fn run(&mut self, p2p: NC, state_options: RunInitConfig<ClientId, ClientId>) -> Result<()> {
+    pub async fn run(
+        &mut self,
+        p2p: NC,
+        state_options: RunInitConfig<ClientId, ClientId>,
+    ) -> Result<()> {
         let client_run = self.inner.run(p2p, state_options);
         tokio::pin!(client_run);
         loop {
