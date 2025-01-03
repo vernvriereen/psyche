@@ -162,7 +162,10 @@ impl<T: NetworkableNodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                         Some(witness) = rx_checkpoint.recv() => {
                             watcher.backend_mut().send_checkpoint(witness).await?;
                         }
-                        Some(_model) = rx_model.recv() => todo!(),
+                        Some(model) = rx_model.recv() => {
+                            let a = model.keys().into_iter().next().unwrap();
+                            println!("VARIABLE!: {}", a);
+                        },
                     }
                 }
                 Ok(())

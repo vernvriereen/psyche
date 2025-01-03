@@ -100,6 +100,7 @@ impl CooldownStepMetadata {
         let checkpoint_extra_files = self.checkpoint_extra_files.clone();
         let checkpoint_info = self.checkpoint_info.clone();
         let tx_checkpoint = self.tx_checkpoint.clone();
+        let tx_model = self.tx_model.clone();
         let eval_runner = self.eval_runner.clone();
 
         let checkpointing_and_evals = tokio::task::spawn(
@@ -121,6 +122,12 @@ impl CooldownStepMetadata {
                     checkpoint_dir,
                 }) = checkpoint_info
                 else {
+                    // FIXME(marian): Here we are assuming that we either we upload the model to HF or
+                    // we share it by p2p, but in principle both could be possible.
+                    tx_model
+                        .send(variables)
+                        .map_err(|_| CheckpointError::SendCheckpoint)?;
+
                     return Ok(evals);
                 };
 
