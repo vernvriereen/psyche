@@ -27,7 +27,7 @@ use super::{
     stats::StatsLogger,
     train::{TrainError, TrainingStep, TrainingStepMetadata},
     types::PayloadState,
-    warmup::{WarmupError, WarmupStep, WarmupStepMetadata},
+    warmup::{WarmupStep, WarmupStepMetadata},
     witness::{WitnessStep, WitnessStepMetadata, WitnessingError},
     RunInitConfigAndIO,
 };
@@ -76,9 +76,6 @@ pub enum StepError {
 
     #[error("Evals error: {0}")]
     Evals(#[from] EvalError),
-
-    #[error("Warmup error: {0}")]
-    Warmup(#[from] WarmupError),
 }
 
 #[derive(Error, Debug)]
@@ -107,9 +104,7 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
         tx_witness: mpsc::UnboundedSender<Witness>,
         stats_logger: StatsLogger,
     ) -> Self {
-        // TODO(marian): Remove this unwrap. Since this is the first warmup, we should not do all
-        // the p2p model sharing thing.
-        let active_step = ActiveStep::Warmup(warmup.start(trainers).unwrap());
+        let active_step = ActiveStep::Warmup(warmup.start(trainers));
         let notify_try_opportunistic_witness = Arc::new(Notify::new());
         Self {
             identity,
@@ -475,24 +470,18 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
                     ActiveStep::Warmup(warmup) => ActiveStep::Warmup(warmup),
                     ActiveStep::Cooldown(cooldown) => {
                         trace!("since we're not a member of this step, killing cooldown step and returning to warmup to wait.");
-                        let trainers = cooldown.finish().await?.stop_evals().await?;
-                        ActiveStep::Warmup(self.warmup.start(trainers)?)
+                        ActiveStep::Warmup(self.warmup.start(cooldown.finish().await?))
                     }
                     ActiveStep::Training(training) => {
                         trace!("since we're not a member of this step, killing training step and returning to warmup to wait.");
-                        let trainers = training
-                            .finish()
-                            .await?
-                            .evals_or_trainers
-                            .stop_evals()
-                            .await?;
-
-                        ActiveStep::Warmup(self.warmup.start(trainers)?)
+                        ActiveStep::Warmup(
+                            self.warmup
+                                .start(training.finish().await?.evals_or_trainers),
+                        )
                     }
                     ActiveStep::Witness(witness) => {
                         trace!("since we're not a member of this step, killing witness step and returning to warmup to wait.");
-                        let trainers = witness.finish().await?.stop_evals().await?;
-                        ActiveStep::Warmup(self.warmup.start(trainers)?)
+                        ActiveStep::Warmup(self.warmup.start(witness.finish().await?))
                     }
                 };
                 self.active_step = new_step;
@@ -504,7 +493,7 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
         let new_step: ActiveStep = match (std::mem::take(&mut self.active_step), state.run_state) {
             // start training at the beginning of an epoch
             (ActiveStep::Warmup(warmup), RunState::RoundTrain) => {
-                let trainers = warmup.finish().await?.stop_evals().await?;
+                let trainers = warmup.finish().stop_evals().await?;
                 self.stats_logger.push_eval_results();
                 ActiveStep::Training(self.training.start(
                     client_index,
@@ -556,8 +545,8 @@ impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
             }
             // cooldown is done, we consider waiting for members and warmup to be basically the same
             (ActiveStep::Cooldown(cooldown), RunState::WaitingForMembers) => {
-                let trainers = cooldown.finish().await?.stop_evals().await?;
-                ActiveStep::Warmup(self.warmup.start(trainers)?)
+                let trainers = cooldown.finish().await?;
+                ActiveStep::Warmup(self.warmup.start(trainers))
             }
             // stay in existing run state if there's no reason to change.
             (current_step, next_run_state) if current_step.allowed_in_run_state(next_run_state) => {
