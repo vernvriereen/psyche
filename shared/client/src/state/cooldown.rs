@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use psyche_coordinator::{
     model::{self, HubRepo},
@@ -7,6 +7,7 @@ use psyche_coordinator::{
 use psyche_core::NodeIdentity;
 use psyche_data_provider::{upload_model_repo_async, UploadModelError};
 use psyche_modeling::{save_tensors_into_safetensors, SaveSafetensorsError};
+use tch::Tensor;
 use thiserror::Error;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{info, info_span, Instrument};
@@ -35,6 +36,7 @@ pub enum CooldownError {
 
 pub struct CooldownStepMetadata {
     tx_checkpoint: mpsc::UnboundedSender<model::Checkpoint>,
+    tx_model: mpsc::UnboundedSender<HashMap<String, Tensor>>,
     checkpoint_info: Option<CheckpointConfig>,
     checkpoint_extra_files: Vec<PathBuf>,
 
@@ -44,12 +46,14 @@ pub struct CooldownStepMetadata {
 impl CooldownStepMetadata {
     pub fn new(
         tx_checkpoint: mpsc::UnboundedSender<model::Checkpoint>,
+        tx_model: mpsc::UnboundedSender<HashMap<String, Tensor>>,
         checkpoint_info: Option<CheckpointConfig>,
         checkpoint_extra_files: Vec<PathBuf>,
         eval_runner: EvalRunner,
     ) -> Self {
         Self {
             tx_checkpoint,
+            tx_model,
             checkpoint_info,
             checkpoint_extra_files,
             eval_runner,
@@ -87,9 +91,10 @@ impl CooldownStepMetadata {
         mut trainers: Vec<Trainer>,
         state: &Coordinator<T>,
     ) -> Result<CooldownStep, CooldownError> {
-        if trainers.is_empty() {
+        let Some(mut trainer) = trainers.pop() else {
             return Err(CooldownError::NoTrainers);
-        }
+        };
+
         let step = state.progress.step - 1;
         let run_id = String::from_utf8(state.run_id.clone().to_vec()).unwrap();
         let checkpoint_extra_files = self.checkpoint_extra_files.clone();
@@ -99,86 +104,77 @@ impl CooldownStepMetadata {
 
         let checkpointing_and_evals = tokio::task::spawn(
             async move {
-                // we extract the vars from the trainer, then start evals right away before trying to upload to HF / write to disk
-                // to give us some more eval time.
-                let (checkpoint, checkpoint_trainers) = if let Some(checkpoint) = checkpoint_info {
-                    let mut trainer = trainers
-                        .pop()
-                        .expect("we checked trainers emptiness earlier, this is infallible.");
-
-                    info!("Extracting full model for save");
+                info!("Extracting full model");
+                let (variables, trainer) =
                     tokio::task::spawn_blocking::<_, Result<_, CheckpointError>>(|| {
                         let variables = trainer.extract()?;
-                        Ok((Some((checkpoint, variables)), vec![trainer]))
+                        Ok((variables, trainer))
                     })
                     .await
-                    .map_err(|_| CheckpointError::ExtractThreadCrashed)??
-                } else {
-                    (None, vec![])
+                    .map_err(|_| CheckpointError::ExtractThreadCrashed)??;
+
+                trainers.push(trainer);
+                let evals = eval_runner.start(trainers);
+
+                let Some(CheckpointConfig {
+                    hub_upload,
+                    checkpoint_dir,
+                }) = checkpoint_info
+                else {
+                    return Ok(evals);
                 };
 
-                let all_trainers: Vec<_> =
-                    trainers.into_iter().chain(checkpoint_trainers).collect();
+                let path = checkpoint_dir.join(format!("{run_id}-step{step}"));
+                info!("Saving to {}", path.display());
 
-                let evals = eval_runner.start(all_trainers);
+                let mut local = tokio::task::spawn_blocking({
+                    let path = path.clone();
+                    move || save_tensors_into_safetensors(variables, path)
+                })
+                .await
+                .map_err(|_| CheckpointError::WriteThreadCrashed)??;
 
-                if let Some((
-                    CheckpointConfig {
-                        hub_upload,
-                        checkpoint_dir,
-                    },
-                    variables,
-                )) = checkpoint
-                {
-                    let path = checkpoint_dir.join(format!("{run_id}-step{step}"));
-                    info!("Saving to {}", path.display());
-
-                    let mut local = tokio::task::spawn_blocking({
-                        let path = path.clone();
-                        move || save_tensors_into_safetensors(variables, path)
-                    })
-                    .await
-                    .map_err(|_| CheckpointError::WriteThreadCrashed)??;
-
-                    for extra in checkpoint_extra_files {
-                        let to = path.join(extra.file_name().unwrap());
-                        tokio::fs::copy(extra.clone(), to.clone())
-                            .await
-                            .map_err(CheckpointError::WriteExtraFile)?;
-                        local.push(to);
-                    }
-
-                    if let Some(HubUploadInfo {
-                        hub_repo,
-                        hub_token,
-                    }) = hub_upload
-                    {
-                        info!("Uploading to {}", hub_repo);
-                        let mut hub_repo_bytes = [0u8; SOLANA_MAX_STRING_LEN]; // Initialize an array with zeros
-                        let bytes = hub_repo.as_bytes(); // Convert the string to bytes
-                        let len = bytes.len().min(SOLANA_MAX_STRING_LEN); // Limit to 64 bytes if the input is too long
-                        hub_repo_bytes[..len].copy_from_slice(&bytes[..len]); // Copy the bytes into the array
-                        let revision = upload_model_repo_async(
-                            hub_repo.clone(),
-                            local,
-                            hub_token.clone(),
-                            Some(format!("step {step}")),
-                            None,
-                        )
-                        .await?;
-                        let mut revision_bytes = [0u8; SOLANA_MAX_STRING_LEN]; // Initialize an array with zeros
-                        let bytes = revision.as_bytes(); // Convert the string to bytes
-                        let len = bytes.len().min(SOLANA_MAX_STRING_LEN); // Limit to 64 bytes if the input is too long
-                        revision_bytes[..len].copy_from_slice(&bytes[..len]); // Copy the bytes into the array
-
-                        tx_checkpoint
-                            .send(model::Checkpoint::Hub(HubRepo {
-                                repo_id: hub_repo_bytes,
-                                revision: Some(revision_bytes),
-                            }))
-                            .map_err(|_| CheckpointError::SendCheckpoint)?;
-                    }
+                for extra in checkpoint_extra_files {
+                    let to = path.join(extra.file_name().unwrap());
+                    tokio::fs::copy(extra.clone(), to.clone())
+                        .await
+                        .map_err(CheckpointError::WriteExtraFile)?;
+                    local.push(to);
                 }
+
+                let Some(HubUploadInfo {
+                    hub_repo,
+                    hub_token,
+                }) = hub_upload
+                else {
+                    return Ok(evals);
+                };
+
+                info!("Uploading to {}", hub_repo);
+                let mut hub_repo_bytes = [0u8; SOLANA_MAX_STRING_LEN]; // Initialize an array with zeros
+                let bytes = hub_repo.as_bytes(); // Convert the string to bytes
+                let len = bytes.len().min(SOLANA_MAX_STRING_LEN); // Limit to 64 bytes if the input is too long
+                hub_repo_bytes[..len].copy_from_slice(&bytes[..len]); // Copy the bytes into the array
+                let revision = upload_model_repo_async(
+                    hub_repo.clone(),
+                    local,
+                    hub_token.clone(),
+                    Some(format!("step {step}")),
+                    None,
+                )
+                .await?;
+                let mut revision_bytes = [0u8; SOLANA_MAX_STRING_LEN]; // Initialize an array with zeros
+                let bytes = revision.as_bytes(); // Convert the string to bytes
+                let len = bytes.len().min(SOLANA_MAX_STRING_LEN); // Limit to 64 bytes if the input is too long
+                revision_bytes[..len].copy_from_slice(&bytes[..len]); // Copy the bytes into the array
+
+                tx_checkpoint
+                    .send(model::Checkpoint::Hub(HubRepo {
+                        repo_id: hub_repo_bytes,
+                        revision: Some(revision_bytes),
+                    }))
+                    .map_err(|_| CheckpointError::SendCheckpoint)?;
+
                 Ok(evals)
             }
             .instrument(info_span!("checkpointing")),

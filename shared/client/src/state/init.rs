@@ -17,8 +17,8 @@ use psyche_modeling::{
     LlamaForCausalLM, LoadLlamaForCausalLMError,
 };
 use psyche_network::{BlobTicket, NetworkableNodeIdentity};
-use std::{path::PathBuf, sync::Arc};
-use tch::{Device, Kind};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use tch::{Device, Kind, Tensor};
 use thiserror::Error;
 use tokenizers::{models::wordlevel::WordLevel, ModelWrapper, Tokenizer};
 use tokio::{
@@ -111,6 +111,7 @@ pub struct RunInitConfigAndIO<T: NetworkableNodeIdentity> {
     pub tx_witness: UnboundedSender<Witness>,
     pub tx_health_check: UnboundedSender<HealthChecks>,
     pub tx_checkpoint: UnboundedSender<model::Checkpoint>,
+    pub tx_model: UnboundedSender<HashMap<String, Tensor>>,
     pub tx_distro_result: UnboundedSender<DistroBroadcastAndPayload>,
     pub tx_request_download: UnboundedSender<BlobTicket>,
 }
@@ -126,6 +127,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
             tx_witness,
             tx_health_check,
             tx_checkpoint,
+            tx_model,
             tx_distro_result,
             tx_request_download,
         } = self;
@@ -396,6 +398,7 @@ impl<T: NetworkableNodeIdentity> RunInitConfigAndIO<T> {
 
         let cooldown = CooldownStepMetadata::new(
             tx_checkpoint,
+            tx_model,
             init_config.checkpoint_config,
             checkpoint_extra_files,
             eval_runner,
