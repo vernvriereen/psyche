@@ -24,6 +24,6 @@ psyche-coordinator = { path = "../../../../../shared/coordinator" }
 serde = { version = "1.0.209", features = ["derive"] }
 
 [dev-dependencies]
-solana-sdk = "=2.0.18"
-solana_toolbox_endpoint = "=0.1.14-solana-2.0.18"
+solana-sdk = "=2.1.4"
+solana_toolbox_endpoint = "=0.1.16-solana-2.1.4"
 tokio = "1.42.0"

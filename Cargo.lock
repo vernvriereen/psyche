@@ -6266,6 +6266,7 @@ dependencies = [
  "serde",
  "solana-sdk",
  "solana_toolbox_endpoint",
+ "tokio",
 ]
 
 [[package]]
@@ -9436,15 +9437,16 @@ dependencies = [
 
 [[package]]
 name = "solana_toolbox_endpoint"
-version = "0.1.14-solana-2.0.18"
+version = "0.1.16-solana-2.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89588dc7a0a4089e5cad94418443c651cd2ab43acd753e3cdb5f5504c89bab1b"
+checksum = "11aedbbdfd369be55036ad1b4312e495d7dd9d0568ddc7709b84e7cdd4c4ff7d"
 dependencies = [
  "async-trait",
  "bincode",
  "borsh 1.5.3",
  "serde",
  "solana-client",
+ "solana-program-runtime",
  "solana-program-test",
  "solana-sdk",
  "spl-associated-token-account",

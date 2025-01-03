@@ -18,7 +18,7 @@ tokio.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 home = "0.5.9"
-solana-account-decoder-client-types = "2"
+solana-account-decoder-client-types = "=2.1.4"
 
 [dev-dependencies]
 rand.workspace = true

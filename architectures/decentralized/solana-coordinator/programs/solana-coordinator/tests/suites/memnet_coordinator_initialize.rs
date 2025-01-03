@@ -23,11 +23,10 @@ pub async fn memnet_initialize() {
 
     // Create the empty pre-allocated coordinator
     toolbox_endpoint
-        .process_system_create(
+        .process_system_create_exempt(
             &payer,
             &coordinator,
-            1_000_000_000,
-            CoordinatorAccount::size_with_discriminator() as u64,
+            CoordinatorAccount::size_with_discriminator(),
             &solana_coordinator::ID,
         )
         .await

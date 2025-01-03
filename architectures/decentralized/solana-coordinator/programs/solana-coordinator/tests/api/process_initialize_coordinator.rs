@@ -16,7 +16,7 @@ fn bytes_from_string(str: &str) -> &[u8] {
 }
 
 pub async fn process_initialize_coordinator(
-    toolbox_endpoint: &mut ToolboxEndpoint,
+    endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     coordinator: &Pubkey,
     run_id: String,
@@ -39,7 +39,5 @@ pub async fn process_initialize_coordinator(
         program_id: solana_coordinator::ID,
     };
 
-    toolbox_endpoint
-        .process_instruction(instruction, &payer)
-        .await
+    endpoint.process_instruction(instruction, &payer).await
 }
