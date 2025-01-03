@@ -1,13 +1,13 @@
-use psyche_network::NetworkableNodeIdentity;
-
 use crate::{DataProviderTcpClient, DummyDataProvider, TokenizedDataProvider};
 
-pub enum DataProvider<T: NetworkableNodeIdentity> {
+use psyche_network::AuthenticatableIdentity;
+
+pub enum DataProvider<T: AuthenticatableIdentity> {
     Server(DataProviderTcpClient<T>),
     Dummy(DummyDataProvider),
 }
 
-impl<T: NetworkableNodeIdentity> TokenizedDataProvider for DataProvider<T> {
+impl<T: AuthenticatableIdentity> TokenizedDataProvider for DataProvider<T> {
     async fn get_samples(
         &mut self,
         data_ids: &[psyche_core::BatchId],

@@ -27,4 +27,5 @@ pub trait NodeIdentity:
     + DeserializeOwned
     + 'static
 {
+    fn get_p2p_public_key(&self) -> &[u8; 32];
 }

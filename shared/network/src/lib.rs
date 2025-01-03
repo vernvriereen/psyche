@@ -26,8 +26,8 @@ pub use ed25519::Signature;
 pub use iroh::{NodeId, RelayMode};
 pub use iroh_blobs::{ticket::BlobTicket, Hash};
 
+mod authenticable_identity;
 mod download_manager;
-mod networkable_node_identity;
 mod peer_list;
 mod serde;
 mod signed_message;
@@ -36,9 +36,9 @@ mod tcp;
 mod tui;
 mod util;
 
+pub use authenticable_identity::{AuthenticatableIdentity, FromSignedBytesError};
 pub use download_manager::{DownloadComplete, DownloadFailed};
 pub use iroh::{Endpoint, PublicKey, SecretKey};
-pub use networkable_node_identity::{FromSignedBytesError, NetworkableNodeIdentity};
 pub use peer_list::PeerList;
 pub use serde::Networkable;
 pub use signed_message::SignedMessage;

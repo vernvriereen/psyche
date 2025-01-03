@@ -7,7 +7,7 @@ mod state;
 mod trainer;
 mod tui;
 
-pub use cli::{read_secret_key, SecretKeyLocation, TrainArgs};
+pub use cli::{exercise_sdpa_if_needed, print_identity_keys, read_identity_secret_key, TrainArgs};
 pub use client::Client;
 pub use protocol::{TrainingResult, TransmittableDistroResult, NC};
 pub use serialized_distro::{
