@@ -1,9 +1,9 @@
 use std::{collections::HashMap, fmt, future::Future, pin::Pin, sync::Arc};
 
 use psyche_coordinator::{Committee, Coordinator, RunState, Witness};
-use psyche_core::{sha256, BatchId};
+use psyche_core::{sha256, BatchId, NodeIdentity};
 use psyche_modeling::DistroResult;
-use psyche_network::{BlobTicket, Hash, NetworkableNodeIdentity};
+use psyche_network::{AuthenticatableIdentity, BlobTicket, Hash};
 use tch::TchError;
 use thiserror::Error;
 use tokio::sync::{
@@ -32,13 +32,13 @@ use super::{
     RunInitConfigAndIO,
 };
 
-pub struct StepStateMachine<T: NetworkableNodeIdentity> {
+pub struct StepStateMachine<T: NodeIdentity, A: AuthenticatableIdentity> {
     identity: T,
 
     stats_logger: StatsLogger,
 
     warmup: WarmupStepMetadata,
-    training: TrainingStepMetadata<T>,
+    training: TrainingStepMetadata<T, A>,
     witness: WitnessStepMetadata<T>,
     cooldown: CooldownStepMetadata,
 
@@ -90,12 +90,12 @@ pub enum OpportunisticWitnessError {
     Send,
 }
 
-impl<T: NetworkableNodeIdentity> StepStateMachine<T> {
+impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, A> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         identity: T,
         warmup: WarmupStepMetadata,
-        training: TrainingStepMetadata<T>,
+        training: TrainingStepMetadata<T, A>,
         witness: WitnessStepMetadata<T>,
         cooldown: CooldownStepMetadata,
         trainers: Vec<Trainer>,
@@ -611,13 +611,16 @@ impl fmt::Display for ActiveStep {
     }
 }
 
-pub enum InitStage<T: NetworkableNodeIdentity> {
-    NotYetInitialized(Option<RunInitConfigAndIO<T>>),
-    Initializing(Pin<Box<dyn Future<Output = Result<StepStateMachine<T>, InitRunError>> + Send>>),
-    Running(StepStateMachine<T>),
+pub enum InitStage<T: NodeIdentity, A: AuthenticatableIdentity> {
+    NotYetInitialized(Option<RunInitConfigAndIO<T, A>>),
+    #[allow(clippy::type_complexity)]
+    Initializing(
+        Pin<Box<dyn Future<Output = Result<StepStateMachine<T, A>, InitRunError>> + Send>>,
+    ),
+    Running(StepStateMachine<T, A>),
 }
 
-pub struct RunManager<T: NetworkableNodeIdentity>(InitStage<T>);
+pub struct RunManager<T: NodeIdentity, A: AuthenticatableIdentity>(InitStage<T, A>);
 
 #[derive(Error, Debug)]
 pub enum ApplyStateError {
@@ -628,8 +631,8 @@ pub enum ApplyStateError {
     Step(#[from] StepError),
 }
 
-impl<T: NetworkableNodeIdentity> RunManager<T> {
-    pub fn new(config: RunInitConfigAndIO<T>) -> Self {
+impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunManager<T, A> {
+    pub fn new(config: RunInitConfigAndIO<T, A>) -> Self {
         Self(InitStage::NotYetInitialized(Some(config)))
     }
 
@@ -772,8 +775,10 @@ impl<T: NetworkableNodeIdentity> RunManager<T> {
     }
 }
 
-impl<T: NetworkableNodeIdentity> From<&RunManager<T>> for ClientTUIState {
-    fn from(run: &RunManager<T>) -> Self {
+impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> From<&RunManager<T, A>>
+    for ClientTUIState
+{
+    fn from(run: &RunManager<T, A>) -> Self {
         match &run.0 {
             InitStage::Running(state_machine) => {
                 let coordinator = &state_machine.coordinator_state;

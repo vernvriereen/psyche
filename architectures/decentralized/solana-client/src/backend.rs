@@ -11,7 +11,7 @@ use futures_util::StreamExt;
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
-use solana_coordinator::{coordinator_account_from_bytes, ClientId};
+use solana_coordinator::coordinator_account_from_bytes;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -24,6 +24,7 @@ pub struct SolanaBackend {
 }
 
 impl SolanaBackend {
+    #[allow(dead_code)]
     pub fn new(cluster: Cluster, payer: Arc<Keypair>) -> Result<Self> {
         let client = Client::new(cluster.clone(), payer.clone());
         let program = client.program(solana_coordinator::ID)?;
@@ -35,6 +36,7 @@ impl SolanaBackend {
         })
     }
 
+    #[allow(dead_code)]
     pub async fn start(&mut self, coordinator: Pubkey) -> Result<()> {
         if self.updates.is_some() {
             bail!("Already started watching coordinator account");
@@ -75,8 +77,8 @@ impl SolanaBackend {
 }
 
 #[async_trait::async_trait]
-impl WatcherBackend<ClientId> for SolanaBackend {
-    async fn wait_for_new_state(&mut self) -> Result<Coordinator<ClientId>> {
+impl WatcherBackend<solana_coordinator::ClientId> for SolanaBackend {
+    async fn wait_for_new_state(&mut self) -> Result<Coordinator<solana_coordinator::ClientId>> {
         match &mut self.updates {
             Some(updates) => match updates.recv().await {
                 Some(update) => match update.value.data.decode() {

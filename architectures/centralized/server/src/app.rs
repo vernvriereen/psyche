@@ -90,7 +90,8 @@ impl psyche_watcher::Backend<ClientId> for ChannelCoordinatorBackend {
     }
 }
 
-type DataServer = DataProviderTcpServer<ClientId, LocalDataProvider, ChannelCoordinatorBackend>;
+type DataServer =
+    DataProviderTcpServer<ClientId, ClientId, LocalDataProvider, ChannelCoordinatorBackend>;
 
 pub struct App {
     cancel: CancellationToken,
