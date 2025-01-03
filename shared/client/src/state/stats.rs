@@ -2,7 +2,6 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use psyche_coordinator::{model, Coordinator};
 use psyche_core::{BoundedQueue, NodeIdentity};
-use psyche_network::NetworkableNodeIdentity;
 use tokenizers::Tokenizer;
 use tracing::warn;
 use wandb::{DataValue, LogData};
@@ -37,7 +36,7 @@ impl StatsLogger {
         }
     }
 
-    pub fn publish_round_stats<T: NetworkableNodeIdentity>(
+    pub fn publish_round_stats<T: NodeIdentity>(
         &self,
         state: &Coordinator<T>,
         node_info: &HashMap<String, DataValue>,
@@ -122,10 +121,7 @@ impl StatsLogger {
         &self.losses
     }
 
-    pub fn global_tokens_per_second<T: NetworkableNodeIdentity>(
-        &self,
-        state: &Coordinator<T>,
-    ) -> f32 {
+    pub fn global_tokens_per_second<T: NodeIdentity>(&self, state: &Coordinator<T>) -> f32 {
         match self.round_durations.is_empty() {
             true => 0.,
             false => match &state.model {
