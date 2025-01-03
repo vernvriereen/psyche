@@ -12,7 +12,9 @@ use testing::{
 async fn connect_single_node() {
     let init_min_clients = 2;
     let batches_per_round = 4;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
 
     let server_port = server_handle.server_port;
     let run_id = &server_handle.run_id;
@@ -27,7 +29,9 @@ async fn connect_multiple_nodes() {
     let number_of_nodes = 10;
     let init_min_clients = 15;
     let batches_per_round = 4;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
 
     let server_port = server_handle.server_port;
     let run_id = &server_handle.run_id;
@@ -45,7 +49,9 @@ async fn state_change_waiting_for_members_to_warmup() {
     // Coordinator is initialized with some default values
     let init_min_clients = 2;
     let batches_per_round = 4;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
 
     let run_state = || server_handle.get_run_state();
     let connected_clients = || server_handle.get_clients_len();
@@ -73,7 +79,9 @@ async fn state_change_shutdown_node_in_warmup() {
     // Coordinator is initialized with some default values
     let init_min_clients = 2;
     let batches_per_round = 4;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
 
     // No clients are connected yet, so run state should be `WaitingForMembers`
 
@@ -113,7 +121,9 @@ async fn state_change_waiting_for_members_to_round_train() {
     // Coordinator is initialized with some default values
     let init_min_clients = 2;
     let batches_per_round = 4;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -140,7 +150,9 @@ async fn state_change_waiting_for_members_to_round_train() {
 async fn state_change_waiting_for_members_to_round_witness() {
     let init_min_clients = 2;
     let batches_per_round = 4;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -177,7 +189,9 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     // and they won't appear in the bloom filters, making the test fail
     let init_min_clients = 5;
     let batches_per_round = init_min_clients;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -235,8 +249,10 @@ async fn validate_all_clients_participate_in_witness_bloom() {
 async fn complete_round_with_shutdown_node() {
     let init_min_clients = 2;
     let batches_per_round = 2;
+    let witness_nodes = 1;
     let training_delay = 2;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -295,7 +311,9 @@ async fn finish_epoch() {
     // This way, every client will be assigned with only one batch
     let init_min_clients = 2;
     let batches_per_round = 2;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -358,7 +376,9 @@ async fn client_join_in_training() {
     // start a normal run with 2 clients
     let init_min_clients = 2;
     let batches_per_round = 2;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -431,8 +451,10 @@ async fn client_join_in_training() {
 async fn shutdown_node_in_training() {
     let init_min_clients = 2;
     let batches_per_round = 2;
+    let witness_nodes = 2;
     let training_delay = 2;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -461,11 +483,9 @@ async fn shutdown_node_in_training() {
 
     tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
 
-
     // train
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
     let clients = server_handle.get_clients().await;
-
 
     client_1_task.client_handle.abort();
     // tokio::time::sleep(Duration::from_secs(training_delay)).await;
