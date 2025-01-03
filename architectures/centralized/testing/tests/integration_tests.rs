@@ -246,7 +246,7 @@ async fn validate_all_clients_participate_in_witness_bloom() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn complete_round_with_shutdown_node() {
+async fn replace_node_and_complete_round() {
     let init_min_clients = 2;
     let batches_per_round = 2;
     let witness_nodes = 1;
@@ -448,9 +448,10 @@ async fn client_join_in_training() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn shutdown_node_in_training() {
+async fn shutdown_node_in_training_and_complete_round() {
     let init_min_clients = 2;
     let batches_per_round = 2;
+    // we need 2 witness nodes, as one will be shutdown
     let witness_nodes = 2;
     let training_delay = 2;
     let server_handle =
@@ -477,40 +478,36 @@ async fn shutdown_node_in_training() {
 
     // warmup
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
-
-    // A client is killed and the coordinator state returns to `WaitingForMembers`. Since client 3
-    // was pending, the state immediately changes to `Warmup` again
-
     tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
 
     // train
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
     let clients = server_handle.get_clients().await;
+    assert_eq(clients.len(), 2);
 
+    // shutdown node 1.
+    // this round's workload should be handled entirely by node 2.
     client_1_task.client_handle.abort();
-    // tokio::time::sleep(Duration::from_secs(training_delay)).await;
 
     // witness
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
 
+    // assert that just one node parcipate in the witness
     let witnesses = &server_handle.get_rounds().await[0].witnesses;
-
     let mut score = 0;
-    // let clients = server_handle.get_clients().await;
     clients.iter().for_each(|client| {
         score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
             &client.id, witnesses,
         );
     });
-
     assert_eq!(score, 1);
 
+    // since up nodes < init_min_clients
+    // the network should return to WaitingForMembers
     assert_with_retries(
         || server_handle.get_run_state(),
         RunState::WaitingForMembers,
     )
     .await;
-
-    println!("here");
 }
