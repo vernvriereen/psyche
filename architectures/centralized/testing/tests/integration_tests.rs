@@ -483,7 +483,7 @@ async fn shutdown_node_in_training_and_complete_round() {
     // train
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
     let clients = server_handle.get_clients().await;
-    assert_eq(clients.len(), 2);
+    assert_eq!(clients.len(), 2);
 
     // shutdown node 1.
     // this round's workload should be handled entirely by node 2.
