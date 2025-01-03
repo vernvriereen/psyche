@@ -6254,7 +6254,7 @@ dependencies = [
  "solana-account-decoder-client-types",
  "time",
  "tokio",
- "tokio-util",
+ "tokio-util 0.7.13",
  "tracing",
 ]
 
