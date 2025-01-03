@@ -83,3 +83,105 @@ impl From<solana_coordinator::ClientId> for NetworkIdentity {
         Self(value)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::Rng;
+
+    fn generate_random_challenge() -> [u8; 32] {
+        let mut rng = rand::thread_rng();
+        let mut challenge = [0u8; 32];
+        rng.fill(&mut challenge);
+        challenge
+    }
+
+    #[test]
+    fn test_network_identity_roundtrip() {
+        let keypair = Arc::new(Keypair::new());
+        let secret_key = SecretKey::generate(&mut rand::rngs::OsRng);
+        let private_key = (keypair.clone(), secret_key.clone());
+
+        let client_id = solana_coordinator::ClientId {
+            owner: keypair.pubkey(),
+            p2p_identity: *secret_key.public().as_bytes(),
+        };
+
+        let network_identity = NetworkIdentity(client_id);
+
+        let challenge = generate_random_challenge();
+
+        let signed_bytes = network_identity.to_signed_bytes(&private_key, challenge);
+        let decoded_identity = NetworkIdentity::from_signed_bytes(&signed_bytes, challenge)
+            .expect("Failed to decode signed bytes");
+
+        assert_eq!(network_identity, decoded_identity);
+        assert_eq!(network_identity.0.owner, decoded_identity.0.owner);
+        assert_eq!(
+            network_identity.0.p2p_identity,
+            decoded_identity.0.p2p_identity
+        );
+    }
+
+    #[test]
+    fn test_network_identity_invalid_challenge() {
+        let keypair = Arc::new(Keypair::new());
+        let secret_key = SecretKey::generate(&mut rand::rngs::OsRng);
+        let private_key = (keypair.clone(), secret_key.clone());
+
+        let client_id = solana_coordinator::ClientId {
+            owner: keypair.pubkey(),
+            p2p_identity: *secret_key.public().as_bytes(),
+        };
+
+        let network_identity = NetworkIdentity(client_id);
+        let challenge1 = generate_random_challenge();
+        let challenge2 = generate_random_challenge();
+
+        // sign with challenge1 but verify with challenge2
+        let signed_bytes = network_identity.to_signed_bytes(&private_key, challenge1);
+        let result = NetworkIdentity::from_signed_bytes(&signed_bytes, challenge2);
+
+        assert!(result.is_err());
+        match result {
+            Err(FromSignedBytesError::MismatchedChallenge(_, _)) => (),
+            _ => panic!("Expected MismatchedChallenge error"),
+        }
+    }
+
+    #[test]
+    fn test_network_identity_display() {
+        let keypair = Arc::new(Keypair::new());
+        let secret_key = SecretKey::generate(&mut rand::rngs::OsRng);
+        let client_id = solana_coordinator::ClientId {
+            owner: keypair.pubkey(),
+            p2p_identity: *secret_key.public().as_bytes(),
+        };
+        let network_identity = NetworkIdentity(client_id);
+
+        let display_string = format!("{}", network_identity);
+        assert_eq!(display_string, format!("{}", client_id));
+    }
+
+    #[test]
+    fn test_network_identity_hash() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let keypair = Arc::new(Keypair::new());
+        let secret_key = SecretKey::generate(&mut rand::rngs::OsRng);
+        let client_id = solana_coordinator::ClientId {
+            owner: keypair.pubkey(),
+            p2p_identity: *secret_key.public().as_bytes(),
+        };
+        let network_identity = NetworkIdentity(client_id);
+
+        let mut hasher1 = DefaultHasher::new();
+        let mut hasher2 = DefaultHasher::new();
+
+        network_identity.hash(&mut hasher1);
+        client_id.hash(&mut hasher2);
+
+        assert_eq!(hasher1.finish(), hasher2.finish());
+    }
+}
