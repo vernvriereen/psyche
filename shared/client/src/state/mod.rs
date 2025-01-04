@@ -11,6 +11,6 @@ mod train;
 mod warmup;
 mod witness;
 
-pub use init::{RunInitConfig, RunInitConfigAndIO};
+pub use init::{InitRunError, RunInitConfig, RunInitConfigAndIO};
 pub use steps::RunManager;
 pub use types::{CheckpointConfig, DistroBroadcastAndPayload, HubUploadInfo};

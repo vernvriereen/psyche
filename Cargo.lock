@@ -8989,6 +8989,7 @@ dependencies = [
 name = "testing"
 version = "0.0.1"
 dependencies = [
+ "anyhow",
  "bytemuck",
  "psyche-centralized-client",
  "psyche-centralized-server",
