@@ -121,9 +121,12 @@ impl<T: NetworkableNodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                                             p2p.start_download(dl.blob_ticket).await?;
                                         }
                                     }
-                                    NetworkEvent::ParameterRequest(parameter_name) => {
+                                    NetworkEvent::ParameterRequest(parameter_name, protocol_req_tx) => {
                                         let transmittable_parameter = current_model.get_transmittable_parameter(&parameter_name)?;
                                         let ticket = p2p.add_downloadable(transmittable_parameter).await?;
+                                        if let Err(e) = protocol_req_tx.send(ticket.to_string()) {
+                                            warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e}");
+                                        };
                                     }
                                 }
                             }

@@ -9,7 +9,7 @@ use futures_lite::future::Boxed as BoxedFuture;
 use iroh::{endpoint::Connecting, protocol::ProtocolHandler};
 use serde::{Deserialize, Serialize};
 use tch::Tensor;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 pub const ALPN: &[u8] = b"model-parameter-sharing/0";
 
@@ -53,7 +53,7 @@ impl Error for SharableModelParameterError {
 }
 
 pub enum ParameterSharingMessage {
-    Get(String),
+    Get(String, oneshot::Sender<String>),
     Response(String),
 }
 

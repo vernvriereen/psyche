@@ -311,8 +311,8 @@ where
                     None => {}
                 }
             }
-            Some(ParameterSharingMessage::Get(parameter_name)) = self.rx_model_parameter_req.recv() => {
-                return Ok(Some(NetworkEvent::ParameterRequest(parameter_name)));
+            Some(ParameterSharingMessage::Get(parameter_name, protocol_req_tx)) = self.rx_model_parameter_req.recv() => {
+                return Ok(Some(NetworkEvent::ParameterRequest(parameter_name, protocol_req_tx)));
             }
             _ = self.update_stats_interval.tick() => {
                 on_update_stats(self.router.endpoint(), &mut self.state).await?;
@@ -402,7 +402,7 @@ where
     MessageReceived((PublicKey, BM)),
     DownloadComplete(DownloadComplete<D>),
     DownloadFailed(DownloadFailed),
-    ParameterRequest(String),
+    ParameterRequest(String, oneshot::Sender<String>),
 }
 
 async fn on_update_stats(endpoint: &Endpoint, stats: &mut State) -> Result<()> {
