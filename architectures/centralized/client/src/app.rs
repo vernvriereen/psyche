@@ -5,7 +5,9 @@ use psyche_client::{
     CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
 };
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
-use psyche_network::{NetworkTUIState, NetworkTui, RelayMode, SecretKey, TcpClient};
+use psyche_network::{
+    AllClientsAllowed, NetworkTUIState, NetworkTui, RelayMode, SecretKey, TcpClient,
+};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
 use psyche_watcher::{Backend as WatcherBackend, CoordinatorTui};
@@ -110,6 +112,7 @@ impl AppBuilder {
             RelayMode::Default,
             vec![],
             Some(p.identity_secret_key.clone()),
+            AllClientsAllowed,
         )
         .await?;
 

@@ -14,7 +14,9 @@ use psyche_core::{u8_to_string, FixedVec, Shuffle, SizedIterator, TokenSize};
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider,
 };
-use psyche_network::{ClientNotification, NetworkEvent, NetworkTui, RelayMode, TcpServer};
+use psyche_network::{
+    AllClientsAllowed, ClientNotification, NetworkEvent, NetworkTui, RelayMode, TcpServer,
+};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{maybe_start_render_loop, CustomWidget, MaybeTui, TabbedWidget};
 use psyche_watcher::CoordinatorTui;
@@ -154,7 +156,15 @@ impl App {
         withdraw_on_disconnect: bool,
     ) -> Result<Self> {
         let run_id = u8_to_string(&coordinator.run_id);
-        let p2p = NC::init(&run_id, p2p_port, RelayMode::Default, vec![], None).await?;
+        let p2p = NC::init(
+            &run_id,
+            p2p_port,
+            RelayMode::Default,
+            vec![],
+            None,
+            AllClientsAllowed,
+        )
+        .await?;
 
         Self::reset_ephemeral(&mut coordinator);
 

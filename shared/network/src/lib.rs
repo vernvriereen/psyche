@@ -1,10 +1,11 @@
 use anyhow::{Error, Result};
 use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
 use futures_util::StreamExt;
-use iroh::{endpoint::RemoteInfo, protocol::Router, NodeAddr};
+use iroh::{endpoint::RemoteInfo, NodeAddr};
 use iroh_blobs::{net_protocol::Blobs, store::mem::Store, util::local_pool::LocalPool};
 use iroh_gossip::net::{Gossip, GossipEvent, GossipReceiver, GossipSender};
 use p2p_model_sharing::ParameterSharingMessage;
+use router::Router;
 use state::State;
 use std::{
     collections::HashSet,
@@ -34,6 +35,7 @@ mod authenticable_identity;
 mod download_manager;
 mod p2p_model_sharing;
 mod peer_list;
+mod router;
 mod serde;
 mod signed_message;
 mod state;
@@ -46,6 +48,7 @@ pub use download_manager::{DownloadComplete, DownloadFailed};
 pub use iroh::{Endpoint, PublicKey, SecretKey};
 pub use p2p_model_sharing::{ModelParameterSharing, ModelParameters, ALPN};
 pub use peer_list::PeerList;
+pub use router::{AllClientsAllowed, Allowlist};
 pub use serde::Networkable;
 pub use signed_message::SignedMessage;
 pub use tcp::{ClientNotification, TcpClient, TcpServer};
@@ -93,12 +96,13 @@ where
     BroadcastMessage: Networkable,
     Download: Networkable,
 {
-    pub async fn init(
+    pub async fn init<A: Allowlist + 'static + Send>(
         run_id: &str,
         port: Option<u16>,
         relay_mode: RelayMode,
         bootstrap_peers: Vec<NodeAddr>,
         secret_key: Option<SecretKey>,
+        allowlist: A,
     ) -> Result<Self> {
         let secret_key = match secret_key {
             None => SecretKey::generate(&mut rand::rngs::OsRng),
@@ -106,7 +110,6 @@ where
         };
         debug!("Using relay servers: {}", fmt_relay_mode(&relay_mode));
 
-        // TODO add an allowlist of public keys, don't let any connections from people with keys not in that list.
         let endpoint = Endpoint::builder()
             .secret_key(secret_key)
             .relay_mode(relay_mode)
@@ -131,12 +134,14 @@ where
         let model_parameter_sharing = ModelParameterSharing::new(tx_model_parameter_req);
 
         let router = Arc::new(
-            Router::builder(endpoint)
-                .accept(iroh_blobs::ALPN, blobs.clone())
-                .accept(iroh_gossip::ALPN, gossip.clone())
-                .accept(p2p_model_sharing::ALPN, model_parameter_sharing.clone())
-                .spawn()
-                .await?,
+            Router::spawn(
+                endpoint,
+                gossip.clone(),
+                blobs.clone(),
+                model_parameter_sharing.clone(),
+                allowlist,
+            )
+            .await?,
         );
 
         // add any bootstrap peers

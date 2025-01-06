@@ -3,7 +3,8 @@ use chrono::{Local, Timelike};
 use clap::{ArgAction, Parser};
 use iroh::{PublicKey, RelayMap, RelayMode, RelayUrl};
 use psyche_network::{
-    BlobTicket, NetworkConnection, NetworkEvent, NetworkTUIState, NetworkTui, PeerList,
+    AllClientsAllowed, BlobTicket, NetworkConnection, NetworkEvent, NetworkTUIState, NetworkTui,
+    PeerList,
 };
 use psyche_tui::{
     logging::LoggerWidget,
@@ -252,7 +253,15 @@ async fn main() -> Result<()> {
     };
     info!("using relay servers: {:?}", &relay_mode);
 
-    let network = NC::init("123", args.bind_port, relay_mode, peers, secret_key).await?;
+    let network = NC::init(
+        "123",
+        args.bind_port,
+        relay_mode,
+        peers,
+        secret_key,
+        AllClientsAllowed,
+    )
+    .await?;
 
     let tui = args.tui;
 
