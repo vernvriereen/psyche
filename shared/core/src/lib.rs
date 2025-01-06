@@ -15,6 +15,7 @@ mod running_average;
 mod serde_utils;
 mod sha256;
 mod similarity;
+mod small_boolean;
 mod swap_or_not;
 
 pub use batch_id::BatchId;
@@ -37,6 +38,7 @@ pub use sha256::{sha256, sha256v};
 pub use similarity::{
     hamming_distance, is_similar, jaccard_distance, manhattan_distance, DistanceThresholds,
 };
+pub use small_boolean::SmallBoolean;
 pub use swap_or_not::compute_shuffled_index;
 
 pub fn u8_to_string(slice: &[u8]) -> String {

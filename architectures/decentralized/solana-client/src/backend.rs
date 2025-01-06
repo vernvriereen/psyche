@@ -84,7 +84,7 @@ impl WatcherBackend<solana_coordinator::ClientId> for SolanaBackend {
                 Some(update) => match update.value.data.decode() {
                     Some(data) => coordinator_account_from_bytes(&data)
                         .map_err(|_| anyhow!("Unable to decode coordinator account data"))
-                        .map(|x| x.coordinator),
+                        .map(|x| x.state.coordinator),
                     None => bail!("Unable to decode account data"),
                 },
                 None => bail!("Account updates channel closed"),
@@ -121,6 +121,7 @@ mod test {
             system_instruction,
         },
     };
+    use bytemuck::Zeroable;
     use psyche_coordinator::{CoodinatorConfig, RunState};
     use rand::Rng;
 
@@ -171,7 +172,7 @@ mod test {
                     .accounts(
                         solana_coordinator::accounts::InitializeCoordinatorAccounts {
                             instance: instance_pda,
-                            coordinator: coordinator_keypair.pubkey(),
+                            account: coordinator_keypair.pubkey(),
                             payer: backend.program.payer(),
                             system_program: system_program::ID,
                         },
@@ -202,12 +203,12 @@ mod test {
             .request()
             .accounts(solana_coordinator::accounts::CoordinatorAccounts {
                 instance: instance_pda,
-                coordinator: coordinator_keypair.pubkey(),
+                account: coordinator_keypair.pubkey(),
                 payer: key_pair.pubkey(),
                 system_program: system_program::ID,
             })
             .args(solana_coordinator::instruction::UpdateCoordinatorConfig {
-                config: CoodinatorConfig::<ClientId>::zeroed(),
+                config: CoodinatorConfig::<solana_coordinator::ClientId>::zeroed(),
             })
             .signed_transaction()
             .await

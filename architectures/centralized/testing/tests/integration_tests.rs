@@ -226,9 +226,9 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     });
 
     let number_of_sent_witnesses = witnesses.len();
-    let number_of_seen_clients = score / number_of_sent_witnesses as u32;
+    let number_of_seen_clients = score as usize / number_of_sent_witnesses;
 
-    assert_eq!(number_of_seen_clients, clients.len() as u32)
+    assert_eq!(number_of_seen_clients, clients.len())
 }
 
 #[tokio::test(flavor = "multi_thread")]

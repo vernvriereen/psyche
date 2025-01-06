@@ -45,7 +45,7 @@ enum TestingQueryMsg {
         respond_to: oneshot::Sender<u32>,
     },
     Epoch {
-        respond_to: oneshot::Sender<u32>,
+        respond_to: oneshot::Sender<u16>,
     },
 }
 
@@ -59,8 +59,8 @@ struct CoordinatorServer {
 impl CoordinatorServer {
     pub async fn new(
         query_chan_receiver: Receiver<TestingQueryMsg>,
-        init_min_clients: u32,
-        batches_per_round: u32,
+        init_min_clients: u16,
+        batches_per_round: u16,
     ) -> Self {
         let coordinator_config = CoodinatorConfig {
             warmup_time: WARMUP_TIME,
@@ -75,12 +75,12 @@ impl CoordinatorServer {
             witness_nodes: 1,
             witness_quorum: 1,
             total_steps: 10,
-            overlapped: false,
+            overlapped: false.into(),
             ..CoodinatorConfig::<ClientId>::zeroed()
         };
 
         let epoch_state = CoordinatorEpochState {
-            first_round: true,
+            first_round: true.into(),
             ..CoordinatorEpochState::<ClientId>::zeroed()
         };
 
@@ -170,7 +170,7 @@ pub struct CoordinatorServerHandle {
 }
 
 impl CoordinatorServerHandle {
-    pub async fn new(init_min_clients: u32, batches_per_round: u32) -> Self {
+    pub async fn new(init_min_clients: u16, batches_per_round: u16) -> Self {
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
         let mut server =
             CoordinatorServer::new(query_chan_receiver, init_min_clients, batches_per_round).await;
@@ -233,8 +233,8 @@ impl CoordinatorServerHandle {
         recv.await.expect("Coordinator actor task has been killed")
     }
 
-    pub async fn get_current_epoch(&self) -> u32 {
-        let (send, recv) = oneshot::channel::<u32>();
+    pub async fn get_current_epoch(&self) -> u16 {
+        let (send, recv) = oneshot::channel::<u16>();
         let msg = TestingQueryMsg::Epoch { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
         recv.await.expect("Coordinator actor task has been killed")
