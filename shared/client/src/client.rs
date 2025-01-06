@@ -5,8 +5,8 @@ use crate::{
 use anyhow::{Error, Result};
 use psyche_coordinator::RunState;
 use psyche_network::{
-    DownloadComplete, NetworkConnection, NetworkEvent, NetworkTUIState, Networkable,
-    NetworkableNodeIdentity,
+    DownloadComplete, ModelParameters, NetworkConnection, NetworkEvent, NetworkTUIState,
+    Networkable, NetworkableNodeIdentity,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use wandb::DataValue;
@@ -69,7 +69,7 @@ impl<T: NetworkableNodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                 });
 
                 let mut retried_downloads: HashMap<psyche_network::Hash, usize> = HashMap::new();
-                let mut current_model = HashMap::new();
+                let mut current_model = ModelParameters::empty();
                 loop {
                     select! {
                         _ = cancel.cancelled() => {
@@ -121,6 +121,14 @@ impl<T: NetworkableNodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                                             p2p.start_download(dl.blob_ticket).await?;
                                         }
                                     }
+                                    NetworkEvent::ParameterRequest(parameter_name) => {
+                                        if let Some(parameter) = current_model.get(&parameter_name) {
+                                            let mut buffer = Vec::new();
+                                            parameter.save_to_stream(buffer).unwrap();
+                                            let ticket = p2p.add_downloadable(buffer).await?;
+                                        };
+                                            warn!("Got request for an unknown parameter: {parameter_name}");
+                                    }
                                 }
                             }
                         }
@@ -164,7 +172,8 @@ impl<T: NetworkableNodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                             watcher.backend_mut().send_checkpoint(witness).await?;
                         }
                         Some(model) = rx_model.recv() => {
-                            current_model = model;
+                            current_model.update_parameters(model)?;
+
                             // let a = model.keys().into_iter().next().unwrap();
                             // println!("VARIABLE!: {}", a);
                         },

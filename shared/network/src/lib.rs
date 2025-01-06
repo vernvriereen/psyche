@@ -4,6 +4,7 @@ use futures_util::StreamExt;
 use iroh::{endpoint::RemoteInfo, protocol::Router, NodeAddr};
 use iroh_blobs::{net_protocol::Blobs, store::mem::Store, util::local_pool::LocalPool};
 use iroh_gossip::net::{Gossip, GossipEvent, GossipReceiver, GossipSender};
+use p2p_model_sharing::ParameterSharingMessage;
 use state::State;
 use std::{
     collections::HashSet,
@@ -43,7 +44,7 @@ mod util;
 pub use download_manager::{DownloadComplete, DownloadFailed};
 pub use iroh::{Endpoint, PublicKey, SecretKey};
 pub use networkable_node_identity::{FromSignedBytesError, NetworkableNodeIdentity};
-pub use p2p_model_sharing::{ModelParameterSharing, ALPN};
+pub use p2p_model_sharing::{ModelParameterSharing, ModelParameters, ALPN};
 pub use peer_list::PeerList;
 pub use serde::Networkable;
 pub use signed_message::SignedMessage;
@@ -61,7 +62,7 @@ where
     state: State,
     gossip_tx: GossipSender,
     gossip_rx: GossipReceiver,
-    rx_model_parameter_req: UnboundedReceiver<String>,
+    rx_model_parameter_req: UnboundedReceiver<ParameterSharingMessage>,
     download_manager: DownloadManager<Download>,
     _broadcast_message: PhantomData<BroadcastMessage>,
     _download: PhantomData<Download>,
@@ -310,6 +311,9 @@ where
                     None => {}
                 }
             }
+            Some(ParameterSharingMessage::Get(parameter_name)) = self.rx_model_parameter_req.recv() => {
+                return Ok(Some(NetworkEvent::ParameterRequest(parameter_name)));
+            }
             _ = self.update_stats_interval.tick() => {
                 on_update_stats(self.router.endpoint(), &mut self.state).await?;
             }
@@ -398,6 +402,7 @@ where
     MessageReceived((PublicKey, BM)),
     DownloadComplete(DownloadComplete<D>),
     DownloadFailed(DownloadFailed),
+    ParameterRequest(String),
 }
 
 async fn on_update_stats(endpoint: &Endpoint, stats: &mut State) -> Result<()> {
