@@ -17,7 +17,7 @@ verification_percent = 50
 witness_nodes = 1
 witness_quorum = 1
 total_steps = 25000
-overlapped = false
+overlapped = 0
 
 [model.LLM]
 architecture = "HfLlama"
