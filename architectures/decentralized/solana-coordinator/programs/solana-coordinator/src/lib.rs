@@ -1,10 +1,17 @@
 mod client_id;
 
 use anchor_lang::{prelude::*, system_program};
+use bytemuck::{Pod, Zeroable};
 pub use client_id::ClientId;
-use psyche_coordinator::{CoodinatorConfig, Coordinator, SOLANA_MAX_STRING_LEN};
+use psyche_coordinator::{
+    CoodinatorConfig, Coordinator, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
+};
+use psyche_core::FixedVec;
 
 declare_id!("5gKtdi6At7WEcLE22GmkSg94rVgc2hRRo3VvKhLnoJZP");
+
+pub const SOLANA_MAX_NUM_PENDING_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
+pub const SOLANA_MAX_NUM_WHITELISTED_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 
 pub fn bytes_from_string(str: &str) -> &[u8] {
     &str.as_bytes()[..psyche_coordinator::SOLANA_MAX_STRING_LEN.min(str.as_bytes().len())]
@@ -25,19 +32,39 @@ pub fn coordinator_account_from_bytes(
     ))
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, Zeroable, InitSpace, Pod)]
+#[repr(C)]
+pub struct Client {
+    owner: Pubkey,
+    id: ClientId,
+    staked: u64,
+    earned: u64,
+    slashed: u64,
+    next_epoch: u64,
+}
+
 #[account(zero_copy)]
 #[repr(C)]
 pub struct CoordinatorAccount {
-    pub coordinator: Coordinator<ClientId>,
+    pub state: CoordinatorInstanceState,
 }
+
+#[derive(Clone, Copy, Zeroable)]
+#[repr(C)]
+pub struct CoordinatorInstanceState {
+    pub coordinator: Coordinator<ClientId>,
+    pub whitelist: FixedVec<ClientId, SOLANA_MAX_NUM_WHITELISTED_CLIENTS>,
+    pub clients: FixedVec<Client, SOLANA_MAX_NUM_PENDING_CLIENTS>,
+}
+
+unsafe impl Pod for CoordinatorInstanceState {}
 
 #[derive(InitSpace)]
 #[account]
 pub struct CoordinatorInstance {
     pub bump: u8,
     pub owner: Pubkey,
-    pub coordinator: Pubkey,
+    pub account: Pubkey,
     #[max_len(SOLANA_MAX_STRING_LEN)]
     pub run_id: String,
 }
@@ -57,12 +84,12 @@ pub mod solana_coordinator {
         let instance = &mut ctx.accounts.instance;
         instance.bump = ctx.bumps.instance;
         instance.owner = ctx.accounts.payer.key();
-        instance.coordinator = ctx.accounts.coordinator.key();
+        instance.account = ctx.accounts.account.key();
         instance.run_id = run_id.clone();
 
         // this is what AccountLoader::load_init does, but unrolled to deal with weird lifetime stuff
-        let mut coordinator: RefMut<CoordinatorAccount> = {
-            let acc_info = ctx.accounts.coordinator.as_ref();
+        let mut account: RefMut<CoordinatorAccount> = {
+            let acc_info = ctx.accounts.account.as_ref();
             if acc_info.owner != &solana_coordinator::ID {
                 return Err(Error::from(ErrorCode::AccountOwnedByWrongProgram)
                     .with_pubkeys((*acc_info.owner, solana_coordinator::ID)));
@@ -103,7 +130,7 @@ pub mod solana_coordinator {
         let mut array = [0u8; SOLANA_MAX_STRING_LEN];
         let run_id = bytes_from_string(&run_id);
         array[..run_id.len()].copy_from_slice(run_id);
-        coordinator.coordinator.run_id = array;
+        account.state.coordinator.run_id = array;
 
         Ok(())
     }
@@ -112,7 +139,7 @@ pub mod solana_coordinator {
         ctx: Context<CoordinatorAccounts>,
         config: CoodinatorConfig<ClientId>,
     ) -> Result<()> {
-        let coordinator = &mut ctx.accounts.coordinator.load_mut()?.coordinator;
+        let coordinator = &mut ctx.accounts.account.load_mut()?.state.coordinator;
 
         if coordinator.run_state == RunState::Finished {
             return err!(ProgramError::UpdateConfigFinished);
@@ -145,7 +172,7 @@ pub struct InitializeCoordinatorAccounts<'info> {
     #[account(init, payer = payer, space = 8 + CoordinatorInstance::INIT_SPACE, seeds = [b"coordinator", bytes_from_string(&run_id)], bump)]
     pub instance: Account<'info, CoordinatorInstance>,
     #[account(mut)]
-    pub coordinator: UncheckedAccount<'info>,
+    pub account: UncheckedAccount<'info>,
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(address = system_program::ID)]
@@ -156,8 +183,8 @@ pub struct InitializeCoordinatorAccounts<'info> {
 pub struct CoordinatorAccounts<'info> {
     #[account(seeds = [b"coordinator", bytes_from_string(&instance.run_id)], bump = instance.bump, constraint = instance.owner == *payer.key)]
     pub instance: Account<'info, CoordinatorInstance>,
-    #[account(mut, owner = crate::ID, constraint = instance.coordinator == coordinator.key())]
-    pub coordinator: AccountLoader<'info, CoordinatorAccount>,
+    #[account(mut, owner = crate::ID, constraint = instance.account == account.key())]
+    pub account: AccountLoader<'info, CoordinatorAccount>,
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(address = system_program::ID)]

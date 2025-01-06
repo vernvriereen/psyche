@@ -393,7 +393,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
         _previous_round: &mut RoundState<T>,
         current_round: &mut RoundState<T>,
     ) -> Result<JoinHandle<Result<Vec<Trainer>, ApplyError>>, ApplyError> {
-        if state.epoch_state.first_round {
+        if state.epoch_state.first_round.into() {
             // the first training step of each epoch has no apply phase.
             info!("Skipping early apply");
             return Ok(tokio::task::spawn(async move { Ok(trainers) }));
@@ -521,54 +521,56 @@ fn start_sending_health_checks<T: NodeIdentity>(
     tx_health_check: mpsc::UnboundedSender<HealthChecks>,
 ) -> Result<Option<JoinHandle<Result<(), TrainError>>>, TrainError> {
     // we won't have any information to health check with until at least one round of training has finished
-    if state.epoch_state.first_round {
+    if state.epoch_state.first_round.into() {
         return Ok(None);
     }
     let (_, witness_proof, committee_selection) = current_round
         .committee_info
         .as_ref()
         .ok_or(TrainError::NoCommitteeInfo)?;
-    Ok(if !state.epoch_state.first_round && witness_proof.witness {
-        let witnesses = state
-            .previous_round()
-            .ok_or(TrainError::NoActiveRound)?
-            .witnesses;
-        let witness_quorum = state.config.witness_quorum;
-        let clients = state.epoch_state.clients;
-        let committee_selection = committee_selection.clone();
-        Some(tokio::task::spawn(async move {
-            let mut checks = HealthChecks::new();
-            for (index, client) in clients.iter().enumerate() {
-                let proof = committee_selection.get_committee(index as u64);
-                if proof.committee == Committee::Trainer {
-                    debug!(
-                        "Trainer {:?} health score: {}",
-                        client,
-                        Coordinator::trainer_healthy_score_by_witnesses(&client.id, &witnesses)
-                    );
-                    if !Coordinator::trainer_healthy_by_witnesses(
-                        &client.id,
-                        &witnesses,
-                        witness_quorum,
-                    ) {
-                        debug!("Found unhealthy trainer at index {index}");
-                        checks.push(proof);
+    Ok(
+        if state.epoch_state.first_round.is_false() && witness_proof.witness {
+            let witnesses = state
+                .previous_round()
+                .ok_or(TrainError::NoActiveRound)?
+                .witnesses;
+            let witness_quorum = state.config.witness_quorum;
+            let clients = state.epoch_state.clients;
+            let committee_selection = committee_selection.clone();
+            Some(tokio::task::spawn(async move {
+                let mut checks = HealthChecks::new();
+                for (index, client) in clients.iter().enumerate() {
+                    let proof = committee_selection.get_committee(index as u64);
+                    if proof.committee == Committee::Trainer {
+                        debug!(
+                            "Trainer {:?} health score: {}",
+                            client,
+                            Coordinator::trainer_healthy_score_by_witnesses(&client.id, &witnesses)
+                        );
+                        if !Coordinator::trainer_healthy_by_witnesses(
+                            &client.id,
+                            &witnesses,
+                            witness_quorum,
+                        ) {
+                            debug!("Found unhealthy trainer at index {index}");
+                            checks.push(proof);
+                        }
                     }
                 }
-            }
 
-            if !checks.is_empty() {
-                info!("Sending health check for following indicies: {:?}", checks);
-                tx_health_check
-                    .send(checks)
-                    .map_err(|_| TrainError::SendHealthChecks)
-            } else {
-                Ok(())
-            }
-        }))
-    } else {
-        None
-    })
+                if !checks.is_empty() {
+                    info!("Sending health check for following indicies: {:?}", checks);
+                    tx_health_check
+                        .send(checks)
+                        .map_err(|_| TrainError::SendHealthChecks)
+                } else {
+                    Ok(())
+                }
+            }))
+        } else {
+            None
+        },
+    )
 }
 
 #[derive(Error, Debug)]

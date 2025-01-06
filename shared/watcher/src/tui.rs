@@ -78,7 +78,7 @@ pub enum TuiRunState {
     Uninitialized,
     Paused,
     WaitingForMembers {
-        need: u32,
+        need: u16,
     },
     Warmup {
         end_time: Instant,
@@ -124,7 +124,7 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for TuiRunState {
                 need: c
                     .config
                     .min_clients
-                    .saturating_sub(c.epoch_state.clients.len() as u32),
+                    .saturating_sub(c.epoch_state.clients.len() as u16),
             },
             RunState::Warmup => {
                 let time_since_epoch = SystemTime::now()

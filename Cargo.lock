@@ -5883,6 +5883,7 @@ dependencies = [
  "anchor-client",
  "anyhow",
  "async-trait",
+ "bytemuck",
  "clap",
  "futures-util",
  "home",

@@ -8,6 +8,7 @@ use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace}
 use bytemuck::{Pod, Zeroable};
 use psyche_core::{
     serde_deserialize_string, serde_serialize_string, sha256, Bloom, FixedVec, NodeIdentity,
+    SmallBoolean,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::hash::Hash;
@@ -94,25 +95,15 @@ impl<I: NodeIdentity> Hash for Client<I> {
     }
 }
 
-#[derive(
-    Clone,
-    Default,
-    Debug,
-    Zeroable,
-    Copy,
-    AnchorDeserialize,
-    AnchorSerialize,
-    Serialize,
-    Deserialize,
-)]
+#[derive(Clone, Default, Debug, Zeroable, Copy, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Round {
-    pub height: u32,
-    pub clients_len: u32,
-    pub tie_breaker_tasks: u32,
+    pub witnesses: FixedVec<Witness, SOLANA_MAX_NUM_WITNESSES>,
     pub data_index: u64,
     pub random_seed: u64,
-    pub witnesses: FixedVec<Witness, SOLANA_MAX_NUM_WITNESSES>,
+    pub height: u32,
+    pub clients_len: u16,
+    pub tie_breaker_tasks: u16,
 }
 
 #[derive(
@@ -173,53 +164,47 @@ pub struct CoodinatorConfig<I> {
     pub max_round_train_time: u64,
     pub round_witness_time: u64,
 
-    pub min_clients: u32,
+    pub min_clients: u16,
 
-    pub batches_per_round: u32,
-    pub data_indicies_per_batch: u32,
+    pub batches_per_round: u16,
+    pub data_indicies_per_batch: u16,
 
     pub verification_percent: u8,
-    pub witness_nodes: u32,
-    pub witness_quorum: u32,
+    pub witness_nodes: u16,
+    pub witness_quorum: u16,
 
     pub rounds_per_epoch: u32,
     pub total_steps: u32,
 
-    pub overlapped: bool,
+    pub overlapped: SmallBoolean,
 
     // TODO: remove when we implement parameter sharing over p2p
     #[serde(default)]
     pub checkpointers: FixedVec<I, SOLANA_MAX_NUM_CHECKPOINTERS>,
 }
 
-#[derive(
-    Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorDeserialize, AnchorSerialize,
-)]
+#[derive(Clone, Debug, Zeroable, Copy, Serialize, Deserialize)]
 #[repr(C)]
 #[serde(bound = "T: DeserializeOwned + NodeIdentity")]
 pub struct CoordinatorEpochState<T> {
     pub rounds: [Round; NUM_STORED_ROUNDS],
-    pub rounds_head: u32,
-    pub first_round: bool,
-    pub checkpointed: bool,
-    pub pause: bool,
     pub clients: FixedVec<Client<T>, SOLANA_MAX_NUM_CLIENTS>,
     pub exited_clients: FixedVec<Client<T>, SOLANA_MAX_NUM_CLIENTS>,
+    pub rounds_head: u32,
+    pub first_round: SmallBoolean,
+    pub checkpointed: SmallBoolean,
+    pub pause: SmallBoolean,
 }
 
-#[derive(
-    Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorDeserialize, AnchorSerialize,
-)]
+#[derive(Clone, Debug, Zeroable, Copy, Serialize, Deserialize)]
 #[repr(C)]
 pub struct CoordinatorProgress {
-    pub epoch: u32,
+    pub epoch: u16,
     pub step: u32,
     pub epoch_start_data_index: u64,
 }
 
-#[derive(
-    Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorDeserialize, AnchorSerialize,
-)]
+#[derive(Clone, Debug, Zeroable, Copy, Serialize, Deserialize)]
 #[serde(bound = "T: DeserializeOwned + NodeIdentity")]
 #[repr(C)]
 pub struct Coordinator<T> {
@@ -342,9 +327,9 @@ impl<T: NodeIdentity> Default for CoordinatorEpochState<T> {
         Self {
             rounds: Default::default(),
             rounds_head: Default::default(),
-            first_round: true,
-            pause: false,
-            checkpointed: false,
+            first_round: true.into(),
+            pause: Default::default(),
+            checkpointed: Default::default(),
             clients: Default::default(),
             exited_clients: Default::default(),
         }
@@ -383,15 +368,15 @@ impl<T: NodeIdentity> Coordinator<T> {
                 Err(CoordinatorError::Halted)
             }
             run_state => {
-                if self.epoch_state.pause {
-                    self.epoch_state.pause = false;
+                if self.epoch_state.pause.into() {
+                    self.epoch_state.pause = false.into();
                     self.change_state(unix_timestamp, RunState::Paused);
                     Ok(TickResult::EpochAbandoned)
                 } else if run_state == RunState::WaitingForMembers {
                     self.tick_waiting_for_members(backend, unix_timestamp)
                 } else if run_state == RunState::Cooldown {
                     self.tick_cooldown(unix_timestamp)
-                } else if (self.epoch_state.clients.len() as u32) < self.config.min_clients {
+                } else if (self.epoch_state.clients.len() as u16) < self.config.min_clients {
                     self.start_waiting_for_members(unix_timestamp);
                     Ok(TickResult::EpochAbandoned)
                 } else {
@@ -491,7 +476,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         checkpoint: Checkpoint,
     ) -> std::result::Result<(), CoordinatorError> {
         if self.run_state == RunState::Cooldown
-            && !self.epoch_state.checkpointed
+            && self.epoch_state.checkpointed.is_false()
             && self.config.checkpointers.iter().any(|x| x == from)
         {
             match &mut self.model {
@@ -499,7 +484,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                     llm.checkpoint = checkpoint;
                 }
             }
-            self.epoch_state.checkpointed = true;
+            self.epoch_state.checkpointed = true.into();
             Ok(())
         } else {
             Err(CoordinatorError::InvalidCheckpoint)
@@ -519,7 +504,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     pub fn pause(&mut self) -> std::result::Result<(), CoordinatorError> {
-        self.epoch_state.pause = true;
+        self.epoch_state.pause = true.into();
         Ok(())
     }
 
@@ -576,9 +561,9 @@ impl<T: NodeIdentity> Coordinator<T> {
     pub fn trainer_healthy_by_witnesses(
         id: &T,
         witnesses: &[Witness],
-        witness_quorum: u32,
+        witness_quorum: u16,
     ) -> bool {
-        let score: u32 = Self::trainer_healthy_score_by_witnesses(id, witnesses);
+        let score = Self::trainer_healthy_score_by_witnesses(id, witnesses);
         match witness_quorum {
             0 => score as usize == witnesses.len(),
             witness_quorum => score >= witness_quorum,
@@ -587,9 +572,9 @@ impl<T: NodeIdentity> Coordinator<T> {
 
     /// Computes the health score of a client based on witness confirmations.
     /// The score increases for each witness whose participant bloom filter contains the client's hashed ID.
-    pub fn trainer_healthy_score_by_witnesses(id: &T, witnesses: &[Witness]) -> u32 {
+    pub fn trainer_healthy_score_by_witnesses(id: &T, witnesses: &[Witness]) -> u16 {
         let hash = sha256(id.as_ref());
-        let mut score = 0u32;
+        let mut score = 0u16;
         for witness in witnesses {
             if witness.participant_bloom.contains(&hash) {
                 score += 1;
@@ -627,7 +612,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     pub fn select_consensus_commitment_by_witnesses(
         commitments: &[Commitment],
         witnesses: &[Witness],
-        witness_quorum: u32,
+        witness_quorum: u16,
     ) -> Option<usize> {
         let mut scores = vec![0; commitments.len()];
         for witness in witnesses {
@@ -716,7 +701,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     pub fn get_client_at_historical_index(
         &self,
         n: usize,
-        prev_clients_len: u32,
+        prev_clients_len: u16,
     ) -> Option<&Client<T>> {
         if n < self.epoch_state.clients.len() {
             Some(&self.epoch_state.clients[n])
@@ -728,7 +713,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
     }
 
-    pub fn get_historical_clients(&self, clients_len: u32) -> Vec<&Client<T>> {
+    pub fn get_historical_clients(&self, clients_len: u16) -> Vec<&Client<T>> {
         (0..clients_len)
             .filter_map(|i| self.get_client_at_historical_index(i as usize, clients_len))
             .collect()
@@ -740,7 +725,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         unix_timestamp: u64,
     ) -> std::result::Result<TickResult, CoordinatorError> {
         let clients = backend.select_new_clients();
-        if clients.len() as u32 >= self.config.min_clients {
+        if clients.len() as u16 >= self.config.min_clients {
             // set epoch_state to default
             let _ = std::mem::take(&mut self.epoch_state);
             self.epoch_state.clients = FixedVec::from_iter(
@@ -784,7 +769,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     ) -> std::result::Result<TickResult, CoordinatorError> {
         if self.check_timeout(unix_timestamp, self.config.round_witness_time) {
             // TODO: Punish idle witnesses
-            self.epoch_state.first_round = false;
+            self.epoch_state.first_round = false.into();
             self.progress.step += 1;
 
             let height = self.current_round_unchecked().height;
@@ -812,7 +797,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         // cooldown_time == 0 means we never automatically advance to the next epoch,
         // so the only way to get there is through the checkpointing code.
         // this forces everything to wait on a valid checkpoint
-        if self.epoch_state.checkpointed
+        if self.epoch_state.checkpointed.into()
             || (self.config.cooldown_time > 0
                 && self.check_timeout(unix_timestamp, self.config.cooldown_time))
         {
@@ -835,25 +820,26 @@ impl<T: NodeIdentity> Coordinator<T> {
             && unix_timestamp >= duration + self.run_state_start_unix_timestamp
     }
 
-    fn start_round_train(&mut self, unix_timestamp: u64, random_seed: u64, tie_breaker_tasks: u32) {
-        let (next_rounds_head, next_height, next_data_index) = if self.epoch_state.first_round {
-            // very first round, don't increment -- just start here
-            (0usize, 0u32, self.progress.epoch_start_data_index)
-        } else {
-            let current_round = &self.epoch_state.rounds[self.epoch_state.rounds_head as usize];
-            (
-                (self.epoch_state.rounds_head + 1) as usize % self.epoch_state.rounds.len(),
-                current_round.height + 1,
-                Self::get_next_round_data_index(
-                    current_round.data_index,
-                    self.config.batches_per_round,
-                    self.config.data_indicies_per_batch,
-                ),
-            )
-        };
+    fn start_round_train(&mut self, unix_timestamp: u64, random_seed: u64, tie_breaker_tasks: u16) {
+        let (next_rounds_head, next_height, next_data_index) =
+            if self.epoch_state.first_round.into() {
+                // very first round, don't increment -- just start here
+                (0usize, 0u32, self.progress.epoch_start_data_index)
+            } else {
+                let current_round = &self.epoch_state.rounds[self.epoch_state.rounds_head as usize];
+                (
+                    (self.epoch_state.rounds_head + 1) as usize % self.epoch_state.rounds.len(),
+                    current_round.height + 1,
+                    Self::get_next_round_data_index(
+                        current_round.data_index,
+                        self.config.batches_per_round,
+                        self.config.data_indicies_per_batch,
+                    ),
+                )
+            };
         let round = &mut self.epoch_state.rounds[next_rounds_head];
         self.epoch_state.rounds_head = next_rounds_head as u32;
-        round.clients_len = self.epoch_state.clients.len() as u32;
+        round.clients_len = self.epoch_state.clients.len() as u16;
         round.height = next_height;
         round.data_index = next_data_index;
         round.tie_breaker_tasks = tie_breaker_tasks;
@@ -885,10 +871,10 @@ impl<T: NodeIdentity> Coordinator<T> {
 
     fn get_next_round_data_index(
         data_index: u64,
-        batches_per_round: u32,
-        data_indicies_per_batch: u32,
+        batches_per_round: u16,
+        data_indicies_per_batch: u16,
     ) -> u64 {
-        data_index + (batches_per_round * data_indicies_per_batch) as u64
+        data_index + (batches_per_round as u64 * data_indicies_per_batch as u64)
     }
 
     fn move_clients_to_exited(&mut self, height: u32) {
