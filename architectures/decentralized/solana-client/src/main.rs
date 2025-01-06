@@ -1,11 +1,17 @@
-use crate::app::{AppBuilder, AppParams};
+use crate::{
+    app::{AppBuilder, AppParams},
+    backend::SolanaBackend,
+};
 
-use anchor_client::solana_sdk::{
-    signature::{EncodableKey, Keypair},
-    signer::Signer,
+use anchor_client::{
+    solana_sdk::{
+        signature::{EncodableKey, Keypair},
+        signer::Signer,
+    },
+    Cluster,
 };
 use anyhow::{bail, Result};
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use psyche_client::{
     exercise_sdpa_if_needed, print_identity_keys, read_identity_secret_key, TrainArgs,
 };
@@ -22,9 +28,24 @@ mod backend;
 mod network_identity;
 
 #[derive(Parser, Debug)]
-struct Args {
+struct CliArgs {
     #[command(subcommand)]
     command: Commands,
+}
+
+#[derive(Args, Debug)]
+pub struct WalletArgs {
+    #[clap(short, long, env)]
+    wallet_private_key_path: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+pub struct ClusterArgs {
+    #[clap(long, env, default_value_t = Cluster::Localnet.url().to_string())]
+    rpc: String,
+
+    #[clap(long, env, default_value_t = Cluster::Localnet.ws_url().to_string())]
+    ws_rpc: String,
 }
 
 #[allow(clippy::large_enum_variant)] // it's only used at startup, we don't care.
@@ -36,17 +57,52 @@ enum Commands {
     CreateIdentity {
         save_path: PathBuf,
     },
-    Train {
+    CreateRun {
+        #[clap(flatten)]
+        cluster: ClusterArgs,
+
+        #[clap(flatten)]
+        wallet: WalletArgs,
+
         #[clap(short, long, env)]
-        wallet_private_key_path: Option<PathBuf>,
+        run_id: String,
+    },
+    Train {
+        #[clap(flatten)]
+        wallet: WalletArgs,
 
         #[clap(flatten)]
         args: TrainArgs,
     },
 }
 
+impl From<ClusterArgs> for Cluster {
+    fn from(val: ClusterArgs) -> Self {
+        Cluster::Custom(val.rpc, val.ws_rpc)
+    }
+}
+
+impl TryInto<Keypair> for WalletArgs {
+    type Error = anyhow::Error;
+
+    fn try_into(self) -> std::result::Result<Keypair, Self::Error> {
+        let wallet_keypair = match std::env::var("RAW_WALLET_PRIVATE_KEY").ok() {
+            Some(raw_wallet_private_key) => Keypair::from_base58_string(&raw_wallet_private_key),
+            None => match self.wallet_private_key_path {
+                Some(wallet_private_key_path) => match Keypair::read_from_file(wallet_private_key_path) {
+                    Ok(wallet_keypair) => wallet_keypair,
+                    Err(err) => bail!("{}", err),
+                },
+                None => bail!("No wallet private key! Must pass --wallet-private-key-path or set RAW_WALLET_PRIVATE_KEY")
+            }
+        };
+
+        Ok(wallet_keypair)
+    }
+}
+
 async fn async_main() -> Result<()> {
-    let args = Args::parse();
+    let args = CliArgs::parse();
 
     match args.command {
         Commands::ShowIdentity {
@@ -59,10 +115,23 @@ async fn async_main() -> Result<()> {
             println!("Wrote secret key to {}", save_path.display());
             Ok(())
         }
-        Commands::Train {
-            wallet_private_key_path,
-            args,
+        Commands::CreateRun {
+            cluster,
+            wallet,
+            run_id,
         } => {
+            let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
+            let backend = SolanaBackend::new(cluster.into(), key_pair.clone()).unwrap();
+            let created = backend.create_run(run_id.clone()).await?;
+            println!(
+                "Created run {} with transaction {}!",
+                run_id, created.transaction
+            );
+            println!("Instance account: {}", created.instance);
+            println!("Coordinator account: {}", created.account);
+            Ok(())
+        }
+        Commands::Train { wallet, args } => {
             exercise_sdpa_if_needed();
 
             let hub_read_token = std::env::var("HF_TOKEN").ok();
@@ -89,16 +158,7 @@ async fn async_main() -> Result<()> {
                 read_identity_secret_key(args.identity_secret_key_path.as_ref())?
                     .unwrap_or_else(|| SecretKey::generate(&mut rand::rngs::OsRng));
 
-            let wallet_keypair = Arc::new(match std::env::var("RAW_WALLET_PRIVATE_KEY").ok() {
-                Some(raw_wallet_private_key) => Keypair::from_base58_string(&raw_wallet_private_key),
-                None => match wallet_private_key_path {
-                    Some(wallet_private_key_path) => match Keypair::read_from_file(wallet_private_key_path) {
-                        Ok(wallet_keypair) => wallet_keypair,
-                        Err(err) => bail!("{}", err),
-                    },
-                    None => bail!("No wallet private key! Must pass --wallet-private-key-path or set RAW_WALLET_PRIVATE_KEY")
-                }
-            });
+            let wallet_keypair: Arc<Keypair> = Arc::new(wallet.try_into()?);
 
             let wandb_info = args.wandb_info(format!(
                 "{}-{}",

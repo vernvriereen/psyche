@@ -32,6 +32,17 @@ pub fn coordinator_account_from_bytes(
     ))
 }
 
+#[derive(Debug, Clone, Copy, Zeroable, InitSpace, Pod)]
+#[repr(C)]
+pub struct Client {
+    owner: Pubkey,
+    id: ClientId,
+    staked: u64,
+    earned: u64,
+    slashed: u64,
+    next_epoch: u64,
+}
+
 #[account(zero_copy)]
 #[repr(C)]
 pub struct CoordinatorAccount {
@@ -43,7 +54,7 @@ pub struct CoordinatorAccount {
 pub struct CoordinatorInstanceState {
     pub coordinator: Coordinator<ClientId>,
     pub whitelist: FixedVec<ClientId, SOLANA_MAX_NUM_WHITELISTED_CLIENTS>,
-    pub pending_clients: FixedVec<ClientId, SOLANA_MAX_NUM_PENDING_CLIENTS>,
+    pub clients: FixedVec<Client, SOLANA_MAX_NUM_PENDING_CLIENTS>,
 }
 
 unsafe impl Pod for CoordinatorInstanceState {}
