@@ -235,7 +235,7 @@ where
         Ok(())
     }
 
-    pub async fn add_downloadable(&mut self, data: Download) -> Result<BlobTicket> {
+    pub async fn add_downloadable<N: Networkable>(&mut self, data: N) -> Result<BlobTicket> {
         let bytes = postcard::to_allocvec(&data)?;
         let blob_res = self.blobs.client().add_bytes(bytes).await?;
         let addr = self.router.endpoint().node_addr().await?;

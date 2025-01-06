@@ -122,12 +122,8 @@ impl<T: NetworkableNodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                                         }
                                     }
                                     NetworkEvent::ParameterRequest(parameter_name) => {
-                                        if let Some(parameter) = current_model.get(&parameter_name) {
-                                            let mut buffer = Vec::new();
-                                            parameter.save_to_stream(buffer).unwrap();
-                                            let ticket = p2p.add_downloadable(buffer).await?;
-                                        };
-                                            warn!("Got request for an unknown parameter: {parameter_name}");
+                                        let transmittable_parameter = current_model.get_transmittable_parameter(&parameter_name)?;
+                                        let ticket = p2p.add_downloadable(transmittable_parameter).await?;
                                     }
                                 }
                             }
