@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use bytemuck::Zeroable;
+use bytemuck::{Pod, Zeroable};
 use psyche_core::NodeIdentity;
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
     Deserialize,
     Default,
     Zeroable,
+    Pod,
 )]
 pub struct ClientId {
     pub owner: Pubkey,
