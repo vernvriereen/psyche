@@ -8,7 +8,7 @@ use std::{
 use futures::{future::try_join_all, stream::FuturesUnordered, StreamExt};
 use psyche_coordinator::{
     assign_data_for_state, get_batch_ids_for_round, Commitment, Committee, CommitteeSelection,
-    Coordinator, HealthChecks, RunState, BLOOM_FALSE_RATE,
+    Coordinator, CoordinatorError, HealthChecks, RunState, BLOOM_FALSE_RATE,
 };
 use psyche_core::{sha256, BatchId, Bloom, NodeIdentity};
 use psyche_modeling::DistroResult;
@@ -81,6 +81,9 @@ pub enum TrainError {
 
     #[error("Healthcheck thread crashed")]
     HealthCheckCrashed,
+
+    #[error("Healthcheck thread crashed")]
+    CoordinatorError(CoordinatorError),
 }
 
 pub struct TrainingStepMetadata<T: NodeIdentity, A: AuthenticatableIdentity> {
@@ -158,7 +161,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
             state.config.verification_percent,
             state.epoch_state.clients.len(),
             round.random_seed,
-        );
+        )
+        .map_err(TrainError::CoordinatorError)?;
 
         let data_assignments = assign_data_for_state(state, &committee_selection);
 
