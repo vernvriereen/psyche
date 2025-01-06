@@ -14,7 +14,10 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::{select, sync::oneshot};
+use tokio::{
+    select,
+    sync::{mpsc::UnboundedReceiver, oneshot},
+};
 use tokio::{
     sync::mpsc,
     time::{interval, Interval},
@@ -28,6 +31,7 @@ pub use iroh_blobs::{ticket::BlobTicket, Hash};
 
 mod download_manager;
 mod networkable_node_identity;
+mod p2p_model_sharing;
 mod peer_list;
 mod serde;
 mod signed_message;
@@ -39,6 +43,7 @@ mod util;
 pub use download_manager::{DownloadComplete, DownloadFailed};
 pub use iroh::{Endpoint, PublicKey, SecretKey};
 pub use networkable_node_identity::{FromSignedBytesError, NetworkableNodeIdentity};
+pub use p2p_model_sharing::{ModelParameterSharing, ALPN};
 pub use peer_list::PeerList;
 pub use serde::Networkable;
 pub use signed_message::SignedMessage;
@@ -56,6 +61,7 @@ where
     state: State,
     gossip_tx: GossipSender,
     gossip_rx: GossipReceiver,
+    rx_model_parameter_req: UnboundedReceiver<String>,
     download_manager: DownloadManager<Download>,
     _broadcast_message: PhantomData<BroadcastMessage>,
     _download: PhantomData<Download>,
@@ -120,10 +126,14 @@ where
 
         let gossip = Gossip::builder().spawn(endpoint.clone()).await?;
 
+        let (tx_model_parameter_req, rx_model_parameter_req) = mpsc::unbounded_channel();
+        let model_parameter_sharing = ModelParameterSharing::new(tx_model_parameter_req);
+
         let router = Arc::new(
             Router::builder(endpoint)
                 .accept(iroh_blobs::ALPN, blobs.clone())
                 .accept(iroh_gossip::ALPN, gossip.clone())
+                .accept(p2p_model_sharing::ALPN, model_parameter_sharing.clone())
                 .spawn()
                 .await?,
         );
@@ -160,6 +170,7 @@ where
             blobs,
             gossip_rx,
             gossip_tx,
+            rx_model_parameter_req,
 
             router,
 
