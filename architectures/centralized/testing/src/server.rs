@@ -62,6 +62,7 @@ impl CoordinatorServer {
         init_min_clients: u32,
         batches_per_round: u32,
         witness_nodes: u32,
+        witness_quorum: u32,
     ) -> Self {
         let coordinator_config = CoodinatorConfig {
             warmup_time: WARMUP_TIME,
@@ -74,7 +75,7 @@ impl CoordinatorServer {
             data_indicies_per_batch: 1,
             verification_percent: 0,
             witness_nodes,
-            witness_quorum: 1,
+            witness_quorum,
             total_steps: 10,
             overlapped: false,
             ..CoodinatorConfig::<ClientId>::zeroed()
@@ -171,13 +172,19 @@ pub struct CoordinatorServerHandle {
 }
 
 impl CoordinatorServerHandle {
-    pub async fn new(init_min_clients: u32, batches_per_round: u32, witness_nodes: u32) -> Self {
+    pub async fn new(
+        init_min_clients: u32,
+        batches_per_round: u32,
+        witness_nodes: u32,
+        witness_quorum: u32,
+    ) -> Self {
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
         let mut server = CoordinatorServer::new(
             query_chan_receiver,
             init_min_clients,
             batches_per_round,
             witness_nodes,
+            witness_quorum,
         )
         .await;
         let server_port = server.port;

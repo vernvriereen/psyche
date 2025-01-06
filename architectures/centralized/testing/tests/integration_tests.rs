@@ -13,8 +13,14 @@ async fn connect_single_node() {
     let init_min_clients = 2;
     let batches_per_round = 4;
     let witness_nodes = 1;
-    let server_handle =
-        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     let server_port = server_handle.server_port;
     let run_id = &server_handle.run_id;
@@ -30,8 +36,14 @@ async fn connect_multiple_nodes() {
     let init_min_clients = 15;
     let batches_per_round = 4;
     let witness_nodes = 1;
-    let server_handle =
-        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     let server_port = server_handle.server_port;
     let run_id = &server_handle.run_id;
@@ -50,8 +62,14 @@ async fn state_change_waiting_for_members_to_warmup() {
     let init_min_clients = 2;
     let batches_per_round = 4;
     let witness_nodes = 1;
-    let server_handle =
-        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     let run_state = || server_handle.get_run_state();
     let connected_clients = || server_handle.get_clients_len();
@@ -80,8 +98,14 @@ async fn state_change_shutdown_node_in_warmup() {
     let init_min_clients = 2;
     let batches_per_round = 4;
     let witness_nodes = 1;
-    let server_handle =
-        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     // No clients are connected yet, so run state should be `WaitingForMembers`
 
@@ -122,8 +146,14 @@ async fn state_change_waiting_for_members_to_round_train() {
     let init_min_clients = 2;
     let batches_per_round = 4;
     let witness_nodes = 1;
-    let server_handle =
-        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -151,8 +181,14 @@ async fn state_change_waiting_for_members_to_round_witness() {
     let init_min_clients = 2;
     let batches_per_round = 4;
     let witness_nodes = 1;
-    let server_handle =
-        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -190,8 +226,14 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     let init_min_clients = 5;
     let batches_per_round = init_min_clients;
     let witness_nodes = 1;
-    let server_handle =
-        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -250,9 +292,15 @@ async fn replace_node_and_complete_round() {
     let init_min_clients = 2;
     let batches_per_round = 2;
     let witness_nodes = 1;
+    let witness_quorum = 1;
     let training_delay = 2;
-    let server_handle =
-        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -312,8 +360,14 @@ async fn finish_epoch() {
     let init_min_clients = 2;
     let batches_per_round = 2;
     let witness_nodes = 1;
-    let server_handle =
-        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -377,8 +431,14 @@ async fn client_join_in_training() {
     let init_min_clients = 2;
     let batches_per_round = 2;
     let witness_nodes = 1;
-    let server_handle =
-        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -451,11 +511,18 @@ async fn client_join_in_training() {
 async fn shutdown_node_in_training_and_complete_round() {
     let init_min_clients = 2;
     let batches_per_round = 2;
-    // we need 2 witness nodes, as one will be shutdown
-    let witness_nodes = 2;
+    // all nodes are witness
+    let witness_nodes = 0;
+    // we set witness_quorum = 2 witness, as one node will be shutdown
+    let witness_quorum = 1;
     let training_delay = 2;
-    let server_handle =
-        CoordinatorServerHandle::new(init_min_clients, batches_per_round, witness_nodes).await;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -502,7 +569,6 @@ async fn shutdown_node_in_training_and_complete_round() {
         );
     });
     assert_eq!(score, 1);
-
     // since up nodes < init_min_clients
     // the network should return to WaitingForMembers
     assert_with_retries(
