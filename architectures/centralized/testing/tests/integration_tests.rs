@@ -509,12 +509,12 @@ async fn client_join_in_training() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn shutdown_node_in_training_and_complete_round() {
-    let init_min_clients = 2;
-    let batches_per_round = 2;
+    let init_min_clients = 3;
+    let batches_per_round = 3;
     // all nodes are witness
     let witness_nodes = 0;
-    // we set witness_quorum = 2 witness, as one node will be shutdown
-    let witness_quorum = 1;
+    // set witness_quorum = 2 witness, as one node will be shutdown
+    let witness_quorum = 2;
     let training_delay = 2;
     let server_handle = CoordinatorServerHandle::new(
         init_min_clients,
@@ -533,7 +533,7 @@ async fn shutdown_node_in_training_and_complete_round() {
 
     let server_port = server_handle.server_port;
     let run_id = &server_handle.run_id;
-    let [client_1_task, _client_2_task] = spawn_clients_with_training_delay(
+    let [client_1_task, _client_2_task, _client_3_task] = spawn_clients_with_training_delay(
         init_min_clients as usize,
         server_port,
         run_id,
@@ -550,17 +550,19 @@ async fn shutdown_node_in_training_and_complete_round() {
     // train
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
     let clients = server_handle.get_clients().await;
-    assert_eq!(clients.len(), 2);
+    assert_eq!(clients.len(), 3);
 
     // shutdown node 1.
-    // this round's workload should be handled entirely by node 2.
+    // this round's workload should be handled entirely by node 2 and 3.
     client_1_task.client_handle.abort();
 
     // witness
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
 
-    // assert that just one node parcipate in the witness
+    // assert that the shutdown node do not participate in the witnesses
+    // since two nodes must send their witness and two nodes participate in the round
+    // score should be 4
     let witnesses = &server_handle.get_rounds().await[0].witnesses;
     let mut score = 0;
     clients.iter().for_each(|client| {
@@ -568,7 +570,8 @@ async fn shutdown_node_in_training_and_complete_round() {
             &client.id, witnesses,
         );
     });
-    assert_eq!(score, 1);
+    assert_eq!(score, 4);
+
     // since up nodes < init_min_clients
     // the network should return to WaitingForMembers
     assert_with_retries(
