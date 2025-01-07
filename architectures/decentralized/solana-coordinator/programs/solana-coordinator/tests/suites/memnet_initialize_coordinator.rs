@@ -13,7 +13,7 @@ pub async fn memnet_initialize_coordinator() {
     let payer_lamports = 10_000_000_000;
 
     let run_id = "Hello World".to_string();
-    let coordinator = Keypair::new();
+    let coordinator_account = Keypair::new();
 
     // Prepare the payer
     endpoint
@@ -21,11 +21,11 @@ pub async fn memnet_initialize_coordinator() {
         .await
         .unwrap();
 
-    // Create the empty pre-allocated coordinator
+    // Create the empty pre-allocated coordinator_account
     endpoint
         .process_system_create_exempt(
             &payer,
-            &coordinator,
+            &coordinator_account,
             CoordinatorAccount::size_with_discriminator(),
             &solana_coordinator::ID,
         )
@@ -33,7 +33,7 @@ pub async fn memnet_initialize_coordinator() {
         .unwrap();
 
     // Run the initialize IX
-    process_initialize_coordinator(&mut endpoint, &payer, &coordinator.pubkey(), run_id)
+    process_initialize_coordinator(&mut endpoint, &payer, &coordinator_account.pubkey(), run_id)
         .await
         .unwrap();
 }

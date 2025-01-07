@@ -11,20 +11,20 @@ use solana_sdk::system_program;
 use solana_toolbox_endpoint::ToolboxEndpoint;
 use solana_toolbox_endpoint::ToolboxEndpointError;
 
-use crate::api::find_pda_instance::find_pda_instance;
+use crate::api::find_pda_coordinator_instance::find_pda_coordinator_instance;
 
 pub async fn process_initialize_coordinator(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
-    coordinator: &Pubkey,
+    coordinator_account: &Pubkey,
     run_id: String,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let instance = find_pda_instance(&run_id);
+    let coordinator_instance = find_pda_coordinator_instance(&run_id);
 
     let accounts = InitializeCoordinatorAccounts {
         payer: payer.pubkey(),
-        coordinator: *coordinator,
-        instance,
+        instance: coordinator_instance,
+        account: *coordinator_account,
         system_program: system_program::ID,
     };
     let instruction = Instruction {
