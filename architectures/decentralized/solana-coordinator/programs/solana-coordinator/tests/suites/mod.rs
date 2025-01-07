@@ -1,1 +1,1 @@
-mod memnet_coordinator_initialize;
+mod memnet_initialize_coordinator;

@@ -6,7 +6,7 @@ use crate::api::create_memnet_endpoint::create_memnet_endpoint;
 use crate::api::process_initialize_coordinator::process_initialize_coordinator;
 
 #[tokio::test]
-pub async fn memnet_initialize() {
+pub async fn memnet_initialize_coordinator() {
     let mut endpoint = create_memnet_endpoint().await;
 
     let payer = Keypair::new();
