@@ -6,8 +6,8 @@ use anyhow::{Error, Result};
 use psyche_coordinator::RunState;
 use psyche_core::NodeIdentity;
 use psyche_network::{
-    DownloadComplete, ModelParameters, NetworkConnection, NetworkEvent, NetworkTUIState,
-    Networkable, AuthenticatableIdentity,
+    AuthenticatableIdentity, DownloadComplete, ModelParameters, NetworkConnection, NetworkEvent,
+    NetworkTUIState, Networkable,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use wandb::DataValue;

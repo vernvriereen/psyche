@@ -16,7 +16,7 @@ use psyche_modeling::{
     auto_tokenizer, AutoTokenizerError, CommunicatorId, ConcreteCausalLM, DummyModel,
     LlamaForCausalLM, LoadLlamaForCausalLMError,
 };
-use psyche_network::{BlobTicket, AuthenticatableIdentity};
+use psyche_network::{AuthenticatableIdentity, BlobTicket};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tch::{Device, Kind, Tensor};
 use thiserror::Error;
