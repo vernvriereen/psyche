@@ -184,12 +184,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         }
                         Some(model) = rx_model.recv() => {
                             current_model.update_parameters(model)?;
-
-                            // let a = model.keys().into_iter().next().unwrap();
-                            // println!("VARIABLE!: {}", a);
                         },
-                        // Some(parameter_req) = rx_parameter_req.recv()
-                        //
                     }
                 }
                 Ok(())
