@@ -122,9 +122,18 @@ impl<T: NetworkableNodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                                         }
                                     }
                                     NetworkEvent::ParameterRequest(parameter_name, protocol_req_tx) => {
+
+                                        // We should validate things here:
+                                        //  * Make sure that the parameter is requested while we are in RunState::Warmup.
+                                        //  * Validate that the message is from a known peer.
+
                                         let transmittable_parameter = current_model.get_transmittable_parameter(&parameter_name)?;
                                         let ticket = p2p.add_downloadable(transmittable_parameter).await?;
-                                        if let Err(e) = protocol_req_tx.send(ticket.to_string()) {
+
+                                        // Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
+                                        // to the client
+
+                                        if let Err(e) = protocol_req_tx.send(ticket) {
                                             warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e}");
                                         };
                                     }

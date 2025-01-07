@@ -1,13 +1,13 @@
+use anyhow::Result;
 use core::fmt;
+use futures_lite::future::Boxed as BoxedFuture;
+use iroh::{endpoint::Connecting, protocol::ProtocolHandler};
+use iroh_blobs::ticket::BlobTicket;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     error::Error,
 };
-
-use anyhow::Result;
-use futures_lite::future::Boxed as BoxedFuture;
-use iroh::{endpoint::Connecting, protocol::ProtocolHandler};
-use serde::{Deserialize, Serialize};
 use tch::Tensor;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
@@ -53,7 +53,7 @@ impl Error for SharableModelParameterError {
 }
 
 pub enum ParameterSharingMessage {
-    Get(String, oneshot::Sender<String>),
+    Get(String, oneshot::Sender<BlobTicket>),
     Response(String),
 }
 
@@ -118,6 +118,31 @@ impl ModelParameterSharing {
 
 impl ProtocolHandler for ModelParameterSharing {
     fn accept(&self, connecting: Connecting) -> BoxedFuture<Result<()>> {
-        Box::pin(async move { Ok(()) })
+        let tx_model_parameter_req = self.tx_model_parameter_req.clone();
+        Box::pin(async move {
+            let connection = connecting.await?;
+            // We can get the remote's node id from the connection.
+            let _node_id = iroh::endpoint::get_remote_node_id(&connection)?;
+
+            let (mut send, mut recv) = connection.accept_bi().await?;
+            let parameter_request_bytes = recv.read_to_end(1000).await?;
+            let Ok(parameter_request) = String::from_utf8(parameter_request_bytes) else {
+                send.write_all(b"Invalid parameter request").await?;
+                return Ok(());
+            };
+
+            // Create channel for requesting the model parameter to the client backend
+            // and add a new blob for it
+            let (tx_req, rx_req) = oneshot::channel::<BlobTicket>();
+            let request = ParameterSharingMessage::Get(parameter_request, tx_req);
+            tx_model_parameter_req.send(request)?;
+
+            // Receive the blob ticket and forward it to the requesting client
+            let parameter_blob_ticket = rx_req.await?;
+            let data = postcard::to_stdvec(&parameter_blob_ticket)?;
+            send.write_all(&data).await?;
+
+            Ok(())
+        })
     }
 }

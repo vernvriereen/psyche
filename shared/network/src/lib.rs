@@ -402,7 +402,7 @@ where
     MessageReceived((PublicKey, BM)),
     DownloadComplete(DownloadComplete<D>),
     DownloadFailed(DownloadFailed),
-    ParameterRequest(String, oneshot::Sender<String>),
+    ParameterRequest(String, oneshot::Sender<BlobTicket>),
 }
 
 async fn on_update_stats(endpoint: &Endpoint, stats: &mut State) -> Result<()> {
