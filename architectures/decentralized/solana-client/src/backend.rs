@@ -1,9 +1,15 @@
 use anchor_client::{
+    anchor_lang::system_program,
     solana_client::{
         nonblocking::pubsub_client::PubsubClient, rpc_config::RpcAccountInfoConfig,
         rpc_response::Response as RpcResponse,
     },
-    solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Keypair},
+    solana_sdk::{
+        commitment_config::CommitmentConfig,
+        pubkey::Pubkey,
+        signature::{Keypair, Signature, Signer},
+        system_instruction,
+    },
     Client, Cluster, Program,
 };
 use anyhow::{anyhow, bail, Result};
@@ -21,6 +27,13 @@ pub struct SolanaBackend {
     program: Program<Arc<Keypair>>,
     cluster: Cluster,
     updates: Option<mpsc::UnboundedReceiver<RpcResponse<UiAccount>>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreatedRun {
+    pub instance: Pubkey,
+    pub account: Pubkey,
+    pub transaction: Signature,
 }
 
 impl SolanaBackend {
@@ -74,6 +87,72 @@ impl SolanaBackend {
 
         Ok(())
     }
+
+    pub async fn create_run(&self, run_id: String) -> Result<CreatedRun> {
+        let coordinator_keypair = Arc::new(Keypair::new());
+        let space = 8 + std::mem::size_of::<solana_coordinator::CoordinatorAccount>();
+        let rent = self
+            .program
+            .rpc()
+            .get_minimum_balance_for_rent_exemption(space)
+            .await?;
+
+        let seeds = &[
+            b"coordinator",
+            solana_coordinator::bytes_from_string(&run_id),
+        ];
+        let (instance_pda, _bump) = Pubkey::find_program_address(seeds, &self.program.id());
+
+        let tx = self
+            .program
+            .request()
+            .instruction(system_instruction::transfer(
+                &self.program.payer(),
+                &coordinator_keypair.pubkey(),
+                rent,
+            ))
+            .instruction(system_instruction::allocate(
+                &coordinator_keypair.pubkey(),
+                space as u64,
+            ))
+            .instruction(system_instruction::assign(
+                &coordinator_keypair.pubkey(),
+                &self.program.id(),
+            ))
+            .instruction(
+                self.program
+                    .request()
+                    .accounts(
+                        solana_coordinator::accounts::InitializeCoordinatorAccounts {
+                            instance: instance_pda,
+                            account: coordinator_keypair.pubkey(),
+                            payer: self.program.payer(),
+                            system_program: system_program::ID,
+                        },
+                    )
+                    .args(solana_coordinator::instruction::InitializeCoordinator { run_id })
+                    .instructions()
+                    .unwrap()[0]
+                    .clone(),
+            )
+            .signer(coordinator_keypair.clone())
+            .signed_transaction()
+            .await?;
+
+        let signature = self.program.rpc().send_transaction(&tx).await.unwrap();
+
+        let _ = self
+            .program
+            .rpc()
+            .confirm_transaction_with_commitment(&signature, CommitmentConfig::processed())
+            .await?;
+
+        Ok(CreatedRun {
+            instance: instance_pda,
+            account: coordinator_keypair.pubkey(),
+            transaction: signature,
+        })
+    }
 }
 
 #[async_trait::async_trait]
@@ -84,7 +163,7 @@ impl WatcherBackend<solana_coordinator::ClientId> for SolanaBackend {
                 Some(update) => match update.value.data.decode() {
                     Some(data) => coordinator_account_from_bytes(&data)
                         .map_err(|_| anyhow!("Unable to decode coordinator account data"))
-                        .map(|x| x.coordinator),
+                        .map(|x| x.state.coordinator),
                     None => bail!("Unable to decode account data"),
                 },
                 None => bail!("Account updates channel closed"),
@@ -121,6 +200,7 @@ mod test {
             system_instruction,
         },
     };
+    use bytemuck::Zeroable;
     use psyche_coordinator::{CoodinatorConfig, RunState};
     use rand::Rng;
 
@@ -131,83 +211,22 @@ mod test {
                 .unwrap(),
         );
         let mut backend = SolanaBackend::new(Cluster::Localnet, key_pair.clone()).unwrap();
-
-        let coordinator_keypair = Arc::new(Keypair::new());
-        let space = 8 + std::mem::size_of::<solana_coordinator::CoordinatorAccount>();
-        let rent = backend
-            .program
-            .rpc()
-            .get_minimum_balance_for_rent_exemption(space)
-            .await
-            .unwrap();
-
         let run_id = format!("{}", rand::thread_rng().gen_range(0..1000000));
-        let seeds = &[
-            b"coordinator",
-            solana_coordinator::bytes_from_string(&run_id),
-        ];
-        let (instance_pda, _bump) = Pubkey::find_program_address(seeds, &backend.program.id());
 
-        let tx = backend
-            .program
-            .request()
-            .instruction(system_instruction::transfer(
-                &backend.program.payer(),
-                &coordinator_keypair.pubkey(),
-                rent,
-            ))
-            .instruction(system_instruction::allocate(
-                &coordinator_keypair.pubkey(),
-                space as u64,
-            ))
-            .instruction(system_instruction::assign(
-                &coordinator_keypair.pubkey(),
-                &backend.program.id(),
-            ))
-            .instruction(
-                backend
-                    .program
-                    .request()
-                    .accounts(
-                        solana_coordinator::accounts::InitializeCoordinatorAccounts {
-                            instance: instance_pda,
-                            coordinator: coordinator_keypair.pubkey(),
-                            payer: backend.program.payer(),
-                            system_program: system_program::ID,
-                        },
-                    )
-                    .args(solana_coordinator::instruction::InitializeCoordinator { run_id })
-                    .instructions()
-                    .unwrap()[0]
-                    .clone(),
-            )
-            .signer(coordinator_keypair.clone())
-            .signed_transaction()
-            .await
-            .unwrap();
-
-        let signature = backend.program.rpc().send_transaction(&tx).await.unwrap();
-
-        let _ = backend
-            .program
-            .rpc()
-            .confirm_transaction_with_commitment(&signature, CommitmentConfig::processed())
-            .await
-            .unwrap();
-
-        backend.start(coordinator_keypair.pubkey()).await.unwrap();
+        let created = backend.create_run(run_id).await.unwrap();
+        backend.start(created.account).await.unwrap();
 
         let tx = backend
             .program
             .request()
             .accounts(solana_coordinator::accounts::CoordinatorAccounts {
-                instance: instance_pda,
-                coordinator: coordinator_keypair.pubkey(),
+                instance: created.instance,
+                account: created.account,
                 payer: key_pair.pubkey(),
                 system_program: system_program::ID,
             })
             .args(solana_coordinator::instruction::UpdateCoordinatorConfig {
-                config: CoodinatorConfig::<ClientId>::zeroed(),
+                config: CoodinatorConfig::<solana_coordinator::ClientId>::zeroed(),
             })
             .signed_transaction()
             .await

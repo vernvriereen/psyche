@@ -6238,6 +6238,7 @@ dependencies = [
  "anchor-client",
  "anyhow",
  "async-trait",
+ "bytemuck",
  "clap",
  "futures-util",
  "home",
@@ -10288,6 +10289,7 @@ checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 name = "testing"
 version = "0.0.1"
 dependencies = [
+ "anyhow",
  "bytemuck",
  "psyche-centralized-client",
  "psyche-centralized-server",
