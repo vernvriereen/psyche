@@ -1,2 +1,2 @@
-pub mod create_memnet_toolbox_endpoint;
+pub mod create_memnet_endpoint;
 pub mod process_initialize_coordinator;
