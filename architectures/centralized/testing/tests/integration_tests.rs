@@ -226,9 +226,9 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     });
 
     let number_of_sent_witnesses = witnesses.len();
-    let number_of_seen_clients = score / number_of_sent_witnesses as u32;
+    let number_of_seen_clients = score as usize / number_of_sent_witnesses;
 
-    assert_eq!(number_of_seen_clients, clients.len() as u32)
+    assert_eq!(number_of_seen_clients, clients.len())
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -348,4 +348,81 @@ async fn finish_epoch() {
     tokio::time::sleep(Duration::from_secs(COOLDOWN_TIME)).await;
 
     assert_with_retries(|| server_handle.get_current_epoch(), 1).await;
+}
+
+/// A new client attempts to join the network during the RoundTrain phase.
+/// The new client should not participate in the current round
+/// and should attempt to join the network in the subsequent round.
+#[tokio::test(flavor = "multi_thread")]
+async fn client_join_in_training() {
+    // start a normal run with 2 clients
+    let init_min_clients = 2;
+    let batches_per_round = 2;
+    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+
+    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
+
+    let training_delay = 2;
+    let server_port = server_handle.server_port;
+    let run_id = &server_handle.run_id;
+    let _client_handles = spawn_clients_with_training_delay(
+        init_min_clients as usize,
+        server_port,
+        run_id,
+        training_delay,
+    )
+    .await;
+
+    assert_with_retries(
+        || server_handle.get_clients_len(),
+        init_min_clients as usize,
+    )
+    .await;
+
+    // execute round 0
+    assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
+    // warmup
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+    // train
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+
+    // spawn new client
+    let [new_client_handle] =
+        spawn_clients_with_training_delay(1, server_port, run_id, training_delay)
+            .await
+            .try_into()
+            .unwrap();
+
+    // assert new client didnt join the round but is ready in peding clients
+    assert_with_retries(|| server_handle.get_pending_clients_len(), 3).await;
+    assert_with_retries(|| server_handle.get_clients_len(), 2).await;
+
+    // train
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
+    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
+    let witnesses = &server_handle.get_rounds().await[0].witnesses;
+
+    // clients spawned in RoundTrain state should not be present in the witnesses
+    let mut score = 0;
+    let pending_clients = server_handle.get_pending_clients().await;
+    pending_clients.iter().for_each(|client| {
+        score +=
+            psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(client, witnesses);
+    });
+    assert_eq!(score, init_min_clients);
+
+    assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
+    // the new client tries to join the network
+    // but since the llm checkpoint is Ephemeral
+    // it results in an InitRunError::ModelIsEphemeral error
+    let error = new_client_handle.client_handle.await.unwrap().unwrap_err();
+    assert!(error
+        .to_string()
+        .contains(&psyche_client::InitRunError::ModelIsEphemeral.to_string()));
 }

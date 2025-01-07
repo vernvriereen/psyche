@@ -1,8 +1,7 @@
-use crate::{Networkable, NetworkableNodeIdentity};
+use crate::{AuthenticatableIdentity, Networkable};
 
 use anyhow::{anyhow, bail};
 use futures_util::{SinkExt, StreamExt};
-use psyche_core::NodeIdentity;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt::Debug, io, marker::PhantomData, net::SocketAddr, sync::Arc};
@@ -39,7 +38,7 @@ pub enum ClientNotification<T: Debug, U: Debug> {
 
 pub struct TcpServer<I, ToServerMessage, ToClientMessage>
 where
-    I: NodeIdentity,
+    I: AuthenticatableIdentity,
     ToServerMessage: Networkable + Debug + Send + Sync + 'static,
     ToClientMessage: Networkable + Debug + Send + Sync + 'static,
 {
@@ -62,7 +61,7 @@ pub enum ConnectError {
 
 impl<I, ToServer, ToClient> TcpServer<I, ToServer, ToClient>
 where
-    I: NetworkableNodeIdentity,
+    I: AuthenticatableIdentity + 'static,
     ToServer: Networkable + Clone + Debug + Send + Sync + 'static,
     ToClient: Networkable + Clone + Debug + Send + Sync + 'static,
 {
@@ -162,7 +161,7 @@ where
         let identity = I::from_signed_bytes(&challenge_response, challenge)?;
         debug!("Challenge response accepted! welcome, {:?}!", identity);
         let (client_tx, mut client_rx) = mpsc::unbounded_channel();
-        clients.lock().await.insert(identity, client_tx);
+        clients.lock().await.insert(identity.clone(), client_tx);
 
         loop {
             tokio::select! {
@@ -177,7 +176,7 @@ where
                                bail!("Unexpected challenge message");
                             }
                             ClientToServerMessage::Else(m) => {
-                                incoming_tx.send((identity, m))?;
+                                incoming_tx.send((identity.clone(), m))?;
                             }
                         }
                     }
@@ -200,7 +199,7 @@ where
             .lock()
             .await
             .iter()
-            .map(|(identity, _)| *identity)
+            .map(|(identity, _)| identity.clone())
             .collect()
     }
 
@@ -233,7 +232,7 @@ where
 
 pub struct TcpClient<I, ToServerMessage, ToClientMessage>
 where
-    I: NodeIdentity,
+    I: AuthenticatableIdentity,
     ToServerMessage: Networkable + Debug + Send + Sync + 'static,
     ToClientMessage: Networkable + Debug + Send + Sync + 'static,
 {
@@ -244,7 +243,7 @@ where
 
 impl<I, ToServer, ToClient> TcpClient<I, ToServer, ToClient>
 where
-    I: NetworkableNodeIdentity,
+    I: AuthenticatableIdentity,
     ToServer: Networkable + Debug + Send + Sync + 'static,
     ToClient: Networkable + Debug + Send + Sync + 'static,
 {

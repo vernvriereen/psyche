@@ -29,6 +29,7 @@ rand_chacha.workspace = true
 thiserror.workspace = true
 time.workspace = true
 hf-hub.workspace = true
+clap.workspace = true
 
 [features]
 parallelism = ["psyche-modeling/parallelism"]

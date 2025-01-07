@@ -5668,7 +5668,6 @@ dependencies = [
  "psyche-tui",
  "psyche-watcher",
  "rand 0.8.5",
- "tch",
  "time",
  "tokio",
  "tokio-util",
@@ -5725,6 +5724,7 @@ name = "psyche-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "futures",
  "hex",
  "hf-hub",
@@ -5866,7 +5866,6 @@ dependencies = [
  "iroh-blobs",
  "iroh-gossip",
  "postcard",
- "psyche-core",
  "psyche-tui",
  "rand 0.8.5",
  "serde",
@@ -5887,16 +5886,23 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bytemuck",
+ "clap",
  "futures-util",
  "home",
  "psyche-client",
  "psyche-coordinator",
+ "psyche-core",
+ "psyche-eval",
+ "psyche-network",
  "psyche-solana-coordinator",
+ "psyche-tui",
  "psyche-watcher",
  "rand 0.8.5",
  "serde_json",
  "solana-account-decoder-client-types",
+ "time",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -8986,6 +8992,7 @@ dependencies = [
 name = "testing"
 version = "0.0.1"
 dependencies = [
+ "anyhow",
  "bytemuck",
  "psyche-centralized-client",
  "psyche-centralized-server",

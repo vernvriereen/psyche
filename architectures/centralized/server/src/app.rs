@@ -90,7 +90,8 @@ impl psyche_watcher::Backend<ClientId> for ChannelCoordinatorBackend {
     }
 }
 
-type DataServer = DataProviderTcpServer<ClientId, LocalDataProvider, ChannelCoordinatorBackend>;
+type DataServer =
+    DataProviderTcpServer<ClientId, ClientId, LocalDataProvider, ChannelCoordinatorBackend>;
 
 pub struct App {
     cancel: CancellationToken,
@@ -103,7 +104,7 @@ pub struct App {
     training_data_server: Option<(Sender<Coordinator<ClientId>>, DataServer)>,
     save_state_dir: Option<PathBuf>,
     original_warmup_time: u64,
-    original_min_clients: u32,
+    original_min_clients: u16,
     withdraw_on_disconnect: bool,
 }
 
@@ -133,7 +134,7 @@ impl App {
         self.coordinator.epoch_state.rounds_head
     }
 
-    pub fn get_current_epoch(&self) -> u32 {
+    pub fn get_current_epoch(&self) -> u16 {
         self.coordinator.progress.epoch
     }
 }
@@ -156,7 +157,7 @@ impl App {
         server_port: Option<u16>,
         save_state_dir: Option<PathBuf>,
         init_warmup_time: Option<u64>,
-        init_min_clients: Option<u32>,
+        init_min_clients: Option<u16>,
         withdraw_on_disconnect: bool,
     ) -> Result<Self> {
         let run_id = u8_to_string(&coordinator.run_id);

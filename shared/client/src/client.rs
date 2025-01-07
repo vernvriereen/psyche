@@ -4,9 +4,10 @@ use crate::{
 };
 use anyhow::{Error, Result};
 use psyche_coordinator::RunState;
+use psyche_core::NodeIdentity;
 use psyche_network::{
     DownloadComplete, ModelParameters, NetworkConnection, NetworkEvent, NetworkTUIState,
-    Networkable, NetworkableNodeIdentity,
+    Networkable, AuthenticatableIdentity,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use wandb::DataValue;
@@ -25,19 +26,21 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace, warn};
 pub type TUIStates = (ClientTUIState, NetworkTUIState);
 
-pub struct Client<T: NetworkableNodeIdentity, B: Backend<T> + 'static> {
+pub struct Client<T: NodeIdentity, A: AuthenticatableIdentity, B: Backend<T> + 'static> {
     rx: Receiver<TUIStates>,
     req_tui_state: Arc<Notify>,
     cancel: CancellationToken,
     join: JoinHandle<Result<()>>,
-    _t: PhantomData<(T, B)>,
+    _t: PhantomData<(T, A, B)>,
 }
 
 const MAX_DOWNLOAD_RETRIES: usize = 3;
 
-impl<T: NetworkableNodeIdentity, B: Backend<T> + 'static> Client<T, B> {
+impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'static>
+    Client<T, A, B>
+{
     #[allow(clippy::too_many_arguments)]
-    pub fn new(backend: B, mut p2p: NC, init_config: RunInitConfig<T>) -> Self {
+    pub fn new(backend: B, mut p2p: NC, init_config: RunInitConfig<T, A>) -> Self {
         let cancel = CancellationToken::new();
         let (tx, rx) = watch::channel::<TUIStates>(Default::default());
         let req_tui_state = Arc::new(Notify::new());
@@ -57,7 +60,7 @@ impl<T: NetworkableNodeIdentity, B: Backend<T> + 'static> Client<T, B> {
                 let (tx_distro_result, mut rx_distro_result) = mpsc::unbounded_channel();
                 let (tx_request_download, mut rx_request_download) = mpsc::unbounded_channel();
 
-                let mut run = RunManager::<T>::new(RunInitConfigAndIO {
+                let mut run = RunManager::<T, A>::new(RunInitConfigAndIO {
                     init_config,
 
                     tx_witness,
