@@ -83,27 +83,27 @@ impl CommitteeSelection {
     ) -> Result<Self, CoordinatorError> {
         if total_nodes >= u64::MAX as usize {
             return Err(CoordinatorError::InvalidCommitteeSelection(format!(
-                "total_nodes: {} < u64::MAX",
+                "Invalid CommitteeSelection: total_nodes: {} >= u64::MAX",
                 total_nodes
             )));
         }
         if total_nodes < tie_breaker_nodes {
             return Err(CoordinatorError::InvalidCommitteeSelection(format!(
-                "total_nodes: {} >= tie_breaker_nodes: {}",
+                "Invalid CommitteeSelection: total_nodes: {} < tie_breaker_nodes: {}",
                 total_nodes, tie_breaker_nodes
             )));
         }
 
         if witness_nodes != 0 && total_nodes < witness_nodes {
             return Err(CoordinatorError::InvalidCommitteeSelection(format!(
-                "witness_nodes: {} == 0 || total_nodes: {} >= witness_nodes: {}",
+                "Invalid CommitteeSelection: witness_nodes: {} != 0 && total_nodes: {} < witness_nodes: {}",
                 witness_nodes, total_nodes, witness_nodes
             )));
         }
 
         if verification_percent > 100 {
             return Err(CoordinatorError::InvalidCommitteeSelection(format!(
-                "verification_percent {} <= 100",
+                "Invalid CommitteeSelection: verification_percent {} > 100",
                 verification_percent
             )));
         }
@@ -378,9 +378,8 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn test_invalid_total_nodes() {
-        CommitteeSelection::new(10, 5, 20, 9, 12345).unwrap();
+        assert!(CommitteeSelection::new(10, 5, 20, 9, 12345).is_err());
     }
 
     #[test]
@@ -391,6 +390,8 @@ mod tests {
         assert!(CommitteeSelection::new(10, 5, 101, 5, 12345).is_err());
         // total_nodes < witness_nodes
         assert!(CommitteeSelection::new(10, 50, 101, 11, 12345).is_err());
+        // total_nodes >= u64::MAX
+        assert!(CommitteeSelection::new(10, 50, 101, u64::MAX as usize, 12345).is_err());
     }
 
     #[test]
