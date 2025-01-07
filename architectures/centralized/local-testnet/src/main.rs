@@ -365,7 +365,7 @@ fn start_client(args: &Args, i: usize, run_id: &String, print: bool, start_time:
     };
 
     cmd.push(format!(
-        "RUST_LOG={} RUST_BACKTRACE=1 cargo run -p psyche-centralized-client -- train --raw-secret-key {} --run-id {} --server-addr localhost:{} --tui {}",
+        "RUST_LOG={} RUST_BACKTRACE=1 RAW_IDENTITY_SECRET_KEY={} cargo run -p psyche-centralized-client -- train --run-id {} --server-addr localhost:{} --tui {}",
         args.log,
         raw_key,
         run_id,
