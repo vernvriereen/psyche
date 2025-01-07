@@ -122,8 +122,8 @@ impl CooldownStepMetadata {
                     checkpoint_dir,
                 }) = checkpoint_info
                 else {
-                    // FIXME(marian): Here we are assuming that we either we upload the model to HF or
-                    // we share it by p2p, but in principle both could be possible.
+                    // Here we assume that we either we upload the model to HF or
+                    // we share it by p2p.
                     tx_model
                         .send(variables)
                         .map_err(|_| CheckpointError::SendCheckpoint)?;
