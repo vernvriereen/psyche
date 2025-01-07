@@ -81,7 +81,7 @@ impl CommitteeSelection {
         total_nodes: usize,
         seed: u64,
     ) -> Result<Self, CoordinatorError> {
-        if total_nodes > u64::MAX as usize {
+        if total_nodes >= u64::MAX as usize {
             return Err(CoordinatorError::InvalidCommitteeSelection(format!(
                 "total_nodes: {} < u64::MAX",
                 total_nodes
@@ -384,9 +384,13 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn test_invalid_verification_percent() {
-        CommitteeSelection::new(10, 5, 101, 100, 12345).unwrap();
+    fn test_invalid_comittee_selections() {
+        // verification_percent > 100
+        assert!(CommitteeSelection::new(10, 5, 101, 100, 12345).is_err());
+        // total_nodes < tie_breaker_nodes
+        assert!(CommitteeSelection::new(10, 5, 101, 5, 12345).is_err());
+        // total_nodes < witness_nodes
+        assert!(CommitteeSelection::new(10, 50, 101, 11, 12345).is_err());
     }
 
     #[test]
