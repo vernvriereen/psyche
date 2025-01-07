@@ -17,7 +17,6 @@ use futures_util::StreamExt;
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
-use solana_coordinator::coordinator_account_from_bytes;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -103,7 +102,7 @@ impl SolanaBackend {
         ];
         let (instance_pda, _bump) = Pubkey::find_program_address(seeds, &self.program.id());
 
-        let tx = self
+        let signature = self
             .program
             .request()
             .instruction(system_instruction::transfer(
@@ -136,15 +135,7 @@ impl SolanaBackend {
                     .clone(),
             )
             .signer(coordinator_keypair.clone())
-            .signed_transaction()
-            .await?;
-
-        let signature = self.program.rpc().send_transaction(&tx).await.unwrap();
-
-        let _ = self
-            .program
-            .rpc()
-            .confirm_transaction_with_commitment(&signature, CommitmentConfig::processed())
+            .send()
             .await?;
 
         Ok(CreatedRun {
@@ -152,6 +143,76 @@ impl SolanaBackend {
             account: coordinator_keypair.pubkey(),
             transaction: signature,
         })
+    }
+
+    pub async fn set_whitelist(
+        &self,
+        run_id: &str,
+        clients: Vec<solana_coordinator::ClientId>,
+    ) -> Result<Signature> {
+        let (instance_pda, _) = self.find_instance_from_run_id(run_id);
+
+        let instance: solana_coordinator::CoordinatorInstance =
+            self.program.account(instance_pda).await?;
+
+        if instance.owner != self.program.payer() {
+            bail!(
+                "Not owner of run -- owner is {} and we are {}",
+                instance.owner,
+                self.program.payer()
+            );
+        }
+
+        let signature = self
+            .program
+            .request()
+            .accounts(solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                instance: instance_pda,
+                account: instance.account,
+                payer: self.program.payer(),
+                system_program: system_program::ID,
+            })
+            .args(solana_coordinator::instruction::SetWhitelist { clients })
+            .send()
+            .await?;
+
+        Ok(signature)
+    }
+
+    pub async fn join_run(
+        &self,
+        run_id: &str,
+        id: solana_coordinator::ClientId,
+    ) -> Result<Signature> {
+        let (instance_pda, _) = self.find_instance_from_run_id(run_id);
+
+        let instance: solana_coordinator::CoordinatorInstance =
+            self.program.account(instance_pda).await?;
+
+        let signature = self
+            .program
+            .request()
+            .accounts(
+                solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                    instance: instance_pda,
+                    account: instance.account,
+                    payer: self.program.payer(),
+                    system_program: system_program::ID,
+                },
+            )
+            .args(solana_coordinator::instruction::JoinRun { id })
+            .send()
+            .await?;
+
+        Ok(signature)
+    }
+
+    pub fn find_instance_from_run_id(&self, run_id: &str) -> (Pubkey, u8) {
+        let seeds = &[
+            b"coordinator",
+            solana_coordinator::bytes_from_string(&run_id),
+        ];
+        Pubkey::find_program_address(seeds, &self.program.id())
     }
 }
 
@@ -161,7 +222,7 @@ impl WatcherBackend<solana_coordinator::ClientId> for SolanaBackend {
         match &mut self.updates {
             Some(updates) => match updates.recv().await {
                 Some(update) => match update.value.data.decode() {
-                    Some(data) => coordinator_account_from_bytes(&data)
+                    Some(data) => solana_coordinator::coordinator_account_from_bytes(&data)
                         .map_err(|_| anyhow!("Unable to decode coordinator account data"))
                         .map(|x| x.state.coordinator),
                     None => bail!("Unable to decode account data"),
@@ -193,15 +254,11 @@ mod test {
 
     use anchor_client::{
         anchor_lang::system_program,
-        solana_client::rpc_config::RpcSendTransactionConfig,
-        solana_sdk::{
-            pubkey::Pubkey,
-            signature::{EncodableKey, Signer},
-            system_instruction,
-        },
+        solana_sdk::signature::{EncodableKey, Signer},
     };
     use bytemuck::Zeroable;
     use psyche_coordinator::{CoodinatorConfig, RunState};
+    use psyche_network::SecretKey;
     use rand::Rng;
 
     #[tokio::test]
@@ -213,46 +270,46 @@ mod test {
         let mut backend = SolanaBackend::new(Cluster::Localnet, key_pair.clone()).unwrap();
         let run_id = format!("{}", rand::thread_rng().gen_range(0..1000000));
 
-        let created = backend.create_run(run_id).await.unwrap();
+        let created = backend.create_run(run_id.clone()).await.unwrap();
         backend.start(created.account).await.unwrap();
 
-        let tx = backend
+        let _ = backend
             .program
             .request()
-            .accounts(solana_coordinator::accounts::CoordinatorAccounts {
+            .accounts(solana_coordinator::accounts::OwnerCoordinatorAccounts {
                 instance: created.instance,
                 account: created.account,
-                payer: key_pair.pubkey(),
+                payer: backend.program.payer(),
                 system_program: system_program::ID,
             })
             .args(solana_coordinator::instruction::UpdateCoordinatorConfig {
                 config: CoodinatorConfig::<solana_coordinator::ClientId>::zeroed(),
             })
-            .signed_transaction()
-            .await
-            .unwrap();
-
-        let signature = backend
-            .program
-            .rpc()
-            .send_transaction_with_config(
-                &tx,
-                RpcSendTransactionConfig {
-                    skip_preflight: true,
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-
-        let _ = backend
-            .program
-            .rpc()
-            .confirm_transaction_with_commitment(&signature, CommitmentConfig::confirmed())
+            .send()
             .await
             .unwrap();
 
         let new_state = backend.wait_for_new_state().await.unwrap();
         assert_eq!(new_state.run_state, RunState::Paused);
+
+        let client_keypair = Arc::new(Keypair::new());
+        let client_p2p = SecretKey::generate(&mut rand::rngs::OsRng);
+        let client_id = solana_coordinator::ClientId::new(
+            client_keypair.pubkey(),
+            *client_p2p.public().as_bytes(),
+        );
+
+        // add a dummy whitelist entry so the run is permissioned
+        backend
+            .set_whitelist(&run_id, vec![solana_coordinator::ClientId::zeroed()])
+            .await
+            .unwrap();
+
+        assert!(backend.join_run(&run_id, client_id).await.is_err());
+
+        backend
+            .set_whitelist(&run_id, vec![client_id])
+            .await
+            .unwrap();
     }
 }

@@ -1,6 +1,5 @@
 use crate::{
     model::{self, Checkpoint, Model},
-    traits::Backend,
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
 
@@ -126,7 +125,7 @@ pub struct Witness {
     pub order_bloom: WitnessBloom,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum CoordinatorError {
     NoActiveRound,
     InvalidWitness,
@@ -142,8 +141,7 @@ pub enum CoordinatorError {
 
 pub enum TickResult {
     Ticked,
-    EpochFinished,
-    EpochAbandoned,
+    EpochEnd(bool), // if successfully finished
 }
 
 pub type Commitment = [u8; 32];
@@ -355,9 +353,9 @@ impl<T: NodeIdentity> Client<T> {
 }
 
 impl<T: NodeIdentity> Coordinator<T> {
-    pub fn tick(
-        &mut self,
-        backend: &dyn Backend<T>,
+    pub fn tick<'a, 'b>(
+        &'a mut self,
+        new_clients: Option<impl ExactSizeIterator<Item = &'b T>>,
         unix_timestamp: u64,
         random_seed: u64,
     ) -> std::result::Result<TickResult, CoordinatorError> {
@@ -369,14 +367,14 @@ impl<T: NodeIdentity> Coordinator<T> {
                 if self.epoch_state.pause.into() {
                     self.epoch_state.pause = false.into();
                     self.change_state(unix_timestamp, RunState::Paused);
-                    Ok(TickResult::EpochAbandoned)
+                    Ok(TickResult::EpochEnd(false))
                 } else if run_state == RunState::WaitingForMembers {
-                    self.tick_waiting_for_members(backend, unix_timestamp)
+                    self.tick_waiting_for_members(new_clients, unix_timestamp)
                 } else if run_state == RunState::Cooldown {
                     self.tick_cooldown(unix_timestamp)
                 } else if (self.epoch_state.clients.len() as u16) < self.config.min_clients {
                     self.start_waiting_for_members(unix_timestamp);
-                    Ok(TickResult::EpochAbandoned)
+                    Ok(TickResult::EpochEnd(false))
                 } else {
                     match run_state {
                         RunState::Warmup => self.tick_warmup(unix_timestamp, random_seed),
@@ -717,22 +715,28 @@ impl<T: NodeIdentity> Coordinator<T> {
             .collect()
     }
 
-    fn tick_waiting_for_members(
-        &mut self,
-        backend: &dyn Backend<T>,
+    fn tick_waiting_for_members<'a, 'b>(
+        &'a mut self,
+        new_clients: Option<impl ExactSizeIterator<Item = &'b T>>,
         unix_timestamp: u64,
     ) -> std::result::Result<TickResult, CoordinatorError> {
-        let clients = backend.select_new_clients();
-        if clients.len() as u16 >= self.config.min_clients {
-            // set epoch_state to default
-            let _ = std::mem::take(&mut self.epoch_state);
-            self.epoch_state.clients = FixedVec::from_iter(
-                clients
-                    .into_iter()
-                    .take(SOLANA_MAX_NUM_CLIENTS)
-                    .map(|x| Client::new(x)),
-            );
-            self.start_warmup(unix_timestamp);
+        if let Some(new_clients) = new_clients {
+            if new_clients.len() as u16 >= self.config.min_clients {
+                // set epoch_state to default
+                bytemuck::write_zeroes(&mut self.epoch_state);
+                self.epoch_state.first_round = true.into();
+
+                self.epoch_state
+                    .clients
+                    .extend(
+                        new_clients
+                            .take(SOLANA_MAX_NUM_CLIENTS)
+                            .map(|x| Client::new(*x)),
+                    )
+                    .unwrap();
+
+                self.start_warmup(unix_timestamp);
+            }
         }
         Ok(TickResult::Ticked)
     }
@@ -807,7 +811,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             );
             self.progress.epoch += 1;
             self.start_waiting_for_members(unix_timestamp);
-            Ok(TickResult::EpochFinished)
+            Ok(TickResult::EpochEnd(true))
         } else {
             Ok(TickResult::Ticked)
         }
