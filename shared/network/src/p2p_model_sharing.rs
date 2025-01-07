@@ -141,6 +141,11 @@ impl ProtocolHandler for ModelParameterSharing {
             let parameter_blob_ticket = rx_req.await?;
             let data = postcard::to_stdvec(&parameter_blob_ticket)?;
             send.write_all(&data).await?;
+            send.finish()?;
+
+            // Wait until the remote closes the connection, which it does once it
+            // received the response.
+            connection.closed().await;
 
             Ok(())
         })
