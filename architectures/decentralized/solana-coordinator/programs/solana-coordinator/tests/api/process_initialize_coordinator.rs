@@ -11,9 +11,7 @@ use solana_sdk::system_program;
 use solana_toolbox_endpoint::ToolboxEndpoint;
 use solana_toolbox_endpoint::ToolboxEndpointError;
 
-fn bytes_from_string(str: &str) -> &[u8] {
-    &str.as_bytes()[..64.min(str.as_bytes().len())]
-}
+use crate::api::find_pda_instance::find_pda_instance;
 
 pub async fn process_initialize_coordinator(
     endpoint: &mut ToolboxEndpoint,
@@ -21,11 +19,7 @@ pub async fn process_initialize_coordinator(
     coordinator: &Pubkey,
     run_id: String,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let instance = Pubkey::find_program_address(
-        &[b"coordinator", bytes_from_string(&run_id)],
-        &solana_coordinator::ID,
-    )
-    .0;
+    let instance = find_pda_instance(&run_id);
 
     let accounts = InitializeCoordinatorAccounts {
         payer: payer.pubkey(),
