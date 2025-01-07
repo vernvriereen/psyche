@@ -24,9 +24,8 @@ serde_json.workspace = true
 tracing.workspace = true
 rand.workspace = true
 time.workspace = true
-
 home = "0.5.9"
 solana-account-decoder-client-types = "=2.1.4"
 
 [features]
-solana-tests = []
+solana-localnet-tests = []

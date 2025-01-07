@@ -246,7 +246,7 @@ impl WatcherBackend<solana_coordinator::ClientId> for SolanaBackend {
     }
 }
 
-#[cfg(feature = "solana-tests")]
+#[cfg(feature = "solana-localnet-tests")]
 #[cfg(test)]
 mod test {
 
@@ -257,12 +257,14 @@ mod test {
         solana_sdk::signature::{EncodableKey, Signer},
     };
     use bytemuck::Zeroable;
-    use psyche_coordinator::{CoodinatorConfig, RunState};
+    use psyche_coordinator::{CoordinatorConfig, RunState};
     use psyche_network::SecretKey;
     use rand::Rng;
 
     #[tokio::test]
-    pub async fn test_create_and_initialize() {
+    pub async fn localnet_coordinator_run() {
+        // try to keep this and memnet_coordinator_run synced up
+
         let key_pair = Arc::new(
             Keypair::read_from_file(home::home_dir().unwrap().join(".config/solana/id.json"))
                 .unwrap(),
@@ -283,7 +285,7 @@ mod test {
                 system_program: system_program::ID,
             })
             .args(solana_coordinator::instruction::UpdateCoordinatorConfig {
-                config: CoodinatorConfig::<solana_coordinator::ClientId>::zeroed(),
+                config: CoordinatorConfig::<solana_coordinator::ClientId>::zeroed(),
             })
             .send()
             .await

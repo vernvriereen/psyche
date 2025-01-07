@@ -4,7 +4,7 @@ use anchor_lang::{prelude::*, system_program};
 use bytemuck::{Pod, Zeroable};
 pub use client_id::ClientId;
 use psyche_coordinator::{
-    ClientState, CoodinatorConfig, Coordinator, CoordinatorError, RunState, TickResult,
+    ClientState, CoordinatorConfig, Coordinator, CoordinatorError, RunState, TickResult,
     SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
 };
 use psyche_core::{sha256v, FixedVec, SizedIterator};
@@ -150,7 +150,7 @@ pub mod solana_coordinator {
 
     pub fn update_coordinator_config(
         ctx: Context<OwnerCoordinatorAccounts>,
-        config: CoodinatorConfig<ClientId>,
+        config: CoordinatorConfig<ClientId>,
     ) -> Result<()> {
         let coordinator = &mut ctx.accounts.account.load_mut()?.state.coordinator;
 
@@ -194,13 +194,11 @@ pub mod solana_coordinator {
     pub fn join_run(ctx: Context<PermissionlessCoordinatorAccounts>, id: ClientId) -> Result<()> {
         let clients_state = &mut ctx.accounts.account.load_mut()?.state.clients_state;
 
-        let owner = *ctx.accounts.payer.signer_key().unwrap();
-
         if !clients_state.whitelist.is_empty() {
             if clients_state
                 .whitelist
                 .iter()
-                .find(|x| x.owner == owner)
+                .find(|x| x.signer == id.signer)
                 .is_none()
             {
                 return err!(ProgramError::NotInWhitelist);
@@ -209,7 +207,7 @@ pub mod solana_coordinator {
             panic!("no whitelist");
         }
 
-        let exisiting = match clients_state.clients.iter_mut().find(|x| x.owner == owner) {
+        let exisiting = match clients_state.clients.iter_mut().find(|x| x.id.signer == id.signer) {
             Some(client) => {
                 if client.id != id {
                     return err!(ProgramError::ClientIdMismatch);
@@ -224,7 +222,7 @@ pub mod solana_coordinator {
             if clients_state
                 .clients
                 .push(Client {
-                    owner,
+                    owner: *ctx.accounts.payer.signer_key().unwrap(),
                     id,
                     staked: 0,
                     earned: 0,

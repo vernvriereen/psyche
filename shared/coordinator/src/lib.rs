@@ -9,7 +9,7 @@ pub use committee_selection::{
     Committee, CommitteeProof, CommitteeSelection, WitnessProof, COMMITTEE_SALT, WITNESS_SALT,
 };
 pub use coordinator::{
-    Client, ClientState, Commitment, CoodinatorConfig, Coordinator, CoordinatorEpochState,
+    Client, ClientState, Commitment, CoordinatorConfig, Coordinator, CoordinatorEpochState,
     CoordinatorError, HealthChecks, Round, RunState, TickResult, Witness, WitnessBloom,
     BLOOM_FALSE_RATE, NUM_STORED_ROUNDS, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_NUM_WITNESSES,
     SOLANA_MAX_STRING_LEN,

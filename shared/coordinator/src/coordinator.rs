@@ -154,7 +154,7 @@ pub const NUM_STORED_ROUNDS: usize = 4;
 )]
 #[repr(C)]
 #[serde(bound = "I: DeserializeOwned + NodeIdentity")]
-pub struct CoodinatorConfig<I> {
+pub struct CoordinatorConfig<I> {
     pub warmup_time: u64,
     pub cooldown_time: u64,
 
@@ -215,7 +215,7 @@ pub struct Coordinator<T> {
 
     pub model: Model,
 
-    pub config: CoodinatorConfig<T>,
+    pub config: CoordinatorConfig<T>,
 
     #[serde(default)]
     pub progress: CoordinatorProgress,
