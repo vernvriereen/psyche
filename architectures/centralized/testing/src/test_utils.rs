@@ -87,7 +87,7 @@ pub async fn assert_witnesses_score(
 ) {
     let clients = server_handle.get_clients().await;
 
-    // Obtener los testigos del round especificado
+    // get witnesses
     let rounds = server_handle.get_rounds().await;
     let witnesses = &rounds[round_number].witnesses;
 
