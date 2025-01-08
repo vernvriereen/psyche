@@ -579,4 +579,30 @@ async fn shutdown_node_in_training_and_complete_round() {
         RunState::WaitingForMembers,
     )
     .await;
+
+    // We dont advance this  round.
+    assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
+
+    let _new_client =
+        spawn_clients_with_training_delay(1, server_port, run_id, training_delay).await;
+
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
+
+    // check that we advance to the following round
+    assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
+
+    // assert all nodes sent their witnesses
+    // 3 nodes participate in the round, all the nodes are witness
+    // so, score should be 9
+    let clients = server_handle.get_clients().await;
+    let witnesses = &server_handle.get_rounds().await[0].witnesses;
+    let mut score = 0;
+    clients.iter().for_each(|client| {
+        score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
+            &client.id, witnesses,
+        );
+    });
+    assert_eq!(score, 9);
 }
