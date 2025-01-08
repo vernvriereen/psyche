@@ -17,7 +17,7 @@ pub async fn process_initialize_coordinator(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     coordinator_account: &Pubkey,
-    run_id: &String,
+    run_id: &str,
 ) -> Result<Signature, ToolboxEndpointError> {
     let coordinator_instance = find_pda_coordinator_instance(run_id);
 
