@@ -9,6 +9,7 @@ use std::env;
 use tokio_util::sync::CancellationToken;
 
 use crate::client::ClientHandle;
+use crate::server::CoordinatorServerHandle;
 
 pub fn repo_path() -> String {
     let cargo_manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
@@ -77,6 +78,32 @@ pub fn get_free_port() -> u16 {
 
 pub fn sample_rand_run_id() -> String {
     Alphanumeric.sample_string(&mut rand::thread_rng(), 16)
+}
+
+pub async fn assert_witnesses_score(
+    server_handle: &CoordinatorServerHandle,
+    round_number: usize,
+    expected_score: u16,
+) {
+    let clients = server_handle.get_clients().await;
+
+    // Obtener los testigos del round especificado
+    let rounds = server_handle.get_rounds().await;
+    let witnesses = &rounds[round_number].witnesses;
+
+    // calculate score
+    let mut score = 0;
+    clients.iter().for_each(|client| {
+        score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
+            &client.id, witnesses,
+        );
+    });
+
+    assert_eq!(
+        score, expected_score,
+        "Score {} != expected score {}",
+        score, expected_score
+    );
 }
 
 pub fn dummy_client_app_params_with_training_delay(
