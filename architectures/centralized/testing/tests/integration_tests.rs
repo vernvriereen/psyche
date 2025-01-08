@@ -4,7 +4,10 @@ use psyche_coordinator::RunState;
 use testing::{
     client::ClientHandle,
     server::CoordinatorServerHandle,
-    test_utils::{assert_with_retries, spawn_clients, spawn_clients_with_training_delay},
+    test_utils::{
+        assert_with_retries, assert_witnesses_score, spawn_clients,
+        spawn_clients_with_training_delay,
+    },
     COOLDOWN_TIME, MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME,
 };
 
@@ -563,14 +566,7 @@ async fn shutdown_node_in_training_and_complete_round() {
     // assert that the shutdown node do not participate in the witnesses
     // since two nodes must send their witness and two nodes participate in the round
     // score should be 4
-    let witnesses = &server_handle.get_rounds().await[0].witnesses;
-    let mut score = 0;
-    clients.iter().for_each(|client| {
-        score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
-            &client.id, witnesses,
-        );
-    });
-    assert_eq!(score, 4);
+    assert_witnesses_score(&server_handle, 0, 4).await;
 
     // since up nodes < init_min_clients
     // the network should return to WaitingForMembers
@@ -580,13 +576,17 @@ async fn shutdown_node_in_training_and_complete_round() {
     )
     .await;
 
-    // We dont advance this  round.
+    // We dont advance this round.
     assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
 
+    // spawn new client to complete round
     let _new_client =
         spawn_clients_with_training_delay(1, server_port, run_id, training_delay).await;
 
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+
+    // assert that the witnesses is clear
+    assert_witnesses_score(&server_handle, 0, 0).await;
 
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
 
@@ -594,15 +594,7 @@ async fn shutdown_node_in_training_and_complete_round() {
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
 
     // assert all nodes sent their witnesses
-    // 3 nodes participate in the round, all the nodes are witness
+    // the 3 nodes participate in the round and the 3 nodes are witness
     // so, score should be 9
-    let clients = server_handle.get_clients().await;
-    let witnesses = &server_handle.get_rounds().await[0].witnesses;
-    let mut score = 0;
-    clients.iter().for_each(|client| {
-        score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
-            &client.id, witnesses,
-        );
-    });
-    assert_eq!(score, 9);
+    assert_witnesses_score(&server_handle, 0, 9).await;
 }
