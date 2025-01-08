@@ -7,22 +7,9 @@ use tokio::{sync::Mutex, task::JoinSet};
 use tokio_util::{sync::CancellationToken, task::AbortOnDropHandle};
 use tracing::{debug, error, info_span, trace, warn, Instrument};
 
-use iroh::{endpoint::get_remote_node_id, protocol::ProtocolHandler, Endpoint, NodeId};
+use iroh::{endpoint::get_remote_node_id, protocol::ProtocolHandler, Endpoint};
 
-use crate::{p2p_model_sharing, ModelParameterSharing};
-
-pub trait Allowlist: std::fmt::Debug + Clone {
-    fn allowed(&self, addr: NodeId) -> bool;
-}
-
-#[derive(Debug, Clone)]
-pub struct AllClientsAllowed;
-
-impl Allowlist for AllClientsAllowed {
-    fn allowed(&self, _addr: NodeId) -> bool {
-        true
-    }
-}
+use crate::{p2p_model_sharing, Allowlist, ModelParameterSharing};
 
 /// The allowlist-enabled router.
 // This is mostly verbatim from Iroh's source, just modified to let us insert the allowlist.
@@ -252,7 +239,7 @@ mod tests {
     use std::time::Duration;
 
     use futures_util::future::join_all;
-    use iroh::{PublicKey, SecretKey};
+    use iroh::SecretKey;
     use iroh_blobs::util::local_pool::LocalPool;
     use iroh_gossip::{
         net::{Event, GossipEvent, Message},
@@ -260,7 +247,10 @@ mod tests {
     };
     use tokio_stream::StreamExt;
 
-    use crate::ModelParameterSharing;
+    use crate::{
+        allowlist::{AllowAll, AllowDynamic},
+        ModelParameterSharing,
+    };
 
     use super::*;
 
@@ -279,7 +269,7 @@ mod tests {
             gossip.clone(),
             blobs.clone(),
             p2p_model_sharing.clone(),
-            AllClientsAllowed,
+            AllowAll,
         )
         .await?;
 
@@ -321,15 +311,6 @@ mod tests {
             })
             .collect();
 
-        #[derive(Debug, Clone)]
-        pub struct StaticAllowlist(Vec<PublicKey>);
-
-        impl Allowlist for StaticAllowlist {
-            fn allowed(&self, addr: NodeId) -> bool {
-                self.0.contains(&addr)
-            }
-        }
-
         let pubkeys: Vec<_> = keys
             .iter()
             .take(N_ALLOWED as usize)
@@ -340,7 +321,7 @@ mod tests {
         let routers = join_all(
             keys.into_iter()
                 .map(|k| async {
-                    let allowlist = StaticAllowlist(pubkeys.clone());
+                    let allowlist = AllowDynamic::with_nodes(pubkeys.clone());
                     let endpoint = Endpoint::builder().secret_key(k).bind().await?;
                     let blobs_local_pool = LocalPool::default();
                     let blobs = Blobs::memory().build(blobs_local_pool.handle(), &endpoint);

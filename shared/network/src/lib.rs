@@ -1,3 +1,4 @@
+use allowlist::Allowlist;
 use anyhow::{Error, Result};
 use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
 use futures_util::StreamExt;
@@ -31,6 +32,7 @@ pub use ed25519::Signature;
 pub use iroh::{NodeId, RelayMode};
 pub use iroh_blobs::{ticket::BlobTicket, Hash};
 
+pub mod allowlist;
 mod authenticable_identity;
 mod download_manager;
 mod p2p_model_sharing;
@@ -48,7 +50,6 @@ pub use download_manager::{DownloadComplete, DownloadFailed};
 pub use iroh::{Endpoint, PublicKey, SecretKey};
 pub use p2p_model_sharing::{ModelParameterSharing, ModelParameters, ALPN};
 pub use peer_list::PeerList;
-pub use router::{AllClientsAllowed, Allowlist};
 pub use serde::Networkable;
 pub use signed_message::SignedMessage;
 pub use tcp::{ClientNotification, TcpClient, TcpServer};
@@ -188,17 +189,15 @@ where
         })
     }
 
-    pub async fn add_peers(&mut self, peers: Vec<NodeAddr>) -> Result<()> {
-        peers
-            .iter()
-            .filter(|p| p.node_id != self.router.endpoint().node_id())
-            .map(|peer| self.router.endpoint().add_node_addr(peer.clone()))
-            .collect::<Result<Vec<_>>>()?;
+    pub async fn shutdown(&self) -> Result<()> {
+        self.router.shutdown().await
+    }
+
+    pub async fn add_peers(&mut self, peers: Vec<NodeId>) -> Result<()> {
         self.gossip_tx
             .join_peers(
                 peers
                     .into_iter()
-                    .map(|i| i.node_id)
                     .filter(|p| p != &self.router.endpoint().node_id())
                     .collect(),
             )

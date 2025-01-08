@@ -10,15 +10,16 @@ use psyche_coordinator::{
     SOLANA_MAX_NUM_CLIENTS,
 };
 
-use psyche_core::{u8_to_string, FixedVec, Shuffle, SizedIterator, TokenSize};
+use psyche_core::{u8_to_string, FixedVec, NodeIdentity, Shuffle, SizedIterator, TokenSize};
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider,
 };
 use psyche_network::{
-    AllClientsAllowed, ClientNotification, NetworkEvent, NetworkTui, RelayMode, TcpServer,
+    allowlist, ClientNotification, NetworkEvent, NetworkTui, NodeId, RelayMode, TcpServer,
 };
-use psyche_tui::logging::LoggerWidget;
-use psyche_tui::{maybe_start_render_loop, CustomWidget, MaybeTui, TabbedWidget};
+use psyche_tui::{
+    logging::LoggerWidget, maybe_start_render_loop, CustomWidget, MaybeTui, TabbedWidget,
+};
 use psyche_watcher::CoordinatorTui;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -101,6 +102,7 @@ pub struct App {
     original_warmup_time: u64,
     original_min_clients: u16,
     withdraw_on_disconnect: bool,
+    allowlist: allowlist::AllowDynamic,
 }
 
 /// Methods intended for testing purposes only.
@@ -156,13 +158,15 @@ impl App {
         withdraw_on_disconnect: bool,
     ) -> Result<Self> {
         let run_id = u8_to_string(&coordinator.run_id);
+        let allowlist = allowlist::AllowDynamic::new();
+
         let p2p = NC::init(
             &run_id,
             p2p_port,
             RelayMode::Default,
             vec![],
             None,
-            AllClientsAllowed,
+            allowlist.clone(),
         )
         .await?;
 
@@ -273,6 +277,7 @@ impl App {
             original_warmup_time,
             original_min_clients,
             withdraw_on_disconnect,
+            allowlist,
         })
     }
 
@@ -367,16 +372,6 @@ impl App {
                 let coord_run_id = u8_to_string(&self.coordinator.run_id);
                 if coord_run_id == run_id {
                     self.backend.pending_clients.insert(from);
-                    let client_joined = self
-                        .backend
-                        .net_server
-                        .broadcast(ServerToClientMessage::P2PConnect(
-                            self.p2p.get_all_peers().await,
-                        ))
-                        .await;
-                    if let Err(e) = client_joined {
-                        warn!("Error sending p2p list to client: {e}");
-                    }
                 } else {
                     info!("{from:?} tried to join unknown run {run_id}");
                 }
@@ -470,6 +465,15 @@ impl App {
             self.coordinator.config.warmup_time = self.original_warmup_time;
             self.coordinator.config.min_clients = self.original_min_clients;
         }
+
+        self.allowlist.set(
+            self.coordinator
+                .epoch_state
+                .clients
+                .iter()
+                .map(|c| NodeId::from_bytes(c.id.get_p2p_public_key()).unwrap()),
+        );
+
         if broadcast {
             if let Err(err) = self
                 .backend
