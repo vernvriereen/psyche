@@ -1,5 +1,5 @@
 use crate::{
-    model::{self, Checkpoint, Model},
+    model::{self, Checkpoint, Model, LLM},
     traits::Backend,
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
@@ -777,8 +777,14 @@ impl<T: NodeIdentity> Coordinator<T> {
             if height == self.config.rounds_per_epoch - 1 {
                 match &mut self.model {
                     Model::LLM(llm) => {
-                        llm.checkpoint = Checkpoint::Ephemeral;
-                        // llm.checkpoint = Checkpoint::P2P;
+                        if let Checkpoint::Hub(hub_repo) = llm.checkpoint {
+                            llm.checkpoint = Checkpoint::P2P(hub_repo)
+                        }
+                        // match llm.checkpoint {
+                        //     Checkpoint::Hub(hub_repo) => llm.checkpoint = Checkpoint::P2P(hub_repo),
+                        //     Checkpoint::P2P(_) => {},
+                        //     _ => panic!("Checkpoint not expected")
+                        // }
                     }
                 }
                 self.change_state(unix_timestamp, RunState::Cooldown);

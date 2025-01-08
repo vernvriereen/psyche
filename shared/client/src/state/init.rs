@@ -4,8 +4,9 @@ use crate::{
     WandBInfo,
 };
 
+use hf_hub::{Cache, Repo, RepoType};
 use psyche_coordinator::{
-    model::{self, LLMTrainingDataLocation},
+    model::{self, HubRepo, LLMTrainingDataLocation},
     Coordinator, HealthChecks, Witness,
 };
 use psyche_core::{u8_to_string, NodeIdentity};
@@ -13,12 +14,12 @@ use psyche_data_provider::{
     download_model_repo_async, DataProvider, DataProviderTcpClient, DummyDataProvider,
 };
 use psyche_modeling::{
-    auto_tokenizer, AutoTokenizerError, CommunicatorId, ConcreteCausalLM, DummyModel,
-    LlamaForCausalLM, LoadLlamaForCausalLMError,
+    auto_tokenizer, AutoTokenizerError, CommunicatorId, ConcreteCausalLM, Config, DummyModel,
+    Llama, LlamaConfig, LlamaForCausalLM, LoadLlamaForCausalLMError,
 };
 use psyche_network::{AuthenticatableIdentity, BlobTicket};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
-use tch::{Device, Kind, Tensor};
+use tch::{nn, Device, Kind, Tensor};
 use thiserror::Error;
 use tokenizers::{models::wordlevel::WordLevel, ModelWrapper, Tokenizer};
 use tokio::{
@@ -295,7 +296,46 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                     })
                 }
                 model::Checkpoint::Ephemeral => return Err(InitRunError::ModelIsEphemeral),
-                model::Checkpoint::P2P => todo!(),
+                model::Checkpoint::P2P(hub_repo) => {
+                    let hub_repo = *hub_repo;
+                    tokio::spawn(async move {
+                        let repo_id = u8_to_string(&hub_repo.repo_id);
+                        let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
+                        let builder = hf_hub::api::sync::ApiBuilder::new();
+                        let repo = match revision {
+                            Some(revision) => {
+                                Repo::with_revision(repo_id.to_owned(), RepoType::Dataset, revision)
+                            }
+                            None => Repo::new(repo_id.to_owned(), RepoType::Dataset),
+                        };
+                        let api = builder
+                            .with_cache_dir(Cache::default().path().clone())
+                            .with_token(init_config.hub_read_token.clone())
+                            .with_progress(false)
+                            .build()
+                            .unwrap();
+                        let config_file = std::fs::read_to_string(
+                            api.model("emozilla/llama2-20m-init".to_string())
+                                .get("config.json")
+                                .unwrap()
+                                .as_path(),
+                        )
+                        .unwrap();
+                        let llama_config: LlamaConfig = serde_json::from_str(&config_file).unwrap();
+                        let device = Device::Cuda(0);
+                        let mut variables: nn::VarStore = nn::VarStore::new(device);
+                        variables.set_kind(Kind::BFloat16);
+                        let config: Config = llama_config.into_config(true);
+                        let model = Llama::new(variables.root(), &config, None);
+                        todo!()
+                        // Ok(RawLoadedModel{
+                        //     models: vec![],
+                        //     tokenizer,
+                        //     checkpoint_extra_files: vec![],
+                        //     eval_runner
+                        // })
+                    })
+                }
             },
         };
 
