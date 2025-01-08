@@ -4,13 +4,14 @@ use crate::api::{
     accounts::get_coordinator_instance_state,
     create_memnet_endpoint::create_memnet_endpoint,
     process_instructions::{
-        process_initialize_coordinator, process_join_run, process_set_whitelist,
-        process_update_coordinator_config,
+        process_initialize_coordinator, process_join_run, process_set_paused,
+        process_set_whitelist, process_tick, process_update_coordinator_config,
     },
 };
 
 use bytemuck::Zeroable;
 use psyche_coordinator::{CoordinatorConfig, RunState};
+use psyche_core::FixedVec;
 use solana_coordinator::{ClientId, CoordinatorAccount};
 use solana_sdk::{signature::Keypair, signer::Signer};
 
@@ -63,7 +64,22 @@ pub async fn memnet_coordinator_run() {
         &payer,
         &coordinator_account.pubkey(),
         run_id.clone(),
-        CoordinatorConfig::<ClientId>::zeroed(),
+        CoordinatorConfig::<ClientId> {
+            warmup_time: 1,
+            cooldown_time: 1,
+            max_round_train_time: 10,
+            round_witness_time: 1,
+            min_clients: 1,
+            batches_per_round: 1,
+            data_indicies_per_batch: 1,
+            verification_percent: 0,
+            witness_nodes: 0,
+            witness_quorum: 0,
+            rounds_per_epoch: 10,
+            total_steps: 100,
+            overlapped: false.into(),
+            checkpointers: FixedVec::zeroed(),
+        },
     )
     .await
     .unwrap();
@@ -126,4 +142,48 @@ pub async fn memnet_coordinator_run() {
     )
     .await
     .unwrap();
+
+    let ticker_keypair = Arc::new(Keypair::new());
+    endpoint
+        .process_airdrop(&ticker_keypair.pubkey(), payer_lamports)
+        .await
+        .unwrap();
+
+    // paused
+    assert!(process_tick(
+        &mut endpoint,
+        &ticker_keypair,
+        &coordinator_account.pubkey(),
+        run_id.clone()
+    )
+    .await
+    .is_err());
+
+    process_set_paused(
+        &mut endpoint,
+        &payer,
+        &coordinator_account.pubkey(),
+        run_id.clone(),
+        false,
+    )
+    .await
+    .unwrap();
+
+    process_tick(
+        &mut endpoint,
+        &ticker_keypair,
+        &coordinator_account.pubkey(),
+        run_id.clone(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        get_coordinator_instance_state(&mut endpoint, &coordinator_account.pubkey())
+            .await
+            .unwrap()
+            .coordinator
+            .run_state,
+        RunState::WaitingForMembers
+    );
 }

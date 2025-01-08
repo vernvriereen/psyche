@@ -120,7 +120,6 @@ pub struct Round {
 pub struct Witness {
     pub index: u64,
     pub proof: WitnessProof,
-    pub commit_bloom: WitnessBloom,
     pub participant_bloom: WitnessBloom,
     pub order_bloom: WitnessBloom,
 }
@@ -579,32 +578,6 @@ impl<T: NodeIdentity> Coordinator<T> {
         score
     }
 
-    pub fn commitment_exists_by_witnesses(
-        commitment: &Commitment,
-        witnesses: &[Witness],
-        witness_quorum: u32,
-    ) -> bool {
-        let score = Self::commitment_exists_score_by_witnesses(commitment, witnesses);
-        match witness_quorum {
-            0 => score as usize == witnesses.len(),
-            witness_quorum => score >= witness_quorum,
-        }
-    }
-
-    pub fn commitment_exists_score_by_witnesses(
-        commitment: &Commitment,
-        witnesses: &[Witness],
-    ) -> u32 {
-        let hash = sha256(commitment);
-        let mut score = 0u32;
-        for witness in witnesses {
-            if witness.commit_bloom.contains(&hash) {
-                score += 1;
-            }
-        }
-        score
-    }
-
     pub fn select_consensus_commitment_by_witnesses(
         commitments: &[Commitment],
         witnesses: &[Witness],
@@ -906,5 +879,17 @@ impl<T: NodeIdentity> Coordinator<T> {
                     model::LLMTrainingDataType::Finetuning => todo!(),
                 },
             }
+    }
+}
+
+impl<I> CoordinatorConfig<I> {
+    pub fn check(&self) -> bool {
+        self.max_round_train_time != 0
+            && self.round_witness_time != 0
+            && self.min_clients != 0
+            && self.batches_per_round != 0
+            && self.data_indicies_per_batch != 0
+            && self.rounds_per_epoch != 0
+            && self.total_steps != 0
     }
 }

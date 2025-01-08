@@ -4,8 +4,8 @@ use anchor_lang::{prelude::*, system_program};
 use bytemuck::{Pod, Zeroable};
 pub use client_id::ClientId;
 use psyche_coordinator::{
-    ClientState, CoordinatorConfig, Coordinator, CoordinatorError, RunState, TickResult,
-    SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
+    ClientState, Coordinator, CoordinatorConfig, CoordinatorError, RunState, TickResult, Witness,
+    WitnessBloom, WitnessProof, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
 };
 use psyche_core::{sha256v, FixedVec, SizedIterator};
 use std::{
@@ -160,7 +160,10 @@ pub mod solana_coordinator {
             return err!(ProgramError::UpdateConfigNotHalted);
         }
 
-        // TODO: add sanity checks
+        // TODO: more sanity checks
+        if !config.check() {
+            return err!(ProgramError::ConfigSanityCheckFailed);
+        }
 
         let _ = std::mem::replace(&mut coordinator.config, config);
 
@@ -207,7 +210,11 @@ pub mod solana_coordinator {
             panic!("no whitelist");
         }
 
-        let exisiting = match clients_state.clients.iter_mut().find(|x| x.id.signer == id.signer) {
+        let exisiting = match clients_state
+            .clients
+            .iter_mut()
+            .find(|x| x.id.signer == id.signer)
+        {
             Some(client) => {
                 if client.id != id {
                     return err!(ProgramError::ClientIdMismatch);
@@ -308,6 +315,32 @@ pub mod solana_coordinator {
             }
         }
     }
+
+    pub fn witness(
+        ctx: Context<PermissionlessCoordinatorAccounts>,
+        index: u64,
+        proof: WitnessProof,
+        participant_bloom: WitnessBloom,
+        order_bloom: WitnessBloom,
+    ) -> Result<()> {
+        let state = &mut ctx.accounts.account.load_mut()?.state;
+
+        let id = state.clients_state.find_signer(&ctx.accounts.payer.key)?;
+
+        state
+            .coordinator
+            .witness(
+                id,
+                Witness {
+                    index,
+                    proof,
+                    participant_bloom,
+                    order_bloom,
+                },
+                Clock::get()?.unix_timestamp as u64,
+            )
+            .map_err(|err| anchor_lang::error!(ProgramError::from(err)))
+    }
 }
 
 impl ClientsState {
@@ -328,6 +361,13 @@ impl ClientsState {
 
         let size = *size.borrow();
         SizedIterator::new(iter, size)
+    }
+
+    fn find_signer(&self, signer: &Pubkey) -> Result<&ClientId> {
+        match self.clients.iter().find(|x| x.id.signer == *signer) {
+            Some(client) => Ok(&client.id),
+            None => return err!(ProgramError::SignerNotAClient),
+        }
     }
 }
 
@@ -390,6 +430,12 @@ pub enum ProgramError {
 
     #[msg("Clients list full")]
     ClientsFull,
+
+    #[msg("Config sanity check failed")]
+    ConfigSanityCheckFailed,
+
+    #[msg("Signer not a client")]
+    SignerNotAClient,
 
     #[msg("Coordinator error: No active round")]
     CoordinatorErrorNoActiveRound,

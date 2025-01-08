@@ -176,16 +176,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
 
         let blooms = match witness_proof.witness {
             true => {
-                let commit_bloom =
-                    Bloom::random(num_batch_ids_for_this_round * 2, BLOOM_FALSE_RATE);
                 let participant_bloom =
                     Bloom::random(state.epoch_state.clients.len(), BLOOM_FALSE_RATE);
                 let order_bloom = Bloom::random(num_batch_ids_for_this_round, BLOOM_FALSE_RATE);
-                debug!(
-                    "Commit bloom size: {} bits, {} keys",
-                    commit_bloom.bits.0.len(),
-                    commit_bloom.keys.len()
-                );
                 debug!(
                     "Participant bloom size: {} bits, {} keys",
                     participant_bloom.bits.0.len(),
@@ -196,7 +189,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     order_bloom.bits.0.len(),
                     order_bloom.keys.len()
                 );
-                Some((commit_bloom, participant_bloom, order_bloom))
+                Some((participant_bloom, order_bloom))
             }
             false => None,
         };

@@ -3,8 +3,10 @@ use crate::api::find_pda_coordinator_instance::find_pda_coordinator_instance;
 use anchor_lang::{InstructionData, ToAccountMetas};
 use psyche_coordinator::CoordinatorConfig;
 use solana_coordinator::{
-    accounts::{InitializeCoordinatorAccounts, OwnerCoordinatorAccounts, PermissionlessCoordinatorAccounts},
-    instruction::{InitializeCoordinator, JoinRun, SetWhitelist, UpdateCoordinatorConfig},
+    accounts::{
+        InitializeCoordinatorAccounts, OwnerCoordinatorAccounts, PermissionlessCoordinatorAccounts,
+    },
+    instruction::{InitializeCoordinator, JoinRun, SetPaused, SetWhitelist, Tick, UpdateCoordinatorConfig},
     ClientId,
 };
 use solana_sdk::{
@@ -105,6 +107,53 @@ pub async fn process_join_run(
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
         data: JoinRun { id }.data(),
+        program_id: solana_coordinator::ID,
+    };
+
+    endpoint.process_instruction(instruction, &payer).await
+}
+
+pub async fn process_set_paused(
+    endpoint: &mut ToolboxEndpoint,
+    payer: &Keypair,
+    coordinator_account: &Pubkey,
+    run_id: String,
+    paused: bool,
+) -> Result<Signature, ToolboxEndpointError> {
+    let coordinator_instance = find_pda_coordinator_instance(&run_id);
+
+    let accounts = OwnerCoordinatorAccounts {
+        instance: coordinator_instance,
+        account: *coordinator_account,
+        payer: payer.pubkey(),
+        system_program: system_program::ID,
+    };
+    let instruction = Instruction {
+        accounts: accounts.to_account_metas(None),
+        data: SetPaused { paused }.data(),
+        program_id: solana_coordinator::ID,
+    };
+
+    endpoint.process_instruction(instruction, &payer).await
+}
+
+pub async fn process_tick(
+    endpoint: &mut ToolboxEndpoint,
+    payer: &Keypair,
+    coordinator_account: &Pubkey,
+    run_id: String,
+) -> Result<Signature, ToolboxEndpointError> {
+    let coordinator_instance = find_pda_coordinator_instance(&run_id);
+
+    let accounts = PermissionlessCoordinatorAccounts {
+        instance: coordinator_instance,
+        account: *coordinator_account,
+        payer: payer.pubkey(),
+        system_program: system_program::ID,
+    };
+    let instruction = Instruction {
+        accounts: accounts.to_account_metas(None),
+        data: Tick{}.data(),
         program_id: solana_coordinator::ID,
     };
 

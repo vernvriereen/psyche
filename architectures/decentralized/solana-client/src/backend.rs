@@ -207,6 +207,77 @@ impl SolanaBackend {
         Ok(signature)
     }
 
+    pub async fn set_paused(&self, run_id: &str, paused: bool) -> Result<Signature> {
+        let (instance_pda, _) = self.find_instance_from_run_id(run_id);
+
+        let instance: solana_coordinator::CoordinatorInstance =
+            self.program.account(instance_pda).await?;
+
+        let signature = self
+            .program
+            .request()
+            .accounts(solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                instance: instance_pda,
+                account: instance.account,
+                payer: self.program.payer(),
+                system_program: system_program::ID,
+            })
+            .args(solana_coordinator::instruction::SetPaused { paused })
+            .send()
+            .await?;
+
+        Ok(signature)
+    }
+
+    pub async fn tick(&self, run_id: &str) -> Result<Signature> {
+        let (instance_pda, _) = self.find_instance_from_run_id(run_id);
+
+        let instance: solana_coordinator::CoordinatorInstance =
+            self.program.account(instance_pda).await?;
+
+        let signature = self
+            .program
+            .request()
+            .accounts(solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                instance: instance_pda,
+                account: instance.account,
+                payer: self.program.payer(),
+                system_program: system_program::ID,
+            })
+            .args(solana_coordinator::instruction::Tick {})
+            .send()
+            .await?;
+
+        Ok(signature)
+    }
+
+    pub async fn witness(&self, run_id: &str, witness: Witness) -> Result<Signature> {
+        let (instance_pda, _) = self.find_instance_from_run_id(run_id);
+
+        let instance: solana_coordinator::CoordinatorInstance =
+            self.program.account(instance_pda).await?;
+
+        let signature = self
+            .program
+            .request()
+            .accounts(solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                instance: instance_pda,
+                account: instance.account,
+                payer: self.program.payer(),
+                system_program: system_program::ID,
+            })
+            .args(solana_coordinator::instruction::Witness {
+                index: witness.index,
+                proof: witness.proof,
+                participant_bloom: witness.participant_bloom,
+                order_bloom: witness.order_bloom
+            })
+            .send()
+            .await?;
+
+        Ok(signature)
+    }
+
     pub fn find_instance_from_run_id(&self, run_id: &str) -> (Pubkey, u8) {
         let seeds = &[
             b"coordinator",
@@ -285,7 +356,22 @@ mod test {
                 system_program: system_program::ID,
             })
             .args(solana_coordinator::instruction::UpdateCoordinatorConfig {
-                config: CoordinatorConfig::<solana_coordinator::ClientId>::zeroed(),
+                config: CoordinatorConfig::<solana_coordinator::ClientId> {
+                    warmup_time: 1,
+                    cooldown_time: 1,
+                    max_round_train_time: 10,
+                    round_witness_time: 1,
+                    min_clients: 1,
+                    batches_per_round: 1,
+                    data_indicies_per_batch: 1,
+                    verification_percent: 0,
+                    witness_nodes: 0,
+                    witness_quorum: 0,
+                    rounds_per_epoch: 10,
+                    total_steps: 100,
+                    overlapped: false.into(),
+                    checkpointers: FixedVec::zeroed(),
+                },
             })
             .send()
             .await
