@@ -19,7 +19,7 @@ pub async fn process_update_coordinator_config(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     coordinator_account: &Pubkey,
-    run_id: &String,
+    run_id: &str,
     config: &CoodinatorConfig<ClientId>,
 ) -> Result<Signature, ToolboxEndpointError> {
     let coordinator_instance = find_pda_coordinator_instance(run_id);
@@ -36,5 +36,5 @@ pub async fn process_update_coordinator_config(
         program_id: solana_coordinator::ID,
     };
 
-    endpoint.process_instruction(instruction, &payer).await
+    endpoint.process_instruction(instruction, payer).await
 }

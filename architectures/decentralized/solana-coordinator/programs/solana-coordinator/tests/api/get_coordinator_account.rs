@@ -9,5 +9,5 @@ pub async fn get_coordinator_account(
     let coordinator_bytes = endpoint.get_account_data(coordinator_account).await?;
     let coordinator_account = coordinator_account_from_bytes(&coordinator_bytes)
         .map_err(|_| ToolboxEndpointError::Custom("bytemuck error"))?;
-    Ok(coordinator_account.clone())
+    Ok(*coordinator_account)
 }

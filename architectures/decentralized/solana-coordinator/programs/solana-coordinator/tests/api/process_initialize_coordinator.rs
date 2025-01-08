@@ -36,5 +36,5 @@ pub async fn process_initialize_coordinator(
         program_id: solana_coordinator::ID,
     };
 
-    endpoint.process_instruction(instruction, &payer).await
+    endpoint.process_instruction(instruction, payer).await
 }
