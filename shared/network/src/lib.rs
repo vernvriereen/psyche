@@ -379,6 +379,32 @@ where
             .collect(),
         )
     }
+
+    pub async fn request_model_parameter(
+        &self,
+        node_addr: NodeAddr,
+        param_name: String,
+    ) -> Result<BlobTicket> {
+        let conn = self
+            .router
+            .endpoint()
+            .connect(node_addr, p2p_model_sharing::ALPN)
+            .await?;
+
+        // Open a bidirectional QUIC stream
+        let (mut send, mut recv) = conn.open_bi().await?;
+
+        // Request parameter
+        send.write_all(param_name.as_bytes()).await?;
+        send.finish()?;
+
+        // Receive parameter value blob ticket
+        let parameter_blob_ticket_bytes = recv.read_to_end(100000).await?;
+        let parameter_blob_ticket: BlobTicket = postcard::from_bytes(&parameter_blob_ticket_bytes)?;
+
+        println!("yay");
+        Ok(parameter_blob_ticket)
+    }
 }
 
 fn parse_gossip_event<BroadcastMessage: Networkable>(

@@ -3,6 +3,7 @@ use crate::{
     ClientTUIState, RunInitConfig, RunInitConfigAndIO, TrainingResult, NC,
 };
 use anyhow::{Error, Result};
+use futures::channel::oneshot;
 use psyche_coordinator::RunState;
 use psyche_core::NodeIdentity;
 use psyche_network::{
@@ -12,9 +13,9 @@ use psyche_network::{
 use psyche_watcher::{Backend, BackendWatcher};
 use wandb::DataValue;
 
-use std::{collections::HashMap, marker::PhantomData, sync::Arc};
+use std::{collections::HashMap, marker::PhantomData, sync::Arc, time::Duration};
 use tokio::{
-    select,
+    pin, select,
     sync::{
         mpsc,
         watch::{self, Receiver},
@@ -59,6 +60,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                 let (tx_model, mut rx_model) = mpsc::unbounded_channel();
                 let (tx_distro_result, mut rx_distro_result) = mpsc::unbounded_channel();
                 let (tx_request_download, mut rx_request_download) = mpsc::unbounded_channel();
+                let (tx_parameters_req, mut rx_parameters_req) = mpsc::unbounded_channel();
 
                 let mut run = RunManager::<T, A>::new(RunInitConfigAndIO {
                     init_config,
@@ -67,6 +69,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                     tx_health_check,
                     tx_checkpoint,
                     tx_model,
+                    tx_parameters_req,
                     tx_distro_result,
                     tx_request_download,
                 });
@@ -130,14 +133,16 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         //  * Make sure that the parameter is requested while we are in RunState::Warmup.
                                         //  * Validate that the message is from a known peer.
 
-                                        let transmittable_parameter = current_model.get_transmittable_parameter(&parameter_name)?;
-                                        let ticket = p2p.add_downloadable(transmittable_parameter).await?;
+                                        // let transmittable_parameter = current_model.get_transmittable_parameter(&parameter_name)?;
+                                        let transmittable_parameter = current_model.get_transmittable_parameter(&parameter_name).unwrap();
+                                        let ticket = p2p.add_downloadable(transmittable_parameter).await.unwrap();
 
                                         // Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
                                         // to the client
 
                                         if let Err(e) = protocol_req_tx.send(ticket) {
                                             warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e}");
+                                            panic!("ERRORRR");
                                         };
                                     }
                                 }
@@ -185,6 +190,22 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         Some(model) = rx_model.recv() => {
                             current_model.update_parameters(model)?;
                         },
+                        Some((param_names, tx_params_response)) = rx_parameters_req.recv() => {
+                            let param_name = param_names[0].clone();
+                            let peers = p2p.get_all_peers().await.0;
+
+                            for peer in peers.clone() {
+                                println!("PEER: {}", peer.node_id);
+                            }
+
+                            let peer_addr = peers[1].clone();
+
+                            let parameter_blob_ticket = p2p.request_model_parameter(peer_addr, param_name).await?;
+
+                            println!("PARAMETER BLOB TICKET: {}", parameter_blob_ticket);
+
+                            todo!();
+                        }
                     }
                 }
                 Ok(())

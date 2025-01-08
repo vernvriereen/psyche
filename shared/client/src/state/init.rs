@@ -4,6 +4,7 @@ use crate::{
     WandBInfo,
 };
 
+use futures::channel::oneshot;
 use hf_hub::{Cache, Repo, RepoType};
 use psyche_coordinator::{
     model::{self, HubRepo, LLMTrainingDataLocation},
@@ -18,7 +19,7 @@ use psyche_modeling::{
     Llama, LlamaConfig, LlamaForCausalLM, LoadLlamaForCausalLMError,
 };
 use psyche_network::{AuthenticatableIdentity, BlobTicket};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 use tch::{nn, Device, Kind, Tensor};
 use thiserror::Error;
 use tokenizers::{models::wordlevel::WordLevel, ModelWrapper, Tokenizer};
@@ -40,6 +41,9 @@ pub struct RunInitConfig<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub identity: T,
     pub network_identity: A,
     pub private_key: A::PrivateKey,
+
+    // p2p model sharing config
+    // pub max_concurrent_parameter_requests: usize,
 
     // model & dataload
     pub hub_read_token: Option<String>,
@@ -114,6 +118,7 @@ pub struct RunInitConfigAndIO<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub tx_health_check: UnboundedSender<HealthChecks>,
     pub tx_checkpoint: UnboundedSender<model::Checkpoint>,
     pub tx_model: UnboundedSender<HashMap<String, Tensor>>,
+    pub tx_parameters_req: UnboundedSender<(Vec<String>, oneshot::Sender<HashMap<String, Tensor>>)>,
     pub tx_distro_result: UnboundedSender<DistroBroadcastAndPayload>,
     pub tx_request_download: UnboundedSender<BlobTicket>,
 }
@@ -130,6 +135,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
             tx_health_check,
             tx_checkpoint,
             tx_model,
+            tx_parameters_req,
             tx_distro_result,
             tx_request_download,
         } = self;
@@ -187,6 +193,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                         let repo_id = u8_to_string(&hub_repo.repo_id);
                         let potential_local_path = PathBuf::from(repo_id.clone());
                         let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
+
                         let model_is_local = if revision.is_none()
                             && tokio::fs::try_exists(potential_local_path.clone())
                                 .await
@@ -304,29 +311,42 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                         let builder = hf_hub::api::sync::ApiBuilder::new();
                         let repo = match revision {
                             Some(revision) => {
-                                Repo::with_revision(repo_id.to_owned(), RepoType::Dataset, revision)
+                                Repo::with_revision(repo_id.to_owned(), RepoType::Model, revision)
                             }
-                            None => Repo::new(repo_id.to_owned(), RepoType::Dataset),
+                            None => Repo::new(repo_id.to_owned(), RepoType::Model),
                         };
+
                         let api = builder
                             .with_cache_dir(Cache::default().path().clone())
                             .with_token(init_config.hub_read_token.clone())
                             .with_progress(false)
                             .build()
-                            .unwrap();
-                        let config_file = std::fs::read_to_string(
-                            api.model("emozilla/llama2-20m-init".to_string())
-                                .get("config.json")
-                                .unwrap()
-                                .as_path(),
-                        )
-                        .unwrap();
+                            .unwrap()
+                            .repo(repo);
+
+                        let config_file =
+                            std::fs::read_to_string(api.get("config.json").unwrap().as_path())?;
                         let llama_config: LlamaConfig = serde_json::from_str(&config_file).unwrap();
+                        let config: Config = llama_config.into_config(true);
+
                         let device = Device::Cuda(0);
                         let mut variables: nn::VarStore = nn::VarStore::new(device);
                         variables.set_kind(Kind::BFloat16);
-                        let config: Config = llama_config.into_config(true);
                         let model = Llama::new(variables.root(), &config, None);
+
+                        let parameter_names: Vec<String> = {
+                            let variables_lock = variables.variables_.lock().unwrap();
+                            variables_lock.named_variables.keys().cloned().collect()
+                        };
+
+                        let (tx_params_response, rx_params_response) = oneshot::channel();
+                        tx_parameters_req
+                            .send((parameter_names, tx_params_response))
+                            .unwrap();
+
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        let parameters = rx_params_response.await.unwrap();
+
                         todo!()
                         // Ok(RawLoadedModel{
                         //     models: vec![],

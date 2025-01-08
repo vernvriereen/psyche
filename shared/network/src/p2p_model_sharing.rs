@@ -10,6 +10,7 @@ use std::{
 };
 use tch::Tensor;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
+use tracing::info;
 
 pub const ALPN: &[u8] = b"model-parameter-sharing/0";
 
@@ -121,8 +122,9 @@ impl ProtocolHandler for ModelParameterSharing {
         let tx_model_parameter_req = self.tx_model_parameter_req.clone();
         Box::pin(async move {
             let connection = connecting.await?;
-            // We can get the remote's node id from the connection.
-            let _node_id = iroh::endpoint::get_remote_node_id(&connection)?;
+
+            let node_id = iroh::endpoint::get_remote_node_id(&connection)?;
+            info!("Received new model parameter request from {node_id}");
 
             let (mut send, mut recv) = connection.accept_bi().await?;
             let parameter_request_bytes = recv.read_to_end(1000).await?;
