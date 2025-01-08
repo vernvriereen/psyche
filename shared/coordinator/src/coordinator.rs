@@ -727,7 +727,10 @@ impl<T: NodeIdentity> Coordinator<T> {
         let clients = backend.select_new_clients();
         if clients.len() as u16 >= self.config.min_clients {
             // set epoch_state to default
-            let _ = std::mem::take(&mut self.epoch_state);
+            if self.epoch_state.first_round.into() {
+                // set epoch_state to default
+                let _ = std::mem::take(&mut self.epoch_state);
+            }
             self.epoch_state.clients = FixedVec::from_iter(
                 clients
                     .into_iter()
