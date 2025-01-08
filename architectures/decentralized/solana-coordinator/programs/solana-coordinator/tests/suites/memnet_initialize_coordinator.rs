@@ -3,7 +3,9 @@ use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 
 use crate::api::create_memnet_endpoint::create_memnet_endpoint;
+use crate::api::get_coordinator_account::get_coordinator_account;
 use crate::api::process_initialize_coordinator::process_initialize_coordinator;
+use crate::api::process_update_coordinator_config::process_update_coordinator_config;
 
 #[tokio::test]
 pub async fn memnet_initialize_coordinator() {
@@ -33,7 +35,45 @@ pub async fn memnet_initialize_coordinator() {
         .unwrap();
 
     // Run the initialize IX
-    process_initialize_coordinator(&mut endpoint, &payer, &coordinator_account.pubkey(), run_id)
+    process_initialize_coordinator(
+        &mut endpoint,
+        &payer,
+        &coordinator_account.pubkey(),
+        &run_id,
+    )
+    .await
+    .unwrap();
+
+    // Fetch the initialized coordinator account and read its config
+    let mut coordinator_config =
+        get_coordinator_account(&mut endpoint, &coordinator_account.pubkey())
+            .await
+            .unwrap()
+            .state
+            .coordinator
+            .config;
+
+    // Create a slightly modified config
+    coordinator_config.witness_nodes = 42;
+
+    // Run the config update IX
+    process_update_coordinator_config(
+        &mut endpoint,
+        &payer,
+        &coordinator_account.pubkey(),
+        &run_id,
+        &coordinator_config,
+    )
+    .await
+    .unwrap();
+
+    // Re fetch the coordinator config and check that the value was updated
+    let coordinator_config = get_coordinator_account(&mut endpoint, &coordinator_account.pubkey())
         .await
-        .unwrap();
+        .unwrap()
+        .state
+        .coordinator
+        .config;
+
+    assert_eq!(42, coordinator_config.witness_nodes);
 }

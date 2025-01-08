@@ -1,7 +1,9 @@
 use anchor_lang::InstructionData;
 use anchor_lang::ToAccountMetas;
-use solana_coordinator::accounts::InitializeCoordinatorAccounts;
-use solana_coordinator::instruction::InitializeCoordinator;
+use psyche_coordinator::CoodinatorConfig;
+use solana_coordinator::accounts::CoordinatorAccounts;
+use solana_coordinator::instruction::UpdateCoordinatorConfig;
+use solana_coordinator::ClientId;
 use solana_sdk::instruction::Instruction;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
@@ -13,15 +15,16 @@ use solana_toolbox_endpoint::ToolboxEndpointError;
 
 use crate::api::find_pda_coordinator_instance::find_pda_coordinator_instance;
 
-pub async fn process_initialize_coordinator(
+pub async fn process_update_coordinator_config(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     coordinator_account: &Pubkey,
     run_id: &String,
+    config: &CoodinatorConfig<ClientId>,
 ) -> Result<Signature, ToolboxEndpointError> {
     let coordinator_instance = find_pda_coordinator_instance(run_id);
 
-    let accounts = InitializeCoordinatorAccounts {
+    let accounts = CoordinatorAccounts {
         payer: payer.pubkey(),
         instance: coordinator_instance,
         account: *coordinator_account,
@@ -29,10 +32,7 @@ pub async fn process_initialize_coordinator(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: InitializeCoordinator {
-            run_id: run_id.to_string(),
-        }
-        .data(),
+        data: UpdateCoordinatorConfig { config: *config }.data(),
         program_id: solana_coordinator::ID,
     };
 
