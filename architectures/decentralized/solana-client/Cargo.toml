@@ -22,11 +22,11 @@ tokio.workspace = true
 tokio-util.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
-home = "0.5.9"
-solana-account-decoder-client-types = "2"
 rand.workspace = true
 time.workspace = true
 
+home = "0.5.9"
+solana-account-decoder-client-types = "=2.1.4"
 
 [features]
 solana-tests = []
