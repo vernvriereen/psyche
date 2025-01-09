@@ -787,7 +787,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 }
                 self.change_state(unix_timestamp, RunState::Cooldown);
             } else if self.epoch_state.clients.len() < self.config.min_clients as usize {
-                self.start_waiting_for_members(unix_timestamp);
+                self.change_state(unix_timestamp, RunState::Cooldown);
             } else {
                 self.start_round_train(unix_timestamp, random_seed, 0);
             }
