@@ -300,6 +300,7 @@ where
             update = self.download_manager.poll_next() => {
                 match update {
                     Some(DownloadManagerEvent::Complete(result)) => {
+                        panic!("THE DOWNLOAD IS COMPLETE!!!");
                         return Ok(Some(NetworkEvent::DownloadComplete(result)))
                     }
                     Some(DownloadManagerEvent::Update(update)) => {
@@ -382,7 +383,7 @@ where
 
     pub async fn request_model_parameter(
         &self,
-        node_addr: NodeAddr,
+        node_addr: NodeId,
         param_name: String,
     ) -> Result<BlobTicket> {
         let conn = self
@@ -402,7 +403,6 @@ where
         let parameter_blob_ticket_bytes = recv.read_to_end(100000).await?;
         let parameter_blob_ticket: BlobTicket = postcard::from_bytes(&parameter_blob_ticket_bytes)?;
 
-        println!("yay");
         Ok(parameter_blob_ticket)
     }
 }

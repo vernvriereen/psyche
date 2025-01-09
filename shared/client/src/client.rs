@@ -8,7 +8,7 @@ use psyche_coordinator::RunState;
 use psyche_core::NodeIdentity;
 use psyche_network::{
     AuthenticatableIdentity, DownloadComplete, ModelParameters, NetworkConnection, NetworkEvent,
-    NetworkTUIState, Networkable,
+    NetworkTUIState, Networkable, NodeId,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use wandb::DataValue;
@@ -135,14 +135,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                                         // let transmittable_parameter = current_model.get_transmittable_parameter(&parameter_name)?;
                                         let transmittable_parameter = current_model.get_transmittable_parameter(&parameter_name).unwrap();
-                                        let ticket = p2p.add_downloadable(transmittable_parameter).await.unwrap();
+                                        let ticket = p2p.add_downloadable(transmittable_parameter).await?;
 
                                         // Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
                                         // to the client
 
                                         if let Err(e) = protocol_req_tx.send(ticket) {
                                             warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e}");
-                                            panic!("ERRORRR");
                                         };
                                     }
                                 }
@@ -192,18 +191,23 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         },
                         Some((param_names, tx_params_response)) = rx_parameters_req.recv() => {
                             let param_name = param_names[0].clone();
-                            let peers = p2p.get_all_peers().await.0;
 
-                            for peer in peers.clone() {
-                                println!("PEER: {}", peer.node_id);
+                            let Some(coordinator_state) = watcher.coordinator_state() else {
+                                warn!("Coordinator state not yet registered, nothing to do");
+                                return Ok(());
+                            };
+
+                            for client in coordinator_state.epoch_state.clients.iter() {
+                               println!("WATCHER PEER: {}", hex::encode(client.id.get_p2p_public_key()));
                             }
 
-                            let peer_addr = peers[1].clone();
-
-                            let parameter_blob_ticket = p2p.request_model_parameter(peer_addr, param_name).await?;
+                            let peer_id = NodeId::from_bytes(coordinator_state.epoch_state.clients[1].id.get_p2p_public_key()).unwrap();
+                            let parameter_blob_ticket = p2p.request_model_parameter(peer_id, param_name).await?;
 
                             println!("PARAMETER BLOB TICKET: {}", parameter_blob_ticket);
+                            p2p.start_download(parameter_blob_ticket).await?;
 
+                            tokio::time::sleep(Duration::from_secs(5)).await;
                             todo!();
                         }
                     }

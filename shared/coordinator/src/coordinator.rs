@@ -1,5 +1,5 @@
 use crate::{
-    model::{self, Checkpoint, Model, LLM},
+    model::{self, Checkpoint, Model},
     traits::Backend,
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
