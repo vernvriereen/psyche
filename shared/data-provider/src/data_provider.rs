@@ -1,6 +1,8 @@
 use crate::{DataProviderTcpClient, DummyDataProvider, TokenizedDataProvider};
 
 use psyche_network::AuthenticatableIdentity;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 
 pub enum DataProvider<T: AuthenticatableIdentity> {
     Server(DataProviderTcpClient<T>),
@@ -21,4 +23,9 @@ impl<T: AuthenticatableIdentity> TokenizedDataProvider for DataProvider<T> {
             }
         }
     }
+}
+
+pub enum Shuffle {
+    Seeded(<ChaCha8Rng as SeedableRng>::Seed),
+    DontShuffle,
 }

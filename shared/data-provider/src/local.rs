@@ -8,6 +8,7 @@ use tracing::info;
 
 use crate::token_size::TokenSize;
 use crate::traits::{LengthKnownDataProvider, TokenizedDataProvider};
+use crate::Shuffle;
 
 fn mmap_file(p: &std::path::PathBuf) -> Result<memmap2::Mmap> {
     let file = std::fs::File::open(p)?;
@@ -25,11 +26,6 @@ pub struct LocalDataProvider {
     sequences: Vec<SequencePointer>,
     seq_len: usize,
     token_size_in_bytes: TokenSize,
-}
-
-pub enum Shuffle {
-    Seeded(<ChaCha8Rng as SeedableRng>::Seed),
-    DontShuffle,
 }
 
 impl LengthKnownDataProvider for LocalDataProvider {
