@@ -40,18 +40,19 @@ pub async fn memnet_initialize_coordinator() {
         .unwrap();
 
     // Fetch the initialized coordinator account and read its config
-    let coordinator_config_before =
-        get_coordinator_account(&mut endpoint, &coordinator_account.pubkey())
-            .await
-            .unwrap()
-            .state
-            .coordinator
-            .config;
+    let config_before = get_coordinator_account(&mut endpoint, &coordinator_account.pubkey())
+        .await
+        .unwrap()
+        .state
+        .coordinator
+        .config;
 
     // Create a slightly modified config
-    let mut coordinator_config_modified = coordinator_config_before;
-    coordinator_config_modified.witness_nodes = 42;
-    coordinator_config_modified.min_clients = 99;
+    let mut config_modified = config_before;
+    config_modified.warmup_time = 1337;
+    config_modified.max_round_train_time = 777;
+    config_modified.round_witness_time = 42;
+    config_modified.min_clients = 99;
 
     // Run the config update IX
     process_update_coordinator_config(
@@ -59,21 +60,28 @@ pub async fn memnet_initialize_coordinator() {
         &payer,
         &coordinator_account.pubkey(),
         run_id,
-        &coordinator_config_modified,
+        &config_modified,
     )
     .await
     .unwrap();
 
     // Re fetch the coordinator config after the IX
-    let coordinator_config_after =
-        get_coordinator_account(&mut endpoint, &coordinator_account.pubkey())
-            .await
-            .unwrap()
-            .state
-            .coordinator
-            .config;
+    let config_after = get_coordinator_account(&mut endpoint, &coordinator_account.pubkey())
+        .await
+        .unwrap()
+        .state
+        .coordinator
+        .config;
 
     // Check that the expected values were updated
-    assert_eq!(42, coordinator_config_after.witness_nodes);
-    assert_eq!(99, coordinator_config_after.min_clients);
+    assert_eq!(1337, config_after.warmup_time);
+    assert_eq!(777, config_after.max_round_train_time);
+    assert_eq!(42, config_after.round_witness_time);
+    assert_eq!(99, config_after.min_clients);
+
+    // Check that some other un-updated values are still the same
+    assert_eq!(config_before.cooldown_time, config_after.cooldown_time);
+    assert_eq!(config_before.witness_nodes, config_after.witness_nodes);
+    assert_eq!(config_before.witness_quorum, config_after.witness_quorum);
+    assert_eq!(config_before.total_steps, config_after.total_steps);
 }
