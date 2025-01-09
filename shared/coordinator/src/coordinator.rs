@@ -779,14 +779,14 @@ impl<T: NodeIdentity> Coordinator<T> {
 
             self.move_clients_to_exited(height);
 
-            if height == self.config.rounds_per_epoch - 1 {
+            if height == self.config.rounds_per_epoch - 1
+                || self.epoch_state.clients.len() < self.config.min_clients as usize
+            {
                 match &mut self.model {
                     Model::LLM(llm) => {
                         llm.checkpoint = Checkpoint::Ephemeral;
                     }
                 }
-                self.change_state(unix_timestamp, RunState::Cooldown);
-            } else if self.epoch_state.clients.len() < self.config.min_clients as usize {
                 self.change_state(unix_timestamp, RunState::Cooldown);
             } else {
                 self.start_round_train(unix_timestamp, random_seed, 0);
