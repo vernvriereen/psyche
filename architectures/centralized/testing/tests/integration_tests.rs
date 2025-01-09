@@ -578,7 +578,6 @@ async fn shutdown_node_in_training_and_complete_round() {
     )
     .await;
 
-    // spawn new client to complete round
     // spawn new client
     let [new_client_handle] =
         spawn_clients_with_training_delay(1, server_port, run_id, training_delay)
@@ -586,6 +585,9 @@ async fn shutdown_node_in_training_and_complete_round() {
             .try_into()
             .unwrap();
 
+    // the new client tries to join the network
+    // but since the llm checkpoint is Ephemeral
+    // it results in an InitRunError::ModelIsEphemeral error
     let error = new_client_handle.client_handle.await.unwrap().unwrap_err();
     assert!(error
         .to_string()

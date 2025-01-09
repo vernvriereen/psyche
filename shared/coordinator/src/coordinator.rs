@@ -728,7 +728,6 @@ impl<T: NodeIdentity> Coordinator<T> {
         if clients.len() as u16 >= self.config.min_clients {
             // set epoch_state to default
             if self.epoch_state.first_round.into() {
-                // set epoch_state to default
                 let _ = std::mem::take(&mut self.epoch_state);
             }
             self.epoch_state.clients = FixedVec::from_iter(
@@ -779,6 +778,8 @@ impl<T: NodeIdentity> Coordinator<T> {
 
             self.move_clients_to_exited(height);
 
+            // if we finish an epoch or some clients disconnect and we don't reach the minimum number of clients,
+            // we create a checkpoint.
             if height == self.config.rounds_per_epoch - 1
                 || self.epoch_state.clients.len() < self.config.min_clients as usize
             {
