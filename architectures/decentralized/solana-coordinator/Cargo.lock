@@ -788,9 +788,9 @@ dependencies = [
 
 [[package]]
 name = "bytemuck"
-version = "1.20.0"
+version = "1.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b37c88a63ffd85d15b406896cc343916d7cf57838a847b3a6f2ca5d39a5695a"
+checksum = "ef657dfab802224e671f5818e9a4935f9b1957ed18e58292690cc39e7a4092a3"
 dependencies = [
  "bytemuck_derive",
 ]
@@ -5789,13 +5789,14 @@ dependencies = [
 
 [[package]]
 name = "solana_toolbox_endpoint"
-version = "0.1.25-solana-2.1.4"
+version = "0.1.26-solana-2.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c98aea2732536599ca567b1f6da76731205325abe2bdc97494e02231e75b43ba"
+checksum = "7b66b243583753ad9c212f57c31b691c98ae5614827e136075f8ca0c9e16e41a"
 dependencies = [
  "async-trait",
  "bincode",
  "borsh 1.5.3",
+ "bytemuck",
  "serde",
  "solana-client",
  "solana-program-runtime",

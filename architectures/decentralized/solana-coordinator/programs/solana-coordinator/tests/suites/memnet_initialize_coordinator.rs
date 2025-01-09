@@ -43,6 +43,7 @@ pub async fn memnet_initialize_coordinator() {
     let config_before = get_coordinator_account(&mut endpoint, &coordinator_account.pubkey())
         .await
         .unwrap()
+        .unwrap()
         .state
         .coordinator
         .config;
@@ -68,6 +69,7 @@ pub async fn memnet_initialize_coordinator() {
     // Re fetch the coordinator config after the IX
     let config_after = get_coordinator_account(&mut endpoint, &coordinator_account.pubkey())
         .await
+        .unwrap()
         .unwrap()
         .state
         .coordinator
