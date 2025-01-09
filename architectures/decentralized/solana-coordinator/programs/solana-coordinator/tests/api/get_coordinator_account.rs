@@ -15,25 +15,20 @@ pub async fn get_coordinator_account(
     endpoint: &mut ToolboxEndpoint,
     coordinator_account: &Pubkey,
 ) -> Result<Option<CoordinatorAccount>, ToolboxEndpointError> {
-    match endpoint
+    endpoint
         .get_account_data_bytemuck_mapped::<CoordinatorAccountWithDiscriminator>(
             coordinator_account,
         )
         .await?
-    {
-        Some(coordinator_account_with_discriminator) => {
+        .map(|coordinator_account_with_discriminator| {
             if coordinator_account_with_discriminator.discriminator
                 != CoordinatorAccount::DISCRIMINATOR
             {
-                Err(ToolboxEndpointError::Custom(
+                return Err(ToolboxEndpointError::Custom(
                     "Invalid CoordinatorAccount discriminator",
-                ))
-            } else {
-                Ok(Some(
-                    coordinator_account_with_discriminator.coordinator_account,
-                ))
+                ));
             }
-        }
-        None => Ok(None),
-    }
+            Ok(coordinator_account_with_discriminator.coordinator_account)
+        })
+        .transpose()
 }
