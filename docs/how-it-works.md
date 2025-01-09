@@ -6,7 +6,7 @@ The system is composed of three main actors:
 
 - **Coordinator**: Responsible for managing a training run among all the clients. Each training run has one coordinator that oversees the entire process. The coordinator is implemented as a program running on the Solana Blockchain.
 - **Client**: A user participating in a training run. Clients receive the model to be trained and a specific dataset for that run. They communicate with the coordinator to progress the training run and use a peer-to-peer network to share their results at each training step with other clients.
-- **Data server**: A server that stores the data to be used for model training.
+- **Data Provider**: A server that stores the data to be used for model training.
 
 ![Architecture example for two training runs](images/architecture.png)
 
