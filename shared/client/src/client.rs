@@ -3,19 +3,18 @@ use crate::{
     ClientTUIState, RunInitConfig, RunInitConfigAndIO, TrainingResult, NC,
 };
 use anyhow::{Error, Result};
-use futures::channel::oneshot;
 use psyche_coordinator::RunState;
 use psyche_core::NodeIdentity;
 use psyche_network::{
     AuthenticatableIdentity, DownloadComplete, ModelParameters, NetworkConnection, NetworkEvent,
-    NetworkTUIState, Networkable, NodeId,
+    NetworkTUIState, Networkable, NodeId, TransmittableDownload,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use wandb::DataValue;
 
 use std::{collections::HashMap, marker::PhantomData, sync::Arc, time::Duration};
 use tokio::{
-    pin, select,
+    select,
     sync::{
         mpsc,
         watch::{self, Receiver},
@@ -112,10 +111,17 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         }
                                     }
                                     NetworkEvent::DownloadComplete(DownloadComplete {
-                                        data: distro_result, hash, ..
+                                        data: download_data, hash, ..
                                     }) => {
-                                        trace!("Download complete: step {} batch id {}", distro_result.step, distro_result.batch_id);
-                                        run.apply_distro_result(hash, distro_result).await;
+                                        match download_data {
+                                            TransmittableDownload::DistroResult(distro_result) => {
+                                                trace!("Download complete: step {} batch id {}", distro_result.step, distro_result.batch_id);
+                                                run.apply_distro_result(hash, distro_result).await;
+                                            },
+                                            TransmittableDownload::ModelParameter(_) => {
+                                                panic!("RECEIVED MODEL PARAMETER!!!");
+                                            },
+                                        }
                                     }
                                     NetworkEvent::DownloadFailed(dl) => {
                                         let retries = *retried_downloads.get(&dl.blob_ticket.hash()).unwrap_or(&0);
@@ -135,7 +141,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                                         // let transmittable_parameter = current_model.get_transmittable_parameter(&parameter_name)?;
                                         let transmittable_parameter = current_model.get_transmittable_parameter(&parameter_name).unwrap();
-                                        let ticket = p2p.add_downloadable(transmittable_parameter).await?;
+                                        let transmittable_download = TransmittableDownload::ModelParameter(transmittable_parameter);
+                                        let ticket = p2p.add_downloadable(transmittable_download).await?;
 
                                         // Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
                                         // to the client
@@ -153,7 +160,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         }
 
                         Some(DistroBroadcastAndPayload{ step, batch_id, commitment, proof, distro_result }) = rx_distro_result.recv() => {
-                            let ticket = p2p.add_downloadable(distro_result.clone()).await?;
+                            let transmittable_distro_result = TransmittableDownload::DistroResult(distro_result.clone());
+                            let ticket = p2p.add_downloadable(transmittable_distro_result).await?;
                             let hash = ticket.hash();
                             debug!(
                                 "Broadcasting payload step {step} batch id {batch_id} hash 0x{}",
@@ -191,7 +199,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         },
                         Some((param_names, tx_params_response)) = rx_parameters_req.recv() => {
                             let param_name = param_names[0].clone();
-
                             let Some(coordinator_state) = watcher.coordinator_state() else {
                                 warn!("Coordinator state not yet registered, nothing to do");
                                 return Ok(());
@@ -207,7 +214,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             println!("PARAMETER BLOB TICKET: {}", parameter_blob_ticket);
                             p2p.start_download(parameter_blob_ticket).await?;
 
-                            tokio::time::sleep(Duration::from_secs(5)).await;
+                            tokio::time::sleep(Duration::from_secs(10)).await;
                             todo!();
                         }
                     }

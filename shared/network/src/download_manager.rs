@@ -162,7 +162,9 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                             break;
                         }
                     }
-                    Ok(None) => {}
+                    Ok(None) => {
+                        println!("RECEIVED NONE RESULT OF POLL NEXT INNER!!");
+                    }
                     Err(e) => {
                         error!("Error polling next: {}", e);
                     }
@@ -220,6 +222,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
             return Ok(None);
         }
 
+        #[derive(Debug)]
         enum FutureResult {
             Download(usize, Result<DownloadProgress>),
             Read(usize, Result<Bytes>),
@@ -258,6 +261,12 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
             download_futures.chain(read_futures).collect();
 
         let result = select_all(all_futures).await.0;
+
+        // if matches!(result, FutureResult::Read(_, _)) {
+        //     println!("FUTURE RESULT: {:?}", result);
+        //     panic!();
+        // }
+
         match result {
             FutureResult::Download(index, result) => {
                 Self::handle_download_progress(downloads, result, index)

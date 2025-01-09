@@ -16,7 +16,7 @@ use psyche_data_provider::{
     TokenSize,
 };
 use psyche_network::{
-    ClientNotification, NetworkEvent, NetworkTui, RelayMode, TcpServer, TransmittableDistroResult,
+    ClientNotification, NetworkEvent, NetworkTui, RelayMode, TcpServer, TransmittableDownload,
 };
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{maybe_start_render_loop, CustomWidget, MaybeTui, TabbedWidget};
@@ -331,7 +331,7 @@ impl App {
         Ok(())
     }
 
-    fn on_network_event(&mut self, event: NetworkEvent<TrainingResult, TransmittableDistroResult>) {
+    fn on_network_event(&mut self, event: NetworkEvent<TrainingResult, TransmittableDownload>) {
         if let NetworkEvent::MessageReceived((_, _)) = event {
             // we're the coordinator, why are we even in the p2p? lol
         }

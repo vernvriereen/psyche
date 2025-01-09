@@ -240,7 +240,7 @@ where
         Ok(())
     }
 
-    pub async fn add_downloadable<N: Networkable>(&mut self, data: N) -> Result<BlobTicket> {
+    pub async fn add_downloadable(&mut self, data: Download) -> Result<BlobTicket> {
         let bytes = postcard::to_allocvec(&data)?;
         let blob_res = self.blobs.client().add_bytes(bytes).await?;
         let addr = self.router.endpoint().node_addr().await?;
@@ -305,7 +305,6 @@ where
             update = self.download_manager.poll_next() => {
                 match update {
                     Some(DownloadManagerEvent::Complete(result)) => {
-                        panic!("THE DOWNLOAD IS COMPLETE!!!");
                         return Ok(Some(NetworkEvent::DownloadComplete(result)))
                     }
                     Some(DownloadManagerEvent::Update(update)) => {
@@ -349,6 +348,7 @@ where
                             Ok(b) => b,
                             Err(e) => {
                                 error!("Failed to read bytes: {e}");
+                                // panic!();
                                 return;
                             }
                         };
