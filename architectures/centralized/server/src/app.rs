@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
-use psyche_client::{TrainingResult, TransmittableDistroResult, NC};
+use psyche_client::{TrainingResult, NC};
 use psyche_coordinator::model::{
     self, Checkpoint, LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM,
 };
@@ -15,7 +15,9 @@ use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider, Shuffle,
     TokenSize,
 };
-use psyche_network::{ClientNotification, NetworkEvent, NetworkTui, RelayMode, TcpServer};
+use psyche_network::{
+    ClientNotification, NetworkEvent, NetworkTui, RelayMode, TcpServer, TransmittableDistroResult,
+};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{maybe_start_render_loop, CustomWidget, MaybeTui, TabbedWidget};
 use psyche_watcher::CoordinatorTui;

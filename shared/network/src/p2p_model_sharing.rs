@@ -58,7 +58,7 @@ pub enum ParameterSharingMessage {
     Response(String),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TransmittableModelParameter(Vec<u8>);
 
 #[derive(Debug)]

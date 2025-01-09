@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt, future::Future, pin::Pin, sync::Arc};
 use psyche_coordinator::{Committee, Coordinator, RunState, Witness};
 use psyche_core::{sha256, BatchId, NodeIdentity};
 use psyche_modeling::DistroResult;
-use psyche_network::{AuthenticatableIdentity, BlobTicket, Hash};
+use psyche_network::{AuthenticatableIdentity, BlobTicket, Hash, TransmittableDistroResult};
 use tch::TchError;
 use thiserror::Error;
 use tokio::sync::{
@@ -16,7 +16,7 @@ use wandb::DataValue;
 use crate::{
     state::{train::FinishedTrainers, types::DeserializeError},
     trainer::Trainer,
-    ClientTUIState, TrainingResult, TransmittableDistroResult,
+    ClientTUIState, TrainingResult,
 };
 
 use super::{

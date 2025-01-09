@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 psyche-tui.workspace = true
+psyche-core.workspace = true
+psyche-modeling.workspace = true
 iroh.workspace = true
 iroh-blobs.workspace = true
 iroh-gossip.workspace = true

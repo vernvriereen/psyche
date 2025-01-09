@@ -1,8 +1,8 @@
 use std::io::{self, Write};
 
 use clap::Parser;
-use psyche_client::distro_results_from_reader;
 use psyche_modeling::{CompressDCT, DistroResult};
+use psyche_network::distro_results_from_reader;
 
 #[derive(Parser, Debug)]
 struct Args {

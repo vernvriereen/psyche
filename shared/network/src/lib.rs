@@ -35,6 +35,7 @@ mod download_manager;
 mod p2p_model_sharing;
 mod peer_list;
 mod serde;
+mod serialized_distro;
 mod signed_message;
 mod state;
 mod tcp;
@@ -42,11 +43,15 @@ mod tui;
 mod util;
 
 pub use authenticable_identity::{AuthenticatableIdentity, FromSignedBytesError};
-pub use download_manager::{DownloadComplete, DownloadFailed};
+pub use download_manager::{DownloadComplete, DownloadFailed, TransmittableDownload};
 pub use iroh::{Endpoint, PublicKey, SecretKey};
 pub use p2p_model_sharing::{ModelParameterSharing, ModelParameters, ALPN};
 pub use peer_list::PeerList;
 pub use serde::Networkable;
+pub use serialized_distro::{
+    distro_results_from_reader, distro_results_to_bytes, SerializeDistroResultError,
+    SerializedDistroResult, TransmittableDistroResult,
+};
 pub use signed_message::SignedMessage;
 pub use tcp::{ClientNotification, TcpClient, TcpServer};
 pub use tui::{NetworkTUIState, NetworkTui};

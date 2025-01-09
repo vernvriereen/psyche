@@ -2364,6 +2364,7 @@ dependencies = [
  "postcard",
  "psyche-client",
  "psyche-modeling",
+ "psyche-network",
  "tch",
 ]
 
@@ -6222,6 +6223,8 @@ dependencies = [
  "iroh-blobs",
  "iroh-gossip",
  "postcard",
+ "psyche-core",
+ "psyche-modeling",
  "psyche-tui",
  "rand 0.8.5",
  "serde",
