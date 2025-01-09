@@ -569,32 +569,25 @@ async fn shutdown_node_in_training_and_complete_round() {
     assert_witnesses_score(&server_handle, 0, 4).await;
 
     // since up nodes < init_min_clients
-    // the network should return to WaitingForMembers
+    // the network should return to Cooldown and the WaitingForMembers
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Cooldown).await;
+
     assert_with_retries(
         || server_handle.get_run_state(),
         RunState::WaitingForMembers,
     )
     .await;
 
-    // We dont advance this round.
-    assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
-
     // spawn new client to complete round
-    let _new_client =
-        spawn_clients_with_training_delay(1, server_port, run_id, training_delay).await;
+    // spawn new client
+    let [new_client_handle] =
+        spawn_clients_with_training_delay(1, server_port, run_id, training_delay)
+            .await
+            .try_into()
+            .unwrap();
 
-    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
-
-    // assert that the witnesses is clear
-    assert_witnesses_score(&server_handle, 0, 0).await;
-
-    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
-
-    // check that we advance to the following round
-    assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
-
-    // assert all nodes sent their witnesses
-    // the 3 nodes participate in the round and the 3 nodes are witness
-    // so, score should be 9
-    assert_witnesses_score(&server_handle, 0, 9).await;
+    let error = new_client_handle.client_handle.await.unwrap().unwrap_err();
+    assert!(error
+        .to_string()
+        .contains(&psyche_client::InitRunError::ModelIsEphemeral.to_string()));
 }

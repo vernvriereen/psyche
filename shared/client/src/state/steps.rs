@@ -548,10 +548,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                 let trainers = cooldown.finish().await?;
                 ActiveStep::Warmup(self.warmup.start(trainers))
             }
-            (ActiveStep::Witness(witnessing), RunState::WaitingForMembers) => {
-                let trainers = witnessing.finish().await?.stop_evals().await?;
-                ActiveStep::Cooldown(self.cooldown.start(trainers, &state)?)
-            }
             // stay in existing run state if there's no reason to change.
             (current_step, next_run_state) if current_step.allowed_in_run_state(next_run_state) => {
                 current_step
