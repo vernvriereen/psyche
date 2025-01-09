@@ -1,77 +1,105 @@
-# Running a client
+# Psyche Centralized Client
 
-The client is the one responsible for joining and participating in a run, training the model and sharing the results to the other peers in order to fully train a model. The client is a cli app with different configurations.
+The Psyche Centralized Client is responsible for joining and participating in a training run, contributing to the model's training process, and sharing results with other peers. It is a CLI application with various configurable options.
 
-First we want to install the client cli, for this we can just run:
+## Installation
+
+To install the client CLI, simply run:
 
 ```bash
 just install
 ```
 
-If everything went well you should be able to check the diffent commands that we can use with the client
+After installation, verify the available commands by running:
 
 ```bash
 psyche-centralized-client --help
+```
 
+This will display the following usage information:
+
+```plaintext
 Usage: psyche-centralized-client <COMMAND>
 
 Commands:
-  show-identity
-  train
+  show-identity  Display the client's identity
+  train          Participate in a training run
   help           Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help  Print help
 ```
 
-The client consists basically in two diffent commands, **show-identity** and **train**.
+## Commands
 
-The **show-identity** command we will tell us our personal id, that will identify us when we participate in the run with other clients.
-First we have to generate a key file (TODO: how to actually do this).
+The Psyche Centralized Client provides two primary commands: **show-identity** and **train**.
 
-Once that's done now we can use the path to that file to get our id.
+### **1. show-identity**
+
+The `show-identity` command displays the client's unique identifier, used to participate in training runs.
+
+#### Prerequisites
+
+Before using this command, you need to generate a key file. *(TODO: Provide instructions for generating the key file)*.
+
+#### Usage
+
+Once the key file is ready, use its path to obtain your identity:
 
 ```bash
 psyche-centralized-client show-identity --identity-secret-key-path <path_to_key_file>
 ```
 
-TODO: Show output
+*Example Output:* *(TODO: Add sample output)*
 
-The real command is the **train** command, this basically allows the client to join a run of training and participate in the training of a model. To run this we basically need two things:
-- `run-id` This is the id that represents a run of training, is unique for every run and allows the client to join and participate any live run.
-- `server-addr` This is the address where the server hosting the run is up.
+### **2. train**
+
+The `train` command allows the client to join a training run and contribute to the model's training process.
+
+#### Required Arguments
+
+- **`run-id`**: A unique identifier for the training run. This ID allows the client to join a specific active run.
+- **`server-addr`**: The address of the server hosting the training run.
+
+#### Usage
 
 ```bash
 psyche-centralized-client train --run-id <RUN_ID> --server-addr <SERVER_ADDR>
 ```
 
-There's also a lot of optional arguments that we can set for the client, if we want a little more control on the behavior, you can see all the optional arguments running:
+#### Optional Arguments
+
+You can customize the client's behavior using additional optional arguments:
+
+- **`identity-secret-key-path`**: Specifies the key file for client authentication.
+- **`bind-p2p-port`**: Sets the port for the client's P2P network participation.
+- **`tui`**: Enables a terminal-based graphical interface for monitoring analytics.
+- **`data-parallelism`**: *(TODO: Provide details)*.
+- **`tensor-parallelism`**: *(TODO: Provide details)*.
+- **`micro-batch-size`**: *(TODO: Provide details)*.
+- **`write-gradients-dir`**: Specifies the directory to store gradients from the training run.
+- **`eval-tasks`**: Tasks for evaluating the model during training.
+- **`eval-fewshots`**: *(TODO: Provide details)*.
+- **`eval-seed`**: *(TODO: Provide details)*.
+- **`eval-test-max-docs`**: *(TODO: Provide details)*.
+- **`checkpoint-dir`**: *(TODO: Provide details)*.
+- **`hub-repo`**: Path to the Hugging Face repository containing model data and configuration.
+- **`write-log`**: *(TODO: Provide details)*.
+- **`optim-stats-steps`**: *(TODO: Provide details)*.
+- **`grad-accum-in-fp32`**: *(TODO: Provide details)*.
+- **`dummy-training-delay-secs`**: *(TODO: Provide details)*.
+
+For a detailed list of all available options, run:
 
 ```bash
 psyche-centralized-client train --help
 ```
 
-But let's do a quick explanation for all of them:
-- `identity-secret-key-path` Just as the show-iddentity commands, this creates the client with a specific key file.
-- `bind-p2p-port` The client participates in a p2p network with the other clients, this way can choose the port for that p2p network.
-- `tui` A graphical interface in the terminal to navigate the different anylitics for the client.
-- `data-parallelism` TODO
-- `tensor-parallelism` TODO
-- `micro-batch-size` TODO
-- `write-gradients-dir` A directory where the clients will store all the gradients seen in the run
-- `eval-tasks` tasks to test the model in the middle of the training
-- `eval-fewshots` TODO
-- `eval-seed` TODO
-- `eval-test-max-docs` TODO
-- `checkpoint-dir` TODO
-- `hub-repo` A path to the huggingface repository containing data and config for the model.
-- `write-log` TODO
-- `optim-stats-steps` TODO
-- `grad-accum-in-fp32` TODO
-- `dummy-training-delay-secs` TODO
+## WandB Integration
 
-Also there's a few estra arguments related to `wandb`to actually upload the training results of the run
-- `wandb-project`
-- `wandb-run`
-- `wandb-group`
-- `wandb-entity`
+The client supports logging training results to **Weights & Biases (WandB)**. To enable this, provide the following arguments:
+
+- **`wandb-project`**: Name of the WandB project.
+- **`wandb-run`**: Run identifier for WandB.
+- **`wandb-group`**: Group identifier for organizing multiple runs.
+- **`wandb-entity`**: Name of the WandB entity.
