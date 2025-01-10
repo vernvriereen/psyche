@@ -251,6 +251,7 @@ impl SolanaBackend {
         Ok(signature)
     }
 
+    #[allow(dead_code)]
     pub async fn tick(&self, run_id: &str) -> Result<Signature> {
         let (instance_pda, _) = self.find_instance_from_run_id(run_id);
 
