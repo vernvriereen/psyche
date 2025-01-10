@@ -1,2 +1,12 @@
 [profile.default]
 slow-timeout = { period = "30s", terminate-after = 2 }
+
+[test-groups]
+serial-integration = { max-threads = 1 }
+
+# the http server we use for tests doesn't return the port it's running on
+# and it's not worth the time to fork and fix it
+# so let's just do it once
+[[profile.default.overrides]]
+filter = 'package(psyche-data-provider)'
+test-group = 'serial-integration'

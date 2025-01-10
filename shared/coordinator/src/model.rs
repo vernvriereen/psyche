@@ -1,10 +1,10 @@
-use crate::SOLANA_MAX_STRING_LEN;
+use crate::{coordinator::SOLANA_MAX_URL_STRING_LEN, SOLANA_MAX_STRING_LEN};
 
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Zeroable, ZeroableInOption};
 use psyche_core::{
     serde_deserialize_optional_string, serde_deserialize_string, serde_serialize_optional_string,
-    serde_serialize_string, u8_to_string, LearningRateScheduler,
+    serde_serialize_string, u8_to_string, LearningRateScheduler, Shuffle, TokenSize,
 };
 use serde::{Deserialize, Serialize};
 
@@ -78,15 +78,54 @@ pub enum LLMTrainingDataLocation {
             serialize_with = "serde_serialize_string",
             deserialize_with = "serde_deserialize_string"
         )]
-        [u8; SOLANA_MAX_STRING_LEN],
+        [u8; SOLANA_MAX_URL_STRING_LEN],
     ),
     Local(
         #[serde(
             serialize_with = "serde_serialize_string",
             deserialize_with = "serde_deserialize_string"
         )]
-        [u8; SOLANA_MAX_STRING_LEN],
+        [u8; SOLANA_MAX_URL_STRING_LEN],
     ),
+    Http {
+        location: HttpTrainingDataLocation,
+        token_size_in_bytes: TokenSize,
+        num_tokens_per_sequence: u32,
+        shuffle: Shuffle,
+    },
+}
+
+/// NOTE: Support for Vecs of URLs is not enabled because of the large size it would support.
+#[derive(
+    AnchorSerialize,
+    AnchorDeserialize,
+    InitSpace,
+    Serialize,
+    Deserialize,
+    Clone,
+    Debug,
+    Zeroable,
+    Copy,
+)]
+#[repr(C)]
+pub enum HttpTrainingDataLocation {
+    SingleUrl(
+        #[serde(
+            serialize_with = "serde_serialize_string",
+            deserialize_with = "serde_deserialize_string"
+        )]
+        [u8; SOLANA_MAX_URL_STRING_LEN],
+    ),
+    NumberedFiles {
+        #[serde(
+            serialize_with = "serde_serialize_string",
+            deserialize_with = "serde_deserialize_string"
+        )]
+        url_template: [u8; SOLANA_MAX_URL_STRING_LEN],
+        start_index: u32,
+        n_left_pad_zeros: u32,
+        num_files: u32,
+    },
 }
 
 #[derive(

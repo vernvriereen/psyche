@@ -56,18 +56,18 @@ impl AuthenticatableIdentity for NetworkIdentity {
         let mut owner: [u8; 32] = [0; 32];
         owner.copy_from_slice(pubkey);
         Ok(Self(solana_coordinator::ClientId {
-            owner: owner.into(),
+            signer: owner.into(),
             p2p_identity: *p2p_identity.as_bytes(),
         }))
     }
 
     fn to_signed_bytes(&self, private_key: &Self::PrivateKey, challenge: [u8; 32]) -> Vec<u8> {
-        assert_eq!(private_key.0.pubkey(), self.0.owner);
+        assert_eq!(private_key.0.pubkey(), self.0.signer);
         assert_eq!(private_key.1.public().as_bytes(), &self.0.p2p_identity);
         let challenge = private_key.0.sign_message(&challenge);
         SignedMessage::<Vec<u8>>::sign_and_encode(
             &private_key.1,
-            &[challenge.as_ref(), &self.0.owner.to_bytes()].concat(),
+            &[challenge.as_ref(), &self.0.signer.to_bytes()].concat(),
         )
         .expect("alloc error")
         .to_vec()
@@ -103,7 +103,7 @@ mod tests {
         let private_key = (keypair.clone(), secret_key.clone());
 
         let client_id = solana_coordinator::ClientId {
-            owner: keypair.pubkey(),
+            signer: keypair.pubkey(),
             p2p_identity: *secret_key.public().as_bytes(),
         };
 
@@ -116,7 +116,7 @@ mod tests {
             .expect("Failed to decode signed bytes");
 
         assert_eq!(network_identity, decoded_identity);
-        assert_eq!(network_identity.0.owner, decoded_identity.0.owner);
+        assert_eq!(network_identity.0.signer, decoded_identity.0.signer);
         assert_eq!(
             network_identity.0.p2p_identity,
             decoded_identity.0.p2p_identity
@@ -130,7 +130,7 @@ mod tests {
         let private_key = (keypair.clone(), secret_key.clone());
 
         let client_id = solana_coordinator::ClientId {
-            owner: keypair.pubkey(),
+            signer: keypair.pubkey(),
             p2p_identity: *secret_key.public().as_bytes(),
         };
 
@@ -154,7 +154,7 @@ mod tests {
         let keypair = Arc::new(Keypair::new());
         let secret_key = SecretKey::generate(&mut rand::rngs::OsRng);
         let client_id = solana_coordinator::ClientId {
-            owner: keypair.pubkey(),
+            signer: keypair.pubkey(),
             p2p_identity: *secret_key.public().as_bytes(),
         };
         let network_identity = NetworkIdentity(client_id);
@@ -171,7 +171,7 @@ mod tests {
         let keypair = Arc::new(Keypair::new());
         let secret_key = SecretKey::generate(&mut rand::rngs::OsRng);
         let client_id = solana_coordinator::ClientId {
-            owner: keypair.pubkey(),
+            signer: keypair.pubkey(),
             p2p_identity: *secret_key.public().as_bytes(),
         };
         let network_identity = NetworkIdentity(client_id);

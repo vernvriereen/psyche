@@ -1,14 +1,19 @@
-use crate::network_identity::NetworkIdentity;
+use crate::{backend::SolanaBackend, network_identity::NetworkIdentity};
 
-use anchor_client::solana_sdk::signature::{Keypair, Signer};
+use anchor_client::{
+    solana_sdk::signature::{Keypair, Signer},
+    Cluster,
+};
 use anyhow::Result;
-use psyche_client::{CheckpointConfig, RunInitConfig, WandBInfo, NC};
+use psyche_client::{CheckpointConfig, Client, RunInitConfig, WandBInfo, NC};
 use psyche_network::{RelayMode, SecretKey};
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::select;
 
 pub struct App {
-    // run_id: String,
+    run_id: String,
+    cluster: Cluster,
     // cancel: CancellationToken,
     // update_tui_interval: Interval,
     // tx_tui_state: Option<Sender<TabsData>>,
@@ -20,6 +25,7 @@ pub struct AppParams {
     //pub cancel: CancellationToken,
     pub identity_secret_key: SecretKey,
     pub wallet_keypair: Arc<Keypair>,
+    pub cluster: Cluster,
     //pub tx_tui_state: Option<Sender<TabsData>>,
     pub run_id: String,
     pub data_parallelism: usize,
@@ -61,10 +67,11 @@ impl AppBuilder {
         .await?;
 
         let app = App {
+            run_id: p.run_id.clone(),
+            cluster: p.cluster,
             //cancel: p.cancel,
             //tx_tui_state: p.tx_tui_state,
             //update_tui_interval: interval(Duration::from_millis(150)),
-            // run_id: p.run_id,
         };
         let identity = solana_coordinator::ClientId::new(
             p.wallet_keypair.pubkey(),
@@ -96,10 +103,31 @@ impl AppBuilder {
 impl App {
     pub async fn run(
         &mut self,
-        mut _p2p: NC,
-        _state_options: RunInitConfig<solana_coordinator::ClientId, NetworkIdentity>,
+        p2p: NC,
+        state_options: RunInitConfig<solana_coordinator::ClientId, NetworkIdentity>,
     ) -> Result<()> {
-        Ok(())
+        let backend =
+            SolanaBackend::new(self.cluster.clone(), state_options.private_key.0.clone())?;
+        let instance = backend.get_coordinator_instance(&self.run_id).await?;
+        let backend = backend.start(self.run_id.clone(), instance.account).await?;
+
+        let mut client = Client::new(backend, p2p, state_options);
+
+        loop {
+            select! {
+                // _ = self.cancel.cancelled() => {
+                //    break;
+                // }
+                // _ = self.update_tui_interval.tick() => {
+                //     let (client_tui_state, network_tui_state) = client.tui_states().await;
+                //     self.update_tui(client_tui_state, network_tui_state).await?;
+                // }
+                res = client.finished() => {
+                    res??;
+                }
+
+            }
+        }
     }
 
     // async fn update_tui(
