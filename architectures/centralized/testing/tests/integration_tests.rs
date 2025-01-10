@@ -10,6 +10,7 @@ use testing::{
     },
     COOLDOWN_TIME, MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME,
 };
+use tracing::{info, warn};
 
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn connect_single_node() {
@@ -314,6 +315,8 @@ async fn replace_node_and_complete_round() {
 
     let server_port = server_handle.server_port;
     let run_id = &server_handle.run_id;
+
+    info!("initializing clients...");
     let [client_1_task, _client_2_task] = spawn_clients_with_training_delay(
         init_min_clients as usize,
         server_port,
@@ -329,12 +332,15 @@ async fn replace_node_and_complete_round() {
     // witnesses should be empty
     assert!(server_handle.get_rounds().await[0].witnesses.is_empty());
 
+    info!("waiting for warmup...");
+
     // warmup
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
 
     // A new client is spawned, but since we are in `Warmup` state, it should wait for `WaitingForMembers`
     // to join the run
 
+    info!("creating third client...");
     let _client_handle_3 =
         ClientHandle::new_with_training_delay(server_port, run_id, training_delay).await;
 
@@ -461,6 +467,7 @@ async fn client_join_in_training() {
     )
     .await;
 
+    info!("waiting for init min clients...");
     assert_with_retries(
         || server_handle.get_clients_len(),
         init_min_clients as usize,
@@ -468,15 +475,22 @@ async fn client_join_in_training() {
     .await;
 
     // execute round 0
+    info!("waiting for round 0...");
     assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
+
     // warmup
+    info!("waiting for warmup...");
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+
+    info!("waiting for end of warmup...");
     tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+
     // train
+    info!("waiting for start of train...");
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 
     // spawn new client
-    println!("spawning new client while we're in round train");
+    info!("spawning new client while we're in round train");
     let [new_client_handle] =
         spawn_clients_with_training_delay(1, server_port, run_id, training_delay)
             .await
@@ -484,10 +498,12 @@ async fn client_join_in_training() {
             .unwrap();
 
     // assert new client didnt join the round but is ready in pending clients
+    info!("waiting for pending clients to contain new client");
     assert_with_retries(|| server_handle.get_pending_clients_len(), 3).await;
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
 
     // train
+    info!("waiting for witness state...");
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
     let witnesses = &server_handle.get_rounds().await[0].witnesses;
@@ -501,10 +517,13 @@ async fn client_join_in_training() {
     });
     assert_eq!(score, init_min_clients);
 
+    info!("waiting for next round!");
+
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
     // the new client tries to join the network
     // but since the llm checkpoint is Ephemeral
     // it results in an InitRunError::ModelIsEphemeral error
+    info!("waiting for client handle...");
     let error = new_client_handle.client_handle.await.unwrap().unwrap_err();
     assert!(error
         .to_string()

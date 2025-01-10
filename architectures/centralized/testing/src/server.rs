@@ -15,6 +15,7 @@ use tokio::{
         oneshot,
     },
 };
+use tracing::debug;
 
 use crate::{test_utils::sample_rand_run_id, COOLDOWN_TIME};
 use crate::{MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME};
@@ -92,6 +93,8 @@ impl CoordinatorServer {
             ..Coordinator::<ClientId>::zeroed()
         };
 
+        debug!("ServerApp::new() waiting...");
+
         let server = ServerApp::new(
             false,
             coordinator,
@@ -104,6 +107,7 @@ impl CoordinatorServer {
         )
         .await
         .unwrap();
+        debug!("ServerApp::new() done!");
 
         let port = server.get_port();
 
@@ -175,6 +179,7 @@ impl CoordinatorServerHandle {
         witness_nodes: u16,
         witness_quorum: u16,
     ) -> Self {
+        debug!("creating coordinator server...");
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
         let mut server = CoordinatorServer::new(
             query_chan_receiver,
@@ -187,6 +192,8 @@ impl CoordinatorServerHandle {
         let server_port = server.port;
         let run_id = server.run_id.clone();
         tokio::spawn(async move { server.run().await });
+        debug!("coordinator server created on port {server_port}");
+
         Self {
             query_chan_sender,
             server_port,

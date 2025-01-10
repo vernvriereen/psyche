@@ -9,6 +9,7 @@ use psyche_client::NC;
 use psyche_network::allowlist;
 use tokio::select;
 use tokio::task::JoinHandle;
+use tracing::debug;
 
 use crate::test_utils::dummy_client_app_params_default;
 use crate::test_utils::dummy_client_app_params_with_training_delay;
@@ -62,7 +63,7 @@ impl Client {
         p2p: NC,
         state_options: RunInitConfig<ClientId, ClientId>,
     ) -> Result<()> {
-        println!(
+        debug!(
             "spawned new client: {}",
             p2p.node_addr().await.unwrap().node_id
         );
@@ -97,11 +98,13 @@ impl ClientHandle {
         run_id: &str,
         training_delay_secs: u64,
     ) -> Self {
+        debug!("spawning new client...");
         let (mut client, allowlist, p2p, state_options) =
             Client::new_with_training_delay(server_port, run_id, training_delay_secs).await;
         let client_handle =
             tokio::spawn(async move { client.run(allowlist, p2p, state_options).await });
         tokio::time::sleep(Duration::from_millis(100)).await;
+        debug!("new client spawned!");
         Self { client_handle }
     }
 }
