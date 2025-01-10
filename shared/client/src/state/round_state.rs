@@ -16,7 +16,7 @@ pub struct RoundState<T: NodeIdentity> {
     pub results: HashMap<BatchId, Vec<(T, TrainingResult)>>,
     pub commitments_per_client: HashMap<T, u32>,
     pub data_assignments: IntervalTree<BatchId, T>,
-    pub blooms: Option<(WitnessBloom, WitnessBloom, WitnessBloom)>,
+    pub blooms: Option<(WitnessBloom, WitnessBloom)>,
     pub committee_info: Option<(CommitteeProof, WitnessProof, CommitteeSelection)>,
     pub batch_ids_not_yet_trained_on: Option<(usize, Arc<Mutex<BatchIdSet>>)>,
 }
@@ -56,19 +56,17 @@ impl<T: NodeIdentity> RoundState<T> {
         }
 
         let blooms = self.blooms;
-        let (commit_bloom, participant_bloom, order_bloom) = blooms?;
+        let (participant_bloom, order_bloom) = blooms?;
 
         info!("Submitting witness blooms");
         self.sent_witness = true;
 
-        debug!("Commit bloom: {:?}", commit_bloom);
         debug!("Participant bloom: {:?}", participant_bloom);
         debug!("Order bloom: {:?}", order_bloom);
 
         Some(Witness {
             index,
             proof: *witness_proof,
-            commit_bloom,
             participant_bloom,
             order_bloom,
         })

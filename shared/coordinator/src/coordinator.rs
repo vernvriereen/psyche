@@ -1,6 +1,5 @@
 use crate::{
     model::{self, Checkpoint, Model},
-    traits::Backend,
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
 
@@ -14,6 +13,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::hash::Hash;
 
 pub const SOLANA_MAX_STRING_LEN: usize = 64;
+pub const SOLANA_MAX_URL_STRING_LEN: usize = 256;
 pub const SOLANA_MAX_NUM_CLIENTS: usize = 64;
 pub const SOLANA_MAX_NUM_WITNESSES: usize = 16;
 pub const SOLANA_MAX_NUM_CHECKPOINTERS: usize = 4;
@@ -121,12 +121,11 @@ pub struct Round {
 pub struct Witness {
     pub index: u64,
     pub proof: WitnessProof,
-    pub commit_bloom: WitnessBloom,
     pub participant_bloom: WitnessBloom,
     pub order_bloom: WitnessBloom,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum CoordinatorError {
     NoActiveRound,
     InvalidWitness,
@@ -142,8 +141,7 @@ pub enum CoordinatorError {
 
 pub enum TickResult {
     Ticked,
-    EpochFinished,
-    EpochAbandoned,
+    EpochEnd(bool), // if successfully finished
 }
 
 pub type Commitment = [u8; 32];
@@ -156,7 +154,7 @@ pub const NUM_STORED_ROUNDS: usize = 4;
 )]
 #[repr(C)]
 #[serde(bound = "I: DeserializeOwned + NodeIdentity")]
-pub struct CoodinatorConfig<I> {
+pub struct CoordinatorConfig<I> {
     pub warmup_time: u64,
     pub cooldown_time: u64,
 
@@ -217,7 +215,7 @@ pub struct Coordinator<T> {
 
     pub model: Model,
 
-    pub config: CoodinatorConfig<T>,
+    pub config: CoordinatorConfig<T>,
 
     #[serde(default)]
     pub progress: CoordinatorProgress,
@@ -355,9 +353,9 @@ impl<T: NodeIdentity> Client<T> {
 }
 
 impl<T: NodeIdentity> Coordinator<T> {
-    pub fn tick(
-        &mut self,
-        backend: &dyn Backend<T>,
+    pub fn tick<'a, 'b>(
+        &'a mut self,
+        new_clients: Option<impl ExactSizeIterator<Item = &'b T>>,
         unix_timestamp: u64,
         random_seed: u64,
     ) -> std::result::Result<TickResult, CoordinatorError> {
@@ -369,14 +367,14 @@ impl<T: NodeIdentity> Coordinator<T> {
                 if self.epoch_state.pause.into() {
                     self.epoch_state.pause = false.into();
                     self.change_state(unix_timestamp, RunState::Paused);
-                    Ok(TickResult::EpochAbandoned)
+                    Ok(TickResult::EpochEnd(false))
                 } else if run_state == RunState::WaitingForMembers {
-                    self.tick_waiting_for_members(backend, unix_timestamp)
+                    self.tick_waiting_for_members(new_clients, unix_timestamp)
                 } else if run_state == RunState::Cooldown {
                     self.tick_cooldown(unix_timestamp)
                 } else if (self.epoch_state.clients.len() as u16) < self.config.min_clients {
                     self.start_waiting_for_members(unix_timestamp);
-                    Ok(TickResult::EpochAbandoned)
+                    Ok(TickResult::EpochEnd(false))
                 } else {
                     match run_state {
                         RunState::Warmup => self.tick_warmup(unix_timestamp, random_seed),
@@ -581,32 +579,6 @@ impl<T: NodeIdentity> Coordinator<T> {
         score
     }
 
-    pub fn commitment_exists_by_witnesses(
-        commitment: &Commitment,
-        witnesses: &[Witness],
-        witness_quorum: u32,
-    ) -> bool {
-        let score = Self::commitment_exists_score_by_witnesses(commitment, witnesses);
-        match witness_quorum {
-            0 => score as usize == witnesses.len(),
-            witness_quorum => score >= witness_quorum,
-        }
-    }
-
-    pub fn commitment_exists_score_by_witnesses(
-        commitment: &Commitment,
-        witnesses: &[Witness],
-    ) -> u32 {
-        let hash = sha256(commitment);
-        let mut score = 0u32;
-        for witness in witnesses {
-            if witness.commit_bloom.contains(&hash) {
-                score += 1;
-            }
-        }
-        score
-    }
-
     pub fn select_consensus_commitment_by_witnesses(
         commitments: &[Commitment],
         witnesses: &[Witness],
@@ -717,22 +689,28 @@ impl<T: NodeIdentity> Coordinator<T> {
             .collect()
     }
 
-    fn tick_waiting_for_members(
-        &mut self,
-        backend: &dyn Backend<T>,
+    fn tick_waiting_for_members<'a, 'b>(
+        &'a mut self,
+        new_clients: Option<impl ExactSizeIterator<Item = &'b T>>,
         unix_timestamp: u64,
     ) -> std::result::Result<TickResult, CoordinatorError> {
-        let clients = backend.select_new_clients();
-        if clients.len() as u16 >= self.config.min_clients {
-            // set epoch_state to default
-            let _ = std::mem::take(&mut self.epoch_state);
-            self.epoch_state.clients = FixedVec::from_iter(
-                clients
-                    .into_iter()
-                    .take(SOLANA_MAX_NUM_CLIENTS)
-                    .map(|x| Client::new(x)),
-            );
-            self.start_warmup(unix_timestamp);
+        if let Some(new_clients) = new_clients {
+            if new_clients.len() as u16 >= self.config.min_clients {
+                // set epoch_state to default
+                bytemuck::write_zeroes(&mut self.epoch_state);
+                self.epoch_state.first_round = true.into();
+
+                self.epoch_state
+                    .clients
+                    .extend(
+                        new_clients
+                            .take(SOLANA_MAX_NUM_CLIENTS)
+                            .map(|x| Client::new(*x)),
+                    )
+                    .unwrap();
+
+                self.start_warmup(unix_timestamp);
+            }
         }
         Ok(TickResult::Ticked)
     }
@@ -807,7 +785,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             );
             self.progress.epoch += 1;
             self.start_waiting_for_members(unix_timestamp);
-            Ok(TickResult::EpochFinished)
+            Ok(TickResult::EpochEnd(true))
         } else {
             Ok(TickResult::Ticked)
         }
@@ -902,5 +880,17 @@ impl<T: NodeIdentity> Coordinator<T> {
                     model::LLMTrainingDataType::Finetuning => todo!(),
                 },
             }
+    }
+}
+
+impl<I> CoordinatorConfig<I> {
+    pub fn check(&self) -> bool {
+        self.max_round_train_time != 0
+            && self.round_witness_time != 0
+            && self.min_clients != 0
+            && self.batches_per_round != 0
+            && self.data_indicies_per_batch != 0
+            && self.rounds_per_epoch != 0
+            && self.total_steps != 0
     }
 }

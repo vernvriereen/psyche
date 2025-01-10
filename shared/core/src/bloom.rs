@@ -14,12 +14,14 @@ pub trait BloomHashIndex {
 }
 
 #[derive(Clone, PartialEq, Eq, Copy, Zeroable)]
+#[repr(C)]
 pub struct Bloom<const U: usize, const K: usize> {
     pub keys: [u64; K],
     pub bits: BitArrayWrapper<U>,
 }
 
 #[derive(Clone, PartialEq, Eq, Copy, Default, Serialize, Deserialize)]
+#[repr(transparent)]
 pub struct BitArrayWrapper<const U: usize>(pub BitArray<[u64; U]>);
 
 unsafe impl<const U: usize> Zeroable for BitArrayWrapper<U> {}

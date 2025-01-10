@@ -1,12 +1,11 @@
 use anyhow::{anyhow, bail, Result};
-use psyche_core::BatchId;
+use psyche_core::{BatchId, Shuffle, TokenSize};
 use rand::seq::SliceRandom;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::fs;
 use tracing::info;
 
-use crate::token_size::TokenSize;
 use crate::traits::{LengthKnownDataProvider, TokenizedDataProvider};
 
 fn mmap_file(p: &std::path::PathBuf) -> Result<memmap2::Mmap> {
@@ -25,11 +24,6 @@ pub struct LocalDataProvider {
     sequences: Vec<SequencePointer>,
     seq_len: usize,
     token_size_in_bytes: TokenSize,
-}
-
-pub enum Shuffle {
-    Seeded(<ChaCha8Rng as SeedableRng>::Seed),
-    DontShuffle,
 }
 
 impl LengthKnownDataProvider for LocalDataProvider {
@@ -89,7 +83,8 @@ impl LocalDataProvider {
                 .enumerate()
                 // find every sequence in every file
                 .flat_map(|(file_index, current_tokens)| {
-                    (0..current_tokens.len() - seq_len_in_bytes)
+                    (0..current_tokens.len()
+                        - (seq_len_in_bytes + usize::from(token_size_in_bytes))) // +1 token for pretraining data!
                         .step_by(seq_len_in_bytes)
                         .map(move |byte_offset| SequencePointer {
                             file_index,
