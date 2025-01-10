@@ -14,18 +14,21 @@ use anchor_client::{
 };
 use anyhow::{anyhow, bail, Result};
 use futures_util::StreamExt;
-use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
+use psyche_coordinator::{model, Coordinator, CoordinatorConfig, HealthChecks, Witness};
 use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-#[allow(dead_code)]
 pub struct SolanaBackend {
-    #[allow(unused)]
     program: Program<Arc<Keypair>>,
     cluster: Cluster,
-    updates: Option<mpsc::UnboundedReceiver<RpcResponse<UiAccount>>>,
+}
+
+pub struct SolanaBackendRunner {
+    backend: SolanaBackend,
+    run_id: String,
+    updates: mpsc::UnboundedReceiver<RpcResponse<UiAccount>>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,19 +44,10 @@ impl SolanaBackend {
         let client = Client::new(cluster.clone(), payer.clone());
         let program = client.program(solana_coordinator::ID)?;
 
-        Ok(Self {
-            program,
-            cluster,
-            updates: None,
-        })
+        Ok(Self { program, cluster })
     }
 
-    #[allow(dead_code)]
-    pub async fn start(&mut self, coordinator: Pubkey) -> Result<()> {
-        if self.updates.is_some() {
-            bail!("Already started watching coordinator account");
-        }
-
+    pub async fn start(self, run_id: String, coordinator: Pubkey) -> Result<SolanaBackendRunner> {
         let sub_client = PubsubClient::new(self.cluster.ws_url()).await?;
         let (tx, rx) = mpsc::unbounded_channel();
 
@@ -82,9 +76,11 @@ impl SolanaBackend {
             }
         });
 
-        self.updates = Some(rx);
-
-        Ok(())
+        Ok(SolanaBackendRunner {
+            backend: self,
+            updates: rx,
+            run_id,
+        })
     }
 
     pub async fn create_run(&self, run_id: String) -> Result<CreatedRun> {
@@ -207,6 +203,32 @@ impl SolanaBackend {
         Ok(signature)
     }
 
+    pub async fn update_config(
+        &self,
+        run_id: &str,
+        config: CoordinatorConfig<solana_coordinator::ClientId>,
+    ) -> Result<Signature> {
+        let (instance_pda, _) = self.find_instance_from_run_id(run_id);
+
+        let instance: solana_coordinator::CoordinatorInstance =
+            self.program.account(instance_pda).await?;
+
+        let signature = self
+            .program
+            .request()
+            .accounts(solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                instance: instance_pda,
+                account: instance.account,
+                payer: self.program.payer(),
+                system_program: system_program::ID,
+            })
+            .args(solana_coordinator::instruction::UpdateCoordinatorConfig { config })
+            .send()
+            .await?;
+
+        Ok(signature)
+    }
+
     pub async fn set_paused(&self, run_id: &str, paused: bool) -> Result<Signature> {
         let (instance_pda, _) = self.find_instance_from_run_id(run_id);
 
@@ -238,12 +260,14 @@ impl SolanaBackend {
         let signature = self
             .program
             .request()
-            .accounts(solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
-                instance: instance_pda,
-                account: instance.account,
-                payer: self.program.payer(),
-                system_program: system_program::ID,
-            })
+            .accounts(
+                solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                    instance: instance_pda,
+                    account: instance.account,
+                    payer: self.program.payer(),
+                    system_program: system_program::ID,
+                },
+            )
             .args(solana_coordinator::instruction::Tick {})
             .send()
             .await?;
@@ -260,17 +284,19 @@ impl SolanaBackend {
         let signature = self
             .program
             .request()
-            .accounts(solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
-                instance: instance_pda,
-                account: instance.account,
-                payer: self.program.payer(),
-                system_program: system_program::ID,
-            })
+            .accounts(
+                solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                    instance: instance_pda,
+                    account: instance.account,
+                    payer: self.program.payer(),
+                    system_program: system_program::ID,
+                },
+            )
             .args(solana_coordinator::instruction::Witness {
                 index: witness.index,
                 proof: witness.proof,
                 participant_bloom: witness.participant_bloom,
-                order_bloom: witness.order_bloom
+                order_bloom: witness.order_bloom,
             })
             .send()
             .await?;
@@ -278,7 +304,18 @@ impl SolanaBackend {
         Ok(signature)
     }
 
-    pub fn find_instance_from_run_id(&self, run_id: &str) -> (Pubkey, u8) {
+    pub async fn get_coordinator_instance(
+        &self,
+        run_id: &str,
+    ) -> Result<solana_coordinator::CoordinatorInstance> {
+        let (instance_pda, _) = self.find_instance_from_run_id(run_id);
+
+        let instance: solana_coordinator::CoordinatorInstance =
+            self.program.account(instance_pda).await?;
+        Ok(instance)
+    }
+
+    fn find_instance_from_run_id(&self, run_id: &str) -> (Pubkey, u8) {
         let seeds = &[
             b"coordinator",
             solana_coordinator::bytes_from_string(&run_id),
@@ -288,24 +325,22 @@ impl SolanaBackend {
 }
 
 #[async_trait::async_trait]
-impl WatcherBackend<solana_coordinator::ClientId> for SolanaBackend {
+impl WatcherBackend<solana_coordinator::ClientId> for SolanaBackendRunner {
     async fn wait_for_new_state(&mut self) -> Result<Coordinator<solana_coordinator::ClientId>> {
-        match &mut self.updates {
-            Some(updates) => match updates.recv().await {
-                Some(update) => match update.value.data.decode() {
-                    Some(data) => solana_coordinator::coordinator_account_from_bytes(&data)
-                        .map_err(|_| anyhow!("Unable to decode coordinator account data"))
-                        .map(|x| x.state.coordinator),
-                    None => bail!("Unable to decode account data"),
-                },
-                None => bail!("Account updates channel closed"),
+        match self.updates.recv().await {
+            Some(update) => match update.value.data.decode() {
+                Some(data) => solana_coordinator::coordinator_account_from_bytes(&data)
+                    .map_err(|_| anyhow!("Unable to decode coordinator account data"))
+                    .map(|x| x.state.coordinator),
+                None => bail!("Unable to decode account data"),
             },
-            None => bail!("Not watching any coordinator account"),
+            None => bail!("Account updates channel closed"),
         }
     }
 
-    async fn send_witness(&mut self, _witness: Witness) -> Result<()> {
-        unimplemented!();
+    async fn send_witness(&mut self, witness: Witness) -> Result<()> {
+        self.backend.witness(&self.run_id, witness).await?;
+        Ok(())
     }
 
     async fn send_health_check(&mut self, _health_checks: HealthChecks) -> Result<()> {
@@ -344,19 +379,15 @@ mod test {
         let run_id = format!("{}", rand::thread_rng().gen_range(0..1000000));
 
         let created = backend.create_run(run_id.clone()).await.unwrap();
-        backend.start(created.account).await.unwrap();
+        let runner = backend
+            .start(run_id.clone(), created.account)
+            .await
+            .unwrap();
 
-        let _ = backend
-            .program
-            .request()
-            .accounts(solana_coordinator::accounts::OwnerCoordinatorAccounts {
-                instance: created.instance,
-                account: created.account,
-                payer: backend.program.payer(),
-                system_program: system_program::ID,
-            })
-            .args(solana_coordinator::instruction::UpdateCoordinatorConfig {
-                config: CoordinatorConfig::<solana_coordinator::ClientId> {
+        backend
+            .update_config(
+                &run_id,
+                CoordinatorConfig::<solana_coordinator::ClientId> {
                     warmup_time: 1,
                     cooldown_time: 1,
                     max_round_train_time: 10,
@@ -372,12 +403,11 @@ mod test {
                     overlapped: false.into(),
                     checkpointers: FixedVec::zeroed(),
                 },
-            })
-            .send()
+            )
             .await
             .unwrap();
 
-        let new_state = backend.wait_for_new_state().await.unwrap();
+        let new_state = runner.wait_for_new_state().await.unwrap();
         assert_eq!(new_state.run_state, RunState::Paused);
 
         let client_keypair = Arc::new(Keypair::new());

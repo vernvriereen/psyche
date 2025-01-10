@@ -16,12 +16,13 @@ use clap::{Args, Parser, Subcommand};
 use psyche_client::{
     exercise_sdpa_if_needed, print_identity_keys, read_identity_secret_key, TrainArgs,
 };
+use psyche_coordinator::CoordinatorConfig;
 use psyche_network::{PublicKey, SecretKey};
 use psyche_tui::LogOutput;
 use serde::Deserialize;
 use solana_coordinator::ClientId;
-use std::sync::Arc;
 use std::path::PathBuf;
+use std::sync::Arc;
 use time::OffsetDateTime;
 use tokio::runtime::Builder;
 use tracing::{info, Level};
@@ -94,7 +95,20 @@ enum Commands {
         run_id: String,
 
         #[clap(short, long, env)]
-        paused: bool,
+        resume: bool,
+    },
+    UpdateConfig {
+        #[clap(flatten)]
+        cluster: ClusterArgs,
+
+        #[clap(flatten)]
+        wallet: WalletArgs,
+
+        #[clap(short, long, env)]
+        run_id: String,
+
+        #[clap(long, env)]
+        config_path: PathBuf,
     },
     JoinRun {
         #[clap(flatten)]
@@ -110,6 +124,9 @@ enum Commands {
         identity: Identity,
     },
     Train {
+        #[clap(flatten)]
+        cluster: ClusterArgs,
+
         #[clap(flatten)]
         wallet: WalletArgs,
 
@@ -198,11 +215,11 @@ async fn async_main() -> Result<()> {
             let backend = SolanaBackend::new(cluster.into(), key_pair.clone()).unwrap();
             let members: Vec<Identity> = toml::from_str(std::str::from_utf8(
                 &std::fs::read(&members_path).with_context(|| {
-                    format!("failed to read coordinator state toml file {members_path:?}")
+                    format!("failed to read whitelist members toml file {members_path:?}")
                 })?,
             )?)
             .with_context(|| {
-                format!("failed to parse coordinator state toml file {members_path:?}")
+                format!("failed to parse whitelist members toml file {members_path:?}")
             })?;
             let num_members = members.len();
             let set = backend
@@ -214,12 +231,33 @@ async fn async_main() -> Result<()> {
             );
             Ok(())
         }
+        Commands::UpdateConfig {
+            cluster,
+            wallet,
+            run_id,
+            config_path,
+        } => {
+            let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
+            let backend = SolanaBackend::new(cluster.into(), key_pair.clone()).unwrap();
+            let config: CoordinatorConfig<ClientId> = toml::from_str(std::str::from_utf8(
+                &std::fs::read(&config_path).with_context(|| {
+                    format!("failed to read coordinator config toml file {config_path:?}")
+                })?,
+            )?)
+            .with_context(|| {
+                format!("failed to parse coordinator config toml file {config_path:?}")
+            })?;
+            let set = backend.update_config(&run_id, config).await?;
+            println!("Updated config of {} with transaction {}", run_id, set);
+            Ok(())
+        }
         Commands::SetPaused {
             cluster,
             wallet,
             run_id,
-            paused,
+            resume,
         } => {
+            let paused = !resume;
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
             let backend = SolanaBackend::new(cluster.into(), key_pair.clone()).unwrap();
             let set = backend.set_paused(&run_id, paused).await?;
@@ -248,7 +286,11 @@ async fn async_main() -> Result<()> {
             );
             Ok(())
         }
-        Commands::Train { wallet, args } => {
+        Commands::Train {
+            cluster,
+            wallet,
+            args,
+        } => {
             exercise_sdpa_if_needed();
 
             let hub_read_token = std::env::var("HF_TOKEN").ok();
@@ -292,6 +334,7 @@ async fn async_main() -> Result<()> {
                 //tx_tui_state,
                 identity_secret_key,
                 wallet_keypair,
+                cluster: cluster.into(),
                 run_id: args.run_id,
                 p2p_port: args.bind_p2p_port,
                 data_parallelism: args.data_parallelism,
