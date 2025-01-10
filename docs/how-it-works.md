@@ -12,6 +12,8 @@ The system is composed of three main actors:
 
 # How it works
 
+## How a training run looks like
+
 The training process for a specific model is divided into distinct steps that progress in a coordinated manner. The process is broken into rounds, and these **rounds** are grouped into **epochs**. The entire training process spans multiple epochs.
 
 During a training run, clients primarily perform three tasks:
@@ -20,13 +22,13 @@ During a training run, clients primarily perform three tasks:
 - **Witnessing**: Verify the liveness and correctness of other participants.
 - **Verifying**: Recompute and compare results to identify and mitigate malicious participants.
 
-## Warmup
+### Warmup
 
 At the start of a run, all clients have a window of time to join the run by notifying the coordinator and connecting to the other participating clients. This warmup phase occurs only at the beginning of the run or after completing an epoch.
 
 ![Warmup flow](images/warmup.png)
 
-## Training
+### Training
 
 At the beginning of the run, after the _warmup_ phase ends, clients are assigned specific tasks that require them to train the model on a portion of the data.
 
@@ -34,7 +36,7 @@ If clients have already been training (i.e., it is not the first round of the ru
 
 Once the training results are broadcasted, clients begin downloading results from other participants to later incorporate them into their models.
 
-## Witnessing
+### Witnessing
 
 At the start of each round, one or more clients may be randomly selected as witnesses. The number of witnesses can be configured. Witness clients train the model as usual but also build bloom filters that track which nodes are actively participating and providing valid results.
 
@@ -51,8 +53,12 @@ Here’s a high-level overview of the process. Additional details exist, but thi
 
 ![An example of opportunistic witness](images/training.png)
 
-## Verifying
+### Verifying
 
 TODO
 
+## Model sharing
 
+When a run starts, all clients should download the model parameters, tokenizer configuration, and model configuration from HuggingFace, where the model must have been previously uploaded (TODO: add more details on uploading a model). Each client will maintain the updated model while receiving new gradients from other clients and applying them.
+
+When a new client joins a specific run, it would not be accurate for it to download the model from HuggingFace, as the model parameters would have already been modified by others. Instead, the new client must synchronize with the training progress by obtaining the latest model parameters from a peer-to-peer (P2P) network where all the other clients are connected. This allows the new client to receive parts of the model from other clients and assemble the updated model to reflect its current state, enabling it to continue training effectively.
