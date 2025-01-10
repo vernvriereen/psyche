@@ -11,10 +11,6 @@ use tokenizers::Tokenizer;
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// File size in bytes
-    #[arg(long)]
-    file_size: u64,
-
     /// Sequence length
     #[arg(long, default_value = "2048")]
     sequence_length: u32,
@@ -84,14 +80,8 @@ async fn main() -> Result<()> {
             FileURLs::from_list(&urls)
         }
     };
-    let mut provider = HttpDataProvider::new(
-        urls,
-        cli.file_size,
-        token_size,
-        cli.sequence_length,
-        Shuffle::DontShuffle,
-    )
-    .await?;
+    let mut provider =
+        HttpDataProvider::new(urls, token_size, cli.sequence_length, Shuffle::DontShuffle).await?;
     let samples = provider.get_samples(&batch_ids).await?;
 
     // Output handling

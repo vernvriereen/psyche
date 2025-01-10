@@ -106,11 +106,9 @@ impl From<&HttpTrainingDataLocation> for FileURLs {
         }
     }
 }
-
 impl HttpDataProvider {
     pub async fn new(
         file_urls: impl Into<FileURLs>,
-        file_size: u64,
         token_size_in_bytes: TokenSize,
         num_tokens_per_sequence: u32,
         shuffle: Shuffle,
@@ -119,7 +117,7 @@ impl HttpDataProvider {
         let num_files = file_urls.len();
 
         let client = reqwest::Client::new();
-        validate_urls(client.clone(), &file_urls).await?;
+        let sizes = get_file_sizes(&client, &file_urls).await?;
 
         let seq_len_in_bytes =
             num_tokens_per_sequence as u64 * usize::from(token_size_in_bytes) as u64;
@@ -127,7 +125,8 @@ impl HttpDataProvider {
         let sequences: Vec<SequencePointer> = {
             let mut all_indexes: Vec<_> = (0..num_files)
                 .flat_map(|file_index| {
-                    (0..file_size - seq_len_in_bytes)
+                    let file_size = sizes[file_index];
+                    (0..file_size - (seq_len_in_bytes + usize::from(token_size_in_bytes) as u64)) // +1 token for pretraining data!
                         .step_by(seq_len_in_bytes as usize)
                         .map(move |byte_offset| SequencePointer {
                             file_index,
@@ -253,12 +252,54 @@ impl TokenizedDataProvider for HttpDataProvider {
     }
 }
 
-async fn validate_urls(client: reqwest::Client, urls: &[String]) -> Result<()> {
-    for url in urls {
-        let response = client.head(url).send().await?;
-        if !response.status().is_success() {
-            bail!("URL validation failed for {}: {}", url, response.status());
+// i tried this nicely with streams and generators.
+// there's some weird rust impl is not general enough for Send bug i hit
+// so i just manually chunk instead of doing it fancy with a limited concurrency stream
+async fn get_file_sizes(client: &reqwest::Client, urls: &[String]) -> Result<Vec<u64>> {
+    let futures: Vec<_> = urls
+        .iter()
+        .map(|url| {
+            let url = url.clone();
+            async move {
+                let response = client.head(&url).send().await?;
+
+                if !response.status().is_success() {
+                    bail!("URL validation failed for {}: {}", url, response.status());
+                }
+
+                // grab the Content-Length header
+                let size = response
+                    .headers()
+                    .get(reqwest::header::CONTENT_LENGTH)
+                    .and_then(|h| h.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Missing or invalid Content-Length header for {}", url)
+                    })?;
+                Ok::<u64, anyhow::Error>(size)
+            }
+        })
+        .collect();
+
+    let mut results = Vec::with_capacity(urls.len());
+    let mut futures = futures.into_iter();
+
+    // only pull 2 chunks at once
+    while let Some(first) = futures.next() {
+        let mut chunk = vec![first];
+        for _ in 0..2 {
+            if let Some(next) = futures.next() {
+                chunk.push(next);
+            } else {
+                break;
+            }
+        }
+
+        let chunk_results = futures::future::join_all(chunk).await;
+        for result in chunk_results {
+            results.push(result?);
         }
     }
-    Ok(())
+
+    Ok(results)
 }

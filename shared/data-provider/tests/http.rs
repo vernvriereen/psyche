@@ -62,7 +62,6 @@ async fn test_http_data_provider() -> Result<()> {
         Duration::from_secs(2),
         HttpDataProvider::new(
             FileURLs::from_template(base_url, 0, 3, 2)?,
-            FILE_SIZE,
             TokenSize::TwoBytes,
             SEQUENCE_LEN,
             Shuffle::DontShuffle,
@@ -126,7 +125,6 @@ async fn test_http_data_provider_shuffled() -> Result<()> {
         Duration::from_secs(2),
         HttpDataProvider::new(
             FileURLs::from_template(base_url.clone(), 0, 3, 2)?,
-            FILE_SIZE,
             TokenSize::TwoBytes,
             SEQUENCE_LEN,
             Shuffle::Seeded(seed),
@@ -146,7 +144,6 @@ async fn test_http_data_provider_shuffled() -> Result<()> {
         Duration::from_secs(2),
         HttpDataProvider::new(
             FileURLs::from_template(base_url.clone(), 0, 3, 2)?,
-            FILE_SIZE,
             TokenSize::TwoBytes,
             SEQUENCE_LEN,
             Shuffle::Seeded(seed),
@@ -169,7 +166,6 @@ async fn test_http_data_provider_shuffled() -> Result<()> {
         Duration::from_secs(2),
         HttpDataProvider::new(
             FileURLs::from_template(base_url.clone(), 0, 3, 2)?,
-            FILE_SIZE,
             TokenSize::TwoBytes,
             SEQUENCE_LEN,
             Shuffle::DontShuffle,

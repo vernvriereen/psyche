@@ -83,7 +83,8 @@ impl LocalDataProvider {
                 .enumerate()
                 // find every sequence in every file
                 .flat_map(|(file_index, current_tokens)| {
-                    (0..current_tokens.len() - seq_len_in_bytes)
+                    (0..current_tokens.len()
+                        - (seq_len_in_bytes + usize::from(token_size_in_bytes))) // +1 token for pretraining data!
                         .step_by(seq_len_in_bytes)
                         .map(move |byte_offset| SequencePointer {
                             file_index,

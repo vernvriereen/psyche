@@ -89,7 +89,6 @@ pub enum LLMTrainingDataLocation {
     ),
     Http {
         location: HttpTrainingDataLocation,
-        file_size: u64,
         token_size_in_bytes: TokenSize,
         num_tokens_per_sequence: u32,
         shuffle: Shuffle,

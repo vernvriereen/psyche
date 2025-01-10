@@ -150,14 +150,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                 }
                 LLMTrainingDataLocation::Http {
                     location,
-                    file_size,
                     token_size_in_bytes,
                     num_tokens_per_sequence,
                     shuffle,
                 } => DataProvider::Http(
                     HttpDataProvider::new(
                         location,
-                        *file_size,
                         *token_size_in_bytes,
                         *num_tokens_per_sequence,
                         *shuffle,
