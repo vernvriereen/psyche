@@ -200,7 +200,8 @@ pub mod solana_coordinator {
         if !clients_state.whitelist.is_empty() {
             if !clients_state
                 .whitelist
-                .iter().any(|x| x.signer == id.signer)
+                .iter()
+                .any(|x| x.signer == id.signer)
             {
                 return err!(ProgramError::NotInWhitelist);
             }
@@ -223,7 +224,8 @@ pub mod solana_coordinator {
             None => false,
         };
 
-        if !exisiting && clients_state
+        if !exisiting
+            && clients_state
                 .clients
                 .push(Client {
                     owner: *ctx.accounts.payer.signer_key().unwrap(),
@@ -233,7 +235,8 @@ pub mod solana_coordinator {
                     slashed: 0,
                     active: clients_state.next_active,
                 })
-                .is_err() {
+                .is_err()
+        {
             return err!(ProgramError::ClientsFull);
         }
 
