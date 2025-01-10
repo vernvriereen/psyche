@@ -16,10 +16,7 @@ use tokio::{
     },
 };
 
-use crate::{
-    test_utils::{get_free_port, sample_rand_run_id},
-    COOLDOWN_TIME,
-};
+use crate::{test_utils::sample_rand_run_id, COOLDOWN_TIME};
 use crate::{MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME};
 
 enum TestingQueryMsg {
@@ -95,13 +92,12 @@ impl CoordinatorServer {
             ..Coordinator::<ClientId>::zeroed()
         };
 
-        let server_port = get_free_port();
         let server = ServerApp::new(
             false,
             coordinator,
             None,
             None,
-            Some(server_port),
+            None,
             None,
             Some(WARMUP_TIME),
             Some(init_min_clients),
@@ -110,10 +106,12 @@ impl CoordinatorServer {
         .await
         .unwrap();
 
+        let port = server.get_port();
+
         Self {
             inner: server,
             query_chan_receiver,
-            port: server_port,
+            port,
             run_id,
         }
     }

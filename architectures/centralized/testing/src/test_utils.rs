@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::net::TcpListener;
 use std::time::Duration;
 
 use psyche_centralized_client::app::AppParams;
@@ -67,13 +66,6 @@ where
             tokio::time::sleep(Duration::from_millis(250 * attempt)).await;
         }
     }
-}
-
-pub fn get_free_port() -> u16 {
-    // Get a free port by binding to "0.0.0.0:0"
-    let listener = TcpListener::bind("0.0.0.0:0").unwrap();
-    // Retrieve the assigned port number
-    listener.local_addr().unwrap().port()
 }
 
 pub fn sample_rand_run_id() -> String {

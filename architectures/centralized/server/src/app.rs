@@ -56,6 +56,12 @@ struct Backend {
     pending_clients: HashSet<ClientId>,
 }
 
+impl Backend {
+    pub fn port(&self) -> u16 {
+        self.net_server.local_addr().port()
+    }
+}
+
 struct ChannelCoordinatorBackend {
     rx: Receiver<Coordinator<ClientId>>,
 }
@@ -134,6 +140,10 @@ impl App {
     pub fn get_current_epoch(&self) -> u16 {
         self.coordinator.progress.epoch
     }
+
+    pub fn get_port(&self) -> u16 {
+        self.backend.port()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -151,7 +161,7 @@ impl App {
         mut coordinator: Coordinator<ClientId>,
         data_server_config: Option<DataServerInfo>,
         p2p_port: Option<u16>,
-        server_port: Option<u16>,
+        coordinator_server_port: Option<u16>,
         save_state_dir: Option<PathBuf>,
         init_warmup_time: Option<u64>,
         init_min_clients: Option<u16>,
@@ -210,7 +220,7 @@ impl App {
             let server_addr: SocketAddr = u8_to_string(url).parse().map_err(|e| {
                 anyhow!("Failed to parse training data server URL {:?}: {}", url, e)
             })?;
-            let server_port = server_addr.port();
+            let data_server_port = server_addr.port();
             let DataServerInfo {
                 dir,
                 seq_len,
@@ -227,7 +237,8 @@ impl App {
 
             let (tx, backend) = ChannelCoordinatorBackend::new();
             let data_server =
-                DataProviderTcpServer::start(local_data_provider, backend, server_port).await?;
+                DataProviderTcpServer::start(local_data_provider, backend, data_server_port)
+                    .await?;
             Some((tx, data_server))
         } else {
             None
@@ -246,7 +257,7 @@ impl App {
             TcpServer::<ClientId, ClientToServerMessage, ServerToClientMessage>::start(
                 SocketAddr::new(
                     std::net::IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-                    server_port.unwrap_or(0),
+                    coordinator_server_port.unwrap_or(0),
                 ),
             )
             .await?;
