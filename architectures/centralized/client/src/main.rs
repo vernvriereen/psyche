@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 use psyche_client::{
     exercise_sdpa_if_needed, print_identity_keys, read_identity_secret_key, TrainArgs,
 };
-use psyche_network::SecretKey;
+use psyche_network::{DiscoveryMode, SecretKey};
 use psyche_tui::{maybe_start_render_loop, LogOutput};
 use std::path::PathBuf;
 use time::OffsetDateTime;
@@ -95,6 +95,7 @@ async fn async_main() -> Result<()> {
                 optim_stats: args.optim_stats_steps,
                 grad_accum_in_fp32: args.grad_accum_in_fp32,
                 dummy_training_delay_secs: args.dummy_training_delay_secs,
+                discovery_mode: DiscoveryMode::N0,
             })
             .build()
             .await

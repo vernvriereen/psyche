@@ -6,8 +6,8 @@ use psyche_client::{
 };
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_network::{
-    allowlist, AuthenticatableIdentity, NetworkTUIState, NetworkTui, NodeId, RelayMode, SecretKey,
-    TcpClient,
+    allowlist, AuthenticatableIdentity, DiscoveryMode, NetworkTUIState, NetworkTui, NodeId,
+    RelayMode, SecretKey, TcpClient,
 };
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
@@ -98,6 +98,7 @@ pub struct AppParams {
     pub optim_stats: Option<u32>,
     pub grad_accum_in_fp32: bool,
     pub dummy_training_delay_secs: Option<u64>,
+    pub discovery_mode: DiscoveryMode,
 }
 
 impl AppBuilder {
@@ -129,6 +130,7 @@ impl AppBuilder {
             &p.run_id,
             p.p2p_port,
             RelayMode::Default,
+            p.discovery_mode,
             vec![],
             Some(p.identity_secret_key.clone()),
             allowlist.clone(),

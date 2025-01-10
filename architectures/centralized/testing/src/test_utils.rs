@@ -2,7 +2,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use psyche_centralized_client::app::AppParams;
-use psyche_network::SecretKey;
+use psyche_network::{DiscoveryMode, SecretKey};
 use rand::distributions::{Alphanumeric, DistString};
 use std::env;
 use tokio_util::sync::CancellationToken;
@@ -122,6 +122,7 @@ pub fn dummy_client_app_params_with_training_delay(
         optim_stats: None,
         grad_accum_in_fp32: false,
         dummy_training_delay_secs: Some(training_delay_secs),
+        discovery_mode: DiscoveryMode::Local,
     }
 }
 
@@ -145,5 +146,6 @@ pub fn dummy_client_app_params_default(server_port: u16, run_id: &str) -> AppPar
         optim_stats: None,
         grad_accum_in_fp32: false,
         dummy_training_delay_secs: None,
+        discovery_mode: DiscoveryMode::Local,
     }
 }

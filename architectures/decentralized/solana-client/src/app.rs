@@ -6,7 +6,7 @@ use anchor_client::{
 };
 use anyhow::Result;
 use psyche_client::{CheckpointConfig, Client, RunInitConfig, WandBInfo, NC};
-use psyche_network::{allowlist, RelayMode, SecretKey};
+use psyche_network::{allowlist, DiscoveryMode, RelayMode, SecretKey};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::select;
@@ -64,6 +64,7 @@ impl AppBuilder {
             &p.run_id,
             p.p2p_port,
             RelayMode::Default,
+            DiscoveryMode::N0,
             vec![],
             Some(p.identity_secret_key.clone()),
             allowlist.clone(),

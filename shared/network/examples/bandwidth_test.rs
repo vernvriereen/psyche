@@ -3,7 +3,8 @@ use chrono::{Local, Timelike};
 use clap::{ArgAction, Parser};
 use iroh::{PublicKey, RelayMap, RelayMode, RelayUrl};
 use psyche_network::{
-    allowlist, BlobTicket, NetworkConnection, NetworkEvent, NetworkTUIState, NetworkTui, PeerList,
+    allowlist, BlobTicket, DiscoveryMode, NetworkConnection, NetworkEvent, NetworkTUIState,
+    NetworkTui, PeerList,
 };
 use psyche_tui::{
     logging::LoggerWidget,
@@ -256,6 +257,7 @@ async fn main() -> Result<()> {
         "123",
         args.bind_port,
         relay_mode,
+        DiscoveryMode::N0,
         peers,
         secret_key,
         allowlist::AllowAll,

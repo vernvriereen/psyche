@@ -35,6 +35,7 @@ pub use iroh_blobs::{ticket::BlobTicket, Hash};
 pub mod allowlist;
 mod authenticable_identity;
 mod download_manager;
+mod local_discovery;
 mod p2p_model_sharing;
 mod peer_list;
 mod router;
@@ -55,6 +56,15 @@ pub use signed_message::SignedMessage;
 pub use tcp::{ClientNotification, TcpClient, TcpServer};
 pub use tui::{NetworkTUIState, NetworkTui};
 
+/// How should this node discover other nodes?
+///
+/// In almost all cases, you want "N0", for over-the-internet communication.
+/// For running tests, you might want Local, since Iroh's relay nodes have a rate limit per-ip.
+#[derive(Debug, Clone, Copy)]
+pub enum DiscoveryMode {
+    Local,
+    N0,
+}
 pub struct NetworkConnection<BroadcastMessage, Download>
 where
     BroadcastMessage: Networkable,
@@ -101,6 +111,7 @@ where
         run_id: &str,
         port: Option<u16>,
         relay_mode: RelayMode,
+        discovery_mode: DiscoveryMode,
         bootstrap_peers: Vec<NodeAddr>,
         secret_key: Option<SecretKey>,
         allowlist: A,
@@ -109,18 +120,29 @@ where
             None => SecretKey::generate(&mut rand::rngs::OsRng),
             Some(key) => key,
         };
+
+        let public_key = secret_key.public();
+
         debug!("Using relay servers: {}", fmt_relay_mode(&relay_mode));
 
-        let endpoint = Endpoint::builder()
-            .secret_key(secret_key)
-            .relay_mode(relay_mode)
-            .bind_addr_v4(SocketAddrV4::new(
-                Ipv4Addr::new(0, 0, 0, 0),
-                port.unwrap_or(0),
-            ))
-            .discovery_n0()
-            .bind()
-            .await?;
+        let endpoint = {
+            let endpoint = Endpoint::builder()
+                .secret_key(secret_key)
+                .relay_mode(relay_mode)
+                .bind_addr_v4(SocketAddrV4::new(
+                    Ipv4Addr::new(0, 0, 0, 0),
+                    port.unwrap_or(0),
+                ));
+
+            let e = match discovery_mode {
+                DiscoveryMode::Local => endpoint.discovery(Box::new(
+                    local_discovery::LocalTestDiscovery::new(public_key),
+                )),
+                DiscoveryMode::N0 => endpoint.discovery_n0(),
+            };
+
+            e.bind().await?
+        };
 
         let node_addr = endpoint.node_addr().await?;
 

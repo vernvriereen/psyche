@@ -1,7 +1,6 @@
 use std::time::Duration;
 
-use psyche_coordinator::RunState;
-use testing::{
+use psyche_centralized_testing::{
     client::ClientHandle,
     server::CoordinatorServerHandle,
     test_utils::{
@@ -10,7 +9,8 @@ use testing::{
     },
     COOLDOWN_TIME, MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME,
 };
-use tracing::{info, warn};
+use psyche_coordinator::RunState;
+use tracing::info;
 
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn connect_single_node() {
@@ -288,7 +288,7 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     let number_of_sent_witnesses = witnesses.len();
     let number_of_seen_clients = score as usize / number_of_sent_witnesses;
 
-    assert_eq!(number_of_seen_clients, clients.len())
+    assert_eq!(number_of_seen_clients, clients.len());
 }
 
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
@@ -459,6 +459,7 @@ async fn client_join_in_training() {
     let training_delay = 2;
     let server_port = server_handle.server_port;
     let run_id = &server_handle.run_id;
+
     let _client_handles = spawn_clients_with_training_delay(
         init_min_clients as usize,
         server_port,
