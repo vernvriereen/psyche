@@ -18,3 +18,4 @@ bytemuck.workspace = true
 anyhow.workspace = true
 rand.workspace = true
 toml = "0.8.19"
+test-log.workspace = true

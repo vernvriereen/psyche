@@ -10704,6 +10704,7 @@ dependencies = [
  "psyche-data-provider",
  "psyche-network",
  "rand 0.8.5",
+ "test-log",
  "tokio",
  "tokio-util 0.7.13",
  "toml 0.8.19",

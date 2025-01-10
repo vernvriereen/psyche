@@ -11,7 +11,7 @@ use testing::{
     COOLDOWN_TIME, MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME,
 };
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn connect_single_node() {
     let init_min_clients = 2;
     let batches_per_round = 4;
@@ -33,7 +33,7 @@ async fn connect_single_node() {
     assert_with_retries(connected_clients, 1).await;
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn connect_multiple_nodes() {
     let number_of_nodes = 10;
     let init_min_clients = 15;
@@ -59,7 +59,7 @@ async fn connect_multiple_nodes() {
     assert_with_retries(run_state, RunState::WaitingForMembers).await;
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn state_change_waiting_for_members_to_warmup() {
     // Coordinator is initialized with some default values
     let init_min_clients = 2;
@@ -95,7 +95,7 @@ async fn state_change_waiting_for_members_to_warmup() {
     assert_with_retries(run_state, RunState::Warmup).await;
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn state_change_shutdown_node_in_warmup() {
     // Coordinator is initialized with some default values
     let init_min_clients = 2;
@@ -143,7 +143,7 @@ async fn state_change_shutdown_node_in_warmup() {
     assert_with_retries(|| server_handle.get_pending_clients_len(), 1).await;
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn state_change_waiting_for_members_to_round_train() {
     // Coordinator is initialized with some default values
     let init_min_clients = 2;
@@ -179,7 +179,7 @@ async fn state_change_waiting_for_members_to_round_train() {
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn state_change_waiting_for_members_to_round_witness() {
     let init_min_clients = 2;
     let batches_per_round = 4;
@@ -220,7 +220,7 @@ async fn state_change_waiting_for_members_to_round_witness() {
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn validate_all_clients_participate_in_witness_bloom() {
     // We make sure that the number of clients and the batches per round are the same
     // It is important that the number of clients is not greater than the number of batches per round,
@@ -290,7 +290,7 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     assert_eq!(number_of_seen_clients, clients.len())
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn replace_node_and_complete_round() {
     let init_min_clients = 2;
     let batches_per_round = 2;
@@ -356,7 +356,7 @@ async fn replace_node_and_complete_round() {
     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn finish_epoch() {
     // We initialize the coordinator with the same number of min clients as batches per round.
     // This way, every client will be assigned with only one batch
@@ -428,7 +428,7 @@ async fn finish_epoch() {
 /// A new client attempts to join the network during the RoundTrain phase.
 /// The new client should not participate in the current round
 /// and should attempt to join the network in the subsequent round.
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn client_join_in_training() {
     // start a normal run with 2 clients
     let init_min_clients = 2;
