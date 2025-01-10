@@ -9,6 +9,5 @@ pub async fn get_coordinator_instance_state(
     let data = endpoint.get_account_data(coordinator_account).await?;
     Ok(coordinator_account_from_bytes(&data)
         .map_err(|_| ToolboxEndpointError::Custom("Unable to decode coordinator account data"))?
-        .state
-        .clone())
+        .state)
 }

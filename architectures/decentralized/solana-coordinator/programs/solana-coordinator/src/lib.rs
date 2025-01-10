@@ -198,11 +198,9 @@ pub mod solana_coordinator {
         let clients_state = &mut ctx.accounts.account.load_mut()?.state.clients_state;
 
         if !clients_state.whitelist.is_empty() {
-            if clients_state
+            if !clients_state
                 .whitelist
-                .iter()
-                .find(|x| x.signer == id.signer)
-                .is_none()
+                .iter().any(|x| x.signer == id.signer)
             {
                 return err!(ProgramError::NotInWhitelist);
             }
@@ -225,8 +223,7 @@ pub mod solana_coordinator {
             None => false,
         };
 
-        if !exisiting {
-            if clients_state
+        if !exisiting && clients_state
                 .clients
                 .push(Client {
                     owner: *ctx.accounts.payer.signer_key().unwrap(),
@@ -236,10 +233,8 @@ pub mod solana_coordinator {
                     slashed: 0,
                     active: clients_state.next_active,
                 })
-                .is_err()
-            {
-                return err!(ProgramError::ClientsFull);
-            }
+                .is_err() {
+            return err!(ProgramError::ClientsFull);
         }
 
         Ok(())
@@ -289,22 +284,18 @@ pub mod solana_coordinator {
                 let exited_clients = &state.coordinator.epoch_state.exited_clients;
 
                 for client in state.clients_state.clients.iter_mut() {
-                    if i < finished_clients.len() {
-                        if client.id == finished_clients[i].id {
-                            if finished_clients[i].state == ClientState::Healthy {
-                                client.earned += 1;
-                            }
-                            i += 1;
+                    if i < finished_clients.len() && client.id == finished_clients[i].id {
+                        if finished_clients[i].state == ClientState::Healthy {
+                            client.earned += 1;
                         }
+                        i += 1;
                     }
 
-                    if j < exited_clients.len() {
-                        if client.id == exited_clients[j].id {
-                            if exited_clients[j].state == ClientState::Ejected {
-                                client.slashed += 1;
-                            }
-                            j += 1;
+                    if j < exited_clients.len() && client.id == exited_clients[j].id {
+                        if exited_clients[j].state == ClientState::Ejected {
+                            client.slashed += 1;
                         }
+                        j += 1;
                     }
                 }
 
@@ -325,7 +316,7 @@ pub mod solana_coordinator {
     ) -> Result<()> {
         let state = &mut ctx.accounts.account.load_mut()?.state;
 
-        let id = state.clients_state.find_signer(&ctx.accounts.payer.key)?;
+        let id = state.clients_state.find_signer(ctx.accounts.payer.key)?;
 
         state
             .coordinator
@@ -366,7 +357,7 @@ impl ClientsState {
     fn find_signer(&self, signer: &Pubkey) -> Result<&ClientId> {
         match self.clients.iter().find(|x| x.id.signer == *signer) {
             Some(client) => Ok(&client.id),
-            None => return err!(ProgramError::SignerNotAClient),
+            None => err!(ProgramError::SignerNotAClient),
         }
     }
 }

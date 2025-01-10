@@ -40,7 +40,7 @@ pub async fn process_initialize_coordinator(
         program_id: solana_coordinator::ID,
     };
 
-    endpoint.process_instruction(instruction, &payer).await
+    endpoint.process_instruction(instruction, payer).await
 }
 
 pub async fn process_update_coordinator_config(
@@ -64,7 +64,7 @@ pub async fn process_update_coordinator_config(
         program_id: solana_coordinator::ID,
     };
 
-    endpoint.process_instruction(instruction, &payer).await
+    endpoint.process_instruction(instruction, payer).await
 }
 
 pub async fn process_set_whitelist(
@@ -88,7 +88,7 @@ pub async fn process_set_whitelist(
         program_id: solana_coordinator::ID,
     };
 
-    endpoint.process_instruction(instruction, &payer).await
+    endpoint.process_instruction(instruction, payer).await
 }
 
 pub async fn process_join_run(
@@ -112,7 +112,7 @@ pub async fn process_join_run(
         program_id: solana_coordinator::ID,
     };
 
-    endpoint.process_instruction(instruction, &payer).await
+    endpoint.process_instruction(instruction, payer).await
 }
 
 pub async fn process_set_paused(
@@ -136,7 +136,7 @@ pub async fn process_set_paused(
         program_id: solana_coordinator::ID,
     };
 
-    endpoint.process_instruction(instruction, &payer).await
+    endpoint.process_instruction(instruction, payer).await
 }
 
 pub async fn process_tick(
@@ -159,5 +159,5 @@ pub async fn process_tick(
         program_id: solana_coordinator::ID,
     };
 
-    endpoint.process_instruction(instruction, &payer).await
+    endpoint.process_instruction(instruction, payer).await
 }

@@ -169,9 +169,9 @@ struct Identity {
     p2p_identity: PublicKey,
 }
 
-impl Into<ClientId> for Identity {
-    fn into(self) -> ClientId {
-        ClientId::new(self.signer, *self.p2p_identity.as_bytes())
+impl From<Identity> for ClientId {
+    fn from(val: Identity) -> Self {
+        ClientId::new(val.signer, *val.p2p_identity.as_bytes())
     }
 }
 

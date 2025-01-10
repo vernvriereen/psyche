@@ -318,7 +318,7 @@ impl SolanaBackend {
     fn find_instance_from_run_id(&self, run_id: &str) -> (Pubkey, u8) {
         let seeds = &[
             b"coordinator",
-            solana_coordinator::bytes_from_string(&run_id),
+            solana_coordinator::bytes_from_string(run_id),
         ];
         Pubkey::find_program_address(seeds, &self.program.id())
     }
