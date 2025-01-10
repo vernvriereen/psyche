@@ -258,19 +258,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             self.coordinator_state.progress.step, total_commitments
         );
 
-        if let Some((_, witness_proof, _)) = round_state.committee_info.as_ref() {
-            if witness_proof.witness {
-                if let Some((commit_bloom, participant_bloom, order_bloom)) =
-                    &mut round_state.blooms
-                {
-                    commit_bloom.add(&sha256(&training_result.commitment));
-                    participant_bloom.add(&sha256(from_client_id.as_ref()));
-                    // Note: need to check if this batch_id is in remaining_batch_ids for order_bloom
-                    order_bloom.add(&sha256(&training_result.commitment));
-                }
-            }
-        }
-
         round_state
             .results
             .entry(training_result.batch_id)
@@ -374,7 +361,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             let mut remaining_batch_ids = batch_ids_not_yet_trained_on.lock().await;
             if witness_proof.witness {
                 match round_state.blooms.as_mut() {
-                    Some((_, participant_bloom, order_bloom)) => {
+                    Some((participant_bloom, order_bloom)) => {
                         participant_bloom.add(&sha256(from.as_ref()));
                         if remaining_batch_ids.contains(batch_id) {
                             // first received payload for this batch id, vote for it in consensus
