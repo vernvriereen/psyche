@@ -126,14 +126,21 @@ where
 
         info!("Our node addr: {}", node_addr.node_id);
 
+        trace!("creating blobs...");
         let blobs_local_pool = LocalPool::default();
         let blobs = Blobs::memory().build(blobs_local_pool.handle(), &endpoint);
+        trace!("blobs created!");
 
+        trace!("creating gossip...");
         let gossip = Gossip::builder().spawn(endpoint.clone()).await?;
+        trace!("gossip created!");
 
+        trace!("creating model parameter sharing...");
         let (tx_model_parameter_req, rx_model_parameter_req) = mpsc::unbounded_channel();
         let model_parameter_sharing = ModelParameterSharing::new(tx_model_parameter_req);
+        trace!("model parameter sharing created!");
 
+        trace!("creating router...");
         let router = Arc::new(
             Router::spawn(
                 endpoint,
@@ -144,6 +151,7 @@ where
             )
             .await?,
         );
+        trace!("router created!");
 
         // add any bootstrap peers
         {
