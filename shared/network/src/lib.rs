@@ -147,9 +147,6 @@ where
 
         // add any bootstrap peers
         {
-            let me = router.endpoint().node_addr().await?;
-            let join_ticket = PeerList(vec![me]);
-            info!("our join ticket: {}", join_ticket);
             if bootstrap_peers.is_empty() {
                 info!("Waiting for peers to join us...");
             } else {
