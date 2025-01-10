@@ -33,10 +33,6 @@ struct CommonArgs {
 
     /// if not specified, a random free port will be chosen.
     #[clap(short, long)]
-    p2p_port: Option<u16>,
-
-    /// if not specified, a random free port will be chosen.
-    #[clap(short, long)]
     server_port: Option<u16>,
 
     #[clap(
@@ -151,7 +147,6 @@ async fn main() -> Result<()> {
                         common_args.tui,
                         config.0,
                         config.1,
-                        common_args.p2p_port,
                         common_args.server_port,
                         common_args.save_state_dir,
                         common_args.init_warmup_time,

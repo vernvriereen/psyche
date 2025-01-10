@@ -98,7 +98,6 @@ impl CoordinatorServer {
             None,
             None,
             None,
-            None,
             Some(WARMUP_TIME),
             Some(init_min_clients),
             true,

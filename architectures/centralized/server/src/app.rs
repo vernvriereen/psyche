@@ -1,7 +1,6 @@
 use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
-use psyche_client::{TrainingResult, TransmittableDistroResult, NC};
 use psyche_coordinator::model::{
     self, Checkpoint, LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM,
 };
@@ -10,13 +9,11 @@ use psyche_coordinator::{
     SOLANA_MAX_NUM_CLIENTS,
 };
 
-use psyche_core::{u8_to_string, FixedVec, NodeIdentity, Shuffle, SizedIterator, TokenSize};
+use psyche_core::{u8_to_string, FixedVec, Shuffle, SizedIterator, TokenSize};
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider,
 };
-use psyche_network::{
-    allowlist, ClientNotification, NetworkEvent, NetworkTui, NodeId, RelayMode, TcpServer,
-};
+use psyche_network::{ClientNotification, TcpServer};
 use psyche_tui::{
     logging::LoggerWidget, maybe_start_render_loop, CustomWidget, MaybeTui, TabbedWidget,
 };
@@ -38,17 +35,11 @@ use crate::dashboard::{DashboardState, DashboardTui};
 pub(super) type Tabs = TabbedWidget<(
     DashboardTui,
     CoordinatorTui,
-    NetworkTui,
     MaybeTui<DataServerTui>,
     LoggerWidget,
 )>;
-pub(super) const TAB_NAMES: [&str; 5] = [
-    "Dashboard",
-    "Coordinator",
-    "P2P Network",
-    "Training Data Server",
-    "Logger",
-];
+pub(super) const TAB_NAMES: [&str; 4] =
+    ["Dashboard", "Coordinator", "Training Data Server", "Logger"];
 type TabsData = <Tabs as CustomWidget>::Data;
 
 struct Backend {
@@ -97,7 +88,6 @@ type DataServer =
 
 pub struct App {
     cancel: CancellationToken,
-    p2p: NC,
     tx_tui_state: Option<Sender<TabsData>>,
     tick_interval: Interval,
     update_tui_interval: Interval,
@@ -108,7 +98,6 @@ pub struct App {
     original_warmup_time: u64,
     original_min_clients: u16,
     withdraw_on_disconnect: bool,
-    allowlist: allowlist::AllowDynamic,
 }
 
 /// Methods intended for testing purposes only.
@@ -160,26 +149,12 @@ impl App {
         tui: bool,
         mut coordinator: Coordinator<ClientId>,
         data_server_config: Option<DataServerInfo>,
-        p2p_port: Option<u16>,
         coordinator_server_port: Option<u16>,
         save_state_dir: Option<PathBuf>,
         init_warmup_time: Option<u64>,
         init_min_clients: Option<u16>,
         withdraw_on_disconnect: bool,
     ) -> Result<Self> {
-        let run_id = u8_to_string(&coordinator.run_id);
-        let allowlist = allowlist::AllowDynamic::new();
-
-        let p2p = NC::init(
-            &run_id,
-            p2p_port,
-            RelayMode::Default,
-            vec![],
-            None,
-            allowlist.clone(),
-        )
-        .await?;
-
         Self::reset_ephemeral(&mut coordinator);
 
         let training_data_server = if let Model::LLM(LLM {
@@ -275,7 +250,6 @@ impl App {
         Ok(Self {
             cancel,
             training_data_server,
-            p2p,
             tx_tui_state,
             tick_interval,
             update_tui_interval,
@@ -288,7 +262,6 @@ impl App {
             original_warmup_time,
             original_min_clients,
             withdraw_on_disconnect,
-            allowlist,
         })
     }
 
@@ -300,11 +273,6 @@ impl App {
                     return Ok(());
                 }
 
-                Ok(p2p_event) = self.p2p.poll_next() => {
-                    if let Some(event) = p2p_event {
-                        self.on_network_event(event);
-                    }
-                }
                 Some(event) = self.backend.net_server.next() => {
                     match event {
                         ClientNotification::Message((from, message)) => {
@@ -339,19 +307,12 @@ impl App {
             let states = (
                 (&*self).into(),
                 (&self.coordinator).into(),
-                (&self.p2p).into(),
                 self.training_data_server.as_ref().map(|o| (&o.1).into()),
                 Default::default(),
             );
             tx_tui_state.send(states).await?;
         }
         Ok(())
-    }
-
-    fn on_network_event(&mut self, event: NetworkEvent<TrainingResult, TransmittableDistroResult>) {
-        if let NetworkEvent::MessageReceived((_, _)) = event {
-            // we're the coordinator, why are we even in the p2p? lol
-        }
     }
 
     fn on_disconnect(&mut self, from: ClientId) -> Result<()> {
@@ -476,15 +437,6 @@ impl App {
             self.coordinator.config.warmup_time = self.original_warmup_time;
             self.coordinator.config.min_clients = self.original_min_clients;
         }
-
-        self.allowlist.set(
-            self.coordinator
-                .epoch_state
-                .clients
-                .iter()
-                .map(|c| NodeId::from_bytes(c.id.get_p2p_public_key()).unwrap()),
-        );
-
         if broadcast {
             if let Err(err) = self
                 .backend
