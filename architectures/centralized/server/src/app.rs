@@ -10,10 +10,9 @@ use psyche_coordinator::{
     SOLANA_MAX_NUM_CLIENTS,
 };
 
-use psyche_core::{u8_to_string, FixedVec, SizedIterator};
+use psyche_core::{u8_to_string, FixedVec, Shuffle, SizedIterator, TokenSize};
 use psyche_data_provider::{
-    download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider, Shuffle,
-    TokenSize,
+    download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider,
 };
 use psyche_network::{ClientNotification, NetworkEvent, NetworkTui, RelayMode, TcpServer};
 use psyche_tui::logging::LoggerWidget;
