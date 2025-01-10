@@ -158,7 +158,9 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                 .await
                 {
                     Ok(Some(event)) => {
+                        println!("SENDING EVENT!!: {:?}", event);
                         if event_sender.send(event).is_err() {
+                            println!("SENDING EVENT ERROR????????????");
                             break;
                         }
                     }
@@ -190,6 +192,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                 .lock()
                 .await
                 .push(Download::new(blob_ticket, progress));
+
             if let Err(e) = sender.send(()) {
                 error!("{}", e);
             }
@@ -211,7 +214,9 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
     }
 
     pub async fn poll_next(&mut self) -> Option<DownloadManagerEvent<D>> {
-        self.event_receiver.recv().await
+        let event = self.event_receiver.recv().await;
+        println!("INTERCEPTED EVENT!: {:?}", event);
+        event
     }
 
     async fn poll_next_inner(
@@ -219,6 +224,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
         reading: &mut Vec<ReadingFinishedDownload>,
     ) -> Result<Option<DownloadManagerEvent<D>>> {
         if downloads.is_empty() && reading.is_empty() {
+            println!("RETURNING EARLY NONE");
             return Ok(None);
         }
 
@@ -256,6 +262,9 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                 )
             }) as Pin<Box<dyn Future<Output = FutureResult> + Send>>
         });
+
+        println!("DOWNLOAD FUTURES LEN: {}", download_futures.len());
+        println!("READ FUTURES LEN: {}", read_futures.len());
 
         let all_futures: Vec<Pin<Box<dyn Future<Output = FutureResult> + Send>>> =
             download_futures.chain(read_futures).collect();

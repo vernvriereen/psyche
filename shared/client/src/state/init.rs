@@ -344,7 +344,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             .send((parameter_names, tx_params_response))
                             .unwrap();
 
-                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        tokio::time::sleep(Duration::from_secs(30)).await;
                         let parameters = rx_params_response.await.unwrap();
 
                         todo!()
