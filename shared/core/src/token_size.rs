@@ -1,7 +1,20 @@
+use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use anyhow::anyhow;
+use bytemuck::Zeroable;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(
+    AnchorSerialize,
+    AnchorDeserialize,
+    InitSpace,
+    Serialize,
+    Deserialize,
+    Clone,
+    Debug,
+    Zeroable,
+    Copy,
+)]
+#[repr(C)]
 pub enum TokenSize {
     TwoBytes,
     FourBytes,

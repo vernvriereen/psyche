@@ -1,9 +1,9 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use psyche_core::BatchId;
+use psyche_core::{BatchId, Shuffle, TokenSize};
 use psyche_data_provider::{
     http::{FileURLs, HttpDataProvider},
-    Shuffle, TokenSize, TokenizedDataProvider,
+    TokenizedDataProvider,
 };
 use std::path::PathBuf;
 use tokenizers::Tokenizer;
@@ -13,11 +13,11 @@ use tokenizers::Tokenizer;
 struct Cli {
     /// File size in bytes
     #[arg(long)]
-    file_size: usize,
+    file_size: u64,
 
     /// Sequence length
     #[arg(long, default_value = "2048")]
-    sequence_length: usize,
+    sequence_length: u32,
 
     /// Token size in bytes
     #[arg(long, default_value = "2")]

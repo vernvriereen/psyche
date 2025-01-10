@@ -13,6 +13,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::hash::Hash;
 
 pub const SOLANA_MAX_STRING_LEN: usize = 64;
+pub const SOLANA_MAX_URL_STRING_LEN: usize = 256;
 pub const SOLANA_MAX_NUM_CLIENTS: usize = 64;
 pub const SOLANA_MAX_NUM_WITNESSES: usize = 16;
 pub const SOLANA_MAX_NUM_CHECKPOINTERS: usize = 4;

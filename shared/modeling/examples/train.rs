@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
-use psyche_core::{CancellableBarrier, CosineLR, LearningRateScheduler};
-use psyche_data_provider::{download_model_repo_sync, LocalDataProvider, Shuffle};
+use psyche_core::{CancellableBarrier, CosineLR, LearningRateScheduler, Shuffle};
+use psyche_data_provider::{download_model_repo_sync, LocalDataProvider};
 use psyche_modeling::{
     Batcher, CausalLM, CommunicatorId, Distro, Fp32GradientAccumulator, LlamaForCausalLM,
 };

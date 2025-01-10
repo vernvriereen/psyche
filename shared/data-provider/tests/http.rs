@@ -1,8 +1,8 @@
 use anyhow::Result;
-use psyche_core::BatchId;
+use psyche_core::{BatchId, Shuffle, TokenSize};
 use psyche_data_provider::{
     http::{FileURLs, HttpDataProvider},
-    Shuffle, TokenSize, TokenizedDataProvider,
+    TokenizedDataProvider,
 };
 use std::io::Write;
 use std::net::SocketAddr;
@@ -49,8 +49,8 @@ impl TestServer {
 
 #[test(tokio::test)]
 async fn test_http_data_provider() -> Result<()> {
-    const FILE_SIZE: usize = 16;
-    const SEQUENCE_LEN: usize = 3;
+    const FILE_SIZE: u64 = 16;
+    const SEQUENCE_LEN: u32 = 3;
 
     let file1: Vec<u8> = (0..FILE_SIZE).map(|i| i as u8).collect();
     let file2: Vec<u8> = (FILE_SIZE..FILE_SIZE * 2).map(|i| i as u8).collect();
@@ -112,8 +112,8 @@ async fn test_http_data_provider() -> Result<()> {
 
 #[test(tokio::test)]
 async fn test_http_data_provider_shuffled() -> Result<()> {
-    const FILE_SIZE: usize = 16;
-    const SEQUENCE_LEN: usize = 3;
+    const FILE_SIZE: u64 = 16;
+    const SEQUENCE_LEN: u32 = 3;
 
     let file1: Vec<u8> = (0..FILE_SIZE).map(|i| i as u8).collect();
     let file2: Vec<u8> = (FILE_SIZE..FILE_SIZE * 2).map(|i| i as u8).collect();

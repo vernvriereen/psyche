@@ -1,13 +1,12 @@
 use anyhow::{anyhow, bail, Result};
-use psyche_core::BatchId;
+use psyche_coordinator::model::HttpTrainingDataLocation;
+use psyche_core::{u8_to_string, BatchId, Shuffle, TokenSize};
 use rand::seq::SliceRandom;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use tracing::{info, trace};
 
-use crate::token_size::TokenSize;
 use crate::traits::{LengthKnownDataProvider, TokenizedDataProvider};
-use crate::Shuffle;
 
 struct SequencePointer {
     file_index: usize,
@@ -18,7 +17,7 @@ pub struct HttpDataProvider {
     client: reqwest::Client,
     file_urls: Vec<String>,
     sequences: Vec<SequencePointer>,
-    seq_len: usize,
+    seq_len: u32,
     token_size_in_bytes: TokenSize,
 }
 
@@ -88,30 +87,51 @@ impl From<FileURLs> for Vec<String> {
     }
 }
 
+impl From<&HttpTrainingDataLocation> for FileURLs {
+    fn from(val: &HttpTrainingDataLocation) -> Self {
+        match val {
+            HttpTrainingDataLocation::SingleUrl(u) => FileURLs::from_list(&[u8_to_string(u)]),
+            HttpTrainingDataLocation::NumberedFiles {
+                url_template,
+                start_index,
+                n_left_pad_zeros,
+                num_files,
+            } => FileURLs::from_template(
+                u8_to_string(url_template),
+                (*start_index).try_into().expect("u32 fits in usize"),
+                (*n_left_pad_zeros).try_into().expect("u32 fits in usize"),
+                (*num_files).try_into().expect("u32 fits in usize"),
+            )
+            .expect("URL was validated before byte-stringing!"),
+        }
+    }
+}
+
 impl HttpDataProvider {
     pub async fn new(
-        file_urls: FileURLs,
-        file_size: usize,
+        file_urls: impl Into<FileURLs>,
+        file_size: u64,
         token_size_in_bytes: TokenSize,
-        num_tokens_per_sequence: usize,
+        num_tokens_per_sequence: u32,
         shuffle: Shuffle,
     ) -> Result<Self> {
-        let file_urls: Vec<_> = file_urls.into();
+        let file_urls: Vec<_> = file_urls.into().into();
         let num_files = file_urls.len();
 
         let client = reqwest::Client::new();
         validate_urls(client.clone(), &file_urls).await?;
 
-        let seq_len_in_bytes = num_tokens_per_sequence * usize::from(token_size_in_bytes);
+        let seq_len_in_bytes =
+            num_tokens_per_sequence as u64 * usize::from(token_size_in_bytes) as u64;
 
         let sequences: Vec<SequencePointer> = {
             let mut all_indexes: Vec<_> = (0..num_files)
                 .flat_map(|file_index| {
                     (0..file_size - seq_len_in_bytes)
-                        .step_by(seq_len_in_bytes)
+                        .step_by(seq_len_in_bytes as usize)
                         .map(move |byte_offset| SequencePointer {
                             file_index,
-                            byte_offset,
+                            byte_offset: byte_offset as usize,
                         })
                 })
                 .collect();
@@ -201,7 +221,7 @@ impl HttpDataProvider {
                     )
                 })?;
 
-            let data_len = usize::from(self.token_size_in_bytes) * (self.seq_len + 1);
+            let data_len = usize::from(self.token_size_in_bytes) * (self.seq_len as usize + 1);
             let data = self
                 .fetch_data_range(*file_index, *byte_offset, data_len)
                 .await?;

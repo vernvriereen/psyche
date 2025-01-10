@@ -5,10 +5,9 @@ pub mod http;
 mod hub;
 mod local;
 mod remote;
-mod token_size;
 mod traits;
 
-pub use data_provider::{DataProvider, Shuffle};
+pub use data_provider::DataProvider;
 pub use dataset::{Dataset, Field, Row, Split};
 pub use dummy::DummyDataProvider;
 pub use hub::{
@@ -18,5 +17,4 @@ pub use hub::{
 pub use local::LocalDataProvider;
 pub use parquet::record::{ListAccessor, MapAccessor, RowAccessor};
 pub use remote::{DataProviderTcpClient, DataProviderTcpServer, DataServerTui};
-pub use token_size::TokenSize;
 pub use traits::{LengthKnownDataProvider, TokenizedDataProvider};

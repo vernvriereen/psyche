@@ -1,14 +1,12 @@
 use anyhow::{anyhow, bail, Result};
-use psyche_core::BatchId;
+use psyche_core::{BatchId, Shuffle, TokenSize};
 use rand::seq::SliceRandom;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::fs;
 use tracing::info;
 
-use crate::token_size::TokenSize;
 use crate::traits::{LengthKnownDataProvider, TokenizedDataProvider};
-use crate::Shuffle;
 
 fn mmap_file(p: &std::path::PathBuf) -> Result<memmap2::Mmap> {
     let file = std::fs::File::open(p)?;
