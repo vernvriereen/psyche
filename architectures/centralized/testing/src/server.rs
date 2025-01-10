@@ -3,7 +3,7 @@ use psyche_centralized_server::app::App as ServerApp;
 use psyche_centralized_shared::ClientId;
 use psyche_coordinator::{
     model::{Model, LLM},
-    CoordinatorConfig, Coordinator, CoordinatorEpochState, RunState, SOLANA_MAX_NUM_CLIENTS,
+    Coordinator, CoordinatorConfig, CoordinatorEpochState, RunState, SOLANA_MAX_NUM_CLIENTS,
 };
 use psyche_coordinator::{Client, Round};
 use psyche_core::FixedVec;

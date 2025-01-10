@@ -6,7 +6,9 @@ use solana_coordinator::{
     accounts::{
         InitializeCoordinatorAccounts, OwnerCoordinatorAccounts, PermissionlessCoordinatorAccounts,
     },
-    instruction::{InitializeCoordinator, JoinRun, SetPaused, SetWhitelist, Tick, UpdateCoordinatorConfig},
+    instruction::{
+        InitializeCoordinator, JoinRun, SetPaused, SetWhitelist, Tick, UpdateCoordinatorConfig,
+    },
     ClientId,
 };
 use solana_sdk::{
@@ -153,7 +155,7 @@ pub async fn process_tick(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: Tick{}.data(),
+        data: Tick {}.data(),
         program_id: solana_coordinator::ID,
     };
 
