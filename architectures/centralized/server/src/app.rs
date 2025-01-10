@@ -28,7 +28,7 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::time::{interval, MissedTickBehavior};
 use tokio::{select, time::Interval};
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::{debug, info, info_span, warn, Instrument};
 
 use crate::dashboard::{DashboardState, DashboardTui};
 
@@ -155,114 +155,119 @@ impl App {
         init_min_clients: Option<u16>,
         withdraw_on_disconnect: bool,
     ) -> Result<Self> {
-        Self::reset_ephemeral(&mut coordinator);
+        async {
+            Self::reset_ephemeral(&mut coordinator);
 
-        let training_data_server = if let Model::LLM(LLM {
-            data_location: LLMTrainingDataLocation::Server(url),
-            data_type,
-            checkpoint,
-            ..
-        }) = &coordinator.model
-        {
-            if let LLMTrainingDataType::Finetuning = data_type {
-                panic!("Finetuning is not supported yet.")
-            }
+            debug!("potentially launching data server...");
 
-            match checkpoint {
-                Checkpoint::Hub(hub_repo) => {
-                    let repo_id = u8_to_string(&hub_repo.repo_id);
-                    let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
-                    if revision.is_some()
-                        || !tokio::fs::try_exists(PathBuf::from(repo_id.clone()))
-                            .await
-                            .unwrap_or_default()
-                    {
-                        download_model_repo_async(&repo_id, revision, None, None, None, true)
-                            .await?;
+            let training_data_server = if let Model::LLM(LLM {
+                data_location: LLMTrainingDataLocation::Server(url),
+                data_type,
+                checkpoint,
+                ..
+            }) = &coordinator.model
+            {
+                if let LLMTrainingDataType::Finetuning = data_type {
+                    panic!("Finetuning is not supported yet.")
+                }
+
+                match checkpoint {
+                    Checkpoint::Hub(hub_repo) => {
+                        let repo_id = u8_to_string(&hub_repo.repo_id);
+                        let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
+                        if revision.is_some()
+                            || !tokio::fs::try_exists(PathBuf::from(repo_id.clone()))
+                                .await
+                                .unwrap_or_default()
+                        {
+                            download_model_repo_async(&repo_id, revision, None, None, None, true)
+                                .await?;
+                        }
+                    }
+                    Checkpoint::Ephemeral => {
+                        bail!("Can't start up a run with an Ephemeral checkpoint.")
+                    }
+                    Checkpoint::Dummy => {
+                        // ok!
+                    }
+                    Checkpoint::P2P => {
+                        bail!("Can't start up a run with a P2P checkpoint.")
                     }
                 }
-                Checkpoint::Ephemeral => {
-                    bail!("Can't start up a run with an Ephemeral checkpoint.")
-                }
-                Checkpoint::Dummy => {
-                    // ok!
-                }
-                Checkpoint::P2P => {
-                    bail!("Can't start up a run with a P2P checkpoint.")
-                }
+
+                let server_addr: SocketAddr = u8_to_string(url).parse().map_err(|e| {
+                    anyhow!("Failed to parse training data server URL {:?}: {}", url, e)
+                })?;
+                let data_server_port = server_addr.port();
+                let DataServerInfo {
+                    dir,
+                    seq_len,
+                    shuffle_seed,
+                    token_size
+                } = data_server_config.ok_or_else(|| anyhow!("Coordinator state requires we host training data, but no --data-config passed."))?;
+
+                let local_data_provider = LocalDataProvider::new_from_directory(
+                    dir,
+                    token_size,
+                    seq_len,
+                    Shuffle::Seeded(shuffle_seed),
+                )?;
+
+                let (tx, backend) = ChannelCoordinatorBackend::new();
+                let data_server =
+                    DataProviderTcpServer::start(local_data_provider, backend, data_server_port)
+                        .await?;
+                Some((tx, data_server))
+            } else {
+                None
+            };
+            debug!("data server work done.");
+
+            let (cancel, tx_tui_state) =
+                maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;
+
+            let mut tick_interval = interval(Duration::from_millis(500));
+            tick_interval.set_missed_tick_behavior(MissedTickBehavior::Skip); //important!
+
+            let mut update_tui_interval = interval(Duration::from_millis(150));
+            update_tui_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+            let net_server =
+                TcpServer::<ClientId, ClientToServerMessage, ServerToClientMessage>::start(
+                    SocketAddr::new(
+                        std::net::IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                        coordinator_server_port.unwrap_or(0),
+                    ),
+                )
+                .await?;
+
+            let original_warmup_time = coordinator.config.warmup_time;
+            let original_min_clients = coordinator.config.min_clients;
+
+            if let Some(init_warmup_time) = init_warmup_time {
+                coordinator.config.warmup_time = init_warmup_time;
+            }
+            if let Some(init_min_clients) = init_min_clients {
+                coordinator.config.min_clients = init_min_clients;
             }
 
-            let server_addr: SocketAddr = u8_to_string(url).parse().map_err(|e| {
-                anyhow!("Failed to parse training data server URL {:?}: {}", url, e)
-            })?;
-            let data_server_port = server_addr.port();
-            let DataServerInfo {
-                dir,
-                seq_len,
-                shuffle_seed,
-                token_size
-            } = data_server_config.ok_or_else(|| anyhow!("Coordinator state requires we host training data, but no --data-config passed."))?;
-
-            let local_data_provider = LocalDataProvider::new_from_directory(
-                dir,
-                token_size,
-                seq_len,
-                Shuffle::Seeded(shuffle_seed),
-            )?;
-
-            let (tx, backend) = ChannelCoordinatorBackend::new();
-            let data_server =
-                DataProviderTcpServer::start(local_data_provider, backend, data_server_port)
-                    .await?;
-            Some((tx, data_server))
-        } else {
-            None
-        };
-
-        let (cancel, tx_tui_state) =
-            maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;
-
-        let mut tick_interval = interval(Duration::from_millis(500));
-        tick_interval.set_missed_tick_behavior(MissedTickBehavior::Skip); //important!
-
-        let mut update_tui_interval = interval(Duration::from_millis(150));
-        update_tui_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
-        let net_server =
-            TcpServer::<ClientId, ClientToServerMessage, ServerToClientMessage>::start(
-                SocketAddr::new(
-                    std::net::IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-                    coordinator_server_port.unwrap_or(0),
-                ),
-            )
-            .await?;
-
-        let original_warmup_time = coordinator.config.warmup_time;
-        let original_min_clients = coordinator.config.min_clients;
-
-        if let Some(init_warmup_time) = init_warmup_time {
-            coordinator.config.warmup_time = init_warmup_time;
-        }
-        if let Some(init_min_clients) = init_min_clients {
-            coordinator.config.min_clients = init_min_clients;
-        }
-
-        Ok(Self {
-            cancel,
-            training_data_server,
-            tx_tui_state,
-            tick_interval,
-            update_tui_interval,
-            coordinator,
-            backend: Backend {
-                net_server,
-                pending_clients: HashSet::new(),
-            },
-            save_state_dir,
-            original_warmup_time,
-            original_min_clients,
-            withdraw_on_disconnect,
-        })
+            Ok(Self {
+                cancel,
+                training_data_server,
+                tx_tui_state,
+                tick_interval,
+                update_tui_interval,
+                coordinator,
+                backend: Backend {
+                    net_server,
+                    pending_clients: HashSet::new(),
+                },
+                save_state_dir,
+                original_warmup_time,
+                original_min_clients,
+                withdraw_on_disconnect,
+            })
+        }.instrument(info_span!("App::new")).await
     }
 
     pub async fn run(&mut self) -> Result<()> {
@@ -343,6 +348,7 @@ impl App {
                 // TODO: check whitelist
                 let coord_run_id = u8_to_string(&self.coordinator.run_id);
                 if coord_run_id == run_id {
+                    info!("added pending client {from}");
                     self.backend.pending_clients.insert(from);
                 } else {
                     info!("{from:?} tried to join unknown run {run_id}");
