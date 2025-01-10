@@ -460,6 +460,9 @@ pub enum ProgramError {
 
     #[msg("Coordinator error: Invalid withdraw")]
     CoordinatorErrorInvalidWithdraw,
+
+    #[msg("Coordinator error: Invalid committee selection")]
+    CoordinatorErrorInvalidCommitteeSelection,
 }
 
 impl From<CoordinatorError> for ProgramError {
@@ -477,6 +480,9 @@ impl From<CoordinatorError> for ProgramError {
             CoordinatorError::WitnessesFull => ProgramError::CoordinatorErrorWitnessesFull,
             CoordinatorError::CannotResume => ProgramError::CoordinatorErrorCannotResume,
             CoordinatorError::InvalidWithdraw => ProgramError::CoordinatorErrorInvalidWithdraw,
+            CoordinatorError::InvalidCommitteeSelection => {
+                ProgramError::CoordinatorErrorInvalidCommitteeSelection
+            }
         }
     }
 }
