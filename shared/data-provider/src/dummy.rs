@@ -1,7 +1,6 @@
-use crate::token_size::TokenSize;
 use crate::traits::TokenizedDataProvider;
 use anyhow::Result;
-use psyche_core::BatchId;
+use psyche_core::{BatchId, TokenSize};
 
 pub struct DummyDataProvider {
     seq_len: usize,

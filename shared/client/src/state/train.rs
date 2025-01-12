@@ -12,7 +12,7 @@ use psyche_coordinator::{
 };
 use psyche_core::{sha256, BatchId, Bloom, NodeIdentity};
 use psyche_modeling::DistroResult;
-use psyche_network::NetworkableNodeIdentity;
+use psyche_network::AuthenticatableIdentity;
 use thiserror::Error;
 use tokio::{
     sync::{mpsc, Mutex},
@@ -83,9 +83,9 @@ pub enum TrainError {
     HealthCheckCrashed,
 }
 
-pub struct TrainingStepMetadata<T: NetworkableNodeIdentity> {
+pub struct TrainingStepMetadata<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub identity: T,
-    pub data_fetcher: DataFetcher<T>,
+    pub data_fetcher: DataFetcher<T, A>,
     pub tx_health_check: mpsc::UnboundedSender<HealthChecks>,
     pub tx_distro_result: mpsc::UnboundedSender<DistroBroadcastAndPayload>,
 
@@ -124,7 +124,7 @@ impl TrainingStep {
     }
 }
 
-impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
+impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata<T, A> {
     pub fn start(
         &mut self,
         client_index: u64,
@@ -176,16 +176,9 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
 
         let blooms = match witness_proof.witness {
             true => {
-                let commit_bloom =
-                    Bloom::random(num_batch_ids_for_this_round * 2, BLOOM_FALSE_RATE);
                 let participant_bloom =
                     Bloom::random(state.epoch_state.clients.len(), BLOOM_FALSE_RATE);
                 let order_bloom = Bloom::random(num_batch_ids_for_this_round, BLOOM_FALSE_RATE);
-                debug!(
-                    "Commit bloom size: {} bits, {} keys",
-                    commit_bloom.bits.0.len(),
-                    commit_bloom.keys.len()
-                );
                 debug!(
                     "Participant bloom size: {} bits, {} keys",
                     participant_bloom.bits.0.len(),
@@ -196,7 +189,7 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
                     order_bloom.bits.0.len(),
                     order_bloom.keys.len()
                 );
-                Some((commit_bloom, participant_bloom, order_bloom))
+                Some((participant_bloom, order_bloom))
             }
             false => None,
         };
@@ -389,7 +382,7 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
         _previous_round: &mut RoundState<T>,
         current_round: &mut RoundState<T>,
     ) -> Result<JoinHandle<Result<Vec<Trainer>, ApplyError>>, ApplyError> {
-        if state.epoch_state.first_round {
+        if state.epoch_state.first_round.into() {
             // the first training step of each epoch has no apply phase.
             info!("Skipping early apply");
             return Ok(tokio::task::spawn(async move { Ok(trainers) }));
@@ -511,60 +504,62 @@ impl<T: NetworkableNodeIdentity> TrainingStepMetadata<T> {
     }
 }
 
-fn start_sending_health_checks<T: NetworkableNodeIdentity>(
+fn start_sending_health_checks<T: NodeIdentity>(
     current_round: &mut RoundState<T>,
     state: &Coordinator<T>,
     tx_health_check: mpsc::UnboundedSender<HealthChecks>,
 ) -> Result<Option<JoinHandle<Result<(), TrainError>>>, TrainError> {
     // we won't have any information to health check with until at least one round of training has finished
-    if state.epoch_state.first_round {
+    if state.epoch_state.first_round.into() {
         return Ok(None);
     }
     let (_, witness_proof, committee_selection) = current_round
         .committee_info
         .as_ref()
         .ok_or(TrainError::NoCommitteeInfo)?;
-    Ok(if !state.epoch_state.first_round && witness_proof.witness {
-        let witnesses = state
-            .previous_round()
-            .ok_or(TrainError::NoActiveRound)?
-            .witnesses;
-        let witness_quorum = state.config.witness_quorum;
-        let clients = state.epoch_state.clients;
-        let committee_selection = committee_selection.clone();
-        Some(tokio::task::spawn(async move {
-            let mut checks = HealthChecks::new();
-            for (index, client) in clients.iter().enumerate() {
-                let proof = committee_selection.get_committee(index as u64);
-                if proof.committee == Committee::Trainer {
-                    debug!(
-                        "Trainer {:?} health score: {}",
-                        client,
-                        Coordinator::trainer_healthy_score_by_witnesses(&client.id, &witnesses)
-                    );
-                    if !Coordinator::trainer_healthy_by_witnesses(
-                        &client.id,
-                        &witnesses,
-                        witness_quorum,
-                    ) {
-                        debug!("Found unhealthy trainer at index {index}");
-                        checks.push(proof);
+    Ok(
+        if state.epoch_state.first_round.is_false() && witness_proof.witness {
+            let witnesses = state
+                .previous_round()
+                .ok_or(TrainError::NoActiveRound)?
+                .witnesses;
+            let witness_quorum = state.config.witness_quorum;
+            let clients = state.epoch_state.clients;
+            let committee_selection = committee_selection.clone();
+            Some(tokio::task::spawn(async move {
+                let mut checks = HealthChecks::new();
+                for (index, client) in clients.iter().enumerate() {
+                    let proof = committee_selection.get_committee(index as u64);
+                    if proof.committee == Committee::Trainer {
+                        debug!(
+                            "Trainer {:?} health score: {}",
+                            client,
+                            Coordinator::trainer_healthy_score_by_witnesses(&client.id, &witnesses)
+                        );
+                        if !Coordinator::trainer_healthy_by_witnesses(
+                            &client.id,
+                            &witnesses,
+                            witness_quorum,
+                        ) {
+                            debug!("Found unhealthy trainer at index {index}");
+                            checks.push(proof);
+                        }
                     }
                 }
-            }
 
-            if !checks.is_empty() {
-                info!("Sending health check for following indicies: {:?}", checks);
-                tx_health_check
-                    .send(checks)
-                    .map_err(|_| TrainError::SendHealthChecks)
-            } else {
-                Ok(())
-            }
-        }))
-    } else {
-        None
-    })
+                if !checks.is_empty() {
+                    info!("Sending health check for following indicies: {:?}", checks);
+                    tx_health_check
+                        .send(checks)
+                        .map_err(|_| TrainError::SendHealthChecks)
+                } else {
+                    Ok(())
+                }
+            }))
+        } else {
+            None
+        },
+    )
 }
 
 #[derive(Error, Debug)]

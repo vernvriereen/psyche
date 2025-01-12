@@ -1,8 +1,8 @@
 use anyhow::Result;
 use bytemuck::Zeroable;
 use psyche_coordinator::Coordinator;
-use psyche_core::BatchId;
-use psyche_network::{ClientNotification, NetworkableNodeIdentity, TcpServer};
+use psyche_core::{BatchId, NodeIdentity};
+use psyche_network::{AuthenticatableIdentity, ClientNotification, TcpServer};
 use psyche_watcher::Backend;
 use std::collections::{HashMap, HashSet};
 use tracing::{debug, warn};
@@ -11,29 +11,31 @@ use crate::traits::{LengthKnownDataProvider, TokenizedDataProvider};
 
 use super::shared::{ClientToServerMessage, RejectionReason, ServerToClientMessage};
 
-pub struct DataProviderTcpServer<T, D, W>
+pub struct DataProviderTcpServer<T, A, D, W>
 where
-    T: NetworkableNodeIdentity,
+    T: NodeIdentity,
+    A: AuthenticatableIdentity,
     D: TokenizedDataProvider + LengthKnownDataProvider,
     W: Backend<T>,
 {
-    tcp_server: TcpServer<T, ClientToServerMessage, ServerToClientMessage>,
+    tcp_server: TcpServer<A, ClientToServerMessage, ServerToClientMessage>,
     pub(crate) local_data_provider: D,
     backend: W,
     pub(crate) state: Coordinator<T>,
     // pub(crate) selected_data: IntervalTree<u64, T>,
-    pub(crate) in_round: HashSet<T>,
-    pub(crate) provided_sequences: HashMap<T, usize>,
+    pub(crate) in_round: HashSet<[u8; 32]>,
+    pub(crate) provided_sequences: HashMap<A, usize>,
 }
 
-impl<T, D, W> DataProviderTcpServer<T, D, W>
+impl<T, A, D, W> DataProviderTcpServer<T, A, D, W>
 where
-    T: NetworkableNodeIdentity + 'static,
+    T: NodeIdentity + 'static,
+    A: AuthenticatableIdentity + 'static,
     D: TokenizedDataProvider + LengthKnownDataProvider + 'static,
     W: Backend<T> + 'static,
 {
     pub async fn start(local_data_provider: D, backend: W, port: u16) -> Result<Self> {
-        let tcp_server = TcpServer::<T, ClientToServerMessage, ServerToClientMessage>::start(
+        let tcp_server = TcpServer::<A, ClientToServerMessage, ServerToClientMessage>::start(
             format!("0.0.0.0:{port}").parse()?,
         )
         .await?;
@@ -65,19 +67,19 @@ where
             }
         }
     }
-    pub async fn handle_client_message(&mut self, from: T, message: ClientToServerMessage) {
+    pub async fn handle_client_message(&mut self, from: A, message: ClientToServerMessage) {
         match message {
             ClientToServerMessage::RequestTrainingData { data_ids } => {
-                let result = self.try_send_data(from, data_ids.clone()).await;
+                let result = self.try_send_data(from.clone(), data_ids.clone()).await;
                 match result {
                     Ok(data) => {
                         let old_count = *self.provided_sequences.get(&from).unwrap_or(&0);
                         self.provided_sequences
-                            .insert(from, old_count + data_ids.len());
+                            .insert(from.clone(), old_count + data_ids.len());
                         match self
                             .tcp_server
                             .send_to(
-                                from,
+                                from.clone(),
                                 ServerToClientMessage::TrainingData {
                                     data_ids,
                                     raw_data: data,
@@ -97,7 +99,7 @@ where
                         match self
                             .tcp_server
                             .send_to(
-                                from,
+                                from.clone(),
                                 ServerToClientMessage::RequestRejected { data_ids, reason },
                             )
                             .await
@@ -117,10 +119,10 @@ where
 
     async fn try_send_data(
         &mut self,
-        to: T,
+        to: A,
         data_ids: Vec<BatchId>,
     ) -> Result<Vec<Vec<i32>>, RejectionReason> {
-        if !self.in_round.contains(&to) {
+        if !self.in_round.contains(to.get_p2p_public_key()) {
             return Err(RejectionReason::NotInThisRound);
         }
 
@@ -148,7 +150,7 @@ where
             .epoch_state
             .clients
             .iter()
-            .map(|x| x.id)
+            .map(|x| *x.id.get_p2p_public_key())
             .collect();
         // self.selected_data = match self.state.current_round() {
         //     Ok(round) => {

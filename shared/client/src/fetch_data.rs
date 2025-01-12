@@ -1,8 +1,8 @@
 use psyche_coordinator::{get_batch_ids_for_round, Coordinator};
-use psyche_core::{BatchId, IntervalTree};
+use psyche_core::{BatchId, IntervalTree, NodeIdentity};
 use psyche_data_provider::{DataProvider, TokenizedDataProvider};
-use psyche_network::NetworkableNodeIdentity;
-use std::{collections::HashSet, sync::Arc};
+use psyche_network::AuthenticatableIdentity;
+use std::{collections::HashSet, marker::PhantomData, sync::Arc};
 use tokio::{
     sync::{mpsc, Mutex},
     task::JoinHandle,
@@ -18,18 +18,20 @@ pub struct Batch {
     pub data: Vec<Vec<i32>>,
 }
 
-pub struct DataFetcher<T: NetworkableNodeIdentity> {
-    data_provider: Arc<Mutex<DataProvider<T>>>,
+pub struct DataFetcher<T: NodeIdentity, A: AuthenticatableIdentity> {
+    data_provider: Arc<Mutex<DataProvider<A>>>,
     active_fetch_task: Option<(BatchStep, JoinHandle<()>)>,
     buffer_size: usize,
+    _phantom: PhantomData<T>,
 }
 
-impl<T: NetworkableNodeIdentity> DataFetcher<T> {
-    pub fn new(data_provider: DataProvider<T>, buffer_size: usize) -> Self {
+impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> DataFetcher<T, A> {
+    pub fn new(data_provider: DataProvider<A>, buffer_size: usize) -> Self {
         Self {
             data_provider: Arc::new(Mutex::new(data_provider)),
             active_fetch_task: None,
             buffer_size,
+            _phantom: Default::default(),
         }
     }
 

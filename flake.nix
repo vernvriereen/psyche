@@ -45,7 +45,9 @@
         };
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
-        testResourcesFilter = path: _type: builtins.match ".*tests/resources/.*$" path != null;
+        testResourcesFilter = path: _type:
+          (builtins.match ".*tests/resources/.*$" path != null)
+          || (builtins.match ".*.config/.*$" path != null);
         src = pkgs.lib.cleanSourceWith {
           src = ./.;
           filter = path: type: (testResourcesFilter path type) || (craneLib.filterCargoSources path type);

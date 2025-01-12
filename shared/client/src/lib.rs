@@ -1,3 +1,4 @@
+mod cli;
 mod client;
 mod fetch_data;
 mod protocol;
@@ -6,12 +7,13 @@ mod state;
 mod trainer;
 mod tui;
 
+pub use cli::{exercise_sdpa_if_needed, print_identity_keys, read_identity_secret_key, TrainArgs};
 pub use client::Client;
 pub use protocol::{TrainingResult, TransmittableDistroResult, NC};
 pub use serialized_distro::{
     distro_results_from_reader, distro_results_to_bytes, SerializedDistroResult,
 };
-pub use state::{CheckpointConfig, HubUploadInfo, RunInitConfig, RunInitConfigAndIO};
+pub use state::{CheckpointConfig, HubUploadInfo, InitRunError, RunInitConfig, RunInitConfigAndIO};
 pub use tui::{ClientTUI, ClientTUIState};
 
 #[derive(Clone)]

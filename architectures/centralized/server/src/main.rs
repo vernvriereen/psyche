@@ -60,7 +60,7 @@ struct CommonArgs {
     init_warmup_time: Option<u64>,
 
     #[clap(long)]
-    init_min_clients: Option<u32>,
+    init_min_clients: Option<u16>,
 
     #[clap(
         long,

@@ -10,10 +10,9 @@ use psyche_coordinator::{
     SOLANA_MAX_NUM_CLIENTS,
 };
 
-use psyche_core::{u8_to_string, FixedVec};
+use psyche_core::{u8_to_string, FixedVec, Shuffle, SizedIterator, TokenSize};
 use psyche_data_provider::{
-    download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider, Shuffle,
-    TokenSize,
+    download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider,
 };
 use psyche_network::{ClientNotification, NetworkEvent, NetworkTui, RelayMode, TcpServer};
 use psyche_tui::logging::LoggerWidget;
@@ -54,12 +53,6 @@ struct Backend {
     pending_clients: HashSet<ClientId>,
 }
 
-impl psyche_coordinator::Backend<ClientId> for Backend {
-    fn select_new_clients(&self) -> Vec<ClientId> {
-        self.pending_clients.iter().cloned().collect()
-    }
-}
-
 struct ChannelCoordinatorBackend {
     rx: Receiver<Coordinator<ClientId>>,
 }
@@ -90,7 +83,8 @@ impl psyche_watcher::Backend<ClientId> for ChannelCoordinatorBackend {
     }
 }
 
-type DataServer = DataProviderTcpServer<ClientId, LocalDataProvider, ChannelCoordinatorBackend>;
+type DataServer =
+    DataProviderTcpServer<ClientId, ClientId, LocalDataProvider, ChannelCoordinatorBackend>;
 
 pub struct App {
     cancel: CancellationToken,
@@ -103,7 +97,7 @@ pub struct App {
     training_data_server: Option<(Sender<Coordinator<ClientId>>, DataServer)>,
     save_state_dir: Option<PathBuf>,
     original_warmup_time: u64,
-    original_min_clients: u32,
+    original_min_clients: u16,
     withdraw_on_disconnect: bool,
 }
 
@@ -133,7 +127,7 @@ impl App {
         self.coordinator.epoch_state.rounds_head
     }
 
-    pub fn get_current_epoch(&self) -> u32 {
+    pub fn get_current_epoch(&self) -> u16 {
         self.coordinator.progress.epoch
     }
 }
@@ -156,7 +150,7 @@ impl App {
         server_port: Option<u16>,
         save_state_dir: Option<PathBuf>,
         init_warmup_time: Option<u64>,
-        init_min_clients: Option<u32>,
+        init_min_clients: Option<u16>,
         withdraw_on_disconnect: bool,
     ) -> Result<Self> {
         let run_id = u8_to_string(&coordinator.run_id);
@@ -410,33 +404,39 @@ impl App {
 
     async fn on_tick(&mut self) {
         match self.coordinator.tick(
-            &self.backend,
+            Some(SizedIterator::new(
+                self.backend.pending_clients.iter(),
+                self.backend.pending_clients.len(),
+            )),
             Self::get_timestamp(),
             rand::thread_rng().next_u64(),
         ) {
-            Ok(TickResult::EpochFinished) => {
-                if let Some(save_state_dir) = &self.save_state_dir {
-                    let mut state = self.coordinator;
-                    print!("{:?}", state);
-                    Self::reset_ephemeral(&mut state);
-                    match toml::to_string_pretty(&state) {
-                        Ok(toml) => {
-                            let filename = format!(
-                                "{:?}-step{}.toml",
-                                self.coordinator.run_id,
-                                self.coordinator.progress.step - 1
-                            );
-                            info!("Saving state to {filename}");
-                            if let Err(err) = std::fs::write(save_state_dir.join(filename), toml) {
-                                tracing::error!("Error saving TOML: {}", err);
+            Ok(TickResult::EpochEnd(result)) => {
+                if result {
+                    if let Some(save_state_dir) = &self.save_state_dir {
+                        let mut state = self.coordinator;
+                        print!("{:?}", state);
+                        Self::reset_ephemeral(&mut state);
+                        match toml::to_string_pretty(&state) {
+                            Ok(toml) => {
+                                let filename = format!(
+                                    "{:?}-step{}.toml",
+                                    self.coordinator.run_id,
+                                    self.coordinator.progress.step - 1
+                                );
+                                info!("Saving state to {filename}");
+                                if let Err(err) =
+                                    std::fs::write(save_state_dir.join(filename), toml)
+                                {
+                                    tracing::error!("Error saving TOML: {}", err);
+                                }
                             }
+                            Err(err) => tracing::error!("Error serialized to TOML: {err}"),
                         }
-                        Err(err) => tracing::error!("Error serialized to TOML: {err}"),
                     }
+                } else {
+                    warn!("Epoch abandoned")
                 }
-            }
-            Ok(TickResult::EpochAbandoned) => {
-                warn!("Epoch abandoned")
             }
             Ok(TickResult::Ticked) | Err(CoordinatorError::Halted) => {}
             Err(err) => warn!("Coordinator tick error: {err}"),
