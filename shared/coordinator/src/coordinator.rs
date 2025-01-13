@@ -755,7 +755,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             self.move_clients_to_exited(height);
 
             // if we finish an epoch or some clients disconnect and we don't reach the minimum number of clients,
-            // we create a checkpoint.
+            // we change state to cooldown.
             if height == self.config.rounds_per_epoch - 1
                 || self.epoch_state.clients.len() < self.config.min_clients as usize
             {
@@ -797,6 +797,8 @@ impl<T: NodeIdentity> Coordinator<T> {
             && unix_timestamp >= duration + self.run_state_start_unix_timestamp
     }
 
+    // set checkpoint to Ephemeral
+    // and change state to cooldown
     fn start_cooldown(&mut self, unix_timestamp: u64) {
         match &mut self.model {
             Model::LLM(llm) => {
