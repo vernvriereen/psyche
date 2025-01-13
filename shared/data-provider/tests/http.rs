@@ -22,7 +22,7 @@ impl Drop for TestServer {
 }
 
 impl TestServer {
-    fn new(files: Vec<Vec<u8>>) -> Result<Self> {
+    async fn new(files: Vec<Vec<u8>>) -> Result<Self> {
         let temp_dir = tempfile::tempdir()?;
 
         for (idx, data) in files.iter().enumerate() {
@@ -34,15 +34,17 @@ impl TestServer {
 
         let (cancel, rx_cancel) = tokio::sync::watch::channel(());
         let mut settings = static_web_server::Settings::get_unparsed(false)?;
-        settings.general.port = 8188;
+        settings.general.port = 0;
         settings.general.root = temp_dir.into_path();
+        let (tx_port, rx_port) = tokio::sync::oneshot::channel();
         std::thread::spawn(move || {
             static_web_server::Server::new(settings)
                 .unwrap()
-                .run_standalone(Some(rx_cancel))
+                .run_standalone(Some(rx_cancel), tx_port)
                 .unwrap();
         });
-        let addr = "127.0.0.1:8188".parse()?;
+        let port = rx_port.await?;
+        let addr = SocketAddr::new("127.0.0.1".parse()?, port);
         Ok(Self { addr, cancel })
     }
 }
@@ -55,7 +57,7 @@ async fn test_http_data_provider() -> Result<()> {
     let file1: Vec<u8> = (0..FILE_SIZE).map(|i| i as u8).collect();
     let file2: Vec<u8> = (FILE_SIZE..FILE_SIZE * 2).map(|i| i as u8).collect();
 
-    let server = TestServer::new(vec![file1.clone(), file2.clone()])?;
+    let server = TestServer::new(vec![file1.clone(), file2.clone()]).await?;
     let base_url = format!("http://{}/{{}}.ds", server.addr);
 
     let mut provider = timeout(
@@ -117,7 +119,7 @@ async fn test_http_data_provider_shuffled() -> Result<()> {
     let file1: Vec<u8> = (0..FILE_SIZE).map(|i| i as u8).collect();
     let file2: Vec<u8> = (FILE_SIZE..FILE_SIZE * 2).map(|i| i as u8).collect();
 
-    let server = TestServer::new(vec![file1.clone(), file2.clone()])?;
+    let server = TestServer::new(vec![file1.clone(), file2.clone()]).await?;
     let base_url = format!("http://{}/{{}}.ds", server.addr);
 
     let seed = [42u8; 32];
