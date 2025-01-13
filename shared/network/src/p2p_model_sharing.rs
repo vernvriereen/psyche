@@ -4,11 +4,12 @@ use futures_lite::future::Boxed as BoxedFuture;
 use iroh::{endpoint::Connecting, protocol::ProtocolHandler};
 use iroh_blobs::ticket::BlobTicket;
 use serde::{Deserialize, Serialize};
+use std::io::{BufReader, Cursor, Read, Write};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap, HashSet},
     error::Error,
 };
-use tch::Tensor;
+use tch::{Device, Kind, Tensor};
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use tracing::info;
 
@@ -17,13 +18,27 @@ pub const ALPN: &[u8] = b"model-parameter-sharing/0";
 #[derive(Debug)]
 pub enum SharableModelParameterError {
     TchSerializeError(tch::TchError),
-    ParameterNotFound(String),
     InvalidUpdate,
+    ParameterUnknown(String),
+    ParameterAlreadyAdded,
+    SerializationError(String),
 }
 
 impl From<tch::TchError> for SharableModelParameterError {
     fn from(err: tch::TchError) -> Self {
         SharableModelParameterError::TchSerializeError(err)
+    }
+}
+
+impl From<std::io::Error> for SharableModelParameterError {
+    fn from(err: std::io::Error) -> Self {
+        SharableModelParameterError::SerializationError(err.to_string())
+    }
+}
+
+impl From<std::string::FromUtf8Error> for SharableModelParameterError {
+    fn from(err: std::string::FromUtf8Error) -> Self {
+        SharableModelParameterError::SerializationError(err.to_string())
     }
 }
 
@@ -33,11 +48,21 @@ impl fmt::Display for SharableModelParameterError {
             SharableModelParameterError::TchSerializeError(err) => {
                 write!(f, "Torch serialize error: {}", err)
             }
-            SharableModelParameterError::ParameterNotFound(name) => {
-                write!(f, "Parameter with name {name} not found")
-            }
             SharableModelParameterError::InvalidUpdate => {
                 write!(f, "The update of the sharable model parameters is invalid")
+            }
+            SharableModelParameterError::ParameterUnknown(unknown_param_name) => {
+                write!(
+                    f,
+                    "Parameter with name {} is unknown",
+                    unknown_param_name.to_string()
+                )
+            }
+            SharableModelParameterError::ParameterAlreadyAdded => {
+                write!(f, "The parameter was already added")
+            }
+            SharableModelParameterError::SerializationError(err) => {
+                write!(f, "Serialization error: {}", err)
             }
         }
     }
@@ -48,7 +73,9 @@ impl Error for SharableModelParameterError {
         match self {
             SharableModelParameterError::TchSerializeError(err) => Some(err),
             SharableModelParameterError::InvalidUpdate => Some(self),
-            SharableModelParameterError::ParameterNotFound(_name) => Some(self),
+            SharableModelParameterError::ParameterUnknown(_unknown_parameter) => Some(self),
+            SharableModelParameterError::ParameterAlreadyAdded => Some(self),
+            SharableModelParameterError::SerializationError(_err) => Some(self),
         }
     }
 }
@@ -59,7 +86,19 @@ pub enum ParameterSharingMessage {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TransmittableModelParameter(Vec<u8>);
+pub struct TransmittableModelParameter {
+    param_name_bytes: Vec<u8>,
+    param_value_bytes: Vec<u8>,
+}
+
+impl TransmittableModelParameter {
+    fn new(param_name_bytes: Vec<u8>, param_value_bytes: Vec<u8>) -> Self {
+        Self {
+            param_name_bytes,
+            param_value_bytes,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct ModelParameters(HashMap<String, Tensor>);
@@ -90,17 +129,63 @@ impl ModelParameters {
 
     pub fn get_transmittable_parameter(
         &self,
-        parameter_name: &str,
+        param_name: &str,
     ) -> Result<TransmittableModelParameter, SharableModelParameterError> {
-        let Some(parameter) = self.0.get(parameter_name) else {
-            return Err(SharableModelParameterError::ParameterNotFound(
-                parameter_name.to_string(),
+        let Some(parameter) = self.0.get(param_name) else {
+            return Err(SharableModelParameterError::ParameterUnknown(
+                param_name.to_string(),
             ));
         };
-        let mut buffer = Vec::new();
-        parameter.save_to_stream(&mut buffer)?;
-        let transmittable_parameter = TransmittableModelParameter(buffer);
+
+        let mut param_name_buffer = Vec::new();
+        let mut param_value_buffer = Vec::new();
+
+        param_name_buffer.write_all(param_name.as_bytes())?;
+        parameter.save_to_stream(&mut param_value_buffer)?;
+
+        let transmittable_parameter =
+            TransmittableModelParameter::new(param_name_buffer, param_value_buffer);
+
         Ok(transmittable_parameter)
+    }
+
+    pub fn initialize_parameters(&mut self, param_names: &[String]) {
+        // Initialize the model parameter names with a dummy zero tensor.
+        for param_name in param_names {
+            self.0.insert(
+                param_name.clone(),
+                Tensor::zeros([1], (Kind::BFloat16, Device::Cpu)),
+            );
+        }
+    }
+
+    pub fn add_parameter(
+        &mut self,
+        parameter: TransmittableModelParameter,
+    ) -> Result<(), SharableModelParameterError> {
+        // Deserialize model parameter
+
+        let param_name = String::from_utf8(parameter.param_name_bytes)?;
+        let buf_reader = Cursor::new(parameter.param_value_bytes);
+        let param_value = Tensor::load_from_stream(buf_reader)?;
+
+        // Validate that the parameter does not already exist
+        // This should be called only by a client that joins the run
+        match self.0.entry(param_name.to_string()) {
+            Entry::Occupied(mut param_entry) => {
+                let param = param_entry.get_mut();
+                if is_initialized(param) {
+                    return Err(SharableModelParameterError::ParameterAlreadyAdded);
+                }
+                *param = param_value;
+                Ok(())
+            }
+            Entry::Vacant(_) => {
+                return Err(SharableModelParameterError::ParameterUnknown(
+                    param_name.to_string(),
+                ))
+            }
+        }
     }
 }
 
@@ -152,4 +237,8 @@ impl ProtocolHandler for ModelParameterSharing {
             Ok(())
         })
     }
+}
+
+pub fn is_initialized(tensor: &Tensor) -> bool {
+    tensor != &Tensor::zeros([1], (Kind::BFloat16, Device::Cpu))
 }

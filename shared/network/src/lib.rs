@@ -45,7 +45,9 @@ mod util;
 pub use authenticable_identity::{AuthenticatableIdentity, FromSignedBytesError};
 pub use download_manager::{DownloadComplete, DownloadFailed, TransmittableDownload};
 pub use iroh::{Endpoint, PublicKey, SecretKey};
-pub use p2p_model_sharing::{ModelParameterSharing, ModelParameters, ALPN};
+pub use p2p_model_sharing::{
+    ModelParameterSharing, ModelParameters, SharableModelParameterError, ALPN,
+};
 pub use peer_list::PeerList;
 pub use serde::Networkable;
 pub use serialized_distro::{
@@ -390,30 +392,33 @@ where
         )
     }
 
-    pub async fn request_model_parameter(
-        &self,
-        node_addr: NodeId,
-        param_name: String,
-    ) -> Result<BlobTicket> {
-        let conn = self
-            .router
-            .endpoint()
-            .connect(node_addr, p2p_model_sharing::ALPN)
-            .await?;
-
-        // Open a bidirectional QUIC stream
-        let (mut send, mut recv) = conn.open_bi().await?;
-
-        // Request parameter
-        send.write_all(param_name.as_bytes()).await?;
-        send.finish()?;
-
-        // Receive parameter value blob ticket
-        let parameter_blob_ticket_bytes = recv.read_to_end(100000).await?;
-        let parameter_blob_ticket: BlobTicket = postcard::from_bytes(&parameter_blob_ticket_bytes)?;
-
-        Ok(parameter_blob_ticket)
+    pub fn router(&self) -> Arc<Router> {
+        self.router.clone()
     }
+}
+
+pub async fn request_model_parameter(
+    router: Arc<Router>,
+    node_addr: NodeId,
+    param_name: String,
+) -> Result<BlobTicket> {
+    let conn = router
+        .endpoint()
+        .connect(node_addr, p2p_model_sharing::ALPN)
+        .await?;
+
+    // Open a bidirectional QUIC stream
+    let (mut send, mut recv) = conn.open_bi().await?;
+
+    // Request parameter
+    send.write_all(param_name.as_bytes()).await?;
+    send.finish()?;
+
+    // Receive parameter value blob ticket
+    let parameter_blob_ticket_bytes = recv.read_to_end(100000).await?;
+    let parameter_blob_ticket: BlobTicket = postcard::from_bytes(&parameter_blob_ticket_bytes)?;
+
+    Ok(parameter_blob_ticket)
 }
 
 fn parse_gossip_event<BroadcastMessage: Networkable>(

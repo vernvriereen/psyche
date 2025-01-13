@@ -6,13 +6,14 @@ use anyhow::{Error, Result};
 use psyche_coordinator::RunState;
 use psyche_core::NodeIdentity;
 use psyche_network::{
-    AuthenticatableIdentity, DownloadComplete, ModelParameters, NetworkConnection, NetworkEvent,
-    NetworkTUIState, Networkable, NodeId, TransmittableDownload,
+    request_model_parameter, AuthenticatableIdentity, DownloadComplete, ModelParameters,
+    NetworkConnection, NetworkEvent, NetworkTUIState, Networkable, NodeId, TransmittableDownload,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use wandb::DataValue;
 
-use std::{collections::HashMap, marker::PhantomData, sync::Arc, time::Duration};
+use psyche_network::SharableModelParameterError;
+use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 use tokio::{
     select,
     sync::{
@@ -118,8 +119,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                                 trace!("Download complete: step {} batch id {}", distro_result.step, distro_result.batch_id);
                                                 run.apply_distro_result(hash, distro_result).await;
                                             },
-                                            TransmittableDownload::ModelParameter(_) => {
-                                                panic!("RECEIVED MODEL PARAMETER!!!");
+                                            TransmittableDownload::ModelParameter(parameter) => {
+                                                current_model.add_parameter(parameter)?;
                                             },
                                         }
                                     }
@@ -185,6 +186,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         Some(download_ticket) = rx_request_download.recv() => {
                             p2p.start_download(download_ticket).await?;
                         }
+
                         Some(witness) = rx_witness.recv() => {
                             watcher.backend_mut().send_witness(witness).await?;
                         }
@@ -198,24 +200,24 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             current_model.update_parameters(model)?;
                         },
                         Some((param_names, tx_params_response)) = rx_parameters_req.recv() => {
-                            let param_name = param_names[0].clone();
+                            let router = p2p.router();
+
                             let Some(coordinator_state) = watcher.coordinator_state() else {
                                 warn!("Coordinator state not yet registered, nothing to do");
                                 return Ok(());
                             };
 
-                            for client in coordinator_state.epoch_state.clients.iter() {
-                               println!("WATCHER PEER: {}", hex::encode(client.id.get_p2p_public_key()));
-                            }
-
+                            let param_name = param_names[0].clone();
+                            let _: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
                             let peer_id = NodeId::from_bytes(coordinator_state.epoch_state.clients[1].id.get_p2p_public_key()).unwrap();
-                            let parameter_blob_ticket = p2p.request_model_parameter(peer_id, param_name).await?;
+                            let parameter_blob_ticket = request_model_parameter(router, peer_id, param_name).await?;
+                            // p2p.start_download(parameter_blob_ticket).await?;
+                            Ok(())
+                        });
 
-                            println!("PARAMETER BLOB TICKET: {}", parameter_blob_ticket);
-                            p2p.start_download(parameter_blob_ticket).await?;
 
-                            tokio::time::sleep(Duration::from_secs(10)).await;
-                            todo!();
+                            // tokio::time::sleep(Duration::from_secs(10)).await;
+                            // todo!();
                         }
                     }
                 }
