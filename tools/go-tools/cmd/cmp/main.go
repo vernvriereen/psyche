@@ -463,6 +463,16 @@ func rank(data []float64) []float64 {
 	return ranked
 }
 
+func sign(x float64) float64 {
+	if x < 0 {
+		return -1
+	}
+	if x > 0 {
+		return 1
+	}
+	return 0
+}
+
 func main() {
 	P := flag.Float64(
 		"P",
@@ -512,6 +522,11 @@ func main() {
 		"",
 		"Path to the output CSV file where the comparison matrix will be saved.",
 	)
+	signOp := flag.Bool(
+		"sign",
+		false,
+		"Apply sign operation to data values (-1 if x<0, +1 if x>0, 0 if x=0)",
+	)
 
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", os.Args[0])
@@ -554,6 +569,7 @@ func main() {
 	fmt.Printf("  Comparison Method: %s\n", *method)
 	fmt.Printf("  Input File: %s\n", *inputFile)
 	fmt.Printf("  Output File: %s\n", *outputFile)
+	fmt.Printf("  Sign Operation: %v\n", *signOp)
 
 	content, err := ioutil.ReadFile(*inputFile)
 	if err != nil {
@@ -595,6 +611,17 @@ func main() {
 	if *P != 0 {
 		for i := range files {
 			applyNorm(files[i].Data, *P)
+		}
+	}
+
+	// Add sign operation to data values
+	if *signOp {
+		for i := range files {
+			if !files[i].Missing {
+				for j := range files[i].Data {
+					files[i].Data[j] = sign(files[i].Data[j])
+				}
+			}
 		}
 	}
 
