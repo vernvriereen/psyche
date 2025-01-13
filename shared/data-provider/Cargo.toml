@@ -25,8 +25,14 @@ serde.workspace = true
 thiserror.workspace = true
 postcard.workspace = true
 bytemuck.workspace = true
+reqwest = "0.12.12"
+url = "2.5.4"
 
 [dev-dependencies]
 psyche-tui.workspace = true
 tokenizers.workspace = true
 pretty_assertions.workspace = true
+test-log.workspace = true
+clap.workspace = true
+tempfile = "3.15.0"
+static-web-server = "2.34.0"

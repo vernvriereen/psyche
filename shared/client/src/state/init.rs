@@ -8,9 +8,10 @@ use psyche_coordinator::{
     model::{self, LLMTrainingDataLocation},
     Coordinator, HealthChecks, Witness,
 };
-use psyche_core::{u8_to_string, NodeIdentity};
+use psyche_core::{u8_to_string, NodeIdentity, TokenSize};
 use psyche_data_provider::{
-    download_model_repo_async, DataProvider, DataProviderTcpClient, DummyDataProvider,
+    download_model_repo_async, http::HttpDataProvider, DataProvider, DataProviderTcpClient,
+    DummyDataProvider,
 };
 use psyche_modeling::{
     auto_tokenizer, AutoTokenizerError, CommunicatorId, ConcreteCausalLM, DummyModel,
@@ -144,10 +145,23 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                     .await?,
                 ),
                 LLMTrainingDataLocation::Local(_) => todo!(),
-                LLMTrainingDataLocation::Dummy => DataProvider::Dummy(DummyDataProvider::new(
-                    psyche_data_provider::TokenSize::TwoBytes,
-                    2048,
-                )),
+                LLMTrainingDataLocation::Dummy => {
+                    DataProvider::Dummy(DummyDataProvider::new(TokenSize::TwoBytes, 2048))
+                }
+                LLMTrainingDataLocation::Http {
+                    location,
+                    token_size_in_bytes,
+                    num_tokens_per_sequence,
+                    shuffle,
+                } => DataProvider::Http(
+                    HttpDataProvider::new(
+                        location,
+                        *token_size_in_bytes,
+                        *num_tokens_per_sequence,
+                        *shuffle,
+                    )
+                    .await?,
+                ),
             };
             Ok(data_provider)
         };

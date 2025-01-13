@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use pretty_assertions::assert_eq;
-use psyche_core::BatchId;
-use psyche_data_provider::{LocalDataProvider, Shuffle, TokenSize, TokenizedDataProvider};
+use psyche_core::{BatchId, Shuffle, TokenSize};
+use psyche_data_provider::{LocalDataProvider, TokenizedDataProvider};
 use tokenizers::Tokenizer;
 use tokio::fs::read_to_string;
 
