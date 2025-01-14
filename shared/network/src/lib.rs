@@ -220,6 +220,10 @@ where
         self.router.shutdown().await
     }
 
+    pub fn node_id(&self) -> NodeId {
+        self.router.endpoint().node_id()
+    }
+
     pub async fn add_peers(&mut self, peers: Vec<NodeId>) -> Result<()> {
         self.gossip_tx
             .join_peers(

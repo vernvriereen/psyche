@@ -94,7 +94,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     .clients
                                     .iter()
                                     .map(|c| NodeId::from_bytes(c.id.get_p2p_public_key()).unwrap()).collect();
-                                p2p.add_peers(node_ids.clone()).await?;
+                                if node_ids.contains(&p2p.node_id()) {
+                                    // only connect to peers after we become part of the set of current clients
+                                    p2p.add_peers(node_ids.clone()).await?;
+                                }
                                 allowlist.set(node_ids);
                             }
 
