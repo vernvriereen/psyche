@@ -137,6 +137,7 @@ pub enum CoordinatorError {
     WitnessesFull,
     CannotResume,
     InvalidWithdraw,
+    InvalidCommitteeSelection,
 }
 
 pub enum TickResult {
@@ -297,6 +298,7 @@ impl std::fmt::Display for CoordinatorError {
             CoordinatorError::WitnessesFull => write!(f, "Witnesses full"),
             CoordinatorError::CannotResume => write!(f, "Cannot resume"),
             CoordinatorError::InvalidWithdraw => write!(f, "Invalid withdraw"),
+            CoordinatorError::InvalidCommitteeSelection => write!(f, "Invalid committee selection"),
         }
     }
 }
