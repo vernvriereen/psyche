@@ -6,7 +6,7 @@ The system is composed of three main actors:
 
 - **Coordinator**: Responsible for managing a training run among all the clients. Each training run has one coordinator that oversees the entire process. The coordinator is implemented as a program running on the Solana Blockchain.
 - **Client**: A user participating in a training run. Clients receive the model to be trained and a specific dataset for that run. They communicate with the coordinator to progress the training run and use a peer-to-peer network to share their results at each training step with other clients.
-- **Data Provider**: A server that stores the data to be used for model training.
+- **Data Provider**: An optional server that stores the data to be used for model training and to be requested by the clients. The clients can host their own data too in case the provider is not present in the run.
 
 ```mermaid
 flowchart TB
@@ -63,7 +63,7 @@ sequenceDiagram
 
 At the beginning of the run, after the _warmup_ phase ends, clients are assigned specific tasks that require them to train the model on a portion of the data.
 
-If clients have already been training (i.e., it is not the first round of the run), they will apply the results from the previous round, then retrieve the data sample they need for the current round. After completing this training step, each client emits a message containing their training results and a commitment that binds them to those results.
+If clients have already been training (i.e., it is not the first round of the epoch), they will apply the results from the previous round, then retrieve the data sample they need for the current round. After completing this training step, each client emits a message containing their training results and a commitment that binds them to those results.
 
 Once the training results are broadcasted, clients begin downloading results from other participants to later incorporate them into their models.
 
@@ -90,7 +90,7 @@ sequenceDiagram
     participant DataServer
     Client1->>DataServer: get_data
     Client2->>DataServer: get_data
-    Coordinator->>Client2: Witness
+    Coordinator->>Client2: witness
     Note over Client1: Train
     Note over Client2: Train
     Client1->>Client2: Send results
@@ -110,9 +110,15 @@ TODO
 
 When a run starts, all clients should download the model parameters, tokenizer configuration, and model configuration from HuggingFace, where the model must have been previously uploaded (TODO: add more details on uploading a model). Each client will maintain the updated model while receiving new gradients from other clients and applying them.
 
-When a new client joins a specific run, it would not be accurate for it to download the model from HuggingFace, as the model parameters would have already been modified by others. Instead, the new client must synchronize with the training progress by obtaining the latest model parameters from a peer-to-peer (P2P) network where all the other clients are connected. This allows the new client to receive parts of the model from other clients and assemble the updated model to reflect its current state, enabling it to continue training effectively.
+When a new client joins a run that has already progressed past its first epoch, it would not be accurate for the client to download the original model from HuggingFace, as the model parameters would have already been updated during training. Instead, the new client must synchronize with the current training state by obtaining the latest model parameters.
+To address this, we introduced the concept of **checkpointing**, which allows clients to save and share the model's state between training epochs to help new clients synchronize. There are two checkpointing variants:  
+1. **HuggingFace Variant**:  
+   In this approach, a client or a set of clients is designated as the **checkpointers** for the run. These clients upload the updated model to HuggingFace after each epoch. When a new client joins the run, it connects to HuggingFace to retrieve the updated model parameters and configuration files, enabling it to effectively join the training process.  
+2. **P2P Variant**:  
+   In the peer-to-peer (P2P) approach, a new client synchronizes by obtaining the updated parameters directly from the P2P network where all other clients are connected. The new client receives the model configuration and tokenizer configuration as metadata from other peers. It then iterates over the model layers, requesting a set of parameters for each layer from different clients. This process allows the client to assemble the latest model state and participate in the training.  
 
-The new client would still need to connect to HuggingFace to retrieve the model configuration along with the tokenizer. However, it will iterate over each layer with a set of parameters, requesting one layer from each client. This process will take place during the **warmup** state while the coordinator waits to start another training run.
+This synchronization process occurs during the **warmup** state, while the coordinator waits to begin the next training run.
+Here's an example of a P2P model sharing interaction.
 
 ```mermaid
 flowchart TB
