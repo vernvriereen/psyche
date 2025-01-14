@@ -4,7 +4,7 @@ use psyche_coordinator::{
     model::{self, HubRepo},
     Coordinator, SOLANA_MAX_STRING_LEN,
 };
-use psyche_core::NodeIdentity;
+use psyche_core::{u8_to_string, NodeIdentity};
 use psyche_data_provider::{upload_model_repo_async, UploadModelError};
 use psyche_modeling::{save_tensors_into_safetensors, SaveSafetensorsError};
 use tch::Tensor;
@@ -96,7 +96,7 @@ impl CooldownStepMetadata {
         };
 
         let step = state.progress.step - 1;
-        let run_id = String::from_utf8(state.run_id.clone().to_vec()).unwrap();
+        let run_id = u8_to_string(&state.run_id);
         let checkpoint_extra_files = self.checkpoint_extra_files.clone();
         let checkpoint_info = self.checkpoint_info.clone();
         let tx_checkpoint = self.tx_checkpoint.clone();

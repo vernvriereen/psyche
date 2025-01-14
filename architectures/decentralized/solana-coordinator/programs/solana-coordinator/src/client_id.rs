@@ -18,25 +18,25 @@ use serde::{Deserialize, Serialize};
     Pod,
 )]
 pub struct ClientId {
-    pub owner: Pubkey,
+    pub signer: Pubkey,
     pub p2p_identity: [u8; 32],
 }
 
 impl AsRef<[u8]> for ClientId {
     fn as_ref(&self) -> &[u8] {
-        self.owner.as_ref()
+        self.signer.as_ref()
     }
 }
 
 impl std::hash::Hash for ClientId {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.owner.hash(state);
+        self.signer.hash(state);
     }
 }
 
 impl std::cmp::PartialEq for ClientId {
     fn eq(&self, other: &Self) -> bool {
-        self.owner == other.owner
+        self.signer == other.signer
     }
 }
 
@@ -44,7 +44,7 @@ impl std::cmp::Eq for ClientId {}
 
 impl std::fmt::Display for ClientId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.owner)
+        write!(f, "{}", self.signer)
     }
 }
 
@@ -57,7 +57,7 @@ impl NodeIdentity for ClientId {
 impl ClientId {
     pub fn new(owner: Pubkey, p2p_identity: [u8; 32]) -> Self {
         Self {
-            owner,
+            signer: owner,
             p2p_identity,
         }
     }

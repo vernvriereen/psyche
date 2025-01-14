@@ -8,7 +8,7 @@ use std::{
 use futures::{future::try_join_all, stream::FuturesUnordered, StreamExt};
 use psyche_coordinator::{
     assign_data_for_state, get_batch_ids_for_round, Commitment, Committee, CommitteeSelection,
-    Coordinator, HealthChecks, RunState, BLOOM_FALSE_RATE,
+    Coordinator, CoordinatorError, HealthChecks, RunState, BLOOM_FALSE_RATE,
 };
 use psyche_core::{sha256, BatchId, Bloom, NodeIdentity};
 use psyche_modeling::DistroResult;
@@ -81,6 +81,9 @@ pub enum TrainError {
 
     #[error("Healthcheck thread crashed")]
     HealthCheckCrashed,
+
+    #[error("Healthcheck thread crashed")]
+    CoordinatorError(CoordinatorError),
 }
 
 pub struct TrainingStepMetadata<T: NodeIdentity, A: AuthenticatableIdentity> {
@@ -158,7 +161,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
             state.config.verification_percent,
             state.epoch_state.clients.len(),
             round.random_seed,
-        );
+        )
+        .map_err(TrainError::CoordinatorError)?;
 
         let data_assignments = assign_data_for_state(state, &committee_selection);
 
@@ -176,16 +180,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
 
         let blooms = match witness_proof.witness {
             true => {
-                let commit_bloom =
-                    Bloom::random(num_batch_ids_for_this_round * 2, BLOOM_FALSE_RATE);
                 let participant_bloom =
                     Bloom::random(state.epoch_state.clients.len(), BLOOM_FALSE_RATE);
                 let order_bloom = Bloom::random(num_batch_ids_for_this_round, BLOOM_FALSE_RATE);
-                debug!(
-                    "Commit bloom size: {} bits, {} keys",
-                    commit_bloom.bits.0.len(),
-                    commit_bloom.keys.len()
-                );
                 debug!(
                     "Participant bloom size: {} bits, {} keys",
                     participant_bloom.bits.0.len(),
@@ -196,7 +193,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     order_bloom.bits.0.len(),
                     order_bloom.keys.len()
                 );
-                Some((commit_bloom, participant_bloom, order_bloom))
+                Some((participant_bloom, order_bloom))
             }
             false => None,
         };

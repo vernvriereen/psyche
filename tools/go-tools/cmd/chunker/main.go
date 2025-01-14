@@ -11,9 +11,9 @@ import (
 	"os"
 )
 
-func deterministicStreamingSample(reader io.Reader, N int, seed int64) ([]float64, error) {
+func deterministicStreamingSample(reader io.Reader, N int, seed int64) ([]float32, error) {
 	r := rand.New(rand.NewSource(seed))
-	result := make([]float64, 0, N)
+	result := make([]float32, 0, N)
 	var f float32
 	var count int64 = 0
 
@@ -29,12 +29,14 @@ func deterministicStreamingSample(reader io.Reader, N int, seed int64) ([]float6
 		}
 		count++
 
+		// fmt.Println(f)
+
 		if len(result) < N {
-			result = append(result, float64(f))
+			result = append(result, float32(f))
 		} else {
 			j := r.Int63n(count)
 			if j < int64(N) {
-				result[j] = float64(f)
+				result[j] = float32(f)
 			}
 		}
 	}

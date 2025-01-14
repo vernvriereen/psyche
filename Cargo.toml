@@ -66,17 +66,22 @@ tch = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "e8b64d8dedccbc0
 torch-sys = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "e8b64d8dedccbc0092ad43b49a01a5355f0feee7" }
 # tch = { path = "../tch-rs" }
 # torch-sys = { path = "../tch-rs/torch-sys" }
-pretty_assertions = "1.4.1"
 time = { version = "0.3.36", features = ["formatting", "macros"] }
 serde_with = { version = "3.11.0", features = ["macros"] }
 bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
 thiserror = "2.0.3"
+toml = "0.8.19"
 
 anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea308440a9fa9cb79cee7bddd30ab163d5" }
 anchor-client = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea308440a9fa9cb79cee7bddd30ab163d5", features = [
     "async",
 ] }
 futures-lite = "2.5.0"
+
+# dev only
+test-log = "0.2.16"
+pretty_assertions = "1.4.1"
+
 
 [profile.release]
 debug = false

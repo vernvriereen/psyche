@@ -5,18 +5,22 @@ use crate::{
 
 use anchor_client::{
     solana_sdk::{
+        pubkey::Pubkey,
         signature::{EncodableKey, Keypair},
         signer::Signer,
     },
     Cluster,
 };
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use psyche_client::{
     exercise_sdpa_if_needed, print_identity_keys, read_identity_secret_key, TrainArgs,
 };
-use psyche_network::SecretKey;
+use psyche_coordinator::{model::Model, CoordinatorConfig};
+use psyche_network::{PublicKey, SecretKey};
 use psyche_tui::LogOutput;
+use serde::Deserialize;
+use solana_coordinator::ClientId;
 use std::path::PathBuf;
 use std::sync::Arc;
 use time::OffsetDateTime;
@@ -67,7 +71,65 @@ enum Commands {
         #[clap(short, long, env)]
         run_id: String,
     },
+    SetWhitelist {
+        #[clap(flatten)]
+        cluster: ClusterArgs,
+
+        #[clap(flatten)]
+        wallet: WalletArgs,
+
+        #[clap(short, long, env)]
+        run_id: String,
+
+        #[clap(long, env)]
+        members_path: PathBuf,
+    },
+    SetPaused {
+        #[clap(flatten)]
+        cluster: ClusterArgs,
+
+        #[clap(flatten)]
+        wallet: WalletArgs,
+
+        #[clap(short, long, env)]
+        run_id: String,
+
+        #[clap(short, long, env)]
+        resume: bool,
+    },
+    UpdateConfig {
+        #[clap(flatten)]
+        cluster: ClusterArgs,
+
+        #[clap(flatten)]
+        wallet: WalletArgs,
+
+        #[clap(short, long, env)]
+        run_id: String,
+
+        #[clap(long, env)]
+        config_path: Option<PathBuf>,
+
+        #[clap(long, env)]
+        model_path: Option<PathBuf>,
+    },
+    JoinRun {
+        #[clap(flatten)]
+        cluster: ClusterArgs,
+
+        #[clap(flatten)]
+        wallet: WalletArgs,
+
+        #[clap(short, long, env)]
+        run_id: String,
+
+        #[clap(flatten)]
+        identity: Identity,
+    },
     Train {
+        #[clap(flatten)]
+        cluster: ClusterArgs,
+
         #[clap(flatten)]
         wallet: WalletArgs,
 
@@ -101,6 +163,21 @@ impl TryInto<Keypair> for WalletArgs {
     }
 }
 
+#[derive(Args, Clone, Debug, Deserialize)]
+struct Identity {
+    #[clap(long, env)]
+    signer: Pubkey,
+
+    #[clap(long, env)]
+    p2p_identity: PublicKey,
+}
+
+impl From<Identity> for ClientId {
+    fn from(val: Identity) -> Self {
+        ClientId::new(val.signer, *val.p2p_identity.as_bytes())
+    }
+}
+
 async fn async_main() -> Result<()> {
     let args = CliArgs::parse();
 
@@ -131,7 +208,111 @@ async fn async_main() -> Result<()> {
             println!("Coordinator account: {}", created.account);
             Ok(())
         }
-        Commands::Train { wallet, args } => {
+        Commands::SetWhitelist {
+            cluster,
+            wallet,
+            run_id,
+            members_path,
+        } => {
+            let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
+            let backend = SolanaBackend::new(cluster.into(), key_pair.clone()).unwrap();
+            let members: Vec<Identity> = toml::from_str(std::str::from_utf8(
+                &std::fs::read(&members_path).with_context(|| {
+                    format!("failed to read whitelist members toml file {members_path:?}")
+                })?,
+            )?)
+            .with_context(|| {
+                format!("failed to parse whitelist members toml file {members_path:?}")
+            })?;
+            let num_members = members.len();
+            let set = backend
+                .set_whitelist(&run_id, members.into_iter().map(|x| x.into()).collect())
+                .await?;
+            println!(
+                "Set whitelist of {} members on run {} with transaction {}",
+                num_members, run_id, set
+            );
+            Ok(())
+        }
+        Commands::UpdateConfig {
+            cluster,
+            wallet,
+            run_id,
+            config_path,
+            model_path,
+        } => {
+            let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
+            let backend = SolanaBackend::new(cluster.into(), key_pair.clone()).unwrap();
+            let config: Option<CoordinatorConfig<ClientId>> = match config_path {
+                Some(config_path) => Some(
+                    toml::from_str(std::str::from_utf8(
+                        &std::fs::read(&config_path).with_context(|| {
+                            format!("failed to read coordinator config toml file {config_path:?}")
+                        })?,
+                    )?)
+                    .with_context(|| {
+                        format!("failed to parse coordinator config toml file {config_path:?}")
+                    })?,
+                ),
+                None => None,
+            };
+            let model: Option<Model> = match model_path {
+                Some(model_path) => Some(
+                    toml::from_str(std::str::from_utf8(
+                        &std::fs::read(&model_path).with_context(|| {
+                            format!("failed to read model toml file {model_path:?}")
+                        })?,
+                    )?)
+                    .with_context(|| format!("failed to parse model toml file {model_path:?}"))?,
+                ),
+                None => None,
+            };
+            let set = backend
+                .update_config_and_model(&run_id, config, model)
+                .await?;
+            println!("Updated config of {} with transaction {}", run_id, set);
+            Ok(())
+        }
+        Commands::SetPaused {
+            cluster,
+            wallet,
+            run_id,
+            resume,
+        } => {
+            let paused = !resume;
+            let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
+            let backend = SolanaBackend::new(cluster.into(), key_pair.clone()).unwrap();
+            let set = backend.set_paused(&run_id, paused).await?;
+            println!(
+                "Set pause state to {} on run {} with transaction {}",
+                paused, run_id, set
+            );
+            Ok(())
+        }
+        Commands::JoinRun {
+            cluster,
+            wallet,
+            run_id,
+            identity,
+        } => {
+            let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
+            let backend = SolanaBackend::new(cluster.into(), key_pair.clone()).unwrap();
+            let joined = backend.join_run(&run_id, identity.clone().into()).await?;
+            println!(
+                "Joined run {} from {} (signer {}) and p2p identity {} with transaction {}",
+                run_id,
+                key_pair.pubkey(),
+                identity.signer,
+                identity.p2p_identity,
+                joined
+            );
+            Ok(())
+        }
+        Commands::Train {
+            cluster,
+            wallet,
+            args,
+        } => {
             exercise_sdpa_if_needed();
 
             let hub_read_token = std::env::var("HF_TOKEN").ok();
@@ -175,6 +356,7 @@ async fn async_main() -> Result<()> {
                 //tx_tui_state,
                 identity_secret_key,
                 wallet_keypair,
+                cluster: cluster.into(),
                 run_id: args.run_id,
                 p2p_port: args.bind_p2p_port,
                 data_parallelism: args.data_parallelism,
