@@ -10,8 +10,9 @@ use psyche_coordinator::{
 };
 use psyche_core::{u8_to_string, NodeIdentity, TokenSize};
 use psyche_data_provider::{
-    download_model_repo_async, http::HttpDataProvider, DataProvider, DataProviderTcpClient,
-    DummyDataProvider,
+    download_model_repo_async,
+    http::{FileURLs, HttpDataProvider},
+    DataProvider, DataProviderTcpClient, DummyDataProvider,
 };
 use psyche_modeling::{
     auto_tokenizer, AutoTokenizerError, CommunicatorId, ConcreteCausalLM, DummyModel,
@@ -154,15 +155,15 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                     location,
                     token_size_in_bytes,
                     shuffle,
-                } => DataProvider::Http(
-                    HttpDataProvider::new(
-                        location,
+                } => {
+                    let file_urls = FileURLs::from_location(location).await?;
+                    DataProvider::Http(HttpDataProvider::new(
+                        file_urls,
                         *token_size_in_bytes,
                         llm.max_seq_len,
                         *shuffle,
-                    )
-                    .await?,
-                ),
+                    )?)
+                }
             };
             Ok(data_provider)
         };

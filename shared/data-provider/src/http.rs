@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use anyhow::{anyhow, bail, Result};
 use futures::future::join_all;
 use psyche_coordinator::model::HttpTrainingDataLocation;
@@ -5,10 +7,15 @@ use psyche_core::{u8_to_string, BatchId, Shuffle, TokenSize};
 use rand::seq::SliceRandom;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+use regex::Regex;
+use reqwest::IntoUrl;
 use tokio::task::JoinHandle;
 use tracing::{info, trace};
 
-use crate::traits::{LengthKnownDataProvider, TokenizedDataProvider};
+use crate::{
+    file_extensions::DATA_FILE_EXTENSIONS,
+    traits::{LengthKnownDataProvider, TokenizedDataProvider},
+};
 
 #[derive(Clone, Copy, Debug)]
 struct SequencePointer {
@@ -18,7 +25,7 @@ struct SequencePointer {
 
 pub struct HttpDataProvider {
     client: reqwest::Client,
-    file_urls: Vec<String>,
+    file_urls: Vec<reqwest::Url>,
     sequences: Vec<SequencePointer>,
     seq_len: u32,
     token_size_in_bytes: TokenSize,
@@ -30,28 +37,24 @@ impl LengthKnownDataProvider for HttpDataProvider {
     }
 }
 
-pub enum FileURLs {
-    FixedList(Vec<String>),
-    /// A url like https://example.com/{}.ds
-    /// will be transformed into "https://example.com/000.ds", "https://example.com/001.ds", etc.
-    NumberedFiles {
-        url_template: String,
-        start_index: usize,
-        n_left_pad_zeros: usize,
-        num_files: usize,
-    },
-}
+/// A Vec of (url, file size)
+pub struct FileURLs(Vec<(reqwest::Url, u64)>);
 
 impl FileURLs {
-    pub fn from_list(urls: &[String]) -> Self {
-        FileURLs::FixedList(urls.to_vec())
+    pub async fn from_list(urls: &[impl IntoUrl + Clone]) -> Result<Self, anyhow::Error> {
+        let client = reqwest::Client::new();
+        let urls: Result<Vec<reqwest::Url>, reqwest::Error> =
+            urls.iter().map(|u| u.clone().into_url()).collect();
+        let urls_with_sizes = with_file_sizes(&client, &urls?).await?;
+
+        Ok(FileURLs(urls_with_sizes))
     }
 
-    pub fn from_template(
-        url_template: String,
-        start_index: usize,
-        n_left_pad_zeros: usize,
-        num_files: usize,
+    pub async fn from_template(
+        url_template: &str,
+        start_index: u32,
+        n_left_pad_zeros: u8,
+        num_files: u32,
     ) -> Result<Self> {
         let num_templates = url_template
             .as_bytes()
@@ -61,66 +64,110 @@ impl FileURLs {
         if num_templates != 1 {
             bail!("invalid url {url_template}. expected 1 set of {{}} for number substitution, got {num_templates}");
         }
-        Ok(FileURLs::NumberedFiles {
-            url_template,
-            start_index,
-            n_left_pad_zeros,
-            num_files,
-        })
-    }
-}
 
-impl From<FileURLs> for Vec<String> {
-    fn from(v: FileURLs) -> Self {
-        match v {
-            FileURLs::FixedList(v) => v,
-            FileURLs::NumberedFiles {
-                url_template,
-                start_index,
-                n_left_pad_zeros,
-                num_files,
-            } => (0..num_files)
-                .map(|index| {
-                    let number = start_index + index;
-                    let formatted_number = format!("{:0>width$}", number, width = n_left_pad_zeros);
-                    url_template.replace("{}", &formatted_number)
+        let urls: Result<Vec<reqwest::Url>, <reqwest::Url as FromStr>::Err> = (0..num_files)
+            .map(|index| {
+                let number = start_index + index;
+                let formatted_number =
+                    format!("{:0>width$}", number, width = n_left_pad_zeros as usize);
+                url_template.replace("{}", &formatted_number).parse()
+            })
+            .collect();
+
+        let client = reqwest::Client::new();
+        let urls_with_sizes = with_file_sizes(&client, &urls?).await?;
+
+        Ok(Self(urls_with_sizes))
+    }
+
+    pub async fn from_gcp_bucket(
+        bucket_url: impl IntoUrl,
+        directory: Option<String>,
+    ) -> Result<Self> {
+        let bucket_url = bucket_url.into_url()?;
+        let gcp_xml_contents = reqwest::get(bucket_url.clone()).await?.text().await?;
+        let files_in_bucket: Vec<(String, u64)> = parse_gcp_xml(&gcp_xml_contents);
+        let data_files_matching_directory: Result<Vec<(reqwest::Url, u64)>, anyhow::Error> =
+            files_in_bucket
+                .into_iter()
+                .filter_map(|(file_path, size)| {
+                    let path_parts: Vec<&str> = file_path.split('/').collect();
+
+                    if let Some(match_dir) = &directory {
+                        if path_parts.is_empty() || path_parts[0] != match_dir {
+                            return None;
+                        }
+                    }
+
+                    let file_ext = path_parts.last()?.split('.').last()?;
+                    if !DATA_FILE_EXTENSIONS.contains(&file_ext) {
+                        return None;
+                    }
+
+                    let full_url = bucket_url
+                        .join(&file_path)
+                        .map_err(|_| anyhow!("invalid url part {file_path}"));
+                    Some(full_url.map(|full_url| (full_url, size)))
                 })
-                .collect(),
-        }
-    }
-}
+                .collect();
 
-impl From<&HttpTrainingDataLocation> for FileURLs {
-    fn from(val: &HttpTrainingDataLocation) -> Self {
-        match val {
-            HttpTrainingDataLocation::SingleUrl(u) => FileURLs::from_list(&[u8_to_string(u)]),
+        Ok(Self(data_files_matching_directory?))
+    }
+
+    pub async fn from_location(location: &HttpTrainingDataLocation) -> Result<Self> {
+        match location {
             HttpTrainingDataLocation::NumberedFiles {
                 url_template,
                 start_index,
                 n_left_pad_zeros,
                 num_files,
-            } => FileURLs::from_template(
-                u8_to_string(url_template),
-                (*start_index).try_into().expect("u32 fits in usize"),
-                (*n_left_pad_zeros).try_into().expect("u32 fits in usize"),
-                (*num_files).try_into().expect("u32 fits in usize"),
-            )
-            .expect("URL was validated before byte-stringing!"),
+            } => {
+                Self::from_template(
+                    &u8_to_string(url_template),
+                    *start_index,
+                    *n_left_pad_zeros,
+                    *num_files,
+                )
+                .await
+            }
+            HttpTrainingDataLocation::SingleUrl(url) => Self::from_list(&[u8_to_string(url)]).await,
+            HttpTrainingDataLocation::Gcp {
+                bucket_url,
+                filter_directory,
+            } => {
+                let filter_directory = u8_to_string(filter_directory);
+                Self::from_gcp_bucket(
+                    u8_to_string(bucket_url),
+                    if filter_directory.is_empty() {
+                        None
+                    } else {
+                        Some(filter_directory)
+                    },
+                )
+                .await
+            }
         }
     }
 }
+
+fn parse_gcp_xml(xml: &str) -> Vec<(String, u64)> {
+    let re = Regex::new(r"(?s)<Key>([^<]+)</Key>.*?<Size>(\d+)</Size>").unwrap();
+    re.captures_iter(xml)
+        .map(|cap| (cap[1].to_string(), cap[2].parse().unwrap()))
+        .collect()
+}
+
 impl HttpDataProvider {
-    pub async fn new(
-        file_urls: impl Into<FileURLs>,
+    pub fn new(
+        file_urls: FileURLs,
         token_size_in_bytes: TokenSize,
         num_tokens_per_sequence: u32,
         shuffle: Shuffle,
     ) -> Result<Self> {
-        let file_urls: Vec<_> = file_urls.into().into();
+        let file_urls = file_urls.0;
         let num_files = file_urls.len();
 
         let client = reqwest::Client::new();
-        let sizes = get_file_sizes(&client, &file_urls).await?;
 
         let seq_len_in_bytes =
             num_tokens_per_sequence as u64 * usize::from(token_size_in_bytes) as u64;
@@ -128,7 +175,7 @@ impl HttpDataProvider {
         let sequences: Vec<SequencePointer> = {
             let mut all_indexes: Vec<_> = (0..num_files)
                 .flat_map(|file_index| {
-                    let file_size = sizes[file_index];
+                    let file_size = file_urls[file_index].1;
                     (0..file_size - (seq_len_in_bytes + usize::from(token_size_in_bytes) as u64)) // +1 token for pretraining data!
                         .step_by(seq_len_in_bytes as usize)
                         .map(move |byte_offset| SequencePointer {
@@ -153,7 +200,7 @@ impl HttpDataProvider {
 
         Ok(Self {
             client,
-            file_urls,
+            file_urls: file_urls.into_iter().map(|f| f.0).collect(),
             sequences,
             seq_len: num_tokens_per_sequence,
             token_size_in_bytes,
@@ -162,7 +209,7 @@ impl HttpDataProvider {
 
     async fn fetch_data_range(
         client: reqwest::Client,
-        url: String,
+        url: reqwest::Url,
         start: usize,
         length: usize,
     ) -> Result<Vec<u8>> {
@@ -205,7 +252,7 @@ impl HttpDataProvider {
 
     async fn fetch_tokenized_data_range(
         client: reqwest::Client,
-        url: String,
+        url: reqwest::Url,
         start: usize,
         length: usize,
         token_size_in_bytes: TokenSize,
@@ -288,13 +335,16 @@ impl TokenizedDataProvider for HttpDataProvider {
 // i tried this nicely with streams and generators.
 // there's some weird rust impl is not general enough for Send bug i hit
 // so i just manually chunk instead of doing it fancy with a limited concurrency stream
-async fn get_file_sizes(client: &reqwest::Client, urls: &[String]) -> Result<Vec<u64>> {
+async fn with_file_sizes(
+    client: &reqwest::Client,
+    urls: &[reqwest::Url],
+) -> Result<Vec<(reqwest::Url, u64)>> {
     let futures: Vec<_> = urls
         .iter()
         .map(|url| {
             let url = url.clone();
             async move {
-                let response = client.head(&url).send().await?;
+                let response = client.head(url.clone()).send().await?;
 
                 if !response.status().is_success() {
                     bail!("URL validation failed for {}: {}", url, response.status());
@@ -309,7 +359,7 @@ async fn get_file_sizes(client: &reqwest::Client, urls: &[String]) -> Result<Vec
                     .ok_or_else(|| {
                         anyhow::anyhow!("Missing or invalid Content-Length header for {}", url)
                     })?;
-                Ok::<u64, anyhow::Error>(size)
+                Ok::<(reqwest::Url, u64), anyhow::Error>((url, size))
             }
         })
         .collect();
@@ -335,4 +385,38 @@ async fn get_file_sizes(client: &reqwest::Client, urls: &[String]) -> Result<Vec
     }
 
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_gcp_xml() {
+        let xml = r#"
+        <ListBucketResult xmlns="http://doc.s3.amazonaws.com/2006-03-01"><Name>nous-pretraining-public-us</Name><Prefix /><Marker /><IsTruncated>false</IsTruncated><Contents><Key>fineweb-1pct-tokenized-llama3/000_fineweb.ds.index</Key><Generation>1736437740991720</Generation><MetaGeneration>1</MetaGeneration><LastModified>2025-01-09T15:49:01.055Z</LastModified><ETag>"58bfa7b320e9ddf7163d67cb95f5c4ac"</ETag><Size>118694800</Size>
+        </Contents>
+        <Contents>
+            <Key>fineweb-1pct-tokenized-llama3/000_fineweb.ds.metadata</Key>
+            <Generation>1736437738841326</Generation>
+            <MetaGeneration>1</MetaGeneration>
+            <LastModified>2025-01-09T15:48:58.887Z</LastModified>
+            <ETag>"333054bbb946a240ca09e6c312135314"</ETag>
+            <Size>50</Size>
+        </Contents>
+        "#;
+
+        let expected = vec![
+            (
+                "fineweb-1pct-tokenized-llama3/000_fineweb.ds.index".to_string(),
+                118694800,
+            ),
+            (
+                "fineweb-1pct-tokenized-llama3/000_fineweb.ds.metadata".to_string(),
+                50,
+            ),
+        ];
+
+        assert_eq!(parse_gcp_xml(xml), expected);
+    }
 }
