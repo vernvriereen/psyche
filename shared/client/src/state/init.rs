@@ -4,7 +4,7 @@ use crate::{
     WandBInfo,
 };
 
-use hf_hub::{Cache, Repo, RepoType};
+use hf_hub::{Cache as HfCache, Repo, RepoType};
 use psyche_coordinator::{
     model::{self, LLMTrainingDataLocation},
     Coordinator, HealthChecks, Witness,
@@ -14,12 +14,13 @@ use psyche_data_provider::{
     download_model_repo_async, DataProvider, DataProviderTcpClient, DummyDataProvider,
 };
 use psyche_modeling::{
-    auto_tokenizer, AutoTokenizerError, CommunicatorId, ConcreteCausalLM, Config, DummyModel,
-    Llama, LlamaConfig, LlamaForCausalLM, LoadLlamaForCausalLMError,
+    auto_tokenizer, get_parameter_names, AutoTokenizerError, CommunicatorId, ConcreteCausalLM,
+    DummyModel, LlamaForCausalLM, LoadLlamaForCausalLMError,
 };
 use psyche_network::{AuthenticatableIdentity, BlobTicket};
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
-use tch::{nn, Device, Kind, Tensor};
+use std::str::FromStr;
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use tch::{Device, Kind, Tensor};
 use thiserror::Error;
 use tokenizers::{models::wordlevel::WordLevel, ModelWrapper, Tokenizer};
 use tokio::{
@@ -315,64 +316,97 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             None => Repo::new(repo_id.to_owned(), RepoType::Model),
                         };
 
+                        // TODO: config and tokenizer files could be probably just shared over p2p too
+                        // instead of downloading them from HF.
                         let api = builder
-                            .with_cache_dir(Cache::default().path().clone())
+                            .with_cache_dir(HfCache::default().path().clone())
                             .with_token(init_config.hub_read_token.clone())
                             .with_progress(false)
                             .build()
                             .unwrap()
                             .repo(repo);
 
-                        let config_file =
-                            std::fs::read_to_string(api.get("config.json").unwrap().as_path())?;
-                        let llama_config: LlamaConfig = serde_json::from_str(&config_file).unwrap();
-                        let config: Config = llama_config.into_config(true);
+                        let config_file = api.get("config.json").unwrap();
+                        let config_file_str = std::fs::read_to_string(config_file.as_path())?;
 
-                        let device = Device::Cuda(0);
-                        let mut variables: nn::VarStore = nn::VarStore::new(device);
-                        variables.set_kind(Kind::BFloat16);
-                        let _no_grad = tch::no_grad_guard();
-                        let model = Llama::new(variables.root(), &config, None);
-                        let c = nn::LinearConfig {
-                            bias: false,
-                            ..Default::default()
-                        };
-                        let lm_head = nn::linear(
-                            &variables.root() / "lm_head",
-                            config.hidden_size as i64,
-                            config.vocab_size as i64,
-                            c,
-                        );
+                        let tokenizer_file = api.get("tokenizer.json").unwrap();
+                        let tokenizer_file_str = std::fs::read_to_string(tokenizer_file.as_path())?;
+                        let tokenizer = Arc::new(Tokenizer::from_str(&tokenizer_file_str).unwrap());
 
-                        let parameter_names: Vec<String> = {
-                            let variables_lock = variables.variables_.lock().unwrap();
-                            variables_lock.named_variables.keys().cloned().collect()
-                        };
+                        let parameter_names =
+                            get_parameter_names(&config_file_str, Some(llm.max_seq_len as usize));
 
                         let (tx_params_response, rx_params_response) = oneshot::channel();
                         tx_parameters_req
                             .send((parameter_names, tx_params_response))
                             .unwrap();
 
-                        let parameters = rx_params_response.await.unwrap();
+                        let parameters = Arc::new(rx_params_response.await.unwrap());
 
-                        {
-                            let mut variables = variables.variables_.lock().unwrap();
-                            let shards = variables.shards.clone();
-                            for (name, var) in variables.named_variables.iter_mut() {
-                                let tensor = parameters.get(name).unwrap();
-                                let mut size: Vec<i64> = tensor.size();
-                                let kind: Kind = tensor.kind();
+                        let mut models = Vec::with_capacity(
+                            init_config.data_parallelism * init_config.tensor_parallelism,
+                        );
+                        for dp in 0..init_config.data_parallelism {
+                            let communicator_id = match init_config.tensor_parallelism {
+                                1 => None,
+                                _ => Some(Arc::new(CommunicatorId::new())),
+                            };
+
+                            for tp in 0..init_config.tensor_parallelism {
+                                let tensor_parallelism_world =
+                                    communicator_id.as_ref().map(|communicator_id| {
+                                        (
+                                            communicator_id.clone(),
+                                            tp,
+                                            init_config.tensor_parallelism,
+                                        )
+                                    });
+
+                                let device = if init_config.tensor_parallelism == 1 {
+                                    if dp == 0 {
+                                        Device::cuda_if_available()
+                                    } else {
+                                        Device::Cuda(dp)
+                                    }
+                                } else {
+                                    Device::Cuda(dp * init_config.tensor_parallelism + tp)
+                                };
+
+                                let model = LlamaForCausalLM::from_p2p_shared_parameters(
+                                    config_file_str.clone(),
+                                    parameters.clone(),
+                                    None,
+                                    Some(device),
+                                    Some(Kind::BFloat16),
+                                    tensor_parallelism_world,
+                                    Some(llm.max_seq_len as usize),
+                                )?;
+
+                                models.push(Box::new(model) as Box<dyn ConcreteCausalLM>);
                             }
                         }
 
-                        todo!()
-                        // Ok(RawLoadedModel{
-                        //     models: vec![],
-                        //     tokenizer,
-                        //     checkpoint_extra_files: vec![],
-                        //     eval_runner
-                        // })
+                        info!(
+                            "Loaded {} onto {} gpu(s) (dp={},tp={})",
+                            u8_to_string(&hub_repo.repo_id),
+                            init_config.data_parallelism * init_config.tensor_parallelism,
+                            init_config.data_parallelism,
+                            init_config.tensor_parallelism
+                        );
+
+                        let eval_runner = EvalRunner::new(
+                            init_config.eval_tasks,
+                            tokenizer.clone(),
+                            init_config.eval_task_max_docs,
+                            init_config.data_parallelism,
+                        );
+
+                        Ok(RawLoadedModel {
+                            models,
+                            tokenizer,
+                            checkpoint_extra_files: vec![],
+                            eval_runner,
+                        })
                     })
                 }
             },

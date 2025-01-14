@@ -139,7 +139,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     }
                                     NetworkEvent::ParameterRequest(parameter_name, protocol_req_tx) => {
 
-                                        // We should validate things here:
+                                        // TODO: We should validate things here:
                                         //  * Make sure that the parameter is requested while we are in RunState::Warmup.
                                         //  * Validate that the message is from a known peer.
 
@@ -147,7 +147,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         let transmittable_download = TransmittableDownload::ModelParameter(transmittable_parameter);
                                         let ticket = p2p.add_downloadable(transmittable_download).await?;
 
-                                        // Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
+                                        // TODO: Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
                                         // to the client
 
                                         info!("Sending requested model parameter blob ticket");
@@ -221,6 +221,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                             let _: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
                                 let mut parameter_blob_tickets = Vec::new();
+                                // TODO: The parameter requests could be done concurrently, setting some MAX_CONCURRENT_PARAM_REQUESTS
                                 for (param_name, peer_id) in std::iter::zip(param_names, peer_ids.into_iter().cycle()) {
                                     let router = router.clone();
                                     debug!("Requesting parameter {param_name} to peer {peer_id}");
