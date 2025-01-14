@@ -6,7 +6,7 @@ use crate::{
 
 use hf_hub::{Cache, Repo, RepoType};
 use psyche_coordinator::{
-    model::{self, HubRepo, LLMTrainingDataLocation},
+    model::{self, LLMTrainingDataLocation},
     Coordinator, HealthChecks, Witness,
 };
 use psyche_core::{u8_to_string, NodeIdentity};
@@ -343,7 +343,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             .send((parameter_names, tx_params_response))
                             .unwrap();
 
-                        tokio::time::sleep(Duration::from_secs(30)).await;
                         let parameters = rx_params_response.await.unwrap();
 
                         todo!()

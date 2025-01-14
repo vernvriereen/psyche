@@ -307,11 +307,9 @@ where
             update = self.download_manager.poll_next() => {
                 match update {
                     Some(DownloadManagerEvent::Complete(result)) => {
-                        println!("DOWNLOAD COMPLETE");
                         return Ok(Some(NetworkEvent::DownloadComplete(result)))
                     }
                     Some(DownloadManagerEvent::Update(update)) => {
-                        println!("DOWNLOAD UPDATE");
                         self.on_download_update(update)?;
                     },
                     Some(DownloadManagerEvent::Failed(result)) => {
@@ -365,7 +363,6 @@ where
                 }
             };
 
-            println!("READ REACHED");
             self.download_manager.read(update.blob_ticket, download);
         } else {
             self.state.download_progesses.insert(hash, update);

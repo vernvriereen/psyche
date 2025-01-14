@@ -12,7 +12,6 @@ use psyche_network::{
 use psyche_watcher::{Backend, BackendWatcher};
 use wandb::DataValue;
 
-use psyche_network::SharableModelParameterError;
 use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 use tokio::{
     select,
@@ -123,7 +122,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                             TransmittableDownload::ModelParameter(parameter) => {
                                                 current_model.add_parameter(parameter)?;
                                                 if current_model.is_download_complete() {
-                                                    current_model.send_init_parameters();
+                                                    current_model.send_init_parameters()?;
                                                 }
                                             },
                                         }
@@ -144,14 +143,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         //  * Make sure that the parameter is requested while we are in RunState::Warmup.
                                         //  * Validate that the message is from a known peer.
 
-                                        // let transmittable_parameter = current_model.get_transmittable_parameter(&parameter_name)?;
-                                        let transmittable_parameter = current_model.get_transmittable_parameter(&parameter_name).unwrap();
+                                        let transmittable_parameter = current_model.get_transmittable_parameter(&parameter_name)?;
                                         let transmittable_download = TransmittableDownload::ModelParameter(transmittable_parameter);
                                         let ticket = p2p.add_downloadable(transmittable_download).await?;
 
                                         // Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
                                         // to the client
 
+                                        info!("Sending requested model parameter blob ticket");
                                         if let Err(e) = protocol_req_tx.send(ticket) {
                                             warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e}");
                                         };
@@ -211,15 +210,20 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                             let tx_params_download = tx_params_download.clone();
                             let router = p2p.router();
+
+                            let me = NodeId::from_bytes(identity.get_p2p_public_key()).unwrap();
                             let peer_ids: Vec<NodeId> = coordinator_state.epoch_state.clients.iter().map(|client| {
                                 let peer_id_bytes = client.id.get_p2p_public_key();
                                 NodeId::from_bytes(peer_id_bytes).unwrap()
-                            }).collect();
+                            })
+                            .filter(|peer_id| peer_id != &me)
+                            .collect();
 
                             let _: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
                                 let mut parameter_blob_tickets = Vec::new();
                                 for (param_name, peer_id) in std::iter::zip(param_names, peer_ids.into_iter().cycle()) {
                                     let router = router.clone();
+                                    debug!("Requesting parameter {param_name} to peer {peer_id}");
                                     let parameter_blob_ticket = request_model_parameter(router, peer_id, param_name).await?;
                                     parameter_blob_tickets.push(parameter_blob_ticket);
                                 }
