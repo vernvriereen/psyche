@@ -4,7 +4,10 @@ use psyche_coordinator::RunState;
 use testing::{
     client::ClientHandle,
     server::CoordinatorServerHandle,
-    test_utils::{assert_with_retries, spawn_clients, spawn_clients_with_training_delay},
+    test_utils::{
+        assert_with_retries, assert_witnesses_score, spawn_clients,
+        spawn_clients_with_training_delay,
+    },
     COOLDOWN_TIME, MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME,
 };
 
@@ -563,20 +566,30 @@ async fn shutdown_node_in_training_and_complete_round() {
     // assert that the shutdown node do not participate in the witnesses
     // since two nodes must send their witness and two nodes participate in the round
     // score should be 4
-    let witnesses = &server_handle.get_rounds().await[0].witnesses;
-    let mut score = 0;
-    clients.iter().for_each(|client| {
-        score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
-            &client.id, witnesses,
-        );
-    });
-    assert_eq!(score, 4);
+    assert_witnesses_score(&server_handle, 0, 4).await;
 
     // since up nodes < init_min_clients
-    // the network should return to WaitingForMembers
+    // the network should return to Cooldown and the WaitingForMembers
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Cooldown).await;
+
     assert_with_retries(
         || server_handle.get_run_state(),
         RunState::WaitingForMembers,
     )
     .await;
+
+    // spawn new client
+    let [new_client_handle] =
+        spawn_clients_with_training_delay(1, server_port, run_id, training_delay)
+            .await
+            .try_into()
+            .unwrap();
+
+    // the new client tries to join the network
+    // but since the llm checkpoint is Ephemeral
+    // it results in an InitRunError::ModelIsEphemeral error
+    let error = new_client_handle.client_handle.await.unwrap().unwrap_err();
+    assert!(error
+        .to_string()
+        .contains(&psyche_client::InitRunError::ModelIsEphemeral.to_string()));
 }
