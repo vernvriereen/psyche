@@ -40,7 +40,13 @@ The `show-identity` command displays the client's unique identifier, used to par
 
 #### Prerequisites
 
-Before using this command, you need to generate a key file. *(TODO: Provide instructions for generating the key file)*.
+Before using this command, you need to generate a key file. You can run the following command to save the key for the client to use:
+
+```bash
+openssl rand 32 > secret.key
+```
+
+That will create a file called `secret.key` with the random generated key.
 
 #### Usage
 
@@ -50,7 +56,12 @@ Once the key file is ready, use its path to obtain your identity:
 psyche-centralized-client show-identity --identity-secret-key-path <path_to_key_file>
 ```
 
-*Example Output:* *(TODO: Add sample output)*
+Using the generated file in the previous step, the output should look something like this:
+
+```bash
+Public key: 72870e901bb5c85a11a8261ae903429de99c0f8e8514de3efc0fedd15010cd2f
+Secret key: b5b76aee97dae7d890da63c089632ab6564d54777fdc4f30faa33da5490e4239
+```
 
 ### **2. train**
 
