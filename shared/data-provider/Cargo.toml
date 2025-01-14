@@ -35,4 +35,4 @@ pretty_assertions.workspace = true
 test-log.workspace = true
 clap.workspace = true
 tempfile = "3.15.0"
-static-web-server = "2.34.0"
+static-web-server = { git = "https://github.com/arilotter/static-web-server", rev = "c91445427b56c5ddff0365d8ec116e3b567377ac" } # forked to add a channel for getting the port

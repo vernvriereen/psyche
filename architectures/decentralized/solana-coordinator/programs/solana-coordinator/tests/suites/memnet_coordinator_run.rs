@@ -5,12 +5,18 @@ use crate::api::{
     create_memnet_endpoint::create_memnet_endpoint,
     process_instructions::{
         process_initialize_coordinator, process_join_run, process_set_paused,
-        process_set_whitelist, process_tick, process_update_coordinator_config,
+        process_set_whitelist, process_tick, process_update_coordinator_config_model,
     },
 };
 
 use bytemuck::Zeroable;
-use psyche_coordinator::{CoordinatorConfig, RunState};
+use psyche_coordinator::{
+    model::{
+        Checkpoint, ConstantLR, LLMArchitecture, LLMTrainingDataLocation, LLMTrainingDataType,
+        LearningRateSchedule, Model, Optimizer, LLM,
+    },
+    CoordinatorConfig, RunState,
+};
 use psyche_core::FixedVec;
 use solana_coordinator::{ClientId, CoordinatorAccount};
 use solana_sdk::{signature::Keypair, signer::Signer};
@@ -59,12 +65,12 @@ pub async fn memnet_coordinator_run() {
         RunState::Uninitialized
     );
 
-    process_update_coordinator_config(
+    process_update_coordinator_config_model(
         &mut endpoint,
         &payer,
         &coordinator_account.pubkey(),
         run_id.clone(),
-        CoordinatorConfig::<ClientId> {
+        Some(CoordinatorConfig::<ClientId> {
             warmup_time: 1,
             cooldown_time: 1,
             max_round_train_time: 10,
@@ -79,7 +85,25 @@ pub async fn memnet_coordinator_run() {
             total_steps: 100,
             overlapped: false.into(),
             checkpointers: FixedVec::zeroed(),
-        },
+        }),
+        Some(Model::LLM(LLM {
+            architecture: LLMArchitecture::HfLlama,
+            checkpoint: Checkpoint::Ephemeral,
+            max_seq_len: 4096,
+            data_type: LLMTrainingDataType::Pretraining,
+            data_location: LLMTrainingDataLocation::Local(Zeroable::zeroed()),
+            lr_schedule: LearningRateSchedule::Constant(ConstantLR::default()),
+            optimizer: Optimizer::Distro {
+                clip_grad_norm: None,
+                compression_decay: 1.0,
+                compression_decay_warmup_steps: 0,
+                compression_topk: 1,
+                compression_topk_startup: 0,
+                compression_topk_startup_steps: 0,
+                compression_chunk: 1,
+                quantize: false.into(),
+            },
+        })),
     )
     .await
     .unwrap();
@@ -90,7 +114,7 @@ pub async fn memnet_coordinator_run() {
             .unwrap()
             .coordinator
             .run_state,
-        RunState::Paused
+        RunState::Uninitialized
     );
 
     // add a dummy whitelist entry so the run is permissioned

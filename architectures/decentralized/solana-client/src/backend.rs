@@ -14,7 +14,10 @@ use anchor_client::{
 };
 use anyhow::{anyhow, bail, Result};
 use futures_util::StreamExt;
-use psyche_coordinator::{model, Coordinator, CoordinatorConfig, HealthChecks, Witness};
+use psyche_coordinator::{
+    model::{self, Model},
+    Coordinator, CoordinatorConfig, HealthChecks, Witness,
+};
 use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
 use std::sync::Arc;
@@ -26,7 +29,7 @@ pub struct SolanaBackend {
 }
 
 pub struct SolanaBackendRunner {
-    backend: SolanaBackend,
+    pub(crate) backend: SolanaBackend,
     run_id: String,
     updates: mpsc::UnboundedReceiver<RpcResponse<UiAccount>>,
 }
@@ -203,10 +206,11 @@ impl SolanaBackend {
         Ok(signature)
     }
 
-    pub async fn update_config(
+    pub async fn update_config_and_model(
         &self,
         run_id: &str,
-        config: CoordinatorConfig<solana_coordinator::ClientId>,
+        config: Option<CoordinatorConfig<solana_coordinator::ClientId>>,
+        model: Option<Model>,
     ) -> Result<Signature> {
         let (instance_pda, _) = self.find_instance_from_run_id(run_id);
 
@@ -222,7 +226,7 @@ impl SolanaBackend {
                 payer: self.program.payer(),
                 system_program: system_program::ID,
             })
-            .args(solana_coordinator::instruction::UpdateCoordinatorConfig { config })
+            .args(solana_coordinator::instruction::UpdateCoordinatorConfigModel { config, model })
             .send()
             .await?;
 
@@ -359,12 +363,17 @@ mod test {
 
     use super::*;
 
-    use anchor_client::{
-        anchor_lang::system_program,
-        solana_sdk::signature::{EncodableKey, Signer},
-    };
+    use anchor_client::solana_sdk::signature::{EncodableKey, Signer};
     use bytemuck::Zeroable;
-    use psyche_coordinator::{CoordinatorConfig, RunState};
+    use model::LLM;
+    use psyche_coordinator::{
+        model::{
+            Checkpoint, ConstantLR, LLMArchitecture, LLMTrainingDataLocation, LLMTrainingDataType,
+            LearningRateSchedule, Optimizer,
+        },
+        CoordinatorConfig, RunState,
+    };
+    use psyche_core::FixedVec;
     use psyche_network::SecretKey;
     use rand::Rng;
 
@@ -376,19 +385,20 @@ mod test {
             Keypair::read_from_file(home::home_dir().unwrap().join(".config/solana/id.json"))
                 .unwrap(),
         );
-        let mut backend = SolanaBackend::new(Cluster::Localnet, key_pair.clone()).unwrap();
+        let backend = SolanaBackend::new(Cluster::Localnet, key_pair.clone()).unwrap();
         let run_id = format!("{}", rand::thread_rng().gen_range(0..1000000));
 
         let created = backend.create_run(run_id.clone()).await.unwrap();
-        let runner = backend
+        let mut runner = backend
             .start(run_id.clone(), created.account)
             .await
             .unwrap();
 
-        backend
-            .update_config(
+        runner
+            .backend
+            .update_config_and_model(
                 &run_id,
-                CoordinatorConfig::<solana_coordinator::ClientId> {
+                Some(CoordinatorConfig::<solana_coordinator::ClientId> {
                     warmup_time: 1,
                     cooldown_time: 1,
                     max_round_train_time: 10,
@@ -403,13 +413,31 @@ mod test {
                     total_steps: 100,
                     overlapped: false.into(),
                     checkpointers: FixedVec::zeroed(),
-                },
+                }),
+                Some(Model::LLM(LLM {
+                    architecture: LLMArchitecture::HfLlama,
+                    checkpoint: Checkpoint::Ephemeral,
+                    max_seq_len: 4096,
+                    data_type: LLMTrainingDataType::Pretraining,
+                    data_location: LLMTrainingDataLocation::Local(Zeroable::zeroed()),
+                    lr_schedule: LearningRateSchedule::Constant(ConstantLR::default()),
+                    optimizer: Optimizer::Distro {
+                        clip_grad_norm: None,
+                        compression_decay: 1.0,
+                        compression_decay_warmup_steps: 0,
+                        compression_topk: 1,
+                        compression_topk_startup: 0,
+                        compression_topk_startup_steps: 0,
+                        compression_chunk: 1,
+                        quantize: false.into(),
+                    },
+                })),
             )
             .await
             .unwrap();
 
         let new_state = runner.wait_for_new_state().await.unwrap();
-        assert_eq!(new_state.run_state, RunState::Paused);
+        assert_eq!(new_state.run_state, RunState::Uninitialized);
 
         let client_keypair = Arc::new(Keypair::new());
         let client_p2p = SecretKey::generate(&mut rand::rngs::OsRng);
@@ -419,14 +447,16 @@ mod test {
         );
 
         // add a dummy whitelist entry so the run is permissioned
-        backend
+        runner
+            .backend
             .set_whitelist(&run_id, vec![solana_coordinator::ClientId::zeroed()])
             .await
             .unwrap();
 
-        assert!(backend.join_run(&run_id, client_id).await.is_err());
+        assert!(runner.backend.join_run(&run_id, client_id).await.is_err());
 
-        backend
+        runner
+            .backend
             .set_whitelist(&run_id, vec![client_id])
             .await
             .unwrap();
