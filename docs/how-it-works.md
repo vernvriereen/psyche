@@ -8,7 +8,29 @@ The system is composed of three main actors:
 - **Client**: A user participating in a training run. Clients receive the model to be trained and a specific dataset for that run. They communicate with the coordinator to progress the training run and use a peer-to-peer network to share their results at each training step with other clients.
 - **Data Provider**: A server that stores the data to be used for model training.
 
-![Architecture example for two training runs](images/architecture.png)
+```mermaid
+flowchart TB
+    subgraph run id: test_model_2
+        direction TB
+        subgraph Solana
+            C(("Coordinator"))
+        end
+        C <--> C1(("Client")) & C2(("Client")) & C3(("Client"))
+        C1 <-.-> C2
+        C3 <-.-> C2 & C1
+        DT["Data server"] --> C1 & C2 & C3
+    end
+    subgraph run id: test_model_1
+        direction TB
+        subgraph Solana2["Solana"]
+            CC(("Coordinator"))
+        end
+        CC <--> C11(("Client")) & C22(("Client")) & C33(("Client"))
+        C11 <-.-> C22
+        C33 <-.-> C22 & C11
+        DTT["Data server"] --> C11 & C22 & C33
+    end
+```
 
 # How it works
 
@@ -26,7 +48,16 @@ During a training run, clients primarily perform three tasks:
 
 At the start of a run, all clients have a window of time to join the run by notifying the coordinator and connecting to the other participating clients. This warmup phase occurs only at the beginning of the run or after completing an epoch.
 
-![Warmup flow](images/warmup.png)
+```mermaid
+sequenceDiagram
+    Note over Coordinator: min_clients = 2
+    Client1->>Coordinator: Join
+    Client2->>Coordinator: Join
+    Note over Coordinator: Entering Warmup
+    Client1->>Client2: Connect
+    Client2->>Client1: Connect
+    Note over Coordinator: Entering Training
+```
 
 ### Training
 
@@ -51,7 +82,25 @@ Once the witness round concludes, the coordinator returns to the training round.
 
 Here's a high-level overview of the process. Additional details exist, but this captures the overall flow:
 
-![An example of opportunistic witness](images/training.png)
+```mermaid
+sequenceDiagram
+    participant Client1
+    participant Client2
+    participant Coordinator
+    participant DataServer
+    Client1->>DataServer: get_data
+    Client2->>DataServer: get_data
+    Coordinator->>Client2: Witness
+    Note over Client1: Train
+    Note over Client2: Train
+    Client1->>Client2: Send results
+    Client2->>Client1: Send results
+    Note over Client1: Download results
+    Note over Client2: Download results
+    Client2->>Coordinator: Send witness
+    Note over Coordinator: Quorum reached
+    Note over Coordinator: Starting witness
+```
 
 ### Verifying
 
@@ -65,4 +114,21 @@ When a new client joins a specific run, it would not be accurate for it to downl
 
 The new client would still need to connect to HuggingFace to retrieve the model configuration along with the tokenizer. However, it will iterate over each layer with a set of parameters, requesting one layer from each client. This process will take place during the **warmup** state while the coordinator waits to start another training run.
 
-![Model sharing via P2P](images/model-sharing.png)
+```mermaid
+flowchart TB
+    C((Coordinator))
+    C1[Client]
+    C2[Client]
+    C3[Client]
+    C4[Client]
+    HF[/Hugging Face\]
+    C --warmup---> C1
+    C --warmup---> C2
+    C --warmup---> C3
+    HF --Get model config--> C4
+    C4 -.Join.-> C
+    C1 -.Layer 1 weights.-> C4
+    C2 -.Layer 2 weights.-> C4
+    C3 -.Layer 3 weights.-> C4
+```
+
