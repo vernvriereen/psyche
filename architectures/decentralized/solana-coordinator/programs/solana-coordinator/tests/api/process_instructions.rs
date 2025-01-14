@@ -1,13 +1,13 @@
 use crate::api::find_pda_coordinator_instance::find_pda_coordinator_instance;
 
 use anchor_lang::{InstructionData, ToAccountMetas};
-use psyche_coordinator::CoordinatorConfig;
+use psyche_coordinator::{model::Model, CoordinatorConfig};
 use solana_coordinator::{
     accounts::{
         InitializeCoordinatorAccounts, OwnerCoordinatorAccounts, PermissionlessCoordinatorAccounts,
     },
     instruction::{
-        InitializeCoordinator, JoinRun, SetPaused, SetWhitelist, Tick, UpdateCoordinatorConfig,
+        InitializeCoordinator, JoinRun, SetPaused, SetWhitelist, Tick, UpdateCoordinatorConfigModel,
     },
     ClientId,
 };
@@ -43,12 +43,13 @@ pub async fn process_initialize_coordinator(
     endpoint.process_instruction(instruction, payer).await
 }
 
-pub async fn process_update_coordinator_config(
+pub async fn process_update_coordinator_config_model(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     coordinator_account: &Pubkey,
     run_id: String,
-    config: CoordinatorConfig<ClientId>,
+    config: Option<CoordinatorConfig<ClientId>>,
+    model: Option<Model>,
 ) -> Result<Signature, ToolboxEndpointError> {
     let coordinator_instance = find_pda_coordinator_instance(&run_id);
 
@@ -60,7 +61,7 @@ pub async fn process_update_coordinator_config(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: UpdateCoordinatorConfig { config }.data(),
+        data: UpdateCoordinatorConfigModel { config, model }.data(),
         program_id: solana_coordinator::ID,
     };
 

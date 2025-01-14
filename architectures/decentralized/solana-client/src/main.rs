@@ -16,7 +16,7 @@ use clap::{Args, Parser, Subcommand};
 use psyche_client::{
     exercise_sdpa_if_needed, print_identity_keys, read_identity_secret_key, TrainArgs,
 };
-use psyche_coordinator::CoordinatorConfig;
+use psyche_coordinator::{model::Model, CoordinatorConfig};
 use psyche_network::{PublicKey, SecretKey};
 use psyche_tui::LogOutput;
 use serde::Deserialize;
@@ -108,7 +108,10 @@ enum Commands {
         run_id: String,
 
         #[clap(long, env)]
-        config_path: PathBuf,
+        config_path: Option<PathBuf>,
+
+        #[clap(long, env)]
+        model_path: Option<PathBuf>,
     },
     JoinRun {
         #[clap(flatten)]
@@ -236,18 +239,37 @@ async fn async_main() -> Result<()> {
             wallet,
             run_id,
             config_path,
+            model_path,
         } => {
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
             let backend = SolanaBackend::new(cluster.into(), key_pair.clone()).unwrap();
-            let config: CoordinatorConfig<ClientId> = toml::from_str(std::str::from_utf8(
-                &std::fs::read(&config_path).with_context(|| {
-                    format!("failed to read coordinator config toml file {config_path:?}")
-                })?,
-            )?)
-            .with_context(|| {
-                format!("failed to parse coordinator config toml file {config_path:?}")
-            })?;
-            let set = backend.update_config(&run_id, config).await?;
+            let config: Option<CoordinatorConfig<ClientId>> = match config_path {
+                Some(config_path) => Some(
+                    toml::from_str(std::str::from_utf8(
+                        &std::fs::read(&config_path).with_context(|| {
+                            format!("failed to read coordinator config toml file {config_path:?}")
+                        })?,
+                    )?)
+                    .with_context(|| {
+                        format!("failed to parse coordinator config toml file {config_path:?}")
+                    })?,
+                ),
+                None => None,
+            };
+            let model: Option<Model> = match model_path {
+                Some(model_path) => Some(
+                    toml::from_str(std::str::from_utf8(
+                        &std::fs::read(&model_path).with_context(|| {
+                            format!("failed to read model toml file {model_path:?}")
+                        })?,
+                    )?)
+                    .with_context(|| format!("failed to parse model toml file {model_path:?}"))?,
+                ),
+                None => None,
+            };
+            let set = backend
+                .update_config_and_model(&run_id, config, model)
+                .await?;
             println!("Updated config of {} with transaction {}", run_id, set);
             Ok(())
         }

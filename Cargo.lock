@@ -10261,9 +10261,8 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "static-web-server"
-version = "2.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25f46e7a32b651e5a2145fb79263b5d75f38c8ce6977e4d3d36417cc1cad8717"
+version = "2.35.0"
+source = "git+https://github.com/arilotter/static-web-server?rev=c91445427b56c5ddff0365d8ec116e3b567377ac#c91445427b56c5ddff0365d8ec116e3b567377ac"
 dependencies = [
  "aho-corasick",
  "anyhow",
