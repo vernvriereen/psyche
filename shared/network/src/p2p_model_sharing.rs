@@ -4,7 +4,7 @@ use futures_lite::future::Boxed as BoxedFuture;
 use iroh::{endpoint::Connecting, protocol::ProtocolHandler};
 use iroh_blobs::ticket::BlobTicket;
 use serde::{Deserialize, Serialize};
-use std::io::{BufReader, Cursor, Read, Write};
+use std::io::{Cursor, Write};
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     error::Error,
@@ -101,29 +101,35 @@ impl TransmittableModelParameter {
 }
 
 #[derive(Debug)]
-pub struct ModelParameters(HashMap<String, Tensor>);
+pub struct ModelParameters {
+    parameters: HashMap<String, Tensor>,
+    tx_params_response: Option<oneshot::Sender<HashMap<String, Tensor>>>,
+}
 impl ModelParameters {
     pub fn empty() -> Self {
-        Self(HashMap::new())
+        Self {
+            parameters: HashMap::new(),
+            tx_params_response: None,
+        }
     }
 
     pub fn update_parameters(
         &mut self,
         new_parameters: HashMap<String, Tensor>,
     ) -> Result<(), SharableModelParameterError> {
-        if self.0.is_empty() {
-            self.0 = new_parameters;
+        if self.parameters.is_empty() {
+            self.parameters = new_parameters;
             return Ok(());
         }
 
         // validate that both models have the same parameters
         let new_parameters_names: HashSet<_> = new_parameters.keys().cloned().collect();
-        let parameters_names: HashSet<_> = self.0.keys().cloned().collect();
+        let parameters_names: HashSet<_> = self.parameters.keys().cloned().collect();
         if new_parameters_names != parameters_names {
             return Err(SharableModelParameterError::InvalidUpdate);
         }
 
-        self.0 = new_parameters;
+        self.parameters = new_parameters;
         Ok(())
     }
 
@@ -131,7 +137,7 @@ impl ModelParameters {
         &self,
         param_name: &str,
     ) -> Result<TransmittableModelParameter, SharableModelParameterError> {
-        let Some(parameter) = self.0.get(param_name) else {
+        let Some(parameter) = self.parameters.get(param_name) else {
             return Err(SharableModelParameterError::ParameterUnknown(
                 param_name.to_string(),
             ));
@@ -149,14 +155,19 @@ impl ModelParameters {
         Ok(transmittable_parameter)
     }
 
-    pub fn initialize_parameters(&mut self, param_names: &[String]) {
+    pub fn initialize_parameters(
+        &mut self,
+        param_names: &[String],
+        tx_params_response: oneshot::Sender<HashMap<String, Tensor>>,
+    ) {
         // Initialize the model parameter names with a dummy zero tensor.
         for param_name in param_names {
-            self.0.insert(
+            self.parameters.insert(
                 param_name.clone(),
                 Tensor::zeros([1], (Kind::BFloat16, Device::Cpu)),
             );
         }
+        self.tx_params_response = Some(tx_params_response);
     }
 
     pub fn add_parameter(
@@ -171,7 +182,7 @@ impl ModelParameters {
 
         // Validate that the parameter does not already exist
         // This should be called only by a client that joins the run
-        match self.0.entry(param_name.to_string()) {
+        match self.parameters.entry(param_name.to_string()) {
             Entry::Occupied(mut param_entry) => {
                 let param = param_entry.get_mut();
                 if is_initialized(param) {
@@ -185,6 +196,18 @@ impl ModelParameters {
                     param_name.to_string(),
                 ))
             }
+        }
+    }
+
+    pub fn is_download_complete(&self) -> bool {
+        self.parameters
+            .iter()
+            .all(|(_param_name, param_value)| is_initialized(param_value))
+    }
+
+    pub fn send_init_parameters(&mut self) {
+        if let Some(tx_params_response) = self.tx_params_response.take() {
+            tx_params_response.send(self.parameters.clone());
         }
     }
 }

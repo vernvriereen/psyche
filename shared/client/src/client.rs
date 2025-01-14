@@ -61,6 +61,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                 let (tx_distro_result, mut rx_distro_result) = mpsc::unbounded_channel();
                 let (tx_request_download, mut rx_request_download) = mpsc::unbounded_channel();
                 let (tx_parameters_req, mut rx_parameters_req) = mpsc::unbounded_channel();
+                let (tx_params_download, mut rx_params_download) = mpsc::unbounded_channel();
 
                 let mut run = RunManager::<T, A>::new(RunInitConfigAndIO {
                     init_config,
@@ -121,6 +122,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                             },
                                             TransmittableDownload::ModelParameter(parameter) => {
                                                 current_model.add_parameter(parameter)?;
+                                                if current_model.is_download_complete() {
+                                                    current_model.send_init_parameters();
+                                                }
                                             },
                                         }
                                     }
@@ -186,7 +190,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         Some(download_ticket) = rx_request_download.recv() => {
                             p2p.start_download(download_ticket).await?;
                         }
-
                         Some(witness) = rx_witness.recv() => {
                             watcher.backend_mut().send_witness(witness).await?;
                         }
@@ -200,24 +203,34 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             current_model.update_parameters(model)?;
                         },
                         Some((param_names, tx_params_response)) = rx_parameters_req.recv() => {
-                            let router = p2p.router();
-
+                            current_model.initialize_parameters(&param_names, tx_params_response);
                             let Some(coordinator_state) = watcher.coordinator_state() else {
                                 warn!("Coordinator state not yet registered, nothing to do");
                                 return Ok(());
                             };
 
-                            let param_name = param_names[0].clone();
+                            let tx_params_download = tx_params_download.clone();
+                            let router = p2p.router();
+                            let peer_ids: Vec<NodeId> = coordinator_state.epoch_state.clients.iter().map(|client| {
+                                let peer_id_bytes = client.id.get_p2p_public_key();
+                                NodeId::from_bytes(peer_id_bytes).unwrap()
+                            }).collect();
+
                             let _: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
-                            let peer_id = NodeId::from_bytes(coordinator_state.epoch_state.clients[1].id.get_p2p_public_key()).unwrap();
-                            let parameter_blob_ticket = request_model_parameter(router, peer_id, param_name).await?;
-                            // p2p.start_download(parameter_blob_ticket).await?;
-                            Ok(())
-                        });
-
-
-                            // tokio::time::sleep(Duration::from_secs(10)).await;
-                            // todo!();
+                                let mut parameter_blob_tickets = Vec::new();
+                                for (param_name, peer_id) in std::iter::zip(param_names, peer_ids.into_iter().cycle()) {
+                                    let router = router.clone();
+                                    let parameter_blob_ticket = request_model_parameter(router, peer_id, param_name).await?;
+                                    parameter_blob_tickets.push(parameter_blob_ticket);
+                                }
+                                tx_params_download.send(parameter_blob_tickets)?;
+                                Ok(())
+                            });
+                        }
+                        Some(param_blob_tickets) = rx_params_download.recv() => {
+                            for ticket in param_blob_tickets {
+                                p2p.start_download(ticket).await?;
+                            }
                         }
                     }
                 }

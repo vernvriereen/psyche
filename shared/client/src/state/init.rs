@@ -4,7 +4,6 @@ use crate::{
     WandBInfo,
 };
 
-use futures::channel::oneshot;
 use hf_hub::{Cache, Repo, RepoType};
 use psyche_coordinator::{
     model::{self, HubRepo, LLMTrainingDataLocation},
@@ -25,7 +24,7 @@ use thiserror::Error;
 use tokenizers::{models::wordlevel::WordLevel, ModelWrapper, Tokenizer};
 use tokio::{
     io,
-    sync::mpsc::UnboundedSender,
+    sync::{mpsc::UnboundedSender, oneshot},
     task::{JoinError, JoinHandle},
 };
 use tracing::info;
