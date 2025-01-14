@@ -1,7 +1,9 @@
 # Data Provider  
 
-The data provider is responsible for parsing the training data and creating
-samples for the clients to use when training a model.  
+The data provider is the interface that will be implemented by the different structures responsible for parsing the training data and creating samples for the clients to use when training a model. There's three different structures ways to declare a data provider depending on how they will host the data and how the clients will request them:
+- **Local data provider** where the client already contains the data to be used on training.
+- **HTTP data provider** the clients will recieve a list of urls to make request on where all the necessary data of training is hosted.
+- **TCP data provider** a local server separated from the client that the clients could communicate using TCP to get the training data.
 
 ## Overview  
 
@@ -17,24 +19,83 @@ corresponding data to begin training.
 To better understand how the data is partitioned for each client, refer to the
 following diagram:  
 
-![Data distribution example](images/data-distribution.png)  
+```mermaid
+flowchart TD
+    C((Coordinator))
+    C1[Client]
+    C2[Client]
+    C --Batch IDs--> C1
+    C --Batch IDs--> C2
+    subgraph Data Provider
+        B1["Batch
+            1. Data
+            2. Data
+            3. Data
+            "]
+        B2["Batch
+            1. Data
+            2. Data
+            3. Data
+            "]
+        B3["Batch
+            1. Data
+            2. Data
+            3. Data
+            "]
+        B4["Batch
+            1. Data
+            2. Data
+            3. Data
+        "]
+        B5["Batch
+            1. Data
+            2. Data
+            3. Data
+        "]
+        B6["Batch
+            1. Data
+            2. Data
+            3. Data
+        "]
+        B4 ~~~ B1
+        B5 ~~~ B2
+        B6 ~~~ B3
+    end
+    B1 --> C1
+    B2 --> C1
+    B3 --> C1
+    B4 --> C2
+    B5 --> C2
+    B6 --> C2
+```
 
 The number of batches used for training in a run, as well as the indexes of
 data that each batch contains, can be configured.  
 
-## Deep Dive  
+## Deep Dive
 
-When loading a model, there are two configuration files that must be declared
-for the coordinator to start working: `data.toml` and `state.toml`. Examples of
-these files can be found in the `config` folder.  
+For the coordinator's initial state, the `state.toml` file contains configuration details for the entire run. A key section to consider is `[model.LLM.data_location]`, which specifies whether the data will be hosted on a TCP server, accessed via HTTP, or stored in a local folder.  
 
-The `data.toml` file contains configuration for the data itself in case of
-running local training, such as the data's location, token size, sequence
-length, and a seed to shuffle the data if needed. The `state.toml` file
-contains configuration for the entire run. Of particular interest is the
-`[model.LLM.data_location]` section, which defines whether the data will be
-hosted on a server or in a local folder. If it is a server, the IP must be
-specified, as it is where the clients will connect.  
+When loading a model, the required configuration depends on the data provider implementation being used:  
+
+1. **TCP Server**:  
+   - If the data provider is configured as a TCP server, an additional file named `data.toml` is required.  
+   - This file contains configurations for local training, including:  
+     - Data location  
+     - Token size  
+     - Sequence length  
+     - A seed to shuffle the data if necessary  
+   - An example `data.toml` file can be found in `psyche/config` within the various initial state examples.  
+
+2. **HTTP Provider**:  
+   - For the HTTP data provider, no additional configuration file is needed.  
+   - The required fields for this setup include:  
+     - The URL (or a set of URLs) from which the data will be fetched  
+     - Token size (in bytes)  
+     - A shuffle seed, if data shuffling is desired.
+
+3. **Client Hosting the Data**:  
+   - In this case, the client must simply provide the URL where the data is hosted.
 
 The `init_run` function initializes the data provider using the configuration
 and creates a `DataFetcher`, the structure responsible for managing the data
