@@ -331,7 +331,18 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                         let device = Device::Cuda(0);
                         let mut variables: nn::VarStore = nn::VarStore::new(device);
                         variables.set_kind(Kind::BFloat16);
+                        let _no_grad = tch::no_grad_guard();
                         let model = Llama::new(variables.root(), &config, None);
+                        let c = nn::LinearConfig {
+                            bias: false,
+                            ..Default::default()
+                        };
+                        let lm_head = nn::linear(
+                            &variables.root() / "lm_head",
+                            config.hidden_size as i64,
+                            config.vocab_size as i64,
+                            c,
+                        );
 
                         let parameter_names: Vec<String> = {
                             let variables_lock = variables.variables_.lock().unwrap();
@@ -344,6 +355,16 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             .unwrap();
 
                         let parameters = rx_params_response.await.unwrap();
+
+                        {
+                            let mut variables = variables.variables_.lock().unwrap();
+                            let shards = variables.shards.clone();
+                            for (name, var) in variables.named_variables.iter_mut() {
+                                let tensor = parameters.get(name).unwrap();
+                                let mut size: Vec<i64> = tensor.size();
+                                let kind: Kind = tensor.kind();
+                            }
+                        }
 
                         todo!()
                         // Ok(RawLoadedModel{
