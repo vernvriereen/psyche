@@ -7,7 +7,7 @@ use psyche_coordinator::{
 };
 use psyche_coordinator::{Client, Round};
 use psyche_core::FixedVec;
-use std::collections::HashSet;
+use std::{collections::HashSet, ops::ControlFlow};
 use tokio::{
     select,
     sync::{
@@ -159,7 +159,11 @@ impl CoordinatorServer {
     pub async fn run(&mut self) {
         loop {
             select! {
-                res = self.inner.run() => res.unwrap(),
+                res = self.inner.poll_next() => {
+                    if let ControlFlow::Break(()) = res.unwrap() {
+                        break
+                    }
+                },
                 Some(client_msg) = self.query_chan_receiver.recv() => self.handle_message(client_msg).await
             }
         }

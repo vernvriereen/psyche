@@ -22,6 +22,7 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddr};
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -272,39 +273,45 @@ impl App {
 
     pub async fn run(&mut self) -> Result<()> {
         loop {
-            select! {
-                _ = self.cancel.cancelled() => {
-                    info!("got cancel callback, exiting cleanly.");
-                    return Ok(());
-                }
-
-                Some(event) = self.backend.net_server.next() => {
-                    match event {
-                        ClientNotification::Message((from, message)) => {
-                            self.on_client_message(from, message).await;
-                        }
-                        ClientNotification::Disconnected(from) => {
-                            self.on_disconnect(from)?;
-                        }
-                    }
-                }
-                _ = self.tick_interval.tick() => {
-                    self.on_tick().await;
-                }
-                _ = self.update_tui_interval.tick() => {
-                    self.update_tui().await?;
-                }
-                _ = async {
-                    if let Some((_, server))  = &mut self.training_data_server {
-                        server.poll().await
-                    } else {
-                        tokio::task::yield_now().await;
-                    }
-                } => {}
-                else => break,
+            if let ControlFlow::Break(()) = self.poll_next().await? {
+                break;
             }
         }
         Ok(())
+    }
+
+    pub async fn poll_next(&mut self) -> Result<ControlFlow<(), ()>> {
+        select! {
+            _ = self.cancel.cancelled() => {
+                info!("got cancel callback, exiting cleanly.");
+                return Ok(ControlFlow::Break(()));
+            }
+
+            Some(event) = self.backend.net_server.next() => {
+                match event {
+                    ClientNotification::Message((from, message)) => {
+                        self.on_client_message(from, message).await;
+                    }
+                    ClientNotification::Disconnected(from) => {
+                        self.on_disconnect(from)?;
+                    }
+                }
+            }
+            _ = self.tick_interval.tick() => {
+                self.on_tick().await;
+            }
+            _ = self.update_tui_interval.tick() => {
+                self.update_tui().await?;
+            }
+            _ = async {
+                if let Some((_, server))  = &mut self.training_data_server {
+                    server.poll().await
+                } else {
+                    tokio::task::yield_now().await;
+                }
+            } => {}
+        }
+        Ok(ControlFlow::Continue(()))
     }
 
     async fn update_tui(&mut self) -> Result<()> {
