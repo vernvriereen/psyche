@@ -82,35 +82,18 @@ impl CommitteeSelection {
         seed: u64,
     ) -> Result<Self, CoordinatorError> {
         if total_nodes >= u64::MAX as usize {
-            tracing::error!(
-                "Invalid CommitteeSelection: total_nodes: {} >= u64::MAX",
-                total_nodes
-            );
             return Err(CoordinatorError::InvalidCommitteeSelection);
         }
+
         if total_nodes < tie_breaker_nodes {
-            tracing::error!(
-                "Invalid CommitteeSelection: total_nodes: {} < tie_breaker_nodes: {}",
-                total_nodes,
-                tie_breaker_nodes
-            );
             return Err(CoordinatorError::InvalidCommitteeSelection);
         }
 
         if witness_nodes != 0 && total_nodes < witness_nodes {
-            tracing::error!(
-                "Invalid CommitteeSelection: witness_nodes: {} != 0 && total_nodes: {} < witness_nodes: {}",
-                witness_nodes, total_nodes, witness_nodes
-            );
             return Err(CoordinatorError::InvalidCommitteeSelection);
         }
 
         if verification_percent > 100 {
-            tracing::error!(
-                "Invalid CommitteeSelection: verification_percent {} > 100",
-                verification_percent
-            );
-
             return Err(CoordinatorError::InvalidCommitteeSelection);
         }
 
