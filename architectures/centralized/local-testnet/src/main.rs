@@ -174,22 +174,20 @@ fn main() -> Result<()> {
                     "run",
                     "-p",
                     "psyche-centralized-server",
-                    "--",
+                    "validate-config",
                     "--state",
                     state_path.to_str().unwrap(),
                     "--data-config",
                     data_path.to_str().unwrap(),
-                    "validate-config",
                 ]
             } else {
                 vec![
                     "run",
                     "-p",
                     "psyche-centralized-server",
-                    "--",
+                    "validate-config",
                     "--state",
                     state_path.to_str().unwrap(),
-                    "validate-config",
                 ]
             };
             // Validate config
@@ -253,7 +251,7 @@ fn main() -> Result<()> {
 
             // Start server
             let mut server_cmd = format!(
-        "RUST_LOG={} cargo run -p psyche-centralized-server -- --state {} --server-port {} --tui {}",
+        "RUST_LOG={} cargo run -p psyche-centralized-server run --state {} --server-port {} --tui {}",
         start_args.log,
         state_path.display(),
         start_args.server_port,
@@ -262,7 +260,6 @@ fn main() -> Result<()> {
             if data_path.exists() {
                 server_cmd.push_str(&format!(" --data-config {}", data_path.display()));
             }
-            server_cmd.push_str(" run");
 
             println!("starting server: {server_cmd:?}");
 
@@ -408,7 +405,7 @@ fn start_client(
     };
 
     cmd.push(format!(
-        "RUST_LOG={} RUST_BACKTRACE=1 RAW_IDENTITY_SECRET_KEY={} cargo run -p psyche-centralized-client -- train --run-id {} --server-addr localhost:{} --tui {}",
+        "RUST_LOG={} RUST_BACKTRACE=1 RAW_IDENTITY_SECRET_KEY={} cargo run -p psyche-centralized-client train --run-id {} --server-addr localhost:{} --tui {}",
         args.log,
         raw_key,
         run_id,
