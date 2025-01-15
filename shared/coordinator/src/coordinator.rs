@@ -802,7 +802,6 @@ impl<T: NodeIdentity> Coordinator<T> {
     fn start_cooldown(&mut self, unix_timestamp: u64) {
         match &mut self.model {
             Model::LLM(llm) => {
-                llm.checkpoint = Checkpoint::Ephemeral;
                 if let Checkpoint::Hub(hub_repo) = llm.checkpoint {
                     llm.checkpoint = Checkpoint::P2P(hub_repo)
                 }

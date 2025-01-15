@@ -419,7 +419,7 @@ impl Model {
                         Checkpoint::Dummy => false,
                         Checkpoint::Ephemeral => true,
                         Checkpoint::Hub(hub_repo) => hub_repo.repo_id[0] != 0,
-                        Checkpoint::P2P => todo!(),
+                        Checkpoint::P2P(_) => todo!(),
                     }
                     && match llm.optimizer {
                         Optimizer::Dummy => false,
