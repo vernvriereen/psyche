@@ -7,6 +7,7 @@ use anchor_client::{
 use anyhow::Result;
 use psyche_client::{CheckpointConfig, Client, RunInitConfig, WandBInfo, NC};
 use psyche_network::{RelayMode, SecretKey};
+use tracing::info;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::select;
@@ -108,6 +109,25 @@ impl App {
     ) -> Result<()> {
         let backend =
             SolanaBackend::new(self.cluster.clone(), state_options.private_key.0.clone())?;
+
+        let joined = backend
+            .join_run(
+                &run_id,
+                ClientId {
+                    signer: signer.unwrap_or(key_pair.pubkey()),
+                    p2p_identity: (),
+                },
+            )
+            .await?;
+        info!(
+            "Joined run {} from {} (signer {}) and p2p identity {} with transaction {}",
+            run_id,
+            key_pair.pubkey(),
+            identity.signer,
+            identity.p2p_identity,
+            joined
+        );
+
         let instance = backend.get_coordinator_instance(&self.run_id).await?;
         let backend = backend.start(self.run_id.clone(), instance.account).await?;
 

@@ -217,6 +217,7 @@ pub mod solana_coordinator {
                 if client.id != id {
                     return err!(ProgramError::ClientIdMismatch);
                 }
+                client.id = id; // IMPORTANT. Equality is on wallet key but includes ephemeral p2p key
                 client.active = clients_state.next_active;
                 true
             }
