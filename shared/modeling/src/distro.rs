@@ -671,6 +671,8 @@ impl Distro {
             // Remove transmitted from delta
             let _t = delta.g_sub_(&transmit_grad);
 
+            let sparse_val = sparse_val.sign();
+
             ret.push(DistroResult {
                 sparse_idx,
                 sparse_val,

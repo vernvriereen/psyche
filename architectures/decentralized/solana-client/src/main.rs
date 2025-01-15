@@ -351,7 +351,7 @@ async fn async_main() -> Result<()> {
             //     args.tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)),
             // )?;
 
-            let (mut app, p2p, state_options) = AppBuilder::new(AppParams {
+            let (mut app, allowlist, p2p, state_options) = AppBuilder::new(AppParams {
                 //cancel,
                 //tx_tui_state,
                 identity_secret_key,
@@ -376,7 +376,7 @@ async fn async_main() -> Result<()> {
             .await
             .unwrap();
 
-            app.run(p2p, state_options).await
+            app.run(allowlist, p2p, state_options).await
         }
     }
 }

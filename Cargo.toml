@@ -76,10 +76,9 @@ anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea
 anchor-client = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea308440a9fa9cb79cee7bddd30ab163d5", features = [
     "async",
 ] }
-futures-lite = "2.5.0"
 
 # dev only
-test-log = "0.2.16"
+test-log = { version = "0.2.16", features = ["trace"] }
 pretty_assertions = "1.4.1"
 
 

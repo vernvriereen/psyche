@@ -6324,6 +6324,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "psyche-centralized-testing"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "psyche-centralized-client",
+ "psyche-centralized-server",
+ "psyche-centralized-shared",
+ "psyche-client",
+ "psyche-coordinator",
+ "psyche-core",
+ "psyche-data-provider",
+ "psyche-network",
+ "rand 0.8.5",
+ "test-log",
+ "tokio",
+ "tokio-util 0.7.13",
+ "toml 0.8.19",
+ "tracing",
+]
+
+[[package]]
 name = "psyche-client"
 version = "0.1.0"
 dependencies = [
@@ -6481,15 +6503,16 @@ dependencies = [
  "clap",
  "data-encoding",
  "ed25519 2.2.3",
- "futures-lite 2.5.0",
  "futures-util",
  "iroh",
  "iroh-blobs",
  "iroh-gossip",
  "postcard",
+ "psyche-core",
  "psyche-tui",
  "rand 0.8.5",
  "serde",
+ "serde_json",
  "sha2 0.10.8",
  "tch",
  "thiserror 2.0.9",
@@ -10815,26 +10838,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.90",
-]
-
-[[package]]
-name = "testing"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "bytemuck",
- "psyche-centralized-client",
- "psyche-centralized-server",
- "psyche-centralized-shared",
- "psyche-client",
- "psyche-coordinator",
- "psyche-core",
- "psyche-data-provider",
- "psyche-network",
- "rand 0.8.5",
- "tokio",
- "tokio-util 0.7.13",
- "toml 0.8.19",
 ]
 
 [[package]]

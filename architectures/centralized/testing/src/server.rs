@@ -7,7 +7,7 @@ use psyche_coordinator::{
 };
 use psyche_coordinator::{Client, Round};
 use psyche_core::FixedVec;
-use std::collections::HashSet;
+use std::{collections::HashSet, ops::ControlFlow};
 use tokio::{
     select,
     sync::{
@@ -15,11 +15,9 @@ use tokio::{
         oneshot,
     },
 };
+use tracing::debug;
 
-use crate::{
-    test_utils::{get_free_port, sample_rand_run_id},
-    COOLDOWN_TIME,
-};
+use crate::{test_utils::sample_rand_run_id, COOLDOWN_TIME};
 use crate::{MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME};
 
 enum TestingQueryMsg {
@@ -95,13 +93,13 @@ impl CoordinatorServer {
             ..Coordinator::<ClientId>::zeroed()
         };
 
-        let server_port = get_free_port();
+        debug!("ServerApp::new() waiting...");
+
         let server = ServerApp::new(
             false,
             coordinator,
             None,
             None,
-            Some(server_port),
             None,
             Some(WARMUP_TIME),
             Some(init_min_clients),
@@ -109,11 +107,14 @@ impl CoordinatorServer {
         )
         .await
         .unwrap();
+        debug!("ServerApp::new() done!");
+
+        let port = server.get_port();
 
         Self {
             inner: server,
             query_chan_receiver,
-            port: server_port,
+            port,
             run_id,
         }
     }
@@ -158,7 +159,11 @@ impl CoordinatorServer {
     pub async fn run(&mut self) {
         loop {
             select! {
-                res = self.inner.run() => res.unwrap(),
+                res = self.inner.poll_next() => {
+                    if let ControlFlow::Break(()) = res.unwrap() {
+                        break
+                    }
+                },
                 Some(client_msg) = self.query_chan_receiver.recv() => self.handle_message(client_msg).await
             }
         }
@@ -178,6 +183,7 @@ impl CoordinatorServerHandle {
         witness_nodes: u16,
         witness_quorum: u16,
     ) -> Self {
+        debug!("creating coordinator server...");
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
         let mut server = CoordinatorServer::new(
             query_chan_receiver,
@@ -190,6 +196,8 @@ impl CoordinatorServerHandle {
         let server_port = server.port;
         let run_id = server.run_id.clone();
         tokio::spawn(async move { server.run().await });
+        debug!("coordinator server created on port {server_port}");
+
         Self {
             query_chan_sender,
             server_port,

@@ -1,10 +1,12 @@
+use allowlist::Allowlist;
 use anyhow::{Error, Result};
 use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
 use futures_util::StreamExt;
-use iroh::{endpoint::RemoteInfo, protocol::Router, NodeAddr};
+use iroh::{endpoint::RemoteInfo, NodeAddr};
 use iroh_blobs::{net_protocol::Blobs, store::mem::Store, util::local_pool::LocalPool};
 use iroh_gossip::net::{Gossip, GossipEvent, GossipReceiver, GossipSender};
 use p2p_model_sharing::ParameterSharingMessage;
+use router::Router;
 use state::State;
 use std::{
     collections::HashSet,
@@ -30,10 +32,13 @@ pub use ed25519::Signature;
 pub use iroh::{NodeId, RelayMode};
 pub use iroh_blobs::{ticket::BlobTicket, Hash};
 
+pub mod allowlist;
 mod authenticable_identity;
 mod download_manager;
+mod local_discovery;
 mod p2p_model_sharing;
 mod peer_list;
+mod router;
 mod serde;
 mod signed_message;
 mod state;
@@ -51,6 +56,15 @@ pub use signed_message::SignedMessage;
 pub use tcp::{ClientNotification, TcpClient, TcpServer};
 pub use tui::{NetworkTUIState, NetworkTui};
 
+/// How should this node discover other nodes?
+///
+/// In almost all cases, you want "N0", for over-the-internet communication.
+/// For running tests, you might want Local, since Iroh's relay nodes have a rate limit per-ip.
+#[derive(Debug, Clone, Copy)]
+pub enum DiscoveryMode {
+    Local,
+    N0,
+}
 pub struct NetworkConnection<BroadcastMessage, Download>
 where
     BroadcastMessage: Networkable,
@@ -93,57 +107,76 @@ where
     BroadcastMessage: Networkable,
     Download: Networkable,
 {
-    pub async fn init(
+    pub async fn init<A: Allowlist + 'static + Send>(
         run_id: &str,
         port: Option<u16>,
         relay_mode: RelayMode,
+        discovery_mode: DiscoveryMode,
         bootstrap_peers: Vec<NodeAddr>,
         secret_key: Option<SecretKey>,
+        allowlist: A,
     ) -> Result<Self> {
         let secret_key = match secret_key {
             None => SecretKey::generate(&mut rand::rngs::OsRng),
             Some(key) => key,
         };
+
+        let public_key = secret_key.public();
+
         debug!("Using relay servers: {}", fmt_relay_mode(&relay_mode));
 
-        // TODO add an allowlist of public keys, don't let any connections from people with keys not in that list.
-        let endpoint = Endpoint::builder()
-            .secret_key(secret_key)
-            .relay_mode(relay_mode)
-            .bind_addr_v4(SocketAddrV4::new(
-                Ipv4Addr::new(0, 0, 0, 0),
-                port.unwrap_or(0),
-            ))
-            .discovery_n0()
-            .bind()
-            .await?;
+        let endpoint = {
+            let endpoint = Endpoint::builder()
+                .secret_key(secret_key)
+                .relay_mode(relay_mode)
+                .bind_addr_v4(SocketAddrV4::new(
+                    Ipv4Addr::new(0, 0, 0, 0),
+                    port.unwrap_or(0),
+                ));
+
+            let e = match discovery_mode {
+                DiscoveryMode::Local => endpoint.discovery(Box::new(
+                    local_discovery::LocalTestDiscovery::new(public_key),
+                )),
+                DiscoveryMode::N0 => endpoint.discovery_n0(),
+            };
+
+            e.bind().await?
+        };
 
         let node_addr = endpoint.node_addr().await?;
 
         info!("Our node addr: {}", node_addr.node_id);
 
+        trace!("creating blobs...");
         let blobs_local_pool = LocalPool::default();
         let blobs = Blobs::memory().build(blobs_local_pool.handle(), &endpoint);
+        trace!("blobs created!");
 
+        trace!("creating gossip...");
         let gossip = Gossip::builder().spawn(endpoint.clone()).await?;
+        trace!("gossip created!");
 
+        trace!("creating model parameter sharing...");
         let (tx_model_parameter_req, rx_model_parameter_req) = mpsc::unbounded_channel();
         let model_parameter_sharing = ModelParameterSharing::new(tx_model_parameter_req);
+        trace!("model parameter sharing created!");
 
+        trace!("creating router...");
         let router = Arc::new(
-            Router::builder(endpoint)
-                .accept(iroh_blobs::ALPN, blobs.clone())
-                .accept(iroh_gossip::ALPN, gossip.clone())
-                .accept(p2p_model_sharing::ALPN, model_parameter_sharing.clone())
-                .spawn()
-                .await?,
+            Router::spawn(
+                endpoint,
+                gossip.clone(),
+                blobs.clone(),
+                model_parameter_sharing.clone(),
+                allowlist,
+            )
+            .await?,
         );
+        trace!("router created!");
 
         // add any bootstrap peers
         {
-            let me = router.endpoint().node_addr().await?;
-            let join_ticket = PeerList(vec![me]);
-            info!("our join ticket: {}", join_ticket);
             if bootstrap_peers.is_empty() {
                 info!("Waiting for peers to join us...");
             } else {
@@ -183,17 +216,19 @@ where
         })
     }
 
-    pub async fn add_peers(&mut self, peers: Vec<NodeAddr>) -> Result<()> {
-        peers
-            .iter()
-            .filter(|p| p.node_id != self.router.endpoint().node_id())
-            .map(|peer| self.router.endpoint().add_node_addr(peer.clone()))
-            .collect::<Result<Vec<_>>>()?;
+    pub async fn shutdown(&self) -> Result<()> {
+        self.router.shutdown().await
+    }
+
+    pub fn node_id(&self) -> NodeId {
+        self.router.endpoint().node_id()
+    }
+
+    pub async fn add_peers(&mut self, peers: Vec<NodeId>) -> Result<()> {
         self.gossip_tx
             .join_peers(
                 peers
                     .into_iter()
-                    .map(|i| i.node_id)
                     .filter(|p| p != &self.router.endpoint().node_id())
                     .collect(),
             )

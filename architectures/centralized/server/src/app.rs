@@ -1,7 +1,6 @@
 use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientMessage};
-use psyche_client::{TrainingResult, TransmittableDistroResult, NC};
 use psyche_coordinator::model::{
     self, Checkpoint, LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM,
 };
@@ -14,43 +13,45 @@ use psyche_core::{u8_to_string, FixedVec, Shuffle, SizedIterator, TokenSize};
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider,
 };
-use psyche_network::{ClientNotification, NetworkEvent, NetworkTui, RelayMode, TcpServer};
-use psyche_tui::logging::LoggerWidget;
-use psyche_tui::{maybe_start_render_loop, CustomWidget, MaybeTui, TabbedWidget};
+use psyche_network::{ClientNotification, TcpServer};
+use psyche_tui::{
+    logging::LoggerWidget, maybe_start_render_loop, CustomWidget, MaybeTui, TabbedWidget,
+};
 use psyche_watcher::CoordinatorTui;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddr};
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::time::{interval, MissedTickBehavior};
 use tokio::{select, time::Interval};
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::{debug, info, info_span, warn, Instrument};
 
 use crate::dashboard::{DashboardState, DashboardTui};
 
 pub(super) type Tabs = TabbedWidget<(
     DashboardTui,
     CoordinatorTui,
-    NetworkTui,
     MaybeTui<DataServerTui>,
     LoggerWidget,
 )>;
-pub(super) const TAB_NAMES: [&str; 5] = [
-    "Dashboard",
-    "Coordinator",
-    "P2P Network",
-    "Training Data Server",
-    "Logger",
-];
+pub(super) const TAB_NAMES: [&str; 4] =
+    ["Dashboard", "Coordinator", "Training Data Server", "Logger"];
 type TabsData = <Tabs as CustomWidget>::Data;
 
 struct Backend {
     net_server: TcpServer<ClientId, ClientToServerMessage, ServerToClientMessage>,
     pending_clients: HashSet<ClientId>,
+}
+
+impl Backend {
+    pub fn port(&self) -> u16 {
+        self.net_server.local_addr().port()
+    }
 }
 
 struct ChannelCoordinatorBackend {
@@ -88,7 +89,6 @@ type DataServer =
 
 pub struct App {
     cancel: CancellationToken,
-    p2p: NC,
     tx_tui_state: Option<Sender<TabsData>>,
     tick_interval: Interval,
     update_tui_interval: Interval,
@@ -130,6 +130,10 @@ impl App {
     pub fn get_current_epoch(&self) -> u16 {
         self.coordinator.progress.epoch
     }
+
+    pub fn get_port(&self) -> u16 {
+        self.backend.port()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -146,166 +150,168 @@ impl App {
         tui: bool,
         mut coordinator: Coordinator<ClientId>,
         data_server_config: Option<DataServerInfo>,
-        p2p_port: Option<u16>,
-        server_port: Option<u16>,
+        coordinator_server_port: Option<u16>,
         save_state_dir: Option<PathBuf>,
         init_warmup_time: Option<u64>,
         init_min_clients: Option<u16>,
         withdraw_on_disconnect: bool,
     ) -> Result<Self> {
-        let run_id = u8_to_string(&coordinator.run_id);
-        let p2p = NC::init(&run_id, p2p_port, RelayMode::Default, vec![], None).await?;
+        async {
+            Self::reset_ephemeral(&mut coordinator);
 
-        Self::reset_ephemeral(&mut coordinator);
+            debug!("potentially launching data server...");
 
-        let training_data_server = if let Model::LLM(LLM {
-            data_location: LLMTrainingDataLocation::Server(url),
-            data_type,
-            checkpoint,
-            ..
-        }) = &coordinator.model
-        {
-            if let LLMTrainingDataType::Finetuning = data_type {
-                panic!("Finetuning is not supported yet.")
-            }
+            let training_data_server = if let Model::LLM(LLM {
+                data_location: LLMTrainingDataLocation::Server(url),
+                data_type,
+                checkpoint,
+                ..
+            }) = &coordinator.model
+            {
+                if let LLMTrainingDataType::Finetuning = data_type {
+                    panic!("Finetuning is not supported yet.")
+                }
 
-            match checkpoint {
-                Checkpoint::Hub(hub_repo) => {
-                    let repo_id = u8_to_string(&hub_repo.repo_id);
-                    let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
-                    if revision.is_some()
-                        || !tokio::fs::try_exists(PathBuf::from(repo_id.clone()))
-                            .await
-                            .unwrap_or_default()
-                    {
-                        download_model_repo_async(&repo_id, revision, None, None, None, true)
-                            .await?;
+                match checkpoint {
+                    Checkpoint::Hub(hub_repo) => {
+                        let repo_id = u8_to_string(&hub_repo.repo_id);
+                        let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
+                        if revision.is_some()
+                            || !tokio::fs::try_exists(PathBuf::from(repo_id.clone()))
+                                .await
+                                .unwrap_or_default()
+                        {
+                            download_model_repo_async(&repo_id, revision, None, None, None, true)
+                                .await?;
+                        }
+                    }
+                    Checkpoint::Ephemeral => {
+                        bail!("Can't start up a run with an Ephemeral checkpoint.")
+                    }
+                    Checkpoint::Dummy => {
+                        // ok!
+                    }
+                    Checkpoint::P2P => {
+                        bail!("Can't start up a run with a P2P checkpoint.")
                     }
                 }
-                Checkpoint::Ephemeral => {
-                    bail!("Can't start up a run with an Ephemeral checkpoint.")
-                }
-                Checkpoint::Dummy => {
-                    // ok!
-                }
-                Checkpoint::P2P => {
-                    bail!("Can't start up a run with a P2P checkpoint.")
-                }
+
+                let server_addr: SocketAddr = u8_to_string(url).parse().map_err(|e| {
+                    anyhow!("Failed to parse training data server URL {:?}: {}", url, e)
+                })?;
+                let data_server_port = server_addr.port();
+                let DataServerInfo {
+                    dir,
+                    seq_len,
+                    shuffle_seed,
+                    token_size
+                } = data_server_config.ok_or_else(|| anyhow!("Coordinator state requires we host training data, but no --data-config passed."))?;
+
+                let local_data_provider = LocalDataProvider::new_from_directory(
+                    dir,
+                    token_size,
+                    seq_len,
+                    Shuffle::Seeded(shuffle_seed),
+                )?;
+
+                let (tx, backend) = ChannelCoordinatorBackend::new();
+                let data_server =
+                    DataProviderTcpServer::start(local_data_provider, backend, data_server_port)
+                        .await?;
+                Some((tx, data_server))
+            } else {
+                None
+            };
+            debug!("data server work done.");
+
+            let (cancel, tx_tui_state) =
+                maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;
+
+            let mut tick_interval = interval(Duration::from_millis(500));
+            tick_interval.set_missed_tick_behavior(MissedTickBehavior::Skip); //important!
+
+            let mut update_tui_interval = interval(Duration::from_millis(150));
+            update_tui_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+            let net_server =
+                TcpServer::<ClientId, ClientToServerMessage, ServerToClientMessage>::start(
+                    SocketAddr::new(
+                        std::net::IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                        coordinator_server_port.unwrap_or(0),
+                    ),
+                )
+                .await?;
+
+            let original_warmup_time = coordinator.config.warmup_time;
+            let original_min_clients = coordinator.config.min_clients;
+
+            if let Some(init_warmup_time) = init_warmup_time {
+                coordinator.config.warmup_time = init_warmup_time;
+            }
+            if let Some(init_min_clients) = init_min_clients {
+                coordinator.config.min_clients = init_min_clients;
             }
 
-            let server_addr: SocketAddr = u8_to_string(url).parse().map_err(|e| {
-                anyhow!("Failed to parse training data server URL {:?}: {}", url, e)
-            })?;
-            let server_port = server_addr.port();
-            let DataServerInfo {
-                dir,
-                seq_len,
-                shuffle_seed,
-                token_size
-            } = data_server_config.ok_or_else(|| anyhow!("Coordinator state requires we host training data, but no --data-config passed."))?;
-
-            let local_data_provider = LocalDataProvider::new_from_directory(
-                dir,
-                token_size,
-                seq_len,
-                Shuffle::Seeded(shuffle_seed),
-            )?;
-
-            let (tx, backend) = ChannelCoordinatorBackend::new();
-            let data_server =
-                DataProviderTcpServer::start(local_data_provider, backend, server_port).await?;
-            Some((tx, data_server))
-        } else {
-            None
-        };
-
-        let (cancel, tx_tui_state) =
-            maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;
-
-        let mut tick_interval = interval(Duration::from_millis(500));
-        tick_interval.set_missed_tick_behavior(MissedTickBehavior::Skip); //important!
-
-        let mut update_tui_interval = interval(Duration::from_millis(150));
-        update_tui_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
-        let net_server =
-            TcpServer::<ClientId, ClientToServerMessage, ServerToClientMessage>::start(
-                SocketAddr::new(
-                    std::net::IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-                    server_port.unwrap_or(0),
-                ),
-            )
-            .await?;
-
-        let original_warmup_time = coordinator.config.warmup_time;
-        let original_min_clients = coordinator.config.min_clients;
-
-        if let Some(init_warmup_time) = init_warmup_time {
-            coordinator.config.warmup_time = init_warmup_time;
-        }
-        if let Some(init_min_clients) = init_min_clients {
-            coordinator.config.min_clients = init_min_clients;
-        }
-
-        Ok(Self {
-            cancel,
-            training_data_server,
-            p2p,
-            tx_tui_state,
-            tick_interval,
-            update_tui_interval,
-            coordinator,
-            backend: Backend {
-                net_server,
-                pending_clients: HashSet::new(),
-            },
-            save_state_dir,
-            original_warmup_time,
-            original_min_clients,
-            withdraw_on_disconnect,
-        })
+            Ok(Self {
+                cancel,
+                training_data_server,
+                tx_tui_state,
+                tick_interval,
+                update_tui_interval,
+                coordinator,
+                backend: Backend {
+                    net_server,
+                    pending_clients: HashSet::new(),
+                },
+                save_state_dir,
+                original_warmup_time,
+                original_min_clients,
+                withdraw_on_disconnect,
+            })
+        }.instrument(info_span!("App::new")).await
     }
 
     pub async fn run(&mut self) -> Result<()> {
         loop {
-            select! {
-                _ = self.cancel.cancelled() => {
-                    info!("got cancel callback, exiting cleanly.");
-                    return Ok(());
-                }
-
-                Ok(p2p_event) = self.p2p.poll_next() => {
-                    if let Some(event) = p2p_event {
-                        self.on_network_event(event);
-                    }
-                }
-                Some(event) = self.backend.net_server.next() => {
-                    match event {
-                        ClientNotification::Message((from, message)) => {
-                            self.on_client_message(from, message).await;
-                        }
-                        ClientNotification::Disconnected(from) => {
-                            self.on_disconnect(from)?;
-                        }
-                    }
-                }
-                _ = self.tick_interval.tick() => {
-                    self.on_tick().await;
-                }
-                _ = self.update_tui_interval.tick() => {
-                    self.update_tui().await?;
-                }
-                _ = async {
-                    if let Some((_, server))  = &mut self.training_data_server {
-                        server.poll().await
-                    } else {
-                        tokio::task::yield_now().await;
-                    }
-                } => {}
-                else => break,
+            if let ControlFlow::Break(()) = self.poll_next().await? {
+                break;
             }
         }
         Ok(())
+    }
+
+    pub async fn poll_next(&mut self) -> Result<ControlFlow<(), ()>> {
+        select! {
+            _ = self.cancel.cancelled() => {
+                info!("got cancel callback, exiting cleanly.");
+                return Ok(ControlFlow::Break(()));
+            }
+
+            Some(event) = self.backend.net_server.next() => {
+                match event {
+                    ClientNotification::Message((from, message)) => {
+                        self.on_client_message(from, message).await;
+                    }
+                    ClientNotification::Disconnected(from) => {
+                        self.on_disconnect(from)?;
+                    }
+                }
+            }
+            _ = self.tick_interval.tick() => {
+                self.on_tick().await;
+            }
+            _ = self.update_tui_interval.tick() => {
+                self.update_tui().await?;
+            }
+            _ = async {
+                if let Some((_, server))  = &mut self.training_data_server {
+                    server.poll().await
+                } else {
+                    tokio::task::yield_now().await;
+                }
+            } => {}
+        }
+        Ok(ControlFlow::Continue(()))
     }
 
     async fn update_tui(&mut self) -> Result<()> {
@@ -313,19 +319,12 @@ impl App {
             let states = (
                 (&*self).into(),
                 (&self.coordinator).into(),
-                (&self.p2p).into(),
                 self.training_data_server.as_ref().map(|o| (&o.1).into()),
                 Default::default(),
             );
             tx_tui_state.send(states).await?;
         }
         Ok(())
-    }
-
-    fn on_network_event(&mut self, event: NetworkEvent<TrainingResult, TransmittableDistroResult>) {
-        if let NetworkEvent::MessageReceived((_, _)) = event {
-            // we're the coordinator, why are we even in the p2p? lol
-        }
     }
 
     fn on_disconnect(&mut self, from: ClientId) -> Result<()> {
@@ -356,17 +355,8 @@ impl App {
                 // TODO: check whitelist
                 let coord_run_id = u8_to_string(&self.coordinator.run_id);
                 if coord_run_id == run_id {
+                    info!("added pending client {from}");
                     self.backend.pending_clients.insert(from);
-                    let client_joined = self
-                        .backend
-                        .net_server
-                        .broadcast(ServerToClientMessage::P2PConnect(
-                            self.p2p.get_all_peers().await,
-                        ))
-                        .await;
-                    if let Err(e) = client_joined {
-                        warn!("Error sending p2p list to client: {e}");
-                    }
                 } else {
                     info!("{from:?} tried to join unknown run {run_id}");
                 }
