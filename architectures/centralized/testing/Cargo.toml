@@ -1,5 +1,5 @@
 [package]
-name = "testing"
+name = "psyche-centralized-testing"
 edition = "2021"
 version.workspace = true
 
@@ -18,3 +18,5 @@ bytemuck.workspace = true
 anyhow.workspace = true
 rand.workspace = true
 toml = "0.8.19"
+test-log.workspace = true
+tracing.workspace = true

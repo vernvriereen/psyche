@@ -331,6 +331,14 @@ impl<'de, T: Deserialize<'de> + Default + Copy, const N: usize> Deserialize<'de>
     }
 }
 
+impl<T, const N: usize> IntoIterator for FixedVec<T, N> {
+    type Item = T;
+    type IntoIter = std::iter::Take<std::array::IntoIter<T, N>>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.data.into_iter().take(self.len as usize)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

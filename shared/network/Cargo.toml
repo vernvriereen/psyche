@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 psyche-tui.workspace = true
+psyche-core.workspace = true
 iroh.workspace = true
 iroh-blobs.workspace = true
 iroh-gossip.workspace = true
@@ -21,10 +22,10 @@ sha2.workspace = true
 futures-util.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
-futures-lite.workspace = true
 tch.workspace = true
 data-encoding = "2.6.0"
 ed25519 = "2.2.3"
+serde_json.workspace = true
 
 # for examples
 [dev-dependencies]

@@ -3,6 +3,7 @@
 mod batch_id;
 mod bloom;
 mod bounded_queue;
+mod boxed_future;
 mod cancellable_barrier;
 mod data_shuffle;
 mod deterministic_shuffle;
@@ -24,6 +25,7 @@ mod token_size;
 pub use batch_id::BatchId;
 pub use bloom::Bloom;
 pub use bounded_queue::BoundedQueue;
+pub use boxed_future::BoxedFuture;
 pub use cancellable_barrier::{CancellableBarrier, CancelledBarrier};
 pub use data_shuffle::Shuffle;
 pub use deterministic_shuffle::deterministic_shuffle;

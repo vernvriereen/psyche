@@ -3,8 +3,7 @@ use bytemuck::Zeroable;
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
 use psyche_core::NodeIdentity;
 use psyche_network::{
-    AuthenticatableIdentity, FromSignedBytesError, NodeId, PeerList, PublicKey, SecretKey,
-    SignedMessage,
+    AuthenticatableIdentity, FromSignedBytesError, NodeId, PublicKey, SecretKey, SignedMessage,
 };
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
@@ -19,7 +18,6 @@ pub enum ClientToServerMessage {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ServerToClientMessage {
-    P2PConnect(PeerList),
     Coordinator(Box<Coordinator<ClientId>>),
 }
 
