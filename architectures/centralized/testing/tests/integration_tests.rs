@@ -419,6 +419,7 @@ async fn finish_epoch() {
     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
 
     // execute round 1
+    println!("SUCCESS IN FIRST ROUND");
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
 
     // train
@@ -431,6 +432,7 @@ async fn finish_epoch() {
     // Cooldown
     assert_with_retries(|| server_handle.get_run_state(), RunState::Cooldown).await;
     tokio::time::sleep(Duration::from_secs(COOLDOWN_TIME)).await;
+    println!("SUCCESS IN SECOND ROUND");
 
     assert_with_retries(|| server_handle.get_current_epoch(), 1).await;
 }

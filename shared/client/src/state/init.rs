@@ -3,8 +3,6 @@ use crate::{
     trainer::{ParallelModels, Trainer},
     WandBInfo,
 };
-
-use hf_hub::{Cache as HfCache, Repo, RepoType};
 use psyche_coordinator::{
     model::{self, LLMTrainingDataLocation},
     Coordinator, HealthChecks, Witness,
@@ -17,10 +15,11 @@ use psyche_data_provider::{
 };
 use psyche_modeling::{
     auto_tokenizer, get_parameter_names, AutoTokenizerError, CommunicatorId, ConcreteCausalLM,
-    DummyModel, LlamaForCausalLM, LoadLlamaForCausalLMError, PretrainedSource,
+    Config, DummyModel, LlamaForCausalLM, LoadLlamaForCausalLMError,
 };
 use psyche_network::{AuthenticatableIdentity, BlobTicket};
-use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
+use std::rc::Rc;
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tch::{Device, Kind, Tensor};
 use thiserror::Error;
 use tokenizers::{models::wordlevel::WordLevel, ModelWrapper, Tokenizer};
@@ -113,6 +112,7 @@ struct RawLoadedModel {
 }
 
 type OneshotModelParameterSender = oneshot::Sender<HashMap<String, Tensor>>;
+type OneShotModelConfigSender = oneshot::Sender<(Config, Tokenizer)>;
 
 pub struct RunInitConfigAndIO<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub init_config: RunInitConfig<T, A>,
@@ -122,8 +122,10 @@ pub struct RunInitConfigAndIO<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub tx_checkpoint: UnboundedSender<model::Checkpoint>,
     pub tx_model: UnboundedSender<HashMap<String, Tensor>>,
     pub tx_parameters_req: UnboundedSender<(Vec<String>, OneshotModelParameterSender)>,
+    pub tx_config: UnboundedSender<(String, String)>,
     pub tx_distro_result: UnboundedSender<DistroBroadcastAndPayload>,
     pub tx_request_download: UnboundedSender<BlobTicket>,
+    pub tx_request_model_config: UnboundedSender<OneShotModelConfigSender>,
 }
 
 impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T, A> {
@@ -138,9 +140,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
             tx_health_check,
             tx_checkpoint,
             tx_model,
+            tx_config,
             tx_parameters_req,
             tx_distro_result,
             tx_request_download,
+            tx_request_model_config,
         } = self;
 
         let model::Model::LLM(llm) = state.model;
@@ -202,7 +206,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                         eval_runner: EvalRunner::new(vec![], tokenizer, None, 0),
                     })
                 }),
-                model::Checkpoint::Hub(_) | model::Checkpoint::P2P(_) => {
+                model::Checkpoint::Hub(_) | model::Checkpoint::P2P => {
                     let checkpoint = llm.checkpoint;
                     tokio::spawn(async move {
                         let (source, tokenizer, checkpoint_extra_files) = match checkpoint {
@@ -257,7 +261,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                                     checkpoint_extra_files,
                                 )
                             }
-                            model::Checkpoint::P2P(hub_repo) => {
+                            model::Checkpoint::P2P => {
                                 let repo_id = u8_to_string(&hub_repo.repo_id);
                                 let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
                                 let builder = hf_hub::api::sync::ApiBuilder::new();
@@ -363,11 +367,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
 
                         let mut models: Vec<Box<dyn ConcreteCausalLM>> = Vec::new();
                         for future in futures {
-                            models.push(Box::new(
-                                future
-                                    .await
-                                    .map_err(InitRunError::ModelLoadingThreadCrashed)??,
-                            ));
+                            let model = future
+                                .await
+                                .map_err(InitRunError::ModelLoadingThreadCrashed)??;
+                            let config = model.config.to_string();
+                            info!("Config Uploaded: {}", config);
+                            let tokenizer = tokenizer.to_string(false).unwrap();
+                            tx_config.send((config, tokenizer)).unwrap();
+                            models.push(Box::new(model));
                         }
                         info!(
                             "Loaded model onto {} gpu(s) (dp={},tp={})",

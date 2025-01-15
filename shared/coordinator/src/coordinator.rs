@@ -840,11 +840,17 @@ impl<T: NodeIdentity> Coordinator<T> {
     // and change state to cooldown
     fn start_cooldown(&mut self, unix_timestamp: u64) {
         match &mut self.model {
-            Model::LLM(llm) => {
-                if let Checkpoint::Hub(hub_repo) = llm.checkpoint {
-                    llm.checkpoint = Checkpoint::P2P(hub_repo)
+            Model::LLM(llm) => match llm.checkpoint {
+                Checkpoint::Hub(hub_repo) => {
+                    println!("CHECKPOINT UPDATED TO P2P");
+                    llm.checkpoint = Checkpoint::P2P(hub_repo);
                 }
-            }
+                Checkpoint::Dummy => {
+                    println!("CHECKPOINT UPDATED TO P2P");
+                    llm.checkpoint = Checkpoint::P2P(HubRepo::dummy());
+                }
+                _ => {}
+            },
         }
         self.change_state(unix_timestamp, RunState::Cooldown);
     }

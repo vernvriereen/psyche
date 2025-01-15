@@ -27,7 +27,7 @@ local-testnet +args:
 # run integration tests
 integration-test test_name="":
     if [ "{{test_name}}" = "" ]; then \
-        cargo test --release --test integration_tests; \
+        cargo test --release --test integration_tests -- --nocapture; \
     else \
         cargo test --release --test integration_tests -- --nocapture "{{test_name}}"; \
     fi

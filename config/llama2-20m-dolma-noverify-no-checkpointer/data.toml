@@ -1,4 +1,4 @@
-dir = "../../data/dolma"
+dir = "/root/data/data/dolma"
 token_size = "TwoBytes"
 seq_len = 2048
 shuffle_seed = [

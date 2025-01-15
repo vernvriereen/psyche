@@ -9,7 +9,10 @@ use tracing::{debug, error, info_span, trace, warn, Instrument};
 
 use iroh::{endpoint::get_remote_node_id, protocol::ProtocolHandler, Endpoint};
 
-use crate::{p2p_model_sharing, Allowlist, ModelParameterSharing};
+use crate::{
+    p2p_model_sharing::{self, ModelConfigSharing},
+    Allowlist, ModelParameterSharing,
+};
 
 /// The allowlist-enabled router.
 // This is mostly verbatim from Iroh's source, just modified to let us insert the allowlist.
@@ -73,12 +76,14 @@ impl Router {
         gossip: Gossip,
         blobs: Blobs<Store>,
         p2p_model_sharing: ModelParameterSharing,
+        p2p_model_config_sharing: ModelConfigSharing,
         allowlist: A,
     ) -> Result<Self> {
         if let Err(err) = endpoint.set_alpns(vec![
             iroh_blobs::ALPN.to_vec(),
             iroh_gossip::ALPN.to_vec(),
             p2p_model_sharing::ALPN.to_vec(),
+            p2p_model_sharing::CONFIG_ALPN.to_vec(),
         ]) {
             shutdown(&endpoint, gossip, blobs, p2p_model_sharing).await;
             return Err(err);
@@ -93,6 +98,7 @@ impl Router {
             let gossip = gossip.clone();
             let blobs = blobs.clone();
             let p2p_model_sharing = p2p_model_sharing.clone();
+            let p2p_model_config_sharing = p2p_model_config_sharing.clone();
             let allowlist = Box::new(allowlist);
 
             async move {
@@ -140,8 +146,9 @@ impl Router {
                             let blobs = blobs.clone();
                             let allowlist = allowlist.clone();
                             let p2p_model_sharing = p2p_model_sharing.clone();
+                            let p2p_model_config_sharing = p2p_model_config_sharing.clone();
                             join_set.spawn(async move {
-                                token.run_until_cancelled(handle_connection(incoming, gossip, blobs, p2p_model_sharing, allowlist)).await
+                                token.run_until_cancelled(handle_connection(incoming, gossip, blobs, p2p_model_sharing, p2p_model_config_sharing, allowlist)).await
                             }.instrument(info_span!("router.accept")));
                         },
                     }
@@ -188,6 +195,7 @@ async fn handle_connection<A: Allowlist + 'static + Send>(
     gossip: Gossip,
     blobs: Blobs<Store>,
     p2p_model_sharing: ModelParameterSharing,
+    p2p_model_config_sharing: ModelConfigSharing,
     allowlist: Box<A>,
 ) {
     let mut connecting = match incoming.accept() {
@@ -228,6 +236,10 @@ async fn handle_connection<A: Allowlist + 'static + Send>(
         if let Err(err) = p2p_model_sharing.accept_connection(connection).await {
             warn!("Handling incoming p2p model sharing connection ended with error: {err}")
         }
+    } else if alpn == p2p_model_sharing::CONFIG_ALPN {
+        if let Err(err) = p2p_model_config_sharing.accept_connection(connection).await {
+            warn!("Handling incoming p2p model config sharing connection ended with error: {err}")
+        }
     } else {
         warn!("Ignoring connection: unsupported ALPN protocol");
         return;
@@ -262,13 +274,16 @@ mod tests {
         let gossip = Gossip::builder().spawn(endpoint.clone()).await?;
         let (tx_model_parameter_req, _rx_model_parameter_req) =
             tokio::sync::mpsc::unbounded_channel();
+        let (tx_model_config_req, _rx_model_config_req) = tokio::sync::mpsc::unbounded_channel();
         let p2p_model_sharing = ModelParameterSharing::new(tx_model_parameter_req);
+        let p2p_model_config_sharing = ModelConfigSharing::new(tx_model_config_req);
 
         let router = Router::spawn(
             endpoint.clone(),
             gossip.clone(),
             blobs.clone(),
             p2p_model_sharing.clone(),
+            p2p_model_config_sharing.clone(),
             AllowAll,
         )
         .await?;
@@ -330,6 +345,10 @@ mod tests {
                         tokio::sync::mpsc::unbounded_channel();
                     let p2p_model_sharing = ModelParameterSharing::new(tx_model_parameter_req);
 
+                    let (tx_model_config_req, _rx_model_parameter_req) =
+                        tokio::sync::mpsc::unbounded_channel();
+                    let p2p_model_config_sharing = ModelConfigSharing::new(tx_model_config_req);
+
                     Ok((
                         gossip.clone(),
                         Router::spawn(
@@ -337,6 +356,7 @@ mod tests {
                             gossip.clone(),
                             blobs.clone(),
                             p2p_model_sharing.clone(),
+                            p2p_model_config_sharing.clone(),
                             allowlist,
                         )
                         .await?,

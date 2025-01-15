@@ -5,14 +5,17 @@ use iroh::{
 };
 use iroh_blobs::ticket::BlobTicket;
 use psyche_core::BoxedFuture;
+use psyche_modeling::Config;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::io::{Cursor, Write};
 use tch::Tensor;
 use thiserror::Error;
+use tokenizers::Tokenizer;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use tracing::warn;
 
 pub const ALPN: &[u8] = b"model-parameter-sharing/0";
+pub const CONFIG_ALPN: &[u8] = b"model-config-sharing/0";
 pub const REQUEST_PARAMETER_TIMEOUT_SECS: u64 = 3;
 
 #[derive(Error, Debug, serde::Serialize, serde::Deserialize)]
@@ -37,6 +40,26 @@ pub enum SharableModelParameterError {
     ConnectionIOError(String),
     #[error("Could not decode UTF-8 string of model parameter name: {0}")]
     DecodeParameterNameError(String),
+}
+
+#[derive(Error, Debug, serde::Serialize, serde::Deserialize)]
+pub enum SharableModelConfigError {
+    #[error("Model config not initialized")]
+    ModelConfigNotInitialized,
+    #[error("Tokenizer config not initialized")]
+    TokenizerConfigNotInitialized,
+    #[error("Response channel was not initialized")]
+    ResponseChannelNotInitialized,
+    #[error("Error parsing string to config: {0}")]
+    ParseConfig(String),
+    #[error("Could not send the config to the client")]
+    SendConfig,
+}
+
+impl From<serde_json::Error> for SharableModelConfigError {
+    fn from(value: serde_json::Error) -> Self {
+        SharableModelConfigError::ParseConfig(value.to_string())
+    }
 }
 
 // This convertions are done manually since the original errors does not implement serialize and deserialize
@@ -66,6 +89,11 @@ pub enum ParameterSharingMessage {
     Response(String),
 }
 
+pub enum ModelConfigSharingMessage {
+    Get(oneshot::Sender<Result<BlobTicket, SharableModelParameterError>>),
+    Response(String),
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct TransmittableModelParameter {
     param_name_bytes: Vec<u8>,
@@ -78,6 +106,18 @@ impl TransmittableModelParameter {
             param_name_bytes,
             param_value_bytes,
         }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct TransmittableModelConfig {
+    pub config: String,
+    pub tokenizer: String,
+}
+
+impl TransmittableModelConfig {
+    pub fn new(config: String, tokenizer: String) -> Self {
+        Self { config, tokenizer }
     }
 }
 
@@ -108,6 +148,7 @@ impl ModelParameters {
         &mut self,
         new_parameters: HashMap<String, Tensor>,
     ) -> Result<(), SharableModelParameterError> {
+        println!("UPDATING PARAMETERS");
         let Some(parameters) = self.parameters.as_mut() else {
             let mut parameters = HashMap::new();
             let new_parameters = new_parameters;
@@ -117,7 +158,6 @@ impl ModelParameters {
             self.parameters = Some(parameters);
             return Ok(());
         };
-
         // validate that both models have the same parameters
         let new_parameters_names: HashSet<_> = new_parameters.keys().cloned().collect();
         let parameters_names: HashSet<_> = parameters.keys().cloned().collect();
@@ -131,6 +171,7 @@ impl ModelParameters {
             parameters.insert(param_name, Some(tensor));
         });
         self.parameters = Some(parameters);
+        println!("PARAMETERS UPDATED");
         Ok(())
     }
 
@@ -251,6 +292,60 @@ impl ModelParameters {
             return Ok(());
         }
         Err(SharableModelParameterError::ResponseChannelNotInitialized)
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct ModelConfig {
+    pub model_config: Option<Config>,
+    pub tokenizer_config: Option<Tokenizer>,
+    pub tx_model_config_response: Option<oneshot::Sender<(Config, Tokenizer)>>,
+}
+
+impl ModelConfig {
+    pub fn add_config(
+        &mut self,
+        transmittable_config: TransmittableModelConfig,
+    ) -> Result<(), SharableModelConfigError> {
+        let config: Config = serde_json::from_str(&transmittable_config.config)?;
+        let tokenizer: Tokenizer = serde_json::from_str(&transmittable_config.tokenizer)?;
+
+        self.model_config = Some(config);
+        self.tokenizer_config = Some(tokenizer);
+        Ok(())
+    }
+
+    pub fn send_config(&mut self) -> Result<(), SharableModelConfigError> {
+        if let Some(tx_model_config_response) = self.tx_model_config_response.take() {
+            let Some(config) = self.model_config.clone() else {
+                return Err(SharableModelConfigError::ModelConfigNotInitialized);
+            };
+            let Some(tokenizer) = self.tokenizer_config.clone() else {
+                return Err(SharableModelConfigError::TokenizerConfigNotInitialized);
+            };
+            tx_model_config_response
+                .send((config, tokenizer))
+                .map_err(|_e| SharableModelConfigError::SendConfig)?;
+            return Ok(());
+        }
+        Err(SharableModelConfigError::ResponseChannelNotInitialized)
+    }
+
+    pub fn get_transmittable_config(
+        &self,
+    ) -> Result<TransmittableModelConfig, SharableModelConfigError> {
+        let Some(config) = self.model_config.as_ref() else {
+            return Err(SharableModelConfigError::ModelConfigNotInitialized);
+        };
+        let Some(tokenizer) = self.tokenizer_config.as_ref() else {
+            return Err(SharableModelConfigError::TokenizerConfigNotInitialized);
+        };
+        let raw_tokenizer = tokenizer
+            .to_string(false)
+            .map_err(|err| SharableModelConfigError::ParseConfig(err.to_string()))?;
+        let transmittable_config: TransmittableModelConfig =
+            TransmittableModelConfig::new(config.to_string(), raw_tokenizer);
+        Ok(transmittable_config)
     }
 }
 

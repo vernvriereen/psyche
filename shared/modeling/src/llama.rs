@@ -1,4 +1,4 @@
-use crate::{ColumnParallelLinear, Communicator, LlamaConfig, RowParallelLinear};
+use crate::{ColumnParallelLinear, Communicator, RowParallelLinear};
 
 use std::{f32::consts::PI, sync::Arc};
 use tch::nn::{self, Module};
@@ -29,7 +29,7 @@ pub enum LlamaEosToks {
     Multiple(Vec<u32>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct Config {
     pub hidden_size: usize,
     pub intermediate_size: usize,
@@ -44,6 +44,14 @@ pub struct Config {
     pub rope_scaling: Option<Llama3RopeConfig>,
     pub max_position_embeddings: usize,
     pub use_sdpa: bool,
+}
+
+impl std::fmt::Display for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        serde_json::to_string(self)
+            .map_err(|_| std::fmt::Error)
+            .and_then(|s| write!(f, "{}", s))
+    }
 }
 
 #[derive(Debug)]
@@ -428,11 +436,10 @@ impl Llama {
 // but it is probably overkill. We should think about a better way to get them
 // to make the p2p requests.
 pub fn get_parameter_names(
-    config_file_str: &str,
+    config: &mut Config,
     override_max_position_embeddings: Option<usize>,
 ) -> Vec<String> {
-    let llama_config: LlamaConfig = serde_json::from_str(config_file_str).unwrap();
-    let mut config: Config = llama_config.into_config(true);
+    let mut config = config.clone();
     if let Some(override_max_position_embeddings) = override_max_position_embeddings {
         config.max_position_embeddings = override_max_position_embeddings;
     }

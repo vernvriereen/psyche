@@ -1,5 +1,10 @@
 use std::{collections::HashMap, path::PathBuf};
 
+use crate::{
+    trainer::{Trainer, TrainerThreadCommunicationError},
+    HubUploadInfo,
+};
+use psyche_coordinator::model::Checkpoint;
 use psyche_coordinator::{
     model::{self, HubRepo},
     Coordinator,
@@ -11,11 +16,6 @@ use tch::Tensor;
 use thiserror::Error;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{info, info_span, Instrument};
-
-use crate::{
-    trainer::{Trainer, TrainerThreadCommunicationError},
-    HubUploadInfo,
-};
 
 use super::{
     evals::{EvalRunner, RunningEvals},
@@ -95,6 +95,7 @@ impl CooldownStepMetadata {
             return Err(CooldownError::NoTrainers);
         };
 
+        println!("AAAAA");
         let step = state.progress.step - 1;
         let run_id = u8_to_string(&state.run_id);
         let checkpoint_extra_files = self.checkpoint_extra_files.clone();
@@ -102,17 +103,34 @@ impl CooldownStepMetadata {
         let tx_checkpoint = self.tx_checkpoint.clone();
         let tx_model = self.tx_model.clone();
         let eval_runner = self.eval_runner.clone();
+        let current_checkpoint = state.model.checkpoint();
 
         let checkpointing_and_evals = tokio::task::spawn(
             async move {
                 info!("Extracting full model");
-                let (variables, trainer) =
-                    tokio::task::spawn_blocking::<_, Result<_, CheckpointError>>(|| {
+                let (variables, trainer) = match current_checkpoint {
+                    Checkpoint::Dummy => {
+                        // Generate dummy data instead of asking the trainers for the variables
+                        println!("DUMMY CHECKPOINTING EXTRACTING DUMMY VARIABLES");
+                        let mut variables: HashMap<String, Tensor> = HashMap::new();
+                        variables
+                            .insert("a".to_string(), Tensor::zeros(&[8], tch::kind::FLOAT_CPU));
+                        variables
+                            .insert("b".to_string(), Tensor::zeros(&[8], tch::kind::FLOAT_CPU));
+                        variables
+                            .insert("c".to_string(), Tensor::zeros(&[8], tch::kind::FLOAT_CPU));
+                        variables
+                            .insert("d".to_string(), Tensor::zeros(&[8], tch::kind::FLOAT_CPU));
+                        (variables, trainer)
+                    }
+                    _ => tokio::task::spawn_blocking::<_, Result<_, CheckpointError>>(|| {
+                        println!("EXTRACTING REAL VARIABLES");
                         let variables = trainer.extract()?;
                         Ok((variables, trainer))
                     })
                     .await
-                    .map_err(|_| CheckpointError::ExtractThreadCrashed)??;
+                    .map_err(|_| CheckpointError::ExtractThreadCrashed)??,
+                };
 
                 trainers.push(trainer);
                 let evals = eval_runner.start(trainers);
@@ -124,6 +142,7 @@ impl CooldownStepMetadata {
                 else {
                     // Here we assume that either we checkpoint the model to HF or
                     // we share it by p2p.
+                    println!("SENDING VARIABLES");
                     tx_model
                         .send(variables)
                         .map_err(|_| CheckpointError::SendCheckpoint)?;
@@ -158,14 +177,22 @@ impl CooldownStepMetadata {
                 };
 
                 info!("Uploading to {}", hub_repo);
-                let revision = upload_model_repo_async(
-                    hub_repo.clone(),
-                    local,
-                    hub_token.clone(),
-                    Some(format!("step {step}")),
-                    None,
-                )
-                .await?;
+                let revision = match current_checkpoint {
+                    Checkpoint::Dummy => {
+                        // Dummy revision instead of uploading model
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()
+                    }
+                    _ => {
+                        upload_model_repo_async(
+                            hub_repo.clone(),
+                            local,
+                            hub_token.clone(),
+                            Some(format!("step {step}")),
+                            None,
+                        )
+                        .await?
+                    }
+                };
 
                 tx_checkpoint
                     .send(model::Checkpoint::Hub(HubRepo {
@@ -178,6 +205,7 @@ impl CooldownStepMetadata {
             }
             .instrument(info_span!("checkpointing")),
         );
+        println!("END OF COOLDOWN STEP");
         Ok(CooldownStep {
             checkpointing_and_evals,
         })
