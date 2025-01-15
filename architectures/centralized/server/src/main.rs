@@ -21,6 +21,7 @@ enum Commands {
     /// Checks that the configuration declared in the `state.toml` file is valid.
     ValidateConfig {
         /// Path to the `state.toml` file to validate.
+        #[clap(long)]
         state: PathBuf,
         /// Path to `data.toml` file to validate. If no provided then it will not be checked.
         #[clap(long)]

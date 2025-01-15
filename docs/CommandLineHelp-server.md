@@ -23,14 +23,11 @@ This document contains the help content for the `psyche-centralized-server` comm
 
 Checks that the configuration declared in the `state.toml` file is valid
 
-**Usage:** `psyche-centralized-server validate-config [OPTIONS] <STATE>`
-
-###### **Arguments:**
-
-* `<STATE>` — Path to the `state.toml` file to validate
+**Usage:** `psyche-centralized-server validate-config [OPTIONS] --state <STATE>`
 
 ###### **Options:**
 
+* `--state <STATE>` — Path to the `state.toml` file to validate
 * `--data-config <DATA_CONFIG>` — Path to `data.toml` file to validate. If no provided then it will not be checked
 
 
