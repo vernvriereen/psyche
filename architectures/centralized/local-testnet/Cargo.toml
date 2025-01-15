@@ -1,5 +1,5 @@
 [package]
-name = "local-testnet"
+name = "psyche-local-testnet"
 edition = "2021"
 version.workspace = true
 

@@ -3,18 +3,17 @@ mod dashboard;
 
 use anyhow::{bail, Context, Result};
 use app::{App, DataServerInfo};
-use bytemuck::Zeroable;
 use clap::{ArgAction, Parser};
 use psyche_centralized_shared::ClientId;
 use psyche_coordinator::Coordinator;
 use psyche_tui::LogOutput;
 use std::path::{Path, PathBuf};
-use tracing::{info, Level};
+use tracing::{error, info, Level};
 
 #[derive(Parser, Debug)]
 struct Args {
     #[command(subcommand)]
-    command: Option<Commands>,
+    command: Commands,
 
     #[command(flatten)]
     common: CommonArgs,
@@ -23,10 +22,15 @@ struct Args {
 #[derive(Parser, Debug)]
 enum Commands {
     ValidateConfig,
+    Run,
 }
 
 #[derive(Parser, Debug, Clone)]
 struct CommonArgs {
+    /// Path to TOML of Coordinator state
+    #[clap(long)]
+    state: PathBuf,
+
     /// if not specified, a random free port will be chosen.
     #[clap(short, long)]
     p2p_port: Option<u16>,
@@ -44,10 +48,6 @@ struct CommonArgs {
         require_equals = false
     )]
     tui: bool,
-
-    /// Path to TOML of Coordinator state
-    #[clap(long)]
-    state: Option<PathBuf>,
 
     /// Path to TOML of data server config
     #[clap(long)]
@@ -72,31 +72,24 @@ struct CommonArgs {
     )]
     withdraw_on_disconnect: bool,
 }
-#[tokio::main]
-async fn main() -> Result<()> {
-    let args = Args::parse();
 
-    let common_args = args.common;
-    let command = args.command;
-    psyche_tui::init_logging(
-        if common_args.tui {
-            LogOutput::TUI
-        } else {
-            LogOutput::Console
-        },
-        Level::INFO,
-        None,
-    );
-
-    let coordinator: Coordinator<ClientId> = match common_args.state {
-        Some(state_path) => toml::from_str(std::str::from_utf8(
-            &std::fs::read(&state_path).with_context(|| {
-                format!("failed to read coordinator state toml file {state_path:?}")
-            })?,
-        )?)
-        .with_context(|| format!("failed to parse coordinator state toml file {state_path:?}"))?,
-        None => Coordinator::<ClientId>::zeroed(),
-    };
+fn load_config_state(
+    common_args: CommonArgs,
+) -> Result<(Coordinator<ClientId>, Option<DataServerInfo>)> {
+    let coordinator: Coordinator<ClientId> = toml::from_str(std::str::from_utf8(
+        &std::fs::read(&common_args.state).with_context(|| {
+            format!(
+                "failed to read coordinator state toml file {:?}",
+                common_args.state
+            )
+        })?,
+    )?)
+    .with_context(|| {
+        format!(
+            "failed to parse coordinator state toml file {:?}",
+            common_args.state
+        )
+    })?;
 
     if coordinator.config.cooldown_time == 0 && coordinator.config.checkpointers.is_empty() {
         bail!("cooldown time of 0 and no checkpointers will run forever. invalid coordinator state toml.")
@@ -123,25 +116,54 @@ async fn main() -> Result<()> {
         None => None,
     };
 
+    Ok((coordinator, data_server_config))
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let args = Args::parse();
+
+    let common_args = args.common;
+    let command = args.command;
+
+    let config = load_config_state(common_args.clone());
     match command {
-        Some(Commands::ValidateConfig) => {
-            info!("configs are OK!");
+        Commands::ValidateConfig => {
+            psyche_tui::init_logging(LogOutput::Console, Level::INFO, None);
+            match config {
+                Ok(_) => info!("Configs are OK!"),
+                Err(error) => error!("Error found in config: {}", error),
+            }
         }
-        None => {
-            App::new(
-                common_args.tui,
-                coordinator,
-                data_server_config,
-                common_args.p2p_port,
-                common_args.server_port,
-                common_args.save_state_dir,
-                common_args.init_warmup_time,
-                common_args.init_min_clients,
-                common_args.withdraw_on_disconnect,
-            )
-            .await?
-            .run()
-            .await?;
+        Commands::Run => {
+            psyche_tui::init_logging(
+                if common_args.tui {
+                    LogOutput::TUI
+                } else {
+                    LogOutput::Console
+                },
+                Level::INFO,
+                None,
+            );
+            match config {
+                Ok(config) => {
+                    App::new(
+                        common_args.tui,
+                        config.0,
+                        config.1,
+                        common_args.p2p_port,
+                        common_args.server_port,
+                        common_args.save_state_dir,
+                        common_args.init_warmup_time,
+                        common_args.init_min_clients,
+                        common_args.withdraw_on_disconnect,
+                    )
+                    .await?
+                    .run()
+                    .await?
+                }
+                Err(error) => error!("Error found in config: {}", error),
+            }
         }
     }
 
