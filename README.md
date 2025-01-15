@@ -152,6 +152,28 @@ Then, in a new terminal, run a validator with `solana-test-validator`.
 Once that's running, you can deploy the solana coordinator using `just deploy-local-solana-coordinator`
 and send a basic transaction from a client running `cargo run -p psyche-solana-client`
 
+## Build and Serve the Psyche Book  
+
+To install the necessary dependencies, run:  
+
+```bash
+just book_deps
+```  
+
+To serve the book locally, use:  
+
+```bash
+just serve_book
+```  
+
+If you prefer to manually generate the HTML files to serve with another tool, run:  
+
+```bash
+just build_book <OUTPUT_DIR>
+```  
+
+Where `OUTPUT_DIR` specifies the directory where the book will be built. If no directory is provided, the root of the `Psyche` repository will be used by default.
+
 ## Utils
 
 ### compare-hf-psyche.sh

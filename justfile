@@ -45,3 +45,12 @@ uninstall:
 	cargo uninstall psyche-centralized-client
 	cargo uninstall psyche-centralized-server
 	cargo uninstall psyche-local-testnet
+
+book_deps:
+	cargo install mdbook mdbook-mermaid
+
+build_book output-dir="../book":
+	mdbook build psyche-book -d {{output-dir}}
+
+serve_book:
+	mdbook serve psyche-book --open
