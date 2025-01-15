@@ -137,6 +137,7 @@ pub enum CoordinatorError {
     WitnessesFull,
     CannotResume,
     InvalidWithdraw,
+    InvalidCommitteeSelection,
 }
 
 pub enum TickResult {
@@ -297,6 +298,7 @@ impl std::fmt::Display for CoordinatorError {
             CoordinatorError::WitnessesFull => write!(f, "Witnesses full"),
             CoordinatorError::CannotResume => write!(f, "Cannot resume"),
             CoordinatorError::InvalidWithdraw => write!(f, "Invalid withdraw"),
+            CoordinatorError::InvalidCommitteeSelection => write!(f, "Invalid committee selection"),
         }
     }
 }
@@ -752,13 +754,12 @@ impl<T: NodeIdentity> Coordinator<T> {
 
             self.move_clients_to_exited(height);
 
-            if height == self.config.rounds_per_epoch - 1 {
-                match &mut self.model {
-                    Model::LLM(llm) => {
-                        llm.checkpoint = Checkpoint::Ephemeral;
-                    }
-                }
-                self.change_state(unix_timestamp, RunState::Cooldown);
+            // if we finish an epoch or some clients disconnect and we don't reach the minimum number of clients,
+            // we change state to cooldown.
+            if height == self.config.rounds_per_epoch - 1
+                || self.epoch_state.clients.len() < self.config.min_clients as usize
+            {
+                self.start_cooldown(unix_timestamp);
             } else {
                 self.start_round_train(unix_timestamp, random_seed, 0);
             }
@@ -794,6 +795,17 @@ impl<T: NodeIdentity> Coordinator<T> {
     fn check_timeout(&self, unix_timestamp: u64, duration: u64) -> bool {
         self.run_state_start_unix_timestamp != unix_timestamp
             && unix_timestamp >= duration + self.run_state_start_unix_timestamp
+    }
+
+    // set checkpoint to Ephemeral
+    // and change state to cooldown
+    fn start_cooldown(&mut self, unix_timestamp: u64) {
+        match &mut self.model {
+            Model::LLM(llm) => {
+                llm.checkpoint = Checkpoint::Ephemeral;
+            }
+        }
+        self.change_state(unix_timestamp, RunState::Cooldown);
     }
 
     fn start_round_train(&mut self, unix_timestamp: u64, random_seed: u64, tie_breaker_tasks: u16) {

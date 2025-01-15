@@ -4646,18 +4646,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4ce301924b7887e9d637144fdade93f9dfff9b60981d4ac161db09720d39aa5"
 
 [[package]]
-name = "local-testnet"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "clap",
- "rand 0.8.5",
- "serde",
- "time",
- "toml 0.8.19",
-]
-
-[[package]]
 name = "lock_api"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6378,7 +6366,6 @@ dependencies = [
  "psyche-core",
  "serde",
  "serde_with",
- "tracing",
 ]
 
 [[package]]
@@ -6452,6 +6439,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "psyche-local-testnet"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "rand 0.8.5",
+ "serde",
+ "time",
+ "toml 0.8.19",
+]
+
+[[package]]
 name = "psyche-modeling"
 version = "0.1.0"
 dependencies = [
@@ -6482,6 +6481,7 @@ dependencies = [
  "clap",
  "data-encoding",
  "ed25519 2.2.3",
+ "futures-lite 2.5.0",
  "futures-util",
  "iroh",
  "iroh-blobs",
@@ -6491,6 +6491,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "sha2 0.10.8",
+ "tch",
  "thiserror 2.0.9",
  "tokio",
  "tokio-stream",
@@ -10389,9 +10390,8 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "static-web-server"
-version = "2.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25f46e7a32b651e5a2145fb79263b5d75f38c8ce6977e4d3d36417cc1cad8717"
+version = "2.35.0"
+source = "git+https://github.com/arilotter/static-web-server?rev=c91445427b56c5ddff0365d8ec116e3b567377ac#c91445427b56c5ddff0365d8ec116e3b567377ac"
 dependencies = [
  "aho-corasick",
  "anyhow",

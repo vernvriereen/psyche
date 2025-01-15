@@ -6,8 +6,8 @@ use anyhow::{Error, Result};
 use psyche_coordinator::RunState;
 use psyche_core::NodeIdentity;
 use psyche_network::{
-    AuthenticatableIdentity, DownloadComplete, NetworkConnection, NetworkEvent, NetworkTUIState,
-    Networkable,
+    AuthenticatableIdentity, DownloadComplete, ModelParameters, NetworkConnection, NetworkEvent,
+    NetworkTUIState, Networkable,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use wandb::DataValue;
@@ -56,6 +56,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                 let (tx_witness, mut rx_witness) = mpsc::unbounded_channel();
                 let (tx_health_check, mut rx_health_check) = mpsc::unbounded_channel();
                 let (tx_checkpoint, mut rx_checkpoint) = mpsc::unbounded_channel();
+                let (tx_model, mut rx_model) = mpsc::unbounded_channel();
                 let (tx_distro_result, mut rx_distro_result) = mpsc::unbounded_channel();
                 let (tx_request_download, mut rx_request_download) = mpsc::unbounded_channel();
 
@@ -65,11 +66,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                     tx_witness,
                     tx_health_check,
                     tx_checkpoint,
+                    tx_model,
                     tx_distro_result,
                     tx_request_download,
                 });
 
                 let mut retried_downloads: HashMap<psyche_network::Hash, usize> = HashMap::new();
+                let mut current_model = ModelParameters::empty();
                 loop {
                     select! {
                         _ = cancel.cancelled() => {
@@ -121,6 +124,22 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                             p2p.start_download(dl.blob_ticket).await?;
                                         }
                                     }
+                                    NetworkEvent::ParameterRequest(parameter_name, protocol_req_tx) => {
+
+                                        // We should validate things here:
+                                        //  * Make sure that the parameter is requested while we are in RunState::Warmup.
+                                        //  * Validate that the message is from a known peer.
+
+                                        let transmittable_parameter = current_model.get_transmittable_parameter(&parameter_name)?;
+                                        let ticket = p2p.add_downloadable(transmittable_parameter).await?;
+
+                                        // Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
+                                        // to the client
+
+                                        if let Err(e) = protocol_req_tx.send(ticket) {
+                                            warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e}");
+                                        };
+                                    }
                                 }
                             }
                         }
@@ -163,6 +182,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         Some(witness) = rx_checkpoint.recv() => {
                             watcher.backend_mut().send_checkpoint(witness).await?;
                         }
+                        Some(model) = rx_model.recv() => {
+                            current_model.update_parameters(model)?;
+                        },
                     }
                 }
                 Ok(())

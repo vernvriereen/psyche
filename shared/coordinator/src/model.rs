@@ -90,7 +90,6 @@ pub enum LLMTrainingDataLocation {
     Http {
         location: HttpTrainingDataLocation,
         token_size_in_bytes: TokenSize,
-        num_tokens_per_sequence: u32,
         shuffle: Shuffle,
     },
 }
@@ -218,6 +217,7 @@ pub enum LearningRateSchedule {
 )]
 #[repr(C)]
 pub enum Optimizer {
+    Dummy,
     AdamW {
         betas: [f32; 2],
         weight_decay: f32,
@@ -234,7 +234,6 @@ pub enum Optimizer {
         compression_chunk: u16,
         quantize: bool,
     },
-    Dummy,
 }
 
 #[derive(
@@ -306,6 +305,7 @@ pub enum Checkpoint {
     Dummy,
     Ephemeral,
     Hub(HubRepo),
+    P2P,
 }
 
 impl std::fmt::Display for Checkpoint {
@@ -314,6 +314,7 @@ impl std::fmt::Display for Checkpoint {
             Checkpoint::Dummy => write!(f, "Dummy"),
             Checkpoint::Ephemeral => write!(f, "Ephemeral"),
             Checkpoint::Hub(hub_repo) => write!(f, "{}", u8_to_string(&hub_repo.repo_id)),
+            Checkpoint::P2P => write!(f, "P2P"),
         }
     }
 }
@@ -392,6 +393,40 @@ impl From<LearningRateSchedule> for AnyLearningRateScheduler {
             LearningRateSchedule::Constant(c) => Self::Constant(c.into()),
             LearningRateSchedule::Linear(c) => Self::Linear(c.into()),
             LearningRateSchedule::Cosine(c) => Self::Cosine(c.into()),
+        }
+    }
+}
+
+impl Model {
+    pub fn check(&self) -> bool {
+        match self {
+            Model::LLM(llm) => {
+                llm.max_seq_len != 0
+                    && match llm.data_location {
+                        LLMTrainingDataLocation::Dummy => false,
+                        LLMTrainingDataLocation::Server(url) => url[0] != 0,
+                        LLMTrainingDataLocation::Local(_) => true,
+                        LLMTrainingDataLocation::Http { location, .. } => match location {
+                            HttpTrainingDataLocation::SingleUrl(url) => url[0] != 0,
+                            HttpTrainingDataLocation::NumberedFiles {
+                                url_template,
+                                num_files,
+                                ..
+                            } => url_template[0] != 0 && num_files > 0,
+                        },
+                    }
+                    && match llm.checkpoint {
+                        Checkpoint::Dummy => false,
+                        Checkpoint::Ephemeral => true,
+                        Checkpoint::Hub(hub_repo) => hub_repo.repo_id[0] != 0,
+                        Checkpoint::P2P => todo!(),
+                    }
+                    && match llm.optimizer {
+                        Optimizer::Dummy => false,
+                        Optimizer::AdamW { .. } => true,
+                        Optimizer::Distro { .. } => true,
+                    }
+            }
         }
     }
 }

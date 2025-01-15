@@ -4,7 +4,10 @@ use psyche_coordinator::RunState;
 use testing::{
     client::ClientHandle,
     server::CoordinatorServerHandle,
-    test_utils::{assert_with_retries, spawn_clients, spawn_clients_with_training_delay},
+    test_utils::{
+        assert_with_retries, assert_witnesses_score, spawn_clients,
+        spawn_clients_with_training_delay,
+    },
     COOLDOWN_TIME, MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME,
 };
 
@@ -12,7 +15,15 @@ use testing::{
 async fn connect_single_node() {
     let init_min_clients = 2;
     let batches_per_round = 4;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     let server_port = server_handle.server_port;
     let run_id = &server_handle.run_id;
@@ -27,7 +38,15 @@ async fn connect_multiple_nodes() {
     let number_of_nodes = 10;
     let init_min_clients = 15;
     let batches_per_round = 4;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     let server_port = server_handle.server_port;
     let run_id = &server_handle.run_id;
@@ -45,7 +64,15 @@ async fn state_change_waiting_for_members_to_warmup() {
     // Coordinator is initialized with some default values
     let init_min_clients = 2;
     let batches_per_round = 4;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     let run_state = || server_handle.get_run_state();
     let connected_clients = || server_handle.get_clients_len();
@@ -73,7 +100,15 @@ async fn state_change_shutdown_node_in_warmup() {
     // Coordinator is initialized with some default values
     let init_min_clients = 2;
     let batches_per_round = 4;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     // No clients are connected yet, so run state should be `WaitingForMembers`
 
@@ -113,7 +148,15 @@ async fn state_change_waiting_for_members_to_round_train() {
     // Coordinator is initialized with some default values
     let init_min_clients = 2;
     let batches_per_round = 4;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -140,7 +183,15 @@ async fn state_change_waiting_for_members_to_round_train() {
 async fn state_change_waiting_for_members_to_round_witness() {
     let init_min_clients = 2;
     let batches_per_round = 4;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -177,7 +228,15 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     // and they won't appear in the bloom filters, making the test fail
     let init_min_clients = 5;
     let batches_per_round = init_min_clients;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -232,11 +291,19 @@ async fn validate_all_clients_participate_in_witness_bloom() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn complete_round_with_shutdown_node() {
+async fn replace_node_and_complete_round() {
     let init_min_clients = 2;
     let batches_per_round = 2;
+    let witness_nodes = 1;
+    let witness_quorum = 1;
     let training_delay = 2;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -295,7 +362,15 @@ async fn finish_epoch() {
     // This way, every client will be assigned with only one batch
     let init_min_clients = 2;
     let batches_per_round = 2;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -358,7 +433,15 @@ async fn client_join_in_training() {
     // start a normal run with 2 clients
     let init_min_clients = 2;
     let batches_per_round = 2;
-    let server_handle = CoordinatorServerHandle::new(init_min_clients, batches_per_round).await;
+    let witness_nodes = 1;
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -418,6 +501,90 @@ async fn client_join_in_training() {
     assert_eq!(score, init_min_clients);
 
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
+    // the new client tries to join the network
+    // but since the llm checkpoint is Ephemeral
+    // it results in an InitRunError::ModelIsEphemeral error
+    let error = new_client_handle.client_handle.await.unwrap().unwrap_err();
+    assert!(error
+        .to_string()
+        .contains(&psyche_client::InitRunError::ModelIsEphemeral.to_string()));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn shutdown_node_in_training_and_complete_round() {
+    let init_min_clients = 3;
+    let batches_per_round = 3;
+    // all nodes are witness
+    let witness_nodes = 0;
+    // set witness_quorum = 2 witness, as one node will be shutdown
+    let witness_quorum = 2;
+    let training_delay = 2;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
+
+    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
+
+    let server_port = server_handle.server_port;
+    let run_id = &server_handle.run_id;
+    let [client_1_task, _client_2_task, _client_3_task] = spawn_clients_with_training_delay(
+        init_min_clients as usize,
+        server_port,
+        run_id,
+        training_delay,
+    )
+    .await
+    .try_into()
+    .unwrap();
+
+    // warmup
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+
+    // train
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+    let clients = server_handle.get_clients().await;
+    assert_eq!(clients.len(), 3);
+
+    // shutdown node 1.
+    // this round's workload should be handled entirely by node 2 and 3.
+    client_1_task.client_handle.abort();
+
+    // witness
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
+    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
+
+    // assert that the shutdown node do not participate in the witnesses
+    // since two nodes must send their witness and two nodes participate in the round
+    // score should be 4
+    assert_witnesses_score(&server_handle, 0, 4).await;
+
+    // since up nodes < init_min_clients
+    // the network should return to Cooldown and the WaitingForMembers
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Cooldown).await;
+
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
+
+    // spawn new client
+    let [new_client_handle] =
+        spawn_clients_with_training_delay(1, server_port, run_id, training_delay)
+            .await
+            .try_into()
+            .unwrap();
+
     // the new client tries to join the network
     // but since the llm checkpoint is Ephemeral
     // it results in an InitRunError::ModelIsEphemeral error

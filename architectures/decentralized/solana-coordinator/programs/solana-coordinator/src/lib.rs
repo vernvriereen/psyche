@@ -4,8 +4,8 @@ use anchor_lang::{prelude::*, system_program};
 use bytemuck::{Pod, Zeroable};
 pub use client_id::ClientId;
 use psyche_coordinator::{
-    ClientState, Coordinator, CoordinatorConfig, CoordinatorError, RunState, TickResult, Witness,
-    WitnessBloom, WitnessProof, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
+    model::Model, ClientState, Coordinator, CoordinatorConfig, CoordinatorError, RunState,
+    TickResult, Witness, WitnessBloom, WitnessProof, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
 };
 use psyche_core::{sha256v, FixedVec, SizedIterator};
 use std::{
@@ -148,9 +148,10 @@ pub mod solana_coordinator {
         Ok(())
     }
 
-    pub fn update_coordinator_config(
+    pub fn update_coordinator_config_model(
         ctx: Context<OwnerCoordinatorAccounts>,
-        config: CoordinatorConfig<ClientId>,
+        config: Option<CoordinatorConfig<ClientId>>,
+        model: Option<Model>,
     ) -> Result<()> {
         let coordinator = &mut ctx.accounts.account.load_mut()?.state.coordinator;
 
@@ -160,22 +161,20 @@ pub mod solana_coordinator {
             return err!(ProgramError::UpdateConfigNotHalted);
         }
 
-        // TODO: more sanity checks
-        if !config.check() {
-            return err!(ProgramError::ConfigSanityCheckFailed);
+        if let Some(config) = config {
+            if !config.check() {
+                return err!(ProgramError::ConfigSanityCheckFailed);
+            }
+
+            let _ = std::mem::replace(&mut coordinator.config, config);
         }
 
-        let _ = std::mem::replace(&mut coordinator.config, config);
+        if let Some(model) = model {
+            if !model.check() {
+                return err!(ProgramError::ModelSanityCheckFailed);
+            }
 
-        if coordinator.run_state == RunState::Uninitialized {
-            // this is the only way to get out of uninitialized
-            // basically we're requiring a call to update_coordinator_config before
-            // we can start
-
-            coordinator.run_state = RunState::Paused;
-            // resume() copies the previous epoch's progress
-            // step 1 is the first valid step
-            coordinator.prev_epoch_progress.step = 1;
+            let _ = std::mem::replace(&mut coordinator.model, model);
         }
 
         Ok(())
@@ -248,7 +247,22 @@ pub mod solana_coordinator {
 
         if let Err(err) = match paused {
             true => coordinator.pause(),
-            false => coordinator.resume(Clock::get()?.unix_timestamp as u64),
+            false => {
+                if !coordinator.config.check() {
+                    return err!(ProgramError::ConfigSanityCheckFailed);
+                }
+                if !coordinator.model.check() {
+                    return err!(ProgramError::ModelSanityCheckFailed);
+                }
+
+                if coordinator.run_state == RunState::Uninitialized {
+                    coordinator.run_state = RunState::Paused;
+                    // resume() copies the previous epoch's progress
+                    // step 1 is the first valid step
+                    coordinator.prev_epoch_progress.step = 1;
+                }
+                coordinator.resume(Clock::get()?.unix_timestamp as u64)
+            }
         } {
             return err!(ProgramError::from(err));
         }
@@ -428,6 +442,9 @@ pub enum ProgramError {
     #[msg("Config sanity check failed")]
     ConfigSanityCheckFailed,
 
+    #[msg("Model sanity check failed")]
+    ModelSanityCheckFailed,
+
     #[msg("Signer not a client")]
     SignerNotAClient,
 
@@ -460,6 +477,9 @@ pub enum ProgramError {
 
     #[msg("Coordinator error: Invalid withdraw")]
     CoordinatorErrorInvalidWithdraw,
+
+    #[msg("Coordinator error: Invalid committee selection")]
+    CoordinatorErrorInvalidCommitteeSelection,
 }
 
 impl From<CoordinatorError> for ProgramError {
@@ -477,6 +497,9 @@ impl From<CoordinatorError> for ProgramError {
             CoordinatorError::WitnessesFull => ProgramError::CoordinatorErrorWitnessesFull,
             CoordinatorError::CannotResume => ProgramError::CoordinatorErrorCannotResume,
             CoordinatorError::InvalidWithdraw => ProgramError::CoordinatorErrorInvalidWithdraw,
+            CoordinatorError::InvalidCommitteeSelection => {
+                ProgramError::CoordinatorErrorInvalidCommitteeSelection
+            }
         }
     }
 }

@@ -35,3 +35,13 @@ deploy-local-solana-coordinator:
 
 solana-client-tests:
 	cargo test --package psyche-solana-client
+
+install:
+	cargo install --path architectures/centralized/client
+	cargo install --path architectures/centralized/server
+	cargo install --path architectures/centralized/local-testnet
+
+uninstall:
+	cargo uninstall psyche-centralized-client
+	cargo uninstall psyche-centralized-server
+	cargo uninstall psyche-local-testnet

@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 psyche-core.workspace = true
 async-trait.workspace = true
-tracing.workspace = true
 anchor-lang.workspace = true
 bytemuck.workspace = true
 serde_with.workspace = true
