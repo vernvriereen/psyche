@@ -20,7 +20,7 @@ pub const SOLANA_MAX_NUM_PENDING_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 pub const SOLANA_MAX_NUM_WHITELISTED_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 
 pub fn bytes_from_string(str: &str) -> &[u8] {
-    &str.as_bytes()[..SOLANA_MAX_STRING_LEN.min(str.as_bytes().len())]
+    &str.as_bytes()[..SOLANA_MAX_STRING_LEN.min(str.len())]
 }
 
 pub fn coordinator_account_from_bytes(

@@ -1,24 +1,20 @@
-
 use anchor_lang::{InstructionData, ToAccountMetas};
+use psyche_solana_treasurer::{
+    accounts::InitializeCoordinatorAccounts, instruction::InitializeCoordinator,
+};
 use solana_sdk::{
     instruction::Instruction,
-    pubkey::Pubkey,
     signature::{Keypair, Signature},
     signer::Signer,
     system_program,
 };
 use solana_toolbox_endpoint::{ToolboxEndpoint, ToolboxEndpointError};
-use psyche_solana_treasurer::{
-    accounts::InitializeCoordinatorAccounts,
-    instruction::InitializeCoordinator,
-};
 
 pub async fn process_initialize_coordinator(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     run_id: &str,
 ) -> Result<Signature, ToolboxEndpointError> {
-
     let accounts = InitializeCoordinatorAccounts {
         payer: payer.pubkey(),
         system_program: system_program::ID,

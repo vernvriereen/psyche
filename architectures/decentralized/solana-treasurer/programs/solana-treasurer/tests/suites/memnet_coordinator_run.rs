@@ -3,7 +3,6 @@ use crate::api::{
     process_instructions::process_initialize_coordinator,
 };
 
-use bytemuck::Zeroable;
 use solana_sdk::{signature::Keypair, signer::Signer};
 
 #[tokio::test]
@@ -20,7 +19,7 @@ pub async fn memnet_coordinator_run() {
         .await
         .unwrap();
 
-
-    process_initialize_coordinator(&mut endpoint, &payer, run_id).await.unwrap();
-
+    process_initialize_coordinator(&mut endpoint, &payer, run_id)
+        .await
+        .unwrap();
 }
