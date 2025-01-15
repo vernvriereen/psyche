@@ -158,15 +158,11 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                 .await
                 {
                     Ok(Some(event)) => {
-                        println!("SENDING EVENT!!: {:?}", event);
                         if event_sender.send(event).is_err() {
-                            println!("SENDING EVENT ERROR????????????");
                             break;
                         }
                     }
-                    Ok(None) => {
-                        println!("RECEIVED NONE RESULT OF POLL NEXT INNER!!");
-                    }
+                    Ok(None) => {}
                     Err(e) => {
                         error!("Error polling next: {}", e);
                     }
@@ -215,7 +211,6 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
 
     pub async fn poll_next(&mut self) -> Option<DownloadManagerEvent<D>> {
         let event = self.event_receiver.recv().await;
-        println!("INTERCEPTED EVENT!: {:?}", event);
         event
     }
 
@@ -224,7 +219,6 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
         reading: &mut Vec<ReadingFinishedDownload>,
     ) -> Result<Option<DownloadManagerEvent<D>>> {
         if downloads.is_empty() && reading.is_empty() {
-            println!("RETURNING EARLY NONE");
             return Ok(None);
         }
 
@@ -263,18 +257,10 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
             }) as Pin<Box<dyn Future<Output = FutureResult> + Send>>
         });
 
-        println!("DOWNLOAD FUTURES LEN: {}", download_futures.len());
-        println!("READ FUTURES LEN: {}", read_futures.len());
-
         let all_futures: Vec<Pin<Box<dyn Future<Output = FutureResult> + Send>>> =
             download_futures.chain(read_futures).collect();
 
         let result = select_all(all_futures).await.0;
-
-        // if matches!(result, FutureResult::Read(_, _)) {
-        //     println!("FUTURE RESULT: {:?}", result);
-        //     panic!();
-        // }
 
         match result {
             FutureResult::Download(index, result) => {

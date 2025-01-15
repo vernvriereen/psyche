@@ -22,6 +22,8 @@ pub enum SharableModelParameterError {
     ParameterUnknown(String),
     ParameterAlreadyAdded,
     SerializationError(String),
+    ParametersNotInitialized,
+    ResponseChannelNotInitialized,
 }
 
 impl From<tch::TchError> for SharableModelParameterError {
@@ -64,6 +66,12 @@ impl fmt::Display for SharableModelParameterError {
             SharableModelParameterError::SerializationError(err) => {
                 write!(f, "Serialization error: {}", err)
             }
+            SharableModelParameterError::ParametersNotInitialized => {
+                write!(f, "Parameters were not initialized")
+            }
+            SharableModelParameterError::ResponseChannelNotInitialized => {
+                write!(f, "Response channel was not initialized")
+            }
         }
     }
 }
@@ -76,6 +84,8 @@ impl Error for SharableModelParameterError {
             SharableModelParameterError::ParameterUnknown(_unknown_parameter) => Some(self),
             SharableModelParameterError::ParameterAlreadyAdded => Some(self),
             SharableModelParameterError::SerializationError(_err) => Some(self),
+            SharableModelParameterError::ParametersNotInitialized => Some(self),
+            SharableModelParameterError::ResponseChannelNotInitialized => Some(self),
         }
     }
 }
@@ -102,13 +112,13 @@ impl TransmittableModelParameter {
 
 #[derive(Debug)]
 pub struct ModelParameters {
-    parameters: HashMap<String, Tensor>,
+    parameters: Option<HashMap<String, Tensor>>,
     tx_params_response: Option<oneshot::Sender<HashMap<String, Tensor>>>,
 }
 impl ModelParameters {
     pub fn empty() -> Self {
         Self {
-            parameters: HashMap::new(),
+            parameters: None,
             tx_params_response: None,
         }
     }
@@ -117,19 +127,19 @@ impl ModelParameters {
         &mut self,
         new_parameters: HashMap<String, Tensor>,
     ) -> Result<(), SharableModelParameterError> {
-        if self.parameters.is_empty() {
-            self.parameters = new_parameters;
+        let Some(parameters) = self.parameters.as_mut() else {
+            self.parameters = Some(new_parameters);
             return Ok(());
-        }
+        };
 
         // validate that both models have the same parameters
         let new_parameters_names: HashSet<_> = new_parameters.keys().cloned().collect();
-        let parameters_names: HashSet<_> = self.parameters.keys().cloned().collect();
+        let parameters_names: HashSet<_> = parameters.keys().cloned().collect();
         if new_parameters_names != parameters_names {
             return Err(SharableModelParameterError::InvalidUpdate);
         }
 
-        self.parameters = new_parameters;
+        self.parameters = Some(new_parameters);
         Ok(())
     }
 
@@ -137,7 +147,11 @@ impl ModelParameters {
         &self,
         param_name: &str,
     ) -> Result<TransmittableModelParameter, SharableModelParameterError> {
-        let Some(parameter) = self.parameters.get(param_name) else {
+        let Some(parameters) = self.parameters.as_ref() else {
+            return Err(SharableModelParameterError::ParametersNotInitialized);
+        };
+
+        let Some(parameter) = parameters.get(param_name) else {
             return Err(SharableModelParameterError::ParameterUnknown(
                 param_name.to_string(),
             ));
@@ -161,12 +175,14 @@ impl ModelParameters {
         tx_params_response: oneshot::Sender<HashMap<String, Tensor>>,
     ) {
         // Initialize the model parameter names with a dummy zero tensor.
+        let mut parameters = HashMap::new();
         for param_name in param_names {
-            self.parameters.insert(
+            parameters.insert(
                 param_name.clone(),
                 Tensor::zeros([1], (Kind::BFloat16, Device::Cpu)),
             );
         }
+        self.parameters = Some(parameters);
         self.tx_params_response = Some(tx_params_response);
     }
 
@@ -174,15 +190,18 @@ impl ModelParameters {
         &mut self,
         parameter: TransmittableModelParameter,
     ) -> Result<(), SharableModelParameterError> {
-        // Deserialize model parameter
+        let Some(parameters) = self.parameters.as_mut() else {
+            return Err(SharableModelParameterError::ParametersNotInitialized);
+        };
 
+        // Deserialize model parameter
         let param_name = String::from_utf8(parameter.param_name_bytes)?;
         let buf_reader = Cursor::new(parameter.param_value_bytes);
         let param_value = Tensor::load_from_stream(buf_reader)?;
 
         // Validate that the parameter does not already exist
         // This should be called only by a client that joins the run
-        match self.parameters.entry(param_name.to_string()) {
+        match parameters.entry(param_name.to_string()) {
             Entry::Occupied(mut param_entry) => {
                 let param = param_entry.get_mut();
                 if is_initialized(param) {
@@ -200,15 +219,24 @@ impl ModelParameters {
     }
 
     pub fn is_download_complete(&self) -> bool {
-        self.parameters
+        let Some(parameters) = self.parameters.as_ref() else {
+            return false;
+        };
+
+        parameters
             .iter()
             .all(|(_param_name, param_value)| is_initialized(param_value))
     }
 
-    pub fn send_init_parameters(&mut self) {
+    pub fn send_init_parameters(&mut self) -> Result<(), SharableModelParameterError> {
         if let Some(tx_params_response) = self.tx_params_response.take() {
-            tx_params_response.send(self.parameters.clone());
+            let Some(parameters) = self.parameters.take() else {
+                return Err(SharableModelParameterError::ParametersNotInitialized);
+            };
+            tx_params_response.send(parameters).unwrap();
+            return Ok(());
         }
+        Err(SharableModelParameterError::ResponseChannelNotInitialized)
     }
 }
 
