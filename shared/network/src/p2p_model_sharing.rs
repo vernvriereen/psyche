@@ -108,11 +108,17 @@ impl TransmittableModelParameter {
     }
 }
 
+// This data structure is the one responsible of storing the model
+// parameters for sharing them to other peers via p2p, as well as
+// storing them while parameters are downloaded from other peers.
 #[derive(Debug)]
 pub struct ModelParameters {
     parameters: Option<HashMap<String, Tensor>>,
     tx_params_response: Option<oneshot::Sender<HashMap<String, Tensor>>>,
 }
+
+// These impls are methods called by both the sharing model peers and the ones
+// that download
 impl ModelParameters {
     pub fn empty() -> Self {
         Self {
@@ -120,7 +126,11 @@ impl ModelParameters {
             tx_params_response: None,
         }
     }
+}
 
+// These impls on the `ModelParameters` struct are the ones called by the
+// peers that are in charge of sharing the parameters to the newly joined ones.
+impl ModelParameters {
     pub fn update_parameters(
         &mut self,
         new_parameters: HashMap<String, Tensor>,
@@ -166,7 +176,14 @@ impl ModelParameters {
 
         Ok(transmittable_parameter)
     }
+}
 
+// These impls on the `ModelParameters` struct are the ones called by the
+// new peers that are joining a run and have to download parameters from peers
+// that are sharing them.
+impl ModelParameters {
+    // Initialize the model parameter names. This is important to know when
+    // all model parameters have been downloaded from other peers.
     pub fn initialize_parameters(
         &mut self,
         param_names: &[String],
@@ -184,6 +201,7 @@ impl ModelParameters {
         self.tx_params_response = Some(tx_params_response);
     }
 
+    // Add new parameter downloaded from another peer
     pub fn add_parameter(
         &mut self,
         parameter: TransmittableModelParameter,
@@ -214,6 +232,8 @@ impl ModelParameters {
         }
     }
 
+    // Utility function that is used to know when we have downloaded all
+    // model parameters from the other peers
     pub fn is_download_complete(&self) -> bool {
         let Some(parameters) = self.parameters.as_ref() else {
             return false;
@@ -224,6 +244,8 @@ impl ModelParameters {
             .all(|(_param_name, param_value)| is_initialized(param_value))
     }
 
+    // Once all parameters have been downloaded, this function is called to send them
+    // to the initialization task, so that the model can be loaded
     pub fn send_init_parameters(&mut self) -> Result<(), SharableModelParameterError> {
         if let Some(tx_params_response) = self.tx_params_response.take() {
             let Some(parameters) = self.parameters.take() else {
@@ -295,6 +317,7 @@ impl ProtocolHandler for ModelParameterSharing {
     }
 }
 
+// Utility function to know when a model parameter has been set
 pub fn is_initialized(tensor: &Tensor) -> bool {
     tensor != &Tensor::zeros([1], (Kind::BFloat16, Device::Cpu))
 }

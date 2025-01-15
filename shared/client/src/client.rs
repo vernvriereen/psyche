@@ -76,7 +76,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                 });
 
                 let mut retried_downloads: HashMap<psyche_network::Hash, usize> = HashMap::new();
-                let mut current_model = ModelParameters::empty();
+                let mut sharable_model = ModelParameters::empty();
                 loop {
                     select! {
                         _ = cancel.cancelled() => {
@@ -134,9 +134,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                                 run.apply_distro_result(hash, distro_result).await;
                                             },
                                             TransmittableDownload::ModelParameter(parameter) => {
-                                                current_model.add_parameter(parameter)?;
-                                                if current_model.is_download_complete() {
-                                                    current_model.send_init_parameters()?;
+                                                sharable_model.add_parameter(parameter)?;
+                                                if sharable_model.is_download_complete() {
+                                                    sharable_model.send_init_parameters()?;
                                                 }
                                             },
                                         }
@@ -157,7 +157,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         //  * Make sure that the parameter is requested while we are in RunState::Warmup.
                                         //  * Validate that the message is from a known peer.
 
-                                        let transmittable_parameter = current_model.get_transmittable_parameter(&parameter_name)?;
+                                        let transmittable_parameter = sharable_model.get_transmittable_parameter(&parameter_name)?;
                                         let transmittable_download = TransmittableDownload::ModelParameter(transmittable_parameter);
                                         let ticket = p2p.add_downloadable(transmittable_download).await?;
 
@@ -213,10 +213,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             watcher.backend_mut().send_checkpoint(witness).await?;
                         }
                         Some(model) = rx_model.recv() => {
-                            current_model.update_parameters(model)?;
+                            sharable_model.update_parameters(model)?;
                         },
                         Some((param_names, tx_params_response)) = rx_parameters_req.recv() => {
-                            current_model.initialize_parameters(&param_names, tx_params_response);
+                            sharable_model.initialize_parameters(&param_names, tx_params_response);
                             let Some(coordinator_state) = watcher.coordinator_state() else {
                                 warn!("Coordinator state not yet registered, nothing to do");
                                 return Ok(());
