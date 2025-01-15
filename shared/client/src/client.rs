@@ -233,7 +233,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             .filter(|peer_id| peer_id != &me)
                             .collect();
 
-                            let _: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
+                            let handle: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
                                 let mut parameter_blob_tickets = Vec::new();
                                 // TODO: The parameter requests could be done concurrently, setting some MAX_CONCURRENT_PARAM_REQUESTS
                                 for (param_name, peer_id) in std::iter::zip(param_names, peer_ids.into_iter().cycle()) {
@@ -245,6 +245,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 tx_params_download.send(parameter_blob_tickets)?;
                                 Ok(())
                             });
+                            // Doing this just so that clippy does not complain
+                            drop(handle);
                         }
                         Some(param_blob_tickets) = rx_params_download.recv() => {
                             for ticket in param_blob_tickets {

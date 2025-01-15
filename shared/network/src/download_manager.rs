@@ -210,8 +210,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
     }
 
     pub async fn poll_next(&mut self) -> Option<DownloadManagerEvent<D>> {
-        let event = self.event_receiver.recv().await;
-        event
+        self.event_receiver.recv().await
     }
 
     async fn poll_next_inner(

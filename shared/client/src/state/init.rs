@@ -19,8 +19,8 @@ use psyche_modeling::{
     DummyModel, LlamaForCausalLM, LoadLlamaForCausalLMError,
 };
 use psyche_network::{AuthenticatableIdentity, BlobTicket};
-use std::str::FromStr;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{rc::Rc, str::FromStr};
 use tch::{Device, Kind, Tensor};
 use thiserror::Error;
 use tokenizers::{models::wordlevel::WordLevel, ModelWrapper, Tokenizer};
@@ -112,6 +112,8 @@ struct RawLoadedModel {
     checkpoint_extra_files: Vec<PathBuf>,
 }
 
+type OneshotModelParameterSender = oneshot::Sender<HashMap<String, Tensor>>;
+
 pub struct RunInitConfigAndIO<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub init_config: RunInitConfig<T, A>,
 
@@ -119,7 +121,7 @@ pub struct RunInitConfigAndIO<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub tx_health_check: UnboundedSender<HealthChecks>,
     pub tx_checkpoint: UnboundedSender<model::Checkpoint>,
     pub tx_model: UnboundedSender<HashMap<String, Tensor>>,
-    pub tx_parameters_req: UnboundedSender<(Vec<String>, oneshot::Sender<HashMap<String, Tensor>>)>,
+    pub tx_parameters_req: UnboundedSender<(Vec<String>, OneshotModelParameterSender)>,
     pub tx_distro_result: UnboundedSender<DistroBroadcastAndPayload>,
     pub tx_request_download: UnboundedSender<BlobTicket>,
 }
@@ -354,7 +356,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             .send((parameter_names, tx_params_response))
                             .unwrap();
 
-                        let parameters = Arc::new(rx_params_response.await.unwrap());
+                        let parameters = Rc::new(rx_params_response.await.unwrap());
 
                         let mut models = Vec::with_capacity(
                             init_config.data_parallelism * init_config.tensor_parallelism,

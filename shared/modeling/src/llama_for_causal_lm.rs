@@ -4,8 +4,8 @@ use crate::{
     tensor_parallelism::Communicator,
     CausalLM, CommunicatorId, ConcreteCausalLM, LoadSafetensorsError,
 };
-use std::collections::HashSet;
 use std::{collections::HashMap, io, path::PathBuf, sync::Arc};
+use std::{collections::HashSet, rc::Rc};
 use tch::{
     nn::{self, Module, VarStore},
     Device, Kind, Tensor,
@@ -226,7 +226,7 @@ impl LlamaForCausalLM {
 
     pub fn from_p2p_shared_parameters(
         config_file_str: String,
-        parameters: Arc<HashMap<String, Tensor>>,
+        parameters: Rc<HashMap<String, Tensor>>,
         attn_implementation: Option<AttentionImplementation>,
         device: Option<Device>,
         kind: Option<Kind>,
@@ -300,7 +300,7 @@ impl LlamaForCausalLM {
             let mut variables = variables.variables_.lock().unwrap();
             for (name, var) in variables.named_variables.iter_mut() {
                 let tensor = parameters.get(name).unwrap();
-                var.f_copy_(&tensor)?;
+                var.f_copy_(tensor)?;
                 unmatched.remove(name);
             }
             if !unmatched.is_empty() {

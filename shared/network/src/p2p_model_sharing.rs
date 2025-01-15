@@ -56,11 +56,7 @@ impl fmt::Display for SharableModelParameterError {
                 write!(f, "The update of the sharable model parameters is invalid")
             }
             SharableModelParameterError::ParameterUnknown(unknown_param_name) => {
-                write!(
-                    f,
-                    "Parameter with name {} is unknown",
-                    unknown_param_name.to_string()
-                )
+                write!(f, "Parameter with name {} is unknown", unknown_param_name)
             }
             SharableModelParameterError::ParameterAlreadyAdded => {
                 write!(f, "The parameter was already added")
@@ -212,11 +208,9 @@ impl ModelParameters {
                 *param = param_value;
                 Ok(())
             }
-            Entry::Vacant(_) => {
-                return Err(SharableModelParameterError::ParameterUnknown(
-                    param_name.to_string(),
-                ))
-            }
+            Entry::Vacant(_) => Err(SharableModelParameterError::ParameterUnknown(
+                param_name.to_string(),
+            )),
         }
     }
 
