@@ -95,13 +95,13 @@ pub enum InitRunError {
     TokenizerLoad(#[from] AutoTokenizerError),
 
     // TODO refactor data provider for real errors
-    #[error("Couldn't initialize data provider")]
+    #[error("Couldn't initialize data provider: {0}")]
     DataProviderConnect(anyhow::Error),
 
     #[error("wandb setup thread crashed")]
     WandbThreadCrashed(JoinError),
 
-    #[error("wandb failed to create run")]
+    #[error("wandb failed to create run: {0}")]
     WandbLoad(#[from] wandb::ApiError),
 }
 

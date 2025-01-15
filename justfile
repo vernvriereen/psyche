@@ -19,7 +19,7 @@ docker-push-centralized-client: docker-build-centralized-client
 
 # spin up a local testnet
 local-testnet +args:
-	cargo run -p local-testnet -- {{args}}
+	cargo run -p psyche-local-testnet -- {{args}}
 
 # run integration tests
 integration-test test_name="":

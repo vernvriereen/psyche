@@ -5,7 +5,10 @@ use psyche_client::{
     CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
 };
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
-use psyche_network::{NetworkTUIState, NetworkTui, RelayMode, SecretKey, TcpClient};
+use psyche_network::{
+    allowlist, AuthenticatableIdentity, DiscoveryMode, NetworkTUIState, NetworkTui, NodeId,
+    RelayMode, SecretKey, TcpClient,
+};
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
 use psyche_watcher::{Backend as WatcherBackend, CoordinatorTui};
@@ -14,7 +17,6 @@ use tokio::sync::mpsc::Sender;
 use tokio::time::interval;
 use tokio::{select, sync::mpsc, time::Interval};
 use tokio_util::sync::CancellationToken;
-use tracing::info;
 
 pub(super) type Tabs = TabbedWidget<(ClientTUI, CoordinatorTui, NetworkTui, LoggerWidget)>;
 pub const TAB_NAMES: [&str; 4] = ["Client", "Coordinator", "Network", "Logger"];
@@ -27,6 +29,7 @@ pub enum ToSend {
 }
 
 struct Backend {
+    allowlist: allowlist::AllowDynamic,
     rx: mpsc::UnboundedReceiver<Coordinator<ClientId>>,
     tx: mpsc::UnboundedSender<ToSend>,
 }
@@ -34,10 +37,19 @@ struct Backend {
 #[async_trait::async_trait]
 impl WatcherBackend<ClientId> for Backend {
     async fn wait_for_new_state(&mut self) -> Result<Coordinator<ClientId>> {
-        self.rx
+        let new_state = self
+            .rx
             .recv()
             .await
-            .ok_or(Error::msg("watcher backend rx channel closed"))
+            .ok_or(Error::msg("watcher backend rx channel closed"))?;
+        self.allowlist.set(
+            new_state
+                .epoch_state
+                .clients
+                .iter()
+                .map(|c| NodeId::from_bytes(c.id.get_p2p_public_key()).unwrap()),
+        );
+        Ok(new_state)
     }
 
     async fn send_witness(&mut self, witness: Witness) -> Result<()> {
@@ -86,6 +98,7 @@ pub struct AppParams {
     pub optim_stats: Option<u32>,
     pub grad_accum_in_fp32: bool,
     pub dummy_training_delay_secs: Option<u64>,
+    pub discovery_mode: DiscoveryMode,
 }
 
 impl AppBuilder {
@@ -93,7 +106,14 @@ impl AppBuilder {
         Self(params)
     }
 
-    pub async fn build(self) -> Result<(App, NC, RunInitConfig<ClientId, ClientId>)> {
+    pub async fn build(
+        self,
+    ) -> Result<(
+        App,
+        allowlist::AllowDynamic,
+        NC,
+        RunInitConfig<ClientId, ClientId>,
+    )> {
         let p = self.0;
 
         let server_conn =
@@ -104,12 +124,16 @@ impl AppBuilder {
             )
             .await?;
 
+        let allowlist = allowlist::AllowDynamic::new();
+
         let p2p = NC::init(
             &p.run_id,
             p.p2p_port,
             RelayMode::Default,
+            p.discovery_mode,
             vec![],
             Some(p.identity_secret_key.clone()),
+            allowlist.clone(),
         )
         .await?;
 
@@ -139,14 +163,15 @@ impl AppBuilder {
             dummy_training_delay_secs: p.dummy_training_delay_secs,
         };
 
-        Ok((app, p2p, state_options))
+        Ok((app, allowlist, p2p, state_options))
     }
 }
 
 impl App {
     pub async fn run(
         &mut self,
-        mut p2p: NC,
+        allowlist: allowlist::AllowDynamic,
+        p2p: NC,
         state_options: RunInitConfig<ClientId, ClientId>,
     ) -> Result<()> {
         // sanity checks
@@ -171,29 +196,15 @@ impl App {
             })
             .await?;
 
-        loop {
-            select! {
-                _ = self.cancel.cancelled() => {
-                    return Ok(());
-                }
-                Ok(ServerToClientMessage::P2PConnect(peers)) = self.server_conn.receive() => {
-                    p2p
-                    .add_peers(peers.0)
-                    .await?;
-                    break;
-                }
-                _ = self.update_tui_interval.tick() => {
-                    self.update_tui(Default::default(), Default::default()).await?;
-                }
-            }
-        }
         let (tx_from_server_message, rx_from_server_message) = mpsc::unbounded_channel();
         let (tx_to_server_message, mut rx_to_server_message) = mpsc::unbounded_channel();
         let mut client = Client::new(
             Backend {
+                allowlist: allowlist.clone(),
                 rx: rx_from_server_message,
                 tx: tx_to_server_message,
             },
+            allowlist,
             p2p,
             state_options,
         );
@@ -204,7 +215,7 @@ impl App {
                    break;
                 }
                 message = self.server_conn.receive() => {
-                    self.on_server_message(message?, &tx_from_server_message);
+                    self.on_server_message(message?, &tx_from_server_message).await;
                 }
                 _ = self.update_tui_interval.tick() => {
                     let (client_tui_state, network_tui_state) = client.tui_states().await;
@@ -242,15 +253,12 @@ impl App {
         Ok(())
     }
 
-    fn on_server_message(
+    async fn on_server_message(
         &mut self,
         message: ServerToClientMessage,
         tx: &mpsc::UnboundedSender<Coordinator<ClientId>>,
     ) {
         match message {
-            ServerToClientMessage::P2PConnect(_peers) => {
-                info!("Got peer list from server, but already connected");
-            }
             ServerToClientMessage::Coordinator(state) => {
                 self.coordinator_state = *state;
                 let _ = tx.send(*state);

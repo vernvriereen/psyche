@@ -1,8 +1,11 @@
 use anyhow::Result;
 use core::fmt;
-use futures_lite::future::Boxed as BoxedFuture;
-use iroh::{endpoint::Connecting, protocol::ProtocolHandler};
+use iroh::{
+    endpoint::{Connecting, Connection},
+    protocol::ProtocolHandler,
+};
 use iroh_blobs::ticket::BlobTicket;
+use psyche_core::BoxedFuture;
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Write};
 use std::{
@@ -251,17 +254,11 @@ impl ModelParameterSharing {
             tx_model_parameter_req,
         }
     }
-}
-
-impl ProtocolHandler for ModelParameterSharing {
-    fn accept(&self, connecting: Connecting) -> BoxedFuture<Result<()>> {
-        let tx_model_parameter_req = self.tx_model_parameter_req.clone();
+    pub(crate) fn _accept_connection(
+        connection: Connection,
+        tx_model_parameter_req: UnboundedSender<ParameterSharingMessage>,
+    ) -> BoxedFuture<Result<()>> {
         Box::pin(async move {
-            let connection = connecting.await?;
-
-            let node_id = iroh::endpoint::get_remote_node_id(&connection)?;
-            info!("Received new model parameter request from {node_id}");
-
             let (mut send, mut recv) = connection.accept_bi().await?;
             let parameter_request_bytes = recv.read_to_end(1000).await?;
             let Ok(parameter_request) = String::from_utf8(parameter_request_bytes) else {
@@ -286,6 +283,21 @@ impl ProtocolHandler for ModelParameterSharing {
             connection.closed().await;
 
             Ok(())
+        })
+    }
+
+    pub fn accept_connection(&self, connection: Connection) -> BoxedFuture<Result<()>> {
+        let tx_model_parameter_req = self.tx_model_parameter_req.clone();
+        Box::pin(async move { Self::_accept_connection(connection, tx_model_parameter_req).await })
+    }
+}
+
+impl ProtocolHandler for ModelParameterSharing {
+    fn accept(&self, connecting: Connecting) -> BoxedFuture<Result<()>> {
+        let tx_model_parameter_req = self.tx_model_parameter_req.clone();
+        Box::pin(async move {
+            let connection = connecting.await?;
+            Self::_accept_connection(connection, tx_model_parameter_req).await
         })
     }
 }
