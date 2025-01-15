@@ -18,8 +18,8 @@ use psyche_modeling::{
     LlamaForCausalLM, LoadLlamaForCausalLMError,
 };
 use psyche_network::{AuthenticatableIdentity, BlobTicket};
-use std::{path::PathBuf, sync::Arc};
-use tch::{Device, Kind};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use tch::{Device, Kind, Tensor};
 use thiserror::Error;
 use tokenizers::{models::wordlevel::WordLevel, ModelWrapper, Tokenizer};
 use tokio::{
@@ -113,6 +113,7 @@ pub struct RunInitConfigAndIO<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub tx_witness: UnboundedSender<Witness>,
     pub tx_health_check: UnboundedSender<HealthChecks>,
     pub tx_checkpoint: UnboundedSender<model::Checkpoint>,
+    pub tx_model: UnboundedSender<HashMap<String, Tensor>>,
     pub tx_distro_result: UnboundedSender<DistroBroadcastAndPayload>,
     pub tx_request_download: UnboundedSender<BlobTicket>,
 }
@@ -128,6 +129,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
             tx_witness,
             tx_health_check,
             tx_checkpoint,
+            tx_model,
             tx_distro_result,
             tx_request_download,
         } = self;
@@ -296,6 +298,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             init_config.data_parallelism,
                             init_config.tensor_parallelism
                         );
+
                         Ok(RawLoadedModel {
                             models,
                             tokenizer,
@@ -305,6 +308,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                     })
                 }
                 model::Checkpoint::Ephemeral => return Err(InitRunError::ModelIsEphemeral),
+                model::Checkpoint::P2P => todo!(),
             },
         };
 
@@ -409,6 +413,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
 
         let cooldown = CooldownStepMetadata::new(
             tx_checkpoint,
+            tx_model,
             init_config.checkpoint_config,
             checkpoint_extra_files,
             eval_runner,

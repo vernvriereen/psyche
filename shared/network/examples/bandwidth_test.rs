@@ -165,6 +165,7 @@ impl App {
                     result.error
                 )
             }
+            _ => todo!(),
         }
     }
     async fn on_tick(&mut self) {

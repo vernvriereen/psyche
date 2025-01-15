@@ -4,6 +4,7 @@ use futures_util::StreamExt;
 use iroh::{endpoint::RemoteInfo, protocol::Router, NodeAddr};
 use iroh_blobs::{net_protocol::Blobs, store::mem::Store, util::local_pool::LocalPool};
 use iroh_gossip::net::{Gossip, GossipEvent, GossipReceiver, GossipSender};
+use p2p_model_sharing::ParameterSharingMessage;
 use state::State;
 use std::{
     collections::HashSet,
@@ -14,7 +15,10 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::{select, sync::oneshot};
+use tokio::{
+    select,
+    sync::{mpsc::UnboundedReceiver, oneshot},
+};
 use tokio::{
     sync::mpsc,
     time::{interval, Interval},
@@ -28,6 +32,7 @@ pub use iroh_blobs::{ticket::BlobTicket, Hash};
 
 mod authenticable_identity;
 mod download_manager;
+mod p2p_model_sharing;
 mod peer_list;
 mod serde;
 mod signed_message;
@@ -39,6 +44,7 @@ mod util;
 pub use authenticable_identity::{AuthenticatableIdentity, FromSignedBytesError};
 pub use download_manager::{DownloadComplete, DownloadFailed};
 pub use iroh::{Endpoint, PublicKey, SecretKey};
+pub use p2p_model_sharing::{ModelParameterSharing, ModelParameters, ALPN};
 pub use peer_list::PeerList;
 pub use serde::Networkable;
 pub use signed_message::SignedMessage;
@@ -56,6 +62,7 @@ where
     state: State,
     gossip_tx: GossipSender,
     gossip_rx: GossipReceiver,
+    rx_model_parameter_req: UnboundedReceiver<ParameterSharingMessage>,
     download_manager: DownloadManager<Download>,
     _broadcast_message: PhantomData<BroadcastMessage>,
     _download: PhantomData<Download>,
@@ -120,10 +127,14 @@ where
 
         let gossip = Gossip::builder().spawn(endpoint.clone()).await?;
 
+        let (tx_model_parameter_req, rx_model_parameter_req) = mpsc::unbounded_channel();
+        let model_parameter_sharing = ModelParameterSharing::new(tx_model_parameter_req);
+
         let router = Arc::new(
             Router::builder(endpoint)
                 .accept(iroh_blobs::ALPN, blobs.clone())
                 .accept(iroh_gossip::ALPN, gossip.clone())
+                .accept(p2p_model_sharing::ALPN, model_parameter_sharing.clone())
                 .spawn()
                 .await?,
         );
@@ -160,6 +171,7 @@ where
             blobs,
             gossip_rx,
             gossip_tx,
+            rx_model_parameter_req,
 
             router,
 
@@ -223,7 +235,7 @@ where
         Ok(())
     }
 
-    pub async fn add_downloadable(&mut self, data: Download) -> Result<BlobTicket> {
+    pub async fn add_downloadable<N: Networkable>(&mut self, data: N) -> Result<BlobTicket> {
         let bytes = postcard::to_allocvec(&data)?;
         let blob_res = self.blobs.client().add_bytes(bytes).await?;
         let addr = self.router.endpoint().node_addr().await?;
@@ -298,6 +310,9 @@ where
                     }
                     None => {}
                 }
+            }
+            Some(ParameterSharingMessage::Get(parameter_name, protocol_req_tx)) = self.rx_model_parameter_req.recv() => {
+                return Ok(Some(NetworkEvent::ParameterRequest(parameter_name, protocol_req_tx)));
             }
             _ = self.update_stats_interval.tick() => {
                 on_update_stats(self.router.endpoint(), &mut self.state).await?;
@@ -387,6 +402,7 @@ where
     MessageReceived((PublicKey, BM)),
     DownloadComplete(DownloadComplete<D>),
     DownloadFailed(DownloadFailed),
+    ParameterRequest(String, oneshot::Sender<BlobTicket>),
 }
 
 async fn on_update_stats(endpoint: &Endpoint, stats: &mut State) -> Result<()> {
