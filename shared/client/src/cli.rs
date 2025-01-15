@@ -33,7 +33,9 @@ pub fn read_identity_secret_key(
 }
 
 pub fn print_identity_keys(key: Option<&PathBuf>) -> Result<()> {
-    let key = read_identity_secret_key(key)?.ok_or_else(|| anyhow!("no key passed!"))?;
+    let key = read_identity_secret_key(key)?.ok_or_else(|| {
+        anyhow!("Use --identity-secret-key-path or use `RAW_IDENTITY_SECRET_KEY` env variable")
+    })?;
     println!("Public key: {}", key.public());
     println!("Secret key: {}", hex::encode(key.secret().as_bytes()));
     Ok(())
@@ -41,12 +43,15 @@ pub fn print_identity_keys(key: Option<&PathBuf>) -> Result<()> {
 
 #[derive(Args, Debug)]
 pub struct TrainArgs {
+    /// Path to the clients secret key. Create a new random one running `openssl rand 32 > secret.key`. If not provided a random one will be generated.
     #[clap(short, long, env)]
     pub identity_secret_key_path: Option<PathBuf>,
 
+    /// Sets the port for the client's P2P network participation. If not provided, a random port will be chosen.
     #[clap(short, long, env)]
     pub bind_p2p_port: Option<u16>,
 
+    /// Enables a terminal-based graphical interface for monitoring analytics.
     #[clap(
             long,
             action = ArgAction::Set,
@@ -58,9 +63,11 @@ pub struct TrainArgs {
         )]
     pub tui: bool,
 
+    /// A unique identifier for the training run. This ID allows the client to join a specific active run.
     #[clap(long, env)]
     pub run_id: String,
 
+    /// The address of the server hosting the training run.
     #[clap(long, env)]
     pub server_addr: String,
 
@@ -89,9 +96,11 @@ pub struct TrainArgs {
     #[clap(long, env)]
     pub eval_task_max_docs: Option<usize>,
 
+    /// If provided, every model parameters update will be save in this directory after each epoch.
     #[clap(long, env)]
     pub checkpoint_dir: Option<PathBuf>,
 
+    /// Path to the Hugging Face repository containing model data and configuration.
     #[clap(long, env)]
     pub hub_repo: Option<String>,
 

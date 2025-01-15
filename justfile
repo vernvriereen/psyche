@@ -19,7 +19,7 @@ docker-push-centralized-client: docker-build-centralized-client
 
 # spin up a local testnet
 local-testnet +args:
-	cargo run -p psyche-local-testnet -- {{args}}
+	cargo run -p psyche-local-testnet -- start {{args}}
 
 # run integration tests
 integration-test test_name="":
@@ -36,16 +36,6 @@ deploy-local-solana-coordinator:
 solana-client-tests:
 	cargo test --package psyche-solana-client
 
-install:
-	cargo install --path architectures/centralized/client
-	cargo install --path architectures/centralized/server
-	cargo install --path architectures/centralized/local-testnet
-
-uninstall:
-	cargo uninstall psyche-centralized-client
-	cargo uninstall psyche-centralized-server
-	cargo uninstall psyche-local-testnet
-
 book_deps:
 	cargo install mdbook mdbook-mermaid
 
@@ -54,3 +44,8 @@ build_book output-dir="../book":
 
 serve_book:
 	mdbook serve psyche-book --open
+
+generate_cli_docs:
+    cargo run -p psyche-centralized-client print-all-help --markdown > docs/CommandLineHelp-client.md
+    cargo run -p psyche-centralized-server print-all-help --markdown > docs/CommandLineHelp-server.md
+    cargo run -p psyche-local-testnet print-all-help --markdown > docs/CommandLineHelp-local-testnet.md

@@ -4,17 +4,11 @@ The Psyche Centralized Server is responsible for hosting the coordinator and a d
 
 ## Installation  
 
-To install the client CLI, simply run:  
+You can build and check the server usage by running the following command:
 
 ```bash
-just install
-```  
-
-After installation, verify the available commands by running:  
-
-```bash
-psyche-centralized-server --help
-```  
+cargo run -p psyche-centralized-server -- --help
+```
 
 This will display the following usage information:  
 
@@ -47,63 +41,6 @@ Options:
           [default: true] [possible values: true, false]
   -h, --help
           Print help
-```  
+```
 
-## Commands  
-
-The Psyche Centralized Server provides two primary commands: **validate-config** and **run**. Both commands require the initial state configuration, an example of which can be found in the `psyche/config` directory under `state.toml` files.  
-
-### **1. validate-config**  
-
-The `validate-config` command checks that the configuration declared in the `state.toml` file is valid.  
-
-#### Usage  
-
-```bash
-psyche-centralized-server --state <PATH_TO_STATE_FILE> validate-config
-```  
-
-For example, running the following command from the root:  
-
-```bash
-psyche-centralized-server --state config/llama2-20m-dolma-noverify-no-checkpointer/state.toml validate-config
-```  
-
-will output:  
-
-```bash
-INFO psyche_centralized_server: Configs are OK!
-```  
-
-### **2. run**  
-
-The `run` command starts the server and launches the coordinator with the declared configuration.  
-
-#### Required Arguments  
-
-- **`state`**: The path to the configuration file containing the initial settings for the coordinator.  
-
-#### Usage  
-
-```bash
-psyche-centralized-server --state <PATH_TO_STATE_FILE> run
-```  
-
-#### Optional Arguments  
-
-You can customize the server's behavior using additional optional arguments:  
-
-- **`p2p-port`**: Specifies the port for the P2P network with the clients.  
-- **`server-port`**: Specifies the port for the server, which clients will use to connect.  
-- **`tui`**: Enables a terminal-based user interface for monitoring analytics.  
-- **`data-config`**: Path to the TOML file containing data configurations (if the `data_location` in `state.toml` is set to `Server`, this is required).  
-- **`save-state-dir`**: Path to save the server and coordinator state.  
-- **`init-warmup-time`**: Sets the warmup time for the run.  
-- **`init-min-clients`**: Sets the minimum number of clients required to start a run.  
-- **`withdraw-on-disconnect`**: Allows clients to withdraw if they need to disconnect from the run (this option has no effect in the centralized version).  
-
-For a detailed list of all available options, run:  
-
-```bash
-psyche-centralized-server run --help
-```  
+To get more information about the server usage and the different options that supports, check the generated docs on `psyche/docs/CommandLineHelp-server.md`

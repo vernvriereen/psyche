@@ -23,13 +23,22 @@ struct Args {
 #[allow(clippy::large_enum_variant)] // it's only used at startup, we don't care.
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Displays the client's unique identifier, used to participate in training runs.
     ShowIdentity {
+        /// Path to the clients secret key. Create a new random one running `openssl rand 32 > secret.key` or use the `RAW_IDENTITY_SECRET_KEY` environment variable.
         #[clap(long)]
         identity_secret_key_path: Option<PathBuf>,
     },
+    /// Allows the client to join a training run and contribute to the model's training process.
     Train {
         #[clap(flatten)]
         args: TrainArgs,
+    },
+    // For generating `docs/CommandLineHelp-client.md`.
+    #[clap(hide = true)]
+    PrintAllHelp {
+        #[arg(long, required = true)]
+        markdown: bool,
     },
 }
 
@@ -102,6 +111,14 @@ async fn async_main() -> Result<()> {
             .unwrap();
 
             app.run(allowlist, p2p, state_options).await
+        }
+        Commands::PrintAllHelp { markdown } => {
+            // This is a required argument for the time being.
+            assert!(markdown);
+
+            let () = clap_markdown::print_help_markdown::<Args>();
+
+            Ok(())
         }
     }
 }
