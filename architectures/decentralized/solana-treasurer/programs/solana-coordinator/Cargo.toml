@@ -19,7 +19,7 @@ idl-build = ["anchor-lang/idl-build"]
 [dependencies]
 anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea308440a9fa9cb79cee7bddd30ab163d5" }
 bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
-psyche-solana-coordinator = { path = "../solana-coordinator" }
+psyche-solana-coordinator = { path = "../../../solana-coordinator/programs/solana-coordinator" }
 serde = { version = "1.0.209", features = ["derive"] }
 
 [dev-dependencies]

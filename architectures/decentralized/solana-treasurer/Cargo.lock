@@ -3121,6 +3121,16 @@ dependencies = [
  "psyche-coordinator",
  "psyche-core",
  "serde",
+]
+
+[[package]]
+name = "psyche-solana-treasurer"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "bytemuck",
+ "psyche-solana-coordinator",
+ "serde",
  "solana-sdk",
  "solana_toolbox_endpoint",
  "tokio",
