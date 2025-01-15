@@ -1,5 +1,7 @@
 #! /bin/bash
 
+set -e
+
 WALLET_FILE=${KEY_FILE:-"$HOME/.config/solana/id.json"}
 RPC=${RPC:-"http://127.0.0.1:8899"}
 WS_RPC=${WS_RPC:-"ws://127.0.0.1:8900"}
@@ -9,6 +11,8 @@ CONFIG_FILE=${CONFIG_FILE:-"./config/solana-test/config.toml"}
 pushd architectures/decentralized/solana-coordinator
 anchor build --no-idl && anchor deploy
 popd
+
+sleep 10
 
 cargo run --release --bin psyche-solana-client -- \
     create-run \
@@ -21,4 +25,4 @@ cargo run --release --bin psyche-solana-client -- \
 cargo run --release --bin psyche-solana-client -- \
     set-paused \
         --wallet-private-key-path ${WALLET_FILE} --rpc ${RPC} --ws-rpc ${WS_RPC} \
-        --run-id ${RUN_ID} --config-path ${CONFIG_FILE} --resume
+        --run-id ${RUN_ID} --resume

@@ -4,17 +4,26 @@ use anchor_client::{
     solana_sdk::signature::{Keypair, Signer},
     Cluster,
 };
-use anyhow::Result;
+use anyhow::{anyhow, bail, Result};
 use psyche_client::{CheckpointConfig, Client, RunInitConfig, WandBInfo, NC};
+use psyche_coordinator::Coordinator;
 use psyche_network::{RelayMode, SecretKey};
-use tracing::info;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::select;
+use rand::RngCore;
+use std::{path::PathBuf, time::Duration};
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
+use tokio::{
+    select,
+    time::{interval, Interval},
+};
+use tracing::{debug, error, info};
 
 pub struct App {
     run_id: String,
     cluster: Cluster,
+    tick_check_interval: Option<Interval>,
     // cancel: CancellationToken,
     // update_tui_interval: Interval,
     // tx_tui_state: Option<Sender<TabsData>>,
@@ -27,6 +36,7 @@ pub struct AppParams {
     pub identity_secret_key: SecretKey,
     pub wallet_keypair: Arc<Keypair>,
     pub cluster: Cluster,
+    pub ticker: bool,
     //pub tx_tui_state: Option<Sender<TabsData>>,
     pub run_id: String,
     pub data_parallelism: usize,
@@ -70,6 +80,10 @@ impl AppBuilder {
         let app = App {
             run_id: p.run_id.clone(),
             cluster: p.cluster,
+            tick_check_interval: match p.ticker {
+                true => Some(interval(Duration::from_millis(500))),
+                false => None,
+            },
             //cancel: p.cancel,
             //tx_tui_state: p.tx_tui_state,
             //update_tui_interval: interval(Duration::from_millis(150)),
@@ -110,26 +124,37 @@ impl App {
         let backend =
             SolanaBackend::new(self.cluster.clone(), state_options.private_key.0.clone())?;
 
+        let signer = state_options.private_key.0.pubkey();
+        let p2p_identity = state_options.private_key.1.public();
         let joined = backend
             .join_run(
-                &run_id,
-                ClientId {
-                    signer: signer.unwrap_or(key_pair.pubkey()),
-                    p2p_identity: (),
+                &self.run_id,
+                solana_coordinator::ClientId {
+                    signer,
+                    p2p_identity: *p2p_identity.as_bytes(),
                 },
             )
             .await?;
         info!(
-            "Joined run {} from {} (signer {}) and p2p identity {} with transaction {}",
-            run_id,
-            key_pair.pubkey(),
-            identity.signer,
-            identity.p2p_identity,
-            joined
+            "Joined run {} from {} (p2p identity {}) with transaction {}",
+            self.run_id, signer, p2p_identity, joined
         );
 
         let instance = backend.get_coordinator_instance(&self.run_id).await?;
         let backend = backend.start(self.run_id.clone(), instance.account).await?;
+
+        let (tick_backend, mut updates) = match self.tick_check_interval.is_some() {
+            true => {
+                let tick_backend = Arc::new(SolanaBackend::new(
+                    self.cluster.clone(),
+                    state_options.private_key.0.clone(),
+                )?);
+                let updates = backend.updates();
+                (Some(tick_backend), Some(updates))
+            }
+            false => (None, None),
+        };
+        let mut latest_update: Option<Coordinator<solana_coordinator::ClientId>> = None;
 
         let mut client = Client::new(backend, p2p, state_options);
 
@@ -142,6 +167,35 @@ impl App {
                 //     let (client_tui_state, network_tui_state) = client.tui_states().await;
                 //     self.update_tui(client_tui_state, network_tui_state).await?;
                 // }
+                _ = self.tick_check_interval.as_mut().unwrap().tick(), if self.tick_check_interval.is_some() => {
+                    if let Some(latest_update) = &latest_update {
+                        let mut ticked = latest_update.clone();
+                        if ticked.tick(Some(vec![].iter()), SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs(),rand::thread_rng().next_u64()).is_ok() {
+                                if ticked.run_state != latest_update.run_state {
+                                    let backend = tick_backend.as_ref().unwrap().clone();
+                                    let run_id = self.run_id.clone();
+                                    tokio::spawn(async move {
+                                        match backend.tick(&run_id).await {
+                                            Ok(signature) => debug!("Tick transaction {}", signature),
+                                            Err(err) => error!("Tick transaction error: {}", err)
+                                        }
+                                    });
+                                }
+                            }
+                    }
+                }
+                update = updates.as_mut().unwrap().recv(), if tick_backend.is_some() => {
+                    let update = update?;
+                    latest_update = match update.value.data.decode() {
+                        Some(data) => Some(solana_coordinator::coordinator_account_from_bytes(&data)
+                            .map_err(|_| anyhow!("Unable to decode coordinator account data"))
+                            .map(|x| x.state.coordinator)?),
+                        None => bail!("Unable to decode account data"),
+                    };
+                }
                 res = client.finished() => {
                     res??;
                 }

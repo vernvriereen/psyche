@@ -55,9 +55,9 @@ impl NodeIdentity for ClientId {
 }
 
 impl ClientId {
-    pub fn new(owner: Pubkey, p2p_identity: [u8; 32]) -> Self {
+    pub fn new(signer: Pubkey, p2p_identity: [u8; 32]) -> Self {
         Self {
-            signer: owner,
+            signer,
             p2p_identity,
         }
     }

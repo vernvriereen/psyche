@@ -38,7 +38,6 @@ pub fn coordinator_account_from_bytes(
 #[derive(Debug, Clone, Copy, Default, Zeroable, InitSpace, Pod)]
 #[repr(C)]
 pub struct Client {
-    owner: Pubkey,
     id: ClientId,
     staked: u64,
     earned: u64,
@@ -69,7 +68,7 @@ unsafe impl Pod for CoordinatorInstanceState {}
 #[derive(Clone, Copy, Zeroable)]
 #[repr(C)]
 pub struct ClientsState {
-    pub whitelist: FixedVec<ClientId, SOLANA_MAX_NUM_WHITELISTED_CLIENTS>,
+    pub whitelist: FixedVec<Pubkey, SOLANA_MAX_NUM_WHITELISTED_CLIENTS>,
     pub clients: FixedVec<Client, SOLANA_MAX_NUM_PENDING_CLIENTS>,
     pub next_active: u64,
 }
@@ -182,7 +181,7 @@ pub mod solana_coordinator {
 
     pub fn set_whitelist(
         ctx: Context<OwnerCoordinatorAccounts>,
-        clients: Vec<ClientId>,
+        clients: Vec<Pubkey>,
     ) -> Result<()> {
         let clients_state = &mut ctx.accounts.account.load_mut()?.state.clients_state;
         clients_state.whitelist.clear();
@@ -197,15 +196,9 @@ pub mod solana_coordinator {
         let clients_state = &mut ctx.accounts.account.load_mut()?.state.clients_state;
 
         if !clients_state.whitelist.is_empty() {
-            if !clients_state
-                .whitelist
-                .iter()
-                .any(|x| x.signer == id.signer)
-            {
+            if !clients_state.whitelist.iter().any(|x| x == &id.signer) {
                 return err!(ProgramError::NotInWhitelist);
             }
-        } else {
-            panic!("no whitelist");
         }
 
         let exisiting = match clients_state
@@ -228,7 +221,6 @@ pub mod solana_coordinator {
             && clients_state
                 .clients
                 .push(Client {
-                    owner: *ctx.accounts.payer.signer_key().unwrap(),
                     id,
                     staked: 0,
                     earned: 0,

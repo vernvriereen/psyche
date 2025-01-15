@@ -61,9 +61,6 @@ pub struct TrainArgs {
     #[clap(long, env)]
     pub run_id: String,
 
-    #[clap(long, env)]
-    pub server_addr: String,
-
     #[clap(long, default_value_t = 1, env)]
     pub data_parallelism: usize,
 

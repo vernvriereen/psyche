@@ -5,9 +5,7 @@ use crate::{
 
 use anchor_client::{
     solana_sdk::{
-        pubkey::Pubkey,
-        signature::{EncodableKey, Keypair},
-        signer::Signer,
+        pubkey::Pubkey, signature::{EncodableKey, Keypair}, signer::Signer
     },
     Cluster,
 };
@@ -18,7 +16,7 @@ use psyche_client::{
     exercise_sdpa_if_needed, print_identity_keys, read_identity_secret_key, TrainArgs,
 };
 use psyche_coordinator::{model::Model, CoordinatorConfig};
-use psyche_network::{PublicKey, SecretKey};
+use psyche_network::SecretKey;
 use psyche_tui::LogOutput;
 use serde::{Deserialize, Serialize};
 use solana_coordinator::ClientId;
@@ -62,10 +60,10 @@ pub struct State {
 #[allow(clippy::large_enum_variant)] // it's only used at startup, we don't care.
 #[derive(Subcommand, Debug)]
 enum Commands {
-    ShowIdentity {
+    ShowStaticP2PIdentity {
         identity_secret_key_path: Option<PathBuf>,
     },
-    CreateIdentity {
+    CreateStaticP2PIdentity {
         save_path: PathBuf,
     },
     CreateRun {
@@ -126,6 +124,9 @@ enum Commands {
 
         #[clap(flatten)]
         args: TrainArgs,
+
+        #[clap(long, env)]
+        ticker: bool,
     },
 }
 
@@ -154,20 +155,14 @@ impl TryInto<Keypair> for WalletArgs {
     }
 }
 
-impl From<Identity> for ClientId {
-    fn from(val: Identity) -> Self {
-        ClientId::new(val.signer, *val.p2p_identity.as_bytes())
-    }
-}
-
 async fn async_main() -> Result<()> {
     let args = CliArgs::parse();
 
     match args.command {
-        Commands::ShowIdentity {
+        Commands::ShowStaticP2PIdentity {
             identity_secret_key_path,
         } => print_identity_keys(identity_secret_key_path.as_ref()),
-        Commands::CreateIdentity { save_path } => {
+        Commands::CreateStaticP2PIdentity { save_path } => {
             let identity_secret_key = SecretKey::generate(&mut rand::rngs::OsRng);
             std::fs::write(&save_path, identity_secret_key.secret().as_bytes())?;
             print_identity_keys(Some(&save_path))?;
@@ -198,7 +193,7 @@ async fn async_main() -> Result<()> {
         } => {
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
             let backend = SolanaBackend::new(cluster.into(), key_pair.clone()).unwrap();
-            let members: Vec<Identity> = toml::from_str(std::str::from_utf8(
+            let members: Vec<Pubkey> = toml::from_str(std::str::from_utf8(
                 &std::fs::read(&members_path).with_context(|| {
                     format!("failed to read whitelist members toml file {members_path:?}")
                 })?,
@@ -255,6 +250,7 @@ async fn async_main() -> Result<()> {
             cluster,
             wallet,
             args,
+            ticker,
         } => {
             exercise_sdpa_if_needed();
 
@@ -300,6 +296,7 @@ async fn async_main() -> Result<()> {
                 identity_secret_key,
                 wallet_keypair,
                 cluster: cluster.into(),
+                ticker,
                 run_id: args.run_id,
                 p2p_port: args.bind_p2p_port,
                 data_parallelism: args.data_parallelism,

@@ -21,7 +21,7 @@ use psyche_coordinator::{
 use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::broadcast;
 
 pub struct SolanaBackend {
     program: Program<Arc<Keypair>>,
@@ -31,7 +31,7 @@ pub struct SolanaBackend {
 pub struct SolanaBackendRunner {
     pub(crate) backend: SolanaBackend,
     run_id: String,
-    updates: mpsc::UnboundedReceiver<RpcResponse<UiAccount>>,
+    updates: broadcast::Receiver<RpcResponse<UiAccount>>,
 }
 
 #[derive(Debug, Clone)]
@@ -52,7 +52,7 @@ impl SolanaBackend {
 
     pub async fn start(self, run_id: String, coordinator: Pubkey) -> Result<SolanaBackendRunner> {
         let sub_client = PubsubClient::new(self.cluster.ws_url()).await?;
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = broadcast::channel(32);
 
         tokio::spawn(async move {
             let mut notifications = match sub_client
@@ -147,7 +147,7 @@ impl SolanaBackend {
     pub async fn set_whitelist(
         &self,
         run_id: &str,
-        clients: Vec<solana_coordinator::ClientId>,
+        clients: Vec<Pubkey>,
     ) -> Result<Signature> {
         let (instance_pda, _) = self.find_instance_from_run_id(run_id);
 
@@ -333,13 +333,13 @@ impl SolanaBackend {
 impl WatcherBackend<solana_coordinator::ClientId> for SolanaBackendRunner {
     async fn wait_for_new_state(&mut self) -> Result<Coordinator<solana_coordinator::ClientId>> {
         match self.updates.recv().await {
-            Some(update) => match update.value.data.decode() {
+            Ok(update) => match update.value.data.decode() {
                 Some(data) => solana_coordinator::coordinator_account_from_bytes(&data)
                     .map_err(|_| anyhow!("Unable to decode coordinator account data"))
                     .map(|x| x.state.coordinator),
                 None => bail!("Unable to decode account data"),
             },
-            None => bail!("Account updates channel closed"),
+            Err(err) => bail!("Account updates channel error: {err}"),
         }
     }
 
@@ -354,6 +354,12 @@ impl WatcherBackend<solana_coordinator::ClientId> for SolanaBackendRunner {
 
     async fn send_checkpoint(&mut self, _checkpoint: model::Checkpoint) -> Result<()> {
         unimplemented!();
+    }
+}
+
+impl SolanaBackendRunner {
+    pub fn updates(&self) -> broadcast::Receiver<RpcResponse<UiAccount>> {
+        self.updates.resubscribe()
     }
 }
 
