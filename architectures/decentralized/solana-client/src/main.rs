@@ -18,9 +18,9 @@ use psyche_client::{
 };
 use psyche_coordinator::{model::Model, CoordinatorConfig};
 use psyche_network::{PublicKey, SecretKey};
+use psyche_solana_coordinator::ClientId;
 use psyche_tui::LogOutput;
 use serde::Deserialize;
-use psyche_solana_coordinator::ClientId;
 use std::path::PathBuf;
 use std::sync::Arc;
 use time::OffsetDateTime;

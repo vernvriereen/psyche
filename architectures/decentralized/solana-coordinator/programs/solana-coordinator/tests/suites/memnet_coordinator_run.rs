@@ -1,6 +1,6 @@
 use crate::api::{
+    accounts::get_coordinator_instance_state,
     create_memnet_endpoint::create_memnet_endpoint,
-    get_coordinator_account::get_coordinator_account,
     process_instructions::{
         process_initialize_coordinator, process_join_run, process_set_paused,
         process_set_whitelist, process_tick, process_update_coordinator_config_model,
@@ -52,16 +52,15 @@ pub async fn memnet_coordinator_run() {
 
     // verify that the run is in initialized state
     assert_eq!(
-        get_coordinator_account(&mut endpoint, &coordinator_account.pubkey())
+        get_coordinator_instance_state(&mut endpoint, &coordinator_account.pubkey())
             .await
             .unwrap()
-            .unwrap()
-            .state
             .coordinator
             .run_state,
         RunState::Uninitialized
     );
 
+    // update the coordinator's model
     process_update_coordinator_config_model(
         &mut endpoint,
         &payer,
@@ -105,19 +104,17 @@ pub async fn memnet_coordinator_run() {
     .await
     .unwrap();
 
-    // State should now have changed state
+    // Coordinator's state should now have changed
     assert_eq!(
-        get_coordinator_account(&mut endpoint, &coordinator_account.pubkey())
+        get_coordinator_instance_state(&mut endpoint, &coordinator_account.pubkey())
             .await
             .unwrap()
-            .unwrap()
-            .state
             .coordinator
             .run_state,
         RunState::Uninitialized
     );
 
-    // add a dummy whitelist entry so the run is permissioned
+    // add a dummy whitelist entry so the run is permissioned but no client whitelisted
     process_set_whitelist(
         &mut endpoint,
         &payer,
@@ -209,11 +206,9 @@ pub async fn memnet_coordinator_run() {
 
     // Check that we're in waiting mode after the last tick
     assert_eq!(
-        get_coordinator_account(&mut endpoint, &coordinator_account.pubkey())
+        get_coordinator_instance_state(&mut endpoint, &coordinator_account.pubkey())
             .await
             .unwrap()
-            .unwrap()
-            .state
             .coordinator
             .run_state,
         RunState::WaitingForMembers

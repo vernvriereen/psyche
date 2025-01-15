@@ -1,6 +1,6 @@
 use anchor_lang::{prelude::*, system_program};
 
-declare_id!("5gKtdi6At7WEcLE22GmkSg94rVgc2hRRo3VvKhLnoJZP");
+declare_id!("77mYTtUnEzSYVoG1JtWCjKAdakSvYDkdPPy8DoGqr5RP");
 
 #[program]
 pub mod psyche_solana_treasurer {

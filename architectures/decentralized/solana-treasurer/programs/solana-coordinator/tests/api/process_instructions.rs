@@ -9,12 +9,8 @@ use solana_sdk::{
 };
 use solana_toolbox_endpoint::{ToolboxEndpoint, ToolboxEndpointError};
 use psyche_solana_treasurer::{
-    accounts::{
-        InitializeCoordinatorAccounts
-    },
-    instruction::{
-        InitializeCoordinator
-    },
+    accounts::InitializeCoordinatorAccounts,
+    instruction::InitializeCoordinator,
 };
 
 pub async fn process_initialize_coordinator(

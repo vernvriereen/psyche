@@ -29,6 +29,9 @@ pub fn coordinator_account_from_bytes(
     if bytes.len() != CoordinatorAccount::size_with_discriminator() {
         return Err(ProgramError::CoordinatorAccountIncorrectSize);
     }
+    if &bytes[..CoordinatorAccount::DISCRIMINATOR.len()] != CoordinatorAccount::DISCRIMINATOR {
+        return Err(ProgramError::CoordinatorAccountInvalidDiscriminator);
+    }
     Ok(bytemuck::from_bytes(
         &bytes[CoordinatorAccount::DISCRIMINATOR.len()
             ..CoordinatorAccount::size_with_discriminator()],
@@ -426,6 +429,9 @@ pub enum ProgramError {
 
     #[msg("Coordinator account incorrect size")]
     CoordinatorAccountIncorrectSize,
+
+    #[msg("Coordinator account invalid discriminator")]
+    CoordinatorAccountInvalidDiscriminator,
 
     #[msg("Could not set whitelist")]
     CouldNotSetWhitelist,

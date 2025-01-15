@@ -4,9 +4,6 @@
 resolution = true
 skip-lint = false
 
-[programs.localnet]
-psyche_solana_coordinator = "5RfSkScUH2mTdiBGAAVmfBVSXpVYs2r4GnWsQjDyZrG7"
-
 [provider]
 cluster = "Localnet"
 wallet = "~/.config/solana/id.json"
