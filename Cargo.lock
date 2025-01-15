@@ -4646,18 +4646,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4ce301924b7887e9d637144fdade93f9dfff9b60981d4ac161db09720d39aa5"
 
 [[package]]
-name = "local-testnet"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "clap",
- "rand 0.8.5",
- "serde",
- "time",
- "toml 0.8.19",
-]
-
-[[package]]
 name = "lock_api"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6451,6 +6439,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "psyche-local-testnet"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "rand 0.8.5",
+ "serde",
+ "time",
+ "toml 0.8.19",
+]
+
+[[package]]
 name = "psyche-modeling"
 version = "0.1.0"
 dependencies = [
@@ -6481,6 +6481,7 @@ dependencies = [
  "clap",
  "data-encoding",
  "ed25519 2.2.3",
+ "futures-lite 2.5.0",
  "futures-util",
  "iroh",
  "iroh-blobs",
@@ -6490,6 +6491,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "sha2 0.10.8",
+ "tch",
  "thiserror 2.0.9",
  "tokio",
  "tokio-stream",
