@@ -16,7 +16,7 @@ use psyche_coordinator::{
     CoordinatorConfig, RunState,
 };
 use psyche_core::FixedVec;
-use solana_coordinator::{ClientId, CoordinatorAccount};
+use psyche_solana_coordinator::{ClientId, CoordinatorAccount};
 use solana_sdk::{signature::Keypair, signer::Signer};
 
 #[tokio::test]
@@ -40,7 +40,7 @@ pub async fn memnet_coordinator_run() {
             &payer,
             &coordinator_account,
             CoordinatorAccount::size_with_discriminator(),
-            &solana_coordinator::ID,
+            &psyche_solana_coordinator::ID,
         )
         .await
         .unwrap();

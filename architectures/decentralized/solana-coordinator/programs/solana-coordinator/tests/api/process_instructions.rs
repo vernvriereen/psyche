@@ -2,7 +2,7 @@ use crate::api::find_pda_coordinator_instance::find_pda_coordinator_instance;
 
 use anchor_lang::{InstructionData, ToAccountMetas};
 use psyche_coordinator::{model::Model, CoordinatorConfig};
-use solana_coordinator::{
+use psyche_solana_coordinator::{
     accounts::{
         InitializeCoordinatorAccounts, OwnerCoordinatorAccounts, PermissionlessCoordinatorAccounts,
     },
@@ -40,7 +40,7 @@ pub async fn process_initialize_coordinator(
             run_id: run_id.to_string(),
         }
         .data(),
-        program_id: solana_coordinator::ID,
+        program_id: psyche_solana_coordinator::ID,
     };
 
     endpoint.process_instruction(instruction, payer).await
@@ -65,7 +65,7 @@ pub async fn process_update_coordinator_config_model(
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
         data: UpdateCoordinatorConfigModel { config, model }.data(),
-        program_id: solana_coordinator::ID,
+        program_id: psyche_solana_coordinator::ID,
     };
 
     endpoint.process_instruction(instruction, payer).await
@@ -89,7 +89,7 @@ pub async fn process_set_whitelist(
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
         data: SetWhitelist { clients }.data(),
-        program_id: solana_coordinator::ID,
+        program_id: psyche_solana_coordinator::ID,
     };
 
     endpoint.process_instruction(instruction, payer).await
@@ -113,7 +113,7 @@ pub async fn process_join_run(
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
         data: JoinRun { id }.data(),
-        program_id: solana_coordinator::ID,
+        program_id: psyche_solana_coordinator::ID,
     };
 
     endpoint.process_instruction(instruction, payer).await
@@ -137,7 +137,7 @@ pub async fn process_set_paused(
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
         data: SetPaused { paused }.data(),
-        program_id: solana_coordinator::ID,
+        program_id: psyche_solana_coordinator::ID,
     };
 
     endpoint.process_instruction(instruction, payer).await
@@ -160,7 +160,7 @@ pub async fn process_tick(
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
         data: Tick {}.data(),
-        program_id: solana_coordinator::ID,
+        program_id: psyche_solana_coordinator::ID,
     };
 
     endpoint.process_instruction(instruction, payer).await

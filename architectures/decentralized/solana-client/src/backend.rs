@@ -45,7 +45,7 @@ impl SolanaBackend {
     #[allow(dead_code)]
     pub fn new(cluster: Cluster, payer: Arc<Keypair>) -> Result<Self> {
         let client = Client::new(cluster.clone(), payer.clone());
-        let program = client.program(solana_coordinator::ID)?;
+        let program = client.program(psyche_solana_coordinator::ID)?;
 
         Ok(Self { program, cluster })
     }
@@ -88,7 +88,7 @@ impl SolanaBackend {
 
     pub async fn create_run(&self, run_id: String) -> Result<CreatedRun> {
         let coordinator_keypair = Arc::new(Keypair::new());
-        let space = 8 + std::mem::size_of::<solana_coordinator::CoordinatorAccount>();
+        let space = 8 + std::mem::size_of::<psyche_solana_coordinator::CoordinatorAccount>();
         let rent = self
             .program
             .rpc()
@@ -97,7 +97,7 @@ impl SolanaBackend {
 
         let seeds = &[
             b"coordinator",
-            solana_coordinator::bytes_from_string(&run_id),
+            psyche_solana_coordinator::bytes_from_string(&run_id),
         ];
         let (instance_pda, _bump) = Pubkey::find_program_address(seeds, &self.program.id());
 
@@ -121,14 +121,14 @@ impl SolanaBackend {
                 self.program
                     .request()
                     .accounts(
-                        solana_coordinator::accounts::InitializeCoordinatorAccounts {
+                        psyche_solana_coordinator::accounts::InitializeCoordinatorAccounts {
                             instance: instance_pda,
                             account: coordinator_keypair.pubkey(),
                             payer: self.program.payer(),
                             system_program: system_program::ID,
                         },
                     )
-                    .args(solana_coordinator::instruction::InitializeCoordinator { run_id })
+                    .args(psyche_solana_coordinator::instruction::InitializeCoordinator { run_id })
                     .instructions()
                     .unwrap()[0]
                     .clone(),
@@ -147,11 +147,11 @@ impl SolanaBackend {
     pub async fn set_whitelist(
         &self,
         run_id: &str,
-        clients: Vec<solana_coordinator::ClientId>,
+        clients: Vec<psyche_solana_coordinator::ClientId>,
     ) -> Result<Signature> {
         let (instance_pda, _) = self.find_instance_from_run_id(run_id);
 
-        let instance: solana_coordinator::CoordinatorInstance =
+        let instance: psyche_solana_coordinator::CoordinatorInstance =
             self.program.account(instance_pda).await?;
 
         if instance.owner != self.program.payer() {
@@ -165,13 +165,15 @@ impl SolanaBackend {
         let signature = self
             .program
             .request()
-            .accounts(solana_coordinator::accounts::OwnerCoordinatorAccounts {
-                instance: instance_pda,
-                account: instance.account,
-                payer: self.program.payer(),
-                system_program: system_program::ID,
-            })
-            .args(solana_coordinator::instruction::SetWhitelist { clients })
+            .accounts(
+                psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                    instance: instance_pda,
+                    account: instance.account,
+                    payer: self.program.payer(),
+                    system_program: system_program::ID,
+                },
+            )
+            .args(psyche_solana_coordinator::instruction::SetWhitelist { clients })
             .send()
             .await?;
 
@@ -181,25 +183,25 @@ impl SolanaBackend {
     pub async fn join_run(
         &self,
         run_id: &str,
-        id: solana_coordinator::ClientId,
+        id: psyche_solana_coordinator::ClientId,
     ) -> Result<Signature> {
         let (instance_pda, _) = self.find_instance_from_run_id(run_id);
 
-        let instance: solana_coordinator::CoordinatorInstance =
+        let instance: psyche_solana_coordinator::CoordinatorInstance =
             self.program.account(instance_pda).await?;
 
         let signature = self
             .program
             .request()
             .accounts(
-                solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
                     instance: instance_pda,
                     account: instance.account,
                     payer: self.program.payer(),
                     system_program: system_program::ID,
                 },
             )
-            .args(solana_coordinator::instruction::JoinRun { id })
+            .args(psyche_solana_coordinator::instruction::JoinRun { id })
             .send()
             .await?;
 
@@ -209,24 +211,31 @@ impl SolanaBackend {
     pub async fn update_config_and_model(
         &self,
         run_id: &str,
-        config: Option<CoordinatorConfig<solana_coordinator::ClientId>>,
+        config: Option<CoordinatorConfig<psyche_solana_coordinator::ClientId>>,
         model: Option<Model>,
     ) -> Result<Signature> {
         let (instance_pda, _) = self.find_instance_from_run_id(run_id);
 
-        let instance: solana_coordinator::CoordinatorInstance =
+        let instance: psyche_solana_coordinator::CoordinatorInstance =
             self.program.account(instance_pda).await?;
 
         let signature = self
             .program
             .request()
-            .accounts(solana_coordinator::accounts::OwnerCoordinatorAccounts {
-                instance: instance_pda,
-                account: instance.account,
-                payer: self.program.payer(),
-                system_program: system_program::ID,
-            })
-            .args(solana_coordinator::instruction::UpdateCoordinatorConfigModel { config, model })
+            .accounts(
+                psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                    instance: instance_pda,
+                    account: instance.account,
+                    payer: self.program.payer(),
+                    system_program: system_program::ID,
+                },
+            )
+            .args(
+                psyche_solana_coordinator::instruction::UpdateCoordinatorConfigModel {
+                    config,
+                    model,
+                },
+            )
             .send()
             .await?;
 
@@ -236,19 +245,21 @@ impl SolanaBackend {
     pub async fn set_paused(&self, run_id: &str, paused: bool) -> Result<Signature> {
         let (instance_pda, _) = self.find_instance_from_run_id(run_id);
 
-        let instance: solana_coordinator::CoordinatorInstance =
+        let instance: psyche_solana_coordinator::CoordinatorInstance =
             self.program.account(instance_pda).await?;
 
         let signature = self
             .program
             .request()
-            .accounts(solana_coordinator::accounts::OwnerCoordinatorAccounts {
-                instance: instance_pda,
-                account: instance.account,
-                payer: self.program.payer(),
-                system_program: system_program::ID,
-            })
-            .args(solana_coordinator::instruction::SetPaused { paused })
+            .accounts(
+                psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                    instance: instance_pda,
+                    account: instance.account,
+                    payer: self.program.payer(),
+                    system_program: system_program::ID,
+                },
+            )
+            .args(psyche_solana_coordinator::instruction::SetPaused { paused })
             .send()
             .await?;
 
@@ -259,21 +270,21 @@ impl SolanaBackend {
     pub async fn tick(&self, run_id: &str) -> Result<Signature> {
         let (instance_pda, _) = self.find_instance_from_run_id(run_id);
 
-        let instance: solana_coordinator::CoordinatorInstance =
+        let instance: psyche_solana_coordinator::CoordinatorInstance =
             self.program.account(instance_pda).await?;
 
         let signature = self
             .program
             .request()
             .accounts(
-                solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
                     instance: instance_pda,
                     account: instance.account,
                     payer: self.program.payer(),
                     system_program: system_program::ID,
                 },
             )
-            .args(solana_coordinator::instruction::Tick {})
+            .args(psyche_solana_coordinator::instruction::Tick {})
             .send()
             .await?;
 
@@ -283,21 +294,21 @@ impl SolanaBackend {
     pub async fn witness(&self, run_id: &str, witness: Witness) -> Result<Signature> {
         let (instance_pda, _) = self.find_instance_from_run_id(run_id);
 
-        let instance: solana_coordinator::CoordinatorInstance =
+        let instance: psyche_solana_coordinator::CoordinatorInstance =
             self.program.account(instance_pda).await?;
 
         let signature = self
             .program
             .request()
             .accounts(
-                solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
                     instance: instance_pda,
                     account: instance.account,
                     payer: self.program.payer(),
                     system_program: system_program::ID,
                 },
             )
-            .args(solana_coordinator::instruction::Witness {
+            .args(psyche_solana_coordinator::instruction::Witness {
                 index: witness.index,
                 proof: witness.proof,
                 participant_bloom: witness.participant_bloom,
@@ -312,10 +323,10 @@ impl SolanaBackend {
     pub async fn get_coordinator_instance(
         &self,
         run_id: &str,
-    ) -> Result<solana_coordinator::CoordinatorInstance> {
+    ) -> Result<psyche_solana_coordinator::CoordinatorInstance> {
         let (instance_pda, _) = self.find_instance_from_run_id(run_id);
 
-        let instance: solana_coordinator::CoordinatorInstance =
+        let instance: psyche_solana_coordinator::CoordinatorInstance =
             self.program.account(instance_pda).await?;
         Ok(instance)
     }
@@ -323,18 +334,20 @@ impl SolanaBackend {
     fn find_instance_from_run_id(&self, run_id: &str) -> (Pubkey, u8) {
         let seeds = &[
             b"coordinator",
-            solana_coordinator::bytes_from_string(run_id),
+            psyche_solana_coordinator::bytes_from_string(run_id),
         ];
         Pubkey::find_program_address(seeds, &self.program.id())
     }
 }
 
 #[async_trait::async_trait]
-impl WatcherBackend<solana_coordinator::ClientId> for SolanaBackendRunner {
-    async fn wait_for_new_state(&mut self) -> Result<Coordinator<solana_coordinator::ClientId>> {
+impl WatcherBackend<psyche_solana_coordinator::ClientId> for SolanaBackendRunner {
+    async fn wait_for_new_state(
+        &mut self,
+    ) -> Result<Coordinator<psyche_solana_coordinator::ClientId>> {
         match self.updates.recv().await {
             Some(update) => match update.value.data.decode() {
-                Some(data) => solana_coordinator::coordinator_account_from_bytes(&data)
+                Some(data) => psyche_solana_coordinator::coordinator_account_from_bytes(&data)
                     .map_err(|_| anyhow!("Unable to decode coordinator account data"))
                     .map(|x| x.state.coordinator),
                 None => bail!("Unable to decode account data"),
@@ -398,7 +411,7 @@ mod test {
             .backend
             .update_config_and_model(
                 &run_id,
-                Some(CoordinatorConfig::<solana_coordinator::ClientId> {
+                Some(CoordinatorConfig::<psyche_solana_coordinator::ClientId> {
                     warmup_time: 1,
                     cooldown_time: 1,
                     max_round_train_time: 10,
@@ -441,7 +454,7 @@ mod test {
 
         let client_keypair = Arc::new(Keypair::new());
         let client_p2p = SecretKey::generate(&mut rand::rngs::OsRng);
-        let client_id = solana_coordinator::ClientId::new(
+        let client_id = psyche_solana_coordinator::ClientId::new(
             client_keypair.pubkey(),
             *client_p2p.public().as_bytes(),
         );
@@ -449,7 +462,7 @@ mod test {
         // add a dummy whitelist entry so the run is permissioned
         runner
             .backend
-            .set_whitelist(&run_id, vec![solana_coordinator::ClientId::zeroed()])
+            .set_whitelist(&run_id, vec![psyche_solana_coordinator::ClientId::zeroed()])
             .await
             .unwrap();
 

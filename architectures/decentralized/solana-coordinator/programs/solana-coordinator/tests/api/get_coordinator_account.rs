@@ -1,6 +1,6 @@
 use anchor_lang::Discriminator;
 use bytemuck::{Pod, Zeroable};
-use solana_coordinator::CoordinatorAccount;
+use psyche_solana_coordinator::CoordinatorAccount;
 use solana_sdk::pubkey::Pubkey;
 use solana_toolbox_endpoint::{ToolboxEndpoint, ToolboxEndpointError};
 

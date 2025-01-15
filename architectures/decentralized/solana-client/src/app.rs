@@ -53,7 +53,7 @@ impl AppBuilder {
     ) -> Result<(
         App,
         NC,
-        RunInitConfig<solana_coordinator::ClientId, NetworkIdentity>,
+        RunInitConfig<psyche_solana_coordinator::ClientId, NetworkIdentity>,
     )> {
         let p = self.0;
 
@@ -73,11 +73,11 @@ impl AppBuilder {
             //tx_tui_state: p.tx_tui_state,
             //update_tui_interval: interval(Duration::from_millis(150)),
         };
-        let identity = solana_coordinator::ClientId::new(
+        let identity = psyche_solana_coordinator::ClientId::new(
             p.wallet_keypair.pubkey(),
             *p.identity_secret_key.public().as_bytes(),
         );
-        let state_options: RunInitConfig<solana_coordinator::ClientId, NetworkIdentity> =
+        let state_options: RunInitConfig<psyche_solana_coordinator::ClientId, NetworkIdentity> =
             RunInitConfig {
                 data_parallelism: p.data_parallelism,
                 tensor_parallelism: p.tensor_parallelism,
@@ -104,7 +104,7 @@ impl App {
     pub async fn run(
         &mut self,
         p2p: NC,
-        state_options: RunInitConfig<solana_coordinator::ClientId, NetworkIdentity>,
+        state_options: RunInitConfig<psyche_solana_coordinator::ClientId, NetworkIdentity>,
     ) -> Result<()> {
         let backend =
             SolanaBackend::new(self.cluster.clone(), state_options.private_key.0.clone())?;

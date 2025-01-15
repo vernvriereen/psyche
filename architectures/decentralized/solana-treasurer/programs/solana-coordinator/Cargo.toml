@@ -1,12 +1,12 @@
 [package]
-name = "psyche-solana-coordinator"
+name = "psyche-solana-treasurer"
 version = "0.1.0"
-description = "Created with Anchor"
+description = ""
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "psyche_solana_coordinator"
+name = "psyche_solana_treasurer"
 
 [features]
 default = []
@@ -19,8 +19,7 @@ idl-build = ["anchor-lang/idl-build"]
 [dependencies]
 anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea308440a9fa9cb79cee7bddd30ab163d5" }
 bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
-psyche-core = { path = "../../../../../shared/core" }
-psyche-coordinator = { path = "../../../../../shared/coordinator" }
+psyche-solana-coordinator = { path = "../solana-coordinator" }
 serde = { version = "1.0.209", features = ["derive"] }
 
 [dev-dependencies]
