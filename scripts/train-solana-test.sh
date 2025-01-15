@@ -14,4 +14,4 @@ export RUST_LOG="error,psyche_client=info,psyche_solana_client=info,psyche_netwo
 cargo run --release --bin psyche-solana-client -- \
     train \
         --wallet-private-key-path ${WALLET_FILE} --rpc ${RPC} --ws-rpc ${WS_RPC} \
-        --run-id ${RUN_ID} --data-parallelism ${DP} --tensor-parallelism ${TP}
+        --run-id ${RUN_ID} --data-parallelism ${DP} --tensor-parallelism ${TP} --ticker

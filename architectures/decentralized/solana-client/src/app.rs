@@ -1,12 +1,11 @@
 use crate::{backend::SolanaBackend, network_identity::NetworkIdentity};
 
 use anchor_client::{
-    solana_sdk::signature::{Keypair, Signer},
+    solana_sdk::signature::{Keypair, Signature, Signer},
     Cluster,
 };
 use anyhow::{anyhow, bail, Result};
 use psyche_client::{CheckpointConfig, Client, RunInitConfig, WandBInfo, NC};
-use psyche_coordinator::Coordinator;
 use psyche_network::{RelayMode, SecretKey};
 use rand::RngCore;
 use std::{path::PathBuf, time::Duration};
@@ -16,7 +15,8 @@ use std::{
 };
 use tokio::{
     select,
-    time::{interval, Interval},
+    task::JoinHandle,
+    time::{interval, Interval, MissedTickBehavior},
 };
 use tracing::{debug, error, info};
 
@@ -81,7 +81,11 @@ impl AppBuilder {
             run_id: p.run_id.clone(),
             cluster: p.cluster,
             tick_check_interval: match p.ticker {
-                true => Some(interval(Duration::from_millis(500))),
+                true => {
+                    let mut interval = interval(Duration::from_millis(500));
+                    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+                    Some(interval)
+                }
                 false => None,
             },
             //cancel: p.cancel,
@@ -123,12 +127,14 @@ impl App {
     ) -> Result<()> {
         let backend =
             SolanaBackend::new(self.cluster.clone(), state_options.private_key.0.clone())?;
+        let (instance_pda, instance) = backend.get_coordinator_instance(&self.run_id).await?;
 
         let signer = state_options.private_key.0.pubkey();
         let p2p_identity = state_options.private_key.1.public();
         let joined = backend
             .join_run(
-                &self.run_id,
+                instance_pda,
+                instance.account,
                 solana_coordinator::ClientId {
                     signer,
                     p2p_identity: *p2p_identity.as_bytes(),
@@ -136,25 +142,38 @@ impl App {
             )
             .await?;
         info!(
-            "Joined run {} from {} (p2p identity {}) with transaction {}",
-            self.run_id, signer, p2p_identity, joined
+            "Joined run {} from {} with transaction {}",
+            self.run_id, signer, joined
         );
 
-        let instance = backend.get_coordinator_instance(&self.run_id).await?;
         let backend = backend.start(self.run_id.clone(), instance.account).await?;
 
-        let (tick_backend, mut updates) = match self.tick_check_interval.is_some() {
-            true => {
-                let tick_backend = Arc::new(SolanaBackend::new(
-                    self.cluster.clone(),
-                    state_options.private_key.0.clone(),
-                )?);
-                let updates = backend.updates();
-                (Some(tick_backend), Some(updates))
-            }
-            false => (None, None),
-        };
-        let mut latest_update: Option<Coordinator<solana_coordinator::ClientId>> = None;
+        let (tick_backend, mut updates, mut latest_update) =
+            match self.tick_check_interval.is_some() {
+                true => {
+                    let tick_backend = Arc::new(SolanaBackend::new(
+                        self.cluster.clone(),
+                        state_options.private_key.0.clone(),
+                    )?);
+                    let latest_update = tick_backend
+                        .get_coordinator_account(&instance.account)
+                        .await?;
+                    let active_clients = latest_update
+                        .state
+                        .clients_state
+                        .active_clients()
+                        .collect::<Vec<_>>();
+                    debug!("Active clients at join: {active_clients:?}");
+                    let updates = backend.updates();
+                    (
+                        Some(tick_backend),
+                        Some(updates),
+                        Some(latest_update.state.coordinator),
+                    )
+                }
+                false => (None, None, None),
+            };
+        let mut tick_tx: Option<JoinHandle<Result<Signature>>> = None;
 
         let mut client = Client::new(backend, p2p, state_options);
 
@@ -167,33 +186,39 @@ impl App {
                 //     let (client_tui_state, network_tui_state) = client.tui_states().await;
                 //     self.update_tui(client_tui_state, network_tui_state).await?;
                 // }
-                _ = self.tick_check_interval.as_mut().unwrap().tick(), if self.tick_check_interval.is_some() => {
-                    if let Some(latest_update) = &latest_update {
-                        let mut ticked = latest_update.clone();
-                        if ticked.tick(Some(vec![].iter()), SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs(),rand::thread_rng().next_u64()).is_ok() {
-                                if ticked.run_state != latest_update.run_state {
-                                    let backend = tick_backend.as_ref().unwrap().clone();
-                                    let run_id = self.run_id.clone();
-                                    tokio::spawn(async move {
-                                        match backend.tick(&run_id).await {
-                                            Ok(signature) => debug!("Tick transaction {}", signature),
-                                            Err(err) => error!("Tick transaction error: {}", err)
-                                        }
-                                    });
-                                }
-                            }
-                    }
+                _ = async { self.tick_check_interval.as_mut().unwrap().tick().await }, if self.tick_check_interval.is_some() && tick_tx.is_none() => {
+                    let latest_update = latest_update.as_ref().unwrap();
+                    let mut ticked = latest_update.clone();
+                    let timestamp = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
+                    // info!("run_state: {}, start: {}, now: {}", ticked.run_state, ticked.run_state_start_unix_timestamp, timestamp);
+                    match ticked.tick(Some(vec![].iter()), timestamp, rand::thread_rng().next_u64()) {
+                        Ok(_) => {
+                            //if ticked.run_state != latest_update.run_state {
+                                let backend = tick_backend.as_ref().unwrap().clone();
+                                tick_tx = Some(tokio::spawn(async move { backend.tick(instance_pda, instance.account).await }));
+                            //}
+                        }
+                        Err(err) => debug!("Tick simulation error: {err}")
+                    };
                 }
-                update = updates.as_mut().unwrap().recv(), if tick_backend.is_some() => {
-                    let update = update?;
-                    latest_update = match update.value.data.decode() {
-                        Some(data) => Some(solana_coordinator::coordinator_account_from_bytes(&data)
+                update = async { updates.as_mut().unwrap().recv().await }, if tick_backend.is_some() => {
+                    let update = match update?.value.data.decode() {
+                        Some(data) => solana_coordinator::coordinator_account_from_bytes(&data)
                             .map_err(|_| anyhow!("Unable to decode coordinator account data"))
-                            .map(|x| x.state.coordinator)?),
+                            .map(|x| x.state.coordinator)?,
                         None => bail!("Unable to decode account data"),
+                    };
+                    info!("run_state: {}, started: {}, ticked: {}", update.run_state, update.run_state_start_unix_timestamp, update.last_tick_unix_timestamp);
+                    latest_update = Some(update);
+                }
+                tx = async { tick_tx.as_mut().unwrap().await }, if tick_tx.is_some() => {
+                    tick_tx = None;
+                    match tx? {
+                        Ok(signature) => info!("Tick transaction {}", signature),
+                        Err(err) => error!("Tick transaction error: {}", err)
                     };
                 }
                 res = client.finished() => {

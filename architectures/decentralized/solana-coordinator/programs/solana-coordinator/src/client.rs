@@ -3,6 +3,16 @@ use bytemuck::{Pod, Zeroable};
 use psyche_core::NodeIdentity;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, Default, Zeroable, InitSpace, Pod)]
+#[repr(C)]
+pub struct Client {
+    pub id: ClientId,
+    pub staked: u64,
+    pub earned: u64,
+    pub slashed: u64,
+    pub active: u64,
+}
+
 #[repr(C)]
 #[derive(
     Debug,

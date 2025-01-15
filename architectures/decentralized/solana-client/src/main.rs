@@ -5,7 +5,9 @@ use crate::{
 
 use anchor_client::{
     solana_sdk::{
-        pubkey::Pubkey, signature::{EncodableKey, Keypair}, signer::Signer
+        pubkey::Pubkey,
+        signature::{EncodableKey, Keypair},
+        signer::Signer,
     },
     Cluster,
 };
@@ -202,8 +204,13 @@ async fn async_main() -> Result<()> {
                 format!("failed to parse whitelist members toml file {members_path:?}")
             })?;
             let num_members = members.len();
+            let (instance_pda, instance) = backend.get_coordinator_instance(&run_id).await?;
             let set = backend
-                .set_whitelist(&run_id, members.into_iter().map(|x| x.into()).collect())
+                .set_whitelist(
+                    instance_pda,
+                    instance.account,
+                    members.into_iter().map(|x| x.into()).collect(),
+                )
                 .await?;
             println!(
                 "Set whitelist of {} members on run {} with transaction {}",
@@ -224,8 +231,14 @@ async fn async_main() -> Result<()> {
                     .with_context(|| format!("failed to read config toml file {config_path:?}"))?,
             )?)
             .with_context(|| format!("failed to parse config toml file {config_path:?}"))?;
+            let (instance_pda, instance) = backend.get_coordinator_instance(&run_id).await?;
             let set = backend
-                .update_config_and_model(&run_id, Some(state.config), Some(state.model))
+                .update_config_and_model(
+                    instance_pda,
+                    instance.account,
+                    Some(state.config),
+                    Some(state.model),
+                )
                 .await?;
             println!("Updated config of {} with transaction {}", run_id, set);
             Ok(())
@@ -239,7 +252,10 @@ async fn async_main() -> Result<()> {
             let paused = !resume;
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
             let backend = SolanaBackend::new(cluster.into(), key_pair.clone()).unwrap();
-            let set = backend.set_paused(&run_id, paused).await?;
+            let (instance_pda, instance) = backend.get_coordinator_instance(&run_id).await?;
+            let set = backend
+                .set_paused(instance_pda, instance.account, paused)
+                .await?;
             println!(
                 "Set pause state to {} on run {} with transaction {}",
                 paused, run_id, set
