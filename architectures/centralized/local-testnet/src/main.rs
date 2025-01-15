@@ -348,6 +348,9 @@ fn main() -> Result<()> {
 }
 
 fn start_client(args: &Args, i: usize, run_id: &String, print: bool, start_time: OffsetDateTime) {
+    // hex 1, 2, 3, etc.
+    let raw_key = format!("{:0>64x}", i - 1);
+
     Command::new("tmux")
         .args(["select-pane", "-t", &i.to_string()])
         .status()
@@ -365,6 +368,7 @@ fn start_client(args: &Args, i: usize, run_id: &String, print: bool, start_time:
         "RUST_LOG={} RUST_BACKTRACE=1 RAW_IDENTITY_SECRET_KEY={} cargo run -p psyche-centralized-client -- train --run-id {} --server-addr localhost:{} --tui {}",
         args.log,
         run_id,
+        raw_key,
         args.server_port,
         args.tui
     ));

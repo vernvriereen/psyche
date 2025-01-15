@@ -14,7 +14,6 @@ use std::{
 };
 use tch::{Device, Kind, Tensor};
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
-use tracing::info;
 
 pub const ALPN: &[u8] = b"model-parameter-sharing/0";
 
