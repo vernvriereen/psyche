@@ -46,7 +46,7 @@ impl<T: Default + Copy, const N: usize> FixedVec<T, N> {
     pub fn pop(&mut self) -> Option<T> {
         if self.len > 0 {
             self.len -= 1;
-            Some(self.data[self.len as usize])
+            Some(std::mem::take(&mut self.data[self.len as usize]))
         } else {
             None
         }
@@ -69,6 +69,9 @@ impl<T: Default + Copy, const N: usize> FixedVec<T, N> {
     }
 
     pub fn clear(&mut self) {
+        for i in 0..self.len as usize {
+            self.data[i] = T::default();
+        }
         self.len = 0;
     }
 
@@ -110,10 +113,12 @@ impl<T: Default + Copy, const N: usize> FixedVec<T, N> {
 
         let item = Some(self.data[index]);
 
-        for i in index..self.len as usize - 1 {
+        let last_pos = self.len as usize - 1;
+        for i in index..last_pos {
             self.data[i] = self.data[i + 1];
         }
 
+        self.data[last_pos] = T::default();
         self.len -= 1;
         item
     }
@@ -152,6 +157,10 @@ impl<T: Default + Copy, const N: usize> FixedVec<T, N> {
             read += 1;
         }
 
+        // zero-out the rest of the positions which are now unused
+        for i in write..self.len as usize {
+            self.data[i] = T::default();
+        }
         self.len = write as u64;
     }
 }
@@ -319,5 +328,140 @@ impl<'de, T: Deserialize<'de> + Default + Copy, const N: usize> Deserialize<'de>
         }
 
         Ok(fixed_vec)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_initial_state() {
+        let vec: FixedVec<u32, 6> = FixedVec::new();
+        assert_eq!(vec.len(), 0);
+        assert_eq!(vec.capacity(), 6);
+        assert!(vec.is_empty());
+        assert!(!vec.is_full());
+        assert_eq!(vec.get(0), None);
+        for i in 0..vec.capacity() {
+            assert_eq!(vec.get(i), None);
+            assert_eq!(vec.data[i], 0u32);
+        }
+    }
+
+    #[test]
+    fn test_push_and_access() {
+        let mut vec: FixedVec<u32, 6> = FixedVec::new();
+        vec.push(1).unwrap();
+        vec.push(2).unwrap();
+        vec.push(3).unwrap();
+
+        assert_eq!(vec.len(), 3);
+        assert_eq!(vec.capacity(), 6);
+        assert!(!vec.is_empty());
+        assert!(!vec.is_full());
+        assert_eq!(vec[0], 1);
+        assert_eq!(vec[1], 2);
+        assert_eq!(vec[2], 3);
+        assert_eq!(vec.get(3), None);
+    }
+
+    #[test]
+    fn test_pop() {
+        let mut vec: FixedVec<u32, 6> = FixedVec::new();
+        vec.push(1).unwrap();
+        vec.push(2).unwrap();
+        vec.push(3).unwrap();
+
+        assert_eq!(vec.pop(), Some(3));
+        assert_eq!(vec.len(), 2);
+        assert_eq!(vec[0], 1);
+        assert_eq!(vec[1], 2);
+        assert_eq!(vec.get(2), None);
+    }
+
+    #[test]
+    fn test_insert_and_remove() {
+        let mut vec: FixedVec<u32, 6> = FixedVec::new();
+        vec.push(1).unwrap();
+        vec.push(2).unwrap();
+        vec.push(3).unwrap();
+
+        // Insert
+        vec.insert(1, 9).unwrap();
+        assert_eq!(vec.len(), 4);
+        assert_eq!(vec[0], 1);
+        assert_eq!(vec[1], 9);
+        assert_eq!(vec[2], 2);
+        assert_eq!(vec[3], 3);
+
+        // Remove
+        vec.remove(1);
+        assert_eq!(vec.len(), 3);
+        assert_eq!(vec[0], 1);
+        assert_eq!(vec[1], 2);
+        assert_eq!(vec[2], 3);
+    }
+
+    #[test]
+    fn test_full_vec_behavior() {
+        let mut vec: FixedVec<u32, 6> = FixedVec::new();
+        vec.extend([1, 2, 3, 4, 5, 6]).unwrap();
+
+        assert!(vec.is_full());
+        assert_eq!(vec.len(), 6);
+
+        // Attempt to push to a full vec
+        let res = vec.push(7);
+        assert_eq!(res, Err("FixedVec is full"));
+
+        // Attempt to insert into a full vec
+        let res = vec.insert(1, 9);
+        assert_eq!(res, Err("FixedVec is full"));
+    }
+
+    #[test]
+    fn test_retain() {
+        let mut vec: FixedVec<u32, 6> = FixedVec::new();
+        vec.extend([1, 2, 3, 4, 5, 6]).unwrap();
+
+        // Retain only even numbers
+        vec.retain(|x| x % 2 == 0);
+        assert_eq!(vec.len(), 3);
+        assert_eq!(vec[0], 2);
+        assert_eq!(vec[1], 4);
+        assert_eq!(vec[2], 6);
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut vec: FixedVec<u32, 6> = FixedVec::new();
+        vec.extend([1, 2, 3, 4, 5, 6]).unwrap();
+        assert!(vec.is_full());
+
+        vec.clear();
+        assert!(vec.is_empty());
+        assert!(!vec.is_full());
+        assert_eq!(vec.len(), 0);
+
+        for i in 0..vec.capacity() {
+            assert_eq!(vec.get(i), None);
+            assert_eq!(vec.data[i], 0u32);
+        }
+    }
+
+    #[test]
+    fn test_clear_empty_vec() {
+        let mut vec: FixedVec<u32, 6> = FixedVec::new();
+        assert!(vec.is_empty());
+
+        vec.clear();
+        assert!(vec.is_empty());
+        assert!(!vec.is_full());
+
+        for i in 0..vec.capacity() {
+            assert_eq!(vec.get(i), None);
+            assert_eq!(vec.data[i], 0u32);
+        }
     }
 }

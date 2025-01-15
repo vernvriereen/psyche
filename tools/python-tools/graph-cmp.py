@@ -9,11 +9,17 @@ import os
 import sys
 
 def extract_data_value(filename):
+    # Try the new .vec-postcard pattern first
+    match = re.search(r'batch(\d+)\.vec-postcard', filename)
+    if match:
+        return match.group(1)
+    
+    # Fall back to the old distro pattern
     match = re.search(r'data-([^-]+)-distro', filename)
     if match:
         return match.group(1)
-    else:
-        return None
+        
+    return None
 
 def process_csv(csv_path):
     try:

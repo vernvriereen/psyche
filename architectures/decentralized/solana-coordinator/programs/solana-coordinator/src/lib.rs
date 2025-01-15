@@ -4,9 +4,15 @@ use anchor_lang::{prelude::*, system_program};
 use bytemuck::{Pod, Zeroable};
 pub use client_id::ClientId;
 use psyche_coordinator::{
-    CoodinatorConfig, Coordinator, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
+    model::Model, ClientState, Coordinator, CoordinatorConfig, CoordinatorError, RunState,
+    TickResult, Witness, WitnessBloom, WitnessProof, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
 };
-use psyche_core::FixedVec;
+use psyche_core::{sha256v, FixedVec, SizedIterator};
+use std::{
+    cell::{RefCell, RefMut},
+    ops::DerefMut,
+    rc::Rc,
+};
 
 declare_id!("5gKtdi6At7WEcLE22GmkSg94rVgc2hRRo3VvKhLnoJZP");
 
@@ -29,7 +35,7 @@ pub fn coordinator_account_from_bytes(
     ))
 }
 
-#[derive(Debug, Clone, Copy, Zeroable, InitSpace, Pod)]
+#[derive(Debug, Clone, Copy, Default, Zeroable, InitSpace, Pod)]
 #[repr(C)]
 pub struct Client {
     owner: Pubkey,
@@ -37,7 +43,7 @@ pub struct Client {
     staked: u64,
     earned: u64,
     slashed: u64,
-    next_epoch: u64,
+    active: u64,
 }
 
 #[account(zero_copy)]
@@ -55,13 +61,22 @@ impl CoordinatorAccount {
 #[repr(C)]
 pub struct CoordinatorInstanceState {
     pub coordinator: Coordinator<ClientId>,
-    pub whitelist: FixedVec<ClientId, SOLANA_MAX_NUM_WHITELISTED_CLIENTS>,
-    pub clients: FixedVec<Client, SOLANA_MAX_NUM_PENDING_CLIENTS>,
+    pub clients_state: ClientsState,
 }
 
 unsafe impl Pod for CoordinatorInstanceState {}
 
-#[derive(InitSpace)]
+#[derive(Clone, Copy, Zeroable)]
+#[repr(C)]
+pub struct ClientsState {
+    pub whitelist: FixedVec<ClientId, SOLANA_MAX_NUM_WHITELISTED_CLIENTS>,
+    pub clients: FixedVec<Client, SOLANA_MAX_NUM_PENDING_CLIENTS>,
+    pub next_active: u64,
+}
+
+unsafe impl Pod for ClientsState {}
+
+#[derive(Debug, InitSpace)]
 #[account]
 pub struct CoordinatorInstance {
     pub bump: u8,
@@ -73,10 +88,6 @@ pub struct CoordinatorInstance {
 
 #[program]
 pub mod solana_coordinator {
-    use std::{cell::RefMut, ops::DerefMut};
-
-    use psyche_coordinator::{RunState, SOLANA_MAX_STRING_LEN};
-
     use super::*;
 
     pub fn initialize_coordinator(
@@ -137,9 +148,10 @@ pub mod solana_coordinator {
         Ok(())
     }
 
-    pub fn update_coordinator_config(
-        ctx: Context<CoordinatorAccounts>,
-        config: CoodinatorConfig<ClientId>,
+    pub fn update_coordinator_config_model(
+        ctx: Context<OwnerCoordinatorAccounts>,
+        config: Option<CoordinatorConfig<ClientId>>,
+        model: Option<Model>,
     ) -> Result<()> {
         let coordinator = &mut ctx.accounts.account.load_mut()?.state.coordinator;
 
@@ -149,22 +161,221 @@ pub mod solana_coordinator {
             return err!(ProgramError::UpdateConfigNotHalted);
         }
 
-        // TODO: add sanity checks
+        if let Some(config) = config {
+            if !config.check() {
+                return err!(ProgramError::ConfigSanityCheckFailed);
+            }
 
-        let _ = std::mem::replace(&mut coordinator.config, config);
+            let _ = std::mem::replace(&mut coordinator.config, config);
+        }
 
-        if coordinator.run_state == RunState::Uninitialized {
-            // this is the only way to get out of uninitialized
-            // basically we're requiring a call to update_coordinator_config before
-            // we can start
+        if let Some(model) = model {
+            if !model.check() {
+                return err!(ProgramError::ModelSanityCheckFailed);
+            }
 
-            coordinator.run_state = RunState::Paused;
-            // resume() copies the previous epoch's progress
-            // step 1 is the first valid step
-            coordinator.prev_epoch_progress.step = 1;
+            let _ = std::mem::replace(&mut coordinator.model, model);
         }
 
         Ok(())
+    }
+
+    pub fn set_whitelist(
+        ctx: Context<OwnerCoordinatorAccounts>,
+        clients: Vec<ClientId>,
+    ) -> Result<()> {
+        let clients_state = &mut ctx.accounts.account.load_mut()?.state.clients_state;
+        clients_state.whitelist.clear();
+        clients_state
+            .whitelist
+            .extend(clients.into_iter())
+            .map_err(|_| ProgramError::CouldNotSetWhitelist)?;
+        Ok(())
+    }
+
+    pub fn join_run(ctx: Context<PermissionlessCoordinatorAccounts>, id: ClientId) -> Result<()> {
+        let clients_state = &mut ctx.accounts.account.load_mut()?.state.clients_state;
+
+        if !clients_state.whitelist.is_empty() {
+            if !clients_state
+                .whitelist
+                .iter()
+                .any(|x| x.signer == id.signer)
+            {
+                return err!(ProgramError::NotInWhitelist);
+            }
+        } else {
+            panic!("no whitelist");
+        }
+
+        let exisiting = match clients_state
+            .clients
+            .iter_mut()
+            .find(|x| x.id.signer == id.signer)
+        {
+            Some(client) => {
+                if client.id != id {
+                    return err!(ProgramError::ClientIdMismatch);
+                }
+                client.active = clients_state.next_active;
+                true
+            }
+            None => false,
+        };
+
+        if !exisiting
+            && clients_state
+                .clients
+                .push(Client {
+                    owner: *ctx.accounts.payer.signer_key().unwrap(),
+                    id,
+                    staked: 0,
+                    earned: 0,
+                    slashed: 0,
+                    active: clients_state.next_active,
+                })
+                .is_err()
+        {
+            return err!(ProgramError::ClientsFull);
+        }
+
+        Ok(())
+    }
+
+    pub fn set_paused(ctx: Context<OwnerCoordinatorAccounts>, paused: bool) -> Result<()> {
+        let coordinator = &mut ctx.accounts.account.load_mut()?.state.coordinator;
+
+        if let Err(err) = match paused {
+            true => coordinator.pause(),
+            false => {
+                if !coordinator.config.check() {
+                    return err!(ProgramError::ConfigSanityCheckFailed);
+                }
+                if !coordinator.model.check() {
+                    return err!(ProgramError::ModelSanityCheckFailed);
+                }
+
+                if coordinator.run_state == RunState::Uninitialized {
+                    coordinator.run_state = RunState::Paused;
+                    // resume() copies the previous epoch's progress
+                    // step 1 is the first valid step
+                    coordinator.prev_epoch_progress.step = 1;
+                }
+                coordinator.resume(Clock::get()?.unix_timestamp as u64)
+            }
+        } {
+            return err!(ProgramError::from(err));
+        }
+        Ok(())
+    }
+
+    pub fn tick(ctx: Context<PermissionlessCoordinatorAccounts>) -> Result<()> {
+        let state = &mut ctx.accounts.account.load_mut()?.state;
+
+        let clock: Clock = Clock::get()?;
+        let random_seed_bytes = sha256v(&[
+            &clock.unix_timestamp.to_ne_bytes(),
+            &clock.slot.to_ne_bytes(),
+        ]);
+
+        let mut random_seed: [u8; 8] = [0; 8];
+        random_seed.copy_from_slice(&random_seed_bytes[..8]);
+
+        let active_clients = match state.coordinator.run_state {
+            RunState::WaitingForMembers => Some(state.clients_state.active_clients()),
+            _ => None,
+        };
+
+        match state.coordinator.tick(
+            active_clients,
+            clock.unix_timestamp as u64,
+            u64::from_ne_bytes(random_seed),
+        ) {
+            Ok(TickResult::Ticked) => Ok(()),
+            Ok(TickResult::EpochEnd(_)) => {
+                state.clients_state.next_active += 1;
+
+                let mut i = 0;
+                let mut j = 0;
+                let finished_clients = &state.coordinator.epoch_state.clients;
+                let exited_clients = &state.coordinator.epoch_state.exited_clients;
+
+                for client in state.clients_state.clients.iter_mut() {
+                    if i < finished_clients.len() && client.id == finished_clients[i].id {
+                        if finished_clients[i].state == ClientState::Healthy {
+                            client.earned += 1;
+                        }
+                        i += 1;
+                    }
+
+                    if j < exited_clients.len() && client.id == exited_clients[j].id {
+                        if exited_clients[j].state == ClientState::Ejected {
+                            client.slashed += 1;
+                        }
+                        j += 1;
+                    }
+                }
+
+                Ok(())
+            }
+            Err(err) => {
+                err!(ProgramError::from(err))
+            }
+        }
+    }
+
+    pub fn witness(
+        ctx: Context<PermissionlessCoordinatorAccounts>,
+        index: u64,
+        proof: WitnessProof,
+        participant_bloom: WitnessBloom,
+        order_bloom: WitnessBloom,
+    ) -> Result<()> {
+        let state = &mut ctx.accounts.account.load_mut()?.state;
+
+        let id = state.clients_state.find_signer(ctx.accounts.payer.key)?;
+
+        state
+            .coordinator
+            .witness(
+                id,
+                Witness {
+                    index,
+                    proof,
+                    participant_bloom,
+                    order_bloom,
+                },
+                Clock::get()?.unix_timestamp as u64,
+            )
+            .map_err(|err| anchor_lang::error!(ProgramError::from(err)))
+    }
+}
+
+impl ClientsState {
+    fn active_clients(&self) -> SizedIterator<impl Iterator<Item = &ClientId>> {
+        let size = Rc::new(RefCell::new(0));
+        let size_clone = size.clone();
+
+        let iter = self
+            .clients
+            .iter()
+            .filter_map(move |x| match x.active == self.next_active {
+                true => {
+                    *size_clone.borrow_mut() += 1;
+                    Some(&x.id)
+                }
+                false => None,
+            });
+
+        let size = *size.borrow();
+        SizedIterator::new(iter, size)
+    }
+
+    fn find_signer(&self, signer: &Pubkey) -> Result<&ClientId> {
+        match self.clients.iter().find(|x| x.id.signer == *signer) {
+            Some(client) => Ok(&client.id),
+            None => err!(ProgramError::SignerNotAClient),
+        }
     }
 }
 
@@ -182,8 +393,20 @@ pub struct InitializeCoordinatorAccounts<'info> {
 }
 
 #[derive(Accounts)]
-pub struct CoordinatorAccounts<'info> {
+pub struct OwnerCoordinatorAccounts<'info> {
     #[account(seeds = [b"coordinator", bytes_from_string(&instance.run_id)], bump = instance.bump, constraint = instance.owner == *payer.key)]
+    pub instance: Account<'info, CoordinatorInstance>,
+    #[account(mut, owner = crate::ID, constraint = instance.account == account.key())]
+    pub account: AccountLoader<'info, CoordinatorAccount>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(address = system_program::ID)]
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct PermissionlessCoordinatorAccounts<'info> {
+    #[account(seeds = [b"coordinator", bytes_from_string(&instance.run_id)], bump = instance.bump)]
     pub instance: Account<'info, CoordinatorInstance>,
     #[account(mut, owner = crate::ID, constraint = instance.account == account.key())]
     pub account: AccountLoader<'info, CoordinatorAccount>,
@@ -203,4 +426,80 @@ pub enum ProgramError {
 
     #[msg("Coordinator account incorrect size")]
     CoordinatorAccountIncorrectSize,
+
+    #[msg("Could not set whitelist")]
+    CouldNotSetWhitelist,
+
+    #[msg("Not in whitelist")]
+    NotInWhitelist,
+
+    #[msg("Client id mismatch")]
+    ClientIdMismatch,
+
+    #[msg("Clients list full")]
+    ClientsFull,
+
+    #[msg("Config sanity check failed")]
+    ConfigSanityCheckFailed,
+
+    #[msg("Model sanity check failed")]
+    ModelSanityCheckFailed,
+
+    #[msg("Signer not a client")]
+    SignerNotAClient,
+
+    #[msg("Coordinator error: No active round")]
+    CoordinatorErrorNoActiveRound,
+
+    #[msg("Coordinator error: Invalid witness")]
+    CoordinatorErrorInvalidWitness,
+
+    #[msg("Coordinator error: Invalid run state")]
+    CoordinatorErrorInvalidRunState,
+
+    #[msg("Coordinator error: Duplicate witness")]
+    CoordinatorErrorDuplicateWitness,
+
+    #[msg("Coordinator error: Invalid health check")]
+    CoordinatorErrorInvalidHealthCheck,
+
+    #[msg("Coordinator error: Halted")]
+    CoordinatorErrorHalted,
+
+    #[msg("Coordinator error: Invalid checkpoint")]
+    CoordinatorErrorInvalidCheckpoint,
+
+    #[msg("Coordinator error: Witnesses full")]
+    CoordinatorErrorWitnessesFull,
+
+    #[msg("Coordinator error: Cannot resume")]
+    CoordinatorErrorCannotResume,
+
+    #[msg("Coordinator error: Invalid withdraw")]
+    CoordinatorErrorInvalidWithdraw,
+
+    #[msg("Coordinator error: Invalid committee selection")]
+    CoordinatorErrorInvalidCommitteeSelection,
+}
+
+impl From<CoordinatorError> for ProgramError {
+    fn from(value: CoordinatorError) -> Self {
+        match value {
+            CoordinatorError::NoActiveRound => ProgramError::CoordinatorErrorNoActiveRound,
+            CoordinatorError::InvalidWitness => ProgramError::CoordinatorErrorInvalidWitness,
+            CoordinatorError::InvalidRunState => ProgramError::CoordinatorErrorInvalidRunState,
+            CoordinatorError::DuplicateWitness => ProgramError::CoordinatorErrorDuplicateWitness,
+            CoordinatorError::InvalidHealthCheck => {
+                ProgramError::CoordinatorErrorInvalidHealthCheck
+            }
+            CoordinatorError::Halted => ProgramError::CoordinatorErrorNoActiveRound,
+            CoordinatorError::InvalidCheckpoint => ProgramError::CoordinatorErrorInvalidCheckpoint,
+            CoordinatorError::WitnessesFull => ProgramError::CoordinatorErrorWitnessesFull,
+            CoordinatorError::CannotResume => ProgramError::CoordinatorErrorCannotResume,
+            CoordinatorError::InvalidWithdraw => ProgramError::CoordinatorErrorInvalidWithdraw,
+            CoordinatorError::InvalidCommitteeSelection => {
+                ProgramError::CoordinatorErrorInvalidCommitteeSelection
+            }
+        }
+    }
 }

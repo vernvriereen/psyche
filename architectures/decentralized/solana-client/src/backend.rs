@@ -14,19 +14,24 @@ use anchor_client::{
 };
 use anyhow::{anyhow, bail, Result};
 use futures_util::StreamExt;
-use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
+use psyche_coordinator::{
+    model::{self, Model},
+    Coordinator, CoordinatorConfig, HealthChecks, Witness,
+};
 use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
-use solana_coordinator::coordinator_account_from_bytes;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-#[allow(dead_code)]
 pub struct SolanaBackend {
-    #[allow(unused)]
     program: Program<Arc<Keypair>>,
     cluster: Cluster,
-    updates: Option<mpsc::UnboundedReceiver<RpcResponse<UiAccount>>>,
+}
+
+pub struct SolanaBackendRunner {
+    pub(crate) backend: SolanaBackend,
+    run_id: String,
+    updates: mpsc::UnboundedReceiver<RpcResponse<UiAccount>>,
 }
 
 #[derive(Debug, Clone)]
@@ -42,19 +47,10 @@ impl SolanaBackend {
         let client = Client::new(cluster.clone(), payer.clone());
         let program = client.program(solana_coordinator::ID)?;
 
-        Ok(Self {
-            program,
-            cluster,
-            updates: None,
-        })
+        Ok(Self { program, cluster })
     }
 
-    #[allow(dead_code)]
-    pub async fn start(&mut self, coordinator: Pubkey) -> Result<()> {
-        if self.updates.is_some() {
-            bail!("Already started watching coordinator account");
-        }
-
+    pub async fn start(self, run_id: String, coordinator: Pubkey) -> Result<SolanaBackendRunner> {
         let sub_client = PubsubClient::new(self.cluster.ws_url()).await?;
         let (tx, rx) = mpsc::unbounded_channel();
 
@@ -83,9 +79,11 @@ impl SolanaBackend {
             }
         });
 
-        self.updates = Some(rx);
-
-        Ok(())
+        Ok(SolanaBackendRunner {
+            backend: self,
+            updates: rx,
+            run_id,
+        })
     }
 
     pub async fn create_run(&self, run_id: String) -> Result<CreatedRun> {
@@ -103,7 +101,7 @@ impl SolanaBackend {
         ];
         let (instance_pda, _bump) = Pubkey::find_program_address(seeds, &self.program.id());
 
-        let tx = self
+        let signature = self
             .program
             .request()
             .instruction(system_instruction::transfer(
@@ -136,15 +134,7 @@ impl SolanaBackend {
                     .clone(),
             )
             .signer(coordinator_keypair.clone())
-            .signed_transaction()
-            .await?;
-
-        let signature = self.program.rpc().send_transaction(&tx).await.unwrap();
-
-        let _ = self
-            .program
-            .rpc()
-            .confirm_transaction_with_commitment(&signature, CommitmentConfig::processed())
+            .send()
             .await?;
 
         Ok(CreatedRun {
@@ -153,27 +143,209 @@ impl SolanaBackend {
             transaction: signature,
         })
     }
+
+    pub async fn set_whitelist(
+        &self,
+        run_id: &str,
+        clients: Vec<solana_coordinator::ClientId>,
+    ) -> Result<Signature> {
+        let (instance_pda, _) = self.find_instance_from_run_id(run_id);
+
+        let instance: solana_coordinator::CoordinatorInstance =
+            self.program.account(instance_pda).await?;
+
+        if instance.owner != self.program.payer() {
+            bail!(
+                "Not owner of run -- owner is {} and we are {}",
+                instance.owner,
+                self.program.payer()
+            );
+        }
+
+        let signature = self
+            .program
+            .request()
+            .accounts(solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                instance: instance_pda,
+                account: instance.account,
+                payer: self.program.payer(),
+                system_program: system_program::ID,
+            })
+            .args(solana_coordinator::instruction::SetWhitelist { clients })
+            .send()
+            .await?;
+
+        Ok(signature)
+    }
+
+    pub async fn join_run(
+        &self,
+        run_id: &str,
+        id: solana_coordinator::ClientId,
+    ) -> Result<Signature> {
+        let (instance_pda, _) = self.find_instance_from_run_id(run_id);
+
+        let instance: solana_coordinator::CoordinatorInstance =
+            self.program.account(instance_pda).await?;
+
+        let signature = self
+            .program
+            .request()
+            .accounts(
+                solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                    instance: instance_pda,
+                    account: instance.account,
+                    payer: self.program.payer(),
+                    system_program: system_program::ID,
+                },
+            )
+            .args(solana_coordinator::instruction::JoinRun { id })
+            .send()
+            .await?;
+
+        Ok(signature)
+    }
+
+    pub async fn update_config_and_model(
+        &self,
+        run_id: &str,
+        config: Option<CoordinatorConfig<solana_coordinator::ClientId>>,
+        model: Option<Model>,
+    ) -> Result<Signature> {
+        let (instance_pda, _) = self.find_instance_from_run_id(run_id);
+
+        let instance: solana_coordinator::CoordinatorInstance =
+            self.program.account(instance_pda).await?;
+
+        let signature = self
+            .program
+            .request()
+            .accounts(solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                instance: instance_pda,
+                account: instance.account,
+                payer: self.program.payer(),
+                system_program: system_program::ID,
+            })
+            .args(solana_coordinator::instruction::UpdateCoordinatorConfigModel { config, model })
+            .send()
+            .await?;
+
+        Ok(signature)
+    }
+
+    pub async fn set_paused(&self, run_id: &str, paused: bool) -> Result<Signature> {
+        let (instance_pda, _) = self.find_instance_from_run_id(run_id);
+
+        let instance: solana_coordinator::CoordinatorInstance =
+            self.program.account(instance_pda).await?;
+
+        let signature = self
+            .program
+            .request()
+            .accounts(solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                instance: instance_pda,
+                account: instance.account,
+                payer: self.program.payer(),
+                system_program: system_program::ID,
+            })
+            .args(solana_coordinator::instruction::SetPaused { paused })
+            .send()
+            .await?;
+
+        Ok(signature)
+    }
+
+    #[allow(dead_code)]
+    pub async fn tick(&self, run_id: &str) -> Result<Signature> {
+        let (instance_pda, _) = self.find_instance_from_run_id(run_id);
+
+        let instance: solana_coordinator::CoordinatorInstance =
+            self.program.account(instance_pda).await?;
+
+        let signature = self
+            .program
+            .request()
+            .accounts(
+                solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                    instance: instance_pda,
+                    account: instance.account,
+                    payer: self.program.payer(),
+                    system_program: system_program::ID,
+                },
+            )
+            .args(solana_coordinator::instruction::Tick {})
+            .send()
+            .await?;
+
+        Ok(signature)
+    }
+
+    pub async fn witness(&self, run_id: &str, witness: Witness) -> Result<Signature> {
+        let (instance_pda, _) = self.find_instance_from_run_id(run_id);
+
+        let instance: solana_coordinator::CoordinatorInstance =
+            self.program.account(instance_pda).await?;
+
+        let signature = self
+            .program
+            .request()
+            .accounts(
+                solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                    instance: instance_pda,
+                    account: instance.account,
+                    payer: self.program.payer(),
+                    system_program: system_program::ID,
+                },
+            )
+            .args(solana_coordinator::instruction::Witness {
+                index: witness.index,
+                proof: witness.proof,
+                participant_bloom: witness.participant_bloom,
+                order_bloom: witness.order_bloom,
+            })
+            .send()
+            .await?;
+
+        Ok(signature)
+    }
+
+    pub async fn get_coordinator_instance(
+        &self,
+        run_id: &str,
+    ) -> Result<solana_coordinator::CoordinatorInstance> {
+        let (instance_pda, _) = self.find_instance_from_run_id(run_id);
+
+        let instance: solana_coordinator::CoordinatorInstance =
+            self.program.account(instance_pda).await?;
+        Ok(instance)
+    }
+
+    fn find_instance_from_run_id(&self, run_id: &str) -> (Pubkey, u8) {
+        let seeds = &[
+            b"coordinator",
+            solana_coordinator::bytes_from_string(run_id),
+        ];
+        Pubkey::find_program_address(seeds, &self.program.id())
+    }
 }
 
 #[async_trait::async_trait]
-impl WatcherBackend<solana_coordinator::ClientId> for SolanaBackend {
+impl WatcherBackend<solana_coordinator::ClientId> for SolanaBackendRunner {
     async fn wait_for_new_state(&mut self) -> Result<Coordinator<solana_coordinator::ClientId>> {
-        match &mut self.updates {
-            Some(updates) => match updates.recv().await {
-                Some(update) => match update.value.data.decode() {
-                    Some(data) => coordinator_account_from_bytes(&data)
-                        .map_err(|_| anyhow!("Unable to decode coordinator account data"))
-                        .map(|x| x.state.coordinator),
-                    None => bail!("Unable to decode account data"),
-                },
-                None => bail!("Account updates channel closed"),
+        match self.updates.recv().await {
+            Some(update) => match update.value.data.decode() {
+                Some(data) => solana_coordinator::coordinator_account_from_bytes(&data)
+                    .map_err(|_| anyhow!("Unable to decode coordinator account data"))
+                    .map(|x| x.state.coordinator),
+                None => bail!("Unable to decode account data"),
             },
-            None => bail!("Not watching any coordinator account"),
+            None => bail!("Account updates channel closed"),
         }
     }
 
-    async fn send_witness(&mut self, _witness: Witness) -> Result<()> {
-        unimplemented!();
+    async fn send_witness(&mut self, witness: Witness) -> Result<()> {
+        self.backend.witness(&self.run_id, witness).await?;
+        Ok(())
     }
 
     async fn send_health_check(&mut self, _health_checks: HealthChecks) -> Result<()> {
@@ -185,74 +357,108 @@ impl WatcherBackend<solana_coordinator::ClientId> for SolanaBackend {
     }
 }
 
-#[cfg(feature = "solana-tests")]
+#[cfg(feature = "solana-localnet-tests")]
 #[cfg(test)]
 mod test {
 
     use super::*;
 
-    use anchor_client::{
-        anchor_lang::system_program,
-        solana_client::rpc_config::RpcSendTransactionConfig,
-        solana_sdk::{
-            pubkey::Pubkey,
-            signature::{EncodableKey, Signer},
-            system_instruction,
-        },
-    };
+    use anchor_client::solana_sdk::signature::{EncodableKey, Signer};
     use bytemuck::Zeroable;
-    use psyche_coordinator::{CoodinatorConfig, RunState};
+    use model::LLM;
+    use psyche_coordinator::{
+        model::{
+            Checkpoint, ConstantLR, LLMArchitecture, LLMTrainingDataLocation, LLMTrainingDataType,
+            LearningRateSchedule, Optimizer,
+        },
+        CoordinatorConfig, RunState,
+    };
+    use psyche_core::FixedVec;
+    use psyche_network::SecretKey;
     use rand::Rng;
 
     #[tokio::test]
-    pub async fn test_create_and_initialize() {
+    pub async fn localnet_coordinator_run() {
+        // try to keep this and memnet_coordinator_run synced up
+
         let key_pair = Arc::new(
             Keypair::read_from_file(home::home_dir().unwrap().join(".config/solana/id.json"))
                 .unwrap(),
         );
-        let mut backend = SolanaBackend::new(Cluster::Localnet, key_pair.clone()).unwrap();
+        let backend = SolanaBackend::new(Cluster::Localnet, key_pair.clone()).unwrap();
         let run_id = format!("{}", rand::thread_rng().gen_range(0..1000000));
 
-        let created = backend.create_run(run_id).await.unwrap();
-        backend.start(created.account).await.unwrap();
-
-        let tx = backend
-            .program
-            .request()
-            .accounts(solana_coordinator::accounts::CoordinatorAccounts {
-                instance: created.instance,
-                account: created.account,
-                payer: key_pair.pubkey(),
-                system_program: system_program::ID,
-            })
-            .args(solana_coordinator::instruction::UpdateCoordinatorConfig {
-                config: CoodinatorConfig::<solana_coordinator::ClientId>::zeroed(),
-            })
-            .signed_transaction()
+        let created = backend.create_run(run_id.clone()).await.unwrap();
+        let mut runner = backend
+            .start(run_id.clone(), created.account)
             .await
             .unwrap();
 
-        let signature = backend
-            .program
-            .rpc()
-            .send_transaction_with_config(
-                &tx,
-                RpcSendTransactionConfig {
-                    skip_preflight: true,
-                    ..Default::default()
-                },
+        runner
+            .backend
+            .update_config_and_model(
+                &run_id,
+                Some(CoordinatorConfig::<solana_coordinator::ClientId> {
+                    warmup_time: 1,
+                    cooldown_time: 1,
+                    max_round_train_time: 10,
+                    round_witness_time: 1,
+                    min_clients: 1,
+                    batches_per_round: 1,
+                    data_indicies_per_batch: 1,
+                    verification_percent: 0,
+                    witness_nodes: 0,
+                    witness_quorum: 0,
+                    rounds_per_epoch: 10,
+                    total_steps: 100,
+                    overlapped: false.into(),
+                    checkpointers: FixedVec::zeroed(),
+                }),
+                Some(Model::LLM(LLM {
+                    architecture: LLMArchitecture::HfLlama,
+                    checkpoint: Checkpoint::Ephemeral,
+                    max_seq_len: 4096,
+                    data_type: LLMTrainingDataType::Pretraining,
+                    data_location: LLMTrainingDataLocation::Local(Zeroable::zeroed()),
+                    lr_schedule: LearningRateSchedule::Constant(ConstantLR::default()),
+                    optimizer: Optimizer::Distro {
+                        clip_grad_norm: None,
+                        compression_decay: 1.0,
+                        compression_decay_warmup_steps: 0,
+                        compression_topk: 1,
+                        compression_topk_startup: 0,
+                        compression_topk_startup_steps: 0,
+                        compression_chunk: 1,
+                        quantize: false.into(),
+                    },
+                })),
             )
             .await
             .unwrap();
 
-        let _ = backend
-            .program
-            .rpc()
-            .confirm_transaction_with_commitment(&signature, CommitmentConfig::confirmed())
+        let new_state = runner.wait_for_new_state().await.unwrap();
+        assert_eq!(new_state.run_state, RunState::Uninitialized);
+
+        let client_keypair = Arc::new(Keypair::new());
+        let client_p2p = SecretKey::generate(&mut rand::rngs::OsRng);
+        let client_id = solana_coordinator::ClientId::new(
+            client_keypair.pubkey(),
+            *client_p2p.public().as_bytes(),
+        );
+
+        // add a dummy whitelist entry so the run is permissioned
+        runner
+            .backend
+            .set_whitelist(&run_id, vec![solana_coordinator::ClientId::zeroed()])
             .await
             .unwrap();
 
-        let new_state = backend.wait_for_new_state().await.unwrap();
-        assert_eq!(new_state.run_state, RunState::Paused);
+        assert!(runner.backend.join_run(&run_id, client_id).await.is_err());
+
+        runner
+            .backend
+            .set_whitelist(&run_id, vec![client_id])
+            .await
+            .unwrap();
     }
 }
