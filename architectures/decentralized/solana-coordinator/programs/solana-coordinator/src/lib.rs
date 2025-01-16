@@ -117,7 +117,7 @@ pub mod solana_coordinator {
         Ok(())
     }
 
-    pub fn free_coordinator(ctx: Context<OwnerCoordinatorAccounts>) -> Result<()> {
+    pub fn free_coordinator(ctx: Context<FreeCoordinatorAccounts>) -> Result<()> {
         {
             let state = &ctx.accounts.account.load()?.state;
             if !state.coordinator.halted() {
@@ -228,6 +228,18 @@ pub struct OwnerCoordinatorAccounts<'info> {
 #[derive(Accounts)]
 pub struct PermissionlessCoordinatorAccounts<'info> {
     #[account(seeds = [b"coordinator", bytes_from_string(&instance.run_id)], bump = instance.bump)]
+    pub instance: Account<'info, CoordinatorInstance>,
+    #[account(mut, owner = crate::ID, constraint = instance.account == account.key())]
+    pub account: AccountLoader<'info, CoordinatorAccount>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(address = system_program::ID)]
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct FreeCoordinatorAccounts<'info> {
+    #[account(mut, seeds = [b"coordinator", bytes_from_string(&instance.run_id)], bump = instance.bump, constraint = instance.owner == *payer.key, close = payer)]
     pub instance: Account<'info, CoordinatorInstance>,
     #[account(mut, owner = crate::ID, constraint = instance.account == account.key())]
     pub account: AccountLoader<'info, CoordinatorAccount>,

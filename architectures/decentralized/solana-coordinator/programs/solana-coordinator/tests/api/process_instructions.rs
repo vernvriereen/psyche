@@ -4,7 +4,8 @@ use anchor_lang::{InstructionData, ToAccountMetas};
 use psyche_coordinator::{model::Model, CoordinatorConfig};
 use solana_coordinator::{
     accounts::{
-        InitializeCoordinatorAccounts, OwnerCoordinatorAccounts, PermissionlessCoordinatorAccounts,
+        FreeCoordinatorAccounts, InitializeCoordinatorAccounts, OwnerCoordinatorAccounts,
+        PermissionlessCoordinatorAccounts,
     },
     instruction::{
         FreeCoordinator, InitializeCoordinator, JoinRun, SetPaused, SetWhitelist, Tick,
@@ -52,7 +53,7 @@ pub async fn process_free_coordinator(
 ) -> Result<Signature, ToolboxEndpointError> {
     let coordinator_instance = find_pda_coordinator_instance(&run_id);
 
-    let accounts = OwnerCoordinatorAccounts {
+    let accounts = FreeCoordinatorAccounts {
         payer: payer.pubkey(),
         instance: coordinator_instance,
         account: *coordinator_account,

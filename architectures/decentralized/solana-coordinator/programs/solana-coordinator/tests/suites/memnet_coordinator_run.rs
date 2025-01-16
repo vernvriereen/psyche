@@ -1,6 +1,7 @@
 use crate::api::{
     accounts::get_coordinator_instance_state,
     create_memnet_endpoint::create_memnet_endpoint,
+    find_pda_coordinator_instance::find_pda_coordinator_instance,
     process_instructions::{
         process_free_coordinator, process_initialize_coordinator, process_join_run,
         process_set_paused, process_set_whitelist, process_tick,
@@ -312,9 +313,26 @@ pub async fn memnet_coordinator_free() {
         .lamports;
     assert!(next_balance < start_balance);
 
-    process_free_coordinator(&mut endpoint, &payer, &coordinator_account.pubkey(), run_id)
+    let coordinator_instance = find_pda_coordinator_instance(&run_id);
+    assert!(endpoint
+        .get_account(&coordinator_account.pubkey())
         .await
-        .unwrap();
+        .unwrap()
+        .is_some());
+    assert!(endpoint
+        .get_account(&coordinator_instance)
+        .await
+        .unwrap()
+        .is_some());
+
+    process_free_coordinator(
+        &mut endpoint,
+        &payer,
+        &coordinator_account.pubkey(),
+        run_id.clone(),
+    )
+    .await
+    .unwrap();
 
     let final_balance = endpoint
         .get_account(&payer.pubkey())
@@ -326,6 +344,11 @@ pub async fn memnet_coordinator_free() {
 
     assert!(endpoint
         .get_account(&coordinator_account.pubkey())
+        .await
+        .unwrap()
+        .is_none());
+    assert!(endpoint
+        .get_account(&coordinator_instance)
         .await
         .unwrap()
         .is_none());

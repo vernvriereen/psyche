@@ -160,7 +160,7 @@ impl SolanaBackend {
         let signature = self
             .program
             .request()
-            .accounts(solana_coordinator::accounts::OwnerCoordinatorAccounts {
+            .accounts(solana_coordinator::accounts::FreeCoordinatorAccounts {
                 instance,
                 account,
                 payer: self.program.payer(),
