@@ -34,7 +34,7 @@ jobs:
             console.log(`Deployment checks: ${checks.data.check_runs.map(c => c.name)}`)
 
             const deploymentCheck = checks.data.check_runs.find(check => 
-              check.name.startsWith('Garnix CI / deployment ')
+              check.name.startsWith('deployment ')
             );
 
             if (!deploymentCheck) {
