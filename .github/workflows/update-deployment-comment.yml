@@ -65,6 +65,7 @@ jobs:
       - name: Find Comment
         uses: peter-evans/find-comment@v2
         id: find-comment
+        continue-on-error: true
         with:
           issue-number: ${{ steps.get-pr.outputs.pr_number }}
           comment-author: "github-actions[bot]"
@@ -73,7 +74,7 @@ jobs:
       - name: Create or Update Comment
         uses: peter-evans/create-or-update-comment@v3
         with:
-          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          comment-id: ${{ steps.find-comment.outcome == 'success' && steps.find-comment.outputs.comment-id || '' }}
           issue-number: ${{ steps.get-pr.outputs.pr_number }}
           body: |
             ## Deployment Status: ${{ steps.get-deployment.outputs.status }}
