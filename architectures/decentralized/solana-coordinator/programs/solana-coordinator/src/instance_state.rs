@@ -198,6 +198,10 @@ impl CoordinatorInstanceState {
             );
         }
 
-        self.tick()
+        if !self.coordinator.halted() {
+            self.tick()
+        } else {
+            Ok(())
+        }
     }
 }

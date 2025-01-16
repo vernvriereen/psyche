@@ -159,7 +159,7 @@ pub async fn memnet_coordinator_run() {
 
     process_join_run(
         &mut endpoint,
-        &payer,
+        &client_keypair,
         &coordinator_account.pubkey(),
         run_id.clone(),
         client_id,
@@ -208,6 +208,6 @@ pub async fn memnet_coordinator_run() {
             .unwrap()
             .coordinator
             .run_state,
-        RunState::WaitingForMembers
+        RunState::Warmup
     );
 }
