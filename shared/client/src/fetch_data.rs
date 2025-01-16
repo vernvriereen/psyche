@@ -64,7 +64,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> DataFetcher<T, A> {
         let num_all_batch_ids = all_batch_ids.len();
         debug!("Got new batch IDs for step {step} - there are {num_all_batch_ids}");
         debug!(
-            "all assignments:{}\nmy assignments: {:?}\nmy id: {}",
+            "all assignments: {}, my assignments: {:?}, my id: {}",
             data_assignments, assigned_batch_ids, identity
         );
         let batch_ids_not_yet_trained_on: std::sync::Arc<Mutex<BatchIdSet>> =

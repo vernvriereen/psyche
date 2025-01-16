@@ -9,7 +9,7 @@ use anchor_client::{
 };
 use anyhow::{anyhow, bail, Result};
 use psyche_client::{CheckpointConfig, Client, RunInitConfig, WandBInfo, NC};
-use psyche_network::{RelayMode, SecretKey};
+use psyche_network::{allowlist, DiscoveryMode, RelayMode, SecretKey};
 use rand::RngCore;
 use std::{path::PathBuf, time::Duration};
 use std::{
@@ -66,17 +66,22 @@ impl AppBuilder {
         self,
     ) -> Result<(
         App,
+        allowlist::AllowDynamic,
         NC,
         RunInitConfig<solana_coordinator::ClientId, NetworkIdentity>,
     )> {
         let p = self.0;
 
+        let allowlist = allowlist::AllowDynamic::new();
+
         let p2p = NC::init(
             &p.run_id,
             p.p2p_port,
             RelayMode::Default,
+            DiscoveryMode::N0,
             vec![],
             Some(p.identity_secret_key.clone()),
+            allowlist.clone(),
         )
         .await?;
 
@@ -118,13 +123,14 @@ impl AppBuilder {
                 dummy_training_delay_secs: p.dummy_training_delay_secs,
             };
 
-        Ok((app, p2p, state_options))
+        Ok((app, allowlist, p2p, state_options))
     }
 }
 
 impl App {
     pub async fn run(
         &mut self,
+        allowlist: allowlist::AllowDynamic,
         p2p: NC,
         state_options: RunInitConfig<solana_coordinator::ClientId, NetworkIdentity>,
     ) -> Result<()> {
@@ -168,7 +174,7 @@ impl App {
         };
         let mut tick_tx: Option<JoinHandle<Result<Signature>>> = None;
 
-        let mut client = Client::new(backend_runner, p2p, state_options);
+        let mut client = Client::new(backend_runner, allowlist, p2p, state_options);
 
         loop {
             select! {

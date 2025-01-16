@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 use psyche_client::{
     exercise_sdpa_if_needed, print_identity_keys, read_identity_secret_key, TrainArgs,
 };
-use psyche_network::SecretKey;
+use psyche_network::{DiscoveryMode, SecretKey};
 use psyche_tui::{maybe_start_render_loop, LogOutput};
 use std::path::PathBuf;
 use time::OffsetDateTime;
@@ -23,16 +23,25 @@ struct Args {
 #[allow(clippy::large_enum_variant)] // it's only used at startup, we don't care.
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Displays the client's unique identifier, used to participate in training runs.
     ShowIdentity {
+        /// Path to the clients secret key. Create a new random one running `openssl rand 32 > secret.key` or use the `RAW_IDENTITY_SECRET_KEY` environment variable.
         #[clap(long)]
         identity_secret_key_path: Option<PathBuf>,
     },
+    /// Allows the client to join a training run and contribute to the model's training process.
     Train {
         #[clap(flatten)]
         args: TrainArgs,
 
         #[clap(long, env)]
         server_addr: String,
+    },
+    // For generating `docs/CommandLineHelp-client.md`.
+    #[clap(hide = true)]
+    PrintAllHelp {
+        #[arg(long, required = true)]
+        markdown: bool,
     },
 }
 
@@ -79,7 +88,7 @@ async fn async_main() -> Result<()> {
                 args.tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)),
             )?;
 
-            let (mut app, p2p, state_options) = AppBuilder::new(AppParams {
+            let (mut app, allowlist, p2p, state_options) = AppBuilder::new(AppParams {
                 cancel,
                 identity_secret_key,
                 server_addr,
@@ -98,12 +107,21 @@ async fn async_main() -> Result<()> {
                 optim_stats: args.optim_stats_steps,
                 grad_accum_in_fp32: args.grad_accum_in_fp32,
                 dummy_training_delay_secs: args.dummy_training_delay_secs,
+                discovery_mode: DiscoveryMode::N0,
             })
             .build()
             .await
             .unwrap();
 
-            app.run(p2p, state_options).await
+            app.run(allowlist, p2p, state_options).await
+        }
+        Commands::PrintAllHelp { markdown } => {
+            // This is a required argument for the time being.
+            assert!(markdown);
+
+            let () = clap_markdown::print_help_markdown::<Args>();
+
+            Ok(())
         }
     }
 }

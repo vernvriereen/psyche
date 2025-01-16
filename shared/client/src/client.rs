@@ -6,8 +6,8 @@ use anyhow::{Error, Result};
 use psyche_coordinator::RunState;
 use psyche_core::NodeIdentity;
 use psyche_network::{
-    AuthenticatableIdentity, DownloadComplete, ModelParameters, NetworkConnection, NetworkEvent,
-    NetworkTUIState, Networkable,
+    allowlist, AuthenticatableIdentity, DownloadComplete, ModelParameters, NetworkConnection,
+    NetworkEvent, NetworkTUIState, Networkable, NodeId,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use wandb::DataValue;
@@ -15,11 +15,7 @@ use wandb::DataValue;
 use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 use tokio::{
     select,
-    sync::{
-        mpsc,
-        watch::{self, Receiver},
-        Notify,
-    },
+    sync::{mpsc, watch, Notify},
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
@@ -27,7 +23,7 @@ use tracing::{debug, info, trace, warn};
 pub type TUIStates = (ClientTUIState, NetworkTUIState);
 
 pub struct Client<T: NodeIdentity, A: AuthenticatableIdentity, B: Backend<T> + 'static> {
-    rx: Receiver<TUIStates>,
+    rx_tui: watch::Receiver<TUIStates>,
     req_tui_state: Arc<Notify>,
     cancel: CancellationToken,
     join: JoinHandle<Result<()>>,
@@ -40,9 +36,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
     Client<T, A, B>
 {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(backend: B, mut p2p: NC, init_config: RunInitConfig<T, A>) -> Self {
+    pub fn new(
+        backend: B,
+        allowlist: allowlist::AllowDynamic,
+        mut p2p: NC,
+        init_config: RunInitConfig<T, A>,
+    ) -> Self {
         let cancel = CancellationToken::new();
-        let (tx, rx) = watch::channel::<TUIStates>(Default::default());
+        let (tx_tui, rx_tui) = watch::channel::<TUIStates>(Default::default());
         let req_tui_state = Arc::new(Notify::new());
 
         let identity = init_config.identity;
@@ -82,11 +83,24 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                          _ = req_tui_state.notified() => {
                             let network_tui_state = (&p2p).into();
                             let client_tui_state = (&run).into();
-                            tx.send((client_tui_state, network_tui_state))?;
+                            tx_tui.send((client_tui_state, network_tui_state))?;
                         },
 
                         state = watcher.poll_next() => {
                             let (old_state, new_state) = state?;
+                            {
+                                let node_ids: Vec<NodeId> = new_state
+                                    .epoch_state
+                                    .clients
+                                    .iter()
+                                    .map(|c| NodeId::from_bytes(c.id.get_p2p_public_key()).unwrap()).collect();
+                                if node_ids.contains(&p2p.node_id()) {
+                                    // only connect to peers after we become part of the set of current clients
+                                    p2p.add_peers(node_ids.clone()).await?;
+                                }
+                                allowlist.set(node_ids);
+                            }
+
                             if old_state.map(|s| s.run_state) != Some(new_state.run_state) && new_state.run_state == RunState::RoundTrain {
                                 for blob in p2p.currently_sharing_blobs().clone() {
                                     p2p.remove_downloadable(blob).await?;
@@ -185,6 +199,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         Some(model) = rx_model.recv() => {
                             current_model.update_parameters(model)?;
                         },
+                        else => break
                     }
                 }
                 Ok(())
@@ -195,7 +210,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
             _t: Default::default(),
             cancel,
             req_tui_state,
-            rx,
+            rx_tui,
             join,
         }
     }
@@ -210,7 +225,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
     pub async fn tui_states(&self) -> TUIStates {
         self.req_tui_state.notify_one();
-        self.rx.borrow().clone()
+        self.rx_tui.borrow().clone()
     }
 }
 
