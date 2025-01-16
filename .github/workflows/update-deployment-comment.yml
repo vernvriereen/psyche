@@ -1,0 +1,71 @@
+name: Update Deployment Comment
+
+on:
+  check_suite:
+    types: [completed]
+
+jobs:
+  update-comment:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.event == 'pull_request'
+
+    steps:
+      - name: Get PR number
+        id: get-pr
+        run: |
+          PR_NUMBER=$(echo ${{ github.event.workflow_run.pull_requests[0].number }})
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+
+      - name: Get deployment status and URL
+        id: get-deployment
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const checks = await github.rest.checks.listForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.sha
+            });
+
+            const deploymentCheck = checks.data.check_runs.find(check => 
+              check.name.startsWith('Garnix CI / deployment ')
+            );
+
+            if (!deploymentCheck) {
+              core.setFailed('Deployment check not found');
+              return;
+            }
+
+            // Get the first line of the output for the URL
+            const outputLines = deploymentCheck.output.text.split('\n');
+            const deploymentLine = outputLines[0];
+            const deploymentUrl = deploymentLine.match(/Server has been successfully deployed to: (.+)/)?.[1];
+
+            if (!deploymentUrl) {
+              core.setFailed('Deployment URL not found in output');
+              return;
+            }
+
+            core.setOutput('status', deploymentCheck.conclusion);
+            core.setOutput('url', deploymentUrl);
+
+      - name: Find Comment
+        uses: peter-evans/find-comment@v2
+        id: find-comment
+        with:
+          issue-number: ${{ steps.get-pr.outputs.pr_number }}
+          comment-author: "github-actions[bot]"
+          body-includes: "Deployment Status"
+
+      - name: Create or Update Comment
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          issue-number: ${{ steps.get-pr.outputs.pr_number }}
+          body: |
+            ## Deployment Status: ${{ steps.get-deployment.outputs.status }}
+
+            🔗 [View Deployment](${{ steps.get-deployment.outputs.url }})
+
+            Last updated: ${{ github.event.workflow_run.updated_at }}
+          edit-mode: replace
