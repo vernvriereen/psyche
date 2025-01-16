@@ -2,7 +2,7 @@
 
 set -e
 
-WALLET_FILE=${KEY_FILE:-"$HOME/.config/solana/id.json"}
+WALLET_FILE=${WALLET_FILE:-"$HOME/.config/solana/id.json"}
 RPC=${RPC:-"http://127.0.0.1:8899"}
 WS_RPC=${WS_RPC:-"ws://127.0.0.1:8900"}
 RUN_ID=${RUN_ID:-"test"}
