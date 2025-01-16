@@ -4,10 +4,11 @@ use anchor_lang::{InstructionData, ToAccountMetas};
 use psyche_coordinator::{model::Model, CoordinatorConfig};
 use solana_coordinator::{
     accounts::{
-        InitializeCoordinatorAccounts, OwnerCoordinatorAccounts, PermissionlessCoordinatorAccounts,
+        FreeCoordinatorAccounts, InitializeCoordinatorAccounts, OwnerCoordinatorAccounts,
+        PermissionlessCoordinatorAccounts,
     },
     instruction::{
-        InitializeCoordinator, JoinRun, SetPaused, SetWhitelist, Tick,
+        FreeCoordinator, InitializeCoordinator, JoinRun, SetPaused, SetWhitelist, Tick,
         UpdateCoordinatorConfigModel, Witness,
     },
     ClientId,
@@ -38,6 +39,29 @@ pub async fn process_initialize_coordinator(
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
         data: InitializeCoordinator { run_id }.data(),
+        program_id: solana_coordinator::ID,
+    };
+
+    endpoint.process_instruction(instruction, payer).await
+}
+
+pub async fn process_free_coordinator(
+    endpoint: &mut ToolboxEndpoint,
+    payer: &Keypair,
+    coordinator_account: &Pubkey,
+    run_id: String,
+) -> Result<Signature, ToolboxEndpointError> {
+    let coordinator_instance = find_pda_coordinator_instance(&run_id);
+
+    let accounts = FreeCoordinatorAccounts {
+        payer: payer.pubkey(),
+        instance: coordinator_instance,
+        account: *coordinator_account,
+        system_program: system_program::ID,
+    };
+    let instruction = Instruction {
+        accounts: accounts.to_account_metas(None),
+        data: FreeCoordinator {}.data(),
         program_id: solana_coordinator::ID,
     };
 

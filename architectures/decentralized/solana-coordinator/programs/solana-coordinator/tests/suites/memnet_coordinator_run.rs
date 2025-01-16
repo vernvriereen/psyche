@@ -1,10 +1,11 @@
 use crate::api::{
     accounts::get_coordinator_instance_state,
     create_memnet_endpoint::create_memnet_endpoint,
+    find_pda_coordinator_instance::find_pda_coordinator_instance,
     process_instructions::{
-        process_initialize_coordinator, process_join_run, process_set_paused,
-        process_set_whitelist, process_tick, process_update_coordinator_config_model,
-        process_witness,
+        process_free_coordinator, process_initialize_coordinator, process_join_run,
+        process_set_paused, process_set_whitelist, process_tick,
+        process_update_coordinator_config_model, process_witness,
     },
 };
 
@@ -260,4 +261,95 @@ pub async fn memnet_coordinator_run() {
             .run_state,
         RunState::RoundWitness
     );
+}
+
+#[tokio::test]
+pub async fn memnet_coordinator_free() {
+    let mut endpoint = create_memnet_endpoint().await;
+
+    let payer = Keypair::new();
+    let payer_lamports = 10_000_000_000;
+
+    let run_id = "Free".to_string();
+    let coordinator_account = Keypair::new();
+
+    endpoint
+        .process_airdrop(&payer.pubkey(), payer_lamports)
+        .await
+        .unwrap();
+
+    // create the empty pre-allocated coordinator_account
+    endpoint
+        .process_system_create_exempt(
+            &payer,
+            &coordinator_account,
+            CoordinatorAccount::size_with_discriminator(),
+            &solana_coordinator::ID,
+        )
+        .await
+        .unwrap();
+
+    let start_balance = endpoint
+        .get_account(&payer.pubkey())
+        .await
+        .unwrap()
+        .unwrap()
+        .lamports;
+
+    process_initialize_coordinator(
+        &mut endpoint,
+        &payer,
+        &coordinator_account.pubkey(),
+        run_id.clone(),
+    )
+    .await
+    .unwrap();
+
+    let next_balance = endpoint
+        .get_account(&payer.pubkey())
+        .await
+        .unwrap()
+        .unwrap()
+        .lamports;
+    assert!(next_balance < start_balance);
+
+    let coordinator_instance = find_pda_coordinator_instance(&run_id);
+    assert!(endpoint
+        .get_account(&coordinator_account.pubkey())
+        .await
+        .unwrap()
+        .is_some());
+    assert!(endpoint
+        .get_account(&coordinator_instance)
+        .await
+        .unwrap()
+        .is_some());
+
+    process_free_coordinator(
+        &mut endpoint,
+        &payer,
+        &coordinator_account.pubkey(),
+        run_id.clone(),
+    )
+    .await
+    .unwrap();
+
+    let final_balance = endpoint
+        .get_account(&payer.pubkey())
+        .await
+        .unwrap()
+        .unwrap()
+        .lamports;
+    assert!(final_balance > next_balance);
+
+    assert!(endpoint
+        .get_account(&coordinator_account.pubkey())
+        .await
+        .unwrap()
+        .is_none());
+    assert!(endpoint
+        .get_account(&coordinator_instance)
+        .await
+        .unwrap()
+        .is_none());
 }
