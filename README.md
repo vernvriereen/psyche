@@ -4,6 +4,10 @@ Psyche uses `just` to run some common tasks!
 It uses `nix` as a build system, to make your life easier.
 To install `nix`, simply run `curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install` or find it at your local package manager.
 
+
+Documentation can be found at `https://psyche-book-http-authed.main.psyche.nousresearch.garnix.me/`.
+If you need the password, ask a team member.
+
 ## Setup
 
 ### Ubuntu
