@@ -1,13 +1,16 @@
 use anyhow::{anyhow, bail, Result};
+use futures::future::join_all;
 use psyche_coordinator::model::HttpTrainingDataLocation;
 use psyche_core::{u8_to_string, BatchId, Shuffle, TokenSize};
 use rand::seq::SliceRandom;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+use tokio::task::JoinHandle;
 use tracing::{info, trace};
 
 use crate::traits::{LengthKnownDataProvider, TokenizedDataProvider};
 
+#[derive(Clone, Copy, Debug)]
 struct SequencePointer {
     file_index: usize,
     byte_offset: usize,
@@ -158,21 +161,18 @@ impl HttpDataProvider {
     }
 
     async fn fetch_data_range(
-        &self,
-        file_index: usize,
+        client: reqwest::Client,
+        url: String,
         start: usize,
         length: usize,
     ) -> Result<Vec<u8>> {
-        let url = &self.file_urls[file_index];
-
         trace!(
             "requesting bytes={}-{} from {url}",
             start,
             start + length - 1
         );
 
-        let response = self
-            .client
+        let response = client
             .get(url)
             .header("Range", format!("bytes={}-{}", start, start + length - 1))
             .send()
@@ -203,45 +203,78 @@ impl HttpDataProvider {
         Ok(bytes.to_vec())
     }
 
+    async fn fetch_tokenized_data_range(
+        client: reqwest::Client,
+        url: String,
+        start: usize,
+        length: usize,
+        token_size_in_bytes: TokenSize,
+    ) -> Result<Vec<i32>> {
+        let data = Self::fetch_data_range(client, url, start, length).await?;
+
+        let tokens: Vec<i32> = data
+            .chunks(token_size_in_bytes.into())
+            .map(|t| {
+                use TokenSize::*;
+                match token_size_in_bytes {
+                    TwoBytes => u16::from_le_bytes(t.try_into().unwrap()) as i32,
+                    FourBytes => u32::from_le_bytes(t.try_into().unwrap()) as i32,
+                }
+            })
+            .collect();
+
+        Ok(tokens)
+    }
+
     async fn internal_get_samples(&self, data_ids: &[BatchId]) -> Result<Vec<Vec<i32>>> {
         trace!("get samples for {data_ids:?}");
-        let mut ret = Vec::new();
-        for data_id in data_ids {
-            let SequencePointer {
-                byte_offset,
-                file_index,
-            } = self
-                .sequences
-                .get(u64::from(*data_id) as usize)
-                .ok_or_else(|| {
-                    anyhow!(
-                        "index {data_id} is out of bounds, we only have {} samples.",
-                        self.sequences.len()
-                    )
-                })?;
+        let mut futures = Vec::new();
 
-            let data_len = usize::from(self.token_size_in_bytes) * (self.seq_len as usize + 1);
-            let data = self
-                .fetch_data_range(*file_index, *byte_offset, data_len)
-                .await?;
+        let sequences: Result<Vec<SequencePointer>> = data_ids
+            .iter()
+            .map(|data_id| {
+                self.sequences
+                    .get(u64::from(*data_id) as usize)
+                    .cloned()
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "index {data_id} is out of bounds, we only have {} samples.",
+                            self.sequences.len()
+                        )
+                    })
+            })
+            .collect();
+        let sequences = sequences?;
 
-            trace!("raw bytes for data_id {data_id}: {data:?}");
+        // check if this is fully sequential
+        // TODO: deal with stepping by seq_len but reading seq_len + 1 -- can we change this? datatrove steps by seq_len + 1
+        // let first_file_index = sequences[0].file_index;
+        // let offset_len  = usize::from(self.token_size_in_bytes) * (self.seq_len as usize);
+        // let sequential = sequences.iter().all(|x| x.file_index == first_file_index)
+        //     && sequences
+        //         .windows(2)
+        //         .all(|x| x[1].byte_offset - x[0].byte_offset == data_len);
 
-            let tokens: Vec<i32> = data
-                .chunks(self.token_size_in_bytes.into())
-                .map(|t| {
-                    use TokenSize::*;
-                    match self.token_size_in_bytes {
-                        TwoBytes => u16::from_le_bytes(t.try_into().unwrap()) as i32,
-                        FourBytes => u32::from_le_bytes(t.try_into().unwrap()) as i32,
-                    }
-                })
-                .collect();
+        let data_len = usize::from(self.token_size_in_bytes) * (self.seq_len as usize + 1);
+        for sequence in sequences {
+            let future: JoinHandle<Result<Vec<i32>>> =
+                tokio::spawn(Self::fetch_tokenized_data_range(
+                    self.client.clone(),
+                    self.file_urls[sequence.file_index].clone(),
+                    sequence.byte_offset,
+                    data_len,
+                    self.token_size_in_bytes,
+                ));
 
-            trace!("tokens for data_id {data_id}: {tokens:?}");
-
-            ret.push(tokens);
+            futures.push(future);
         }
+        let finished = join_all(futures.into_iter()).await;
+
+        let mut ret = Vec::with_capacity(finished.len());
+        for finish in finished {
+            ret.push(finish??);
+        }
+
         Ok(ret)
     }
 }

@@ -33,6 +33,9 @@ enum Commands {
     Train {
         #[clap(flatten)]
         args: TrainArgs,
+
+        #[clap(long, env)]
+        server_addr: String,
     },
     // For generating `docs/CommandLineHelp-client.md`.
     #[clap(hide = true)]
@@ -49,7 +52,7 @@ async fn async_main() -> Result<()> {
         Commands::ShowIdentity {
             identity_secret_key_path,
         } => print_identity_keys(identity_secret_key_path.as_ref()),
-        Commands::Train { args } => {
+        Commands::Train { args, server_addr } => {
             exercise_sdpa_if_needed();
 
             let hub_read_token = std::env::var("HF_TOKEN").ok();
@@ -88,7 +91,7 @@ async fn async_main() -> Result<()> {
             let (mut app, allowlist, p2p, state_options) = AppBuilder::new(AppParams {
                 cancel,
                 identity_secret_key,
-                server_addr: args.server_addr,
+                server_addr,
                 tx_tui_state,
                 run_id: args.run_id,
                 p2p_port: args.bind_p2p_port,

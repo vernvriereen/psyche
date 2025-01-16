@@ -73,7 +73,7 @@ pub async fn process_set_whitelist(
     payer: &Keypair,
     coordinator_account: &Pubkey,
     run_id: String,
-    clients: Vec<ClientId>,
+    clients: Vec<Pubkey>,
 ) -> Result<Signature, ToolboxEndpointError> {
     let coordinator_instance = find_pda_coordinator_instance(&run_id);
 

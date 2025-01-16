@@ -35,6 +35,7 @@ perf.data.*
 .venv/
 libtorch*
 slurm*
+*.key
 
 ### Data folders ###
 /data
