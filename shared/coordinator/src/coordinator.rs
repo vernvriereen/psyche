@@ -119,7 +119,6 @@ pub struct Round {
 )]
 #[repr(C)]
 pub struct Witness {
-    pub index: u64,
     pub proof: WitnessProof,
     pub participant_bloom: WitnessBloom,
     pub order_bloom: WitnessBloom,
@@ -407,7 +406,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             from,
             &witness.proof,
             &self.epoch_state.clients,
-        ) {
+        ) || !witness.proof.witness {
             return Err(CoordinatorError::InvalidWitness);
         }
 
@@ -426,7 +425,7 @@ impl<T: NodeIdentity> Coordinator<T> {
 
         let round = self.current_round().unwrap();
         for witness in round.witnesses.iter() {
-            if self.epoch_state.clients[witness.index as usize].id == *from {
+            if self.epoch_state.clients[witness.proof.index as usize].id == *from {
                 return Err(CoordinatorError::DuplicateWitness);
             }
         }
@@ -750,13 +749,18 @@ impl<T: NodeIdentity> Coordinator<T> {
             self.epoch_state.first_round = false.into();
             self.progress.step += 1;
 
-            let height = self.current_round_unchecked().height;
-
+            let current_round = self.current_round_unchecked();
+            let height = current_round.height;
+            let num_witnesses = current_round.witnesses.len() as u16;
             self.move_clients_to_exited(height);
 
-            // if we finish an epoch or some clients disconnect and we don't reach the minimum number of clients,
-            // we change state to cooldown.
-            if height == self.config.rounds_per_epoch - 1
+            // if we didn't receive a valid number of witnesses then abort the epoch.
+            // otherwise, if we finish an epoch or some clients disconnect and we don't
+            // reach the minimum number of clients we change state to cooldown.
+            if num_witnesses == 0 || (num_witnesses < self.config.witness_quorum) {
+                self.start_waiting_for_members(unix_timestamp);
+                return Ok(TickResult::EpochEnd(false));
+            } else if height == self.config.rounds_per_epoch - 1
                 || self.epoch_state.clients.len() < self.config.min_clients as usize
             {
                 self.start_cooldown(unix_timestamp);

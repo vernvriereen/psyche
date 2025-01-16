@@ -1,11 +1,10 @@
-use std::sync::Arc;
-
 use crate::api::{
     accounts::get_coordinator_instance_state,
     create_memnet_endpoint::create_memnet_endpoint,
     process_instructions::{
         process_initialize_coordinator, process_join_run, process_set_paused,
         process_set_whitelist, process_tick, process_update_coordinator_config_model,
+        process_witness,
     },
 };
 
@@ -15,11 +14,12 @@ use psyche_coordinator::{
         Checkpoint, ConstantLR, LLMArchitecture, LLMTrainingDataLocation, LLMTrainingDataType,
         LearningRateSchedule, Model, Optimizer, LLM,
     },
-    CoordinatorConfig, RunState,
+    CoordinatorConfig, RunState, Witness, WitnessProof,
 };
 use psyche_core::FixedVec;
 use solana_coordinator::{ClientId, CoordinatorAccount};
 use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer};
+use std::sync::Arc;
 
 #[tokio::test]
 pub async fn memnet_coordinator_run() {
@@ -73,7 +73,7 @@ pub async fn memnet_coordinator_run() {
         Some(CoordinatorConfig::<ClientId> {
             warmup_time: 1,
             cooldown_time: 1,
-            max_round_train_time: 10,
+            max_round_train_time: 3,
             round_witness_time: 1,
             min_clients: 1,
             batches_per_round: 1,
@@ -193,11 +193,61 @@ pub async fn memnet_coordinator_run() {
     .await
     .unwrap();
 
+    assert_eq!(
+        get_coordinator_instance_state(&mut endpoint, &coordinator_account.pubkey())
+            .await
+            .unwrap()
+            .coordinator
+            .run_state,
+        RunState::Warmup
+    );
+
+    endpoint.move_clock_forward(1, 1).await.unwrap();
+
     process_tick(
         &mut endpoint,
         &ticker_keypair,
         &coordinator_account.pubkey(),
         run_id.clone(),
+    )
+    .await
+    .unwrap();
+
+    let coordinator = get_coordinator_instance_state(&mut endpoint, &coordinator_account.pubkey())
+        .await
+        .unwrap()
+        .coordinator;
+    assert_eq!(coordinator.run_state, RunState::RoundTrain);
+    assert_eq!(coordinator.current_round().unwrap().height, 0);
+    assert_eq!(coordinator.progress.step, 1);
+
+    let witness = Witness {
+        proof: WitnessProof {
+            witness: true,
+            position: 0,
+            index: 0,
+        },
+        participant_bloom: Default::default(),
+        order_bloom: Default::default(),
+    };
+
+    // invalid witness
+    assert!(process_witness(
+        &mut endpoint,
+        &ticker_keypair,
+        &coordinator_account.pubkey(),
+        run_id.clone(),
+        witness.clone(),
+    )
+    .await
+    .is_err());
+
+    process_witness(
+        &mut endpoint,
+        &client_keypair,
+        &coordinator_account.pubkey(),
+        run_id.clone(),
+        witness,
     )
     .await
     .unwrap();
@@ -208,6 +258,6 @@ pub async fn memnet_coordinator_run() {
             .unwrap()
             .coordinator
             .run_state,
-        RunState::Warmup
+        RunState::RoundWitness
     );
 }

@@ -284,7 +284,6 @@ impl SolanaBackend {
                 },
             )
             .args(solana_coordinator::instruction::Witness {
-                index: witness.index,
                 proof: witness.proof,
                 participant_bloom: witness.participant_bloom,
                 order_bloom: witness.order_bloom,

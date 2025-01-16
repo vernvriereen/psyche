@@ -36,15 +36,17 @@ impl CoordinatorInstanceState {
             _ => None,
         };
 
-        msg!("Run state: {}", self.coordinator.run_state);
+        msg!("Pre-tick run state: {}", self.coordinator.run_state);
 
         match self.coordinator.tick(
             active_clients,
             clock.unix_timestamp as u64,
             u64::from_ne_bytes(random_seed),
         ) {
-            Ok(TickResult::Ticked) => Ok(()),
-            Ok(TickResult::EpochEnd(_)) => {
+            Ok(TickResult::Ticked) => {},
+            Ok(TickResult::EpochEnd(success)) => {
+                msg!("Epoch end, sucecsss: {}", success);
+
                 self.clients_state.next_active += 1;
 
                 let mut i = 0;
@@ -68,12 +70,14 @@ impl CoordinatorInstanceState {
                     }
                 }
 
-                Ok(())
             }
             Err(err) => {
-                err!(ProgramError::from(err))
+                return err!(ProgramError::from(err))
             }
-        }
+        };
+
+        msg!("Post-tick run state: {}", self.coordinator.run_state);
+        Ok(())
     }
 
     pub fn set_paused(&mut self, paused: bool) -> Result<()> {
