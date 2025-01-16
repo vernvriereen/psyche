@@ -39,7 +39,7 @@ rm libtorch-cxx11-abi-shared-with-deps-2.4.1%2Bcu124.zip
 ```
 
 4. In the `.bashrc` file, set the following libtorch environment variables. Here `<path_to_libtorch>` is the absolute path
-to the extracted `libtorch` folder from the previous step
+   to the extracted `libtorch` folder from the previous step
 
 ```bash
 export LIBTORCH=<path_to_libtorch>
@@ -72,6 +72,7 @@ sudo snap install just --edge --classic
 7. (optional) Install Solana and Anchor
 
 Install Solana
+
 ```bash
 sh -c "$(curl -sSfL https://release.anza.xyz/beta/install)"
 ```
@@ -79,6 +80,7 @@ sh -c "$(curl -sSfL https://release.anza.xyz/beta/install)"
 After installation, follow the instructions to add the Solana tools to PATH.
 
 Install Anchor
+
 ```bash
 cargo install --git https://github.com/coral-xyz/anchor --rev a7a23eea308440a9fa9cb79cee7bddd30ab163d5 anchor-cli
 ```
@@ -148,29 +150,30 @@ For local development, create a wallet and switch the using a local validator.
 solana-keygen new
 solana config set --url localhost
 ```
+
 Then, in a new terminal, run a validator with `solana-test-validator`.
 Once that's running, you can deploy the solana coordinator using `just deploy-local-solana-coordinator`
 and send a basic transaction from a client running `cargo run -p psyche-solana-client`
 
-## Build and Serve the Psyche Book  
+## Build and Serve the Psyche Book
 
-To install the necessary dependencies, run:  
+To install the necessary dependencies outside of Nix, run:
 
 ```bash
 just book_deps
-```  
+```
 
-To serve the book locally, use:  
+To serve the book locally, use:
 
 ```bash
 just serve_book
-```  
+```
 
-If you prefer to manually generate the HTML files to serve with another tool, run:  
+If you prefer to manually generate the HTML files to serve with another tool, run:
 
 ```bash
 just build_book <OUTPUT_DIR>
-```  
+```
 
 Where `OUTPUT_DIR` specifies the directory where the book will be built. If no directory is provided, the root of the `Psyche` repository will be used by default.
 

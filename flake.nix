@@ -19,6 +19,7 @@
   };
 
   outputs = inputs @ {
+    nixpkgs,
     flake-parts,
     crane,
     rust-overlay,
@@ -144,10 +145,24 @@
               ];
             };
           };
+
+          psyche-book = pkgs.stdenv.mkDerivation {
+            name = "psyche-book";
+            src = ./psyche-book;
+
+            nativeBuildInputs = with pkgs; [mdbook mdbook-mermaid];
+
+            buildPhase = "mdbook build";
+
+            installPhase = ''
+              mkdir -p $out
+              cp -r book/* $out/
+            '';
+          };
         };
 
         devShells.default = pkgs.mkShell {
-          inputsFrom = [buildWholeWorkspace];
+          inputsFrom = [buildWholeWorkspace packages.psyche-book];
           inherit env;
           buildInputs = with pkgs; [
             # for the ./local.sh script
