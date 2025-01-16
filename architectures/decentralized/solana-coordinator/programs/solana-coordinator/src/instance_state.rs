@@ -1,4 +1,4 @@
-use crate::{clients_state::ClientsState, client::Client, ClientId, ProgramError};
+use crate::{client::Client, clients_state::ClientsState, ClientId, ProgramError};
 
 use anchor_lang::prelude::*;
 use bytemuck::{Pod, Zeroable};
@@ -28,9 +28,15 @@ impl CoordinatorInstanceState {
         random_seed.copy_from_slice(&random_seed_bytes[..8]);
 
         let active_clients = match self.coordinator.run_state {
-            RunState::WaitingForMembers => Some(self.clients_state.active_clients()),
+            RunState::WaitingForMembers => {
+                let active_clients = self.clients_state.active_clients();
+                msg!("Pending active clients: {}", active_clients.len());
+                Some(active_clients)
+            }
             _ => None,
         };
+
+        msg!("Run state: {}", self.coordinator.run_state);
 
         match self.coordinator.tick(
             active_clients,
@@ -162,6 +168,7 @@ impl CoordinatorInstanceState {
                 }
                 client.id = id; // IMPORTANT. Equality is on wallet key but includes ephemeral p2p key
                 client.active = self.clients_state.next_active;
+                msg!("Exisiting client {} re-joined", id.signer);
                 true
             }
             None => false,
@@ -181,6 +188,12 @@ impl CoordinatorInstanceState {
                 .is_err()
         {
             return err!(ProgramError::ClientsFull);
+        } else {
+            msg!(
+                "New client {} joined, {} total clients",
+                id.signer,
+                self.clients_state.clients.len()
+            );
         }
 
         self.tick()

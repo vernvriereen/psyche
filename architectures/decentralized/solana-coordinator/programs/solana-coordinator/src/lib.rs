@@ -141,6 +141,9 @@ pub mod solana_coordinator {
     }
 
     pub fn join_run(ctx: Context<PermissionlessCoordinatorAccounts>, id: ClientId) -> Result<()> {
+        if &id.signer != ctx.accounts.payer.key {
+            return err!(ProgramError::SignerMismatch);
+        }
         ctx.accounts.account.load_mut()?.state.join_run(id)
     }
 

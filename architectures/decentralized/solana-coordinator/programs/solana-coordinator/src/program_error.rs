@@ -33,6 +33,9 @@ pub enum ProgramError {
     #[msg("Signer not a client")]
     SignerNotAClient,
 
+    #[msg("Signer mismatch")]
+    SignerMismatch,
+
     #[msg("Coordinator error: No active round")]
     CoordinatorErrorNoActiveRound,
 

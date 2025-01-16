@@ -6,7 +6,6 @@ use crate::{
 use anchor_lang::prelude::*;
 use bytemuck::{Pod, Zeroable};
 use psyche_core::{FixedVec, SizedIterator};
-use std::{cell::RefCell, rc::Rc};
 
 #[derive(Clone, Copy, Zeroable)]
 #[repr(C)]
@@ -20,21 +19,20 @@ unsafe impl Pod for ClientsState {}
 
 impl ClientsState {
     pub fn active_clients(&self) -> SizedIterator<impl Iterator<Item = &ClientId>> {
-        let size = Rc::new(RefCell::new(0));
-        let size_clone = size.clone();
+        let mut size = 0;
+        for x in self.clients.iter() {
+            if x.active == self.next_active {
+                size += 1;
+            }
+        }
 
-        let iter = self
-            .clients
-            .iter()
-            .filter_map(move |x| match x.active == self.next_active {
-                true => {
-                    *size_clone.borrow_mut() += 1;
-                    Some(&x.id)
-                }
+        let iter = self.clients.iter().filter_map(move |x| {
+            match x.active == self.next_active {
+                true => Some(&x.id),
                 false => None,
-            });
+            }
+        });
 
-        let size = *size.borrow();
         SizedIterator::new(iter, size)
     }
 

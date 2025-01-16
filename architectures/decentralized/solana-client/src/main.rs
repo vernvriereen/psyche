@@ -5,6 +5,7 @@ use crate::{
 
 use anchor_client::{
     solana_sdk::{
+        commitment_config::CommitmentConfig,
         pubkey::Pubkey,
         signature::{EncodableKey, Keypair},
         signer::Signer,
@@ -177,7 +178,12 @@ async fn async_main() -> Result<()> {
             run_id,
         } => {
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
-            let backend = SolanaBackend::new(cluster.into(), key_pair.clone()).unwrap();
+            let backend = SolanaBackend::new(
+                cluster.into(),
+                key_pair.clone(),
+                CommitmentConfig::confirmed(),
+            )
+            .unwrap();
             let created = backend.create_run(run_id.clone()).await?;
             println!(
                 "Created run {} with transaction {}!",
@@ -194,7 +200,12 @@ async fn async_main() -> Result<()> {
             members_path,
         } => {
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
-            let backend = SolanaBackend::new(cluster.into(), key_pair.clone()).unwrap();
+            let backend = SolanaBackend::new(
+                cluster.into(),
+                key_pair.clone(),
+                CommitmentConfig::confirmed(),
+            )
+            .unwrap();
             let members: Vec<Pubkey> = toml::from_str(std::str::from_utf8(
                 &std::fs::read(&members_path).with_context(|| {
                     format!("failed to read whitelist members toml file {members_path:?}")
@@ -225,7 +236,12 @@ async fn async_main() -> Result<()> {
             config_path,
         } => {
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
-            let backend = SolanaBackend::new(cluster.into(), key_pair.clone()).unwrap();
+            let backend = SolanaBackend::new(
+                cluster.into(),
+                key_pair.clone(),
+                CommitmentConfig::confirmed(),
+            )
+            .unwrap();
             let state: State = toml::from_str(std::str::from_utf8(
                 &std::fs::read(&config_path)
                     .with_context(|| format!("failed to read config toml file {config_path:?}"))?,
@@ -251,7 +267,12 @@ async fn async_main() -> Result<()> {
         } => {
             let paused = !resume;
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
-            let backend = SolanaBackend::new(cluster.into(), key_pair.clone()).unwrap();
+            let backend = SolanaBackend::new(
+                cluster.into(),
+                key_pair.clone(),
+                CommitmentConfig::confirmed(),
+            )
+            .unwrap();
             let (instance_pda, instance) = backend.get_coordinator_instance(&run_id).await?;
             let set = backend
                 .set_paused(instance_pda, instance.account, paused)

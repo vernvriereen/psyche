@@ -22,6 +22,7 @@ use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
 use std::sync::Arc;
 use tokio::sync::broadcast;
+use tracing::info;
 
 pub struct SolanaBackend {
     program: Program<Arc<Keypair>>,
@@ -33,6 +34,7 @@ pub struct SolanaBackendRunner {
     instance: Pubkey,
     account: Pubkey,
     updates: broadcast::Receiver<RpcResponse<UiAccount>>,
+    init: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone)]
@@ -44,10 +46,13 @@ pub struct CreatedRun {
 
 impl SolanaBackend {
     #[allow(dead_code)]
-    pub fn new(cluster: Cluster, payer: Arc<Keypair>) -> Result<Self> {
-        let client = Client::new(cluster.clone(), payer.clone());
+    pub fn new(
+        cluster: Cluster,
+        payer: Arc<Keypair>,
+        committment: CommitmentConfig,
+    ) -> Result<Self> {
+        let client = Client::new_with_options(cluster.clone(), payer.clone(), committment);
         let program = client.program(solana_coordinator::ID)?;
-
         Ok(Self { program, cluster })
     }
 
@@ -56,6 +61,9 @@ impl SolanaBackend {
         let (tx, rx) = broadcast::channel(32);
 
         let (instance_pda, instance) = self.get_coordinator_instance(&run_id).await?;
+        let commitment = self.program.rpc().commitment();
+
+        let init = self.program.rpc().get_account_data(&coordinator).await?;
 
         tokio::spawn(async move {
             let mut notifications = match sub_client
@@ -63,7 +71,7 @@ impl SolanaBackend {
                     &coordinator,
                     Some(RpcAccountInfoConfig {
                         encoding: Some(UiAccountEncoding::Base64Zstd),
-                        commitment: Some(CommitmentConfig::confirmed()),
+                        commitment: Some(commitment),
                         ..Default::default()
                     }),
                 )
@@ -87,6 +95,7 @@ impl SolanaBackend {
             updates: rx,
             instance: instance_pda,
             account: instance.account,
+            init: Some(init),
         })
     }
 
@@ -239,7 +248,6 @@ impl SolanaBackend {
         Ok(signature)
     }
 
-    #[allow(dead_code)]
     pub async fn tick(&self, instance: Pubkey, account: Pubkey) -> Result<Signature> {
         let signature = self
             .program
@@ -309,6 +317,18 @@ impl SolanaBackend {
             .map(|x| x.clone())
     }
 
+    // pub async fn get_transaction(
+    //     &self,
+    //     signature: &Signature,
+    // ) -> Result<EncodedConfirmedTransactionWithStatusMeta> {
+    //     let tx = self
+    //         .program
+    //         .rpc()
+    //         .get_transaction(signature, UiTransactionEncoding::Base58)
+    //         .await?;
+    //     Ok(tx)
+    // }
+
     fn find_instance_from_run_id(&self, run_id: &str) -> (Pubkey, u8) {
         let seeds = &[
             b"coordinator",
@@ -321,15 +341,20 @@ impl SolanaBackend {
 #[async_trait::async_trait]
 impl WatcherBackend<solana_coordinator::ClientId> for SolanaBackendRunner {
     async fn wait_for_new_state(&mut self) -> Result<Coordinator<solana_coordinator::ClientId>> {
-        match self.updates.recv().await {
-            Ok(update) => match update.value.data.decode() {
-                Some(data) => solana_coordinator::coordinator_account_from_bytes(&data)
-                    .map_err(|_| anyhow!("Unable to decode coordinator account data"))
-                    .map(|x| x.state.coordinator),
-                None => bail!("Unable to decode account data"),
+        let data = match self.init.take() {
+            Some(init) => init,
+            None => match self.updates.recv().await {
+                Ok(update) => match update.value.data.decode() {
+                    Some(data) => data,
+                    None => bail!("Unable to decode account data"),
+                },
+                Err(err) => bail!("Account updates channel error: {err}"),
             },
-            Err(err) => bail!("Account updates channel error: {err}"),
-        }
+        };
+
+        solana_coordinator::coordinator_account_from_bytes(&data)
+            .map_err(|_| anyhow!("Unable to decode coordinator account data"))
+            .map(|x| x.state.coordinator)
     }
 
     async fn send_witness(&mut self, witness: Witness) -> Result<()> {
@@ -382,7 +407,12 @@ mod test {
             Keypair::read_from_file(home::home_dir().unwrap().join(".config/solana/id.json"))
                 .unwrap(),
         );
-        let backend = SolanaBackend::new(Cluster::Localnet, key_pair.clone()).unwrap();
+        let backend = SolanaBackend::new(
+            Cluster::Localnet,
+            key_pair.clone(),
+            CommitmentConfig::processed(),
+        )
+        .unwrap();
         let run_id = format!("{}", rand::thread_rng().gen_range(0..1000000));
 
         let created = backend.create_run(run_id.clone()).await.unwrap();

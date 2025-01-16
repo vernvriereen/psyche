@@ -1,7 +1,10 @@
 use crate::{backend::SolanaBackend, network_identity::NetworkIdentity};
 
 use anchor_client::{
-    solana_sdk::signature::{Keypair, Signature, Signer},
+    solana_sdk::{
+        commitment_config::CommitmentConfig,
+        signature::{Keypair, Signature, Signer},
+    },
     Cluster,
 };
 use anyhow::{anyhow, bail, Result};
@@ -125,10 +128,19 @@ impl App {
         p2p: NC,
         state_options: RunInitConfig<solana_coordinator::ClientId, NetworkIdentity>,
     ) -> Result<()> {
-        let backend =
-            SolanaBackend::new(self.cluster.clone(), state_options.private_key.0.clone())?;
+        let backend = SolanaBackend::new(
+            self.cluster.clone(),
+            state_options.private_key.0.clone(),
+            CommitmentConfig::confirmed(),
+        )?;
         let (instance_pda, instance) = backend.get_coordinator_instance(&self.run_id).await?;
+        let backend_runner = backend.start(self.run_id.clone(), instance.account).await?;
 
+        let backend = Arc::new(SolanaBackend::new(
+            self.cluster.clone(),
+            state_options.private_key.0.clone(),
+            CommitmentConfig::confirmed(),
+        )?);
         let signer = state_options.private_key.0.pubkey();
         let p2p_identity = state_options.private_key.1.public();
         let joined = backend
@@ -146,36 +158,17 @@ impl App {
             self.run_id, signer, joined
         );
 
-        let backend = backend.start(self.run_id.clone(), instance.account).await?;
-
-        let (tick_backend, mut updates, mut latest_update) =
-            match self.tick_check_interval.is_some() {
-                true => {
-                    let tick_backend = Arc::new(SolanaBackend::new(
-                        self.cluster.clone(),
-                        state_options.private_key.0.clone(),
-                    )?);
-                    let latest_update = tick_backend
-                        .get_coordinator_account(&instance.account)
-                        .await?;
-                    let active_clients = latest_update
-                        .state
-                        .clients_state
-                        .active_clients()
-                        .collect::<Vec<_>>();
-                    debug!("Active clients at join: {active_clients:?}");
-                    let updates = backend.updates();
-                    (
-                        Some(tick_backend),
-                        Some(updates),
-                        Some(latest_update.state.coordinator),
-                    )
-                }
-                false => (None, None, None),
-            };
+        let (mut updates, mut latest_update) = match self.tick_check_interval.is_some() {
+            true => {
+                let latest_update = backend.get_coordinator_account(&instance.account).await?;
+                let updates = backend_runner.updates();
+                (Some(updates), Some(latest_update.state.coordinator))
+            }
+            false => (None, None),
+        };
         let mut tick_tx: Option<JoinHandle<Result<Signature>>> = None;
 
-        let mut client = Client::new(backend, p2p, state_options);
+        let mut client = Client::new(backend_runner, p2p, state_options);
 
         loop {
             select! {
@@ -193,25 +186,23 @@ impl App {
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
                         .as_secs();
-                    // info!("run_state: {}, start: {}, now: {}", ticked.run_state, ticked.run_state_start_unix_timestamp, timestamp);
                     match ticked.tick(Some(vec![].iter()), timestamp, rand::thread_rng().next_u64()) {
                         Ok(_) => {
-                            //if ticked.run_state != latest_update.run_state {
-                                let backend = tick_backend.as_ref().unwrap().clone();
+                            if ticked.run_state != latest_update.run_state {
+                                let backend = backend.clone();
                                 tick_tx = Some(tokio::spawn(async move { backend.tick(instance_pda, instance.account).await }));
-                            //}
+                            }
                         }
                         Err(err) => debug!("Tick simulation error: {err}")
                     };
                 }
-                update = async { updates.as_mut().unwrap().recv().await }, if tick_backend.is_some() => {
+                update = async { updates.as_mut().unwrap().recv().await }, if updates.is_some() => {
                     let update = match update?.value.data.decode() {
                         Some(data) => solana_coordinator::coordinator_account_from_bytes(&data)
                             .map_err(|_| anyhow!("Unable to decode coordinator account data"))
                             .map(|x| x.state.coordinator)?,
                         None => bail!("Unable to decode account data"),
                     };
-                    info!("run_state: {}, started: {}, ticked: {}", update.run_state, update.run_state_start_unix_timestamp, update.last_tick_unix_timestamp);
                     latest_update = Some(update);
                 }
                 tx = async { tick_tx.as_mut().unwrap().await }, if tick_tx.is_some() => {
