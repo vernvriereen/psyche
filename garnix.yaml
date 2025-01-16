@@ -5,4 +5,4 @@ servers:
   - configuration: psyche-book-http-authed
     deployment:
       type: on-branch
-      branch: prod
+      branch: main
