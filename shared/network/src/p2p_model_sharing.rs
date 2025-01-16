@@ -6,7 +6,6 @@ use iroh::{
 };
 use iroh_blobs::ticket::BlobTicket;
 use psyche_core::BoxedFuture;
-use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Write};
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
@@ -14,12 +13,13 @@ use std::{
 };
 use tch::{Device, Kind, Tensor};
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
+use tracing::warn;
 
 pub const ALPN: &[u8] = b"model-parameter-sharing/0";
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub enum SharableModelParameterError {
-    TchSerializeError(tch::TchError),
+    TchSerializeError(String),
     InvalidUpdate,
     ParameterUnknown(String),
     ParameterAlreadyAdded,
@@ -30,7 +30,7 @@ pub enum SharableModelParameterError {
 
 impl From<tch::TchError> for SharableModelParameterError {
     fn from(err: tch::TchError) -> Self {
-        SharableModelParameterError::TchSerializeError(err)
+        SharableModelParameterError::TchSerializeError(err.to_string())
     }
 }
 
@@ -77,7 +77,7 @@ impl fmt::Display for SharableModelParameterError {
 impl Error for SharableModelParameterError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            SharableModelParameterError::TchSerializeError(err) => Some(err),
+            SharableModelParameterError::TchSerializeError(_err) => Some(self),
             SharableModelParameterError::InvalidUpdate => Some(self),
             SharableModelParameterError::ParameterUnknown(_unknown_parameter) => Some(self),
             SharableModelParameterError::ParameterAlreadyAdded => Some(self),
@@ -89,11 +89,14 @@ impl Error for SharableModelParameterError {
 }
 
 pub enum ParameterSharingMessage {
-    Get(String, oneshot::Sender<BlobTicket>),
+    Get(
+        String,
+        oneshot::Sender<Result<BlobTicket, SharableModelParameterError>>,
+    ),
     Response(String),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct TransmittableModelParameter {
     param_name_bytes: Vec<u8>,
     param_value_bytes: Vec<u8>,
@@ -159,22 +162,26 @@ impl ModelParameters {
             return Err(SharableModelParameterError::ParametersNotInitialized);
         };
 
-        let Some(parameter) = parameters.get(param_name) else {
-            return Err(SharableModelParameterError::ParameterUnknown(
-                param_name.to_string(),
-            ));
-        };
+        match parameters.get(param_name) {
+            Some(parameter) if parameter.numel() > 1 => {
+                let mut param_name_buffer = Vec::new();
+                let mut param_value_buffer = Vec::new();
 
-        let mut param_name_buffer = Vec::new();
-        let mut param_value_buffer = Vec::new();
+                param_name_buffer.write_all(param_name.as_bytes())?;
+                parameter.save_to_stream(&mut param_value_buffer)?;
 
-        param_name_buffer.write_all(param_name.as_bytes())?;
-        parameter.save_to_stream(&mut param_value_buffer)?;
+                let transmittable_parameter =
+                    TransmittableModelParameter::new(param_name_buffer, param_value_buffer);
 
-        let transmittable_parameter =
-            TransmittableModelParameter::new(param_name_buffer, param_value_buffer);
-
-        Ok(transmittable_parameter)
+                Ok(transmittable_parameter)
+            }
+            _ => {
+                warn!("Paramater {param_name:?} not initialized");
+                Err(SharableModelParameterError::ParameterUnknown(
+                    param_name.to_string(),
+                ))
+            }
+        }
     }
 }
 
@@ -283,7 +290,8 @@ impl ModelParameterSharing {
 
             // Create channel for requesting the model parameter to the client backend
             // and add a new blob for it
-            let (tx_req, rx_req) = oneshot::channel::<BlobTicket>();
+            let (tx_req, rx_req) =
+                oneshot::channel::<Result<BlobTicket, SharableModelParameterError>>();
             let request = ParameterSharingMessage::Get(parameter_request, tx_req);
             tx_model_parameter_req.send(request)?;
 

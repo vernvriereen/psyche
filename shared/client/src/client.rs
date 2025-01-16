@@ -157,17 +157,23 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         //  * Make sure that the parameter is requested while we are in RunState::Warmup.
                                         //  * Validate that the message is from a known peer.
 
-                                        let transmittable_parameter = sharable_model.get_transmittable_parameter(&parameter_name)?;
-                                        let transmittable_download = TransmittableDownload::ModelParameter(transmittable_parameter);
-                                        let ticket = p2p.add_downloadable(transmittable_download).await?;
+                                        let transmittable_parameter = sharable_model.get_transmittable_parameter(&parameter_name);
+                                        if let Err(e) = transmittable_parameter {
+                                            if let Err(e) = protocol_req_tx.send(Err(e)) {
+                                                warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e:?}");
+                                            }
+                                        } else {
+                                            let transmittable_download = TransmittableDownload::ModelParameter(transmittable_parameter.unwrap());
+                                            let ticket = p2p.add_downloadable(transmittable_download).await?;
 
-                                        // TODO: Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
-                                        // to the client
+                                            // TODO: Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
+                                            // to the client
 
-                                        info!("Sending requested model parameter blob ticket");
-                                        if let Err(e) = protocol_req_tx.send(ticket) {
-                                            warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e}");
-                                        };
+                                            info!("Sending requested model parameter blob ticket");
+                                            if let Err(e) = protocol_req_tx.send(Ok(ticket)) {
+                                                warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e:?}");
+                                            };
+                                        }
                                     }
                                 }
                             }
@@ -236,16 +242,30 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             let handle: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
                                 let mut parameter_blob_tickets = Vec::new();
                                 // TODO: The parameter requests could be done concurrently, setting some MAX_CONCURRENT_PARAM_REQUESTS
-                                for (param_name, peer_id) in std::iter::zip(param_names, peer_ids.into_iter().cycle()) {
-                                    let router = router.clone();
-                                    debug!("Requesting parameter {param_name} to peer {peer_id}");
-                                    let parameter_blob_ticket = request_model_parameter(router, peer_id, param_name).await?;
-                                    parameter_blob_tickets.push(parameter_blob_ticket);
+
+                                let mut peer_iter = peer_ids.iter().cycle(); // Iterate over peers in a cycle
+                                for param_name in param_names {
+                                    loop {
+                                        if let Some(peer_id) = peer_iter.next() {
+                                            let router = router.clone();
+                                            debug!("Requesting parameter {param_name} from peer {peer_id}");
+                                            match request_model_parameter(router, *peer_id, param_name.clone()).await {
+                                                Ok(parameter_blob_ticket) => {
+                                                    parameter_blob_tickets.push(parameter_blob_ticket);
+                                                    // Continue to the next parameter
+                                                    break;
+                                                }
+                                                Err(e) => {
+                                                    warn!("Failed to get parameter {param_name} from peer {peer_id}: {e}");
+                                                    // Continue to the next peer
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                                 tx_params_download.send(parameter_blob_tickets)?;
                                 Ok(())
                             });
-                            // Doing this just so that clippy does not complain
                             drop(handle);
                         }
                         Some(param_blob_tickets) = rx_params_download.recv() => {
