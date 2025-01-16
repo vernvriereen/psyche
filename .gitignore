@@ -46,3 +46,6 @@ config/testing/dolma/
 
 ### Solana ###
 test-ledger
+
+### Book ###
+book

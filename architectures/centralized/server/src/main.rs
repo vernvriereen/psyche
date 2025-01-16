@@ -14,24 +14,39 @@ use tracing::{error, info, Level};
 struct Args {
     #[command(subcommand)]
     command: Commands,
-
-    #[command(flatten)]
-    common: CommonArgs,
 }
 
 #[derive(Parser, Debug)]
 enum Commands {
-    ValidateConfig,
-    Run,
+    /// Checks that the configuration declared in the `state.toml` file is valid.
+    ValidateConfig {
+        /// Path to the `state.toml` file to validate.
+        #[clap(long)]
+        state: PathBuf,
+        /// Path to `data.toml` file to validate. If no provided then it will not be checked.
+        #[clap(long)]
+        data_config: Option<PathBuf>,
+    },
+    /// Starts the server and launches the coordinator with the declared configuration.
+    Run {
+        #[command(flatten)]
+        run_args: RunArgs,
+    },
+    // For generating `docs/CommandLineHelp-server.md`.
+    #[clap(hide = true)]
+    PrintAllHelp {
+        #[arg(long, required = true)]
+        markdown: bool,
+    },
 }
 
 #[derive(Parser, Debug, Clone)]
-struct CommonArgs {
+struct RunArgs {
     /// Path to TOML of Coordinator state
     #[clap(long)]
     state: PathBuf,
 
-    /// if not specified, a random free port will be chosen.
+    /// Port for the server, which clients will use to connect. if not specified, a random free port will be chosen.
     #[clap(short, long)]
     server_port: Option<u16>,
 
@@ -49,15 +64,19 @@ struct CommonArgs {
     #[clap(long)]
     data_config: Option<PathBuf>,
 
+    /// Path to save the server and coordinator state.
     #[clap(long)]
     save_state_dir: Option<PathBuf>,
 
+    /// Sets the warmup time for the run. This overrides the `warmup_time` declared in the state file.
     #[clap(long)]
     init_warmup_time: Option<u64>,
 
+    /// Sets the minimum number of clients required to start a run. This overrides the `min_clients` declared in the state file.
     #[clap(long)]
     init_min_clients: Option<u16>,
 
+    /// Allows clients to withdraw if they need to disconnect from the run (this option has no effect in the centralized version).
     #[clap(
         long,
         action = ArgAction::Set,
@@ -70,20 +89,21 @@ struct CommonArgs {
 }
 
 fn load_config_state(
-    common_args: CommonArgs,
+    state_path: PathBuf,
+    data_config_path: Option<PathBuf>,
 ) -> Result<(Coordinator<ClientId>, Option<DataServerInfo>)> {
     let coordinator: Coordinator<ClientId> = toml::from_str(std::str::from_utf8(
-        &std::fs::read(&common_args.state).with_context(|| {
+        &std::fs::read(&state_path).with_context(|| {
             format!(
                 "failed to read coordinator state toml file {:?}",
-                common_args.state
+                state_path
             )
         })?,
     )?)
     .with_context(|| {
         format!(
             "failed to parse coordinator state toml file {:?}",
-            common_args.state
+            state_path
         )
     })?;
 
@@ -91,7 +111,7 @@ fn load_config_state(
         bail!("cooldown time of 0 and no checkpointers will run forever. invalid coordinator state toml.")
     }
 
-    let data_server_config = match common_args.data_config {
+    let data_server_config = match data_config_path {
         Some(config_path) => {
             let mut data_config: DataServerInfo = toml::from_str(std::str::from_utf8(
                 &std::fs::read(&config_path).with_context(|| {
@@ -119,21 +139,23 @@ fn load_config_state(
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let common_args = args.common;
     let command = args.command;
-
-    let config = load_config_state(common_args.clone());
     match command {
-        Commands::ValidateConfig => {
+        Commands::ValidateConfig {
+            state: state_path,
+            data_config: data_config_path,
+        } => {
+            let config = load_config_state(state_path.clone(), data_config_path);
             psyche_tui::init_logging(LogOutput::Console, Level::INFO, None);
             match config {
                 Ok(_) => info!("Configs are OK!"),
                 Err(error) => error!("Error found in config: {}", error),
             }
         }
-        Commands::Run => {
+        Commands::Run { run_args } => {
+            let config = load_config_state(run_args.state, run_args.data_config);
             psyche_tui::init_logging(
-                if common_args.tui {
+                if run_args.tui {
                     LogOutput::TUI
                 } else {
                     LogOutput::Console
@@ -144,14 +166,14 @@ async fn main() -> Result<()> {
             match config {
                 Ok(config) => {
                     App::new(
-                        common_args.tui,
+                        run_args.tui,
                         config.0,
                         config.1,
-                        common_args.server_port,
-                        common_args.save_state_dir,
-                        common_args.init_warmup_time,
-                        common_args.init_min_clients,
-                        common_args.withdraw_on_disconnect,
+                        run_args.server_port,
+                        run_args.save_state_dir,
+                        run_args.init_warmup_time,
+                        run_args.init_min_clients,
+                        run_args.withdraw_on_disconnect,
                     )
                     .await?
                     .run()
@@ -159,6 +181,14 @@ async fn main() -> Result<()> {
                 }
                 Err(error) => error!("Error found in config: {}", error),
             }
+        }
+        Commands::PrintAllHelp { markdown } => {
+            // This is a required argument for the time being.
+            assert!(markdown);
+
+            let () = clap_markdown::print_help_markdown::<Args>();
+
+            return Ok(());
         }
     }
 

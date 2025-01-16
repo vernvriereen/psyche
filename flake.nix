@@ -192,10 +192,10 @@
 
               for f in $dir/*; do
                   if [ -f $f/data.toml ]; then
-                    ${packages.psyche-centralized-server}/bin/psyche-centralized-server --state $f/state.toml --data-config $f/data.toml validate-config || exit 1
+                    ${packages.psyche-centralized-server}/bin/psyche-centralized-server validate-config --state $f/state.toml --data-config $f/data.toml || exit 1
                     echo "config $f/data.toml and $f/state.toml ok!"
                   else
-                    ${packages.psyche-centralized-server}/bin/psyche-centralized-server --state $f/state.toml validate-config || exit 1
+                    ${packages.psyche-centralized-server}/bin/psyche-centralized-server validate-config --state $f/state.toml|| exit 1
                     echo "config $f/state.toml ok!"
                   fi
               done;
