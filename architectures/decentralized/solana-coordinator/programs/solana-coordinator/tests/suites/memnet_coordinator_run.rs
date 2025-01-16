@@ -19,7 +19,7 @@ use psyche_coordinator::{
 };
 use psyche_core::FixedVec;
 use solana_coordinator::{ClientId, CoordinatorAccount};
-use solana_sdk::{signature::Keypair, signer::Signer};
+use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer};
 
 #[tokio::test]
 pub async fn memnet_coordinator_run() {
@@ -123,7 +123,7 @@ pub async fn memnet_coordinator_run() {
         &payer,
         &coordinator_account.pubkey(),
         run_id.clone(),
-        vec![ClientId::zeroed()],
+        vec![Pubkey::zeroed()],
     )
     .await
     .unwrap();
@@ -152,14 +152,14 @@ pub async fn memnet_coordinator_run() {
         &payer,
         &coordinator_account.pubkey(),
         run_id.clone(),
-        vec![client_id],
+        vec![client_id.signer],
     )
     .await
     .unwrap();
 
     process_join_run(
         &mut endpoint,
-        &payer,
+        &client_keypair,
         &coordinator_account.pubkey(),
         run_id.clone(),
         client_id,
@@ -208,6 +208,6 @@ pub async fn memnet_coordinator_run() {
             .unwrap()
             .coordinator
             .run_state,
-        RunState::WaitingForMembers
+        RunState::Warmup
     );
 }

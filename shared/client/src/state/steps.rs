@@ -1,14 +1,16 @@
-use std::{collections::HashMap, fmt, future::Future, pin::Pin, sync::Arc};
-
 use psyche_coordinator::{Committee, Coordinator, RunState, Witness};
 use psyche_core::{sha256, BatchId, NodeIdentity};
 use psyche_modeling::DistroResult;
 use psyche_network::{AuthenticatableIdentity, BlobTicket, Hash, TransmittableDistroResult};
+use std::{collections::HashMap, fmt, sync::Arc};
 use tch::TchError;
 use thiserror::Error;
-use tokio::sync::{
-    mpsc::{self},
-    Notify,
+use tokio::{
+    sync::{
+        mpsc::{self},
+        Notify,
+    },
+    task::JoinHandle,
 };
 use tracing::{debug, error, info, info_span, trace, warn, Instrument};
 use wandb::DataValue;
@@ -601,9 +603,7 @@ impl fmt::Display for ActiveStep {
 pub enum InitStage<T: NodeIdentity, A: AuthenticatableIdentity> {
     NotYetInitialized(Option<RunInitConfigAndIO<T, A>>),
     #[allow(clippy::type_complexity)]
-    Initializing(
-        Pin<Box<dyn Future<Output = Result<StepStateMachine<T, A>, InitRunError>> + Send>>,
-    ),
+    Initializing(JoinHandle<Result<StepStateMachine<T, A>, InitRunError>>),
     Running(StepStateMachine<T, A>),
 }
 
@@ -694,7 +694,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunManager<T, A> {
             {
                 // Take ownership of init_info using std::mem::take
                 let init_info = init_info.take().unwrap();
-                Some(InitStage::Initializing(Box::pin(init_info.init_run(state))))
+                Some(InitStage::Initializing(tokio::spawn(
+                    init_info.init_run(state),
+                )))
             }
             InitStage::NotYetInitialized(None) => {
                 unreachable!("Once we take the init state, we move to initializing.");
@@ -712,14 +714,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunManager<T, A> {
             }
             InitStage::Initializing(ref mut init_future) => {
                 // Try to complete initialization
-                match futures::poll!(init_future) {
-                    std::task::Poll::Ready(Ok(state_machine)) => {
-                        Some(InitStage::Running(state_machine))
-                    }
-                    std::task::Poll::Ready(Err(e)) => {
-                        return Err(ApplyStateError::Init(e));
-                    }
-                    std::task::Poll::Pending => {
+                match init_future.is_finished() {
+                    true => match init_future.await.unwrap() {
+                        Ok(state_machine) => Some(InitStage::Running(state_machine)),
+                        Err(e) => {
+                            return Err(ApplyStateError::Init(e));
+                        }
+                    },
+                    false => {
                         // We're still initializing, keep current state
                         return Ok(());
                     }

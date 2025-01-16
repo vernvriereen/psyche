@@ -11,34 +11,55 @@ use time::macros::format_description;
 use time::OffsetDateTime;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
 struct Args {
-    /// Number of clients
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[allow(clippy::large_enum_variant)] // it's only used for generating the docs correctly.
+#[derive(Parser, Debug)]
+enum Commands {
+    /// Starts the local-testnet running each part of the system in a separate terminal pane.
+    Start {
+        #[command(flatten)]
+        start_args: StartArgs,
+    },
+    // For generating `docs/CommandLineHelp-local-testnet.md`.
+    #[clap(hide = true)]
+    PrintAllHelp {
+        #[arg(long, required = true)]
+        markdown: bool,
+    },
+}
+
+#[derive(Parser, Debug, Clone)]
+struct StartArgs {
+    /// Number of clients to start
     #[clap(long, value_parser = validate_num_clients)]
     num_clients: usize,
 
-    /// Config directory path
+    /// File path to the configuration that the coordinator will need to start.
     #[clap(long,value_parser = validate_config_path)]
     config_path: PathBuf,
 
-    /// Write DisTrO data to disk
+    /// If provided, write DisTrO data to disk in this path.
     #[clap(long)]
     write_distro_data: Option<PathBuf>,
 
-    /// Server port
+    /// Port where the server for this testnet will be listen it to (this is the one that clients must use when connecting).
     #[clap(long, default_value_t = 20000)]
     server_port: u16,
 
-    /// Enable TUI
+    /// Enables a terminal-based graphical interface for monitoring analytics.
     #[clap(
-            long,
-            action = ArgAction::Set,
-            default_value_t = true,
-            default_missing_value = "true",
-            num_args = 0..=1,
-            require_equals = false,
-            env
-        )]
+                long,
+                action = ArgAction::Set,
+                default_value_t = true,
+                default_missing_value = "true",
+                num_args = 0..=1,
+                require_equals = false,
+                env
+            )]
     tui: bool,
 
     /// Kill N clients randomly every <RANDOM_KILL_INTERVAL> seconds
@@ -53,13 +74,15 @@ struct Args {
     /// Kill <RANDOM_KILL_NUM> clients randomly every N seconds
     random_kill_interval: u64,
 
+    /// Sets the level of the logging for more granular information
     #[clap(long, default_value = "info,psyche=debug")]
     log: String,
 
-    /// HF repo for the first client to checkpoint at
+    /// HF repo where the first client could get the model and the configuration to use.
     #[clap(long)]
     first_client_checkpoint: Option<String>,
 
+    // HF token for all the clients to fetch the model at the beggining of the run.
     #[clap(long)]
     hf_token: Option<String>,
 
@@ -114,240 +137,257 @@ fn extract_run_id(state_path: &PathBuf) -> Result<String> {
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    let command = args.command;
 
-    if let Some(n_kill) = args.random_kill_num {
-        if n_kill > args.num_clients {
-            bail!(
+    match command {
+        Commands::Start { start_args } => {
+            if let Some(n_kill) = start_args.random_kill_num {
+                if n_kill > start_args.num_clients {
+                    bail!(
                 "You requested to kill {n_kill} clients randomly, but you only have {} clients.",
-                args.num_clients
+                start_args.num_clients
             );
-        }
-    }
-    let state_path = args.config_path.join("state.toml");
-    let data_path = args.config_path.join("data.toml");
-
-    println!("{args:?}");
-
-    // Pre-build packages
-    Command::new("cargo")
-        .args(["build", "-p", "psyche-centralized-server"])
-        .status()
-        .ok()
-        .and_then(|s| s.success().then_some(()))
-        .expect("Failed to build server");
-
-    Command::new("cargo")
-        .args(["build", "-p", "psyche-centralized-client"])
-        .status()
-        .ok()
-        .and_then(|s| s.success().then_some(()))
-        .expect("Failed to build client");
-
-    let validate_cmd = if data_path.exists() {
-        vec![
-            "run",
-            "-p",
-            "psyche-centralized-server",
-            "--",
-            "--state",
-            state_path.to_str().unwrap(),
-            "--data-config",
-            data_path.to_str().unwrap(),
-            "validate-config",
-        ]
-    } else {
-        vec![
-            "run",
-            "-p",
-            "psyche-centralized-server",
-            "--",
-            "--state",
-            state_path.to_str().unwrap(),
-            "validate-config",
-        ]
-    };
-    // Validate config
-    Command::new("cargo")
-        .args(validate_cmd)
-        .status()
-        .ok()
-        .and_then(|s| s.success().then_some(()))
-        .expect("Failed to validate config");
-
-    let run_id = extract_run_id(&state_path)?;
-
-    // Create tmux session
-    Command::new("tmux")
-        .args(["new-session", "-d", "-s", "psyche"])
-        .status()
-        .ok()
-        .and_then(|s| s.success().then_some(()))
-        .expect("Failed to create tmux session");
-
-    // Split windows and set up panes
-    Command::new("tmux")
-        .args(["split-window", "-h"])
-        .status()
-        .ok()
-        .and_then(|s| s.success().then_some(()))
-        .expect("Failed to split window horizontally");
-
-    Command::new("tmux")
-        .args(["select-pane", "-t", "0"])
-        .status()
-        .ok()
-        .and_then(|s| s.success().then_some(()))
-        .expect("Failed to select pane");
-
-    Command::new("tmux")
-        .args(["split-window", "-v"])
-        .status()
-        .ok()
-        .and_then(|s| s.success().then_some(()))
-        .expect("Failed to split window vertically");
-
-    // Split remaining panes for clients
-    Command::new("tmux")
-        .args(["select-pane", "-t", "2"])
-        .status()
-        .ok()
-        .and_then(|s| s.success().then_some(()))
-        .expect("Failed to select pane");
-
-    for _ in 1..args.num_clients {
-        Command::new("tmux")
-            .args(["split-window", "-v"])
-            .status()
-            .ok()
-            .and_then(|s| s.success().then_some(()))
-            .expect("Failed to split window for client");
-    }
-
-    let start_time = OffsetDateTime::now_utc();
-
-    // Start server
-    let mut server_cmd = format!(
-        "RUST_LOG={} cargo run -p psyche-centralized-server -- --state {} --server-port {} --tui {}",
-        args.log,
-        state_path.display(),
-        args.server_port,
-        args.tui
-    );
-    if data_path.exists() {
-        server_cmd.push_str(&format!(" --data-config {}", data_path.display()));
-    }
-    server_cmd.push_str(" run");
-
-    println!("starting server: {server_cmd:?}");
-
-    Command::new("tmux")
-        .args(["select-pane", "-t", "0"])
-        .status()
-        .ok()
-        .and_then(|s| s.success().then_some(()))
-        .expect("Failed to select server pane");
-
-    Command::new("tmux")
-        .args(["send-keys", &server_cmd, "C-m"])
-        .status()
-        .ok()
-        .and_then(|s| s.success().then_some(()))
-        .expect("Failed to send server command");
-
-    println!("Waiting for server startup...");
-    loop {
-        if TcpStream::connect(format!("127.0.0.1:{}", args.server_port)).is_ok() {
-            println!("Server started!");
-            break;
-        }
-    }
-
-    // Start nvtop
-    Command::new("tmux")
-        .args(["select-pane", "-t", "1"])
-        .status()
-        .ok()
-        .and_then(|s| s.success().then_some(()))
-        .expect("Failed to select nvtop pane");
-
-    Command::new("tmux")
-        .args(["send-keys", "nvtop", "C-m"])
-        .status()
-        .ok()
-        .and_then(|s| s.success().then_some(()))
-        .expect("Failed to start nvtop");
-
-    // Start clients
-    for i in 2..=args.num_clients + 1 {
-        start_client(&args, i, &run_id, true, start_time);
-    }
-
-    // // Attach to tmux session
-    let mut tmux_session = Command::new("tmux")
-        .args(["attach-session", "-t", "psyche"])
-        .spawn()?;
-
-    if let Some(kill_num) = args.random_kill_num {
-        let allowed_to_kill = |item: &usize| {
-            if args.allowed_to_kill.is_empty() {
-                true
-            } else {
-                args.allowed_to_kill.contains(&(item - 1))
+                }
             }
-        };
-        let mut last_kill_time = Instant::now();
-        let kill_interval = Duration::from_secs(args.random_kill_interval);
-        loop {
-            std::thread::sleep(Duration::from_millis(500));
-            if Instant::now() > (last_kill_time + kill_interval) {
-                last_kill_time = Instant::now();
+            let state_path = start_args.config_path.join("state.toml");
+            let data_path = start_args.config_path.join("data.toml");
 
-                let to_kill = {
-                    let mut client_nums: Vec<usize> =
-                        (2..=args.num_clients + 1).filter(allowed_to_kill).collect();
+            println!("{start_args:?}");
 
-                    client_nums.shuffle(&mut rand::thread_rng());
+            // Pre-build packages
+            Command::new("cargo")
+                .args(["build", "-p", "psyche-centralized-server"])
+                .status()
+                .ok()
+                .and_then(|s| s.success().then_some(()))
+                .expect("Failed to build server");
 
-                    client_nums.truncate(kill_num);
-                    client_nums
-                };
-                for kill in to_kill {
-                    Command::new("tmux")
-                        .args(["select-pane", "-t", &kill.to_string()])
-                        .status()
-                        .ok()
-                        .and_then(|s| s.success().then_some(()))
-                        .expect("Failed to select client pane");
-                    // send ctrl-c
-                    Command::new("tmux")
-                        .args(["send-keys", "-t", &kill.to_string(), "C-c"])
-                        .status()
-                        .ok()
-                        .and_then(|s| s.success().then_some(()))
-                        .expect("Failed to kill client");
-                    // restart client
-                    start_client(&args, kill, &run_id, false, start_time);
+            Command::new("cargo")
+                .args(["build", "-p", "psyche-centralized-client"])
+                .status()
+                .ok()
+                .and_then(|s| s.success().then_some(()))
+                .expect("Failed to build client");
+
+            let validate_cmd = if data_path.exists() {
+                vec![
+                    "run",
+                    "-p",
+                    "psyche-centralized-server",
+                    "validate-config",
+                    "--state",
+                    state_path.to_str().unwrap(),
+                    "--data-config",
+                    data_path.to_str().unwrap(),
+                ]
+            } else {
+                vec![
+                    "run",
+                    "-p",
+                    "psyche-centralized-server",
+                    "validate-config",
+                    "--state",
+                    state_path.to_str().unwrap(),
+                ]
+            };
+            // Validate config
+            Command::new("cargo")
+                .args(validate_cmd)
+                .status()
+                .ok()
+                .and_then(|s| s.success().then_some(()))
+                .expect("Failed to validate config");
+
+            let run_id = extract_run_id(&state_path)?;
+
+            // Create tmux session
+            Command::new("tmux")
+                .args(["new-session", "-d", "-s", "psyche"])
+                .status()
+                .ok()
+                .and_then(|s| s.success().then_some(()))
+                .expect("Failed to create tmux session");
+
+            // Split windows and set up panes
+            Command::new("tmux")
+                .args(["split-window", "-h"])
+                .status()
+                .ok()
+                .and_then(|s| s.success().then_some(()))
+                .expect("Failed to split window horizontally");
+
+            Command::new("tmux")
+                .args(["select-pane", "-t", "0"])
+                .status()
+                .ok()
+                .and_then(|s| s.success().then_some(()))
+                .expect("Failed to select pane");
+
+            Command::new("tmux")
+                .args(["split-window", "-v"])
+                .status()
+                .ok()
+                .and_then(|s| s.success().then_some(()))
+                .expect("Failed to split window vertically");
+
+            // Split remaining panes for clients
+            Command::new("tmux")
+                .args(["select-pane", "-t", "2"])
+                .status()
+                .ok()
+                .and_then(|s| s.success().then_some(()))
+                .expect("Failed to select pane");
+
+            for _ in 1..start_args.num_clients {
+                Command::new("tmux")
+                    .args(["split-window", "-v"])
+                    .status()
+                    .ok()
+                    .and_then(|s| s.success().then_some(()))
+                    .expect("Failed to split window for client");
+            }
+
+            let start_time = OffsetDateTime::now_utc();
+
+            // Start server
+            let mut server_cmd = format!(
+        "RUST_LOG={} cargo run -p psyche-centralized-server run --state {} --server-port {} --tui {}",
+        start_args.log,
+        state_path.display(),
+        start_args.server_port,
+        start_args.tui
+    );
+            if data_path.exists() {
+                server_cmd.push_str(&format!(" --data-config {}", data_path.display()));
+            }
+
+            println!("starting server: {server_cmd:?}");
+
+            Command::new("tmux")
+                .args(["select-pane", "-t", "0"])
+                .status()
+                .ok()
+                .and_then(|s| s.success().then_some(()))
+                .expect("Failed to select server pane");
+
+            Command::new("tmux")
+                .args(["send-keys", &server_cmd, "C-m"])
+                .status()
+                .ok()
+                .and_then(|s| s.success().then_some(()))
+                .expect("Failed to send server command");
+
+            println!("Waiting for server startup...");
+            loop {
+                if TcpStream::connect(format!("127.0.0.1:{}", start_args.server_port)).is_ok() {
+                    println!("Server started!");
+                    break;
                 }
             }
 
-            if tmux_session.try_wait().unwrap().is_some() {
-                break;
+            // Start nvtop
+            Command::new("tmux")
+                .args(["select-pane", "-t", "1"])
+                .status()
+                .ok()
+                .and_then(|s| s.success().then_some(()))
+                .expect("Failed to select nvtop pane");
+
+            Command::new("tmux")
+                .args(["send-keys", "nvtop", "C-m"])
+                .status()
+                .ok()
+                .and_then(|s| s.success().then_some(()))
+                .expect("Failed to start nvtop");
+
+            // Start clients
+            for i in 2..=start_args.num_clients + 1 {
+                start_client(&start_args, i, &run_id, true, start_time);
             }
+
+            // // Attach to tmux session
+            let mut tmux_session = Command::new("tmux")
+                .args(["attach-session", "-t", "psyche"])
+                .spawn()?;
+
+            if let Some(kill_num) = start_args.random_kill_num {
+                let allowed_to_kill = |item: &usize| {
+                    if start_args.allowed_to_kill.is_empty() {
+                        true
+                    } else {
+                        start_args.allowed_to_kill.contains(&(item - 1))
+                    }
+                };
+                let mut last_kill_time = Instant::now();
+                let kill_interval = Duration::from_secs(start_args.random_kill_interval);
+                loop {
+                    std::thread::sleep(Duration::from_millis(500));
+                    if Instant::now() > (last_kill_time + kill_interval) {
+                        last_kill_time = Instant::now();
+
+                        let to_kill = {
+                            let mut client_nums: Vec<usize> = (2..=start_args.num_clients + 1)
+                                .filter(allowed_to_kill)
+                                .collect();
+
+                            client_nums.shuffle(&mut rand::thread_rng());
+
+                            client_nums.truncate(kill_num);
+                            client_nums
+                        };
+                        for kill in to_kill {
+                            Command::new("tmux")
+                                .args(["select-pane", "-t", &kill.to_string()])
+                                .status()
+                                .ok()
+                                .and_then(|s| s.success().then_some(()))
+                                .expect("Failed to select client pane");
+                            // send ctrl-c
+                            Command::new("tmux")
+                                .args(["send-keys", "-t", &kill.to_string(), "C-c"])
+                                .status()
+                                .ok()
+                                .and_then(|s| s.success().then_some(()))
+                                .expect("Failed to kill client");
+                            // restart client
+                            start_client(&start_args, kill, &run_id, false, start_time);
+                        }
+                    }
+
+                    if tmux_session.try_wait().unwrap().is_some() {
+                        break;
+                    }
+                }
+            }
+
+            let _ = tmux_session.wait(); // to prevent weird async tmux overlap with normal shell
+
+            // failsafe kill
+            Command::new("tmux")
+                .args(["kill-session", "-t", "psyche"])
+                .status()
+                .expect("Failed to kill tmux session");
+
+            Ok(())
+        }
+        Commands::PrintAllHelp { markdown } => {
+            // This is a required argument for the time being.
+            assert!(markdown);
+
+            let () = clap_markdown::print_help_markdown::<Args>();
+
+            Ok(())
         }
     }
-
-    let _ = tmux_session.wait(); // to prevent weird async tmux overlap with normal shell
-
-    // failsafe kill
-    Command::new("tmux")
-        .args(["kill-session", "-t", "psyche"])
-        .status()
-        .expect("Failed to kill tmux session");
-
-    Ok(())
 }
 
-fn start_client(args: &Args, i: usize, run_id: &String, print: bool, start_time: OffsetDateTime) {
+fn start_client(
+    args: &StartArgs,
+    i: usize,
+    run_id: &String,
+    print: bool,
+    start_time: OffsetDateTime,
+) {
     // hex 1, 2, 3, etc.
     let raw_key = format!("{:0>64x}", i - 1);
 
@@ -365,7 +405,7 @@ fn start_client(args: &Args, i: usize, run_id: &String, print: bool, start_time:
     };
 
     cmd.push(format!(
-        "RUST_LOG={} RUST_BACKTRACE=1 RAW_IDENTITY_SECRET_KEY={} cargo run -p psyche-centralized-client -- train --run-id {} --server-addr localhost:{} --tui {}",
+        "RUST_LOG={} RUST_BACKTRACE=1 RAW_IDENTITY_SECRET_KEY={} cargo run -p psyche-centralized-client train --run-id {} --server-addr localhost:{} --tui {}",
         args.log,
         raw_key,
         run_id,

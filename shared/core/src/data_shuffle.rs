@@ -18,3 +18,9 @@ pub enum Shuffle {
     DontShuffle,
     Seeded([u8; 32]),
 }
+
+impl Default for Shuffle {
+    fn default() -> Self {
+        Self::DontShuffle
+    }
+}

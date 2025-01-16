@@ -22,4 +22,5 @@ tokio-util.workspace = true
 hf-hub.workspace = true
 time.workspace = true
 bytemuck.workspace = true
+clap-markdown.workspace = true
 hex = "0.4.3"
