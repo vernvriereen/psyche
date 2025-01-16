@@ -117,6 +117,18 @@ pub mod solana_coordinator {
         Ok(())
     }
 
+    pub fn free_coordinator(ctx: Context<OwnerCoordinatorAccounts>) -> Result<()> {
+        {
+            let state = &ctx.accounts.account.load()?.state;
+            if !state.coordinator.halted() {
+                return err!(ProgramError::CloseCoordinatorNotHalted);
+            }
+        }
+        ctx.accounts
+            .account
+            .close(ctx.accounts.payer.to_account_info())
+    }
+
     pub fn update_coordinator_config_model(
         ctx: Context<OwnerCoordinatorAccounts>,
         config: Option<CoordinatorConfig<ClientId>>,

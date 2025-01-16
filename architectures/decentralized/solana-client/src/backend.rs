@@ -156,6 +156,23 @@ impl SolanaBackend {
         })
     }
 
+    pub async fn close_run(&self, instance: Pubkey, account: Pubkey) -> Result<Signature> {
+        let signature = self
+            .program
+            .request()
+            .accounts(solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                instance,
+                account,
+                payer: self.program.payer(),
+                system_program: system_program::ID,
+            })
+            .args(solana_coordinator::instruction::FreeCoordinator {})
+            .send()
+            .await?;
+
+        Ok(signature)
+    }
+
     pub async fn set_whitelist(
         &self,
         instance: Pubkey,
@@ -343,17 +360,9 @@ impl SolanaBackend {
             .copied()
     }
 
-    // pub async fn get_transaction(
-    //     &self,
-    //     signature: &Signature,
-    // ) -> Result<EncodedConfirmedTransactionWithStatusMeta> {
-    //     let tx = self
-    //         .program
-    //         .rpc()
-    //         .get_transaction(signature, UiTransactionEncoding::Base58)
-    //         .await?;
-    //     Ok(tx)
-    // }
+    pub async fn get_balance(&self, account: &Pubkey) -> Result<u64> {
+        Ok(self.program.rpc().get_balance(account).await?)
+    }
 
     fn find_instance_from_run_id(&self, run_id: &str) -> (Pubkey, u8) {
         let seeds = &[

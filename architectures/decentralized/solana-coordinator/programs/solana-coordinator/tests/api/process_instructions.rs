@@ -7,7 +7,7 @@ use solana_coordinator::{
         InitializeCoordinatorAccounts, OwnerCoordinatorAccounts, PermissionlessCoordinatorAccounts,
     },
     instruction::{
-        InitializeCoordinator, JoinRun, SetPaused, SetWhitelist, Tick,
+        FreeCoordinator, InitializeCoordinator, JoinRun, SetPaused, SetWhitelist, Tick,
         UpdateCoordinatorConfigModel, Witness,
     },
     ClientId,
@@ -38,6 +38,29 @@ pub async fn process_initialize_coordinator(
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
         data: InitializeCoordinator { run_id }.data(),
+        program_id: solana_coordinator::ID,
+    };
+
+    endpoint.process_instruction(instruction, payer).await
+}
+
+pub async fn process_free_coordinator(
+    endpoint: &mut ToolboxEndpoint,
+    payer: &Keypair,
+    coordinator_account: &Pubkey,
+    run_id: String,
+) -> Result<Signature, ToolboxEndpointError> {
+    let coordinator_instance = find_pda_coordinator_instance(&run_id);
+
+    let accounts = OwnerCoordinatorAccounts {
+        payer: payer.pubkey(),
+        instance: coordinator_instance,
+        account: *coordinator_account,
+        system_program: system_program::ID,
+    };
+    let instruction = Instruction {
+        accounts: accounts.to_account_metas(None),
+        data: FreeCoordinator {}.data(),
         program_id: solana_coordinator::ID,
     };
 
