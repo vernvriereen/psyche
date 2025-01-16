@@ -79,7 +79,8 @@ jobs:
           body: |
             ## Deployment Status: ${{ steps.get-deployment.outputs.status }}
 
-            🔗 [View Deployment](${{ steps.get-deployment.outputs.url }})
+            🔗 [View Deployment](https://${{ steps.get-deployment.outputs.url }})
 
-            Last updated: ${{ github.event.workflow_run.updated_at }}
+            Last updated: ${{ github.event.check_suite.updated_at }}
+            Deployed commit hash: ${{ github.event.check_suite.head_sha }}
           edit-mode: replace
