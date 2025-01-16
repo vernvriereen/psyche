@@ -12,7 +12,7 @@ DP=${DP:-"8"}
 TP=${TP:-"1"}
 BATCH_SIZE=${BATCH_SIZE:-"8"}
 
-export RUST_LOG="error,psyche_client=info,psyche_solana_client=info,psyche_network=info"
+export RUST_LOG="error,psyche_client=trace,psyche_solana_client=info,psyche_network=info"
 
 cargo run --release --bin psyche-solana-client -- \
     train \
