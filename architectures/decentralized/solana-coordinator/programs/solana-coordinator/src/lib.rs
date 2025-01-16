@@ -157,7 +157,6 @@ pub mod solana_coordinator {
 
     pub fn witness(
         ctx: Context<PermissionlessCoordinatorAccounts>,
-        index: u64,
         proof: WitnessProof,
         participant_bloom: WitnessBloom,
         order_bloom: WitnessBloom,
@@ -165,7 +164,6 @@ pub mod solana_coordinator {
         ctx.accounts.account.load_mut()?.state.witness(
             ctx.accounts.payer.key,
             Witness {
-                index,
                 proof,
                 participant_bloom,
                 order_bloom,

@@ -44,7 +44,7 @@ impl<T: NodeIdentity> Default for RoundState<T> {
 }
 
 impl<T: NodeIdentity> RoundState<T> {
-    pub fn get_witness_to_send(&mut self, index: u64) -> Option<Witness> {
+    pub fn get_witness_to_send(&mut self) -> Option<Witness> {
         if self.sent_witness {
             return None;
         }
@@ -65,7 +65,6 @@ impl<T: NodeIdentity> RoundState<T> {
         debug!("Order bloom: {:?}", order_bloom);
 
         Some(Witness {
-            index,
             proof: *witness_proof,
             participant_bloom,
             order_bloom,
