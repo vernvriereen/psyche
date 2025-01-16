@@ -150,8 +150,10 @@ impl CoordinatorInstanceState {
     }
 
     pub fn join_run(&mut self, id: ClientId) -> Result<()> {
-        if !self.clients_state.whitelist.is_empty() {
-            if !self.clients_state.whitelist.iter().any(|x| x == &id.signer) {
+        if !self.clients_state.whitelist.is_empty()
+            && !self.clients_state.whitelist.iter().any(|x| x == &id.signer)
+        {
+            {
                 return err!(ProgramError::NotInWhitelist);
             }
         }

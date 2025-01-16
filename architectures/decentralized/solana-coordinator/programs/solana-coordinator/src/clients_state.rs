@@ -26,12 +26,13 @@ impl ClientsState {
             }
         }
 
-        let iter = self.clients.iter().filter_map(move |x| {
-            match x.active == self.next_active {
+        let iter = self
+            .clients
+            .iter()
+            .filter_map(move |x| match x.active == self.next_active {
                 true => Some(&x.id),
                 false => None,
-            }
-        });
+            });
 
         SizedIterator::new(iter, size)
     }

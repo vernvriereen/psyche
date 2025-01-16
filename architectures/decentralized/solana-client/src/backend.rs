@@ -22,7 +22,6 @@ use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::info;
 
 pub struct SolanaBackend {
     program: Program<Arc<Keypair>>,
@@ -214,8 +213,8 @@ impl SolanaBackend {
             .program
             .request()
             .accounts(solana_coordinator::accounts::OwnerCoordinatorAccounts {
-                instance: instance,
-                account: account,
+                instance,
+                account,
                 payer: self.program.payer(),
                 system_program: system_program::ID,
             })
@@ -314,7 +313,7 @@ impl SolanaBackend {
         let data = self.program.rpc().get_account_data(account).await?;
         solana_coordinator::coordinator_account_from_bytes(&data)
             .map_err(|_| anyhow!("Unable to decode coordinator account data"))
-            .map(|x| x.clone())
+            .copied()
     }
 
     // pub async fn get_transaction(

@@ -181,12 +181,12 @@ impl App {
                 // }
                 _ = async { self.tick_check_interval.as_mut().unwrap().tick().await }, if self.tick_check_interval.is_some() && tick_tx.is_none() => {
                     let latest_update = latest_update.as_ref().unwrap();
-                    let mut ticked = latest_update.clone();
+                    let mut ticked = *latest_update;
                     let timestamp = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
                         .as_secs();
-                    match ticked.tick(Some(vec![].iter()), timestamp, rand::thread_rng().next_u64()) {
+                    match ticked.tick(Some([].iter()), timestamp, rand::thread_rng().next_u64()) {
                         Ok(_) => {
                             if ticked.run_state != latest_update.run_state {
                                 let backend = backend.clone();

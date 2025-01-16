@@ -217,11 +217,7 @@ async fn async_main() -> Result<()> {
             let num_members = members.len();
             let (instance_pda, instance) = backend.get_coordinator_instance(&run_id).await?;
             let set = backend
-                .set_whitelist(
-                    instance_pda,
-                    instance.account,
-                    members.into_iter().map(|x| x.into()).collect(),
-                )
+                .set_whitelist(instance_pda, instance.account, members)
                 .await?;
             println!(
                 "Set whitelist of {} members on run {} with transaction {}",
