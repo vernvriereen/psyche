@@ -406,7 +406,8 @@ impl<T: NodeIdentity> Coordinator<T> {
             from,
             &witness.proof,
             &self.epoch_state.clients,
-        ) || !witness.proof.witness {
+        ) || !witness.proof.witness
+        {
             return Err(CoordinatorError::InvalidWitness);
         }
 

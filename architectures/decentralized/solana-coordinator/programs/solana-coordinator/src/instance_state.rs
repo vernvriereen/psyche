@@ -43,7 +43,7 @@ impl CoordinatorInstanceState {
             clock.unix_timestamp as u64,
             u64::from_ne_bytes(random_seed),
         ) {
-            Ok(TickResult::Ticked) => {},
+            Ok(TickResult::Ticked) => {}
             Ok(TickResult::EpochEnd(success)) => {
                 msg!("Epoch end, sucecsss: {}", success);
 
@@ -69,11 +69,8 @@ impl CoordinatorInstanceState {
                         j += 1;
                     }
                 }
-
             }
-            Err(err) => {
-                return err!(ProgramError::from(err))
-            }
+            Err(err) => return err!(ProgramError::from(err)),
         };
 
         msg!("Post-tick run state: {}", self.coordinator.run_state);
