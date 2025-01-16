@@ -373,9 +373,6 @@ impl<T: NodeIdentity> Coordinator<T> {
                     self.tick_waiting_for_members(new_clients, unix_timestamp)
                 } else if run_state == RunState::Cooldown {
                     self.tick_cooldown(unix_timestamp)
-                } else if (self.epoch_state.clients.len() as u16) < self.config.min_clients {
-                    self.start_waiting_for_members(unix_timestamp);
-                    Ok(TickResult::EpochEnd(false))
                 } else {
                     match run_state {
                         RunState::Warmup => self.tick_warmup(unix_timestamp, random_seed),
@@ -727,7 +724,12 @@ impl<T: NodeIdentity> Coordinator<T> {
         } else {
             self.move_clients_to_exited(0);
         }
-        Ok(TickResult::Ticked)
+        if (self.epoch_state.clients.len() as u16) < self.config.min_clients {
+            self.start_waiting_for_members(unix_timestamp);
+            Ok(TickResult::EpochEnd(false))
+        } else {
+            Ok(TickResult::Ticked)
+        }
     }
 
     fn tick_round_train(
@@ -755,14 +757,12 @@ impl<T: NodeIdentity> Coordinator<T> {
             let num_witnesses = current_round.witnesses.len() as u16;
             self.move_clients_to_exited(height);
 
-            // if we didn't receive a valid number of witnesses then abort the epoch.
-            // otherwise, if we finish an epoch or some clients disconnect and we don't
+            // if we finish an epoch or some clients disconnect and we don't
             // reach the minimum number of clients we change state to cooldown.
-            if num_witnesses == 0 || (num_witnesses < self.config.witness_quorum) {
-                self.start_waiting_for_members(unix_timestamp);
-                return Ok(TickResult::EpochEnd(false));
-            } else if height == self.config.rounds_per_epoch - 1
+            if height == self.config.rounds_per_epoch - 1
                 || self.epoch_state.clients.len() < self.config.min_clients as usize
+                || num_witnesses == 0
+                || (num_witnesses < self.config.witness_quorum)
             {
                 self.start_cooldown(unix_timestamp);
             } else {
@@ -790,6 +790,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 self.config.data_indicies_per_batch,
             );
             self.progress.epoch += 1;
+
             self.start_waiting_for_members(unix_timestamp);
             Ok(TickResult::EpochEnd(true))
         } else {

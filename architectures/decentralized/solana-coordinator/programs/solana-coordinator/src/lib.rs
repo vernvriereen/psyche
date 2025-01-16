@@ -8,8 +8,8 @@ pub use client::ClientId;
 pub use instance_state::CoordinatorInstanceState;
 pub use program_error::ProgramError;
 use psyche_coordinator::{
-    model::Model, CoordinatorConfig, Witness, WitnessBloom, WitnessProof, SOLANA_MAX_NUM_CLIENTS,
-    SOLANA_MAX_STRING_LEN,
+    model::Model, Committee, CommitteeProof, CoordinatorConfig, Witness, WitnessBloom,
+    WitnessProof, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
 };
 use std::{cell::RefMut, ops::DerefMut};
 
@@ -168,6 +168,22 @@ pub mod solana_coordinator {
                 participant_bloom,
                 order_bloom,
             },
+        )
+    }
+
+    pub fn health_check(
+        ctx: Context<PermissionlessCoordinatorAccounts>,
+        committee: Committee,
+        position: u64,
+        index: u64,
+    ) -> Result<()> {
+        ctx.accounts.account.load_mut()?.state.health_check(
+            ctx.accounts.payer.key,
+            vec![CommitteeProof {
+                committee,
+                position,
+                index,
+            }],
         )
     }
 }

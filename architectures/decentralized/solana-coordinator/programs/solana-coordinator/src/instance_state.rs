@@ -3,7 +3,8 @@ use crate::{client::Client, clients_state::ClientsState, ClientId, ProgramError}
 use anchor_lang::prelude::*;
 use bytemuck::{Pod, Zeroable};
 use psyche_coordinator::{
-    model::Model, ClientState, Coordinator, CoordinatorConfig, RunState, TickResult, Witness,
+    model::Model, ClientState, Coordinator, CoordinatorConfig, HealthChecks, RunState, TickResult,
+    Witness,
 };
 use psyche_core::sha256v;
 
@@ -204,5 +205,14 @@ impl CoordinatorInstanceState {
         } else {
             Ok(())
         }
+    }
+
+    pub fn health_check(&mut self, payer: &Pubkey, checks: HealthChecks) -> Result<()> {
+        let id = self.clients_state.find_signer(payer)?;
+
+        self.coordinator
+            .health_check(id, checks)
+            .map_err(|err| anchor_lang::error!(ProgramError::from(err)))?;
+        self.tick()
     }
 }
