@@ -16,7 +16,7 @@ use anyhow::{anyhow, bail, Result};
 use futures_util::StreamExt;
 use psyche_coordinator::{
     model::{self, Model},
-    Coordinator, CoordinatorConfig, HealthChecks, Witness,
+    CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks, Witness,
 };
 use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
@@ -294,6 +294,34 @@ impl SolanaBackend {
         Ok(signature)
     }
 
+    pub async fn health_check(
+        &self,
+        instance: Pubkey,
+        account: Pubkey,
+        check: CommitteeProof,
+    ) -> Result<Signature> {
+        let signature = self
+            .program
+            .request()
+            .accounts(
+                solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                    instance,
+                    account,
+                    payer: self.program.payer(),
+                    system_program: system_program::ID,
+                },
+            )
+            .args(solana_coordinator::instruction::HealthCheck {
+                committee: check.committee,
+                position: check.position,
+                index: check.index,
+            })
+            .send()
+            .await?;
+
+        Ok(signature)
+    }
+
     pub async fn get_coordinator_instance(
         &self,
         run_id: &str,
@@ -362,8 +390,13 @@ impl WatcherBackend<solana_coordinator::ClientId> for SolanaBackendRunner {
         Ok(())
     }
 
-    async fn send_health_check(&mut self, _health_checks: HealthChecks) -> Result<()> {
-        unimplemented!();
+    async fn send_health_check(&mut self, checks: HealthChecks) -> Result<()> {
+        for check in checks {
+            self.backend
+                .health_check(self.instance, self.account, check)
+                .await?;
+        }
+        Ok(())
     }
 
     async fn send_checkpoint(&mut self, _checkpoint: model::Checkpoint) -> Result<()> {
