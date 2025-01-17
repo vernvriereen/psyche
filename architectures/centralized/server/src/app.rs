@@ -374,8 +374,12 @@ impl App {
             }
             ClientToServerMessage::HealthCheck(health_checks) => {
                 match self.coordinator.health_check(&from, health_checks) {
-                    Ok(dropped) => {
+                    Ok((dropped, dropped_clients)) => {
                         info!("Dropped {} clients from health check", dropped);
+                        for client in dropped_clients {
+                            self.on_disconnect(client.id)
+                                .expect("HealthCheck disconnected");
+                        }
                         dropped > 0
                     }
 
