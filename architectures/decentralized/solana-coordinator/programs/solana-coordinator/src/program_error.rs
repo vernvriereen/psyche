@@ -36,6 +36,9 @@ pub enum ProgramError {
     #[msg("Signer mismatch")]
     SignerMismatch,
 
+    #[msg("Cannot close coordinator account when not halted")]
+    CloseCoordinatorNotHalted,
+
     #[msg("Coordinator error: No active round")]
     CoordinatorErrorNoActiveRound,
 

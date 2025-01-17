@@ -141,7 +141,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             return Ok(());
         }
 
-        if let Some((_, witness_proof, _)) = round.committee_info {
+        if round.committee_info.is_some() {
             // check that we've seen a payload for every batch ID
             if round.batch_ids_not_yet_trained_on.is_some() {
                 // we're not done training yet, still some batch IDs to recv payloads for.
@@ -162,7 +162,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                 }
             }
 
-            if let Some(witness) = round.get_witness_to_send(witness_proof.index) {
+            if let Some(witness) = round.get_witness_to_send() {
                 debug!("Sending opportunistic witness",);
 
                 self.tx_witness
@@ -701,16 +701,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunManager<T, A> {
             InitStage::NotYetInitialized(None) => {
                 unreachable!("Once we take the init state, we move to initializing.");
             }
-            InitStage::Initializing(..) if state.run_state != RunState::Warmup => {
+            InitStage::Initializing(..) if state.run_state == RunState::WaitingForMembers => {
                 // a client has left the network, transitioning back to RunState::WaitingForMembers.
                 // wait for new clients to join the network.
-                if state.run_state == RunState::WaitingForMembers {
-                    return Ok(());
-                }
-
-                unimplemented!(
-                    "we missed warmup while warming up! abort. maybe handle this gracefully?"
-                )
+                return Ok(());
             }
             InitStage::Initializing(ref mut init_future) => {
                 // Try to complete initialization

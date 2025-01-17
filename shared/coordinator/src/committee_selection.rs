@@ -68,8 +68,11 @@ pub struct CommitteeProof {
 )]
 #[repr(C)]
 pub struct WitnessProof {
+    // assertion of witness membership or non-membership
     pub witness: bool,
+    // position in virtual shuffle, as determined by seed
     pub position: u64,
+    // index into epoch_state.clients of sender
     pub index: u64,
 }
 

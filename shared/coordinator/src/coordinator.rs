@@ -119,7 +119,6 @@ pub struct Round {
 )]
 #[repr(C)]
 pub struct Witness {
-    pub index: u64,
     pub proof: WitnessProof,
     pub participant_bloom: WitnessBloom,
     pub order_bloom: WitnessBloom,
@@ -374,9 +373,6 @@ impl<T: NodeIdentity> Coordinator<T> {
                     self.tick_waiting_for_members(new_clients, unix_timestamp)
                 } else if run_state == RunState::Cooldown {
                     self.tick_cooldown(unix_timestamp)
-                } else if (self.epoch_state.clients.len() as u16) < self.config.min_clients {
-                    self.start_waiting_for_members(unix_timestamp);
-                    Ok(TickResult::EpochEnd(false))
                 } else {
                     match run_state {
                         RunState::Warmup => self.tick_warmup(unix_timestamp, random_seed),
@@ -407,7 +403,8 @@ impl<T: NodeIdentity> Coordinator<T> {
             from,
             &witness.proof,
             &self.epoch_state.clients,
-        ) {
+        ) || !witness.proof.witness
+        {
             return Err(CoordinatorError::InvalidWitness);
         }
 
@@ -426,7 +423,7 @@ impl<T: NodeIdentity> Coordinator<T> {
 
         let round = self.current_round().unwrap();
         for witness in round.witnesses.iter() {
-            if self.epoch_state.clients[witness.index as usize].id == *from {
+            if self.epoch_state.clients[witness.proof.index as usize].id == *from {
                 return Err(CoordinatorError::DuplicateWitness);
             }
         }
@@ -727,7 +724,12 @@ impl<T: NodeIdentity> Coordinator<T> {
         } else {
             self.move_clients_to_exited(0);
         }
-        Ok(TickResult::Ticked)
+        if (self.epoch_state.clients.len() as u16) < self.config.min_clients {
+            self.start_waiting_for_members(unix_timestamp);
+            Ok(TickResult::EpochEnd(false))
+        } else {
+            Ok(TickResult::Ticked)
+        }
     }
 
     fn tick_round_train(
@@ -750,14 +752,17 @@ impl<T: NodeIdentity> Coordinator<T> {
             self.epoch_state.first_round = false.into();
             self.progress.step += 1;
 
-            let height = self.current_round_unchecked().height;
-
+            let current_round = self.current_round_unchecked();
+            let height = current_round.height;
+            let num_witnesses = current_round.witnesses.len() as u16;
             self.move_clients_to_exited(height);
 
-            // if we finish an epoch or some clients disconnect and we don't reach the minimum number of clients,
-            // we change state to cooldown.
+            // if we finish an epoch or some clients disconnect and we don't
+            // reach the minimum number of clients we change state to cooldown.
             if height == self.config.rounds_per_epoch - 1
                 || self.epoch_state.clients.len() < self.config.min_clients as usize
+                || num_witnesses == 0
+                || (num_witnesses < self.config.witness_quorum)
             {
                 self.start_cooldown(unix_timestamp);
             } else {
@@ -785,6 +790,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 self.config.data_indicies_per_batch,
             );
             self.progress.epoch += 1;
+
             self.start_waiting_for_members(unix_timestamp);
             Ok(TickResult::EpochEnd(true))
         } else {

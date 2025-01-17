@@ -9,7 +9,7 @@ RUN_ID=${RUN_ID:-"test"}
 CONFIG_FILE=${CONFIG_FILE:-"./config/solana-test/config.toml"}
 
 pushd architectures/decentralized/solana-coordinator
-anchor build --no-idl && anchor deploy
+anchor build --no-idl && anchor deploy --provider.cluster ${RPC} -- --max-len 500000
 popd
 
 sleep 10
