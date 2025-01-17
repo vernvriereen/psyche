@@ -89,7 +89,7 @@ async fn main() -> Result<()> {
         Commands::Gcp {
             bucket_url,
             directory,
-        } => FileURLs::from_gcp_bucket(bucket_url, directory).await?,
+        } => FileURLs::from_gcp_bucket(&bucket_url, directory).await?,
     };
     let mut provider =
         HttpDataProvider::new(urls, token_size, cli.sequence_length, Shuffle::DontShuffle)?;
