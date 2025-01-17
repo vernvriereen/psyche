@@ -138,8 +138,8 @@ pub enum LoadLlamaForCausalLMError {
     #[error("Failed to copy tensor into variable store: {0}")]
     CopyTensorError(#[from] tch::TchError),
 
-    #[error("Some parameters were not loaded")]
-    LoadTensorError,
+    #[error("Some parameters were not loaded: {0:?}")]
+    LoadTensorError(HashSet<String>),
 }
 
 impl LlamaForCausalLM {
@@ -309,7 +309,7 @@ impl LlamaForCausalLM {
                 unmatched.remove(name);
             }
             if !unmatched.is_empty() {
-                return Err(LoadLlamaForCausalLMError::LoadTensorError);
+                return Err(LoadLlamaForCausalLMError::LoadTensorError(unmatched));
             };
         }
 
