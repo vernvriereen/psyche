@@ -153,9 +153,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     }
                                     NetworkEvent::ParameterRequest(parameter_name, protocol_req_tx) => {
 
-                                        // TODO: We should validate things here:
-                                        //  * Make sure that the parameter is requested while we are in RunState::Warmup.
-                                        //  * Validate that the message is from a known peer.
+                                        // TODO: We should validate that the parameter is requested while we are in RunState::Warmup.
 
                                         let transmittable_parameter = sharable_model.get_transmittable_parameter(&parameter_name)?;
                                         let transmittable_download = TransmittableDownload::ModelParameter(transmittable_parameter);
