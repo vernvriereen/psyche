@@ -4,8 +4,13 @@ use crate::{
     tensor_parallelism::Communicator,
     CausalLM, CommunicatorId, ConcreteCausalLM, LoadSafetensorsError,
 };
-use std::{collections::HashMap, io, path::PathBuf, sync::Arc};
-use std::{collections::HashSet, rc::Rc};
+use std::{
+    collections::{HashMap, HashSet},
+    io,
+    path::PathBuf,
+    rc::Rc,
+    sync::Arc,
+};
 use tch::{
     nn::{self, Module, VarStore},
     Device, Kind, Tensor,
