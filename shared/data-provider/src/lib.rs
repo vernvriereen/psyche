@@ -1,6 +1,7 @@
 mod data_provider;
 mod dataset;
 mod dummy;
+mod file_extensions;
 pub mod http;
 mod hub;
 mod local;
