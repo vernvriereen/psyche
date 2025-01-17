@@ -447,7 +447,7 @@ pub async fn request_model_parameter(
     send.finish()?;
 
     // Receive parameter value blob ticket
-    let parameter_blob_ticket_bytes = recv.read_to_end(100000).await?;
+    let parameter_blob_ticket_bytes = recv.read_to_end(500).await?;
     let parameter_blob_ticket: BlobTicket = postcard::from_bytes(&parameter_blob_ticket_bytes)?;
 
     Ok(parameter_blob_ticket)
