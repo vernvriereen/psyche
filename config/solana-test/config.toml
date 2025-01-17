@@ -26,11 +26,9 @@ repo_id = "emozilla/llama2-1.1b-gqa-init"
 token_size_in_bytes = "TwoBytes"
 shuffle = "DontShuffle"
 
-[model.LLM.data_location.Http.location.NumberedFiles]
-url_template = "https://storage.googleapis.com/nous-pretraining-public-us/fineweb-edu-tokenized-llama2/{}_fineweb-edu.ds"
-start_index = 0
-n_left_pad_zeros = 3
-num_files = 83
+[model.LLM.data_location.Http.location.Gcp]
+bucket_url = "https://storage.googleapis.com/nous-pretraining-public-us"
+filter_directory = "fineweb-edu-tokenized-llama2"
 
 [model.LLM.lr_schedule.Cosine]
 base_lr = 4.0e-4

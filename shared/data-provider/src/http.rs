@@ -8,7 +8,7 @@ use rand::seq::SliceRandom;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use regex::Regex;
-use reqwest::IntoUrl;
+use reqwest::{IntoUrl, Url};
 use tokio::task::JoinHandle;
 use tracing::{info, trace};
 
@@ -80,12 +80,16 @@ impl FileURLs {
         Ok(Self(urls_with_sizes))
     }
 
-    pub async fn from_gcp_bucket(
-        bucket_url: impl IntoUrl,
-        directory: Option<String>,
-    ) -> Result<Self> {
-        let bucket_url = bucket_url.into_url()?;
+    pub async fn from_gcp_bucket(bucket_url: &str, directory: Option<String>) -> Result<Self> {
+        let bucket_url = match bucket_url.ends_with("/") {
+            true => bucket_url.to_owned(),
+            false => format!("{bucket_url}/"),
+        };
+        let bucket_url = Url::from_str(&bucket_url)?;
         let gcp_xml_contents = reqwest::get(bucket_url.clone()).await?.text().await?;
+        if gcp_xml_contents.contains("<IsTruncated>true</IsTruncated>") {
+            bail!("Received truncated manifest from GCP bucket");
+        }
         let files_in_bucket: Vec<(String, u64)> = parse_gcp_xml(&gcp_xml_contents);
         let data_files_matching_directory: Result<Vec<(reqwest::Url, u64)>, anyhow::Error> =
             files_in_bucket
@@ -110,8 +114,9 @@ impl FileURLs {
                     Some(full_url.map(|full_url| (full_url, size)))
                 })
                 .collect();
-
-        Ok(Self(data_files_matching_directory?))
+        let mut data_files_matching_directory = data_files_matching_directory?;
+        data_files_matching_directory.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(Self(data_files_matching_directory))
     }
 
     pub async fn from_location(location: &HttpTrainingDataLocation) -> Result<Self> {
@@ -137,7 +142,7 @@ impl FileURLs {
             } => {
                 let filter_directory = u8_to_string(filter_directory);
                 Self::from_gcp_bucket(
-                    u8_to_string(bucket_url),
+                    &u8_to_string(bucket_url),
                     if filter_directory.is_empty() {
                         None
                     } else {
