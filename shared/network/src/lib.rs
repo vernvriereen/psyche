@@ -6,7 +6,7 @@ use futures_util::StreamExt;
 use iroh::{endpoint::RemoteInfo, NodeAddr};
 use iroh_blobs::{net_protocol::Blobs, store::mem::Store, util::local_pool::LocalPool};
 use iroh_gossip::net::{Gossip, GossipEvent, GossipReceiver, GossipSender};
-use p2p_model_sharing::ParameterSharingMessage;
+use p2p_model_sharing::{ParameterSharingMessage, REQUEST_PARAMETER_TIMEOUT_SECS};
 use router::Router;
 use state::State;
 use std::{
@@ -26,6 +26,7 @@ use tokio::{
     sync::mpsc,
     time::{interval, Interval},
 };
+use tokio_util::time::FutureExt;
 use tracing::{debug, error, info, trace};
 use util::{fmt_relay_mode, gossip_topic};
 
@@ -448,7 +449,11 @@ pub async fn request_model_parameter(
     send.finish()?;
 
     // Receive parameter value blob ticket
-    let parameter_blob_ticket_bytes = recv.read_to_end(100000).await?;
+    let parameter_blob_ticket_bytes = recv
+        .read_to_end(100000)
+        .timeout(Duration::from_secs(REQUEST_PARAMETER_TIMEOUT_SECS))
+        .await??;
+
     let parameter_blob_ticket: Result<BlobTicket, SharableModelParameterError> =
         postcard::from_bytes(&parameter_blob_ticket_bytes)?;
 

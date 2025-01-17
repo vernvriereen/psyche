@@ -16,6 +16,7 @@ use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use tracing::warn;
 
 pub const ALPN: &[u8] = b"model-parameter-sharing/0";
+pub const REQUEST_PARAMETER_TIMEOUT_SECS: u64 = 3;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub enum SharableModelParameterError {
@@ -163,7 +164,7 @@ impl ModelParameters {
         };
 
         match parameters.get(param_name) {
-            Some(parameter) if parameter.numel() > 1 => {
+            Some(parameter) if is_initialized(parameter) => {
                 let mut param_name_buffer = Vec::new();
                 let mut param_value_buffer = Vec::new();
 
