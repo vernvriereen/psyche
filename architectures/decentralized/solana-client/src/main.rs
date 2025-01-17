@@ -1,5 +1,5 @@
 use crate::{
-    app::{AppBuilder, AppParams},
+    app::{AppBuilder, AppParams, Tabs, TAB_NAMES},
     backend::SolanaBackend,
 };
 
@@ -21,7 +21,7 @@ use psyche_client::{
 };
 use psyche_coordinator::{model::Model, CoordinatorConfig};
 use psyche_network::SecretKey;
-use psyche_tui::LogOutput;
+use psyche_tui::{maybe_start_render_loop, LogOutput};
 use serde::{Deserialize, Serialize};
 use solana_coordinator::ClientId;
 use std::path::PathBuf;
@@ -325,12 +325,11 @@ async fn async_main() -> Result<()> {
             let eval_tasks = args.eval_tasks()?;
 
             psyche_tui::init_logging(
-                // if args.tui {
-                //     LogOutput::TUI
-                // } else {
-                //     LogOutput::Console
-                // },
-                LogOutput::Console,
+                if args.tui {
+                    LogOutput::TUI
+                } else {
+                    LogOutput::Console
+                },
                 Level::INFO,
                 args.write_log.clone(),
             );
@@ -352,13 +351,13 @@ async fn async_main() -> Result<()> {
                 wallet_keypair.pubkey()
             ))?;
 
-            // let (cancel, tx_tui_state) = maybe_start_render_loop(
-            //     args.tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)),
-            // )?;
+            let (cancel, tx_tui_state) = maybe_start_render_loop(
+                args.tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)),
+            )?;
 
             let (mut app, allowlist, p2p, state_options) = AppBuilder::new(AppParams {
-                //cancel,
-                //tx_tui_state,
+                cancel,
+                tx_tui_state,
                 identity_secret_key,
                 wallet_keypair,
                 cluster: cluster.into(),
