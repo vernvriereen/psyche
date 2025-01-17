@@ -314,7 +314,9 @@ impl std::fmt::Display for Checkpoint {
             Checkpoint::Dummy => write!(f, "Dummy"),
             Checkpoint::Ephemeral => write!(f, "Ephemeral"),
             Checkpoint::Hub(hub_repo) => write!(f, "{}", u8_to_string(&hub_repo.repo_id)),
-            Checkpoint::P2P(_hub_repo) => write!(f, "P2P"),
+            Checkpoint::P2P(hub_repo) => {
+                write!(f, "P2P - hub repo ID: {}", u8_to_string(&hub_repo.repo_id))
+            }
         }
     }
 }
@@ -419,7 +421,7 @@ impl Model {
                         Checkpoint::Dummy => false,
                         Checkpoint::Ephemeral => true,
                         Checkpoint::Hub(hub_repo) => hub_repo.repo_id[0] != 0,
-                        Checkpoint::P2P(_) => todo!(),
+                        Checkpoint::P2P(hub_repo) => hub_repo.repo_id[0] != 0,
                     }
                     && match llm.optimizer {
                         Optimizer::Dummy => false,

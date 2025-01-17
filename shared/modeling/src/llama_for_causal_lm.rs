@@ -4,8 +4,13 @@ use crate::{
     tensor_parallelism::Communicator,
     CausalLM, CommunicatorId, ConcreteCausalLM, LoadSafetensorsError,
 };
-use std::{collections::HashMap, io, path::PathBuf, sync::Arc};
-use std::{collections::HashSet, rc::Rc};
+use std::{
+    collections::{HashMap, HashSet},
+    io,
+    path::PathBuf,
+    rc::Rc,
+    sync::Arc,
+};
 use tch::{
     nn::{self, Module, VarStore},
     Device, Kind, Tensor,
@@ -133,8 +138,8 @@ pub enum LoadLlamaForCausalLMError {
     #[error("Failed to copy tensor into variable store: {0}")]
     CopyTensorError(#[from] tch::TchError),
 
-    #[error("Some parameters were not loaded")]
-    LoadTensorError,
+    #[error("Some parameters were not loaded: {0:?}")]
+    LoadTensorError(HashSet<String>),
 }
 
 impl LlamaForCausalLM {
@@ -304,7 +309,7 @@ impl LlamaForCausalLM {
                 unmatched.remove(name);
             }
             if !unmatched.is_empty() {
-                return Err(LoadLlamaForCausalLMError::LoadTensorError);
+                return Err(LoadLlamaForCausalLMError::LoadTensorError(unmatched));
             };
         }
 

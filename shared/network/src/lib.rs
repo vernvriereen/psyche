@@ -1,5 +1,4 @@
 use allowlist::Allowlist;
-use anyhow::anyhow;
 use anyhow::{Error, Result};
 use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
 use futures_util::StreamExt;
@@ -450,14 +449,11 @@ pub async fn request_model_parameter(
 
     // Receive parameter value blob ticket
     let parameter_blob_ticket_bytes = recv
-        .read_to_end(100000)
+        .read_to_end(500)
         .timeout(Duration::from_secs(REQUEST_PARAMETER_TIMEOUT_SECS))
         .await??;
-
-    let parameter_blob_ticket: Result<BlobTicket, SharableModelParameterError> =
-        postcard::from_bytes(&parameter_blob_ticket_bytes)?;
-
-    parameter_blob_ticket.map_err(|e| anyhow!("Error: {e}"))
+    let parameter_blob_ticket: BlobTicket = postcard::from_bytes(&parameter_blob_ticket_bytes)?;
+    Ok(parameter_blob_ticket)
 }
 
 fn parse_gossip_event<BroadcastMessage: Networkable>(

@@ -11,7 +11,7 @@ use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     error::Error,
 };
-use tch::{Device, Kind, Tensor};
+use tch::Tensor;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use tracing::warn;
 
@@ -26,6 +26,7 @@ pub enum SharableModelParameterError {
     ParameterAlreadyAdded,
     SerializationError(String),
     ParametersNotInitialized,
+    ParameterNotInitialized(String),
     ResponseChannelNotInitialized,
 }
 
@@ -68,6 +69,12 @@ impl fmt::Display for SharableModelParameterError {
             SharableModelParameterError::ParametersNotInitialized => {
                 write!(f, "Parameters were not initialized")
             }
+            SharableModelParameterError::ParameterNotInitialized(param_name) => {
+                write!(
+                    f,
+                    "Parameter {param_name} is known but was not yet initialized"
+                )
+            }
             SharableModelParameterError::ResponseChannelNotInitialized => {
                 write!(f, "Response channel was not initialized")
             }
@@ -84,6 +91,7 @@ impl Error for SharableModelParameterError {
             SharableModelParameterError::ParameterAlreadyAdded => Some(self),
             SharableModelParameterError::SerializationError(_err) => Some(self),
             SharableModelParameterError::ParametersNotInitialized => Some(self),
+            SharableModelParameterError::ParameterNotInitialized(_) => Some(self),
             SharableModelParameterError::ResponseChannelNotInitialized => Some(self),
         }
     }
@@ -117,7 +125,7 @@ impl TransmittableModelParameter {
 // storing them while parameters are downloaded from other peers.
 #[derive(Debug)]
 pub struct ModelParameters {
-    parameters: Option<HashMap<String, Tensor>>,
+    parameters: Option<HashMap<String, Option<Tensor>>>,
     tx_params_response: Option<oneshot::Sender<HashMap<String, Tensor>>>,
 }
 
@@ -140,7 +148,12 @@ impl ModelParameters {
         new_parameters: HashMap<String, Tensor>,
     ) -> Result<(), SharableModelParameterError> {
         let Some(parameters) = self.parameters.as_mut() else {
-            self.parameters = Some(new_parameters);
+            let mut parameters = HashMap::new();
+            let new_parameters = new_parameters;
+            new_parameters.into_iter().for_each(|(param_name, tensor)| {
+                parameters.insert(param_name, Some(tensor));
+            });
+            self.parameters = Some(parameters);
             return Ok(());
         };
 
@@ -151,7 +164,12 @@ impl ModelParameters {
             return Err(SharableModelParameterError::InvalidUpdate);
         }
 
-        self.parameters = Some(new_parameters);
+        let mut parameters = HashMap::new();
+        let new_parameters = new_parameters;
+        new_parameters.into_iter().for_each(|(param_name, tensor)| {
+            parameters.insert(param_name, Some(tensor));
+        });
+        self.parameters = Some(parameters);
         Ok(())
     }
 
@@ -164,7 +182,7 @@ impl ModelParameters {
         };
 
         match parameters.get(param_name) {
-            Some(parameter) if is_initialized(parameter) => {
+            Some(Some(parameter)) => {
                 let mut param_name_buffer = Vec::new();
                 let mut param_value_buffer = Vec::new();
 
@@ -197,13 +215,10 @@ impl ModelParameters {
         param_names: &[String],
         tx_params_response: oneshot::Sender<HashMap<String, Tensor>>,
     ) {
-        // Initialize the model parameter names with a dummy zero tensor.
+        // Initialize the model parameter names with None.
         let mut parameters = HashMap::new();
         for param_name in param_names {
-            parameters.insert(
-                param_name.clone(),
-                Tensor::zeros([1], (Kind::BFloat16, Device::Cpu)),
-            );
+            parameters.insert(param_name.clone(), None);
         }
         self.parameters = Some(parameters);
         self.tx_params_response = Some(tx_params_response);
@@ -228,10 +243,10 @@ impl ModelParameters {
         match parameters.entry(param_name.to_string()) {
             Entry::Occupied(mut param_entry) => {
                 let param = param_entry.get_mut();
-                if is_initialized(param) {
+                if param.is_some() {
                     return Err(SharableModelParameterError::ParameterAlreadyAdded);
                 }
-                *param = param_value;
+                *param = Some(param_value);
                 Ok(())
             }
             Entry::Vacant(_) => Err(SharableModelParameterError::ParameterUnknown(
@@ -249,7 +264,7 @@ impl ModelParameters {
 
         parameters
             .iter()
-            .all(|(_param_name, param_value)| is_initialized(param_value))
+            .all(|(_param_name, param_value)| param_value.is_some())
     }
 
     // Once all parameters have been downloaded, this function is called to send them
@@ -259,7 +274,19 @@ impl ModelParameters {
             let Some(parameters) = self.parameters.take() else {
                 return Err(SharableModelParameterError::ParametersNotInitialized);
             };
-            tx_params_response.send(parameters).unwrap();
+
+            let mut parameters_to_send = HashMap::new();
+            for (param_name, parameter) in parameters.into_iter() {
+                let Some(tensor) = parameter else {
+                    // This error should never really happen, but checking just in case
+                    // something goes really wrong
+                    return Err(SharableModelParameterError::ParameterNotInitialized(
+                        param_name,
+                    ));
+                };
+                parameters_to_send.insert(param_name, tensor);
+            }
+            tx_params_response.send(parameters_to_send).unwrap();
             return Ok(());
         }
         Err(SharableModelParameterError::ResponseChannelNotInitialized)
@@ -324,9 +351,4 @@ impl ProtocolHandler for ModelParameterSharing {
             Self::_accept_connection(connection, tx_model_parameter_req).await
         })
     }
-}
-
-// Utility function to know when a model parameter has been set
-pub fn is_initialized(tensor: &Tensor) -> bool {
-    tensor != &Tensor::zeros([1], (Kind::BFloat16, Device::Cpu))
 }
