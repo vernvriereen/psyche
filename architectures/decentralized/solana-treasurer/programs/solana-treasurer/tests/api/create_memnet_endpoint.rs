@@ -17,6 +17,6 @@ pub async fn create_memnet_endpoint() -> ToolboxEndpoint {
         ),
     ])
     .await;
-    endpoint.add_logger(Box::new(ToolboxEndpointLoggerPrint::new()));
+    endpoint.add_logger(Box::new(ToolboxEndpointLoggerPrint::default()));
     endpoint
 }

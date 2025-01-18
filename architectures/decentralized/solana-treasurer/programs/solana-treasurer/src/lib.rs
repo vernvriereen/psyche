@@ -1,26 +1,18 @@
-use anchor_lang::{prelude::*, system_program};
+use anchor_lang::prelude::*;
 
 declare_id!("77mYTtUnEzSYVoG1JtWCjKAdakSvYDkdPPy8DoGqr5RP");
+
+pub mod create_run;
+
+use create_run::*;
 
 #[program]
 pub mod psyche_solana_treasurer {
     use super::*;
 
-    pub fn initialize_coordinator(
-        ctx: Context<InitializeCoordinatorAccounts>,
-        run_id: String,
-    ) -> Result<()> {
-        Ok(())
+    pub fn create_run(ctx: Context<CreateRunAccounts>, run_id: String) -> Result<()> {
+        create_run_logic(ctx, run_id)
     }
-}
-
-#[derive(Accounts)]
-#[instruction(run_id: String)]
-pub struct InitializeCoordinatorAccounts<'info> {
-    #[account(mut)]
-    pub payer: Signer<'info>,
-    #[account(address = system_program::ID)]
-    pub system_program: Program<'info, System>,
 }
 
 #[error_code]
