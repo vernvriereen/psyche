@@ -1,19 +1,13 @@
 use psyche_solana_coordinator::CoordinatorAccount;
 
+use crate::api::get_coordinator_instance_state::get_coordinator_instance_state;
 use crate::api::{
     create_memnet_endpoint::create_memnet_endpoint, process_instructions::process_create_run,
 };
-use crate::api::get_coordinator_instance_state::get_coordinator_instance_state;
 
 use solana_sdk::{signature::Keypair, signer::Signer};
 
-use psyche_coordinator::{
-    model::{
-        Checkpoint, ConstantLR, LLMArchitecture, LLMTrainingDataLocation, LLMTrainingDataType,
-        LearningRateSchedule, Model, Optimizer, LLM,
-    },
-    CoordinatorConfig, RunState,
-};
+use psyche_coordinator::RunState;
 
 #[tokio::test]
 pub async fn memnet_coordinator_run() {

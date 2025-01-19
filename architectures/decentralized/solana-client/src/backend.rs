@@ -160,12 +160,14 @@ impl SolanaBackend {
         let signature = self
             .program
             .request()
-            .accounts(psyche_solana_coordinator::accounts::FreeCoordinatorAccounts {
-                instance,
-                account,
-                payer: self.program.payer(),
-                system_program: system_program::ID,
-            })
+            .accounts(
+                psyche_solana_coordinator::accounts::FreeCoordinatorAccounts {
+                    instance,
+                    account,
+                    payer: self.program.payer(),
+                    system_program: system_program::ID,
+                },
+            )
             .args(psyche_solana_coordinator::instruction::FreeCoordinator {})
             .send()
             .await?;
@@ -182,12 +184,14 @@ impl SolanaBackend {
         let signature = self
             .program
             .request()
-            .accounts(psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
-                instance,
-                account,
-                payer: self.program.payer(),
-                system_program: system_program::ID,
-            })
+            .accounts(
+                psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                    instance,
+                    account,
+                    payer: self.program.payer(),
+                    system_program: system_program::ID,
+                },
+            )
             .args(psyche_solana_coordinator::instruction::SetWhitelist { clients })
             .send()
             .await?;
@@ -210,7 +214,11 @@ impl SolanaBackend {
                     account,
                     payer: self.program.payer(),
                     system_program: system_program::ID,
-
+                },
+            )
+            .args(psyche_solana_coordinator::instruction::JoinRun { id })
+            .send()
+            .await?;
         Ok(signature)
     }
     pub async fn update_config_and_model(
@@ -223,13 +231,20 @@ impl SolanaBackend {
         let signature = self
             .program
             .request()
-            .accounts(psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
-                instance,
-                account,
-                payer: self.program.payer(),
-                system_program: system_program::ID,
-            })
-            .args(psyche_solana_coordinator::instruction::UpdateCoordinatorConfigModel { config, model })
+            .accounts(
+                psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                    instance,
+                    account,
+                    payer: self.program.payer(),
+                    system_program: system_program::ID,
+                },
+            )
+            .args(
+                psyche_solana_coordinator::instruction::UpdateCoordinatorConfigModel {
+                    config,
+                    model,
+                },
+            )
             .send()
             .await?;
 
@@ -245,12 +260,14 @@ impl SolanaBackend {
         let signature = self
             .program
             .request()
-            .accounts(psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
-                instance,
-                account,
-                payer: self.program.payer(),
-                system_program: system_program::ID,
-            })
+            .accounts(
+                psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                    instance,
+                    account,
+                    payer: self.program.payer(),
+                    system_program: system_program::ID,
+                },
+            )
             .args(psyche_solana_coordinator::instruction::SetPaused { paused })
             .send()
             .await?;
@@ -369,7 +386,9 @@ impl SolanaBackend {
 
 #[async_trait::async_trait]
 impl WatcherBackend<psyche_solana_coordinator::ClientId> for SolanaBackendRunner {
-    async fn wait_for_new_state(&mut self) -> Result<Coordinator<psyche_solana_coordinator::ClientId>> {
+    async fn wait_for_new_state(
+        &mut self,
+    ) -> Result<Coordinator<psyche_solana_coordinator::ClientId>> {
         let data = match self.init.take() {
             Some(init) => init,
             None => match self.updates.recv().await {

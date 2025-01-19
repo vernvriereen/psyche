@@ -1,1 +1,1 @@
-mod memnet_coordinator_run;
+mod memnet_run;

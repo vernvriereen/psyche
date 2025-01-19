@@ -20,7 +20,6 @@ use psyche_coordinator::{
 use psyche_core::FixedVec;
 use psyche_solana_coordinator::{ClientId, CoordinatorAccount};
 use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer};
-use std::sync::Arc;
 
 #[tokio::test]
 pub async fn memnet_coordinator_run() {
