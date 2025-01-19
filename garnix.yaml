@@ -1,0 +1,8 @@
+servers:
+  - configuration: psyche-book-http-authed
+    deployment:
+      type: on-pull-request
+  - configuration: psyche-book-http-authed
+    deployment:
+      type: on-branch
+      branch: main

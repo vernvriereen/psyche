@@ -41,7 +41,7 @@ pub struct WitnessStep {
 impl<T: NodeIdentity> WitnessStepMetadata<T> {
     pub fn start(
         &self,
-        client_index: u64,
+        _client_index: u64,
         _state: &Coordinator<T>,
         trainers: MaybeRunningEvals,
         _previous_round: &mut RoundState<T>,
@@ -54,15 +54,14 @@ impl<T: NodeIdentity> WitnessStepMetadata<T> {
         let evals = self.eval_runner.start_if_not_running(trainers);
 
         let round_to_witness = current_round;
-        let sending_witness =
-            if let Some(witness) = round_to_witness.get_witness_to_send(client_index) {
-                let tx_witness = self.tx_witness.clone();
-                Some(tokio::task::spawn(async move {
-                    tx_witness.send(witness).map_err(|_| WitnessingError::Send)
-                }))
-            } else {
-                None
-            };
+        let sending_witness = if let Some(witness) = round_to_witness.get_witness_to_send() {
+            let tx_witness = self.tx_witness.clone();
+            Some(tokio::task::spawn(async move {
+                tx_witness.send(witness).map_err(|_| WitnessingError::Send)
+            }))
+        } else {
+            None
+        };
         Ok(WitnessStep {
             evals,
             sending_witness,

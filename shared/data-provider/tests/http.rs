@@ -9,6 +9,7 @@ use std::net::SocketAddr;
 use std::{fs::File, time::Duration};
 use test_log::test;
 use tokio::time::timeout;
+use tracing::debug;
 
 struct TestServer {
     cancel: tokio::sync::watch::Sender<()>,
@@ -29,7 +30,7 @@ impl TestServer {
             let file_path = temp_dir.path().join(format!("{:0>3}.ds", idx));
             let mut file = File::create(&file_path)?;
             file.write_all(data)?;
-            println!("created temp test file {file_path:?}");
+            debug!("created temp test file {file_path:?}");
         }
 
         let (cancel, rx_cancel) = tokio::sync::watch::channel(());
@@ -60,16 +61,16 @@ async fn test_http_data_provider() -> Result<()> {
     let server = TestServer::new(vec![file1.clone(), file2.clone()]).await?;
     let base_url = format!("http://{}/{{}}.ds", server.addr);
 
-    let mut provider = timeout(
-        Duration::from_secs(2),
-        HttpDataProvider::new(
-            FileURLs::from_template(base_url, 0, 3, 2)?,
-            TokenSize::TwoBytes,
-            SEQUENCE_LEN,
-            Shuffle::DontShuffle,
-        ),
-    )
-    .await??;
+    let mut provider = HttpDataProvider::new(
+        timeout(
+            Duration::from_secs(2),
+            FileURLs::from_template(&base_url, 0, 3, 2),
+        )
+        .await??,
+        TokenSize::TwoBytes,
+        SEQUENCE_LEN,
+        Shuffle::DontShuffle,
+    )?;
 
     // Test first sequence
     println!("first sequence..");
@@ -123,16 +124,17 @@ async fn test_http_data_provider_shuffled() -> Result<()> {
     let base_url = format!("http://{}/{{}}.ds", server.addr);
 
     let seed = [42u8; 32];
-    let mut provider = timeout(
-        Duration::from_secs(2),
-        HttpDataProvider::new(
-            FileURLs::from_template(base_url.clone(), 0, 3, 2)?,
-            TokenSize::TwoBytes,
-            SEQUENCE_LEN,
-            Shuffle::Seeded(seed),
-        ),
-    )
-    .await??;
+
+    let mut provider = HttpDataProvider::new(
+        timeout(
+            Duration::from_secs(2),
+            FileURLs::from_template(&base_url, 0, 3, 2),
+        )
+        .await??,
+        TokenSize::TwoBytes,
+        SEQUENCE_LEN,
+        Shuffle::Seeded(seed),
+    )?;
 
     // Test first sequence with first provider
     let samples = timeout(
@@ -142,16 +144,16 @@ async fn test_http_data_provider_shuffled() -> Result<()> {
     .await??;
 
     // Create second provider with same seed
-    let mut provider2 = timeout(
-        Duration::from_secs(2),
-        HttpDataProvider::new(
-            FileURLs::from_template(base_url.clone(), 0, 3, 2)?,
-            TokenSize::TwoBytes,
-            SEQUENCE_LEN,
-            Shuffle::Seeded(seed),
-        ),
-    )
-    .await??;
+    let mut provider2 = HttpDataProvider::new(
+        timeout(
+            Duration::from_secs(2),
+            FileURLs::from_template(&base_url, 0, 3, 2),
+        )
+        .await??,
+        TokenSize::TwoBytes,
+        SEQUENCE_LEN,
+        Shuffle::Seeded(seed),
+    )?;
 
     // Test first sequence with second provider
     let samples2 = timeout(
@@ -164,16 +166,16 @@ async fn test_http_data_provider_shuffled() -> Result<()> {
     assert_eq!(samples, samples2);
 
     // Create third provider without shuffle
-    let mut provider3 = timeout(
-        Duration::from_secs(2),
-        HttpDataProvider::new(
-            FileURLs::from_template(base_url.clone(), 0, 3, 2)?,
-            TokenSize::TwoBytes,
-            SEQUENCE_LEN,
-            Shuffle::DontShuffle,
-        ),
-    )
-    .await??;
+    let mut provider3 = HttpDataProvider::new(
+        timeout(
+            Duration::from_secs(2),
+            FileURLs::from_template(&base_url, 0, 3, 2),
+        )
+        .await??,
+        TokenSize::TwoBytes,
+        SEQUENCE_LEN,
+        Shuffle::DontShuffle,
+    )?;
 
     // Test first sequence with third provider
     let samples3 = timeout(

@@ -23,7 +23,6 @@ The tool supports two main modes of operation: template-based URLs and explicit 
 
 #### Required
 
-- `--file-size`: Size of each data file in bytes
 - `--batch-ids`: Comma-separated list of batch IDs to retrieve
 
 #### Optional
@@ -43,7 +42,7 @@ template <TEMPLATE> --start <START> --end <END> [--left-pad-zeros <N> (default 0
 Example:
 
 ```bash
-cargo run --example http --file-size 1000000 --batch-ids 1,2,3 template "http://example.com/{}.ds" --start 0 --end 10
+cargo run --example http --batch-ids 1,2,3 template "http://example.com/{}.ds" --start 0 --end 10
 ```
 
 this will fetch urls http://example.com/0.ds thru http://example.com/10.ds
@@ -61,7 +60,7 @@ urls <URL1> <URL2> ...
 Example:
 
 ```bash
-cargo run --example http --file-size 1000000 --batch-ids 1,2,3 urls "http://example.com/1.ds" "http://example.com/2.ds"
+cargo run --example http --batch-ids 1,2,3 urls "http://example.com/1.ds" "http://example.com/2.ds"
 ```
 
 ### Examples
@@ -69,13 +68,13 @@ cargo run --example http --file-size 1000000 --batch-ids 1,2,3 urls "http://exam
 1. Fetch data using a template with tokenizer:
 
 ```bash
-cargo run --example http --file-size 1000000 --batch-ids 1,2,3 --tokenizer ./tokenizer.json template "http://example.com/{}.ds" --start 0 --end 10
+cargo run --example http --batch-ids 1,2,3 --tokenizer ./tokenizer.json template "http://example.com/{}.ds" --start 0 --end 10
 ```
 
 2. Fetch data using explicit URLs:
 
 ```bash
-cargo run --example http --file-size 1000000 --sequence-length 1024 --batch-ids 1,2,3 urls "http://example.com/data1.ds" "http://example.com/data2.ds"
+cargo run --example http --sequence-length 1024 --batch-ids 1,2,3 urls "http://example.com/data1.ds" "http://example.com/data2.ds"
 ```
 
 ### Output
