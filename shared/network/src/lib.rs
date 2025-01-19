@@ -385,7 +385,6 @@ where
                             Ok(b) => b,
                             Err(e) => {
                                 error!("Failed to read bytes: {e}");
-                                // panic!();
                                 return;
                             }
                         };
