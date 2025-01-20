@@ -245,7 +245,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                                 let mut peer_iter = peer_ids.into_iter().cycle(); // Iterate over peers in a cycle
                                 for param_name in param_names {
-                                    while let Some(peer_id) = peer_iter.next() {
+                                    for peer_id in peer_iter.by_ref() {
                                             let router = router.clone();
                                             debug!("Requesting parameter {param_name} from peer {peer_id}");
                                             match request_model_parameter(router, peer_id, param_name.clone()).await {
