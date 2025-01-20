@@ -8,8 +8,8 @@ pub use client::ClientId;
 pub use instance_state::CoordinatorInstanceState;
 pub use program_error::ProgramError;
 use psyche_coordinator::{
-    model::Model, CoordinatorConfig, Witness, WitnessBloom, WitnessProof, SOLANA_MAX_NUM_CLIENTS,
-    SOLANA_MAX_STRING_LEN,
+    model::Model, Committee, CommitteeProof, CoordinatorConfig, Witness, WitnessBloom,
+    WitnessProof, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
 };
 use std::{cell::RefMut, ops::DerefMut};
 
@@ -117,6 +117,18 @@ pub mod solana_coordinator {
         Ok(())
     }
 
+    pub fn free_coordinator(ctx: Context<FreeCoordinatorAccounts>) -> Result<()> {
+        {
+            let state = &ctx.accounts.account.load()?.state;
+            if !state.coordinator.halted() {
+                return err!(ProgramError::CloseCoordinatorNotHalted);
+            }
+        }
+        ctx.accounts
+            .account
+            .close(ctx.accounts.payer.to_account_info())
+    }
+
     pub fn update_coordinator_config_model(
         ctx: Context<OwnerCoordinatorAccounts>,
         config: Option<CoordinatorConfig<ClientId>>,
@@ -157,7 +169,6 @@ pub mod solana_coordinator {
 
     pub fn witness(
         ctx: Context<PermissionlessCoordinatorAccounts>,
-        index: u64,
         proof: WitnessProof,
         participant_bloom: WitnessBloom,
         order_bloom: WitnessBloom,
@@ -165,11 +176,26 @@ pub mod solana_coordinator {
         ctx.accounts.account.load_mut()?.state.witness(
             ctx.accounts.payer.key,
             Witness {
-                index,
                 proof,
                 participant_bloom,
                 order_bloom,
             },
+        )
+    }
+
+    pub fn health_check(
+        ctx: Context<PermissionlessCoordinatorAccounts>,
+        committee: Committee,
+        position: u64,
+        index: u64,
+    ) -> Result<()> {
+        ctx.accounts.account.load_mut()?.state.health_check(
+            ctx.accounts.payer.key,
+            vec![CommitteeProof {
+                committee,
+                position,
+                index,
+            }],
         )
     }
 }
@@ -202,6 +228,18 @@ pub struct OwnerCoordinatorAccounts<'info> {
 #[derive(Accounts)]
 pub struct PermissionlessCoordinatorAccounts<'info> {
     #[account(seeds = [b"coordinator", bytes_from_string(&instance.run_id)], bump = instance.bump)]
+    pub instance: Account<'info, CoordinatorInstance>,
+    #[account(mut, owner = crate::ID, constraint = instance.account == account.key())]
+    pub account: AccountLoader<'info, CoordinatorAccount>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(address = system_program::ID)]
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct FreeCoordinatorAccounts<'info> {
+    #[account(mut, seeds = [b"coordinator", bytes_from_string(&instance.run_id)], bump = instance.bump, constraint = instance.owner == *payer.key, close = payer)]
     pub instance: Account<'info, CoordinatorInstance>,
     #[account(mut, owner = crate::ID, constraint = instance.account == account.key())]
     pub account: AccountLoader<'info, CoordinatorAccount>,

@@ -6417,6 +6417,7 @@ dependencies = [
  "psyche-watcher",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
+ "regex",
  "reqwest 0.12.12",
  "serde",
  "static-web-server",
@@ -6427,7 +6428,6 @@ dependencies = [
  "tokio",
  "tokio-util 0.7.13",
  "tracing",
- "url",
 ]
 
 [[package]]

@@ -36,6 +36,7 @@ deploy-local-solana-coordinator:
 solana-client-tests:
 	cargo test --package psyche-solana-client
 
+# install deps for building mdbook
 book_deps:
 	cargo install mdbook mdbook-mermaid
 

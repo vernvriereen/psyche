@@ -2,7 +2,7 @@
 warmup_time = 15
 cooldown_time = 30
 rounds_per_epoch = 5000
-max_round_train_time = 60
+max_round_train_time = 30
 round_witness_time = 1
 min_clients = 1
 verification_percent = 0
@@ -26,16 +26,16 @@ repo_id = "emozilla/llama2-1.1b-gqa-init"
 token_size_in_bytes = "TwoBytes"
 shuffle = "DontShuffle"
 
-[model.LLM.data_location.Http.location.NumberedFiles]
-url_template = "https://storage.googleapis.com/nous-pretraining-public-us/fineweb-edu-tokenized-llama2/{}_fineweb-edu.ds"
-start_index = 0
-n_left_pad_zeros = 3
-num_files = 83
+[model.LLM.data_location.Http.location.Gcp]
+bucket_url = "https://storage.googleapis.com/nous-pretraining-public-us"
+filter_directory = "fineweb-edu-tokenized-llama2"
 
-[model.LLM.lr_schedule.Constant]
-base_lr = 0.0
-warmup_steps = 0
+[model.LLM.lr_schedule.Cosine]
+base_lr = 4.0e-4
+warmup_steps = 250
 warmup_init_lr = 0.0
+total_steps = 25000
+final_lr = 4.0e-5
 
 [model.LLM.optimizer.Distro]
 clip_grad_norm = 1.0

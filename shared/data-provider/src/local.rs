@@ -6,7 +6,10 @@ use rand_chacha::ChaCha8Rng;
 use std::fs;
 use tracing::info;
 
-use crate::traits::{LengthKnownDataProvider, TokenizedDataProvider};
+use crate::{
+    file_extensions::DATA_FILE_EXTENSIONS,
+    traits::{LengthKnownDataProvider, TokenizedDataProvider},
+};
 
 fn mmap_file(p: &std::path::PathBuf) -> Result<memmap2::Mmap> {
     let file = std::fs::File::open(p)?;
@@ -46,8 +49,8 @@ impl LocalDataProvider {
             .flatten()
         {
             let file = file.path();
-            if let Some(extension) = file.extension() {
-                if extension == "bin" || extension == "npy" || extension == "ds" {
+            if let Some(extension) = file.extension().and_then(|s| s.to_str()) {
+                if DATA_FILE_EXTENSIONS.contains(&extension) {
                     bin_files.push(file)
                 }
             }

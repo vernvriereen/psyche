@@ -1,11 +1,12 @@
 use crate::{
-    app::{AppBuilder, AppParams},
+    app::{AppBuilder, AppParams, Tabs, TAB_NAMES},
     backend::SolanaBackend,
 };
 
 use anchor_client::{
     solana_sdk::{
         commitment_config::CommitmentConfig,
+        native_token::lamports_to_sol,
         pubkey::Pubkey,
         signature::{EncodableKey, Keypair},
         signer::Signer,
@@ -20,7 +21,7 @@ use psyche_client::{
 };
 use psyche_coordinator::{model::Model, CoordinatorConfig};
 use psyche_network::SecretKey;
-use psyche_tui::LogOutput;
+use psyche_tui::{maybe_start_render_loop, LogOutput};
 use serde::{Deserialize, Serialize};
 use solana_coordinator::ClientId;
 use std::path::PathBuf;
@@ -70,6 +71,16 @@ enum Commands {
         save_path: PathBuf,
     },
     CreateRun {
+        #[clap(flatten)]
+        cluster: ClusterArgs,
+
+        #[clap(flatten)]
+        wallet: WalletArgs,
+
+        #[clap(short, long, env)]
+        run_id: String,
+    },
+    CloseRun {
         #[clap(flatten)]
         cluster: ClusterArgs,
 
@@ -185,12 +196,34 @@ async fn async_main() -> Result<()> {
             )
             .unwrap();
             let created = backend.create_run(run_id.clone()).await?;
+            let locked = backend.get_balance(&created.account).await?;
             println!(
-                "Created run {} with transaction {}!",
+                "Created run {} with transaction {}",
                 run_id, created.transaction
             );
             println!("Instance account: {}", created.instance);
             println!("Coordinator account: {}", created.account);
+            println!("Locked for storage: {:.9} SOL", lamports_to_sol(locked));
+            Ok(())
+        }
+        Commands::CloseRun {
+            cluster,
+            wallet,
+            run_id,
+        } => {
+            let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
+            let backend = SolanaBackend::new(
+                cluster.into(),
+                key_pair.clone(),
+                CommitmentConfig::confirmed(),
+            )
+            .unwrap();
+            let balance = backend.get_balance(&key_pair.pubkey()).await?;
+            let (instance_pda, instance) = backend.get_coordinator_instance(&run_id).await?;
+            let closed = backend.close_run(instance_pda, instance.account).await?;
+            println!("Closed run {} with transaction {}", run_id, closed);
+            let recovered = backend.get_balance(&key_pair.pubkey()).await? - balance;
+            println!("Recovered {:.9} SOL", lamports_to_sol(recovered));
             Ok(())
         }
         Commands::SetWhitelist {
@@ -292,12 +325,11 @@ async fn async_main() -> Result<()> {
             let eval_tasks = args.eval_tasks()?;
 
             psyche_tui::init_logging(
-                // if args.tui {
-                //     LogOutput::TUI
-                // } else {
-                //     LogOutput::Console
-                // },
-                LogOutput::Console,
+                if args.tui {
+                    LogOutput::TUI
+                } else {
+                    LogOutput::Console
+                },
                 Level::INFO,
                 args.write_log.clone(),
             );
@@ -319,13 +351,13 @@ async fn async_main() -> Result<()> {
                 wallet_keypair.pubkey()
             ))?;
 
-            // let (cancel, tx_tui_state) = maybe_start_render_loop(
-            //     args.tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)),
-            // )?;
+            let (cancel, tx_tui_state) = maybe_start_render_loop(
+                args.tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)),
+            )?;
 
             let (mut app, allowlist, p2p, state_options) = AppBuilder::new(AppParams {
-                //cancel,
-                //tx_tui_state,
+                cancel,
+                tx_tui_state,
                 identity_secret_key,
                 wallet_keypair,
                 cluster: cluster.into(),
