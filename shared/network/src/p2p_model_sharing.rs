@@ -1,5 +1,4 @@
 use anyhow::Result;
-use core::fmt;
 use iroh::{
     endpoint::{Connecting, Connection},
     protocol::ProtocolHandler,
@@ -7,93 +6,36 @@ use iroh::{
 use iroh_blobs::ticket::BlobTicket;
 use psyche_core::BoxedFuture;
 use serde::{Deserialize, Serialize};
+use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::io::{Cursor, Write};
-use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
-    error::Error,
-};
 use tch::Tensor;
+use thiserror::Error;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 pub const ALPN: &[u8] = b"model-parameter-sharing/0";
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum SharableModelParameterError {
-    TchSerializeError(tch::TchError),
+    #[error("Torch serialize error: {0}")]
+    TchSerializeError(#[from] tch::TchError),
+    #[error("The update of the sharable model parameters is invalid")]
     InvalidUpdate,
+    #[error("Parameter with name {0} is unknown")]
     ParameterUnknown(String),
+    #[error("The parameter was already added")]
     ParameterAlreadyAdded,
+    #[error("Serialization error: {0}")]
     SerializationError(String),
+    #[error("Parameters were not initialized")]
     ParametersNotInitialized,
+    #[error("Parameter {0} is known but was not yet initialized")]
     ParameterNotInitialized(String),
+    #[error("Response channel was not initialized")]
     ResponseChannelNotInitialized,
-}
-
-impl From<tch::TchError> for SharableModelParameterError {
-    fn from(err: tch::TchError) -> Self {
-        SharableModelParameterError::TchSerializeError(err)
-    }
-}
-
-impl From<std::io::Error> for SharableModelParameterError {
-    fn from(err: std::io::Error) -> Self {
-        SharableModelParameterError::SerializationError(err.to_string())
-    }
-}
-
-impl From<std::string::FromUtf8Error> for SharableModelParameterError {
-    fn from(err: std::string::FromUtf8Error) -> Self {
-        SharableModelParameterError::SerializationError(err.to_string())
-    }
-}
-
-impl fmt::Display for SharableModelParameterError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SharableModelParameterError::TchSerializeError(err) => {
-                write!(f, "Torch serialize error: {}", err)
-            }
-            SharableModelParameterError::InvalidUpdate => {
-                write!(f, "The update of the sharable model parameters is invalid")
-            }
-            SharableModelParameterError::ParameterUnknown(unknown_param_name) => {
-                write!(f, "Parameter with name {} is unknown", unknown_param_name)
-            }
-            SharableModelParameterError::ParameterAlreadyAdded => {
-                write!(f, "The parameter was already added")
-            }
-            SharableModelParameterError::SerializationError(err) => {
-                write!(f, "Serialization error: {}", err)
-            }
-            SharableModelParameterError::ParametersNotInitialized => {
-                write!(f, "Parameters were not initialized")
-            }
-            SharableModelParameterError::ParameterNotInitialized(param_name) => {
-                write!(
-                    f,
-                    "Parameter {param_name} is known but was not yet initialized"
-                )
-            }
-            SharableModelParameterError::ResponseChannelNotInitialized => {
-                write!(f, "Response channel was not initialized")
-            }
-        }
-    }
-}
-
-impl Error for SharableModelParameterError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            SharableModelParameterError::TchSerializeError(err) => Some(err),
-            SharableModelParameterError::InvalidUpdate => Some(self),
-            SharableModelParameterError::ParameterUnknown(_unknown_parameter) => Some(self),
-            SharableModelParameterError::ParameterAlreadyAdded => Some(self),
-            SharableModelParameterError::SerializationError(_err) => Some(self),
-            SharableModelParameterError::ParametersNotInitialized => Some(self),
-            SharableModelParameterError::ParameterNotInitialized(_) => Some(self),
-            SharableModelParameterError::ResponseChannelNotInitialized => Some(self),
-        }
-    }
+    #[error("Connection IO error: {0}")]
+    ConnectionIOError(#[from] std::io::Error),
+    #[error("Could not decode UTF-8 string of model parameter name: {0}")]
+    DecodeParameterNameError(#[from] std::string::FromUtf8Error),
 }
 
 pub enum ParameterSharingMessage {
