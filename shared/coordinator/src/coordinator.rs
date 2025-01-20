@@ -443,30 +443,26 @@ impl<T: NodeIdentity> Coordinator<T> {
         &mut self,
         _from: &T,
         checks: HealthChecks,
-    ) -> std::result::Result<Vec<Client<T>>, CoordinatorError> {
+    ) -> std::result::Result<u32, CoordinatorError> {
         if self.halted() {
             return Err(CoordinatorError::Halted);
         }
-
         for proof in &checks {
             if self.healthy(proof) {
                 return Err(CoordinatorError::InvalidHealthCheck);
             }
         }
-
-        let mut dropped_clients = Vec::new();
-
+        let mut dropped = 0;
         for proof in &checks {
             let index = proof.index as usize;
             let client = &mut self.epoch_state.clients[index];
             if client.state == ClientState::Healthy {
                 client.state = ClientState::Dropped;
-                dropped_clients.push(*client);
+                dropped += 1;
             }
         }
-
         // todo: reward `from` for `dropped` health checks
-        Ok(dropped_clients)
+        Ok(dropped)
     }
 
     pub fn checkpoint(

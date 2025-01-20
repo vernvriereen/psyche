@@ -5,8 +5,8 @@ use psyche_coordinator::model::{
     self, Checkpoint, LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM,
 };
 use psyche_coordinator::{
-    Client, Coordinator, CoordinatorError, HealthChecks, Round, RunState, TickResult, Witness,
-    SOLANA_MAX_NUM_CLIENTS,
+    Client, ClientState, Coordinator, CoordinatorError, HealthChecks, Round, RunState, TickResult,
+    Witness, SOLANA_MAX_NUM_CLIENTS,
 };
 
 use psyche_core::{u8_to_string, FixedVec, Shuffle, SizedIterator, TokenSize};
@@ -374,13 +374,9 @@ impl App {
             }
             ClientToServerMessage::HealthCheck(health_checks) => {
                 match self.coordinator.health_check(&from, health_checks) {
-                    Ok(dropped_clients) => {
-                        info!("Dropped {:?} clients from health check", &dropped_clients);
-                        for client in &dropped_clients {
-                            self.kick_client(client.id)
-                                .expect("HealthCheck disconnected");
-                        }
-                        !dropped_clients.is_empty()
+                    Ok(dropped) => {
+                        info!("Dropped {} clients from health check", dropped);
+                        dropped > 0
                     }
 
                     Err(error) => {
@@ -400,6 +396,7 @@ impl App {
     }
 
     async fn on_tick(&mut self) {
+        self.remove_unhealthy_clients();
         match self.coordinator.tick(
             Some(SizedIterator::new(
                 self.backend.pending_clients.iter(),
@@ -441,29 +438,6 @@ impl App {
         self.post_state_change(true).await;
     }
 
-    // kick client from the network
-    fn kick_client(&mut self, from: ClientId) -> Result<()> {
-        self.backend.pending_clients.remove(&from);
-
-        if self.withdraw_on_disconnect {
-            let position = self
-                .coordinator
-                .epoch_state
-                .clients
-                .iter()
-                .position(|x| x.id == from);
-
-            if let Some(index) = position {
-                match self.coordinator.withdraw(index as u64) {
-                    Ok(_) => info!("c {from}"),
-                    Err(err) => warn!("Coordinator withdraw error: {err}"),
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     fn get_timestamp() -> u64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -501,6 +475,14 @@ impl App {
         }
         for elem in coordinator.epoch_state.exited_clients.iter_mut() {
             *elem = Client::<ClientId>::default();
+        }
+    }
+
+    fn remove_unhealthy_clients(&mut self) {
+        for client in self.coordinator.epoch_state.exited_clients {
+            if client.state != ClientState::Healthy {
+                self.backend.pending_clients.remove(&client.id);
+            }
         }
     }
 }
