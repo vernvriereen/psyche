@@ -443,7 +443,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         &mut self,
         _from: &T,
         checks: HealthChecks,
-    ) -> std::result::Result<(u32, Vec<Client<T>>), CoordinatorError> {
+    ) -> std::result::Result<Vec<Client<T>>, CoordinatorError> {
         if self.halted() {
             return Err(CoordinatorError::Halted);
         }
@@ -454,7 +454,6 @@ impl<T: NodeIdentity> Coordinator<T> {
             }
         }
 
-        let mut dropped = 0;
         let mut dropped_clients = Vec::new();
 
         for proof in &checks {
@@ -463,12 +462,11 @@ impl<T: NodeIdentity> Coordinator<T> {
             if client.state == ClientState::Healthy {
                 client.state = ClientState::Dropped;
                 dropped_clients.push(*client);
-                dropped += 1;
             }
         }
 
         // todo: reward `from` for `dropped` health checks
-        Ok((dropped, dropped_clients))
+        Ok(dropped_clients)
     }
 
     pub fn checkpoint(

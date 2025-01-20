@@ -374,13 +374,13 @@ impl App {
             }
             ClientToServerMessage::HealthCheck(health_checks) => {
                 match self.coordinator.health_check(&from, health_checks) {
-                    Ok((dropped, dropped_clients)) => {
-                        info!("Dropped {} clients from health check", dropped);
-                        for client in dropped_clients {
-                            self.on_disconnect(client.id)
+                    Ok(dropped_clients) => {
+                        info!("Dropped {:?} clients from health check", &dropped_clients);
+                        for client in &dropped_clients {
+                            self.kick_client(client.id)
                                 .expect("HealthCheck disconnected");
                         }
-                        dropped > 0
+                        !dropped_clients.is_empty()
                     }
 
                     Err(error) => {
@@ -439,6 +439,29 @@ impl App {
             Err(err) => warn!("Coordinator tick error: {err}"),
         }
         self.post_state_change(true).await;
+    }
+
+    // kick client from the network
+    fn kick_client(&mut self, from: ClientId) -> Result<()> {
+        self.backend.pending_clients.remove(&from);
+
+        if self.withdraw_on_disconnect {
+            let position = self
+                .coordinator
+                .epoch_state
+                .clients
+                .iter()
+                .position(|x| x.id == from);
+
+            if let Some(index) = position {
+                match self.coordinator.withdraw(index as u64) {
+                    Ok(_) => info!("c {from}"),
+                    Err(err) => warn!("Coordinator withdraw error: {err}"),
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn get_timestamp() -> u64 {
