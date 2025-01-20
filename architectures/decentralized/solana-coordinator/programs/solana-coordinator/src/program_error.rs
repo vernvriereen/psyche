@@ -12,6 +12,9 @@ pub enum ProgramError {
     #[msg("Coordinator account incorrect size")]
     CoordinatorAccountIncorrectSize,
 
+    #[msg("Coordinator account invalid discriminator")]
+    CoordinatorAccountInvalidDiscriminator,
+
     #[msg("Could not set whitelist")]
     CouldNotSetWhitelist,
 
@@ -35,6 +38,9 @@ pub enum ProgramError {
 
     #[msg("Signer mismatch")]
     SignerMismatch,
+
+    #[msg("Cannot close coordinator account when not halted")]
+    CloseCoordinatorNotHalted,
 
     #[msg("Coordinator error: No active round")]
     CoordinatorErrorNoActiveRound,

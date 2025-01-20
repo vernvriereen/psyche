@@ -8,8 +8,13 @@ use anchor_client::{
     Cluster,
 };
 use anyhow::{anyhow, bail, Result};
-use psyche_client::{CheckpointConfig, Client, RunInitConfig, WandBInfo, NC};
-use psyche_network::{allowlist, DiscoveryMode, RelayMode, SecretKey};
+use psyche_client::{
+    CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
+};
+use psyche_coordinator::Coordinator;
+use psyche_network::{allowlist, DiscoveryMode, NetworkTUIState, NetworkTui, RelayMode, SecretKey};
+use psyche_tui::{logging::LoggerWidget, CustomWidget, TabbedWidget};
+use psyche_watcher::CoordinatorTui;
 use rand::RngCore;
 use std::{path::PathBuf, time::Duration};
 use std::{
@@ -18,29 +23,35 @@ use std::{
 };
 use tokio::{
     select,
+    sync::mpsc::Sender,
     task::JoinHandle,
     time::{interval, Interval, MissedTickBehavior},
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
+
+pub(super) type Tabs = TabbedWidget<(ClientTUI, CoordinatorTui, NetworkTui, LoggerWidget)>;
+pub const TAB_NAMES: [&str; 4] = ["Client", "Coordinator", "Network", "Logger"];
+type TabsData = <Tabs as CustomWidget>::Data;
 
 pub struct App {
     run_id: String,
     cluster: Cluster,
     tick_check_interval: Option<Interval>,
-    // cancel: CancellationToken,
-    // update_tui_interval: Interval,
-    // tx_tui_state: Option<Sender<TabsData>>,
+    cancel: CancellationToken,
+    update_tui_interval: Interval,
+    tx_tui_state: Option<Sender<TabsData>>,
 }
 
 pub struct AppBuilder(AppParams);
 
 pub struct AppParams {
-    //pub cancel: CancellationToken,
+    pub cancel: CancellationToken,
     pub identity_secret_key: SecretKey,
     pub wallet_keypair: Arc<Keypair>,
     pub cluster: Cluster,
     pub ticker: bool,
-    //pub tx_tui_state: Option<Sender<TabsData>>,
+    pub tx_tui_state: Option<Sender<TabsData>>,
     pub run_id: String,
     pub data_parallelism: usize,
     pub tensor_parallelism: usize,
@@ -68,7 +79,7 @@ impl AppBuilder {
         App,
         allowlist::AllowDynamic,
         NC,
-        RunInitConfig<solana_coordinator::ClientId, NetworkIdentity>,
+        RunInitConfig<psyche_solana_coordinator::ClientId, NetworkIdentity>,
     )> {
         let p = self.0;
 
@@ -96,15 +107,15 @@ impl AppBuilder {
                 }
                 false => None,
             },
-            //cancel: p.cancel,
-            //tx_tui_state: p.tx_tui_state,
-            //update_tui_interval: interval(Duration::from_millis(150)),
+            cancel: p.cancel,
+            tx_tui_state: p.tx_tui_state,
+            update_tui_interval: interval(Duration::from_millis(150)),
         };
-        let identity = solana_coordinator::ClientId::new(
+        let identity = psyche_solana_coordinator::ClientId::new(
             p.wallet_keypair.pubkey(),
             *p.identity_secret_key.public().as_bytes(),
         );
-        let state_options: RunInitConfig<solana_coordinator::ClientId, NetworkIdentity> =
+        let state_options: RunInitConfig<psyche_solana_coordinator::ClientId, NetworkIdentity> =
             RunInitConfig {
                 data_parallelism: p.data_parallelism,
                 tensor_parallelism: p.tensor_parallelism,
@@ -132,7 +143,7 @@ impl App {
         &mut self,
         allowlist: allowlist::AllowDynamic,
         p2p: NC,
-        state_options: RunInitConfig<solana_coordinator::ClientId, NetworkIdentity>,
+        state_options: RunInitConfig<psyche_solana_coordinator::ClientId, NetworkIdentity>,
     ) -> Result<()> {
         let backend = SolanaBackend::new(
             self.cluster.clone(),
@@ -153,7 +164,7 @@ impl App {
             .join_run(
                 instance_pda,
                 instance.account,
-                solana_coordinator::ClientId {
+                psyche_solana_coordinator::ClientId {
                     signer,
                     p2p_identity: *p2p_identity.as_bytes(),
                 },
@@ -164,30 +175,26 @@ impl App {
             self.run_id, signer, joined
         );
 
-        let (mut updates, mut latest_update) = match self.tick_check_interval.is_some() {
-            true => {
-                let latest_update = backend.get_coordinator_account(&instance.account).await?;
-                let updates = backend_runner.updates();
-                (Some(updates), Some(latest_update.state.coordinator))
-            }
-            false => (None, None),
-        };
+        let mut latest_update = backend
+            .get_coordinator_account(&instance.account)
+            .await?
+            .state
+            .coordinator;
+        let mut updates = backend_runner.updates();
         let mut tick_tx: Option<JoinHandle<Result<Signature>>> = None;
-
         let mut client = Client::new(backend_runner, allowlist, p2p, state_options);
 
         loop {
             select! {
-                // _ = self.cancel.cancelled() => {
-                //    break;
-                // }
-                // _ = self.update_tui_interval.tick() => {
-                //     let (client_tui_state, network_tui_state) = client.tui_states().await;
-                //     self.update_tui(client_tui_state, network_tui_state).await?;
-                // }
+                _ = self.cancel.cancelled() => {
+                   break;
+                }
+                _ = self.update_tui_interval.tick() => {
+                    let (client_tui_state, network_tui_state) = client.tui_states().await;
+                    self.update_tui(client_tui_state, &latest_update, network_tui_state).await?;
+                }
                 _ = async { self.tick_check_interval.as_mut().unwrap().tick().await }, if self.tick_check_interval.is_some() && tick_tx.is_none() => {
-                    let latest_update = latest_update.as_ref().unwrap();
-                    let mut ticked = *latest_update;
+                    let mut ticked = latest_update;
                     let timestamp = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
@@ -202,14 +209,14 @@ impl App {
                         Err(err) => debug!("Tick simulation error: {err}")
                     };
                 }
-                update = async { updates.as_mut().unwrap().recv().await }, if updates.is_some() => {
+                update = async { updates.recv().await } => {
                     let update = match update?.value.data.decode() {
-                        Some(data) => solana_coordinator::coordinator_account_from_bytes(&data)
+                        Some(data) => psyche_solana_coordinator::coordinator_account_from_bytes(&data)
                             .map_err(|_| anyhow!("Unable to decode coordinator account data"))
                             .map(|x| x.state.coordinator)?,
                         None => bail!("Unable to decode account data"),
                     };
-                    latest_update = Some(update);
+                    latest_update = update;
                 }
                 tx = async { tick_tx.as_mut().unwrap().await }, if tick_tx.is_some() => {
                     tick_tx = None;
@@ -224,22 +231,25 @@ impl App {
 
             }
         }
+
+        Ok(())
     }
 
-    // async fn update_tui(
-    //     &mut self,
-    //     client_tui_state: ClientTUIState,
-    //     network_tui_state: NetworkTUIState,
-    // ) -> Result<()> {
-    //     if let Some(tx_tui_state) = &self.tx_tui_state {
-    //         let states = (
-    //             client_tui_state,
-    //             (&self.coordinator_state).into(),
-    //             network_tui_state,
-    //             Default::default(),
-    //         );
-    //         tx_tui_state.send(states).await?;
-    //     }
-    //     Ok(())
-    // }
+    async fn update_tui(
+        &mut self,
+        client_tui_state: ClientTUIState,
+        coordinator_state: &Coordinator<psyche_solana_coordinator::ClientId>,
+        network_tui_state: NetworkTUIState,
+    ) -> Result<()> {
+        if let Some(tx_tui_state) = &self.tx_tui_state {
+            let states = (
+                client_tui_state,
+                coordinator_state.into(),
+                network_tui_state,
+                Default::default(),
+            );
+            tx_tui_state.send(states).await?;
+        }
+        Ok(())
+    }
 }

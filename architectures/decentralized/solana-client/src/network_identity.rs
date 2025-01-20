@@ -8,7 +8,7 @@ use psyche_network::{AuthenticatableIdentity, FromSignedBytesError, SecretKey, S
 use std::sync::Arc;
 
 #[derive(Clone, Debug, Copy)]
-pub struct NetworkIdentity(solana_coordinator::ClientId);
+pub struct NetworkIdentity(psyche_solana_coordinator::ClientId);
 
 impl AsRef<[u8]> for NetworkIdentity {
     fn as_ref(&self) -> &[u8] {
@@ -55,7 +55,7 @@ impl AuthenticatableIdentity for NetworkIdentity {
         }
         let mut owner: [u8; 32] = [0; 32];
         owner.copy_from_slice(pubkey);
-        Ok(Self(solana_coordinator::ClientId {
+        Ok(Self(psyche_solana_coordinator::ClientId {
             signer: owner.into(),
             p2p_identity: *p2p_identity.as_bytes(),
         }))
@@ -78,8 +78,8 @@ impl AuthenticatableIdentity for NetworkIdentity {
     }
 }
 
-impl From<solana_coordinator::ClientId> for NetworkIdentity {
-    fn from(value: solana_coordinator::ClientId) -> Self {
+impl From<psyche_solana_coordinator::ClientId> for NetworkIdentity {
+    fn from(value: psyche_solana_coordinator::ClientId) -> Self {
         Self(value)
     }
 }
@@ -102,7 +102,7 @@ mod tests {
         let secret_key = SecretKey::generate(&mut rand::rngs::OsRng);
         let private_key = (keypair.clone(), secret_key.clone());
 
-        let client_id = solana_coordinator::ClientId {
+        let client_id = psyche_solana_coordinator::ClientId {
             signer: keypair.pubkey(),
             p2p_identity: *secret_key.public().as_bytes(),
         };
@@ -129,7 +129,7 @@ mod tests {
         let secret_key = SecretKey::generate(&mut rand::rngs::OsRng);
         let private_key = (keypair.clone(), secret_key.clone());
 
-        let client_id = solana_coordinator::ClientId {
+        let client_id = psyche_solana_coordinator::ClientId {
             signer: keypair.pubkey(),
             p2p_identity: *secret_key.public().as_bytes(),
         };
@@ -153,7 +153,7 @@ mod tests {
     fn test_network_identity_display() {
         let keypair = Arc::new(Keypair::new());
         let secret_key = SecretKey::generate(&mut rand::rngs::OsRng);
-        let client_id = solana_coordinator::ClientId {
+        let client_id = psyche_solana_coordinator::ClientId {
             signer: keypair.pubkey(),
             p2p_identity: *secret_key.public().as_bytes(),
         };
@@ -170,7 +170,7 @@ mod tests {
 
         let keypair = Arc::new(Keypair::new());
         let secret_key = SecretKey::generate(&mut rand::rngs::OsRng);
-        let client_id = solana_coordinator::ClientId {
+        let client_id = psyche_solana_coordinator::ClientId {
             signer: keypair.pubkey(),
             p2p_identity: *secret_key.public().as_bytes(),
         };

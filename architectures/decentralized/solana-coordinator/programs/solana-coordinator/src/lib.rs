@@ -8,8 +8,8 @@ pub use client::ClientId;
 pub use instance_state::CoordinatorInstanceState;
 pub use program_error::ProgramError;
 use psyche_coordinator::{
-    model::Model, CoordinatorConfig, Witness, WitnessBloom, WitnessProof, SOLANA_MAX_NUM_CLIENTS,
-    SOLANA_MAX_STRING_LEN,
+    model::Model, Committee, CommitteeProof, CoordinatorConfig, Witness, WitnessBloom,
+    WitnessProof, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
 };
 use std::{cell::RefMut, ops::DerefMut};
 
@@ -19,7 +19,7 @@ pub const SOLANA_MAX_NUM_PENDING_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 pub const SOLANA_MAX_NUM_WHITELISTED_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 
 pub fn bytes_from_string(str: &str) -> &[u8] {
-    &str.as_bytes()[..psyche_coordinator::SOLANA_MAX_STRING_LEN.min(str.as_bytes().len())]
+    &str.as_bytes()[..SOLANA_MAX_STRING_LEN.min(str.len())]
 }
 
 pub fn coordinator_account_from_bytes(
@@ -27,6 +27,9 @@ pub fn coordinator_account_from_bytes(
 ) -> std::result::Result<&CoordinatorAccount, ProgramError> {
     if bytes.len() != CoordinatorAccount::size_with_discriminator() {
         return Err(ProgramError::CoordinatorAccountIncorrectSize);
+    }
+    if &bytes[..CoordinatorAccount::DISCRIMINATOR.len()] != CoordinatorAccount::DISCRIMINATOR {
+        return Err(ProgramError::CoordinatorAccountInvalidDiscriminator);
     }
     Ok(bytemuck::from_bytes(
         &bytes[CoordinatorAccount::DISCRIMINATOR.len()
@@ -56,7 +59,7 @@ pub struct CoordinatorInstance {
 }
 
 #[program]
-pub mod solana_coordinator {
+pub mod psyche_solana_coordinator {
     use super::*;
 
     pub fn initialize_coordinator(
@@ -72,9 +75,9 @@ pub mod solana_coordinator {
         // this is what AccountLoader::load_init does, but unrolled to deal with weird lifetime stuff
         let mut account: RefMut<CoordinatorAccount> = {
             let acc_info = ctx.accounts.account.as_ref();
-            if acc_info.owner != &solana_coordinator::ID {
+            if acc_info.owner != &psyche_solana_coordinator::ID {
                 return Err(Error::from(ErrorCode::AccountOwnedByWrongProgram)
-                    .with_pubkeys((*acc_info.owner, solana_coordinator::ID)));
+                    .with_pubkeys((*acc_info.owner, psyche_solana_coordinator::ID)));
             }
             if !acc_info.is_writable {
                 return Err(ErrorCode::AccountNotMutable.into());
@@ -117,6 +120,18 @@ pub mod solana_coordinator {
         Ok(())
     }
 
+    pub fn free_coordinator(ctx: Context<FreeCoordinatorAccounts>) -> Result<()> {
+        {
+            let state = &ctx.accounts.account.load()?.state;
+            if !state.coordinator.halted() {
+                return err!(ProgramError::CloseCoordinatorNotHalted);
+            }
+        }
+        ctx.accounts
+            .account
+            .close(ctx.accounts.payer.to_account_info())
+    }
+
     pub fn update_coordinator_config_model(
         ctx: Context<OwnerCoordinatorAccounts>,
         config: Option<CoordinatorConfig<ClientId>>,
@@ -157,7 +172,6 @@ pub mod solana_coordinator {
 
     pub fn witness(
         ctx: Context<PermissionlessCoordinatorAccounts>,
-        index: u64,
         proof: WitnessProof,
         participant_bloom: WitnessBloom,
         order_bloom: WitnessBloom,
@@ -165,11 +179,26 @@ pub mod solana_coordinator {
         ctx.accounts.account.load_mut()?.state.witness(
             ctx.accounts.payer.key,
             Witness {
-                index,
                 proof,
                 participant_bloom,
                 order_bloom,
             },
+        )
+    }
+
+    pub fn health_check(
+        ctx: Context<PermissionlessCoordinatorAccounts>,
+        committee: Committee,
+        position: u64,
+        index: u64,
+    ) -> Result<()> {
+        ctx.accounts.account.load_mut()?.state.health_check(
+            ctx.accounts.payer.key,
+            vec![CommitteeProof {
+                committee,
+                position,
+                index,
+            }],
         )
     }
 }
@@ -202,6 +231,18 @@ pub struct OwnerCoordinatorAccounts<'info> {
 #[derive(Accounts)]
 pub struct PermissionlessCoordinatorAccounts<'info> {
     #[account(seeds = [b"coordinator", bytes_from_string(&instance.run_id)], bump = instance.bump)]
+    pub instance: Account<'info, CoordinatorInstance>,
+    #[account(mut, owner = crate::ID, constraint = instance.account == account.key())]
+    pub account: AccountLoader<'info, CoordinatorAccount>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(address = system_program::ID)]
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct FreeCoordinatorAccounts<'info> {
+    #[account(mut, seeds = [b"coordinator", bytes_from_string(&instance.run_id)], bump = instance.bump, constraint = instance.owner == *payer.key, close = payer)]
     pub instance: Account<'info, CoordinatorInstance>,
     #[account(mut, owner = crate::ID, constraint = instance.account == account.key())]
     pub account: AccountLoader<'info, CoordinatorAccount>,

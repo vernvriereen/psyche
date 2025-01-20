@@ -6,7 +6,7 @@ edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "solana_coordinator"
+name = "psyche_solana_coordinator"
 
 [features]
 default = []
@@ -25,5 +25,5 @@ serde = { version = "1.0.209", features = ["derive"] }
 
 [dev-dependencies]
 solana-sdk = "=2.1.4"
-solana_toolbox_endpoint = "=0.1.21-solana-2.1.4"
+solana_toolbox_endpoint = "=0.1.30-solana-2.1.4"
 tokio = "1.42.0"

@@ -27,31 +27,38 @@ struct Cli {
     #[arg(long)]
     tokenizer: Option<PathBuf>,
 
+    /// Where to pull samples from
     #[command(subcommand)]
     command: Commands,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Use HTTP data provider with URL template
+    /// A URL template
     Template {
         /// URL template with {} placeholder (e.g., "http://example.com/{}.ds")
         template: String,
         /// Start index
         #[arg(long, default_value = "0")]
-        start: usize,
+        start: u32,
         /// End index
         #[arg(long)]
-        end: usize,
-
+        end: u32,
         // number of zeros to left-pad to
         #[arg(long, default_value = "0")]
-        left_pad_zeros: usize,
+        left_pad_zeros: u8,
     },
-    /// Use HTTP data provider with URL list
+    /// A fixed list of URLs
     Urls {
         /// List of data URLs, in order (e.g., "http://example.com/1.ds", "http://example.com/2.ds")
         urls: Vec<String>,
+    },
+    /// A public GCP bucket
+    Gcp {
+        /// The URL of the GCP bucket
+        bucket_url: String,
+        /// An optional directory to filter by
+        directory: Option<String>,
     },
 }
 
@@ -72,16 +79,20 @@ async fn main() -> Result<()> {
             start,
             left_pad_zeros,
             end,
-        } => FileURLs::from_template(template, start, left_pad_zeros, end - start)?,
+        } => FileURLs::from_template(&template, start, left_pad_zeros, end - start).await?,
         Commands::Urls { urls } => {
             if urls.is_empty() {
                 anyhow::bail!("at least one URL must be passed");
             }
-            FileURLs::from_list(&urls)
+            FileURLs::from_list(&urls).await?
         }
+        Commands::Gcp {
+            bucket_url,
+            directory,
+        } => FileURLs::from_gcp_bucket(&bucket_url, directory).await?,
     };
     let mut provider =
-        HttpDataProvider::new(urls, token_size, cli.sequence_length, Shuffle::DontShuffle).await?;
+        HttpDataProvider::new(urls, token_size, cli.sequence_length, Shuffle::DontShuffle)?;
     let samples = provider.get_samples(&batch_ids).await?;
 
     // Output handling

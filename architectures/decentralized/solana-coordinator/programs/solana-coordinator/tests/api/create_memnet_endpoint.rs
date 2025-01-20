@@ -1,14 +1,17 @@
-use solana_toolbox_endpoint::{toolbox_endpoint_program_test_builtin_program, ToolboxEndpoint};
+use solana_toolbox_endpoint::{
+    toolbox_endpoint_program_test_builtin_program_anchor, ToolboxEndpoint,
+    ToolboxEndpointLoggerPrint,
+};
 
 pub async fn create_memnet_endpoint() -> ToolboxEndpoint {
-    ToolboxEndpoint::new_program_test_with_builtin_programs(&[
-        toolbox_endpoint_program_test_builtin_program!(
-            solana_coordinator::ID,
-            |program_id, accounts, data| {
-                let accounts = Box::leak(Box::new(accounts.to_vec()));
-                solana_coordinator::entry(program_id, accounts, data)
-            }
+    let mut endpoint = ToolboxEndpoint::new_program_test_with_builtin_programs(&[
+        toolbox_endpoint_program_test_builtin_program_anchor!(
+            "psyche_solana_coordinator",
+            psyche_solana_coordinator::ID,
+            psyche_solana_coordinator::entry
         ),
     ])
-    .await
+    .await;
+    endpoint.add_logger(Box::new(ToolboxEndpointLoggerPrint::default()));
+    endpoint
 }

@@ -2,7 +2,7 @@
 
 set -e
 
-WALLET_FILE=${KEY_FILE:-"$HOME/.config/solana/id.json"}
+WALLET_FILE=${WALLET_FILE:-"$HOME/.config/solana/id.json"}
 RPC=${RPC:-"http://127.0.0.1:8899"}
 WS_RPC=${WS_RPC:-"ws://127.0.0.1:8900"}
 RUN_ID=${RUN_ID:-"test"}
@@ -12,7 +12,7 @@ DP=${DP:-"8"}
 TP=${TP:-"1"}
 BATCH_SIZE=${BATCH_SIZE:-"8"}
 
-export RUST_LOG="error,psyche_client=trace,psyche_solana_client=info,psyche_network=info"
+export RUST_LOG="warn,psyche_client=info,psyche_solana_client=info,psyche_network=info,psyche_data_provider=info"
 
 cargo run --release --bin psyche-solana-client -- \
     train \

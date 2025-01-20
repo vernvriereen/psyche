@@ -1,100 +1,42 @@
 use anyhow::Result;
-use core::fmt;
 use iroh::{
     endpoint::{Connecting, Connection},
     protocol::ProtocolHandler,
 };
 use iroh_blobs::ticket::BlobTicket;
 use psyche_core::BoxedFuture;
+use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::io::{Cursor, Write};
-use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
-    error::Error,
-};
 use tch::Tensor;
+use thiserror::Error;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use tracing::warn;
 
 pub const ALPN: &[u8] = b"model-parameter-sharing/0";
 pub const REQUEST_PARAMETER_TIMEOUT_SECS: u64 = 3;
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Error, Debug, serde::Serialize, serde::Deserialize)]
 pub enum SharableModelParameterError {
+    #[error("Torch serialize error: {0}")]
     TchSerializeError(String),
+    #[error("The update of the sharable model parameters is invalid")]
     InvalidUpdate,
+    #[error("Parameter with name {0} is unknown")]
     ParameterUnknown(String),
+    #[error("The parameter was already added")]
     ParameterAlreadyAdded,
+    #[error("Serialization error: {0}")]
     SerializationError(String),
+    #[error("Parameters were not initialized")]
     ParametersNotInitialized,
+    #[error("Parameter {0} is known but was not yet initialized")]
     ParameterNotInitialized(String),
+    #[error("Response channel was not initialized")]
     ResponseChannelNotInitialized,
-}
-
-impl From<tch::TchError> for SharableModelParameterError {
-    fn from(err: tch::TchError) -> Self {
-        SharableModelParameterError::TchSerializeError(err.to_string())
-    }
-}
-
-impl From<std::io::Error> for SharableModelParameterError {
-    fn from(err: std::io::Error) -> Self {
-        SharableModelParameterError::SerializationError(err.to_string())
-    }
-}
-
-impl From<std::string::FromUtf8Error> for SharableModelParameterError {
-    fn from(err: std::string::FromUtf8Error) -> Self {
-        SharableModelParameterError::SerializationError(err.to_string())
-    }
-}
-
-impl fmt::Display for SharableModelParameterError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SharableModelParameterError::TchSerializeError(err) => {
-                write!(f, "Torch serialize error: {}", err)
-            }
-            SharableModelParameterError::InvalidUpdate => {
-                write!(f, "The update of the sharable model parameters is invalid")
-            }
-            SharableModelParameterError::ParameterUnknown(unknown_param_name) => {
-                write!(f, "Parameter with name {} is unknown", unknown_param_name)
-            }
-            SharableModelParameterError::ParameterAlreadyAdded => {
-                write!(f, "The parameter was already added")
-            }
-            SharableModelParameterError::SerializationError(err) => {
-                write!(f, "Serialization error: {}", err)
-            }
-            SharableModelParameterError::ParametersNotInitialized => {
-                write!(f, "Parameters were not initialized")
-            }
-            SharableModelParameterError::ParameterNotInitialized(param_name) => {
-                write!(
-                    f,
-                    "Parameter {param_name} is known but was not yet initialized"
-                )
-            }
-            SharableModelParameterError::ResponseChannelNotInitialized => {
-                write!(f, "Response channel was not initialized")
-            }
-        }
-    }
-}
-
-impl Error for SharableModelParameterError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            SharableModelParameterError::TchSerializeError(_err) => Some(self),
-            SharableModelParameterError::InvalidUpdate => Some(self),
-            SharableModelParameterError::ParameterUnknown(_unknown_parameter) => Some(self),
-            SharableModelParameterError::ParameterAlreadyAdded => Some(self),
-            SharableModelParameterError::SerializationError(_err) => Some(self),
-            SharableModelParameterError::ParametersNotInitialized => Some(self),
-            SharableModelParameterError::ParameterNotInitialized(_) => Some(self),
-            SharableModelParameterError::ResponseChannelNotInitialized => Some(self),
-        }
-    }
+    #[error("Connection IO error: {0}")]
+    ConnectionIOError(String),
+    #[error("Could not decode UTF-8 string of model parameter name: {0}")]
+    DecodeParameterNameError(String),
 }
 
 pub enum ParameterSharingMessage {
@@ -186,8 +128,12 @@ impl ModelParameters {
                 let mut param_name_buffer = Vec::new();
                 let mut param_value_buffer = Vec::new();
 
-                param_name_buffer.write_all(param_name.as_bytes())?;
-                parameter.save_to_stream(&mut param_value_buffer)?;
+                param_name_buffer
+                    .write_all(param_name.as_bytes())
+                    .map_err(|e| SharableModelParameterError::ConnectionIOError(e.to_string()))?;
+                parameter
+                    .save_to_stream(&mut param_value_buffer)
+                    .map_err(|e| SharableModelParameterError::TchSerializeError(e.to_string()))?;
 
                 let transmittable_parameter =
                     TransmittableModelParameter::new(param_name_buffer, param_value_buffer);
@@ -234,9 +180,11 @@ impl ModelParameters {
         };
 
         // Deserialize model parameter
-        let param_name = String::from_utf8(parameter.param_name_bytes)?;
+        let param_name = String::from_utf8(parameter.param_name_bytes)
+            .map_err(|e| SharableModelParameterError::DecodeParameterNameError(e.to_string()))?;
         let buf_reader = Cursor::new(parameter.param_value_bytes);
-        let param_value = Tensor::load_from_stream(buf_reader)?;
+        let param_value = Tensor::load_from_stream(buf_reader)
+            .map_err(|e| SharableModelParameterError::TchSerializeError(e.to_string()))?;
 
         // Validate that the parameter does not already exist
         // This should be called only by a client that joins the run

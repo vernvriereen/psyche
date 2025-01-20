@@ -71,6 +71,7 @@ pub enum LLMTrainingDataType {
     Copy,
 )]
 #[repr(C)]
+#[allow(clippy::large_enum_variant)]
 pub enum LLMTrainingDataLocation {
     Dummy,
     Server(
@@ -107,6 +108,7 @@ pub enum LLMTrainingDataLocation {
     Copy,
 )]
 #[repr(C)]
+#[allow(clippy::large_enum_variant)]
 pub enum HttpTrainingDataLocation {
     SingleUrl(
         #[serde(
@@ -122,8 +124,22 @@ pub enum HttpTrainingDataLocation {
         )]
         url_template: [u8; SOLANA_MAX_URL_STRING_LEN],
         start_index: u32,
-        n_left_pad_zeros: u32,
+        n_left_pad_zeros: u8,
         num_files: u32,
+    },
+    Gcp {
+        #[serde(
+            serialize_with = "serde_serialize_string",
+            deserialize_with = "serde_deserialize_string"
+        )]
+        bucket_url: [u8; SOLANA_MAX_URL_STRING_LEN],
+
+        /// 0 len === no filter
+        #[serde(
+            serialize_with = "serde_serialize_string",
+            deserialize_with = "serde_deserialize_string"
+        )]
+        filter_directory: [u8; SOLANA_MAX_URL_STRING_LEN],
     },
 }
 
@@ -415,6 +431,7 @@ impl Model {
                                 num_files,
                                 ..
                             } => url_template[0] != 0 && num_files > 0,
+                            HttpTrainingDataLocation::Gcp { bucket_url, .. } => bucket_url[0] != 0,
                         },
                     }
                     && match llm.checkpoint {
