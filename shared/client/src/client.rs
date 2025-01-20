@@ -241,13 +241,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 let mut parameter_blob_tickets = Vec::new();
                                 // TODO: The parameter requests could be done concurrently, setting some MAX_CONCURRENT_PARAM_REQUESTS
 
-                                let mut peer_iter = peer_ids.iter().cycle(); // Iterate over peers in a cycle
+                                let mut peer_iter = peer_ids.into_iter().cycle(); // Iterate over peers in a cycle
                                 for param_name in param_names {
-                                    loop {
-                                        if let Some(peer_id) = peer_iter.next() {
+                                    while let Some(peer_id) = peer_iter.next() {
                                             let router = router.clone();
                                             debug!("Requesting parameter {param_name} from peer {peer_id}");
-                                            match request_model_parameter(router, *peer_id, param_name.clone()).await {
+                                            match request_model_parameter(router, peer_id, param_name.clone()).await {
                                                 Ok(parameter_blob_ticket) => {
                                                     parameter_blob_tickets.push(parameter_blob_ticket);
                                                     // Continue to the next parameter
@@ -258,7 +257,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                                     // Continue to the next peer
                                                 }
                                             }
-                                        }
                                     }
                                 }
                                 tx_params_download.send(parameter_blob_tickets)?;
