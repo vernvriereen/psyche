@@ -18,45 +18,41 @@ use psyche_coordinator::{
     CoordinatorConfig, RunState, Witness, WitnessProof,
 };
 use psyche_core::FixedVec;
-use solana_coordinator::{ClientId, CoordinatorAccount};
+use psyche_solana_coordinator::{ClientId, CoordinatorAccount};
 use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer};
-use std::sync::Arc;
 
 #[tokio::test]
 pub async fn memnet_coordinator_run() {
     let mut endpoint = create_memnet_endpoint().await;
 
+    let run_id = "Hello World";
+
+    // Create payer key and fund it
     let payer = Keypair::new();
     let payer_lamports = 10_000_000_000;
-
-    let run_id = "Hello World".to_string();
-    let coordinator_account = Keypair::new();
-
     endpoint
         .process_airdrop(&payer.pubkey(), payer_lamports)
         .await
         .unwrap();
 
     // create the empty pre-allocated coordinator_account
+    let coordinator_account = Keypair::new();
     endpoint
         .process_system_create_exempt(
             &payer,
             &coordinator_account,
             CoordinatorAccount::size_with_discriminator(),
-            &solana_coordinator::ID,
+            &psyche_solana_coordinator::ID,
         )
         .await
         .unwrap();
 
-    process_initialize_coordinator(
-        &mut endpoint,
-        &payer,
-        &coordinator_account.pubkey(),
-        run_id.clone(),
-    )
-    .await
-    .unwrap();
+    // initialize the coordinator
+    process_initialize_coordinator(&mut endpoint, &payer, &coordinator_account.pubkey(), run_id)
+        .await
+        .unwrap();
 
+    // verify that the run is in initialized state
     assert_eq!(
         get_coordinator_instance_state(&mut endpoint, &coordinator_account.pubkey())
             .await
@@ -66,11 +62,12 @@ pub async fn memnet_coordinator_run() {
         RunState::Uninitialized
     );
 
+    // update the coordinator's model
     process_update_coordinator_config_model(
         &mut endpoint,
         &payer,
         &coordinator_account.pubkey(),
-        run_id.clone(),
+        run_id,
         Some(CoordinatorConfig::<ClientId> {
             warmup_time: 1,
             cooldown_time: 1,
@@ -109,6 +106,7 @@ pub async fn memnet_coordinator_run() {
     .await
     .unwrap();
 
+    // Coordinator's state should now have changed
     assert_eq!(
         get_coordinator_instance_state(&mut endpoint, &coordinator_account.pubkey())
             .await
@@ -118,20 +116,20 @@ pub async fn memnet_coordinator_run() {
         RunState::Uninitialized
     );
 
-    // add a dummy whitelist entry so the run is permissioned
+    // add a dummy whitelist entry so the run is permissioned but no client whitelisted
     process_set_whitelist(
         &mut endpoint,
         &payer,
         &coordinator_account.pubkey(),
-        run_id.clone(),
+        run_id,
         vec![Pubkey::zeroed()],
     )
     .await
     .unwrap();
 
-    let client_keypair = Arc::new(Keypair::new());
+    // Generate the client key and fund it
+    let client_keypair = Keypair::new();
     let client_id = ClientId::new(client_keypair.pubkey(), Default::default());
-
     endpoint
         .process_airdrop(&client_keypair.pubkey(), payer_lamports)
         .await
@@ -142,53 +140,57 @@ pub async fn memnet_coordinator_run() {
         &mut endpoint,
         &payer,
         &coordinator_account.pubkey(),
-        run_id.clone(),
+        run_id,
         client_id
     )
     .await
     .is_err());
 
+    // Add client to whitelist
     process_set_whitelist(
         &mut endpoint,
         &payer,
         &coordinator_account.pubkey(),
-        run_id.clone(),
+        run_id,
         vec![client_id.signer],
     )
     .await
     .unwrap();
 
+    // Now whitelisted, can join
     process_join_run(
         &mut endpoint,
         &client_keypair,
         &coordinator_account.pubkey(),
-        run_id.clone(),
+        run_id,
         client_id,
     )
     .await
     .unwrap();
 
-    let ticker_keypair = Arc::new(Keypair::new());
+    // Create a ticker key and fund it
+    let ticker_keypair = Keypair::new();
     endpoint
         .process_airdrop(&ticker_keypair.pubkey(), payer_lamports)
         .await
         .unwrap();
 
-    // paused
+    // Can't tick yet because paused
     assert!(process_tick(
         &mut endpoint,
         &ticker_keypair,
         &coordinator_account.pubkey(),
-        run_id.clone()
+        run_id
     )
     .await
     .is_err());
 
+    // Unpause
     process_set_paused(
         &mut endpoint,
         &payer,
         &coordinator_account.pubkey(),
-        run_id.clone(),
+        run_id,
         false,
     )
     .await
@@ -209,7 +211,7 @@ pub async fn memnet_coordinator_run() {
         &mut endpoint,
         &ticker_keypair,
         &coordinator_account.pubkey(),
-        run_id.clone(),
+        run_id,
     )
     .await
     .unwrap();
@@ -237,7 +239,7 @@ pub async fn memnet_coordinator_run() {
         &mut endpoint,
         &ticker_keypair,
         &coordinator_account.pubkey(),
-        run_id.clone(),
+        run_id,
         witness.clone(),
     )
     .await
@@ -247,7 +249,7 @@ pub async fn memnet_coordinator_run() {
         &mut endpoint,
         &client_keypair,
         &coordinator_account.pubkey(),
-        run_id.clone(),
+        run_id,
         witness,
     )
     .await
@@ -270,7 +272,7 @@ pub async fn memnet_coordinator_free() {
     let payer = Keypair::new();
     let payer_lamports = 10_000_000_000;
 
-    let run_id = "Free".to_string();
+    let run_id = "Free";
     let coordinator_account = Keypair::new();
 
     endpoint
@@ -284,7 +286,7 @@ pub async fn memnet_coordinator_free() {
             &payer,
             &coordinator_account,
             CoordinatorAccount::size_with_discriminator(),
-            &solana_coordinator::ID,
+            &psyche_solana_coordinator::ID,
         )
         .await
         .unwrap();
@@ -296,14 +298,9 @@ pub async fn memnet_coordinator_free() {
         .unwrap()
         .lamports;
 
-    process_initialize_coordinator(
-        &mut endpoint,
-        &payer,
-        &coordinator_account.pubkey(),
-        run_id.clone(),
-    )
-    .await
-    .unwrap();
+    process_initialize_coordinator(&mut endpoint, &payer, &coordinator_account.pubkey(), run_id)
+        .await
+        .unwrap();
 
     let next_balance = endpoint
         .get_account(&payer.pubkey())
@@ -325,14 +322,9 @@ pub async fn memnet_coordinator_free() {
         .unwrap()
         .is_some());
 
-    process_free_coordinator(
-        &mut endpoint,
-        &payer,
-        &coordinator_account.pubkey(),
-        run_id.clone(),
-    )
-    .await
-    .unwrap();
+    process_free_coordinator(&mut endpoint, &payer, &coordinator_account.pubkey(), run_id)
+        .await
+        .unwrap();
 
     let final_balance = endpoint
         .get_account(&payer.pubkey())

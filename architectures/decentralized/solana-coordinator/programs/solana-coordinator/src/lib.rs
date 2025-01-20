@@ -19,7 +19,7 @@ pub const SOLANA_MAX_NUM_PENDING_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 pub const SOLANA_MAX_NUM_WHITELISTED_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 
 pub fn bytes_from_string(str: &str) -> &[u8] {
-    &str.as_bytes()[..psyche_coordinator::SOLANA_MAX_STRING_LEN.min(str.as_bytes().len())]
+    &str.as_bytes()[..SOLANA_MAX_STRING_LEN.min(str.len())]
 }
 
 pub fn coordinator_account_from_bytes(
@@ -27,6 +27,9 @@ pub fn coordinator_account_from_bytes(
 ) -> std::result::Result<&CoordinatorAccount, ProgramError> {
     if bytes.len() != CoordinatorAccount::size_with_discriminator() {
         return Err(ProgramError::CoordinatorAccountIncorrectSize);
+    }
+    if &bytes[..CoordinatorAccount::DISCRIMINATOR.len()] != CoordinatorAccount::DISCRIMINATOR {
+        return Err(ProgramError::CoordinatorAccountInvalidDiscriminator);
     }
     Ok(bytemuck::from_bytes(
         &bytes[CoordinatorAccount::DISCRIMINATOR.len()
@@ -56,7 +59,7 @@ pub struct CoordinatorInstance {
 }
 
 #[program]
-pub mod solana_coordinator {
+pub mod psyche_solana_coordinator {
     use super::*;
 
     pub fn initialize_coordinator(
@@ -72,9 +75,9 @@ pub mod solana_coordinator {
         // this is what AccountLoader::load_init does, but unrolled to deal with weird lifetime stuff
         let mut account: RefMut<CoordinatorAccount> = {
             let acc_info = ctx.accounts.account.as_ref();
-            if acc_info.owner != &solana_coordinator::ID {
+            if acc_info.owner != &psyche_solana_coordinator::ID {
                 return Err(Error::from(ErrorCode::AccountOwnedByWrongProgram)
-                    .with_pubkeys((*acc_info.owner, solana_coordinator::ID)));
+                    .with_pubkeys((*acc_info.owner, psyche_solana_coordinator::ID)));
             }
             if !acc_info.is_writable {
                 return Err(ErrorCode::AccountNotMutable.into());
