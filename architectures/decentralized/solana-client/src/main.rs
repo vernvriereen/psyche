@@ -21,9 +21,9 @@ use psyche_client::{
 };
 use psyche_coordinator::{model::Model, CoordinatorConfig};
 use psyche_network::SecretKey;
+use psyche_solana_coordinator::ClientId;
 use psyche_tui::{maybe_start_render_loop, LogOutput};
 use serde::{Deserialize, Serialize};
-use solana_coordinator::ClientId;
 use std::path::PathBuf;
 use std::sync::Arc;
 use time::OffsetDateTime;

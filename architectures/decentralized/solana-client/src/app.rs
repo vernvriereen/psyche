@@ -79,7 +79,7 @@ impl AppBuilder {
         App,
         allowlist::AllowDynamic,
         NC,
-        RunInitConfig<solana_coordinator::ClientId, NetworkIdentity>,
+        RunInitConfig<psyche_solana_coordinator::ClientId, NetworkIdentity>,
     )> {
         let p = self.0;
 
@@ -111,11 +111,11 @@ impl AppBuilder {
             tx_tui_state: p.tx_tui_state,
             update_tui_interval: interval(Duration::from_millis(150)),
         };
-        let identity = solana_coordinator::ClientId::new(
+        let identity = psyche_solana_coordinator::ClientId::new(
             p.wallet_keypair.pubkey(),
             *p.identity_secret_key.public().as_bytes(),
         );
-        let state_options: RunInitConfig<solana_coordinator::ClientId, NetworkIdentity> =
+        let state_options: RunInitConfig<psyche_solana_coordinator::ClientId, NetworkIdentity> =
             RunInitConfig {
                 data_parallelism: p.data_parallelism,
                 tensor_parallelism: p.tensor_parallelism,
@@ -143,7 +143,7 @@ impl App {
         &mut self,
         allowlist: allowlist::AllowDynamic,
         p2p: NC,
-        state_options: RunInitConfig<solana_coordinator::ClientId, NetworkIdentity>,
+        state_options: RunInitConfig<psyche_solana_coordinator::ClientId, NetworkIdentity>,
     ) -> Result<()> {
         let backend = SolanaBackend::new(
             self.cluster.clone(),
@@ -164,7 +164,7 @@ impl App {
             .join_run(
                 instance_pda,
                 instance.account,
-                solana_coordinator::ClientId {
+                psyche_solana_coordinator::ClientId {
                     signer,
                     p2p_identity: *p2p_identity.as_bytes(),
                 },
@@ -211,7 +211,7 @@ impl App {
                 }
                 update = async { updates.recv().await } => {
                     let update = match update?.value.data.decode() {
-                        Some(data) => solana_coordinator::coordinator_account_from_bytes(&data)
+                        Some(data) => psyche_solana_coordinator::coordinator_account_from_bytes(&data)
                             .map_err(|_| anyhow!("Unable to decode coordinator account data"))
                             .map(|x| x.state.coordinator)?,
                         None => bail!("Unable to decode account data"),
@@ -238,7 +238,7 @@ impl App {
     async fn update_tui(
         &mut self,
         client_tui_state: ClientTUIState,
-        coordinator_state: &Coordinator<solana_coordinator::ClientId>,
+        coordinator_state: &Coordinator<psyche_solana_coordinator::ClientId>,
         network_tui_state: NetworkTUIState,
     ) -> Result<()> {
         if let Some(tx_tui_state) = &self.tx_tui_state {
