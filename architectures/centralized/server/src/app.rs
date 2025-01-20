@@ -396,7 +396,7 @@ impl App {
     }
 
     async fn on_tick(&mut self) {
-        self.remove_unhealthy_clients();
+        self.kick_unhealthy_clients();
         match self.coordinator.tick(
             Some(SizedIterator::new(
                 self.backend.pending_clients.iter(),
@@ -478,7 +478,7 @@ impl App {
         }
     }
 
-    fn remove_unhealthy_clients(&mut self) {
+    fn kick_unhealthy_clients(&mut self) {
         for client in self.coordinator.epoch_state.exited_clients {
             if client.state != ClientState::Healthy {
                 self.backend.pending_clients.remove(&client.id);
