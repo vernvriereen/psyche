@@ -640,7 +640,7 @@ async fn node_dont_train() {
 
     // spawn two clients
     // client_1 is a normal client
-    // client_2 will take to much time to train, so it will be kicked
+    // client_2 will exceed the maximum allowed training time, so it will be kicked
     let training_delay_client_1 = 2;
     let training_delay_client_2 = MAX_ROUND_TRAIN_TIME + 1;
     let server_port = server_handle.server_port;
@@ -657,7 +657,7 @@ async fn node_dont_train() {
     tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
 
-    // Since client_1 didnt get to train in the round 0, in round 1 it should be kicked out of the  network
+    // Since client_1 dont get to train in the round 0, in round 1 it should be kicked out of the network
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 1).await;
