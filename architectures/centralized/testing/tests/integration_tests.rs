@@ -616,7 +616,7 @@ async fn shutdown_node_in_training_and_complete_round() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn node_dont_train() {
+async fn kick_node_that_dont_train() {
     let init_min_clients = 2;
     let batches_per_round = 2;
     // all nodes are witness
