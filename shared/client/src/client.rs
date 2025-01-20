@@ -155,13 +155,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                                         // TODO: We should validate that the parameter is requested while we are in RunState::Warmup.
 
-                                        let transmittable_parameter = sharable_model.get_transmittable_parameter(&parameter_name);
-                                        if let Err(e) = transmittable_parameter {
-                                            if let Err(e) = protocol_req_tx.send(Err(e)) {
-                                                warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e:?}");
-                                            }
-                                        } else {
-                                            let transmittable_download = TransmittableDownload::ModelParameter(transmittable_parameter.unwrap());
+                                        match sharable_model.get_transmittable_parameter(&parameter_name) {
+                                            Err(e) => {
+                                                if let Err(e) = protocol_req_tx.send(Err(e)) {
+                                                    warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e:?}");
+                                                }
+                                            },
+                                            Ok(transmittable_parameter) => {
+                                                 let transmittable_download = TransmittableDownload::ModelParameter(transmittable_parameter);
                                             let ticket = p2p.add_downloadable(transmittable_download).await?;
 
                                             // TODO: Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
@@ -171,6 +172,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                             if let Err(e) = protocol_req_tx.send(Ok(ticket)) {
                                                 warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e:?}");
                                             };
+                                            }
                                         }
                                     }
                                 }
