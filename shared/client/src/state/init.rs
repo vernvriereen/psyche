@@ -4,6 +4,7 @@ use crate::{
     WandBInfo,
 };
 
+use hf_hub::{Cache as HfCache, Repo, RepoType};
 use psyche_coordinator::{
     model::{self, LLMTrainingDataLocation},
     Coordinator, HealthChecks, Witness,
@@ -15,17 +16,18 @@ use psyche_data_provider::{
     DataProvider, DataProviderTcpClient, DummyDataProvider,
 };
 use psyche_modeling::{
-    auto_tokenizer, AutoTokenizerError, CommunicatorId, ConcreteCausalLM, DummyModel,
-    LlamaForCausalLM, LoadLlamaForCausalLMError,
+    auto_tokenizer, get_parameter_names, AutoTokenizerError, CommunicatorId, ConcreteCausalLM,
+    DummyModel, LlamaForCausalLM, LoadLlamaForCausalLMError,
 };
 use psyche_network::{AuthenticatableIdentity, BlobTicket};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{rc::Rc, str::FromStr};
 use tch::{Device, Kind, Tensor};
 use thiserror::Error;
 use tokenizers::{models::wordlevel::WordLevel, ModelWrapper, Tokenizer};
 use tokio::{
     io,
-    sync::mpsc::UnboundedSender,
+    sync::{mpsc::UnboundedSender, oneshot},
     task::{JoinError, JoinHandle},
 };
 use tracing::info;
@@ -41,6 +43,9 @@ pub struct RunInitConfig<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub identity: T,
     pub network_identity: A,
     pub private_key: A::PrivateKey,
+
+    // p2p model sharing config
+    // pub max_concurrent_parameter_requests: usize,
 
     // model & dataload
     pub hub_read_token: Option<String>,
@@ -108,6 +113,8 @@ struct RawLoadedModel {
     checkpoint_extra_files: Vec<PathBuf>,
 }
 
+type OneshotModelParameterSender = oneshot::Sender<HashMap<String, Tensor>>;
+
 pub struct RunInitConfigAndIO<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub init_config: RunInitConfig<T, A>,
 
@@ -115,6 +122,7 @@ pub struct RunInitConfigAndIO<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub tx_health_check: UnboundedSender<HealthChecks>,
     pub tx_checkpoint: UnboundedSender<model::Checkpoint>,
     pub tx_model: UnboundedSender<HashMap<String, Tensor>>,
+    pub tx_parameters_req: UnboundedSender<(Vec<String>, OneshotModelParameterSender)>,
     pub tx_distro_result: UnboundedSender<DistroBroadcastAndPayload>,
     pub tx_request_download: UnboundedSender<BlobTicket>,
 }
@@ -131,6 +139,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
             tx_health_check,
             tx_checkpoint,
             tx_model,
+            tx_parameters_req,
             tx_distro_result,
             tx_request_download,
         } = self;
@@ -200,6 +209,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                         let repo_id = u8_to_string(&hub_repo.repo_id);
                         let potential_local_path = PathBuf::from(repo_id.clone());
                         let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
+
                         let model_is_local = if revision.is_none()
                             && tokio::fs::try_exists(potential_local_path.clone())
                                 .await
@@ -312,7 +322,112 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                     })
                 }
                 model::Checkpoint::Ephemeral => return Err(InitRunError::ModelIsEphemeral),
-                model::Checkpoint::P2P => todo!(),
+                model::Checkpoint::P2P(hub_repo) => {
+                    let hub_repo = *hub_repo;
+                    tokio::spawn(async move {
+                        let repo_id = u8_to_string(&hub_repo.repo_id);
+                        let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
+                        let builder = hf_hub::api::sync::ApiBuilder::new();
+                        let repo = match revision {
+                            Some(revision) => {
+                                Repo::with_revision(repo_id.to_owned(), RepoType::Model, revision)
+                            }
+                            None => Repo::new(repo_id.to_owned(), RepoType::Model),
+                        };
+
+                        // TODO: config and tokenizer files could be probably just shared over p2p too
+                        // instead of downloading them from HF.
+                        let api = builder
+                            .with_cache_dir(HfCache::default().path().clone())
+                            .with_token(init_config.hub_read_token.clone())
+                            .with_progress(false)
+                            .build()
+                            .unwrap()
+                            .repo(repo);
+
+                        let config_file = api.get("config.json").unwrap();
+                        let config_file_str = std::fs::read_to_string(config_file.as_path())?;
+
+                        let tokenizer_file = api.get("tokenizer.json").unwrap();
+                        let tokenizer_file_str = std::fs::read_to_string(tokenizer_file.as_path())?;
+                        let tokenizer = Arc::new(Tokenizer::from_str(&tokenizer_file_str).unwrap());
+
+                        let parameter_names =
+                            get_parameter_names(&config_file_str, Some(llm.max_seq_len as usize));
+
+                        let (tx_params_response, rx_params_response) = oneshot::channel();
+                        tx_parameters_req
+                            .send((parameter_names, tx_params_response))
+                            .unwrap();
+
+                        let parameters = Rc::new(rx_params_response.await.unwrap());
+
+                        let mut models = Vec::with_capacity(
+                            init_config.data_parallelism * init_config.tensor_parallelism,
+                        );
+                        for dp in 0..init_config.data_parallelism {
+                            let communicator_id = match init_config.tensor_parallelism {
+                                1 => None,
+                                _ => Some(Arc::new(CommunicatorId::new())),
+                            };
+
+                            for tp in 0..init_config.tensor_parallelism {
+                                let tensor_parallelism_world =
+                                    communicator_id.as_ref().map(|communicator_id| {
+                                        (
+                                            communicator_id.clone(),
+                                            tp,
+                                            init_config.tensor_parallelism,
+                                        )
+                                    });
+
+                                let device = if init_config.tensor_parallelism == 1 {
+                                    if dp == 0 {
+                                        Device::cuda_if_available()
+                                    } else {
+                                        Device::Cuda(dp)
+                                    }
+                                } else {
+                                    Device::Cuda(dp * init_config.tensor_parallelism + tp)
+                                };
+
+                                let model = LlamaForCausalLM::from_p2p_shared_parameters(
+                                    config_file_str.clone(),
+                                    parameters.clone(),
+                                    None,
+                                    Some(device),
+                                    Some(Kind::BFloat16),
+                                    tensor_parallelism_world,
+                                    Some(llm.max_seq_len as usize),
+                                )?;
+
+                                models.push(Box::new(model) as Box<dyn ConcreteCausalLM>);
+                            }
+                        }
+
+                        info!(
+                            "Loaded {} onto {} gpu(s) (dp={},tp={})",
+                            u8_to_string(&hub_repo.repo_id),
+                            init_config.data_parallelism * init_config.tensor_parallelism,
+                            init_config.data_parallelism,
+                            init_config.tensor_parallelism
+                        );
+
+                        let eval_runner = EvalRunner::new(
+                            init_config.eval_tasks,
+                            tokenizer.clone(),
+                            init_config.eval_task_max_docs,
+                            init_config.data_parallelism,
+                        );
+
+                        Ok(RawLoadedModel {
+                            models,
+                            tokenizer,
+                            checkpoint_extra_files: vec![],
+                            eval_runner,
+                        })
+                    })
+                }
             },
         };
 

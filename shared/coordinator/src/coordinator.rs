@@ -803,12 +803,14 @@ impl<T: NodeIdentity> Coordinator<T> {
             && unix_timestamp >= duration + self.run_state_start_unix_timestamp
     }
 
-    // set checkpoint to Ephemeral
+    // If checkpoint was set to downloading from HuggingFace, change it to P2P
     // and change state to cooldown
     fn start_cooldown(&mut self, unix_timestamp: u64) {
         match &mut self.model {
             Model::LLM(llm) => {
-                llm.checkpoint = Checkpoint::Ephemeral;
+                if let Checkpoint::Hub(hub_repo) = llm.checkpoint {
+                    llm.checkpoint = Checkpoint::P2P(hub_repo)
+                }
             }
         }
         self.change_state(unix_timestamp, RunState::Cooldown);

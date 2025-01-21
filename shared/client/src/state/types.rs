@@ -3,12 +3,10 @@ use std::path::PathBuf;
 use psyche_coordinator::{Commitment, CommitteeProof};
 use psyche_core::{BatchId, NodeIdentity};
 use psyche_modeling::DistroResult;
-use psyche_network::BlobTicket;
+use psyche_network::{BlobTicket, TransmittableDistroResult};
 use tch::TchError;
 use thiserror::Error;
 use tokio::task::JoinHandle;
-
-use crate::TransmittableDistroResult;
 
 #[derive(Debug, Clone)]
 pub struct HubUploadInfo {

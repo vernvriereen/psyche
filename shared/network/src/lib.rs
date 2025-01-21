@@ -40,6 +40,7 @@ mod p2p_model_sharing;
 mod peer_list;
 mod router;
 mod serde;
+mod serialized_distro;
 mod signed_message;
 mod state;
 mod tcp;
@@ -47,11 +48,17 @@ mod tui;
 mod util;
 
 pub use authenticable_identity::{AuthenticatableIdentity, FromSignedBytesError};
-pub use download_manager::{DownloadComplete, DownloadFailed};
+pub use download_manager::{DownloadComplete, DownloadFailed, TransmittableDownload};
 pub use iroh::{Endpoint, PublicKey, SecretKey};
-pub use p2p_model_sharing::{ModelParameterSharing, ModelParameters, ALPN};
+pub use p2p_model_sharing::{
+    ModelParameterSharing, ModelParameters, SharableModelParameterError, ALPN,
+};
 pub use peer_list::PeerList;
 pub use serde::Networkable;
+pub use serialized_distro::{
+    distro_results_from_reader, distro_results_to_bytes, SerializeDistroResultError,
+    SerializedDistroResult, TransmittableDistroResult,
+};
 pub use signed_message::SignedMessage;
 pub use tcp::{ClientNotification, TcpClient, TcpServer};
 pub use tui::{NetworkTUIState, NetworkTui};
@@ -270,7 +277,7 @@ where
         Ok(())
     }
 
-    pub async fn add_downloadable<N: Networkable>(&mut self, data: N) -> Result<BlobTicket> {
+    pub async fn add_downloadable(&mut self, data: Download) -> Result<BlobTicket> {
         let bytes = postcard::to_allocvec(&data)?;
         let blob_res = self.blobs.client().add_bytes(bytes).await?;
         let addr = self.router.endpoint().node_addr().await?;
@@ -389,6 +396,7 @@ where
                     Ok(recv)
                 }
             };
+
             self.download_manager.read(update.blob_ticket, download);
         } else {
             self.state.download_progesses.insert(hash, update);
@@ -414,6 +422,34 @@ where
             .collect(),
         )
     }
+
+    pub fn router(&self) -> Arc<Router> {
+        self.router.clone()
+    }
+}
+
+pub async fn request_model_parameter(
+    router: Arc<Router>,
+    node_addr: NodeId,
+    param_name: String,
+) -> Result<BlobTicket> {
+    let conn = router
+        .endpoint()
+        .connect(node_addr, p2p_model_sharing::ALPN)
+        .await?;
+
+    // Open a bidirectional QUIC stream
+    let (mut send, mut recv) = conn.open_bi().await?;
+
+    // Request parameter
+    send.write_all(param_name.as_bytes()).await?;
+    send.finish()?;
+
+    // Receive parameter value blob ticket
+    let parameter_blob_ticket_bytes = recv.read_to_end(500).await?;
+    let parameter_blob_ticket: BlobTicket = postcard::from_bytes(&parameter_blob_ticket_bytes)?;
+
+    Ok(parameter_blob_ticket)
 }
 
 fn parse_gossip_event<BroadcastMessage: Networkable>(

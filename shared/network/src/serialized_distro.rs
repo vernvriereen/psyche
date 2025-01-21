@@ -1,3 +1,4 @@
+use psyche_core::BatchId;
 use psyche_modeling::DistroResult;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -14,6 +15,13 @@ pub struct SerializedDistroResult {
     pub sparse_val: Vec<u8>,
     pub xshape: Vec<u16>,
     pub totalk: i64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TransmittableDistroResult {
+    pub step: u32,
+    pub batch_id: BatchId,
+    pub distro_results: Vec<SerializedDistroResult>,
 }
 
 fn serialize_tensor(tensor: &Tensor) -> std::result::Result<Vec<u8>, tch::TchError> {
