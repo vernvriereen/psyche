@@ -260,7 +260,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                             let Some(peer_id) = peer_cycle.lock().await.next() else {
                                                 break;
                                             };
-                                            if !busy_peers.lock().await.insert(&peer_id) {
+                                            if !busy_peers.lock().await.insert(peer_id) {
                                                 continue;
                                             }
                                             debug!("Requesting parameter {param_name} from peer {peer_id}");
