@@ -12,10 +12,14 @@ use psyche_network::{
 use psyche_watcher::{Backend, BackendWatcher};
 use wandb::DataValue;
 
-use std::{collections::HashMap, marker::PhantomData, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    marker::PhantomData,
+    sync::Arc,
+};
 use tokio::{
     select,
-    sync::{mpsc, watch, Notify},
+    sync::{mpsc, watch, Mutex, Notify},
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
@@ -240,37 +244,70 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             .collect();
 
                             let handle: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
-                                let mut parameter_blob_tickets = Vec::new();
-                                // TODO: The parameter requests could be done concurrently, setting some MAX_CONCURRENT_PARAM_REQUESTS
+                                let parameter_blob_tickets = Arc::new(Mutex::new(Vec::new()));
+                                let busy_peers = Arc::new(Mutex::new(HashSet::new()));
+                                let peer_cycle = peer_ids.into_iter().cycle(); // Iterate over peers in a cycle
+                                let peer_cycle = Arc::new(Mutex::new(peer_cycle));
 
-                                let mut peer_iter = peer_ids.into_iter().cycle(); // Iterate over peers in a cycle
                                 for param_name in param_names {
-                                    for peer_id in peer_iter.by_ref() {
-                                            let router = router.clone();
-                                            debug!("Requesting parameter {param_name} from peer {peer_id}");
-                                            match request_model_parameter(router, peer_id, param_name.clone()).await {
-                                                Ok(parameter_blob_ticket) => {
-                                                    parameter_blob_tickets.push(parameter_blob_ticket);
-                                                    // Continue to the next parameter
-                                                    break;
-                                                }
-                                                Err(e) => {
-                                                    warn!("Failed to get parameter {param_name} from peer {peer_id}: {e}");
-                                                    // Continue to the next peer
-                                                }
+                                    let router = router.clone();
+                                    let busy_peers = busy_peers.clone();
+                                    let parameter_blob_tickets = parameter_blob_tickets.clone();
+                                    let peer_cycle = peer_cycle.clone();
+
+                                    tokio::spawn(async move {
+                                        loop {
+                                            let Some(peer_id) = peer_cycle.lock().await.next() else {
+                                                break;
+                                            };
+                                            if !busy_peers.lock().await.insert(&peer_id) {
+                                                continue;
                                             }
-                                    }
+                                            debug!("Requesting parameter {param_name} from peer {peer_id}");
+                                            match request_model_parameter(router.clone(), peer_id, param_name.clone()).await {
+                                                Ok(parameter_blob_ticket) => {
+                                                  parameter_blob_tickets.lock().await.push(parameter_blob_ticket);
+                                                  busy_peers.lock().await.remove(&peer_id);
+                                                  break;
+                                                },
+                                                Err(e) => {
+                                                  warn!("Failed to get parameter {param_name} from peer {peer_id}: {e}");
+                                                  busy_peers.lock().await.remove(&peer_id);
+                                                  continue;
+                                                },
+                                            }
+                                        }
+                                    });
+
+                                   //  for peer_id in peer_iter.by_ref() {
+                                   //      // let busy_peers_lock = busy_peers.lock().await;
+                                   //      if busy_peers.lock().await.contains(&peer_id) {
+                                   //          continue;
+                                   //      } else {
+                                   //          busy_peers.lock().await.insert(&peer_id);
+                                   //      }
+
+
+                                   //      tokio::spawn(async move {
+                                   //          debug!("Requesting parameter {param_name} from peer {peer_id}");
+                                   //          match request_model_parameter(router, peer_id, param_name.clone()).await {
+                                   //              Ok(parameter_blob_ticket) => parameter_blob_tickets.lock().await.push(parameter_blob_ticket),
+                                   //              Err(e) => warn!("Failed to get parameter {param_name} from peer {peer_id}: {e}"),
+                                   //          }
+                                   //          busy_peers.lock().await.remove(&peer_id);
+                                   //      });
+                                   // }
                                 }
                                 tx_params_download.send(parameter_blob_tickets)?;
                                 Ok(())
                             });
                             drop(handle);
                         }
-                        Some(param_blob_tickets) = rx_params_download.recv() => {
-                            for ticket in param_blob_tickets {
-                                p2p.start_download(ticket).await?;
-                            }
-                        }
+                        // Some(param_blob_tickets) = rx_params_download.recv() => {
+                        //     for ticket in param_blob_tickets {
+                        //         p2p.start_download(ticket).await?;
+                        //     }
+                        // }
                         else => break
                     }
                 }
