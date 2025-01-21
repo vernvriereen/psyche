@@ -27,6 +27,8 @@ tch.workspace = true
 data-encoding = "2.6.0"
 ed25519 = "2.2.3"
 serde_json.workspace = true
+bitvec.workspace = true
+serde_bytes = "0.11.15"
 
 # for examples
 [dev-dependencies]

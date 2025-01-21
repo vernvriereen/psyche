@@ -14,14 +14,14 @@ use tch::ReduceOpType;
 #[cfg(feature = "parallelism")]
 use crate::tensor_parallelism::unshard_tensor;
 
-struct TransformDCT {
+pub struct TransformDCT {
     shape_dict: HashMap<i64, i64>,
     f_dict: HashMap<i64, Tensor>,
     b_dict: HashMap<i64, Tensor>,
 }
 
 impl TransformDCT {
-    fn new(variables: &[(Tensor, Option<Shard>)], target_chunk: i64) -> Self {
+    pub fn new(variables: &[(Tensor, Option<Shard>)], target_chunk: i64) -> Self {
         let _no_grad = tch::no_grad_guard();
         let mut shape_dict = HashMap::new();
         let mut f_dict = HashMap::new();
@@ -260,7 +260,7 @@ impl TransformDCT {
         }
     }
 
-    fn encode(&mut self, x: &Tensor) -> Tensor {
+    pub fn encode(&mut self, x: &Tensor) -> Tensor {
         let _no_grad = tch::no_grad_guard();
         if x.size().len() > 1 {
             // 2D weights
@@ -286,7 +286,7 @@ impl TransformDCT {
         }
     }
 
-    fn decode(&mut self, x: &Tensor) -> Tensor {
+    pub fn decode(&mut self, x: &Tensor) -> Tensor {
         let _no_grad = tch::no_grad_guard();
         let x_shape = x.size();
 
@@ -341,7 +341,7 @@ impl CompressDCT {
         }
     }
 
-    pub fn compress(x: &Tensor, topk: i64, quantization: bool) -> (Tensor, Tensor, Vec<i64>, i64) {
+    pub fn compress(x: &Tensor, topk: i64) -> (Tensor, Tensor, Vec<i64>, i64) {
         let _no_grad = tch::no_grad_guard();
         let xshape = x.size();
         let x = if xshape.len() > 2 {
@@ -355,11 +355,11 @@ impl CompressDCT {
             x.shallow_clone()
         };
 
-        let mut totalk = *x.size().last().unwrap();
+        let totalk = *x.size().last().unwrap();
         let topk = Self::clamp_topk(&x, topk);
 
         let mut idx = x.abs().topk(topk, -1, true, false).1;
-        let mut val = x.gather(-1, &idx, false);
+        let val = x.gather(-1, &idx, false);
 
         if totalk <= 256 {
             idx = idx.to_kind(Kind::Uint8);
@@ -367,15 +367,6 @@ impl CompressDCT {
             idx = idx.to_kind(Kind::UInt16).view_dtype(Kind::Uint8);
         } else if totalk <= 4294967296 {
             idx = idx.to_kind(Kind::UInt32).view_dtype(Kind::Uint8);
-        }
-
-        if quantization {
-            val = val
-                .multiply_scalar(1e4)
-                .clamp_(-448., 448.) //min max representable values in float8e4m3fn
-                .to_kind(Kind::Float8e4m3fn)
-                .view_dtype(Kind::Uint8);
-            totalk = -totalk; // indicator we're quantizaed
         }
 
         (idx, val, xshape, totalk)
@@ -390,7 +381,6 @@ impl CompressDCT {
         kind: Kind,
         device: Device,
     ) -> Tensor {
-        let quantized = totalk < 0;
         let totalk = totalk.abs();
 
         let idx = if totalk <= 256 {
@@ -404,13 +394,7 @@ impl CompressDCT {
         }
         .to_kind(Kind::Int64);
 
-        let val = match quantized {
-            true => val
-                .view_dtype(Kind::Float8e4m3fn)
-                .to_kind(kind)
-                .multiply_scalar(1e-4),
-            false => val.shallow_clone(),
-        };
+        let val = val.to_kind(kind);
 
         let mut x: Tensor = Tensor::zeros(xshape, (kind, device));
 
@@ -546,7 +530,7 @@ impl Distro {
         lr: f64,
         warmup_factor: f64,
         compression_topk: i64,
-        quantization: bool,
+        quant_1bit: bool,
         stats: bool,
     ) -> Vec<DistroResult> {
         let _no_grad = tch::no_grad_guard();
@@ -583,76 +567,73 @@ impl Distro {
             // add delta to new gradient
             let _ = delta.g_add_(&variable.grad().multiply_scalar(lr));
 
-            let (sparse_idx, sparse_val, xshape, totalk, transmit_grad, full_delta) = match shard {
-                #[cfg(feature = "parallelism")]
-                Some(shard) => {
-                    assert!(self.comm.is_some());
-                    let comm = self.comm.as_ref().unwrap();
+            let (sparse_idx, mut sparse_val, xshape, totalk, transmit_grad, full_delta) =
+                match shard {
+                    #[cfg(feature = "parallelism")]
+                    Some(shard) => {
+                        assert!(self.comm.is_some());
+                        let comm = self.comm.as_ref().unwrap();
 
-                    // gather delta
-                    let shards = (0..shard.world_size)
-                        .map(|_| delta.empty_like())
-                        .collect::<Vec<_>>();
-                    comm.all_gather(&shards, &delta).unwrap();
-                    let gathered_delta = unshard_tensor(shards, shard);
+                        // gather delta
+                        let shards = (0..shard.world_size)
+                            .map(|_| delta.empty_like())
+                            .collect::<Vec<_>>();
+                        comm.all_gather(&shards, &delta).unwrap();
+                        let gathered_delta = unshard_tensor(shards, shard);
 
-                    // Compress delta
-                    let (sparse_idx, sparse_val, xshape, totalk) = CompressDCT::compress(
-                        &self.transform.encode(&gathered_delta),
-                        compression_topk,
-                        quantization,
-                    );
+                        // Compress delta
+                        let (sparse_idx, sparse_val, xshape, totalk) = CompressDCT::compress(
+                            &self.transform.encode(&gathered_delta),
+                            compression_topk,
+                        );
 
-                    // Estimate transmitted delta
-                    let transmit_grad = self.transform.decode(&CompressDCT::decompress(
-                        &sparse_idx,
-                        &sparse_val,
-                        &xshape,
-                        totalk,
-                        variable.kind(),
-                        variable.device(),
-                    ));
-                    let transmit_grad = tensor_shard(&transmit_grad, shard);
+                        // Estimate transmitted delta
+                        let transmit_grad = self.transform.decode(&CompressDCT::decompress(
+                            &sparse_idx,
+                            &sparse_val,
+                            &xshape,
+                            totalk,
+                            variable.kind(),
+                            variable.device(),
+                        ));
+                        let transmit_grad = tensor_shard(&transmit_grad, shard);
 
-                    (
-                        sparse_idx,
-                        sparse_val,
-                        xshape,
-                        totalk,
-                        transmit_grad,
-                        gathered_delta,
-                    )
-                }
-                #[cfg(not(feature = "parallelism"))]
-                Some(_) => panic!("Sharded tensor without parallelism feature?"),
-                None => {
-                    // Compress delta
-                    let (sparse_idx, sparse_val, xshape, totalk) = CompressDCT::compress(
-                        &self.transform.encode(delta),
-                        compression_topk,
-                        quantization,
-                    );
+                        (
+                            sparse_idx,
+                            sparse_val,
+                            xshape,
+                            totalk,
+                            transmit_grad,
+                            gathered_delta,
+                        )
+                    }
+                    #[cfg(not(feature = "parallelism"))]
+                    Some(_) => panic!("Sharded tensor without parallelism feature?"),
+                    None => {
+                        // Compress delta
+                        let (sparse_idx, sparse_val, xshape, totalk) =
+                            CompressDCT::compress(&self.transform.encode(delta), compression_topk);
 
-                    // Estimate transmitted delta
-                    let transmit_grad = self.transform.decode(&CompressDCT::decompress(
-                        &sparse_idx,
-                        &sparse_val,
-                        &xshape,
-                        totalk,
-                        variable.kind(),
-                        variable.device(),
-                    ));
+                        // Estimate transmitted delta
+                        let transmit_grad = self.transform.decode(&CompressDCT::decompress(
+                            &sparse_idx,
+                            &sparse_val,
+                            &xshape,
+                            totalk,
+                            variable.kind(),
+                            variable.device(),
+                        ));
 
-                    (
-                        sparse_idx,
-                        sparse_val,
-                        xshape,
-                        totalk,
-                        transmit_grad,
-                        delta.shallow_clone(),
-                    )
-                }
-            };
+                        (
+                            sparse_idx,
+                            sparse_val,
+                            xshape,
+                            totalk,
+                            transmit_grad,
+                            delta.shallow_clone(),
+                        )
+                    }
+                };
 
             let delta_transmit_energies: Option<(f64, f64)> = match stats {
                 true => Some((
@@ -670,6 +651,14 @@ impl Distro {
 
             // Remove transmitted from delta
             let _t = delta.g_sub_(&transmit_grad);
+
+            let sparse_val = if quant_1bit {
+                let sparse_val = sparse_val.greater_(0);
+                debug_assert!(sparse_val.kind() == Kind::Bool);
+                sparse_val
+            } else {
+                sparse_val
+            };
 
             ret.push(DistroResult {
                 sparse_idx,
@@ -717,7 +706,15 @@ impl Distro {
                 .collect::<Vec<_>>();
             let values = results
                 .iter()
-                .map(|x| x[index].sparse_val.to_device(device))
+                .map(|x| {
+                    let sparse_val = x[index].sparse_val.to_device(device);
+                    if sparse_val.kind() == Kind::Bool {
+                        // when it's quantized to bools, we need to transform it back into -1/+1.
+                        sparse_val.to_kind(Kind::Int8) * 2 - 1
+                    } else {
+                        sparse_val
+                    }
+                })
                 .collect::<Vec<_>>();
 
             // Decode grad from all nodes
@@ -946,7 +943,7 @@ mod tests {
             vec![4i64, 4i64],
             4i64,
         );
-        let ret = CompressDCT::compress(&r, 2, false);
+        let ret = CompressDCT::compress(&r, 2);
         assert_eq!(truth.0, ret.0);
         assert!(truth.1.allclose(&ret.1, 1e-4, 1e-8, false));
         assert_eq!(truth.2, ret.2);
@@ -964,7 +961,7 @@ mod tests {
             vec![8i64],
             8i64,
         );
-        let ret = CompressDCT::compress(&r, 2, false);
+        let ret = CompressDCT::compress(&r, 2);
         assert_eq!(truth.0, ret.0);
         assert!(truth.1.allclose(&ret.1, 1e-4, 1e-8, false));
         assert_eq!(truth.2, ret.2);
@@ -1085,5 +1082,32 @@ mod tests {
         ]);
         let ret = TransformDCT::new(&[(b, None)], 64).decode(&b_);
         assert!(truth.allclose(&ret, 1e-4, 1e-4, false));
+    }
+
+    #[test]
+    fn test_signed_vals_reconstructs_original_sign() {
+        let truth = Tensor::from_slice2(&[
+            [0.5000, 0.5000, 0.5000, 0.5000],
+            [0.6533, 0.2706, -0.2706, -0.6533],
+            [0.5000, -0.5000, -0.5000, 0.5000],
+            [0.2706, -0.6533, 0.6533, -0.2706],
+        ])
+        .to_kind(Kind::Float)
+        .to(Device::Cpu);
+
+        let signed_truth = truth.sign();
+
+        let (sparse_idx, sparse_val, xshape, totalk) = CompressDCT::compress(&truth, i64::MAX);
+        let signed_sparse_val = sparse_val.sign();
+
+        let decompressed_signed = CompressDCT::decompress(
+            &sparse_idx,
+            &signed_sparse_val,
+            &xshape,
+            totalk,
+            truth.kind(),
+            Device::Cpu,
+        );
+        assert!(decompressed_signed.equal(&signed_truth));
     }
 }

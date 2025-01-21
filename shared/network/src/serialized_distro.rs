@@ -4,17 +4,20 @@ use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
     fmt,
-    io::{BufReader, Cursor, Read},
+    io::{BufReader, Read},
     num::TryFromIntError,
 };
-use tch::{Device, Tensor};
+use tch::Device;
+use thiserror::Error;
+
+use crate::serializable_tensor::SerializableTensor;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SerializedDistroResult {
-    pub sparse_idx: Vec<u8>,
-    pub sparse_val: Vec<u8>,
+    pub sparse_idx: SerializableTensor,
+    pub sparse_val: SerializableTensor,
     pub xshape: Vec<u16>,
-    pub totalk: i64,
+    pub totalk: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -24,63 +27,26 @@ pub struct TransmittableDistroResult {
     pub distro_results: Vec<SerializedDistroResult>,
 }
 
-fn serialize_tensor(tensor: &Tensor) -> std::result::Result<Vec<u8>, tch::TchError> {
-    let mut buffer = Vec::new();
-    tensor.save_to_stream(&mut buffer)?;
-    Ok(buffer)
-}
-
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum SerializeDistroResultError {
-    Tch(tch::TchError),
-    ShapeInt(TryFromIntError),
-}
-
-impl fmt::Display for SerializeDistroResultError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SerializeDistroResultError::Tch(err) => write!(f, "Torch error: {}", err),
-            SerializeDistroResultError::ShapeInt(err) => {
-                write!(f, "Shape had invalid u16: {}", err)
-            }
-        }
-    }
-}
-
-impl Error for SerializeDistroResultError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            SerializeDistroResultError::Tch(err) => Some(err),
-            SerializeDistroResultError::ShapeInt(err) => Some(err),
-        }
-    }
-}
-
-impl From<tch::TchError> for SerializeDistroResultError {
-    fn from(err: tch::TchError) -> Self {
-        SerializeDistroResultError::Tch(err)
-    }
-}
-
-impl From<TryFromIntError> for SerializeDistroResultError {
-    fn from(err: TryFromIntError) -> Self {
-        SerializeDistroResultError::ShapeInt(err)
-    }
+    #[error("Torch error: {0}")]
+    Tch(#[from] tch::TchError),
+    #[error("Shape had invalid u16: {0}")]
+    ShapeInt(#[from] TryFromIntError),
 }
 
 impl TryFrom<&DistroResult> for SerializedDistroResult {
     type Error = SerializeDistroResultError;
-
     fn try_from(value: &DistroResult) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
-            sparse_idx: serialize_tensor(&value.sparse_idx)?,
-            sparse_val: serialize_tensor(&value.sparse_val)?,
+            sparse_idx: (&value.sparse_idx).try_into()?,
+            sparse_val: (&value.sparse_val).try_into()?,
             xshape: value
                 .xshape
                 .iter()
                 .map(|&x| u16::try_from(x))
                 .collect::<Result<Vec<u16>, _>>()?,
-            totalk: value.totalk,
+            totalk: value.totalk as u32,
         })
     }
 }
@@ -90,21 +56,15 @@ impl TryFrom<&SerializedDistroResult> for DistroResult {
 
     fn try_from(value: &SerializedDistroResult) -> std::result::Result<Self, Self::Error> {
         let mut distro_result = Self {
-            sparse_idx: Tensor::load_from_stream_with_device(
-                Cursor::new(&value.sparse_idx),
-                Device::Cpu,
-            )?,
-            sparse_val: Tensor::load_from_stream_with_device(
-                Cursor::new(&value.sparse_val),
-                Device::Cpu,
-            )?,
+            sparse_idx: (&value.sparse_idx).try_into()?,
+            sparse_val: (&value.sparse_val).try_into()?,
             xshape: value.xshape.iter().map(|x| *x as i64).collect(),
-            totalk: value.totalk,
+            totalk: value.totalk as i64,
             stats: None,
         };
-        // don't pin - we can run on cpu if we don't!
+        // don't pin - it would crash if no CUDA is available.
         if Device::cuda_if_available().is_cuda() {
-            // idx doesn't matter here
+            // the index of the CUDA device doesn't matter here.
             distro_result.sparse_idx = distro_result.sparse_idx.pin_memory(Device::Cuda(0));
             distro_result.sparse_val = distro_result.sparse_val.pin_memory(Device::Cuda(0));
         }
@@ -199,5 +159,53 @@ impl<R: Read> Iterator for DistroResultIterator<R> {
                 Err(e) => return Some(Err(DistroResultsReaderError::Postcard(e))),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use psyche_modeling::CompressDCT;
+    use tch::{Device, Kind, Tensor};
+
+    use crate::serializable_tensor::SerializableTensor;
+
+    #[test]
+    fn test_roundtrip_distro_result_1bit() {
+        let truth = Tensor::from_slice2(&[
+            [0.5000, 0.5000, 0.5000, 0.5000],
+            [0.6533, 0.2706, -0.2706, -0.6533],
+            [0.5000, -0.5000, -0.5000, 0.5000],
+            [0.2706, -0.6533, 0.6533, -0.2706],
+        ])
+        .to_kind(Kind::Float)
+        .to(Device::Cpu);
+
+        let (sparse_idx, raw_sparse_val, xshape, totalk) = CompressDCT::compress(&truth, i64::MAX);
+        // turn raw sparse vals into bools
+        let bool_sparse_val = raw_sparse_val.greater(0);
+
+        // and compress to 1bit
+        let ser_sparse_val = SerializableTensor::try_from(&bool_sparse_val).unwrap();
+
+        // decompress back into bool tensor
+        let sparse_val = Tensor::try_from(&ser_sparse_val).unwrap();
+
+        assert_eq!(sparse_val.kind(), Kind::Bool);
+
+        // when it's quantized to bools, we need to transform it back into -1/+1.
+        let sparse_val = sparse_val.to_kind(Kind::Int8) * 2 - 1;
+
+        // finally decompress back to ground truth
+        let decompressed_signed = CompressDCT::decompress(
+            &sparse_idx,
+            &sparse_val,
+            &xshape,
+            totalk,
+            truth.kind(),
+            Device::Cpu,
+        );
+        let signed_truth = truth.sign();
+
+        assert!(decompressed_signed.equal(&signed_truth));
     }
 }

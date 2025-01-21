@@ -13,7 +13,7 @@ mod traits;
 
 pub use auto_tokenizer::{auto_tokenizer, AutoTokenizerError};
 pub use batcher::Batcher;
-pub use distro::{CompressDCT, Distro, DistroResult};
+pub use distro::{CompressDCT, Distro, DistroResult, TransformDCT};
 pub use dummy::DummyModel;
 pub use fp32_gradient_accumulator::Fp32GradientAccumulator;
 pub use llama::{get_parameter_names, Cache, Config, Llama, LlamaEosToks};
