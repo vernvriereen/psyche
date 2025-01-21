@@ -11,7 +11,6 @@ use psyche_coordinator::{
     model::Model, Committee, CommitteeProof, CoordinatorConfig, Witness, WitnessBloom,
     WitnessProof, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
 };
-use std::{cell::RefMut, ops::DerefMut};
 
 declare_id!("5gKtdi6At7WEcLE22GmkSg94rVgc2hRRo3VvKhLnoJZP");
 
@@ -66,66 +65,40 @@ pub mod psyche_solana_coordinator {
         ctx: Context<InitializeCoordinatorAccounts>,
         run_id: String,
     ) -> Result<()> {
+        // Initialize the coordinator instance
         let instance = &mut ctx.accounts.instance;
         instance.bump = ctx.bumps.instance;
         instance.owner = ctx.accounts.payer.key();
         instance.account = ctx.accounts.account.key();
         instance.run_id = run_id.clone();
-
-        // this is what AccountLoader::load_init does, but unrolled to deal with weird lifetime stuff
-        let mut account: RefMut<CoordinatorAccount> = {
-            let acc_info = ctx.accounts.account.as_ref();
-            if acc_info.owner != &psyche_solana_coordinator::ID {
-                return Err(Error::from(ErrorCode::AccountOwnedByWrongProgram)
-                    .with_pubkeys((*acc_info.owner, psyche_solana_coordinator::ID)));
-            }
-            if !acc_info.is_writable {
-                return Err(ErrorCode::AccountNotMutable.into());
-            }
-            if !acc_info.is_writable {
-                return Err(ErrorCode::AccountNotMutable.into());
-            }
-
-            let mut data = acc_info.try_borrow_mut_data()?;
-
-            // The discriminator should be zero, since we're initializing.
-            let disc = CoordinatorAccount::DISCRIMINATOR;
-            let given_disc = &data[..disc.len()];
-            let has_disc = given_disc.iter().any(|b| *b != 0);
-            if has_disc {
-                return Err(ErrorCode::AccountDiscriminatorAlreadySet.into());
-            }
-
-            if data.len() != CoordinatorAccount::size_with_discriminator() {
-                return err!(ProgramError::CoordinatorAccountIncorrectSize);
-            }
-
-            {
-                data.deref_mut()[..disc.len()].copy_from_slice(disc);
-            }
-
-            RefMut::map(data, |data| {
-                bytemuck::from_bytes_mut(
-                    &mut data.deref_mut()
-                        [disc.len()..std::mem::size_of::<CoordinatorAccount>() + disc.len()],
-                )
-            })
-        };
-
+        // Initialize the coordinator account
+        let mut data = ctx.accounts.account.try_borrow_mut_data()?;
+        if data.len() != CoordinatorAccount::size_with_discriminator() {
+            return err!(ProgramError::CoordinatorAccountIncorrectSize);
+        }
+        // Install the correct coordinator account's discriminator, verify that it was zero before init
+        let disc = CoordinatorAccount::DISCRIMINATOR;
+        let data_disc = &mut data[..disc.len()];
+        if data_disc.iter().any(|b| *b != 0) {
+            return Err(ErrorCode::AccountDiscriminatorAlreadySet.into());
+        }
+        data_disc.copy_from_slice(disc);
+        // Ready to prepare the coordinator content
+        let account = bytemuck::from_bytes_mut::<CoordinatorAccount>(
+            &mut data[disc.len()..CoordinatorAccount::size_with_discriminator()],
+        );
+        // Setup the run_id const
         let mut array = [0u8; SOLANA_MAX_STRING_LEN];
         let run_id = bytes_from_string(&run_id);
         array[..run_id.len()].copy_from_slice(run_id);
         account.state.coordinator.run_id = array;
-
+        // Done
         Ok(())
     }
 
     pub fn free_coordinator(ctx: Context<FreeCoordinatorAccounts>) -> Result<()> {
-        {
-            let state = &ctx.accounts.account.load()?.state;
-            if !state.coordinator.halted() {
-                return err!(ProgramError::CloseCoordinatorNotHalted);
-            }
+        if !&ctx.accounts.account.load()?.state.coordinator.halted() {
+            return err!(ProgramError::CloseCoordinatorNotHalted);
         }
         ctx.accounts
             .account
