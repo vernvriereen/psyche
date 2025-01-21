@@ -39,6 +39,25 @@ pub enum SharableModelParameterError {
     DecodeParameterNameError(String),
 }
 
+// This convertions are done manually since the original errors does not implement serialize and deserialize
+impl From<tch::TchError> for SharableModelParameterError {
+    fn from(err: tch::TchError) -> Self {
+        SharableModelParameterError::TchSerializeError(err.to_string())
+    }
+}
+
+impl From<std::io::Error> for SharableModelParameterError {
+    fn from(err: std::io::Error) -> Self {
+        SharableModelParameterError::ConnectionIOError(err.to_string())
+    }
+}
+
+impl From<std::string::FromUtf8Error> for SharableModelParameterError {
+    fn from(err: std::string::FromUtf8Error) -> Self {
+        SharableModelParameterError::DecodeParameterNameError(err.to_string())
+    }
+}
+
 pub enum ParameterSharingMessage {
     Get(
         String,
@@ -128,12 +147,8 @@ impl ModelParameters {
                 let mut param_name_buffer = Vec::new();
                 let mut param_value_buffer = Vec::new();
 
-                param_name_buffer
-                    .write_all(param_name.as_bytes())
-                    .map_err(|e| SharableModelParameterError::ConnectionIOError(e.to_string()))?;
-                parameter
-                    .save_to_stream(&mut param_value_buffer)
-                    .map_err(|e| SharableModelParameterError::TchSerializeError(e.to_string()))?;
+                param_name_buffer.write_all(param_name.as_bytes())?;
+                parameter.save_to_stream(&mut param_value_buffer)?;
 
                 let transmittable_parameter =
                     TransmittableModelParameter::new(param_name_buffer, param_value_buffer);
@@ -180,11 +195,9 @@ impl ModelParameters {
         };
 
         // Deserialize model parameter
-        let param_name = String::from_utf8(parameter.param_name_bytes)
-            .map_err(|e| SharableModelParameterError::DecodeParameterNameError(e.to_string()))?;
+        let param_name = String::from_utf8(parameter.param_name_bytes)?;
         let buf_reader = Cursor::new(parameter.param_value_bytes);
-        let param_value = Tensor::load_from_stream(buf_reader)
-            .map_err(|e| SharableModelParameterError::TchSerializeError(e.to_string()))?;
+        let param_value = Tensor::load_from_stream(buf_reader)?;
 
         // Validate that the parameter does not already exist
         // This should be called only by a client that joins the run
