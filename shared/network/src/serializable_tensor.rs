@@ -1,4 +1,3 @@
-use bitvec::vec::BitVec;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use tch::{Device, Kind, TchError, Tensor};
@@ -8,7 +7,7 @@ use crate::serializable_kind::SerializableKind;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum SerializableTensorData {
     Full(#[serde(with = "serde_bytes")] Vec<u8>),
-    OneBit(BitVec),
+    OneBit(#[serde(with = "serde_bytes")] Vec<u8>),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -38,25 +37,49 @@ impl TryFrom<&Tensor> for SerializableTensor {
         let kind = tensor.kind().into();
         let requires_grad = tensor.requires_grad();
 
-        let num_elements = tensor.numel();
-
-        let data = if tensor.kind() == Kind::Bool {
-            // TODO optimization: you can pack (00000000, 00000000, 00000001, 00000000) into 0010 on GPU.
-            // bit_weights = [1, 2, 4, 8, 16, 32, 64, 128]
-            // multiply and sum along last dimension
-            // each group of 8 bits becomes one byte
-            // packed = (reshaped * bit_weights).sum(dim=-1)
-            let flat_tensor = tensor.flatten(0, -1);
-
-            let data = (0..num_elements)
-                .map(|i| flat_tensor.int64_value(&[i as i64]) == 1)
-                .collect();
-            SerializableTensorData::OneBit(data)
-        } else {
+        fn tensor_to_bytes(tensor: &Tensor) -> Vec<u8> {
+            let num_elements = tensor.numel();
             let elt_size = tensor.kind().elt_size_in_bytes();
             let mut data = vec![0u8; num_elements * elt_size];
             tensor.copy_data_u8(&mut data, num_elements);
-            SerializableTensorData::Full(data)
+            data
+        }
+
+        let data = if tensor.kind() == Kind::Bool {
+            // this pad and reshape operation is equivalent to taking a tensor of
+            // [0, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1]
+            // and transforming it into [0b01101110, 0b01101111]
+            let n_bits = tensor.numel() as i64;
+
+            // first we pad lengths to multiple of 8, since final array should be &[u8]
+            let pad_size = (8 - (n_bits % 8)) % 8;
+            let padded = if pad_size > 0 {
+                Tensor::f_pad(&tensor, [0, pad_size], "constant", Some(0.0))?
+            } else {
+                tensor.shallow_clone()
+            };
+
+            // then we reshape to (..., N/8, 8)
+            let new_shape: Vec<i64> = vec![(n_bits + pad_size) / 8, 8];
+            let reshaped = padded.flatten(0, -1).reshape(&new_shape);
+
+            // make a tensor of bit weights (LSB first)
+            // which we will multiply with each value consecutively
+            // to create packable bits
+            let bit_weights = Tensor::from_slice(&[1u8, 2, 4, 8, 16, 32, 64, 128])
+                .to_device(tensor.device())
+                .to_kind(Kind::Uint8);
+
+            // multiply and sum to pack bits
+            let packed = (reshaped.to_kind(Kind::Uint8) * bit_weights).sum_dim_intlist(
+                -1,
+                false,
+                Kind::Uint8,
+            );
+
+            SerializableTensorData::OneBit(tensor_to_bytes(&packed))
+        } else {
+            SerializableTensorData::Full(tensor_to_bytes(&tensor))
         };
 
         Ok(SerializableTensor {
@@ -76,11 +99,33 @@ impl TryFrom<&SerializableTensor> for Tensor {
             SerializableTensorData::Full(data) => {
                 Tensor::f_from_data_size(data, &value.dims, (&value.kind).into())?
             }
-            SerializableTensorData::OneBit(bits) => {
-                let values: Vec<u8> = bits.iter().map(|x| if *x { 1 } else { 0 }).collect();
-                Tensor::from_slice(&values)
-                    .reshape(&value.dims)
-                    .to_kind((&value.kind).into())
+            SerializableTensorData::OneBit(bytes) => {
+                // packed bytes are just a flat 1d slice of bits
+                let packed = Tensor::from_slice(bytes).to_kind(Kind::Uint8);
+
+                // make a tensor of bit weights (LSB first) to unpack
+                let bit_weights =
+                    Tensor::from_slice(&[1u8, 2, 4, 8, 16, 32, 64, 128]).to_kind(Kind::Uint8);
+
+                // calculate total number of elements in the final shape
+                let total_elements: i64 = value.dims.iter().product();
+
+                // reshape packed tensor to [..., 1] for broadcasting back to the original shape
+                let mut packed_shape = packed.size();
+                packed_shape.push(1);
+                let reshaped_packed = packed.reshape(&packed_shape);
+
+                // unpack bits by ANDing with the bit weights and convert to boolean
+                let bits = reshaped_packed
+                    .bitwise_and_tensor(&bit_weights)
+                    .to_kind(Kind::Bool);
+
+                // flatten and select only the needed bits
+                let flat_bits = bits.flatten(0, -1);
+                let needed_bits = flat_bits.slice(0, 0, total_elements, 1);
+
+                // reshape back to original dimensions
+                needed_bits.reshape(&value.dims)
             }
         };
 
@@ -137,8 +182,17 @@ mod tests {
 
         let result = Tensor::try_from(&serializable).unwrap();
 
-        truth.print();
-        result.print();
+        assert!(result.equal(&truth));
+    }
+
+    #[test]
+    fn test_roundtrip_bool_tensor2d() {
+        let truth = Tensor::from_slice2(&[[1, 0, 0, 1], [0, 1, 1, 1], [1, 0, 1, 0], [1, 1, 0, 1]])
+            .to_kind(Kind::Bool)
+            .to(Device::Cpu);
+
+        let serializable = SerializableTensor::try_from(&truth).unwrap();
+        let result = Tensor::try_from(&serializable).unwrap();
 
         assert!(result.equal(&truth));
     }

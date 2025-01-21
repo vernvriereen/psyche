@@ -6488,7 +6488,6 @@ name = "psyche-network"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bitvec",
  "bytes",
  "chrono",
  "clap",
