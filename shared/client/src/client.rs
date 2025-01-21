@@ -3,6 +3,7 @@ use crate::{
     ClientTUIState, RunInitConfig, RunInitConfigAndIO, TrainingResult, NC,
 };
 use anyhow::{Error, Result};
+use futures::future::join_all;
 use psyche_coordinator::RunState;
 use psyche_core::NodeIdentity;
 use psyche_network::{
@@ -249,13 +250,15 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 let peer_cycle = peer_ids.into_iter().cycle(); // Iterate over peers in a cycle
                                 let peer_cycle = Arc::new(Mutex::new(peer_cycle));
 
+                                let mut request_handles = Vec::new();
+
                                 for param_name in param_names {
                                     let router = router.clone();
                                     let busy_peers = busy_peers.clone();
                                     let parameter_blob_tickets = parameter_blob_tickets.clone();
                                     let peer_cycle = peer_cycle.clone();
 
-                                    tokio::spawn(async move {
+                                    let request_handle = tokio::spawn(async move {
                                         loop {
                                             let Some(peer_id) = peer_cycle.lock().await.next() else {
                                                 break;
@@ -279,35 +282,21 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         }
                                     });
 
-                                   //  for peer_id in peer_iter.by_ref() {
-                                   //      // let busy_peers_lock = busy_peers.lock().await;
-                                   //      if busy_peers.lock().await.contains(&peer_id) {
-                                   //          continue;
-                                   //      } else {
-                                   //          busy_peers.lock().await.insert(&peer_id);
-                                   //      }
-
-
-                                   //      tokio::spawn(async move {
-                                   //          debug!("Requesting parameter {param_name} from peer {peer_id}");
-                                   //          match request_model_parameter(router, peer_id, param_name.clone()).await {
-                                   //              Ok(parameter_blob_ticket) => parameter_blob_tickets.lock().await.push(parameter_blob_ticket),
-                                   //              Err(e) => warn!("Failed to get parameter {param_name} from peer {peer_id}: {e}"),
-                                   //          }
-                                   //          busy_peers.lock().await.remove(&peer_id);
-                                   //      });
-                                   // }
+                                    request_handles.push(request_handle);
                                 }
+
+                                join_all(request_handles).await;
+                                let parameter_blob_tickets = Arc::try_unwrap(parameter_blob_tickets).unwrap().into_inner();
                                 tx_params_download.send(parameter_blob_tickets)?;
                                 Ok(())
                             });
                             drop(handle);
                         }
-                        // Some(param_blob_tickets) = rx_params_download.recv() => {
-                        //     for ticket in param_blob_tickets {
-                        //         p2p.start_download(ticket).await?;
-                        //     }
-                        // }
+                        Some(param_blob_tickets) = rx_params_download.recv() => {
+                            for ticket in param_blob_tickets {
+                                p2p.start_download(ticket).await?;
+                            }
+                        }
                         else => break
                     }
                 }
