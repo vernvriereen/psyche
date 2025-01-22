@@ -1,5 +1,5 @@
 use allowlist::Allowlist;
-use anyhow::{Error, Result};
+use anyhow::{Context, Error, Result};
 use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
 use futures_util::StreamExt;
 use iroh::{endpoint::RemoteInfo, NodeAddr};
@@ -451,8 +451,9 @@ pub async fn request_model_parameter(
         .read_to_end(500)
         .timeout(Duration::from_secs(REQUEST_PARAMETER_TIMEOUT_SECS))
         .await??;
-    let parameter_blob_ticket: BlobTicket = postcard::from_bytes(&parameter_blob_ticket_bytes)?;
-    Ok(parameter_blob_ticket)
+    let parameter_blob_ticket: Result<BlobTicket, SharableModelParameterError> =
+        postcard::from_bytes(&parameter_blob_ticket_bytes)?;
+    parameter_blob_ticket.with_context(|| "Error parsing model parameter blob ticket".to_string())
 }
 
 fn parse_gossip_event<BroadcastMessage: Networkable>(
