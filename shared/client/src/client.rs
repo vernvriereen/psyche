@@ -70,6 +70,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                 let (tx_parameters_req, mut rx_parameters_req) = mpsc::unbounded_channel();
                 let (tx_params_download, mut rx_params_download) = mpsc::unbounded_channel();
 
+                let max_concurrent_downloads =
+                    init_config.max_concurrent_parameter_requests.unwrap_or(10);
+
                 let mut run = RunManager::<T, A>::new(RunInitConfigAndIO {
                     init_config,
 
@@ -247,6 +250,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             .collect();
                             peer_ids.shuffle(&mut thread_rng());
 
+
                             let handle: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
                                 let parameter_blob_tickets = Arc::new(Mutex::new(Vec::new()));
                                 let busy_peers = Arc::new(Mutex::new(HashSet::new()));
@@ -285,6 +289,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         }
                                     });
 
+                                    if request_handles.len() == max_concurrent_downloads - 1 {
+                                        let mut max_concurrent_handles = std::mem::take(&mut request_handles);
+                                        max_concurrent_handles.push(request_handle);
+                                        join_all(max_concurrent_handles).await;
+                                        continue;
+                                    }
                                     request_handles.push(request_handle);
                                 }
 
