@@ -1,12 +1,12 @@
 # Overview
 
-Psyche is the system that enables coordination between untrusted nodes to collaboratively train a machine learning (ML) model using concepts derived from DisTrO optimizer.
+Psyche is a system that empowers strangers to collaboratively train a machine learning model in a decentralized and trustless manner.
 
 The system is composed of three main actors:
 
-- **Coordinator**: Responsible for managing a training run among all the clients. Each training run has one coordinator that oversees the entire process. The coordinator is implemented as a program running on the Solana Blockchain.
-- **Client**: A user participating in a training run. Clients receive the model to be trained and a specific dataset for that run. They communicate with the coordinator to progress the training run and use a peer-to-peer network to share their results at each training step with other clients.
-- **Data Provider**: An optional server that stores the data to be used for model training and to be requested by the clients. The clients can host their own data too in case the provider is not present in the run.
+- **Coordinator**: Serves as a source of truth for global state available to all clients in a given training run. Each run has one coordinator that oversees the entire process. The coordinator is implemented as a program running on the Solana Blockchain.
+- **Client**: A user participating in a training run. Clients receive the model to be trained and a specific dataset for that run. They send information to the coordinator to progress the training run and use a peer-to-peer network to share their results at each training step with other clients.
+- **Data Provider**: An optional server that stores the data to be used for model training, to be serverd to clients. A run could use the data provider, an HTTP location for data, or make clients bring their own copy of the dataset.
 
 ```mermaid
 flowchart TB
@@ -18,7 +18,7 @@ flowchart TB
         C <--> C1(("Client")) & C2(("Client")) & C3(("Client"))
         C1 <-.-> C2
         C3 <-.-> C2 & C1
-        DT["Data server"] --> C1 & C2 & C3
+        DT["Data hosted on HTTP"] --> C1 & C2 & C3
     end
     subgraph run id: test_model_1
         direction TB
@@ -34,19 +34,21 @@ flowchart TB
 
 # How it works
 
-## How a training run looks like
+## What does the training process look like?
 
-The training process for a specific model is divided into distinct steps that progress in a coordinated manner. The process is broken into rounds, and these **rounds** are grouped into **epochs**. The entire training process spans multiple epochs.
+The training process for a given model is divided into small steps that incrementally train the model in a coordinated manner. A training run is divided into **epochs**, where clients can join and leave the run, and **epochs** are further divided into **steps**, where the model is incrementally trained.
 
 During a training run, clients primarily perform three tasks:
 
-- **Training**: Train the model using a subset of the data.
+- **Training**: Train the model using an assigned subset of the data.
 - **Witnessing**: Verify the liveness and correctness of other participants.
 - **Verifying**: Recompute and compare results to identify and mitigate malicious participants.
 
-### Warmup
+### Waiting for Clients & Warmup
 
-At the start of a run, all clients have a window of time to join the run by notifying the coordinator and connecting to the other participating clients. This warmup phase occurs only at the beginning of the run or after completing an epoch.
+At the start of an **epoch**, all clients have a window of time to join the run by requesting to be added by coordinator, and then connecting to the other participating clients.
+
+Once a minimum threshold of clients has been met, the run will transition to the _Warmup_ phase and begin a countdown to allow connected clients to update their copy of the model, at which point it will enter the _Training_ phase.
 
 ```mermaid
 sequenceDiagram
@@ -56,30 +58,38 @@ sequenceDiagram
     Note over Coordinator: Entering Warmup
     Client1->>Client2: Connect
     Client2->>Client1: Connect
+    Note over Client2,Coordinator: The Warmup countdown elapses
     Note over Coordinator: Entering Training
 ```
 
 ### Training
 
-At the beginning of the run, after the _warmup_ phase ends, clients are assigned specific tasks that require them to train the model on a portion of the data.
+At the beginning of an **epoch**, after the _Warmup_ phase ends, clients are assigned specific tasks that require them to train the model on a portion of the data.
 
-If clients have already been training (i.e., it is not the first round of the epoch), they will apply the results from the previous round, then retrieve the data sample they need for the current round. After completing this training step, each client emits a message containing their training results and a commitment that binds them to those results.
+The coordinator contains information that uniquely assigns pieces of training data to clients based on the current **round**.
 
-Once the training results are broadcasted, clients begin downloading results from other participants to later incorporate them into their models.
+If clients have already been training (i.e., it is not the first round of the epoch), they will apply the results from the previous round, then retrieve the data sample they need for the current round.
+
+After completing the training on their assigned data, each client emits a p2p broadcast to all other clients containing their training results and a cryptographic commitment that binds them to those results.
+
+As the training results are recieved from other clients, they are downloaded to be later incorporated into the current model.
 
 ### Witnessing
 
-At the start of each round, one or more clients may be randomly selected as witnesses. The number of witnesses can be configured. Witness clients train the model as usual but also build bloom filters that track which nodes are actively participating and providing valid results.
+At the start of each round, one or more clients are randomly selected as witnesses. The number of witnesses can be configured. Witnesses train the model as usual, but also build bloom filters that track which nodes they have recieved training results from, signifying that they are actively participating and providing valid results.
 
-The coordinator advances the run from the **training** state to the **witness** state in one of two ways:
+The coordinator advances the run from the _Training_ phase to the _Witness_ phase in one of two ways:
 
-- If enough witnesses observe all results and reach a **witness quorum** for the round, they notify the coordinator that it is safe to advance. This process, known as **opportunistic witnessing**, accelerates state transitions.
-- If witnesses do not receive all required results or continue training, the coordinator transitions to the new state after a set timeout.
+- If enough witnesses observe all results and reach a **witness quorum** for the round, they notify the coordinator that it is safe to advance. This process, named **opportunistic witnessing**, accelerates the transition to the _Witness_ phase, rather than having to wait a fixed time for training results.
+- If witnesses do not receive all required results from other clients before the maximum time specified for the _Training_ phase, the coordinator will nontheless transition to the _Witness_ phase after the maximum _Training_ time elapses.
 
-During the witness state, there is a brief slack period for non-witness nodes to catch up by downloading any remaining results. The coordinator also uses the bloom filters to identify and remove idle or malicious participants.
+During the _Witness_ phase, there is a brief slack period for non-witness nodes to catch up by downloading any remaining results they might have not finished.
+The coordinator also uses this time to check the bloom filters submitted by witnesses to identify and remove idle or malicious participants.
 
-Once the witness round concludes, the coordinator returns to the training round. Clients are assigned new data, and the process repeats. After a predefined number of rounds, a **cooldown** round occurs, marking the end of an **epoch**.
+Once the _Witness_ phase concludes, the coordinator returns to the _Training_ phase. Clients are assigned new data, and the process repeats. After a predefined number of rounds, a _Cooldown_ round occurs, marking the end of an **epoch**.
 
+
+### The witness/train loop visualized
 Here's a high-level overview of the process. Additional details exist, but this captures the overall flow:
 
 ```mermaid
@@ -99,7 +109,7 @@ sequenceDiagram
     Note over Client2: Download results
     Client2->>Coordinator: Send witness
     Note over Coordinator: Quorum reached
-    Note over Coordinator: Starting witness
+    Note over Coordinator: Starting Witness phase
 ```
 
 ### Verifying
@@ -108,33 +118,36 @@ TODO
 
 ## Model sharing
 
-When a run starts, all clients should download the model parameters, tokenizer configuration, and model configuration from HuggingFace, where the model must have been previously uploaded (TODO: add more details on uploading a model). Each client will maintain the updated model while receiving new gradients from other clients and applying them.
+When an **epoch** starts, all clients must have an identical model to train with.
 
-When a new client joins a run that has already progressed past its first epoch, it would not be accurate for the client to download the original model from HuggingFace, as the model parameters would have already been updated during training. Instead, the new client must synchronize with the current training state by obtaining the latest model parameters.
-To address this, we introduced the concept of **checkpointing**, which allows clients to save and share the model's state between training epochs to help new clients synchronize. There are two checkpointing variants:  
-1. **HuggingFace Variant**:  
-   In this approach, a client or a set of clients is designated as the **checkpointers** for the run. These clients upload the updated model to HuggingFace after each epoch. When a new client joins the run, it connects to HuggingFace to retrieve the updated model parameters and configuration files, enabling it to effectively join the training process.  
-2. **P2P Variant**:  
-   In the peer-to-peer (P2P) approach, a new client synchronizes by obtaining the updated parameters directly from the P2P network where all other clients are connected. The new client receives the model configuration and tokenizer configuration as metadata from other peers. It then iterates over the model layers, requesting a set of parameters for each layer from different clients. This process allows the client to assemble the latest model state and participate in the training.  
+At the beginning of a run, all clients must download the model parameters, tokenizer configuration, and model configuration from HuggingFace, where the model must have been previously uploaded (TODO: add more details on uploading a model). Each client will then modify their copy of the model by receiving new training results from other clients and applying them. This keeps everyone's copy of model identical within an **epoch** without an additional full synchronization step.
 
-This synchronization process occurs during the **warmup** state, while the coordinator waits to begin the next training run.
-Here's an example of a P2P model sharing interaction.
+When a new client joins a run that has already progressed past its first epoch, it would not be correct for the client to download the original model from HuggingFace, as the model parameters would have already been updated during training. Instead, the new client must acquire a copy of the model from the peers who have been actively training it.
 
-```mermaid
-flowchart TB
-    C((Coordinator))
-    C1[Client]
-    C2[Client]
-    C3[Client]
-    C4[Client]
-    HF[/Hugging Face\]
-    C --warmup---> C1
-    C --warmup---> C2
-    C --warmup---> C3
-    HF --Get model config--> C4
-    C4 -.Join.-> C
-    C1 -.Layer 1 weights.-> C4
-    C2 -.Layer 2 weights.-> C4
-    C3 -.Layer 3 weights.-> C4
-```
+This synchronization process occurs during the _Warmup_ phase, while the coordinator waits to begin the next _Training_ phase.
 
+To address this, we **checkpoint** the model at the end of an **epoch**, where clients save and share the entire model for new peers to join. There are two checkpointing variants:  
+1. **HuggingFace checkpoint**:  
+   In this approach, a client or a set of clients are designated as the **checkpointers** for the run. These clients upload their copy of updated model to HuggingFace after each epoch, and send the URL for this checkpoint to the coordinator. When a new client joins the run, it retrieves the checkpoint URL from the coordinator, and connects to HuggingFace to download the latest copy of the model parameters and configuration files.
+2. **P2P checkpoint**:  
+   In the peer-to-peer (P2P) approach, a new client synchronizes by obtaining the latest model directly from other peers. It receives the model information and parameters from any available peer, requesting a set of parameters for each layer from different clients. This process allows the client to assemble the latest model state and participate in the training without an explicit upload step to a central server occuring.
+
+   Here's an example of a P2P model sharing interaction:
+
+    ```mermaid
+    flowchart TB
+        C((Coordinator))
+        C1[Client]
+        C2[Client]
+        C3[Client]
+        C4[Client]
+        HF[/Hugging Face\]
+        C --warmup---> C1
+        C --warmup---> C2
+        C --warmup---> C3
+        HF --Get model config--> C4
+        C4 -.Join.-> C
+        C1 -.Layer 1 weights.-> C4
+        C2 -.Layer 2 weights.-> C4
+        C3 -.Layer 3 weights.-> C4
+    ```
