@@ -44,8 +44,8 @@ pub struct RunInitConfig<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub network_identity: A,
     pub private_key: A::PrivateKey,
 
-    // p2p model sharing config
-    // pub max_concurrent_parameter_requests: usize,
+    // p2p model parameters sharing config
+    pub max_concurrent_parameter_requests: Option<usize>,
 
     // model & dataload
     pub hub_read_token: Option<String>,

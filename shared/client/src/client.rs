@@ -13,6 +13,7 @@ use psyche_network::{
 use psyche_watcher::{Backend, BackendWatcher};
 use wandb::DataValue;
 
+use rand::{seq::SliceRandom, thread_rng};
 use std::{
     collections::{HashMap, HashSet},
     marker::PhantomData,
@@ -25,6 +26,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace, warn};
+
 pub type TUIStates = (ClientTUIState, NetworkTUIState);
 
 pub struct Client<T: NodeIdentity, A: AuthenticatableIdentity, B: Backend<T> + 'static> {
@@ -237,12 +239,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             let router = p2p.router();
 
                             let me = NodeId::from_bytes(identity.get_p2p_public_key()).unwrap();
-                            let peer_ids: Vec<NodeId> = coordinator_state.epoch_state.clients.iter().map(|client| {
+                            let mut peer_ids: Vec<NodeId> = coordinator_state.epoch_state.clients.iter().map(|client| {
                                 let peer_id_bytes = client.id.get_p2p_public_key();
                                 NodeId::from_bytes(peer_id_bytes).unwrap()
                             })
                             .filter(|peer_id| peer_id != &me)
                             .collect();
+                            peer_ids.shuffle(&mut thread_rng());
 
                             let handle: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
                                 let parameter_blob_tickets = Arc::new(Mutex::new(Vec::new()));

@@ -123,6 +123,7 @@ pub fn dummy_client_app_params_with_training_delay(
         grad_accum_in_fp32: false,
         dummy_training_delay_secs: Some(training_delay_secs),
         discovery_mode: DiscoveryMode::Local,
+        max_concurrent_parameter_requests: None,
     }
 }
 
@@ -147,5 +148,6 @@ pub fn dummy_client_app_params_default(server_port: u16, run_id: &str) -> AppPar
         grad_accum_in_fp32: false,
         dummy_training_delay_secs: None,
         discovery_mode: DiscoveryMode::Local,
+        max_concurrent_parameter_requests: None,
     }
 }
