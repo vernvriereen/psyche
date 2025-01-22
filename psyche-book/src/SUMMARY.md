@@ -5,6 +5,6 @@
     - [Coordinator](./coordinator.md)
     - [Data provider](./data-provider.md)
 - [Psyche tooling](./tooling.md)
-    - [Running a local testnet](./running-local-testnet.md)
     - [Running a client](./running-client.md)
     - [Running a server](./running-server.md)
+    - [Running a local testnet](./running-local-testnet.md)

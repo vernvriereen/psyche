@@ -11,3 +11,4 @@ anyhow.workspace = true
 postcard.workspace = true
 tch.workspace = true
 clap.workspace = true
+clap-markdown.workspace = true

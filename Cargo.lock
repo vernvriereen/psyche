@@ -2502,6 +2502,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "clap-markdown",
  "postcard",
  "psyche-client",
  "psyche-modeling",
@@ -6275,6 +6276,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "psyche-centralized-local-testnet"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "clap-markdown",
+ "rand 0.8.5",
+ "serde",
+ "time",
+ "toml 0.8.19",
+]
+
+[[package]]
 name = "psyche-centralized-server"
 version = "0.1.0"
 dependencies = [
@@ -6456,19 +6470,6 @@ dependencies = [
  "tokenizers",
  "tokio-util 0.7.13",
  "tracing",
-]
-
-[[package]]
-name = "psyche-local-testnet"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "clap",
- "clap-markdown",
- "rand 0.8.5",
- "serde",
- "time",
- "toml 0.8.19",
 ]
 
 [[package]]

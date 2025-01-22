@@ -32,7 +32,7 @@ enum Commands {
         #[command(flatten)]
         run_args: RunArgs,
     },
-    // For generating `docs/CommandLineHelp-server.md`.
+    // Prints the help, optionally as markdown. Used for docs generation.
     #[clap(hide = true)]
     PrintAllHelp {
         #[arg(long, required = true)]
