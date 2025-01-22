@@ -704,13 +704,15 @@ impl Distro {
                 .iter()
                 .map(|x| x[index].sparse_idx.to_device(device))
                 .collect::<Vec<_>>();
+
+            let val_kind: Kind = variable.kind();
             let values = results
                 .iter()
                 .map(|x| {
                     let sparse_val = x[index].sparse_val.to_device(device);
                     if sparse_val.kind() == Kind::Bool {
                         // when it's quantized to bools, we need to transform it back into -1/+1.
-                        sparse_val.to_kind(Kind::Int8) * 2 - 1
+                        sparse_val.to_kind(val_kind) * 2 - 1
                     } else {
                         sparse_val
                     }
@@ -723,7 +725,7 @@ impl Distro {
                 &values,
                 &results[0][index].xshape,
                 results[0][index].totalk,
-                variable.kind(),
+                val_kind,
                 device,
             );
 
