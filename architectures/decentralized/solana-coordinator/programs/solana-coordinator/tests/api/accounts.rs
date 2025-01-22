@@ -18,3 +18,11 @@ pub async fn get_coordinator_instance_state(
         })?
         .state)
 }
+
+pub fn find_coordinator_instance(run_id: &str) -> Pubkey {
+    Pubkey::find_program_address(
+        &[b"coordinator", bytes_from_string(run_id)],
+        &psyche_solana_coordinator::ID,
+    )
+    .0
+}

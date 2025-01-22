@@ -1,7 +1,7 @@
 use crate::api::{
     accounts::get_coordinator_instance_state,
     create_memnet_endpoint::create_memnet_endpoint,
-    find_pda_coordinator_instance::find_pda_coordinator_instance,
+    find_coordinator_instance::find_coordinator_instance,
     process_instructions::{
         process_free_coordinator, process_initialize_coordinator, process_join_run,
         process_set_paused, process_set_whitelist, process_tick,
@@ -310,7 +310,7 @@ pub async fn memnet_coordinator_free() {
         .lamports;
     assert!(next_balance < start_balance);
 
-    let coordinator_instance = find_pda_coordinator_instance(&run_id);
+    let coordinator_instance = find_coordinator_instance(&run_id);
     assert!(endpoint
         .get_account(&coordinator_account.pubkey())
         .await

@@ -51,7 +51,7 @@ impl CoordinatorAccount {
 #[account]
 pub struct CoordinatorInstance {
     pub bump: u8,
-    pub owner: Pubkey,
+    pub authority: Pubkey,
     pub account: Pubkey,
     #[max_len(SOLANA_MAX_STRING_LEN)]
     pub run_id: String,
@@ -68,7 +68,7 @@ pub mod psyche_solana_coordinator {
         // Initialize the coordinator instance
         let instance = &mut ctx.accounts.instance;
         instance.bump = ctx.bumps.instance;
-        instance.owner = ctx.accounts.payer.key();
+        instance.owner = ctx.accounts.authority.key();
         instance.account = ctx.accounts.account.key();
         instance.run_id = run_id.clone();
         // Initialize the coordinator account
@@ -179,10 +179,18 @@ pub mod psyche_solana_coordinator {
 #[derive(Accounts)]
 #[instruction(run_id: String)]
 pub struct InitializeCoordinatorAccounts<'info> {
-    #[account(init, payer = payer, space = 8 + CoordinatorInstance::INIT_SPACE, seeds = [b"coordinator", bytes_from_string(&run_id)], bump)]
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + CoordinatorInstance::INIT_SPACE,
+        seeds = [b"coordinator", bytes_from_string(&run_id)],
+        bump
+    )]
     pub instance: Account<'info, CoordinatorInstance>,
     #[account(mut)]
     pub account: UncheckedAccount<'info>,
+    #[account()]
+    pub authority: Signer<'info>,
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(address = system_program::ID)]
@@ -191,36 +199,61 @@ pub struct InitializeCoordinatorAccounts<'info> {
 
 #[derive(Accounts)]
 pub struct OwnerCoordinatorAccounts<'info> {
-    #[account(seeds = [b"coordinator", bytes_from_string(&instance.run_id)], bump = instance.bump, constraint = instance.owner == *payer.key)]
+    #[account(
+        seeds = [b"coordinator", bytes_from_string(&instance.run_id)],
+        bump = instance.bump,
+        constraint = instance.owner == *authority.key
+    )]
     pub instance: Account<'info, CoordinatorInstance>,
-    #[account(mut, owner = crate::ID, constraint = instance.account == account.key())]
+    #[account(
+        mut,
+        owner = crate::ID,
+        constraint = instance.account == account.key()
+    )]
     pub account: AccountLoader<'info, CoordinatorAccount>,
     #[account(mut)]
-    pub payer: Signer<'info>,
+    pub authority: Signer<'info>,
     #[account(address = system_program::ID)]
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct PermissionlessCoordinatorAccounts<'info> {
-    #[account(seeds = [b"coordinator", bytes_from_string(&instance.run_id)], bump = instance.bump)]
+    #[account(
+        seeds = [b"coordinator", bytes_from_string(&instance.run_id)],
+        bump = instance.bump
+    )]
     pub instance: Account<'info, CoordinatorInstance>,
-    #[account(mut, owner = crate::ID, constraint = instance.account == account.key())]
+    #[account(
+        mut,
+        owner = crate::ID,
+        constraint = instance.account == account.key()
+    )]
     pub account: AccountLoader<'info, CoordinatorAccount>,
-    #[account(mut)]
-    pub payer: Signer<'info>,
     #[account(address = system_program::ID)]
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct FreeCoordinatorAccounts<'info> {
-    #[account(mut, seeds = [b"coordinator", bytes_from_string(&instance.run_id)], bump = instance.bump, constraint = instance.owner == *payer.key, close = payer)]
+    #[account(
+        mut,
+        seeds = [b"coordinator", bytes_from_string(&instance.run_id)],
+        bump = instance.bump,
+        constraint = instance.owner == *owner.key,
+        close = reimbursement
+    )]
     pub instance: Account<'info, CoordinatorInstance>,
-    #[account(mut, owner = crate::ID, constraint = instance.account == account.key())]
+    #[account(
+        mut,
+        owner = crate::ID,
+        constraint = instance.account == account.key()
+    )]
     pub account: AccountLoader<'info, CoordinatorAccount>,
     #[account(mut)]
-    pub payer: Signer<'info>,
+    pub owner: Signer<'info>,
+    #[account(mut)]
+    pub reimbursement: UncheckedAccount<'info>,
     #[account(address = system_program::ID)]
     pub system_program: Program<'info, System>,
 }

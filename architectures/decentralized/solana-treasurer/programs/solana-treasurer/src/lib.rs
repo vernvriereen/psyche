@@ -2,9 +2,9 @@ use anchor_lang::prelude::*;
 
 declare_id!("77mYTtUnEzSYVoG1JtWCjKAdakSvYDkdPPy8DoGqr5RP");
 
-pub mod create_run;
-
-use create_run::*;
+pub mod error;
+pub mod logic;
+pub mod state;
 
 #[program]
 pub mod psyche_solana_treasurer {

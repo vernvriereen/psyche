@@ -9,7 +9,7 @@ use solana_sdk::{
 };
 use solana_toolbox_endpoint::{ToolboxEndpoint, ToolboxEndpointError};
 
-use crate::api::find_pda_coordinator_instance::find_pda_coordinator_instance;
+use crate::api::find_coordinator_instance::find_coordinator_instance;
 
 pub async fn process_create_run(
     endpoint: &mut ToolboxEndpoint,
@@ -17,7 +17,7 @@ pub async fn process_create_run(
     coordinator_account: &Pubkey,
     run_id: &str,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let coordinator_instance = find_pda_coordinator_instance(run_id);
+    let coordinator_instance = find_coordinator_instance(run_id);
     let accounts = CreateRunAccounts {
         payer: payer.pubkey(),
         coordinator_account: *coordinator_account,
