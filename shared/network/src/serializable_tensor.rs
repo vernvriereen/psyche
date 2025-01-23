@@ -173,6 +173,22 @@ mod tests {
     }
 
     #[test]
+    fn test_roundtrip_tensor_manyd() {
+        // some random # of dimensions
+        let dims = [2, 16, 2, 25, 2, 215, 6];
+
+        // rand between -500 and +500
+        let truth = (Tensor::rand(&dims, (Kind::Float, Device::Cpu)) - 0.5) * 1000;
+
+        // roundtrip
+        let serializable = SerializableTensor::try_from(&truth).unwrap();
+        let result = Tensor::try_from(&serializable).unwrap();
+
+        // roundtripped bools === original bools
+        assert!(result.equal(&truth));
+    }
+
+    #[test]
     fn test_roundtrip_bool_tensor1d() {
         let truth = Tensor::from_slice(&[1, 0, 0, 1, 0, 1, 1, 1])
             .to_kind(Kind::Bool)
@@ -195,5 +211,31 @@ mod tests {
         let result = Tensor::try_from(&serializable).unwrap();
 
         assert!(result.equal(&truth));
+    }
+
+    #[test]
+    fn test_roundtrip_bool_tensor_manyd() {
+        // some random # of dimensions
+        let dims = [2, 16, 2, 25, 2, 215, 6];
+
+        // rand between -0.5 and +0.5
+        let rand_tensor = Tensor::rand(&dims, (Kind::Float, Device::Cpu)) - 0.5;
+
+        // make a .sign() baseline that's -1s and +1s
+        let signed_truth = rand_tensor.sign();
+
+        // do the real > 0 operation into a bool tensor
+        let truth = rand_tensor.greater(0);
+
+        // roundtrip
+        let serializable = SerializableTensor::try_from(&truth).unwrap();
+        let result = Tensor::try_from(&serializable).unwrap();
+
+        // roundtripped bools === original bools
+        assert!(result.equal(&truth));
+
+        // roundtripped bools turn back into original floats
+        let refloated = result.to_kind(Kind::BFloat16) * 2 - 1;
+        assert!(refloated.equal(&signed_truth));
     }
 }
