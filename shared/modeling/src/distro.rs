@@ -567,73 +567,72 @@ impl Distro {
             // add delta to new gradient
             let _ = delta.g_add_(&variable.grad().multiply_scalar(lr));
 
-            let (sparse_idx, sparse_val, xshape, totalk, transmit_grad, full_delta) =
-                match shard {
-                    #[cfg(feature = "parallelism")]
-                    Some(shard) => {
-                        assert!(self.comm.is_some());
-                        let comm = self.comm.as_ref().unwrap();
+            let (sparse_idx, sparse_val, xshape, totalk, transmit_grad, full_delta) = match shard {
+                #[cfg(feature = "parallelism")]
+                Some(shard) => {
+                    assert!(self.comm.is_some());
+                    let comm = self.comm.as_ref().unwrap();
 
-                        // gather delta
-                        let shards = (0..shard.world_size)
-                            .map(|_| delta.empty_like())
-                            .collect::<Vec<_>>();
-                        comm.all_gather(&shards, &delta).unwrap();
-                        let gathered_delta = unshard_tensor(shards, shard);
+                    // gather delta
+                    let shards = (0..shard.world_size)
+                        .map(|_| delta.empty_like())
+                        .collect::<Vec<_>>();
+                    comm.all_gather(&shards, &delta).unwrap();
+                    let gathered_delta = unshard_tensor(shards, shard);
 
-                        // Compress delta
-                        let (sparse_idx, sparse_val, xshape, totalk) = CompressDCT::compress(
-                            &self.transform.encode(&gathered_delta),
-                            compression_topk,
-                        );
+                    // Compress delta
+                    let (sparse_idx, sparse_val, xshape, totalk) = CompressDCT::compress(
+                        &self.transform.encode(&gathered_delta),
+                        compression_topk,
+                    );
 
-                        // Estimate transmitted delta
-                        let transmit_grad = self.transform.decode(&CompressDCT::decompress(
-                            &sparse_idx,
-                            &sparse_val,
-                            &xshape,
-                            totalk,
-                            variable.kind(),
-                            variable.device(),
-                        ));
-                        let transmit_grad = tensor_shard(&transmit_grad, shard);
+                    // Estimate transmitted delta
+                    let transmit_grad = self.transform.decode(&CompressDCT::decompress(
+                        &sparse_idx,
+                        &sparse_val,
+                        &xshape,
+                        totalk,
+                        variable.kind(),
+                        variable.device(),
+                    ));
+                    let transmit_grad = tensor_shard(&transmit_grad, shard);
 
-                        (
-                            sparse_idx,
-                            sparse_val,
-                            xshape,
-                            totalk,
-                            transmit_grad,
-                            gathered_delta,
-                        )
-                    }
-                    #[cfg(not(feature = "parallelism"))]
-                    Some(_) => panic!("Sharded tensor without parallelism feature?"),
-                    None => {
-                        // Compress delta
-                        let (sparse_idx, sparse_val, xshape, totalk) =
-                            CompressDCT::compress(&self.transform.encode(delta), compression_topk);
+                    (
+                        sparse_idx,
+                        sparse_val,
+                        xshape,
+                        totalk,
+                        transmit_grad,
+                        gathered_delta,
+                    )
+                }
+                #[cfg(not(feature = "parallelism"))]
+                Some(_) => panic!("Sharded tensor without parallelism feature?"),
+                None => {
+                    // Compress delta
+                    let (sparse_idx, sparse_val, xshape, totalk) =
+                        CompressDCT::compress(&self.transform.encode(delta), compression_topk);
 
-                        // Estimate transmitted delta
-                        let transmit_grad = self.transform.decode(&CompressDCT::decompress(
-                            &sparse_idx,
-                            &sparse_val,
-                            &xshape,
-                            totalk,
-                            variable.kind(),
-                            variable.device(),
-                        ));
+                    // Estimate transmitted delta
+                    let transmit_grad = self.transform.decode(&CompressDCT::decompress(
+                        &sparse_idx,
+                        &sparse_val,
+                        &xshape,
+                        totalk,
+                        variable.kind(),
+                        variable.device(),
+                    ));
 
-                        (
-                            sparse_idx,
-                            sparse_val,
-                            xshape,
-                            totalk,
-                            transmit_grad,
-                            delta.shallow_clone(),
-                        )
-                    }
-                };
+                    (
+                        sparse_idx,
+                        sparse_val,
+                        xshape,
+                        totalk,
+                        transmit_grad,
+                        delta.shallow_clone(),
+                    )
+                }
+            };
 
             let delta_transmit_energies: Option<(f64, f64)> = match stats {
                 true => Some((
