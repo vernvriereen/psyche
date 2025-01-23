@@ -100,6 +100,7 @@ async fn async_main() -> Result<()> {
                 dummy_training_delay_secs: args.dummy_training_delay_secs,
                 discovery_mode: DiscoveryMode::N0,
                 max_concurrent_parameter_requests: args.max_concurrent_parameter_requests,
+                compression: args.compression,
             })
             .build()
             .await

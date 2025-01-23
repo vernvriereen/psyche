@@ -71,6 +71,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
         let identity = init_config.identity;
         let network_identity = init_config.network_identity.clone();
         let private_key = init_config.private_key.clone();
+        let distro_compression = init_config.distro_compression;
         let join = tokio::spawn({
             let cancel = cancel.clone();
             let req_tui_state = req_tui_state.clone();
@@ -289,17 +290,17 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                                 }
                                             },
                                             Ok(transmittable_parameter) => {
-                                                 let transmittable_download = TransmittableDownload::ModelParameter(transmittable_parameter);
-                                            // tag 0 means when we enter a train step, it'll get wiped.
-                                            let ticket = p2p.add_downloadable(transmittable_download, 0).await?;
+                                                let transmittable_download = TransmittableDownload::ModelParameter(transmittable_parameter);
+                                                // tag 0 means when we enter a train step, it'll get wiped.
+                                                let ticket = p2p.add_downloadable(transmittable_download, 0, distro_compression).await?;
 
-                                            // TODO: Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
-                                            // to the client
+                                                // TODO: Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
+                                                // to the client
 
-                                            info!(parameter = parameter_name, "Sending requested model parameter blob ticket");
-                                            if let Err(e) = protocol_req_tx.send(Ok(ticket)) {
-                                                warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e:?}");
-                                            };
+                                                info!(parameter = parameter_name, "Sending requested model parameter blob ticket");
+                                                if let Err(e) = protocol_req_tx.send(Ok(ticket)) {
+                                                    warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e:?}");
+                                                };
                                             }
                                         }
                                     },
@@ -313,7 +314,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                             Ok(sharable_config) => {
                                                 let transmittable_config = TransmittableDownload::ModelConfig(sharable_config);
                                                 // tag 0 means when we enter a train step, it'll get wiped.
-                                                let config_ticket = p2p.add_downloadable(transmittable_config, 0).await?;
+                                                let config_ticket = p2p.add_downloadable(transmittable_config, 0, distro_compression).await?;
 
                                                 info!("Sending requested model config blob ticket");
                                                 if let Err(e) = protocol_req_tx.send(Ok(config_ticket)) {
@@ -348,7 +349,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         Some(DistroBroadcastAndPayload{ step, batch_id, commitment_data_hash, proof, distro_result, original_distro_result }) = rx_distro_result.recv() => {
 
                             let transmittable_distro_result = TransmittableDownload::DistroResult(distro_result.clone());
-                            let ticket = p2p.add_downloadable(transmittable_distro_result, step).await?;
+                            let ticket = p2p.add_downloadable(transmittable_distro_result, step, distro_compression).await?;
                             let hash = ticket.hash();
                             debug!(
                                 "Broadcasting payload step {step} batch id {batch_id} hash 0x{}",
