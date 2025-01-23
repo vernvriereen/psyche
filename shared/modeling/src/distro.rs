@@ -653,7 +653,7 @@ impl Distro {
             let _t = delta.g_sub_(&transmit_grad);
 
             let sparse_val = if quant_1bit {
-                let sparse_val = sparse_val.greater_(0);
+                let sparse_val = sparse_val.greater(0);
                 debug_assert!(sparse_val.kind() == Kind::Bool);
                 sparse_val
             } else {
