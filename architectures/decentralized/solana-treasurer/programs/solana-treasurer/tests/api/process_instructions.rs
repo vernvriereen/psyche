@@ -21,7 +21,7 @@ pub async fn process_run_create(
     authority: &Keypair,
     collateral_mint: &Pubkey,
     coordinator_account: &Pubkey,
-    run_identity: &[u8; 64],
+    run_identity: &str,
 ) -> Result<Signature, ToolboxEndpointError> {
     let run = find_run(run_identity);
     let run_collateral = ToolboxEndpoint::find_spl_associated_token_account(&run, collateral_mint);

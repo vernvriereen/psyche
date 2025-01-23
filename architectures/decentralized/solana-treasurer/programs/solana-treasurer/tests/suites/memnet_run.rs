@@ -22,7 +22,7 @@ pub async fn memnet_coordinator_run() {
         .unwrap();
 
     // Constants
-    let run_id = to_fixed_size_array("Hello world");
+    let run_id = "Hello world!";
     let authority = Keypair::new();
 
     // Prepare the collateral mint
@@ -58,7 +58,7 @@ pub async fn memnet_coordinator_run() {
         &authority,
         &collateral_mint.pubkey(),
         &coordinator_account.pubkey(),
-        &run_id,
+        run_id,
     )
     .await
     .unwrap();
