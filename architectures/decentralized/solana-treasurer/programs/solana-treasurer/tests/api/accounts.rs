@@ -1,13 +1,19 @@
-use psyche_solana_coordinator::bytes_from_string;
-use solana_sdk::pubkey::Pubkey;
 use psyche_solana_coordinator::{coordinator_account_from_bytes, CoordinatorInstanceState};
+use psyche_solana_treasurer::state::Run;
 use solana_sdk::pubkey::Pubkey;
 use solana_toolbox_endpoint::{ToolboxEndpoint, ToolboxEndpointError};
 
-
-pub fn find_coordinator_instance(run_id: &str) -> Pubkey {
+pub fn find_run(run_identity: &[u8; 32]) -> Pubkey {
     Pubkey::find_program_address(
-        &[b"coordinator", bytes_from_string(run_id)],
+        &[Run::SEED_PREFIX, run_identity],
+        &psyche_solana_treasurer::ID,
+    )
+    .0
+}
+
+pub fn find_coordinator_instance(run_identity: &[u8; 32]) -> Pubkey {
+    Pubkey::find_program_address(
+        &[b"coordinator", run_identity],
         &psyche_solana_coordinator::ID,
     )
     .0

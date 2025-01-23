@@ -1,6 +1,6 @@
 use psyche_solana_coordinator::CoordinatorAccount;
 
-use crate::api::get_coordinator_instance_state::get_coordinator_instance_state;
+use crate::api::accounts::get_coordinator_instance_state;
 use crate::api::{
     create_memnet_endpoint::create_memnet_endpoint, process_instructions::process_create_run,
 };
@@ -13,13 +13,28 @@ use psyche_coordinator::RunState;
 pub async fn memnet_coordinator_run() {
     let mut endpoint = create_memnet_endpoint().await;
 
-    let run_id = "Hello World";
-
     // Create payer key and fund it
     let payer = Keypair::new();
-    let payer_lamports = 10_000_000_000;
     endpoint
-        .process_airdrop(&payer.pubkey(), payer_lamports)
+        .process_airdrop(&payer.pubkey(), 10_000_000_000)
+        .await
+        .unwrap();
+
+    // Constants
+    let run_id = &Keypair::new().pubkey().to_bytes();
+    let authority = Keypair::new();
+
+    // Prepare the collateral mint
+    let collateral_mint = Keypair::new();
+    let collateral_mint_authority = Keypair::new();
+    endpoint
+        .process_spl_token_mint_init(
+            &payer,
+            &collateral_mint,
+            &collateral_mint_authority.pubkey(),
+            None,
+            6,
+        )
         .await
         .unwrap();
 
@@ -36,9 +51,16 @@ pub async fn memnet_coordinator_run() {
         .unwrap();
 
     // Create a run (it should create the underlying coordinator)
-    process_create_run(&mut endpoint, &payer, &coordinator_account.pubkey(), run_id)
-        .await
-        .unwrap();
+    process_create_run(
+        &mut endpoint,
+        &payer,
+        &authority,
+        &collateral_mint.pubkey(),
+        &coordinator_account.pubkey(),
+        run_id,
+    )
+    .await
+    .unwrap();
 
     // verify that the run is in initialized state
     assert_eq!(

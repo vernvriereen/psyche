@@ -209,7 +209,7 @@ pub struct Coordinator<T> {
         serialize_with = "serde_serialize_string",
         deserialize_with = "serde_deserialize_string"
     )]
-    pub run_id: [u8; SOLANA_MAX_STRING_LEN],
+    pub run_id: [u8; 32],
 
     pub run_state: RunState,
 

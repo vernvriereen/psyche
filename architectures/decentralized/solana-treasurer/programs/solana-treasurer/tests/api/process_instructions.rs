@@ -1,4 +1,7 @@
 use anchor_lang::{InstructionData, ToAccountMetas};
+use anchor_spl::associated_token;
+use anchor_spl::token;
+use psyche_solana_treasurer::logic::CreateRunParams;
 use psyche_solana_treasurer::{accounts::CreateRunAccounts, instruction::CreateRun};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::{
@@ -9,30 +12,46 @@ use solana_sdk::{
 };
 use solana_toolbox_endpoint::{ToolboxEndpoint, ToolboxEndpointError};
 
-use crate::api::find_coordinator_instance::find_coordinator_instance;
+use crate::api::accounts::find_coordinator_instance;
+use crate::api::accounts::find_run;
 
 pub async fn process_create_run(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
+    authority: &Keypair,
+    collateral_mint: &Pubkey,
     coordinator_account: &Pubkey,
-    run_id: &str,
+    run_identity: &[u8; 32],
 ) -> Result<Signature, ToolboxEndpointError> {
-    let coordinator_instance = find_coordinator_instance(run_id);
+    let run = find_run(run_identity);
+    let run_collateral = ToolboxEndpoint::find_spl_associated_token_account(&run, collateral_mint);
+    let coordinator_instance = find_coordinator_instance(run_identity);
+
     let accounts = CreateRunAccounts {
         payer: payer.pubkey(),
+        authority: authority.pubkey(),
+        collateral_mint: *collateral_mint,
+        run,
+        run_collateral,
         coordinator_account: *coordinator_account,
         coordinator_instance,
         coordinator_program: psyche_solana_coordinator::ID,
+        associated_token_program: associated_token::ID,
+        token_program: token::ID,
         system_program: system_program::ID,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
         data: CreateRun {
-            run_id: run_id.to_string(),
+            params: CreateRunParams {
+                run_identity: *run_identity,
+            },
         }
         .data(),
         program_id: psyche_solana_treasurer::ID,
     };
 
-    endpoint.process_instruction(instruction, payer).await
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[authority])
+        .await
 }

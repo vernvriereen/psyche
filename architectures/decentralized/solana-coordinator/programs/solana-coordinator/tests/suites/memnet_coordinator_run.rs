@@ -203,6 +203,7 @@ pub async fn memnet_coordinator_run() {
     .await
     .unwrap();
 
+    // Coordinator should have changed
     assert_eq!(
         get_coordinator_instance_state(&mut endpoint, &coordinator_account.pubkey())
             .await
@@ -214,6 +215,7 @@ pub async fn memnet_coordinator_run() {
 
     endpoint.move_clock_forward(1, 1).await.unwrap();
 
+    // tick should now succeed
     process_tick(
         &mut endpoint,
         &payer,
@@ -224,6 +226,7 @@ pub async fn memnet_coordinator_run() {
     .await
     .unwrap();
 
+    // Coordinator in train mode
     let coordinator = get_coordinator_instance_state(&mut endpoint, &coordinator_account.pubkey())
         .await
         .unwrap()
@@ -232,6 +235,7 @@ pub async fn memnet_coordinator_run() {
     assert_eq!(coordinator.current_round().unwrap().height, 0);
     assert_eq!(coordinator.progress.step, 1);
 
+    // Check that only the right user can successfully send a witness
     let witness = Witness {
         proof: WitnessProof {
             witness: true,
@@ -241,8 +245,6 @@ pub async fn memnet_coordinator_run() {
         participant_bloom: Default::default(),
         order_bloom: Default::default(),
     };
-
-    // invalid witness
     assert!(process_witness(
         &mut endpoint,
         &payer,
@@ -253,7 +255,6 @@ pub async fn memnet_coordinator_run() {
     )
     .await
     .is_err());
-
     process_witness(
         &mut endpoint,
         &payer,
@@ -265,6 +266,7 @@ pub async fn memnet_coordinator_run() {
     .await
     .unwrap();
 
+    // Coordinator state after witness should change
     assert_eq!(
         get_coordinator_instance_state(&mut endpoint, &coordinator_account.pubkey())
             .await
@@ -376,6 +378,7 @@ pub async fn memnet_coordinator_free() {
     .await
     .unwrap();
 
+    // Check all the keys balances at the end
     let payer_balance_final = endpoint
         .get_account_or_default(&payer.pubkey())
         .await
