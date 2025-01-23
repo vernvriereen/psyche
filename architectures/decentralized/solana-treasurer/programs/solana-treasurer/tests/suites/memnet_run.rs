@@ -2,7 +2,7 @@ use psyche_solana_coordinator::CoordinatorAccount;
 
 use crate::api::accounts::get_coordinator_instance_state;
 use crate::api::{
-    create_memnet_endpoint::create_memnet_endpoint, process_instructions::process_create_run,
+    create_memnet_endpoint::create_memnet_endpoint, process_instructions::process_run_create,
 };
 
 use solana_sdk::{signature::Keypair, signer::Signer};
@@ -51,7 +51,7 @@ pub async fn memnet_coordinator_run() {
         .unwrap();
 
     // Create a run (it should create the underlying coordinator)
-    process_create_run(
+    process_run_create(
         &mut endpoint,
         &payer,
         &authority,

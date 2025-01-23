@@ -18,6 +18,7 @@ use psyche_coordinator::{
     model::{self, Model},
     CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks, Witness,
 };
+use psyche_solana_coordinator::CoordinatorAccount;
 use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
 use std::sync::Arc;
@@ -100,7 +101,7 @@ impl SolanaBackend {
 
     pub async fn create_run(&self, run_id: String) -> Result<CreatedRun> {
         let coordinator_keypair = Arc::new(Keypair::new());
-        let space = 8 + std::mem::size_of::<psyche_solana_coordinator::CoordinatorAccount>();
+        let space = psyche_solana_coordinator::CoordinatorAccount::size_with_discriminator();
         let rent = self
             .program
             .rpc()
@@ -109,7 +110,7 @@ impl SolanaBackend {
 
         let seeds = &[
             b"coordinator",
-            psyche_solana_coordinator::bytes_from_string(&run_id),
+            &psyche_solana_coordinator::run_id_from_string(&run_id),
         ];
         let (instance_pda, _bump) = Pubkey::find_program_address(seeds, &self.program.id());
 
@@ -134,9 +135,10 @@ impl SolanaBackend {
                     .request()
                     .accounts(
                         psyche_solana_coordinator::accounts::InitializeCoordinatorAccounts {
+                            payer: self.program.payer(),
+                            authority: self.program.payer(),
                             instance: instance_pda,
                             account: coordinator_keypair.pubkey(),
-                            payer: self.program.payer(),
                             system_program: system_program::ID,
                         },
                     )
@@ -162,9 +164,10 @@ impl SolanaBackend {
             .request()
             .accounts(
                 psyche_solana_coordinator::accounts::FreeCoordinatorAccounts {
+                    authority: self.program.payer(),
+                    reimbursed: self.program.payer(),
                     instance,
                     account,
-                    payer: self.program.payer(),
                     system_program: system_program::ID,
                 },
             )
@@ -186,9 +189,9 @@ impl SolanaBackend {
             .request()
             .accounts(
                 psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                    authority: self.program.payer(),
                     instance,
                     account,
-                    payer: self.program.payer(),
                     system_program: system_program::ID,
                 },
             )
@@ -210,9 +213,9 @@ impl SolanaBackend {
             .request()
             .accounts(
                 psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                    user: self.program.payer(),
                     instance,
                     account,
-                    payer: self.program.payer(),
                     system_program: system_program::ID,
                 },
             )
@@ -233,9 +236,9 @@ impl SolanaBackend {
             .request()
             .accounts(
                 psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                    authority: self.program.payer(),
                     instance,
                     account,
-                    payer: self.program.payer(),
                     system_program: system_program::ID,
                 },
             )
@@ -262,9 +265,9 @@ impl SolanaBackend {
             .request()
             .accounts(
                 psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                    authority: self.program.payer(),
                     instance,
                     account,
-                    payer: self.program.payer(),
                     system_program: system_program::ID,
                 },
             )
@@ -281,9 +284,9 @@ impl SolanaBackend {
             .request()
             .accounts(
                 psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                    user: self.program.payer(),
                     instance,
                     account,
-                    payer: self.program.payer(),
                     system_program: system_program::ID,
                 },
             )
@@ -305,9 +308,9 @@ impl SolanaBackend {
             .request()
             .accounts(
                 psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                    user: self.program.payer(),
                     instance,
                     account,
-                    payer: self.program.payer(),
                     system_program: system_program::ID,
                 },
             )
@@ -333,9 +336,9 @@ impl SolanaBackend {
             .request()
             .accounts(
                 psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                    user: self.program.payer(),
                     instance,
                     account,
-                    payer: self.program.payer(),
                     system_program: system_program::ID,
                 },
             )
@@ -378,7 +381,7 @@ impl SolanaBackend {
     fn find_instance_from_run_id(&self, run_id: &str) -> (Pubkey, u8) {
         let seeds = &[
             b"coordinator",
-            psyche_solana_coordinator::bytes_from_string(run_id),
+            &psyche_solana_coordinator::run_id_from_string(run_id),
         ];
         Pubkey::find_program_address(seeds, &self.program.id())
     }

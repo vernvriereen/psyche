@@ -1,8 +1,8 @@
 use anchor_lang::{InstructionData, ToAccountMetas};
 use anchor_spl::associated_token;
 use anchor_spl::token;
-use psyche_solana_treasurer::logic::CreateRunParams;
-use psyche_solana_treasurer::{accounts::CreateRunAccounts, instruction::CreateRun};
+use psyche_solana_treasurer::logic::RunCreateParams;
+use psyche_solana_treasurer::{accounts::RunCreateAccounts, instruction::RunCreate};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::{
     instruction::Instruction,
@@ -15,7 +15,7 @@ use solana_toolbox_endpoint::{ToolboxEndpoint, ToolboxEndpointError};
 use crate::api::accounts::find_coordinator_instance;
 use crate::api::accounts::find_run;
 
-pub async fn process_create_run(
+pub async fn process_run_create(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     authority: &Keypair,
@@ -27,7 +27,7 @@ pub async fn process_create_run(
     let run_collateral = ToolboxEndpoint::find_spl_associated_token_account(&run, collateral_mint);
     let coordinator_instance = find_coordinator_instance(run_identity);
 
-    let accounts = CreateRunAccounts {
+    let accounts = RunCreateAccounts {
         payer: payer.pubkey(),
         authority: authority.pubkey(),
         collateral_mint: *collateral_mint,
@@ -42,8 +42,8 @@ pub async fn process_create_run(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: CreateRun {
-            params: CreateRunParams {
+        data: RunCreate {
+            params: RunCreateParams {
                 run_identity: *run_identity,
             },
         }

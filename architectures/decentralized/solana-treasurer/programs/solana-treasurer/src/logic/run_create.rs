@@ -11,8 +11,8 @@ use psyche_solana_coordinator::program::PsycheSolanaCoordinator;
 use crate::state::Run;
 
 #[derive(Accounts)]
-#[instruction(params: CreateRunParams)]
-pub struct CreateRunAccounts<'info> {
+#[instruction(params: RunCreateParams)]
+pub struct RunCreateAccounts<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
 
@@ -59,17 +59,21 @@ pub struct CreateRunAccounts<'info> {
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
-pub struct CreateRunParams {
+pub struct RunCreateParams {
     pub run_identity: [u8; 32],
 }
 
-pub fn create_run_processor(
-    context: Context<CreateRunAccounts>,
-    params: &CreateRunParams,
+pub fn run_create_processor(
+    context: Context<RunCreateAccounts>,
+    params: &RunCreateParams,
 ) -> Result<()> {
-    let run_bump = context.bumps.run;
-    let run_identity = params.run_identity;
+    let run = &mut context.accounts.run;
+    run.bump = context.bumps.run;
+    run.identity = params.run_identity;
+    run.authority = context.accounts.authority.key();
+    run.collateral_mint = context.accounts.collateral_mint.key();
 
+    let run_signer_seeds: &[&[&[u8]]] = &[&[Run::SEED_PREFIX, &run.identity.clone(), &[run.bump]]];
     initialize_coordinator(
         CpiContext::new(
             context.accounts.coordinator_program.to_account_info(),
@@ -81,14 +85,9 @@ pub fn create_run_processor(
                 system_program: context.accounts.system_program.to_account_info(),
             },
         )
-        .with_signer(&[&[Run::SEED_PREFIX, &run_identity, &[run_bump]]]),
-        run_identity,
+        .with_signer(run_signer_seeds),
+        params.run_identity,
     )?;
 
-    let run = &mut context.accounts.run;
-    run.bump = run_bump;
-    run.identity = run_identity;
-    run.authority = context.accounts.authority.key();
-    run.collateral_mint = context.accounts.collateral_mint.key();
     Ok(())
 }

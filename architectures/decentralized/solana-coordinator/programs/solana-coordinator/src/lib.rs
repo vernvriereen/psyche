@@ -9,7 +9,7 @@ pub use instance_state::CoordinatorInstanceState;
 pub use program_error::ProgramError;
 use psyche_coordinator::{
     model::Model, Committee, CommitteeProof, CoordinatorConfig, Witness, WitnessBloom,
-    WitnessProof, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
+    WitnessProof, SOLANA_MAX_NUM_CLIENTS,
 };
 
 declare_id!("5gKtdi6At7WEcLE22GmkSg94rVgc2hRRo3VvKhLnoJZP");
@@ -19,8 +19,11 @@ pub const COORDINATOR_SEEDS_PREFIX: &[u8] = b"coordinator";
 pub const SOLANA_MAX_NUM_PENDING_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 pub const SOLANA_MAX_NUM_WHITELISTED_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 
-pub fn bytes_from_string(str: &str) -> &[u8] {
-    &str.as_bytes()[..SOLANA_MAX_STRING_LEN.min(str.len())]
+pub fn run_id_from_string(str: &str) -> Vec<u8> {
+    let mut bytes = vec![];
+    bytes.extend_from_slice(str.as_bytes());
+    bytes.resize(32, 0);
+    bytes
 }
 
 pub fn coordinator_account_from_bytes(
