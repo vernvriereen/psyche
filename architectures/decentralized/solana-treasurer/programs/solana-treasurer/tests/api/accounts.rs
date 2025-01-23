@@ -1,6 +1,6 @@
 use psyche_solana_coordinator::{
     bytes_from_string, coordinator_account_from_bytes, CoordinatorInstanceState,
-    COORDINATOR_SEEDS_PREFIX,
+    CoordinatorInstance,
 };
 use psyche_solana_treasurer::run_identity_from_string;
 use psyche_solana_treasurer::state::Run;
@@ -9,7 +9,7 @@ use solana_toolbox_endpoint::{ToolboxEndpoint, ToolboxEndpointError};
 
 pub fn find_pda_run(run_id: &str) -> Pubkey {
     Pubkey::find_program_address(
-        &[Run::SEED_PREFIX, run_identity_from_string(run_id).as_ref()],
+        &[Run::SEEDS_PREFIX, run_identity_from_string(run_id).as_ref()],
         &psyche_solana_treasurer::ID,
     )
     .0
@@ -17,7 +17,7 @@ pub fn find_pda_run(run_id: &str) -> Pubkey {
 
 pub fn find_pda_coordinator_instance(run_id: &str) -> Pubkey {
     Pubkey::find_program_address(
-        &[COORDINATOR_SEEDS_PREFIX, bytes_from_string(run_id)],
+        &[CoordinatorInstance::SEEDS_PREFIX, bytes_from_string(run_id)],
         &psyche_solana_coordinator::ID,
     )
     .0

@@ -3,6 +3,7 @@ use psyche_solana_coordinator::CoordinatorAccount;
 use crate::api::accounts::get_coordinator_instance_state;
 use crate::api::{
     create_memnet_endpoint::create_memnet_endpoint, process_instructions::process_run_create,
+    process_instructions::process_run_fund,
 };
 
 use solana_sdk::{signature::Keypair, signer::Signer};
@@ -71,4 +72,35 @@ pub async fn memnet_coordinator_run() {
             .run_state,
         RunState::Uninitialized
     );
+
+    // Give the authority some collateral
+    let authority_collateral = endpoint
+        .process_spl_associated_token_account_get_or_init(
+            &payer,
+            &authority.pubkey(),
+            &collateral_mint.pubkey(),
+        )
+        .await
+        .unwrap();
+    endpoint
+        .process_spl_token_mint_to(
+            &payer,
+            &collateral_mint.pubkey(),
+            &collateral_mint_authority,
+            &authority_collateral,
+            10_000_000,
+        )
+        .await
+        .unwrap();
+
+    // Fund the run with some newly minted collateral
+    process_run_fund(
+        &mut endpoint,
+        &payer,
+        &authority,
+        &authority_collateral,
+        &collateral_mint.pubkey(),
+        &run_id,
+        5_000_000,
+    ).await.unwrap();
 }

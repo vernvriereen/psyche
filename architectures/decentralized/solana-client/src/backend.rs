@@ -108,7 +108,7 @@ impl SolanaBackend {
             .await?;
 
         let seeds = &[
-            psyche_solana_coordinator::COORDINATOR_SEEDS_PREFIX,
+            psyche_solana_coordinator::CoordinatorInstance::SEEDS_PREFIX,
             psyche_solana_coordinator::bytes_from_string(&run_id),
         ];
         let (instance_pda, _bump) = Pubkey::find_program_address(seeds, &self.program.id());
@@ -379,7 +379,7 @@ impl SolanaBackend {
 
     fn find_instance_from_run_id(&self, run_id: &str) -> (Pubkey, u8) {
         let seeds = &[
-            psyche_solana_coordinator::COORDINATOR_SEEDS_PREFIX,
+            psyche_solana_coordinator::CoordinatorInstance::SEEDS_PREFIX,
             psyche_solana_coordinator::bytes_from_string(run_id),
         ];
         Pubkey::find_program_address(seeds, &self.program.id())

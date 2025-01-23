@@ -9,6 +9,7 @@ pub struct Run {
     pub identity: Pubkey,
     pub authority: Pubkey,
     pub collateral_mint: Pubkey,
+    pub total_funded_collateral_amount: u64,
 }
 
 impl Run {
@@ -18,5 +19,5 @@ impl Run {
 }
 
 impl Run {
-    pub const SEED_PREFIX: &'static [u8] = b"Run";
+    pub const SEEDS_PREFIX: &'static [u8] = b"Run";
 }

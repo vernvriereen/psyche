@@ -14,8 +14,6 @@ use psyche_coordinator::{
 
 declare_id!("5gKtdi6At7WEcLE22GmkSg94rVgc2hRRo3VvKhLnoJZP");
 
-pub const COORDINATOR_SEEDS_PREFIX: &[u8] = b"coordinator";
-
 pub const SOLANA_MAX_NUM_PENDING_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 pub const SOLANA_MAX_NUM_WHITELISTED_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 
@@ -57,6 +55,10 @@ pub struct CoordinatorInstance {
     pub account: Pubkey,
     #[max_len(SOLANA_MAX_STRING_LEN)]
     pub run_id: String,
+}
+
+impl CoordinatorInstance {
+    pub const SEEDS_PREFIX: &[u8] = b"coordinator";
 }
 
 #[program]
@@ -189,7 +191,10 @@ pub struct InitializeCoordinatorAccounts<'info> {
         init,
         payer = payer,
         space = 8 + CoordinatorInstance::INIT_SPACE,
-        seeds = [COORDINATOR_SEEDS_PREFIX, bytes_from_string(&run_id)],
+        seeds = [
+            CoordinatorInstance::SEEDS_PREFIX,
+            bytes_from_string(&run_id)
+        ],
         bump
     )]
     pub instance: Account<'info, CoordinatorInstance>,
@@ -204,7 +209,10 @@ pub struct OwnerCoordinatorAccounts<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
     #[account(
-        seeds = [COORDINATOR_SEEDS_PREFIX, bytes_from_string(&instance.run_id)],
+        seeds = [
+            CoordinatorInstance::SEEDS_PREFIX,
+            bytes_from_string(&instance.run_id)
+        ],
         bump = instance.bump,
         constraint = instance.authority == *authority.key
     )]
@@ -224,7 +232,10 @@ pub struct PermissionlessCoordinatorAccounts<'info> {
     #[account()]
     pub user: Signer<'info>,
     #[account(
-        seeds = [COORDINATOR_SEEDS_PREFIX, bytes_from_string(&instance.run_id)],
+        seeds = [
+            CoordinatorInstance::SEEDS_PREFIX,
+            bytes_from_string(&instance.run_id)
+        ],
         bump = instance.bump
     )]
     pub instance: Account<'info, CoordinatorInstance>,
@@ -246,7 +257,10 @@ pub struct FreeCoordinatorAccounts<'info> {
     pub reimbursed: UncheckedAccount<'info>,
     #[account(
         mut,
-        seeds = [COORDINATOR_SEEDS_PREFIX, bytes_from_string(&instance.run_id)],
+        seeds = [
+            CoordinatorInstance::SEEDS_PREFIX,
+            bytes_from_string(&instance.run_id)
+        ],
         bump = instance.bump,
         constraint = instance.authority == *authority.key,
         close = reimbursed

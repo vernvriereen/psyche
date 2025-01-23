@@ -13,6 +13,9 @@ pub mod psyche_solana_treasurer {
     pub fn run_create(ctx: Context<RunCreateAccounts>, params: RunCreateParams) -> Result<()> {
         run_create_processor(ctx, &params)
     }
+    pub fn run_fund(ctx: Context<RunFundAccounts>, params: RunFundParams) -> Result<()> {
+        run_fund_processor(ctx, &params)
+    }
 }
 
 #[error_code]

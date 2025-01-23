@@ -2,7 +2,9 @@ use anchor_lang::{InstructionData, ToAccountMetas};
 use anchor_spl::associated_token;
 use anchor_spl::token;
 use psyche_solana_treasurer::logic::RunCreateParams;
+use psyche_solana_treasurer::logic::RunFundParams;
 use psyche_solana_treasurer::{accounts::RunCreateAccounts, instruction::RunCreate};
+use psyche_solana_treasurer::{accounts::RunFundAccounts, instruction::RunFund};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::{
     instruction::Instruction,
@@ -46,6 +48,42 @@ pub async fn process_run_create(
             params: RunCreateParams {
                 run_id: run_id.to_string(),
             },
+        }
+        .data(),
+        program_id: psyche_solana_treasurer::ID,
+    };
+
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[authority])
+        .await
+}
+
+pub async fn process_run_fund(
+    endpoint: &mut ToolboxEndpoint,
+    payer: &Keypair,
+    authority: &Keypair,
+    authority_collateral: &Pubkey,
+    collateral_mint: &Pubkey,
+    run_id: &str,
+    collateral_amount: u64,
+) -> Result<Signature, ToolboxEndpointError> {
+    let run = find_pda_run(run_id);
+    let run_collateral = ToolboxEndpoint::find_spl_associated_token_account(&run, collateral_mint);
+
+    let accounts = RunFundAccounts {
+        payer: payer.pubkey(),
+        authority: authority.pubkey(),
+        authority_collateral: *authority_collateral,
+        collateral_mint: *collateral_mint,
+        run,
+        run_collateral,
+        token_program: token::ID,
+        system_program: system_program::ID,
+    };
+    let instruction = Instruction {
+        accounts: accounts.to_account_metas(None),
+        data: RunFund {
+            params: RunFundParams { collateral_amount },
         }
         .data(),
         program_id: psyche_solana_treasurer::ID,

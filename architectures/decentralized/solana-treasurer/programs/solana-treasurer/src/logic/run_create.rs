@@ -26,7 +26,7 @@ pub struct RunCreateAccounts<'info> {
         payer = payer,
         space = Run::space_with_discriminator(),
         seeds = [
-            Run::SEED_PREFIX,
+            Run::SEEDS_PREFIX,
             run_identity_from_string(&params.run_id).as_ref()
         ],
         bump,
@@ -79,8 +79,10 @@ pub fn run_create_processor(
     run.identity = run_identity;
     run.authority = context.accounts.authority.key();
     run.collateral_mint = context.accounts.collateral_mint.key();
+    run.total_funded_collateral_amount = 0;
 
-    let run_signer_seeds: &[&[&[u8]]] = &[&[Run::SEED_PREFIX, run_identity.as_ref(), &[run.bump]]];
+    let run_signer_seeds: &[&[&[u8]]] =
+        &[&[Run::SEEDS_PREFIX, &run.identity.to_bytes(), &[run.bump]]];
     initialize_coordinator(
         CpiContext::new(
             context.accounts.coordinator_program.to_account_info(),
