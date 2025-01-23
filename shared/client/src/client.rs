@@ -8,9 +8,9 @@ use psyche_coordinator::RunState;
 use psyche_core::NodeIdentity;
 use psyche_modeling::Config;
 use psyche_network::{
-    allowlist, request_model_config, request_model_parameter, AuthenticatableIdentity,
-    DownloadComplete, ModelConfig, ModelParameters, NetworkConnection, NetworkEvent,
-    NetworkTUIState, Networkable, NodeId, TransmittableDownload,
+    allowlist, request_model, AuthenticatableIdentity, DownloadComplete, ModelRequestType,
+    NetworkConnection, NetworkEvent, NetworkTUIState, Networkable, NodeId, SharableModel,
+    TransmittableDownload,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use tokenizers::Tokenizer;
@@ -98,8 +98,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                 });
 
                 let mut retried_downloads: HashMap<psyche_network::Hash, usize> = HashMap::new();
-                let mut sharable_model = ModelParameters::empty();
-                let mut global_conf = ModelConfig::default();
+                let mut sharable_model = SharableModel::empty();
                 loop {
                     select! {
                         _ = cancel.cancelled() => {
@@ -163,8 +162,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                                 }
                                             },
                                             TransmittableDownload::ModelConfig(config) => {
-                                                global_conf.add_config(config)?;
-                                                global_conf.send_config().unwrap();
+                                                sharable_model.add_config(config)?;
+                                                sharable_model.send_config().unwrap();
                                             },
                                         }
                                     }
@@ -203,8 +202,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         }
                                     },
                                     NetworkEvent::ModelConfigRequest(protocol_req_tx) => {
-                                        let transmittable_config = TransmittableDownload::ModelConfig(global_conf.get_transmittable_config().unwrap());
+                                        let transmittable_config = TransmittableDownload::ModelConfig(sharable_model.get_transmittable_config().unwrap());
                                         let config_ticket = p2p.add_downloadable(transmittable_config).await?;
+
+                                        info!("Sending requested model config blob ticket");
                                         if let Err(e) = protocol_req_tx.send(Ok(config_ticket)) {
                                             warn!("Could not send model config blob ticket. Error: {e:?}");
                                         }
@@ -258,8 +259,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         Some((config_string, tokenizer_string)) = rx_config.recv() => {
                             let config: Config = serde_json::from_str(&config_string)?;
                             let tokenizer: Tokenizer = serde_json::from_str(&tokenizer_string)?;
-                            global_conf.model_config = Some(config);
-                            global_conf.tokenizer_config = Some(tokenizer);
+                            sharable_model.update_config(config, tokenizer)?;
                         }
                         Some((param_names, tx_params_response)) = rx_parameters_req.recv() => {
                             sharable_model.initialize_parameters(&param_names, tx_params_response);
@@ -312,7 +312,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                                 continue;
                                             }
                                             debug!("Requesting parameter {param_name} from peer {peer_id}");
-                                            match request_model_parameter(router.clone(), peer_id, param_name.clone()).await {
+                                            match request_model(router.clone(), peer_id, param_name.clone()).await {
                                                 Ok(parameter_blob_ticket) => {
                                                   parameter_blob_tickets_clone.lock().unwrap().push(parameter_blob_ticket);
                                                   busy_peers.lock().unwrap().remove(&peer_id);
@@ -358,7 +358,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             drop(handle);
                         },
                         Some(tx_model_config_response) = rx_request_model_config.recv() => {
-                            global_conf.tx_model_config_response = Some(tx_model_config_response);
+                            sharable_model.tx_model_config_response = Some(tx_model_config_response);
                             let Some(coordinator_state) = watcher.coordinator_state() else {
                                 warn!("Coordinator state not yet registered, nothing to do");
                                 return Ok(());
@@ -373,7 +373,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             .collect();
                             let peer_ids_iter = peer_ids.into_iter().cycle();
                             for peer_id in peer_ids_iter {
-                                match request_model_config(router.clone(), peer_id).await {
+                                match request_model(router.clone(), peer_id, ModelRequestType::Config).await {
                                     Ok(ticket) => {
                                         p2p.start_download(ticket).await?;
                                         break;

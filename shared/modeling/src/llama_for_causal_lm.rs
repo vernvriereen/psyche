@@ -150,18 +150,21 @@ pub enum PretrainedSource {
 unsafe impl Send for PretrainedSource {}
 
 impl PretrainedSource {
-    pub fn get_config(&self) -> Result<LlamaConfig, LoadLlamaForCausalLMError> {
-        let config_file = match self {
-            PretrainedSource::RepoFiles(repo_files) => std::fs::read_to_string(
-                repo_files
-                    .iter()
-                    .find(|x| x.ends_with("config.json"))
-                    .ok_or(LoadLlamaForCausalLMError::MissingConfigJSON)?
-                    .as_path(),
-            )?,
-            PretrainedSource::ConfigAndTensors(config_file, _) => config_file.to_owned(),
-        };
-        Ok(serde_json::from_str(&config_file)?)
+    pub fn get_config(&self) -> Result<Config, LoadLlamaForCausalLMError> {
+        match self {
+            PretrainedSource::RepoFiles(repo_files) => {
+                let config_file = std::fs::read_to_string(
+                    repo_files
+                        .iter()
+                        .find(|x| x.ends_with("config.json"))
+                        .ok_or(LoadLlamaForCausalLMError::MissingConfigJSON)?
+                        .as_path(),
+                )?;
+                let llama_config: LlamaConfig = serde_json::from_str(&config_file)?;
+                Ok(llama_config.into_config(true))
+            }
+            PretrainedSource::ConfigAndTensors(config, _) => Ok(config.to_owned()),
+        }
     }
 
     pub fn load(&self, variables: &mut nn::VarStore) -> Result<(), LoadLlamaForCausalLMError> {
