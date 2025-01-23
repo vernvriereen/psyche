@@ -1,6 +1,9 @@
-use psyche_solana_coordinator::{coordinator_account_from_bytes, CoordinatorInstanceState, COORDINATOR_SEEDS_PREFIX, bytes_from_string};
-use psyche_solana_treasurer::state::Run;
+use psyche_solana_coordinator::{
+    bytes_from_string, coordinator_account_from_bytes, CoordinatorInstanceState,
+    COORDINATOR_SEEDS_PREFIX,
+};
 use psyche_solana_treasurer::run_identity_from_string;
+use psyche_solana_treasurer::state::Run;
 use solana_sdk::pubkey::Pubkey;
 use solana_toolbox_endpoint::{ToolboxEndpoint, ToolboxEndpointError};
 
