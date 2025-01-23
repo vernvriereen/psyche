@@ -1,4 +1,5 @@
 use psyche_solana_coordinator::CoordinatorAccount;
+use psyche_core::to_fixed_size_array;
 
 use crate::api::accounts::get_coordinator_instance_state;
 use crate::api::{
@@ -21,7 +22,7 @@ pub async fn memnet_coordinator_run() {
         .unwrap();
 
     // Constants
-    let run_id = &Keypair::new().pubkey().to_bytes();
+    let run_id = to_fixed_size_array("Hello world");
     let authority = Keypair::new();
 
     // Prepare the collateral mint
@@ -44,7 +45,7 @@ pub async fn memnet_coordinator_run() {
         .process_system_create_exempt(
             &payer,
             &coordinator_account,
-            CoordinatorAccount::size_with_discriminator(),
+            CoordinatorAccount::space_with_discriminator(),
             &psyche_solana_coordinator::ID,
         )
         .await
@@ -57,7 +58,7 @@ pub async fn memnet_coordinator_run() {
         &authority,
         &collateral_mint.pubkey(),
         &coordinator_account.pubkey(),
-        run_id,
+        &run_id,
     )
     .await
     .unwrap();

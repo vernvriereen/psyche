@@ -101,7 +101,7 @@ impl SolanaBackend {
 
     pub async fn create_run(&self, run_id: String) -> Result<CreatedRun> {
         let coordinator_keypair = Arc::new(Keypair::new());
-        let space = psyche_solana_coordinator::CoordinatorAccount::size_with_discriminator();
+        let space = psyche_solana_coordinator::CoordinatorAccount::space_with_discriminator();
         let rent = self
             .program
             .rpc()
@@ -110,7 +110,7 @@ impl SolanaBackend {
 
         let seeds = &[
             b"coordinator",
-            &psyche_solana_coordinator::run_id_from_string(&run_id),
+            &psyche_solana_coordinator::bytes_from_string(&run_id),
         ];
         let (instance_pda, _bump) = Pubkey::find_program_address(seeds, &self.program.id());
 
@@ -381,7 +381,7 @@ impl SolanaBackend {
     fn find_instance_from_run_id(&self, run_id: &str) -> (Pubkey, u8) {
         let seeds = &[
             b"coordinator",
-            &psyche_solana_coordinator::run_id_from_string(run_id),
+            &psyche_solana_coordinator::bytes_from_string(run_id),
         ];
         Pubkey::find_program_address(seeds, &self.program.id())
     }

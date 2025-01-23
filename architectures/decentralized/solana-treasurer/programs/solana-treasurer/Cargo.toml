@@ -30,4 +30,5 @@ solana-sdk = "=2.1.4"
 solana_toolbox_endpoint = "=0.1.30-solana-2.1.4"
 tokio = "1.42.0"
 
+psyche-core = { path = "../../../../../shared/core" }
 psyche-coordinator = { path = "../../../../../shared/coordinator" }

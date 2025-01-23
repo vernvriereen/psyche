@@ -22,7 +22,7 @@ pub struct RunCreateAccounts<'info> {
     #[account(
         init,
         payer = payer,
-        space = Run::space(),
+        space = Run::space_with_discriminator(),
         seeds = [Run::SEED_PREFIX, &params.run_identity],
         bump,
     )]
@@ -60,7 +60,7 @@ pub struct RunCreateAccounts<'info> {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
 pub struct RunCreateParams {
-    pub run_identity: [u8; 32],
+    pub run_identity: [u8; 64],
 }
 
 pub fn run_create_processor(

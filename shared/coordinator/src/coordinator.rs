@@ -5,7 +5,10 @@ use crate::{
 
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Pod, Zeroable};
-use psyche_core::{sha256, Bloom, FixedVec, NodeIdentity, SmallBoolean};
+use psyche_core::{
+    serde_deserialize_string, serde_serialize_string, sha256, Bloom, FixedVec, NodeIdentity,
+    SmallBoolean,
+};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::hash::Hash;
 
@@ -202,7 +205,11 @@ pub struct CoordinatorProgress {
 #[serde(bound = "T: DeserializeOwned + NodeIdentity")]
 #[repr(C)]
 pub struct Coordinator<T> {
-    pub run_id: [u8; 32],
+    #[serde(
+        serialize_with = "serde_serialize_string",
+        deserialize_with = "serde_deserialize_string"
+    )]
+    pub run_id: [u8; SOLANA_MAX_STRING_LEN],
 
     pub run_state: RunState,
 

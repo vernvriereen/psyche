@@ -3159,6 +3159,7 @@ dependencies = [
  "anchor-spl",
  "bytemuck",
  "psyche-coordinator",
+ "psyche-core",
  "psyche-solana-coordinator",
  "serde",
  "solana-sdk",

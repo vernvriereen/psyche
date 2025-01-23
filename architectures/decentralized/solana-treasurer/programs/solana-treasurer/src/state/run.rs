@@ -6,13 +6,13 @@ use anchor_lang::prelude::*;
 #[derive(Debug)]
 pub struct Run {
     pub bump: u8,
-    pub identity: [u8; 32],
+    pub identity: [u8; 64],
     pub authority: Pubkey,
     pub collateral_mint: Pubkey,
 }
 
 impl Run {
-    pub fn space() -> usize {
+    pub fn space_with_discriminator() -> usize {
         8 + size_of::<Run>()
     }
 }

@@ -9,7 +9,7 @@ pub use instance_state::CoordinatorInstanceState;
 pub use program_error::ProgramError;
 use psyche_coordinator::{
     model::Model, Committee, CommitteeProof, CoordinatorConfig, Witness, WitnessBloom,
-    WitnessProof, SOLANA_MAX_NUM_CLIENTS,
+    WitnessProof, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
 };
 
 declare_id!("5gKtdi6At7WEcLE22GmkSg94rVgc2hRRo3VvKhLnoJZP");
@@ -19,17 +19,14 @@ pub const COORDINATOR_SEEDS_PREFIX: &[u8] = b"coordinator";
 pub const SOLANA_MAX_NUM_PENDING_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 pub const SOLANA_MAX_NUM_WHITELISTED_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 
-pub fn run_id_from_string(str: &str) -> Vec<u8> {
-    let mut bytes = vec![];
-    bytes.extend_from_slice(str.as_bytes());
-    bytes.resize(32, 0);
-    bytes
+pub fn bytes_from_string(str: &str) -> &[u8] {
+    &str.as_bytes()[..SOLANA_MAX_STRING_LEN.min(str.len())]
 }
 
 pub fn coordinator_account_from_bytes(
     bytes: &[u8],
 ) -> std::result::Result<&CoordinatorAccount, ProgramError> {
-    if bytes.len() != CoordinatorAccount::size_with_discriminator() {
+    if bytes.len() != CoordinatorAccount::space_with_discriminator() {
         return Err(ProgramError::CoordinatorAccountIncorrectSize);
     }
     if &bytes[..CoordinatorAccount::DISCRIMINATOR.len()] != CoordinatorAccount::DISCRIMINATOR {
@@ -37,7 +34,7 @@ pub fn coordinator_account_from_bytes(
     }
     Ok(bytemuck::from_bytes(
         &bytes[CoordinatorAccount::DISCRIMINATOR.len()
-            ..CoordinatorAccount::size_with_discriminator()],
+            ..CoordinatorAccount::space_with_discriminator()],
     ))
 }
 
@@ -47,8 +44,8 @@ pub struct CoordinatorAccount {
     pub state: CoordinatorInstanceState,
 }
 impl CoordinatorAccount {
-    pub fn size_with_discriminator() -> usize {
-        CoordinatorAccount::DISCRIMINATOR.len() + std::mem::size_of::<CoordinatorAccount>()
+    pub fn space_with_discriminator() -> usize {
+        CoordinatorAccount::DISCRIMINATOR.len() + size_of::<CoordinatorAccount>()
     }
 }
 
@@ -58,7 +55,8 @@ pub struct CoordinatorInstance {
     pub bump: u8,
     pub authority: Pubkey,
     pub account: Pubkey,
-    pub run_id: [u8; 32],
+    #[max_len(SOLANA_MAX_STRING_LEN)]
+    pub run_id: String,
 }
 
 #[program]
@@ -67,7 +65,7 @@ pub mod psyche_solana_coordinator {
 
     pub fn initialize_coordinator(
         ctx: Context<InitializeCoordinatorAccounts>,
-        run_id: [u8; 32],
+        run_id: String,
     ) -> Result<()> {
         // Initialize the coordinator instance
         let instance = &mut ctx.accounts.instance;
@@ -77,7 +75,7 @@ pub mod psyche_solana_coordinator {
         instance.run_id = run_id.clone();
         // Initialize the coordinator account
         let mut data = ctx.accounts.account.try_borrow_mut_data()?;
-        if data.len() != CoordinatorAccount::size_with_discriminator() {
+        if data.len() != CoordinatorAccount::space_with_discriminator() {
             return err!(ProgramError::CoordinatorAccountIncorrectSize);
         }
         // Install the correct coordinator account's discriminator, verify that it was zero before init
@@ -89,10 +87,13 @@ pub mod psyche_solana_coordinator {
         data_disc.copy_from_slice(disc);
         // Ready to prepare the coordinator content
         let account = bytemuck::from_bytes_mut::<CoordinatorAccount>(
-            &mut data[disc.len()..CoordinatorAccount::size_with_discriminator()],
+            &mut data[disc.len()..CoordinatorAccount::space_with_discriminator()],
         );
         // Setup the run_id const
-        account.state.coordinator.run_id = run_id;
+        let mut array = [0u8; SOLANA_MAX_STRING_LEN];
+        let run_id = bytes_from_string(&run_id);
+        array[..run_id.len()].copy_from_slice(run_id);
+        account.state.coordinator.run_id = array;
         // Done
         Ok(())
     }
@@ -178,7 +179,7 @@ pub mod psyche_solana_coordinator {
 }
 
 #[derive(Accounts)]
-#[instruction(run_id: [u8; 32])]
+#[instruction(run_id: String)]
 pub struct InitializeCoordinatorAccounts<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -187,8 +188,8 @@ pub struct InitializeCoordinatorAccounts<'info> {
     #[account(
         init,
         payer = payer,
-        space = 8 + CoordinatorInstance::INIT_SPACE,
-        seeds = [COORDINATOR_SEEDS_PREFIX, &run_id],
+        space = CoordinatorAccount::space_with_discriminator(),
+        seeds = [COORDINATOR_SEEDS_PREFIX, bytes_from_string(&run_id)],
         bump
     )]
     pub instance: Account<'info, CoordinatorInstance>,
@@ -203,7 +204,7 @@ pub struct OwnerCoordinatorAccounts<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
     #[account(
-        seeds = [COORDINATOR_SEEDS_PREFIX, &instance.run_id],
+        seeds = [COORDINATOR_SEEDS_PREFIX, bytes_from_string(&instance.run_id)],
         bump = instance.bump,
         constraint = instance.authority == *authority.key
     )]
@@ -223,7 +224,7 @@ pub struct PermissionlessCoordinatorAccounts<'info> {
     #[account()]
     pub user: Signer<'info>,
     #[account(
-        seeds = [COORDINATOR_SEEDS_PREFIX, &instance.run_id],
+        seeds = [COORDINATOR_SEEDS_PREFIX, bytes_from_string(&instance.run_id)],
         bump = instance.bump
     )]
     pub instance: Account<'info, CoordinatorInstance>,
@@ -245,7 +246,7 @@ pub struct FreeCoordinatorAccounts<'info> {
     pub reimbursed: UncheckedAccount<'info>,
     #[account(
         mut,
-        seeds = [COORDINATOR_SEEDS_PREFIX, &instance.run_id],
+        seeds = [COORDINATOR_SEEDS_PREFIX, bytes_from_string(&instance.run_id)],
         bump = instance.bump,
         constraint = instance.authority == *authority.key,
         close = reimbursed

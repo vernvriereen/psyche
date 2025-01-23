@@ -27,7 +27,7 @@ pub async fn process_initialize_coordinator(
     payer: &Keypair,
     authority: &Keypair,
     coordinator_account: &Pubkey,
-    run_id: &[u8; 32],
+    run_id: &str,
 ) -> Result<Signature, ToolboxEndpointError> {
     let coordinator_instance = find_coordinator_instance(run_id);
 
@@ -40,7 +40,10 @@ pub async fn process_initialize_coordinator(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: InitializeCoordinator { run_id: *run_id }.data(),
+        data: InitializeCoordinator {
+            run_id: run_id.to_string(),
+        }
+        .data(),
         program_id: psyche_solana_coordinator::ID,
     };
 
@@ -55,7 +58,7 @@ pub async fn process_free_coordinator(
     authority: &Keypair,
     reimbursed: &Pubkey,
     coordinator_account: &Pubkey,
-    run_id: &[u8; 32],
+    run_id: &str,
 ) -> Result<Signature, ToolboxEndpointError> {
     let coordinator_instance = find_coordinator_instance(run_id);
 
@@ -82,7 +85,7 @@ pub async fn process_update_coordinator_config_model(
     payer: &Keypair,
     authority: &Keypair,
     coordinator_account: &Pubkey,
-    run_id: &[u8; 32],
+    run_id: &str,
     config: Option<CoordinatorConfig<ClientId>>,
     model: Option<Model>,
 ) -> Result<Signature, ToolboxEndpointError> {
@@ -110,7 +113,7 @@ pub async fn process_set_whitelist(
     payer: &Keypair,
     authority: &Keypair,
     coordinator_account: &Pubkey,
-    run_id: &[u8; 32],
+    run_id: &str,
     clients: Vec<Pubkey>,
 ) -> Result<Signature, ToolboxEndpointError> {
     let coordinator_instance = find_coordinator_instance(run_id);
@@ -137,7 +140,7 @@ pub async fn process_join_run(
     payer: &Keypair,
     user: &Keypair,
     coordinator_account: &Pubkey,
-    run_id: &[u8; 32],
+    run_id: &str,
     id: ClientId,
 ) -> Result<Signature, ToolboxEndpointError> {
     let coordinator_instance = find_coordinator_instance(run_id);
@@ -164,7 +167,7 @@ pub async fn process_set_paused(
     payer: &Keypair,
     authority: &Keypair,
     coordinator_account: &Pubkey,
-    run_id: &[u8; 32],
+    run_id: &str,
     paused: bool,
 ) -> Result<Signature, ToolboxEndpointError> {
     let coordinator_instance = find_coordinator_instance(run_id);
@@ -191,7 +194,7 @@ pub async fn process_tick(
     payer: &Keypair,
     user: &Keypair,
     coordinator_account: &Pubkey,
-    run_id: &[u8; 32],
+    run_id: &str,
 ) -> Result<Signature, ToolboxEndpointError> {
     let coordinator_instance = find_coordinator_instance(run_id);
 
@@ -217,7 +220,7 @@ pub async fn process_witness(
     payer: &Keypair,
     user: &Keypair,
     coordinator_account: &Pubkey,
-    run_id: &[u8; 32],
+    run_id: &str,
     witness: psyche_coordinator::Witness,
 ) -> Result<Signature, ToolboxEndpointError> {
     let coordinator_instance = find_coordinator_instance(run_id);

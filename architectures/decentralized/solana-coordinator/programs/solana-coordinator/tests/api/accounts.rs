@@ -1,4 +1,6 @@
-use psyche_solana_coordinator::{coordinator_account_from_bytes, CoordinatorInstanceState};
+use psyche_solana_coordinator::{
+    bytes_from_string, coordinator_account_from_bytes, CoordinatorInstanceState,
+};
 use solana_sdk::pubkey::Pubkey;
 use solana_toolbox_endpoint::{ToolboxEndpoint, ToolboxEndpointError};
 
@@ -19,6 +21,10 @@ pub async fn get_coordinator_instance_state(
         .state)
 }
 
-pub fn find_coordinator_instance(run_id: &[u8; 32]) -> Pubkey {
-    Pubkey::find_program_address(&[b"coordinator", run_id], &psyche_solana_coordinator::ID).0
+pub fn find_coordinator_instance(run_id: &str) -> Pubkey {
+    Pubkey::find_program_address(
+        &[b"coordinator", bytes_from_string(run_id)],
+        &psyche_solana_coordinator::ID,
+    )
+    .0
 }

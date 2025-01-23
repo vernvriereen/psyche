@@ -3,7 +3,7 @@ use psyche_solana_treasurer::state::Run;
 use solana_sdk::pubkey::Pubkey;
 use solana_toolbox_endpoint::{ToolboxEndpoint, ToolboxEndpointError};
 
-pub fn find_run(run_identity: &[u8; 32]) -> Pubkey {
+pub fn find_run(run_identity: &[u8; 64]) -> Pubkey {
     Pubkey::find_program_address(
         &[Run::SEED_PREFIX, run_identity],
         &psyche_solana_treasurer::ID,
@@ -11,7 +11,7 @@ pub fn find_run(run_identity: &[u8; 32]) -> Pubkey {
     .0
 }
 
-pub fn find_coordinator_instance(run_identity: &[u8; 32]) -> Pubkey {
+pub fn find_coordinator_instance(run_identity: &[u8; 64]) -> Pubkey {
     Pubkey::find_program_address(
         &[b"coordinator", run_identity],
         &psyche_solana_coordinator::ID,

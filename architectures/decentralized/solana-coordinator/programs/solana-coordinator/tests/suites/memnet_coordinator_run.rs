@@ -32,7 +32,7 @@ pub async fn memnet_coordinator_run() {
         .unwrap();
 
     // Run constants
-    let run_id = Keypair::new().pubkey().to_bytes();
+    let run_id = "Hello world!";
     let coordinator_account = Keypair::new();
 
     // The owner authority of the run
@@ -43,7 +43,7 @@ pub async fn memnet_coordinator_run() {
         .process_system_create_exempt(
             &payer,
             &coordinator_account,
-            CoordinatorAccount::size_with_discriminator(),
+            CoordinatorAccount::space_with_discriminator(),
             &psyche_solana_coordinator::ID,
         )
         .await
@@ -55,7 +55,7 @@ pub async fn memnet_coordinator_run() {
         &payer,
         &authority,
         &coordinator_account.pubkey(),
-        &run_id,
+        run_id,
     )
     .await
     .unwrap();
@@ -76,7 +76,7 @@ pub async fn memnet_coordinator_run() {
         &payer,
         &authority,
         &coordinator_account.pubkey(),
-        &run_id,
+        run_id,
         Some(CoordinatorConfig::<ClientId> {
             warmup_time: 1,
             cooldown_time: 1,
@@ -131,7 +131,7 @@ pub async fn memnet_coordinator_run() {
         &payer,
         &authority,
         &coordinator_account.pubkey(),
-        &run_id,
+        run_id,
         vec![Pubkey::zeroed()],
     )
     .await
@@ -147,7 +147,7 @@ pub async fn memnet_coordinator_run() {
         &payer,
         &payer,
         &coordinator_account.pubkey(),
-        &run_id,
+        run_id,
         client_id
     )
     .await
@@ -159,7 +159,7 @@ pub async fn memnet_coordinator_run() {
         &payer,
         &authority,
         &coordinator_account.pubkey(),
-        &run_id,
+        run_id,
         vec![client_id.signer],
     )
     .await
@@ -171,7 +171,7 @@ pub async fn memnet_coordinator_run() {
         &payer,
         &client_keypair,
         &coordinator_account.pubkey(),
-        &run_id,
+        run_id,
         client_id,
     )
     .await
@@ -186,7 +186,7 @@ pub async fn memnet_coordinator_run() {
         &payer,
         &ticker_keypair,
         &coordinator_account.pubkey(),
-        &run_id
+        run_id
     )
     .await
     .is_err());
@@ -197,7 +197,7 @@ pub async fn memnet_coordinator_run() {
         &payer,
         &authority,
         &coordinator_account.pubkey(),
-        &run_id,
+        run_id,
         false,
     )
     .await
@@ -221,7 +221,7 @@ pub async fn memnet_coordinator_run() {
         &payer,
         &ticker_keypair,
         &coordinator_account.pubkey(),
-        &run_id,
+        run_id,
     )
     .await
     .unwrap();
@@ -250,8 +250,8 @@ pub async fn memnet_coordinator_run() {
         &payer,
         &ticker_keypair,
         &coordinator_account.pubkey(),
-        &run_id,
-        witness.clone(),
+        run_id,
+        witness,
     )
     .await
     .is_err());
@@ -260,7 +260,7 @@ pub async fn memnet_coordinator_run() {
         &payer,
         &client_keypair,
         &coordinator_account.pubkey(),
-        &run_id,
+        run_id,
         witness,
     )
     .await
@@ -289,7 +289,7 @@ pub async fn memnet_coordinator_free() {
         .unwrap();
 
     // Run constants
-    let run_id = Keypair::new().pubkey().to_bytes();
+    let run_id = "Hello world!";
     let coordinator_account = Keypair::new();
 
     // The owner authority of the run
@@ -312,7 +312,7 @@ pub async fn memnet_coordinator_free() {
         .process_system_create_exempt(
             &payer,
             &coordinator_account,
-            CoordinatorAccount::size_with_discriminator(),
+            CoordinatorAccount::space_with_discriminator(),
             &psyche_solana_coordinator::ID,
         )
         .await
@@ -324,7 +324,7 @@ pub async fn memnet_coordinator_free() {
         &payer,
         &authority,
         &coordinator_account.pubkey(),
-        &run_id,
+        run_id,
     )
     .await
     .unwrap();
@@ -346,7 +346,7 @@ pub async fn memnet_coordinator_free() {
     assert_eq!(authority_balance_after, authority_balance_start);
 
     // Check that the coordinator instance and account do actually exists now
-    let coordinator_instance = find_coordinator_instance(&&run_id);
+    let coordinator_instance = find_coordinator_instance(run_id);
     assert!(endpoint
         .get_account(&coordinator_account.pubkey())
         .await
@@ -373,7 +373,7 @@ pub async fn memnet_coordinator_free() {
         &authority,
         &reimbursed,
         &coordinator_account.pubkey(),
-        &run_id,
+        run_id,
     )
     .await
     .unwrap();
