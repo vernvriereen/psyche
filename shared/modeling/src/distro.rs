@@ -652,9 +652,7 @@ impl Distro {
             let _t = delta.g_sub_(&transmit_grad);
 
             let sparse_val = if quant_1bit {
-                let sparse_val = sparse_val.greater(0);
-                debug_assert!(sparse_val.kind() == Kind::Bool);
-                sparse_val
+                quantize_nozeros_tensor_to_boolean_sign(&sparse_val)
             } else {
                 sparse_val
             };
@@ -710,8 +708,7 @@ impl Distro {
                 .map(|x| {
                     let sparse_val = x[index].sparse_val.to_device(device);
                     if sparse_val.kind() == Kind::Bool {
-                        // when it's quantized to bools, we need to transform it back into -1/+1.
-                        sparse_val.to_kind(val_kind) * 2 - 1
+                        unpack_tensor_sign_from_boolean(sparse_val, val_kind)
                     } else {
                         sparse_val
                     }
@@ -824,13 +821,22 @@ impl Distro {
     }
 }
 
+fn quantize_nozeros_tensor_to_boolean_sign(tensor: &Tensor) -> Tensor {
+    let original_size = tensor.size();
+    let tensor = tensor.signbit();
+    debug_assert_eq!(tensor.kind(), Kind::Bool);
+    debug_assert_eq!(tensor.size(), original_size);
+    tensor
+}
+
+fn unpack_tensor_sign_from_boolean(tensor: Tensor, unpack_kind: Kind) -> Tensor {
+    tensor.to_kind(unpack_kind) * -2 + 1
+}
+
 unsafe impl Send for Distro {}
 
 #[cfg(test)]
 mod tests {
-
-    use tch::Device;
-
     use super::*;
 
     #[test]
@@ -1110,5 +1116,17 @@ mod tests {
             Device::Cpu,
         );
         assert!(decompressed_signed.equal(&signed_truth));
+    }
+
+    #[test]
+    fn test_1bit_matches_non_quant() {
+        let input = Tensor::rand([51, 35, 5, 13, 6], (Kind::BFloat16, Device::cuda_if_available())) - 0.5;
+        // ensure no zeros in our ground truth!
+        let input = (&input) + (input.sign() + 0.1);
+
+        let quant = quantize_nozeros_tensor_to_boolean_sign(&input);
+        let unquant = unpack_tensor_sign_from_boolean(quant, input.kind());
+
+        assert!(input.sign().equal(&unquant));
     }
 }
