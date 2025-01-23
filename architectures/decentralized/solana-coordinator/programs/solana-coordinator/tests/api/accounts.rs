@@ -1,4 +1,6 @@
-use psyche_solana_coordinator::{coordinator_account_from_bytes, CoordinatorInstanceState};
+use psyche_solana_coordinator::{
+    bytes_from_string, coordinator_account_from_bytes, CoordinatorInstanceState,
+};
 use solana_sdk::pubkey::Pubkey;
 use solana_toolbox_endpoint::{ToolboxEndpoint, ToolboxEndpointError};
 

@@ -68,7 +68,7 @@ pub mod psyche_solana_coordinator {
         // Initialize the coordinator instance
         let instance = &mut ctx.accounts.instance;
         instance.bump = ctx.bumps.instance;
-        instance.owner = ctx.accounts.authority.key();
+        instance.authority = ctx.accounts.authority.key();
         instance.account = ctx.accounts.account.key();
         instance.run_id = run_id.clone();
         // Initialize the coordinator account
@@ -102,7 +102,7 @@ pub mod psyche_solana_coordinator {
         }
         ctx.accounts
             .account
-            .close(ctx.accounts.payer.to_account_info())
+            .close(ctx.accounts.reimbursed.to_account_info())
     }
 
     pub fn update_coordinator_config_model(
@@ -129,7 +129,7 @@ pub mod psyche_solana_coordinator {
     }
 
     pub fn join_run(ctx: Context<PermissionlessCoordinatorAccounts>, id: ClientId) -> Result<()> {
-        if &id.signer != ctx.accounts.payer.key {
+        if &id.signer != ctx.accounts.user.key {
             return err!(ProgramError::SignerMismatch);
         }
         ctx.accounts.account.load_mut()?.state.join_run(id)
@@ -150,7 +150,7 @@ pub mod psyche_solana_coordinator {
         order_bloom: WitnessBloom,
     ) -> Result<()> {
         ctx.accounts.account.load_mut()?.state.witness(
-            ctx.accounts.payer.key,
+            ctx.accounts.user.key,
             Witness {
                 proof,
                 participant_bloom,
@@ -166,7 +166,7 @@ pub mod psyche_solana_coordinator {
         index: u64,
     ) -> Result<()> {
         ctx.accounts.account.load_mut()?.state.health_check(
-            ctx.accounts.payer.key,
+            ctx.accounts.user.key,
             vec![CommitteeProof {
                 committee,
                 position,
@@ -179,6 +179,10 @@ pub mod psyche_solana_coordinator {
 #[derive(Accounts)]
 #[instruction(run_id: String)]
 pub struct InitializeCoordinatorAccounts<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account()]
+    pub authority: Signer<'info>,
     #[account(
         init,
         payer = payer,
@@ -189,20 +193,18 @@ pub struct InitializeCoordinatorAccounts<'info> {
     pub instance: Account<'info, CoordinatorInstance>,
     #[account(mut)]
     pub account: UncheckedAccount<'info>,
-    #[account()]
-    pub authority: Signer<'info>,
-    #[account(mut)]
-    pub payer: Signer<'info>,
     #[account(address = system_program::ID)]
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct OwnerCoordinatorAccounts<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
     #[account(
         seeds = [b"coordinator", bytes_from_string(&instance.run_id)],
         bump = instance.bump,
-        constraint = instance.owner == *authority.key
+        constraint = instance.authority == *authority.key
     )]
     pub instance: Account<'info, CoordinatorInstance>,
     #[account(
@@ -211,14 +213,14 @@ pub struct OwnerCoordinatorAccounts<'info> {
         constraint = instance.account == account.key()
     )]
     pub account: AccountLoader<'info, CoordinatorAccount>,
-    #[account(mut)]
-    pub authority: Signer<'info>,
     #[account(address = system_program::ID)]
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct PermissionlessCoordinatorAccounts<'info> {
+    #[account()]
+    pub user: Signer<'info>,
     #[account(
         seeds = [b"coordinator", bytes_from_string(&instance.run_id)],
         bump = instance.bump
@@ -236,12 +238,16 @@ pub struct PermissionlessCoordinatorAccounts<'info> {
 
 #[derive(Accounts)]
 pub struct FreeCoordinatorAccounts<'info> {
+    #[account()]
+    pub authority: Signer<'info>,
+    #[account(mut)]
+    pub reimbursed: UncheckedAccount<'info>,
     #[account(
         mut,
         seeds = [b"coordinator", bytes_from_string(&instance.run_id)],
         bump = instance.bump,
-        constraint = instance.owner == *owner.key,
-        close = reimbursement
+        constraint = instance.authority == *authority.key,
+        close = reimbursed
     )]
     pub instance: Account<'info, CoordinatorInstance>,
     #[account(
@@ -250,10 +256,6 @@ pub struct FreeCoordinatorAccounts<'info> {
         constraint = instance.account == account.key()
     )]
     pub account: AccountLoader<'info, CoordinatorAccount>,
-    #[account(mut)]
-    pub owner: Signer<'info>,
-    #[account(mut)]
-    pub reimbursement: UncheckedAccount<'info>,
     #[account(address = system_program::ID)]
     pub system_program: Program<'info, System>,
 }

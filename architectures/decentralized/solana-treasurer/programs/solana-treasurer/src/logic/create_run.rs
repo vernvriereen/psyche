@@ -46,17 +46,22 @@ pub struct CreateRunAccounts<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn create_run_processor(ctx: Context<CreateRunAccounts>, run_identity: [u8; 32]) -> Result<()> {
+pub fn create_run_processor(
+    ctx: Context<CreateRunAccounts>,
+    run_identity: &[u8; 32],
+) -> Result<()> {
+    let run_id = from_utf8(run_identity);
+
     let cpi_context = CpiContext::new(
         ctx.accounts.coordinator_program.to_account_info(),
         InitializeCoordinatorAccounts {
             payer: ctx.accounts.payer.to_account_info(),
+            authority: ctx.accounts.run.to_account_info(),
             instance: ctx.accounts.coordinator_instance.to_account_info(),
             account: ctx.accounts.coordinator_account.to_account_info(),
             system_program: ctx.accounts.system_program.to_account_info(),
         },
     );
-    let run_id = String::from_utf8(run_identity);
     initialize_coordinator(cpi_context, run_id)?;
 
     let run = &mut context.accounts.run;

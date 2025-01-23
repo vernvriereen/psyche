@@ -1,5 +1,3 @@
-use crate::api::find_coordinator_instance::find_coordinator_instance;
-
 use anchor_lang::{InstructionData, ToAccountMetas};
 use psyche_coordinator::{model::Model, CoordinatorConfig};
 use psyche_solana_coordinator::{
@@ -22,9 +20,12 @@ use solana_sdk::{
 };
 use solana_toolbox_endpoint::{ToolboxEndpoint, ToolboxEndpointError};
 
+use crate::api::accounts::find_coordinator_instance;
+
 pub async fn process_initialize_coordinator(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
+    authority: &Keypair,
     coordinator_account: &Pubkey,
     run_id: &str,
 ) -> Result<Signature, ToolboxEndpointError> {
@@ -32,6 +33,7 @@ pub async fn process_initialize_coordinator(
 
     let accounts = InitializeCoordinatorAccounts {
         payer: payer.pubkey(),
+        authority: authority.pubkey(),
         instance: coordinator_instance,
         account: *coordinator_account,
         system_program: system_program::ID,
@@ -45,19 +47,24 @@ pub async fn process_initialize_coordinator(
         program_id: psyche_solana_coordinator::ID,
     };
 
-    endpoint.process_instruction(instruction, payer).await
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[authority])
+        .await
 }
 
 pub async fn process_free_coordinator(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
+    authority: &Keypair,
+    reimbursed: &Pubkey,
     coordinator_account: &Pubkey,
     run_id: &str,
 ) -> Result<Signature, ToolboxEndpointError> {
     let coordinator_instance = find_coordinator_instance(run_id);
 
     let accounts = FreeCoordinatorAccounts {
-        payer: payer.pubkey(),
+        authority: authority.pubkey(),
+        reimbursed: *reimbursed,
         instance: coordinator_instance,
         account: *coordinator_account,
         system_program: system_program::ID,
@@ -68,12 +75,15 @@ pub async fn process_free_coordinator(
         program_id: psyche_solana_coordinator::ID,
     };
 
-    endpoint.process_instruction(instruction, payer).await
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[authority])
+        .await
 }
 
 pub async fn process_update_coordinator_config_model(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
+    authority: &Keypair,
     coordinator_account: &Pubkey,
     run_id: &str,
     config: Option<CoordinatorConfig<ClientId>>,
@@ -82,9 +92,9 @@ pub async fn process_update_coordinator_config_model(
     let coordinator_instance = find_coordinator_instance(run_id);
 
     let accounts = OwnerCoordinatorAccounts {
+        authority: authority.pubkey(),
         instance: coordinator_instance,
         account: *coordinator_account,
-        payer: payer.pubkey(),
         system_program: system_program::ID,
     };
     let instruction = Instruction {
@@ -93,12 +103,15 @@ pub async fn process_update_coordinator_config_model(
         program_id: psyche_solana_coordinator::ID,
     };
 
-    endpoint.process_instruction(instruction, payer).await
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[authority])
+        .await
 }
 
 pub async fn process_set_whitelist(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
+    authority: &Keypair,
     coordinator_account: &Pubkey,
     run_id: &str,
     clients: Vec<Pubkey>,
@@ -106,9 +119,9 @@ pub async fn process_set_whitelist(
     let coordinator_instance = find_coordinator_instance(run_id);
 
     let accounts = OwnerCoordinatorAccounts {
+        authority: authority.pubkey(),
         instance: coordinator_instance,
         account: *coordinator_account,
-        payer: payer.pubkey(),
         system_program: system_program::ID,
     };
     let instruction = Instruction {
@@ -117,12 +130,15 @@ pub async fn process_set_whitelist(
         program_id: psyche_solana_coordinator::ID,
     };
 
-    endpoint.process_instruction(instruction, payer).await
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[authority])
+        .await
 }
 
 pub async fn process_join_run(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
+    user: &Keypair,
     coordinator_account: &Pubkey,
     run_id: &str,
     id: ClientId,
@@ -130,9 +146,9 @@ pub async fn process_join_run(
     let coordinator_instance = find_coordinator_instance(run_id);
 
     let accounts = PermissionlessCoordinatorAccounts {
+        user: user.pubkey(),
         instance: coordinator_instance,
         account: *coordinator_account,
-        payer: payer.pubkey(),
         system_program: system_program::ID,
     };
     let instruction = Instruction {
@@ -141,12 +157,15 @@ pub async fn process_join_run(
         program_id: psyche_solana_coordinator::ID,
     };
 
-    endpoint.process_instruction(instruction, payer).await
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[user])
+        .await
 }
 
 pub async fn process_set_paused(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
+    authority: &Keypair,
     coordinator_account: &Pubkey,
     run_id: &str,
     paused: bool,
@@ -154,9 +173,9 @@ pub async fn process_set_paused(
     let coordinator_instance = find_coordinator_instance(run_id);
 
     let accounts = OwnerCoordinatorAccounts {
+        authority: authority.pubkey(),
         instance: coordinator_instance,
         account: *coordinator_account,
-        payer: payer.pubkey(),
         system_program: system_program::ID,
     };
     let instruction = Instruction {
@@ -165,21 +184,24 @@ pub async fn process_set_paused(
         program_id: psyche_solana_coordinator::ID,
     };
 
-    endpoint.process_instruction(instruction, payer).await
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[authority])
+        .await
 }
 
 pub async fn process_tick(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
+    user: &Keypair,
     coordinator_account: &Pubkey,
     run_id: &str,
 ) -> Result<Signature, ToolboxEndpointError> {
     let coordinator_instance = find_coordinator_instance(run_id);
 
     let accounts = PermissionlessCoordinatorAccounts {
+        user: user.pubkey(),
         instance: coordinator_instance,
         account: *coordinator_account,
-        payer: payer.pubkey(),
         system_program: system_program::ID,
     };
     let instruction = Instruction {
@@ -188,12 +210,15 @@ pub async fn process_tick(
         program_id: psyche_solana_coordinator::ID,
     };
 
-    endpoint.process_instruction(instruction, payer).await
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[user])
+        .await
 }
 
 pub async fn process_witness(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
+    user: &Keypair,
     coordinator_account: &Pubkey,
     run_id: &str,
     witness: psyche_coordinator::Witness,
@@ -201,9 +226,9 @@ pub async fn process_witness(
     let coordinator_instance = find_coordinator_instance(run_id);
 
     let accounts = PermissionlessCoordinatorAccounts {
+        user: user.pubkey(),
         instance: coordinator_instance,
         account: *coordinator_account,
-        payer: payer.pubkey(),
         system_program: system_program::ID,
     };
     let instruction = Instruction {
@@ -217,5 +242,7 @@ pub async fn process_witness(
         program_id: psyche_solana_coordinator::ID,
     };
 
-    endpoint.process_instruction(instruction, payer).await
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[user])
+        .await
 }
