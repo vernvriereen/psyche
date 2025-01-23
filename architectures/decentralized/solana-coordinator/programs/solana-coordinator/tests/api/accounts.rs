@@ -22,7 +22,7 @@ pub async fn get_coordinator_instance_state(
         .state)
 }
 
-pub fn find_coordinator_instance(run_id: &str) -> Pubkey {
+pub fn find_pda_coordinator_instance(run_id: &str) -> Pubkey {
     Pubkey::find_program_address(
         &[COORDINATOR_SEEDS_PREFIX, bytes_from_string(run_id)],
         &psyche_solana_coordinator::ID,

@@ -4,10 +4,12 @@ use anchor_spl::token::Mint;
 use anchor_spl::token::Token;
 use anchor_spl::token::TokenAccount;
 
+use psyche_solana_coordinator::bytes_from_string;
 use psyche_solana_coordinator::cpi::accounts::InitializeCoordinatorAccounts;
 use psyche_solana_coordinator::cpi::initialize_coordinator;
 use psyche_solana_coordinator::program::PsycheSolanaCoordinator;
 
+use crate::run_identity_from_string;
 use crate::state::Run;
 
 #[derive(Accounts)]
@@ -23,7 +25,10 @@ pub struct RunCreateAccounts<'info> {
         init,
         payer = payer,
         space = Run::space_with_discriminator(),
-        seeds = [Run::SEED_PREFIX, &params.run_identity],
+        seeds = [
+            Run::SEED_PREFIX,
+            run_identity_from_string(&params.run_id).as_ref()
+        ],
         bump,
     )]
     pub run: Box<Account<'info, Run>>,
@@ -58,22 +63,24 @@ pub struct RunCreateAccounts<'info> {
     pub system_program: Program<'info, System>,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct RunCreateParams {
-    pub run_identity: [u8; 64],
+    pub run_id: String,
 }
 
 pub fn run_create_processor(
     context: Context<RunCreateAccounts>,
     params: &RunCreateParams,
 ) -> Result<()> {
+    let run_identity = run_identity_from_string(&params.run_id);
+
     let run = &mut context.accounts.run;
     run.bump = context.bumps.run;
-    run.identity = params.run_identity;
+    run.identity = run_identity;
     run.authority = context.accounts.authority.key();
     run.collateral_mint = context.accounts.collateral_mint.key();
 
-    let run_signer_seeds: &[&[&[u8]]] = &[&[Run::SEED_PREFIX, &run.identity.clone(), &[run.bump]]];
+    let run_signer_seeds: &[&[&[u8]]] = &[&[Run::SEED_PREFIX, run_identity.as_ref(), &[run.bump]]];
     initialize_coordinator(
         CpiContext::new(
             context.accounts.coordinator_program.to_account_info(),
@@ -86,7 +93,7 @@ pub fn run_create_processor(
             },
         )
         .with_signer(run_signer_seeds),
-        params.run_identity,
+        params.run_id.clone(),
     )?;
 
     Ok(())

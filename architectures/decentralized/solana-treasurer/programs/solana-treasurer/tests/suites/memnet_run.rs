@@ -1,5 +1,4 @@
 use psyche_solana_coordinator::CoordinatorAccount;
-use psyche_core::to_fixed_size_array;
 
 use crate::api::accounts::get_coordinator_instance_state;
 use crate::api::{

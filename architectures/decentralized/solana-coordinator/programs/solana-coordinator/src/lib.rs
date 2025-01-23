@@ -82,7 +82,7 @@ pub mod psyche_solana_coordinator {
         let disc = CoordinatorAccount::DISCRIMINATOR;
         let data_disc = &mut data[..disc.len()];
         if data_disc.iter().any(|b| *b != 0) {
-            return Err(ErrorCode::AccountDiscriminatorAlreadySet.into());
+            return err!(ErrorCode::AccountDiscriminatorAlreadySet);
         }
         data_disc.copy_from_slice(disc);
         // Ready to prepare the coordinator content
@@ -188,7 +188,7 @@ pub struct InitializeCoordinatorAccounts<'info> {
     #[account(
         init,
         payer = payer,
-        space = CoordinatorAccount::space_with_discriminator(),
+        space = 8 + CoordinatorInstance::INIT_SPACE,
         seeds = [COORDINATOR_SEEDS_PREFIX, bytes_from_string(&run_id)],
         bump
     )]

@@ -6,7 +6,7 @@ use anchor_lang::prelude::*;
 #[derive(Debug)]
 pub struct Run {
     pub bump: u8,
-    pub identity: [u8; 32],
+    pub identity: Pubkey,
     pub authority: Pubkey,
     pub collateral_mint: Pubkey,
 }

@@ -1,5 +1,5 @@
 use crate::api::{
-    accounts::{find_coordinator_instance, get_coordinator_instance_state},
+    accounts::{find_pda_coordinator_instance, get_coordinator_instance_state},
     create_memnet_endpoint::create_memnet_endpoint,
     process_instructions::{
         process_free_coordinator, process_initialize_coordinator, process_join_run,
@@ -346,7 +346,7 @@ pub async fn memnet_coordinator_free() {
     assert_eq!(authority_balance_after, authority_balance_start);
 
     // Check that the coordinator instance and account do actually exists now
-    let coordinator_instance = find_coordinator_instance(run_id);
+    let coordinator_instance = find_pda_coordinator_instance(run_id);
     assert!(endpoint
         .get_account(&coordinator_account.pubkey())
         .await

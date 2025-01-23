@@ -20,3 +20,10 @@ pub enum ProgramError {
     #[msg("Invalid parameter")]
     InvalidParameter,
 }
+
+pub fn run_identity_from_string(string: &str) -> Pubkey {
+    let mut bytes = vec![];
+    bytes.extend_from_slice(string.as_bytes());
+    bytes.resize(32, 0);
+    Pubkey::new_from_array(bytes.try_into().unwrap())
+}
