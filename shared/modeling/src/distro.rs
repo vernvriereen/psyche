@@ -358,16 +358,10 @@ impl CompressDCT {
         let totalk = *x.size().last().unwrap();
         let topk = Self::clamp_topk(&x, topk);
 
-        let mut idx = x.abs().topk(topk, -1, true, false).1;
+        let idx = x.abs().topk(topk, -1, true, false).1;
         let val = x.gather(-1, &idx, false);
 
-        if totalk <= 256 {
-            idx = idx.to_kind(Kind::Uint8);
-        } else if totalk <= 65536 {
-            idx = idx.to_kind(Kind::UInt16).view_dtype(Kind::Uint8);
-        } else if totalk <= 4294967296 {
-            idx = idx.to_kind(Kind::UInt32).view_dtype(Kind::Uint8);
-        }
+        let idx = compress_idx(totalk, &idx);
 
         (idx, val, xshape, totalk)
     }
@@ -383,16 +377,7 @@ impl CompressDCT {
     ) -> Tensor {
         let totalk = totalk.abs();
 
-        let idx = if totalk <= 256 {
-            idx.view_dtype(Kind::Uint8)
-        } else if totalk <= 65536 {
-            idx.view_dtype(Kind::UInt16)
-        } else if totalk <= 4294967296 {
-            idx.view_dtype(Kind::UInt32)
-        } else {
-            idx.shallow_clone()
-        }
-        .to_kind(Kind::Int64);
+        let idx = decompress_idx(totalk, idx);
 
         let val = val.to_kind(kind);
 
@@ -438,6 +423,31 @@ impl CompressDCT {
         // Call the decompress method
         Self::decompress(&idx_concat, &val_concat, xshape, totalk, kind, device)
     }
+}
+
+fn compress_idx(max_value: i64, idx: &Tensor) -> Tensor {
+    if max_value <= 256 {
+        idx.to_kind(Kind::Uint8)
+    } else if max_value <= 65536 {
+        idx.to_kind(Kind::UInt16).view_dtype(Kind::Uint8)
+    } else if max_value <= 4294967296 {
+        idx.to_kind(Kind::UInt32).view_dtype(Kind::Uint8)
+    } else {
+        idx.shallow_clone()
+    }
+}
+
+fn decompress_idx(max_value: i64, idx: &Tensor) -> Tensor {
+    if max_value <= 256 {
+        idx.view_dtype(Kind::Uint8)
+    } else if max_value <= 65536 {
+        idx.view_dtype(Kind::UInt16)
+    } else if max_value <= 4294967296 {
+        idx.view_dtype(Kind::UInt32)
+    } else {
+        idx.shallow_clone()
+    }
+    .to_kind(Kind::Int64)
 }
 
 struct State {
@@ -837,6 +847,8 @@ unsafe impl Send for Distro {}
 
 #[cfg(test)]
 mod tests {
+    use itertools::iproduct;
+
     use super::*;
 
     #[test]
@@ -1119,8 +1131,86 @@ mod tests {
     }
 
     #[test]
+    fn test_artifical_distro_results_roundtrip() {
+        use tch::{Kind, Tensor};
+
+        /// Generates a dummy estimate_val tensor of shape (r0, r1, k), where r is the remainder shape after DCT chunking
+        /// r1 can be set to 0 to simulate a 1D DCT
+        fn generate_random_estimate_val(r0: i64, r1: i64, k: i64, dtype: Kind) -> Tensor {
+            // Warning: only works if dtype bits size is divisible by 8, should always be true for current torch tensors
+            // but who knows what would happen one day... fp4?
+
+            let randbytes = match dtype {
+                Kind::BFloat16 => 2,
+                Kind::Float => 4,
+                Kind::Double => 8,
+                _ => panic!("Unsupported dtype"),
+            };
+
+            // 1D DCT estimates
+            let randsize = if r1 == 0 {
+                vec![r0, k * randbytes]
+            }
+            // 2D DCT estimates
+            else {
+                vec![r0, r1, k * randbytes]
+            };
+
+            Tensor::randint(256, &randsize, (Kind::Uint8, tch::Device::Cpu)).view_dtype(dtype)
+        }
+
+        /// Generates a dummy indices tensor when given estimate_val. indices are between 0 and s0*s1 (exclusive),
+        /// where s0 and s1 is the DCT chunk shape
+        /// s1 can be set to 0 to simulate a 1D DCT
+        fn generate_random_estimate_idx(val: &Tensor, s0: i64, s1: i64) -> (Tensor, i64) {
+            // Note: Some indices will collide, just like real estimates
+            // Warning: At the current moment of writing this test, we assume indices must always be int64
+            // for correct torch indexing
+
+            // 1D DCT estimates
+            let s1 = if s1 == 0 { 1 } else { s1 };
+
+            let max_value = s0 * s1;
+            (
+                Tensor::randint(max_value, val.size(), (Kind::Int64, tch::Device::Cpu)),
+                max_value,
+            )
+        }
+
+        let range_r0 = 1..10;
+        let range_r1 = 0..10;
+        let range_s0 = [1, 7, 512];
+        let range_s1 = [1, 4, 64];
+        let range_k = [1, 2, 3, 4, 5, 7, 9, 16, 32, 64, 96, 128];
+        let range_dtype = [Kind::BFloat16, Kind::Float];
+
+        for (r0, r1, s0, s1, k, d) in
+            iproduct!(range_r0, range_r1, range_s0, range_s1, range_k, range_dtype)
+        {
+            let val = generate_random_estimate_val(r0, r1, k, d);
+            let (idx, max_idx_val) = generate_random_estimate_idx(&val, s0, s1);
+
+            let roundtripped_val = unpack_tensor_sign_from_boolean(
+                quantize_nozeros_tensor_to_boolean_sign(&val),
+                val.kind(),
+            );
+
+            // we need to make a reference to compare the compression to.
+            // this compression should hold Infinity and +0 and some NaNs as 1
+            // and -Infinity and -0 and some NaNs as -1
+            let val_signed: Tensor = (-2.0 * val.signbit().to_kind(Kind::Float)) + 1.0;
+            assert!(val_signed.equal(&roundtripped_val));
+
+            let roundtripped_idx = decompress_idx(max_idx_val, &compress_idx(max_idx_val, &idx));
+            assert!(idx.equal(&roundtripped_idx));
+        }
+    }
+    #[test]
     fn test_1bit_matches_non_quant() {
-        let input = Tensor::rand([51, 35, 5, 13, 6], (Kind::BFloat16, Device::cuda_if_available())) - 0.5;
+        let input = Tensor::rand(
+            [51, 35, 5, 13, 6],
+            (Kind::BFloat16, Device::cuda_if_available()),
+        ) - 0.5;
         // ensure no zeros in our ground truth!
         let input = (&input) + (input.sign() + 0.1);
 

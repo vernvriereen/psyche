@@ -178,7 +178,7 @@ mod tests {
         let dims = [2, 16, 2, 25, 2, 215, 6];
 
         // rand between -500 and +500
-        let truth = (Tensor::rand(&dims, (Kind::Float, Device::Cpu)) - 0.5) * 1000;
+        let truth = (Tensor::rand(dims, (Kind::Float, Device::Cpu)) - 0.5) * 1000;
 
         // roundtrip
         let serializable = SerializableTensor::try_from(&truth).unwrap();
@@ -219,7 +219,7 @@ mod tests {
         let dims = [2, 16, 2, 25, 2, 215, 6];
 
         // rand between -0.5 and +0.5
-        let rand_tensor = Tensor::rand(&dims, (Kind::Float, Device::Cpu)) - 0.5;
+        let rand_tensor = Tensor::rand(dims, (Kind::Float, Device::Cpu)) - 0.5;
 
         // make a .sign() baseline that's -1s and +1s
         let signed_truth = rand_tensor.sign();
