@@ -282,11 +282,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                                 Ok(parameter_blob_ticket) => {
                                                   parameter_blob_tickets.lock().await.push(parameter_blob_ticket);
                                                   busy_peers.lock().await.remove(&peer_id);
+                                                  // Continue to next parameter request
                                                   break;
                                                 },
                                                 Err(e) => {
                                                   warn!("Failed to get parameter {param_name} from peer {peer_id}: {e}");
                                                   busy_peers.lock().await.remove(&peer_id);
+                                                  // Continue to request this parameter to another peer
                                                   continue;
                                                 },
                                             }
