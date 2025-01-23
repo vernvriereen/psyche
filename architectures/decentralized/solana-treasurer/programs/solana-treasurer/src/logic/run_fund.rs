@@ -1,17 +1,10 @@
 use anchor_lang::prelude::*;
-use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::transfer;
 use anchor_spl::token::Mint;
 use anchor_spl::token::Token;
 use anchor_spl::token::TokenAccount;
 use anchor_spl::token::Transfer;
 
-use psyche_solana_coordinator::bytes_from_string;
-use psyche_solana_coordinator::cpi::accounts::InitializeCoordinatorAccounts;
-use psyche_solana_coordinator::cpi::initialize_coordinator;
-use psyche_solana_coordinator::program::PsycheSolanaCoordinator;
-
-use crate::run_identity_from_string;
 use crate::state::Run;
 
 #[derive(Accounts)]
@@ -58,8 +51,6 @@ pub struct RunFundParams {
 }
 
 pub fn run_fund_processor(context: Context<RunFundAccounts>, params: &RunFundParams) -> Result<()> {
-    msg!("HELLO:{:?}", context.accounts.authority);
-
     transfer(
         CpiContext::new(
             context.accounts.token_program.to_account_info(),

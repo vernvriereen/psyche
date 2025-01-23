@@ -4,7 +4,6 @@ use anchor_spl::token::Mint;
 use anchor_spl::token::Token;
 use anchor_spl::token::TokenAccount;
 
-use psyche_solana_coordinator::bytes_from_string;
 use psyche_solana_coordinator::cpi::accounts::InitializeCoordinatorAccounts;
 use psyche_solana_coordinator::cpi::initialize_coordinator;
 use psyche_solana_coordinator::program::PsycheSolanaCoordinator;
