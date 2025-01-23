@@ -567,7 +567,7 @@ impl Distro {
             // add delta to new gradient
             let _ = delta.g_add_(&variable.grad().multiply_scalar(lr));
 
-            let (sparse_idx, mut sparse_val, xshape, totalk, transmit_grad, full_delta) =
+            let (sparse_idx, sparse_val, xshape, totalk, transmit_grad, full_delta) =
                 match shard {
                     #[cfg(feature = "parallelism")]
                     Some(shard) => {

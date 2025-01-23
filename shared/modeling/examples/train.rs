@@ -82,6 +82,9 @@ struct Args {
 
     #[arg(long, default_value_t = false)]
     distro: bool,
+
+    #[arg(long, default_value_t = false)]
+    distro_quantization: bool,
 }
 
 fn train(
@@ -90,7 +93,7 @@ fn train(
     args: Args,
 ) -> Result<()> {
     println!(
-        "starting training run: model {}, data_path {}, sequence_length {}, token_size {}, micro_batch {}, total_batch {}, beta1 {:.9}, beta2 {:.9}, weight_decay {:.9}, eps {:.9}, learning_rate {:.9}, warmup_steps {}, total_steps {}, max_grad_norm {:.9}, print_tensors {}, grad_accum_in_fp32 {}, compression_chunk {}, compression_topk {}, compression_decay {}, distro {}",
+        "starting training run: model {}, data_path {}, sequence_length {}, token_size {}, micro_batch {}, total_batch {}, beta1 {:.9}, beta2 {:.9}, weight_decay {:.9}, eps {:.9}, learning_rate {:.9}, warmup_steps {}, total_steps {}, max_grad_norm {:.9}, print_tensors {}, grad_accum_in_fp32 {}, compression_chunk {}, compression_topk {}, compression_decay {}, distro {}, distro quantization {}",
         args.model,
         args.data_path,
         args.sequence_length,
@@ -111,6 +114,7 @@ fn train(
         args.compression_topk,
         args.compression_decay,
         args.distro,
+        args.distro_quantization,
     );
 
     let dataset = LocalDataProvider::new_from_directory(
@@ -282,7 +286,13 @@ fn train(
 
         if let Some(distro) = &mut distro {
             distro.clip_grad_norm(args.max_grad_norm);
-            let results = distro.generate(lr, 1.0, args.compression_topk, false, args.optim_stats);
+            let results = distro.generate(
+                lr,
+                1.0,
+                args.compression_topk,
+                args.distro_quantization,
+                args.optim_stats,
+            );
             distro.apply(&[results], lr);
             distro.zero_grad();
         }
