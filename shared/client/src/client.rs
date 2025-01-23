@@ -2,7 +2,7 @@ use crate::{
     state::{DistroBroadcastAndPayload, RunManager},
     ClientTUIState, RunInitConfig, RunInitConfigAndIO, TrainingResult, NC,
 };
-use anyhow::{Error, Result};
+use anyhow::{bail, Error, Result};
 use futures::future::join_all;
 use psyche_coordinator::RunState;
 use psyche_core::NodeIdentity;
@@ -234,8 +234,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         Some((param_names, tx_params_response)) = rx_parameters_req.recv() => {
                             sharable_model.initialize_parameters(&param_names, tx_params_response);
                             let Some(coordinator_state) = watcher.coordinator_state() else {
-                                warn!("Coordinator state not yet registered, nothing to do");
-                                return Ok(());
+                                bail!("Coordinator state not yet registered, nothing to do. Try joining the run again.");
                             };
 
                             let tx_params_download = tx_params_download.clone();
@@ -248,15 +247,17 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             })
                             .filter(|peer_id| peer_id != &me)
                             .collect();
-                            peer_ids.shuffle(&mut thread_rng());
 
+                            if peer_ids.is_empty() {
+                                bail!("There are no peers to request parameters from. Try joining the run again.");
+                            }
+                            peer_ids.shuffle(&mut thread_rng());
 
                             let handle: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
                                 let parameter_blob_tickets = Arc::new(Mutex::new(Vec::new()));
                                 let busy_peers = Arc::new(Mutex::new(HashSet::new()));
-                                let peer_cycle = peer_ids.into_iter().cycle(); // Iterate over peers in a cycle
+                                let peer_cycle = peer_ids.into_iter().cycle();
                                 let peer_cycle = Arc::new(Mutex::new(peer_cycle));
-
                                 let mut request_handles = Vec::new();
 
                                 for param_name in param_names {
@@ -268,6 +269,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     let request_handle = tokio::spawn(async move {
                                         loop {
                                             let Some(peer_id) = peer_cycle.lock().await.next() else {
+                                                // This should never really happen, since the only chance for calling
+                                                // `next()` on a `Cycle` iterator and return `None` is when the iterator
+                                                // is empty, which was checked previously.
                                                 break;
                                             };
                                             if !busy_peers.lock().await.insert(peer_id) {
@@ -289,10 +293,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         }
                                     });
 
+                                    // Check if we reached the max number of concurrent downloads, and if that is the case,
+                                    // await for all of them to complete
                                     if request_handles.len() == max_concurrent_downloads - 1 {
-                                        let mut max_concurrent_handles = std::mem::take(&mut request_handles);
-                                        max_concurrent_handles.push(request_handle);
-                                        join_all(max_concurrent_handles).await;
+                                        let mut max_concurrent_request_futures = std::mem::take(&mut request_handles);
+                                        max_concurrent_request_futures.push(request_handle);
+                                        join_all(max_concurrent_request_futures).await;
                                         continue;
                                     }
                                     request_handles.push(request_handle);
