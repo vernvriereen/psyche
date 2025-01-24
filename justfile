@@ -1,3 +1,6 @@
+default:
+  just --list
+
 # build & test & check format
 check:
 	nix flake check
@@ -19,7 +22,7 @@ docker-push-centralized-client: docker-build-centralized-client
 
 # spin up a local testnet
 local-testnet +args:
-	cargo run -p psyche-local-testnet -- start {{args}}
+	cargo run -p psyche-centralized-local-testnet -- start {{args}}
 
 # run integration tests
 integration-test test_name="":
@@ -40,13 +43,16 @@ solana-client-tests:
 book_deps:
 	cargo install mdbook mdbook-mermaid
 
-build_book output-dir="../book":
+build_book output-dir="../book": generate_cli_docs
 	mdbook build psyche-book -d {{output-dir}}
 
-serve_book:
+# run an interactive development server for psyche-book
+serve_book: generate_cli_docs
 	mdbook serve psyche-book --open
 
 generate_cli_docs:
-    cargo run -p psyche-centralized-client print-all-help --markdown > docs/CommandLineHelp-client.md
-    cargo run -p psyche-centralized-server print-all-help --markdown > docs/CommandLineHelp-server.md
-    cargo run -p psyche-local-testnet print-all-help --markdown > docs/CommandLineHelp-local-testnet.md
+    echo "generating CLI --help outputs for mdbook..."
+    mkdir -p psyche-book/generated/cli/
+    cargo run -p psyche-centralized-client print-all-help --markdown > psyche-book/generated/cli/centralized-client.md
+    cargo run -p psyche-centralized-server print-all-help --markdown > psyche-book/generated/cli/centralized-server.md
+    cargo run -p psyche-centralized-local-testnet print-all-help --markdown > psyche-book/generated/cli/centralized-local-testnet.md

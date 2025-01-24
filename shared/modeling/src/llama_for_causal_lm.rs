@@ -1,14 +1,13 @@
 use crate::{
     llama::{Cache, Config, Llama, Llama3RopeConfig, LlamaEosToks},
     safetensor_utils::load_safetensors_into_variables,
-    tensor_parallelism::Communicator,
+    tensor_parallelism::{tensor_shard, Communicator},
     CausalLM, CommunicatorId, ConcreteCausalLM, LoadSafetensorsError,
 };
 use std::{
     collections::{HashMap, HashSet},
     io,
     path::PathBuf,
-    rc::Rc,
     sync::Arc,
 };
 use tch::{
@@ -142,23 +141,74 @@ pub enum LoadLlamaForCausalLMError {
     LoadTensorError(HashSet<String>),
 }
 
+#[derive(Clone)]
+pub enum PretrainedSource {
+    RepoFiles(Vec<PathBuf>),
+    ConfigAndTensors(String, Arc<HashMap<String, Tensor>>),
+}
+
+unsafe impl Send for PretrainedSource {}
+
+impl PretrainedSource {
+    pub fn get_config(&self) -> Result<LlamaConfig, LoadLlamaForCausalLMError> {
+        let config_file = match self {
+            PretrainedSource::RepoFiles(repo_files) => std::fs::read_to_string(
+                repo_files
+                    .iter()
+                    .find(|x| x.ends_with("config.json"))
+                    .ok_or(LoadLlamaForCausalLMError::MissingConfigJSON)?
+                    .as_path(),
+            )?,
+            PretrainedSource::ConfigAndTensors(config_file, _) => config_file.to_owned(),
+        };
+        Ok(serde_json::from_str(&config_file)?)
+    }
+
+    pub fn load(&self, variables: &mut nn::VarStore) -> Result<(), LoadLlamaForCausalLMError> {
+        match self {
+            PretrainedSource::RepoFiles(repo_files) => {
+                load_safetensors_into_variables(variables, repo_files)?
+            }
+            PretrainedSource::ConfigAndTensors(_, parameters) => {
+                let mut unmatched = variables
+                    .variables()
+                    .keys()
+                    .cloned()
+                    .collect::<HashSet<_>>();
+
+                let _no_grad = tch::no_grad_guard();
+                let mut variables = variables.variables_.lock().unwrap();
+                let shards = variables.shards.clone();
+                for (name, var) in variables.named_variables.iter_mut() {
+                    let tensor = parameters.get(name).unwrap();
+                    if let Some(shard) = shards.get(name) {
+                        let tensor = tensor_shard(tensor, shard);
+                        var.f_copy_(&tensor)?;
+                    } else {
+                        var.f_copy_(tensor)?
+                    };
+
+                    unmatched.remove(name);
+                }
+                if !unmatched.is_empty() {
+                    return Err(LoadLlamaForCausalLMError::LoadTensorError(unmatched));
+                };
+            }
+        };
+        Ok(())
+    }
+}
+
 impl LlamaForCausalLM {
     pub fn from_pretrained(
-        repo_files: &[PathBuf],
+        source: &PretrainedSource,
         kind: Option<Kind>,
         attn_implementation: Option<AttentionImplementation>,
         device: Option<Device>,
         tensor_parallelism_world: Option<(Arc<CommunicatorId>, usize, usize)>,
         override_max_position_embeddings: Option<usize>,
     ) -> Result<Self, LoadLlamaForCausalLMError> {
-        let config_file = std::fs::read_to_string(
-            repo_files
-                .iter()
-                .find(|x| x.ends_with("config.json"))
-                .ok_or(LoadLlamaForCausalLMError::MissingConfigJSON)?
-                .as_path(),
-        )?;
-        let llama_config: LlamaConfig = serde_json::from_str(&config_file)?;
+        let llama_config = source.get_config()?;
 
         if llama_config.tie_word_embeddings {
             return Err(LoadLlamaForCausalLMError::ModelHasTiedEmbeddings);
@@ -214,107 +264,12 @@ impl LlamaForCausalLM {
                 config.vocab_size as i64,
                 c,
             );
-            load_safetensors_into_variables(&mut variables, repo_files)?;
+
+            source.load(&mut variables)?;
+
             (model, lm_head)
         };
         let cache = Cache::new(kind.unwrap_or(Kind::Float), &config, &device);
-        Ok(LlamaForCausalLM {
-            model,
-            config,
-            variables,
-            device,
-            lm_head,
-            cache,
-            comm,
-        })
-    }
-
-    pub fn from_p2p_shared_parameters(
-        config_file_str: String,
-        parameters: Rc<HashMap<String, Tensor>>,
-        attn_implementation: Option<AttentionImplementation>,
-        device: Option<Device>,
-        kind: Option<Kind>,
-        tensor_parallelism_world: Option<(Arc<CommunicatorId>, usize, usize)>,
-        override_max_position_embeddings: Option<usize>,
-    ) -> Result<Self, LoadLlamaForCausalLMError> {
-        let llama_config: LlamaConfig = serde_json::from_str(&config_file_str)?;
-
-        if llama_config.tie_word_embeddings {
-            return Err(LoadLlamaForCausalLMError::ModelHasTiedEmbeddings);
-        }
-        let mut config: Config = llama_config.into_config(
-            match attn_implementation.unwrap_or(AttentionImplementation::Sdpa) {
-                AttentionImplementation::Eager => false,
-                AttentionImplementation::Sdpa => true,
-                AttentionImplementation::FlashAttention2 => {
-                    return Err(LoadLlamaForCausalLMError::ModelExplicitlyUsesFA2)
-                }
-            },
-        );
-        if let Some(override_max_position_embeddings) = override_max_position_embeddings {
-            config.max_position_embeddings = override_max_position_embeddings;
-        }
-
-        let device = device.unwrap_or(Device::cuda_if_available());
-        #[cfg(feature = "parallelism")]
-        let comm = match tensor_parallelism_world {
-            // TODO: CNCCL is not Sync, though it is Send.
-            // since we can't safely use it on two threads at once,
-            // we should either wrap it in a Mutex, or just switch to Rc if we don't need mutability.
-            #[allow(clippy::arc_with_non_send_sync)]
-            Some((id, rank, world_size)) => Some(Arc::new(
-                CNCCL::new(id, rank as i64, world_size as i64, device)
-                    .map_err(LoadLlamaForCausalLMError::TensorParallelismFailedInit)?,
-            )),
-            None => None,
-        };
-        #[cfg(not(feature = "parallelism"))]
-        let comm = match tensor_parallelism_world {
-            Some(_) => return Err(LoadLlamaForCausalLMError::TensorParallelismNotEnabled),
-            None => None,
-        };
-
-        let mut variables: nn::VarStore = nn::VarStore::new(device);
-        variables.set_kind(Kind::BFloat16);
-        if let Some(kind) = kind {
-            variables.set_kind(kind);
-        }
-
-        let model = Llama::new(variables.root(), &config, comm.clone());
-        let c = nn::LinearConfig {
-            bias: false,
-            ..Default::default()
-        };
-
-        let lm_head = nn::linear(
-            &variables.root() / "lm_head",
-            config.hidden_size as i64,
-            config.vocab_size as i64,
-            c,
-        );
-
-        let mut unmatched = variables
-            .variables()
-            .keys()
-            .cloned()
-            .collect::<HashSet<_>>();
-
-        {
-            let _no_grad = tch::no_grad_guard();
-            let mut variables = variables.variables_.lock().unwrap();
-            for (name, var) in variables.named_variables.iter_mut() {
-                let tensor = parameters.get(name).unwrap();
-                var.f_copy_(tensor)?;
-                unmatched.remove(name);
-            }
-            if !unmatched.is_empty() {
-                return Err(LoadLlamaForCausalLMError::LoadTensorError(unmatched));
-            };
-        }
-
-        let cache = Cache::new(Kind::BFloat16, &config, &device);
-
         Ok(LlamaForCausalLM {
             model,
             config,

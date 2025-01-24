@@ -2,7 +2,7 @@
 
 ## Local Testing
 
-You can use the `local-testnet` binary in `/tools/rust-tools/local-testnet`, which automates the process of launching a centralized server and multiple clients using tmux.
+You can use the `psyche-centralized-local-testnet` binary in `/architectures/centralized/local-testnet`, which automates the process of launching a centralized server and multiple clients using tmux.
 
 ### Prerequisites
 
@@ -14,7 +14,7 @@ You can use the `local-testnet` binary in `/tools/rust-tools/local-testnet`, whi
 ### Usage
 
 ```
-cargo run -p local-testnet -- --help
+cargo run -p psyche-centralized-local-testnet -- --help
 ```
 
 ### Example Invocations
@@ -22,7 +22,7 @@ cargo run -p local-testnet -- --help
 #### Demo
 
 ```bash
-cargo run -p local-testnet -- --num-clients 3 --config-path ../../config/llama2-20m-dolma-noverify-no-checkpointer --write-distro-data ./distro-data/llama2-20m-noverify --tui false
+cargo run -p psyche-centralized-local-testnet -- --num-clients 3 --config-path ../../config/llama2-20m-dolma-noverify-no-checkpointer --write-distro-data ./distro-data/llama2-20m-noverify --tui false
 ```
 
 This command launches a server and 3 clients, using the configuration in `/path/to/config`, writing gradient data, and disabling the TUI for clients.
@@ -30,7 +30,7 @@ This command launches a server and 3 clients, using the configuration in `/path/
 #### Testing against node crashes
 
 ```bash
-just local-testnet --num-clients 3 --config-path ./config/kill-test-short-epoch-checkpoint/ --random-kill-num 1 --allowed-to-kill 2,3 --first-client-checkpoint bug-free-chainsaw/tiny-local-20m --hf-token xxxxxxxxxxxxx --write-log
+just psyche-centralized-local-testnet --num-clients 3 --config-path ./config/kill-test-short-epoch-checkpoint/ --random-kill-num 1 --allowed-to-kill 2,3 --first-client-checkpoint bug-free-chainsaw/tiny-local-20m --hf-token xxxxxxxxxxxxx --write-log
 ```
 
 This command launches a server with 3 clients, using the config "kill-test-short-epoch-checkpoint".

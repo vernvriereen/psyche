@@ -59,6 +59,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
             let cancel = cancel.clone();
             let req_tui_state = req_tui_state.clone();
             async move {
+                #[cfg(not(feature = "parallelism"))]
+                if init_config.tensor_parallelism != 1 {
+                    anyhow::bail!("Tensor parallelism was set but this build does not support it (must be built with --features=parallelism)")
+                }
+
                 let mut watcher = BackendWatcher::new(backend);
 
                 // From Run

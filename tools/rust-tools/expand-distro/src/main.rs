@@ -6,14 +6,41 @@ use psyche_network::distro_results_from_reader;
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[clap(long, default_value_t = false)]
-    cpu: bool,
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[allow(clippy::large_enum_variant)] // it's only used for generating the docs correctly.
+#[derive(Parser, Debug)]
+enum Commands {
+    // Expands a distro result from stdin.
+    Expand {
+        #[clap(long, default_value_t = false)]
+        cpu: bool,
+    },
+    // Prints the help, optionally as markdown. Used for docs generation.
+    #[clap(hide = true)]
+    PrintAllHelp {
+        #[arg(long, required = true)]
+        markdown: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    let cpu = match args.command {
+        Commands::PrintAllHelp { markdown } => {
+            // This is a required argument for the time being.
+            assert!(markdown);
+
+            let () = clap_markdown::print_help_markdown::<Args>();
+
+            return Ok(());
+        }
+        Commands::Expand { cpu } => cpu,
+    };
     let target_type = tch::Kind::BFloat16;
-    let target_device = if args.cpu {
+    let target_device = if cpu {
         tch::Device::Cpu
     } else {
         tch::Device::cuda_if_available()

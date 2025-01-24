@@ -37,7 +37,7 @@ enum Commands {
         #[clap(long, env)]
         server_addr: String,
     },
-    // For generating `docs/CommandLineHelp-client.md`.
+    // Prints the help, optionally as markdown. Used for docs generation.
     #[clap(hide = true)]
     PrintAllHelp {
         #[arg(long, required = true)]

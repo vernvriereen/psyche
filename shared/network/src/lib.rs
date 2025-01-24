@@ -41,6 +41,8 @@ mod p2p_model_sharing;
 mod peer_list;
 mod router;
 mod serde;
+mod serializable_kind;
+mod serializable_tensor;
 mod serialized_distro;
 mod signed_message;
 mod state;

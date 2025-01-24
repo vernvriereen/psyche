@@ -5,8 +5,8 @@ use psyche_coordinator::model::{
     self, Checkpoint, LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM,
 };
 use psyche_coordinator::{
-    Client, Coordinator, CoordinatorError, HealthChecks, Round, RunState, TickResult, Witness,
-    SOLANA_MAX_NUM_CLIENTS,
+    Client, ClientState, Coordinator, CoordinatorError, HealthChecks, Round, RunState, TickResult,
+    Witness, SOLANA_MAX_NUM_CLIENTS,
 };
 
 use psyche_core::{u8_to_string, FixedVec, Shuffle, SizedIterator, TokenSize};
@@ -396,6 +396,7 @@ impl App {
     }
 
     async fn on_tick(&mut self) {
+        self.kick_unhealthy_clients();
         match self.coordinator.tick(
             Some(SizedIterator::new(
                 self.backend.pending_clients.iter(),
@@ -474,6 +475,14 @@ impl App {
         }
         for elem in coordinator.epoch_state.exited_clients.iter_mut() {
             *elem = Client::<ClientId>::default();
+        }
+    }
+
+    fn kick_unhealthy_clients(&mut self) {
+        for client in self.coordinator.epoch_state.exited_clients {
+            if client.state != ClientState::Healthy {
+                self.backend.pending_clients.remove(&client.id);
+            }
         }
     }
 }

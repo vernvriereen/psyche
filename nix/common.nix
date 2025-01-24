@@ -72,7 +72,7 @@
       for bin in ${package}/bin/*; do
         if [ -f "$bin" ] && [ -x "$bin" ]; then
           makeWrapper "$bin" "$out/bin/$(basename $bin)" \
-            --run 'exec ${pkgs.nix-gl-host}/bin/nixglhost "'"$bin"'" "$@"'
+            --run 'exec ${pkgs.nix-gl-host}/bin/nixglhost "'"$bin"'" -- "$@"'
         fi
       done
     '';
