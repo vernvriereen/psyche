@@ -51,7 +51,7 @@
           })
       ];
     };
-    
+
     # server for hosting the docs with no auth, for main
     nixosConfigurations."psyche-book-http" = inputs.nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
@@ -65,12 +65,19 @@
         in
           garnix-required
           // {
-            services.caddy = {
+            services.caddy = let
+              caddyConfig = {
+                extraConfig = ''
+                  root * ${psyche-book}
+                  file_server
+                '';
+              };
+            in {
               enable = true;
-              virtualHosts."http://psyche-book-http.*.psyche.NousResearch.garnix.me, http://docs.psyche.network".extraConfig = ''
-                root * ${psyche-book}
-                file_server
-              '';
+              virtualHosts = {
+                "http://docs.psyche.network" = caddyConfig;
+                "http://psyche-book-http.*.psyche.NousResearch.garnix.me" = caddyConfig;
+              };
             };
             networking.firewall.allowedTCPPorts = [80];
           })
