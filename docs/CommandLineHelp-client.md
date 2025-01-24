@@ -48,7 +48,6 @@ Allows the client to join a training run and contribute to the model's training 
   Possible values: `true`, `false`
 
 * `--run-id <RUN_ID>` — A unique identifier for the training run. This ID allows the client to join a specific active run
-* `--server-addr <SERVER_ADDR>` — The address of the server hosting the training run
 * `--data-parallelism <DATA_PARALLELISM>`
 
   Default value: `1`
@@ -77,6 +76,10 @@ Allows the client to join a training run and contribute to the model's training 
 
   Default value: `false`
 * `--dummy-training-delay-secs <DUMMY_TRAINING_DELAY_SECS>`
+* `--max-concurrent-parameter-requests <MAX_CONCURRENT_PARAMETER_REQUESTS>`
+
+  Default value: `10`
+* `--server-addr <SERVER_ADDR>`
 
 
 
