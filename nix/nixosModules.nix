@@ -39,7 +39,7 @@
             };
             services.caddy = {
               enable = true;
-              virtualHosts."http://psyche-book-http-authed.*.psyche.NousResearch.garnix.me, http://docs.psyche.network".extraConfig = ''
+              virtualHosts."http://psyche-book-http-authed.*.psyche.NousResearch.garnix.me".extraConfig = ''
                 root * ${psyche-book}
                 file_server
                 basic_auth {
@@ -67,7 +67,7 @@
           // {
             services.caddy = {
               enable = true;
-              virtualHosts."http://psyche-book-http.*.psyche.NousResearch.garnix.me".extraConfig = ''
+              virtualHosts."http://psyche-book-http.*.psyche.NousResearch.garnix.me, http://docs.psyche.network".extraConfig = ''
                 root * ${psyche-book}
                 file_server
               '';
