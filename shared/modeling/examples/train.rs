@@ -4,6 +4,7 @@ use psyche_core::{CancellableBarrier, CosineLR, LearningRateScheduler, Shuffle};
 use psyche_data_provider::{download_model_repo_sync, LocalDataProvider};
 use psyche_modeling::{
     Batcher, CausalLM, CommunicatorId, Distro, Fp32GradientAccumulator, LlamaForCausalLM,
+    PretrainedSource,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -128,7 +129,7 @@ fn train(
         .map(|(_, rank, _, _)| *rank)
         .unwrap_or_default();
     let mut model = LlamaForCausalLM::from_pretrained(
-        &repo_files,
+        &PretrainedSource::RepoFiles(repo_files),
         Some(Kind::BFloat16),
         None,
         args.cpu

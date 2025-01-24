@@ -325,7 +325,6 @@ pub fn unshard_tensor(sharded_tensors: Vec<Tensor>, shard: &Shard) -> Tensor {
     full_tensor
 }
 
-#[allow(unused)]
 pub fn tensor_shard(full_tensor: &Tensor, shard: &Shard) -> Tensor {
     let Shard {
         dim,
