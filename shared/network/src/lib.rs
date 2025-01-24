@@ -1,11 +1,11 @@
 use allowlist::Allowlist;
-use anyhow::{Error, Result};
+use anyhow::{Context, Error, Result};
 use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
 use futures_util::StreamExt;
 use iroh::{endpoint::RemoteInfo, NodeAddr};
 use iroh_blobs::{net_protocol::Blobs, store::mem::Store, util::local_pool::LocalPool};
 use iroh_gossip::net::{Gossip, GossipEvent, GossipReceiver, GossipSender};
-use p2p_model_sharing::ParameterSharingMessage;
+use p2p_model_sharing::{ParameterSharingMessage, REQUEST_PARAMETER_TIMEOUT_SECS};
 use router::Router;
 use state::State;
 use std::{
@@ -25,6 +25,7 @@ use tokio::{
     sync::mpsc,
     time::{interval, Interval},
 };
+use tokio_util::time::FutureExt;
 use tracing::{debug, error, info, trace};
 use util::{fmt_relay_mode, gossip_topic};
 
@@ -448,10 +449,13 @@ pub async fn request_model_parameter(
     send.finish()?;
 
     // Receive parameter value blob ticket
-    let parameter_blob_ticket_bytes = recv.read_to_end(500).await?;
-    let parameter_blob_ticket: BlobTicket = postcard::from_bytes(&parameter_blob_ticket_bytes)?;
-
-    Ok(parameter_blob_ticket)
+    let parameter_blob_ticket_bytes = recv
+        .read_to_end(500)
+        .timeout(Duration::from_secs(REQUEST_PARAMETER_TIMEOUT_SECS))
+        .await??;
+    let parameter_blob_ticket: Result<BlobTicket, SharableModelParameterError> =
+        postcard::from_bytes(&parameter_blob_ticket_bytes)?;
+    parameter_blob_ticket.with_context(|| "Error parsing model parameter blob ticket".to_string())
 }
 
 fn parse_gossip_event<BroadcastMessage: Networkable>(
@@ -475,7 +479,10 @@ where
     MessageReceived((PublicKey, BM)),
     DownloadComplete(DownloadComplete<D>),
     DownloadFailed(DownloadFailed),
-    ParameterRequest(String, oneshot::Sender<BlobTicket>),
+    ParameterRequest(
+        String,
+        oneshot::Sender<Result<BlobTicket, SharableModelParameterError>>,
+    ),
 }
 
 async fn on_update_stats(endpoint: &Endpoint, stats: &mut State) -> Result<()> {
