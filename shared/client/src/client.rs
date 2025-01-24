@@ -7,8 +7,9 @@ use futures::future::join_all;
 use psyche_coordinator::RunState;
 use psyche_core::NodeIdentity;
 use psyche_network::{
-    allowlist, request_model_parameter, AuthenticatableIdentity, DownloadComplete, ModelParameters,
-    NetworkConnection, NetworkEvent, NetworkTUIState, Networkable, NodeId, TransmittableDownload,
+    allowlist, request_model_parameter, AuthenticatableIdentity, BlobTicket, DownloadComplete,
+    ModelParameters, NetworkConnection, NetworkEvent, NetworkTUIState, Networkable, NodeId,
+    TransmittableDownload,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use wandb::DataValue;
@@ -262,7 +263,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 for param_name in param_names {
                                     let router = router.clone();
                                     let busy_peers = busy_peers.clone();
-                                    let parameter_blob_tickets = parameter_blob_tickets.clone();
+                                    let parameter_blob_tickets_clone = parameter_blob_tickets.clone();
                                     let peer_cycle = peer_cycle.clone();
 
                                     let request_handle = tokio::spawn(async move {
@@ -279,7 +280,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                             debug!("Requesting parameter {param_name} from peer {peer_id}");
                                             match request_model_parameter(router.clone(), peer_id, param_name.clone()).await {
                                                 Ok(parameter_blob_ticket) => {
-                                                  parameter_blob_tickets.lock().await.push(parameter_blob_ticket);
+                                                  parameter_blob_tickets_clone.lock().await.push(parameter_blob_ticket);
                                                   busy_peers.lock().await.remove(&peer_id);
                                                   // Continue to next parameter request
                                                   break;
@@ -294,19 +295,29 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         }
                                     });
 
-                                    // Check if we reached the max number of concurrent downloads, and if that is the case,
-                                    // await for all of them to complete
+                                    // Check if we reached the max number of concurrent requests, and if that is the case,
+                                    // await for all of them to complete and start downloading the blobs
                                     if request_handles.len() == max_concurrent_downloads - 1 {
                                         let mut max_concurrent_request_futures = std::mem::take(&mut request_handles);
                                         max_concurrent_request_futures.push(request_handle);
                                         join_all(max_concurrent_request_futures).await;
+                                        let current_parameter_blob_tickets: Vec<BlobTicket> = {
+                                            let mut parameter_blob_tickets_lock = parameter_blob_tickets.lock().await;
+                                            parameter_blob_tickets_lock.drain(..).collect()
+                                        };
+                                        tx_params_download.send(current_parameter_blob_tickets)?;
                                         continue;
                                     }
                                     request_handles.push(request_handle);
                                 }
 
+                                // All parameters have been requested, wail all the remaining request futures to complete
+                                // and download the blobs
                                 join_all(request_handles).await;
-                                let parameter_blob_tickets = Arc::try_unwrap(parameter_blob_tickets).unwrap().into_inner();
+                                let parameter_blob_tickets: Vec<BlobTicket> = {
+                                    let mut parameter_blob_tickets_lock = parameter_blob_tickets.lock().await;
+                                    parameter_blob_tickets_lock.drain(..).collect()
+                                };
                                 tx_params_download.send(parameter_blob_tickets)?;
                                 Ok(())
                             });
