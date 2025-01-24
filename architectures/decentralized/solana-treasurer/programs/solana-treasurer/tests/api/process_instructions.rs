@@ -4,13 +4,15 @@ use anchor_spl::token;
 use psyche_solana_treasurer::logic::ParticipantClaimParams;
 use psyche_solana_treasurer::logic::ParticipantCreateParams;
 use psyche_solana_treasurer::logic::RunCreateParams;
-use psyche_solana_treasurer::logic::RunFundParams;
+use psyche_solana_treasurer::logic::RunSetMetadataParams;
+use psyche_solana_treasurer::logic::RunTopUpParams;
 use psyche_solana_treasurer::{accounts::ParticipantClaimAccounts, instruction::ParticipantClaim};
 use psyche_solana_treasurer::{
     accounts::ParticipantCreateAccounts, instruction::ParticipantCreate,
 };
 use psyche_solana_treasurer::{accounts::RunCreateAccounts, instruction::RunCreate};
-use psyche_solana_treasurer::{accounts::RunFundAccounts, instruction::RunFund};
+use psyche_solana_treasurer::{accounts::RunSetMetadataAccounts, instruction::RunSetMetadata};
+use psyche_solana_treasurer::{accounts::RunTopUpAccounts, instruction::RunTopUp};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::{
     instruction::Instruction,
@@ -43,8 +45,8 @@ pub async fn process_run_create(
         collateral_mint: *collateral_mint,
         run,
         run_collateral,
-        coordinator_account: *coordinator_account,
         coordinator_instance,
+        coordinator_account: *coordinator_account,
         coordinator_program: psyche_solana_coordinator::ID,
         associated_token_program: associated_token::ID,
         token_program: token::ID,
@@ -67,7 +69,7 @@ pub async fn process_run_create(
         .await
 }
 
-pub async fn process_run_fund(
+pub async fn process_run_top_up(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     authority: &Keypair,
@@ -79,7 +81,7 @@ pub async fn process_run_fund(
     let run = find_pda_run(run_id);
     let run_collateral = ToolboxEndpoint::find_spl_associated_token_account(&run, collateral_mint);
 
-    let accounts = RunFundAccounts {
+    let accounts = RunTopUpAccounts {
         payer: payer.pubkey(),
         authority: authority.pubkey(),
         authority_collateral: *authority_collateral,
@@ -87,14 +89,42 @@ pub async fn process_run_fund(
         run,
         run_collateral,
         token_program: token::ID,
-        system_program: system_program::ID,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: RunFund {
-            params: RunFundParams { collateral_amount },
+        data: RunTopUp {
+            params: RunTopUpParams { collateral_amount },
         }
         .data(),
+        program_id: psyche_solana_treasurer::ID,
+    };
+
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[authority])
+        .await
+}
+
+pub async fn process_run_set_metadata(
+    endpoint: &mut ToolboxEndpoint,
+    payer: &Keypair,
+    authority: &Keypair,
+    coordinator_account: &Pubkey,
+    run_id: &str,
+    params: RunSetMetadataParams,
+) -> Result<Signature, ToolboxEndpointError> {
+    let run = find_pda_run(run_id);
+    let coordinator_instance = find_pda_coordinator_instance(run_id);
+
+    let accounts = RunSetMetadataAccounts {
+        authority: authority.pubkey(),
+        run,
+        coordinator_instance,
+        coordinator_account: *coordinator_account,
+        coordinator_program: psyche_solana_coordinator::ID,
+    };
+    let instruction = Instruction {
+        accounts: accounts.to_account_metas(None),
+        data: RunSetMetadata { params }.data(),
         program_id: psyche_solana_treasurer::ID,
     };
 
@@ -156,7 +186,6 @@ pub async fn process_participant_claim(
         coordinator_account: *coordinator_account,
         participant,
         token_program: token::ID,
-        system_program: system_program::ID,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),

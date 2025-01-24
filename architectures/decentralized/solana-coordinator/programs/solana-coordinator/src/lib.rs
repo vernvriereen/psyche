@@ -206,7 +206,7 @@ pub struct InitializeCoordinatorAccounts<'info> {
 
 #[derive(Accounts)]
 pub struct OwnerCoordinatorAccounts<'info> {
-    #[account(mut)]
+    #[account()]
     pub authority: Signer<'info>,
     #[account(
         seeds = [
@@ -223,8 +223,6 @@ pub struct OwnerCoordinatorAccounts<'info> {
         constraint = instance.account == account.key()
     )]
     pub account: AccountLoader<'info, CoordinatorAccount>,
-    #[account(address = system_program::ID)]
-    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -245,8 +243,6 @@ pub struct PermissionlessCoordinatorAccounts<'info> {
         constraint = instance.account == account.key()
     )]
     pub account: AccountLoader<'info, CoordinatorAccount>,
-    #[account(address = system_program::ID)]
-    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -272,6 +268,4 @@ pub struct FreeCoordinatorAccounts<'info> {
         constraint = instance.account == account.key()
     )]
     pub account: AccountLoader<'info, CoordinatorAccount>,
-    #[account(address = system_program::ID)]
-    pub system_program: Program<'info, System>,
 }

@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::transfer;
 use anchor_spl::token::Token;
 use anchor_spl::token::TokenAccount;
@@ -57,9 +56,6 @@ pub struct ParticipantClaimAccounts<'info> {
 
     #[account()]
     pub token_program: Program<'info, Token>,
-
-    #[account()]
-    pub system_program: Program<'info, System>,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]

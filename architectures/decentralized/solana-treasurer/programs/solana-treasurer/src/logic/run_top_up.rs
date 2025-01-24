@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::transfer;
 use anchor_spl::token::Mint;
 use anchor_spl::token::Token;
@@ -9,8 +8,8 @@ use anchor_spl::token::Transfer;
 use crate::state::Run;
 
 #[derive(Accounts)]
-#[instruction(params: RunFundParams)]
-pub struct RunFundAccounts<'info> {
+#[instruction(params: RunTopUpParams)]
+pub struct RunTopUpAccounts<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
 
@@ -43,17 +42,17 @@ pub struct RunFundAccounts<'info> {
 
     #[account()]
     pub token_program: Program<'info, Token>,
-
-    #[account()]
-    pub system_program: Program<'info, System>,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
-pub struct RunFundParams {
+pub struct RunTopUpParams {
     pub collateral_amount: u64,
 }
 
-pub fn run_fund_processor(context: Context<RunFundAccounts>, params: RunFundParams) -> Result<()> {
+pub fn run_top_up_processor(
+    context: Context<RunTopUpAccounts>,
+    params: RunTopUpParams,
+) -> Result<()> {
     transfer(
         CpiContext::new(
             context.accounts.token_program.to_account_info(),
@@ -67,10 +66,7 @@ pub fn run_fund_processor(context: Context<RunFundAccounts>, params: RunFundPara
     )?;
 
     let run = &mut context.accounts.run;
-    run.total_funded_collateral_amount = run
-        .total_funded_collateral_amount
-        .checked_add(params.collateral_amount)
-        .unwrap();
+    run.total_funded_collateral_amount += params.collateral_amount;
 
     Ok(())
 }

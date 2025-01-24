@@ -67,7 +67,6 @@ pub async fn process_free_coordinator(
         reimbursed: *reimbursed,
         instance: coordinator_instance,
         account: *coordinator_account,
-        system_program: system_program::ID,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
@@ -95,7 +94,6 @@ pub async fn process_update_coordinator_config_model(
         authority: authority.pubkey(),
         instance: coordinator_instance,
         account: *coordinator_account,
-        system_program: system_program::ID,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
@@ -122,7 +120,6 @@ pub async fn process_set_whitelist(
         authority: authority.pubkey(),
         instance: coordinator_instance,
         account: *coordinator_account,
-        system_program: system_program::ID,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
@@ -149,7 +146,6 @@ pub async fn process_join_run(
         user: user.pubkey(),
         instance: coordinator_instance,
         account: *coordinator_account,
-        system_program: system_program::ID,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
@@ -176,7 +172,6 @@ pub async fn process_set_paused(
         authority: authority.pubkey(),
         instance: coordinator_instance,
         account: *coordinator_account,
-        system_program: system_program::ID,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
@@ -202,7 +197,6 @@ pub async fn process_tick(
         user: user.pubkey(),
         instance: coordinator_instance,
         account: *coordinator_account,
-        system_program: system_program::ID,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
@@ -229,7 +223,6 @@ pub async fn process_witness(
         user: user.pubkey(),
         instance: coordinator_instance,
         account: *coordinator_account,
-        system_program: system_program::ID,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
