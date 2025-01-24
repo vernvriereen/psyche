@@ -167,7 +167,6 @@ impl SolanaBackend {
                     reimbursed: self.program.payer(),
                     instance,
                     account,
-                    system_program: system_program::ID,
                 },
             )
             .args(psyche_solana_coordinator::instruction::FreeCoordinator {})
@@ -191,7 +190,6 @@ impl SolanaBackend {
                     authority: self.program.payer(),
                     instance,
                     account,
-                    system_program: system_program::ID,
                 },
             )
             .args(psyche_solana_coordinator::instruction::SetWhitelist { clients })
@@ -215,7 +213,6 @@ impl SolanaBackend {
                     user: self.program.payer(),
                     instance,
                     account,
-                    system_program: system_program::ID,
                 },
             )
             .args(psyche_solana_coordinator::instruction::JoinRun { id })
@@ -238,7 +235,6 @@ impl SolanaBackend {
                     authority: self.program.payer(),
                     instance,
                     account,
-                    system_program: system_program::ID,
                 },
             )
             .args(
@@ -267,7 +263,6 @@ impl SolanaBackend {
                     authority: self.program.payer(),
                     instance,
                     account,
-                    system_program: system_program::ID,
                 },
             )
             .args(psyche_solana_coordinator::instruction::SetPaused { paused })
@@ -286,7 +281,6 @@ impl SolanaBackend {
                     user: self.program.payer(),
                     instance,
                     account,
-                    system_program: system_program::ID,
                 },
             )
             .args(psyche_solana_coordinator::instruction::Tick {})
@@ -310,7 +304,6 @@ impl SolanaBackend {
                     user: self.program.payer(),
                     instance,
                     account,
-                    system_program: system_program::ID,
                 },
             )
             .args(psyche_solana_coordinator::instruction::Witness {
@@ -338,7 +331,6 @@ impl SolanaBackend {
                     user: self.program.payer(),
                     instance,
                     account,
-                    system_program: system_program::ID,
                 },
             )
             .args(psyche_solana_coordinator::instruction::HealthCheck {

@@ -115,18 +115,7 @@ pub async fn memnet_run() {
         &authority,
         &authority_collateral,
         &collateral_mint.pubkey(),
-        &run_id,
-        5_000_000,
-    )
-    .await
-    .unwrap();
-    process_run_top_up(
-        &mut endpoint,
-        &payer,
-        &authority,
-        &authority_collateral,
-        &collateral_mint.pubkey(),
-        &run_id,
+        run_id,
         5_000_000,
     )
     .await
@@ -144,7 +133,7 @@ pub async fn memnet_run() {
         .unwrap();
 
     // Create the participation manager
-    process_participant_create(&mut endpoint, &payer, &user, &run_id)
+    process_participant_create(&mut endpoint, &payer, &user, run_id)
         .await
         .unwrap();
 
@@ -156,7 +145,7 @@ pub async fn memnet_run() {
         &user_collateral,
         &collateral_mint.pubkey(),
         &coordinator_account.pubkey(),
-        &run_id,
+        run_id,
         0,
     )
     .await
@@ -170,7 +159,7 @@ pub async fn memnet_run() {
         &user_collateral,
         &collateral_mint.pubkey(),
         &coordinator_account.pubkey(),
-        &run_id,
+        run_id,
         1,
     )
     .await
@@ -182,9 +171,9 @@ pub async fn memnet_run() {
         &payer,
         &authority,
         &coordinator_account.pubkey(),
-        &run_id,
+        run_id,
         RunUpdateParams {
-            clients: Some(vec![Pubkey::new_unique()]),
+            whitelist_clients: Some(vec![Pubkey::new_unique()]),
             paused: None,
             config: Some(CoordinatorConfig::<ClientId> {
                 warmup_time: 1,
@@ -221,6 +210,19 @@ pub async fn memnet_run() {
                 },
             })),
         },
+    )
+    .await
+    .unwrap();
+
+    // We should be able to to-up at any time
+    process_run_top_up(
+        &mut endpoint,
+        &payer,
+        &authority,
+        &authority_collateral,
+        &collateral_mint.pubkey(),
+        run_id,
+        5_000_000,
     )
     .await
     .unwrap();

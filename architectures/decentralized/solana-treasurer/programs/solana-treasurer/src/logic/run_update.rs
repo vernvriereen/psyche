@@ -24,7 +24,7 @@ pub struct RunUpdateAccounts<'info> {
     )]
     pub run: Box<Account<'info, Run>>,
 
-    #[account(mut)]
+    #[account()]
     pub coordinator_instance: Account<'info, CoordinatorInstance>,
 
     #[account(mut)]
@@ -36,7 +36,7 @@ pub struct RunUpdateAccounts<'info> {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct RunUpdateParams {
-    pub clients: Option<Vec<Pubkey>>,
+    pub whitelist_clients: Option<Vec<Pubkey>>,
     pub paused: Option<bool>,
     pub config: Option<CoordinatorConfig<ClientId>>,
     pub model: Option<Model>,
@@ -50,7 +50,7 @@ pub fn run_update_processor(
     let run_signer_seeds: &[&[&[u8]]] =
         &[&[Run::SEEDS_PREFIX, &run.identity.to_bytes(), &[run.bump]]];
 
-    if let Some(clients) = params.clients {
+    if let Some(whitelist_clients) = params.whitelist_clients {
         set_whitelist(
             CpiContext::new(
                 context.accounts.coordinator_program.to_account_info(),
@@ -61,10 +61,9 @@ pub fn run_update_processor(
                 },
             )
             .with_signer(run_signer_seeds),
-            clients,
+            whitelist_clients,
         )?;
     }
-
     if let Some(paused) = params.paused {
         set_paused(
             CpiContext::new(
@@ -79,7 +78,6 @@ pub fn run_update_processor(
             paused,
         )?;
     }
-
     if params.config.is_some() || params.model.is_some() {
         update_coordinator_config_model(
             CpiContext::new(
