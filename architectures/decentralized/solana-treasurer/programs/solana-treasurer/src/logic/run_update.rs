@@ -12,8 +12,8 @@ use psyche_solana_coordinator::CoordinatorAccount;
 use psyche_solana_coordinator::CoordinatorInstance;
 
 #[derive(Accounts)]
-#[instruction(params: RunSetMetadataParams)]
-pub struct RunSetMetadataAccounts<'info> {
+#[instruction(params: RunUpdateParams)]
+pub struct RunUpdateAccounts<'info> {
     #[account()]
     pub authority: Signer<'info>,
 
@@ -35,16 +35,16 @@ pub struct RunSetMetadataAccounts<'info> {
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
-pub struct RunSetMetadataParams {
+pub struct RunUpdateParams {
     pub clients: Option<Vec<Pubkey>>,
     pub paused: Option<bool>,
     pub config: Option<CoordinatorConfig<ClientId>>,
     pub model: Option<Model>,
 }
 
-pub fn run_set_metadata_processor(
-    context: Context<RunSetMetadataAccounts>,
-    params: RunSetMetadataParams,
+pub fn run_update_processor(
+    context: Context<RunUpdateAccounts>,
+    params: RunUpdateParams,
 ) -> Result<()> {
     let run = &context.accounts.run;
     let run_signer_seeds: &[&[&[u8]]] =

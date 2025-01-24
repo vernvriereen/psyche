@@ -18,11 +18,8 @@ pub mod psyche_solana_treasurer {
         run_top_up_processor(context, params)
     }
 
-    pub fn run_set_metadata(
-        context: Context<RunSetMetadataAccounts>,
-        params: RunSetMetadataParams,
-    ) -> Result<()> {
-        run_set_metadata_processor(context, params)
+    pub fn run_update(context: Context<RunUpdateAccounts>, params: RunUpdateParams) -> Result<()> {
+        run_update_processor(context, params)
     }
 
     pub fn participant_create(

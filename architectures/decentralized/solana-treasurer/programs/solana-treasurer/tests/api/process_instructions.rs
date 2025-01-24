@@ -4,15 +4,15 @@ use anchor_spl::token;
 use psyche_solana_treasurer::logic::ParticipantClaimParams;
 use psyche_solana_treasurer::logic::ParticipantCreateParams;
 use psyche_solana_treasurer::logic::RunCreateParams;
-use psyche_solana_treasurer::logic::RunSetMetadataParams;
 use psyche_solana_treasurer::logic::RunTopUpParams;
+use psyche_solana_treasurer::logic::RunUpdateParams;
 use psyche_solana_treasurer::{accounts::ParticipantClaimAccounts, instruction::ParticipantClaim};
 use psyche_solana_treasurer::{
     accounts::ParticipantCreateAccounts, instruction::ParticipantCreate,
 };
 use psyche_solana_treasurer::{accounts::RunCreateAccounts, instruction::RunCreate};
-use psyche_solana_treasurer::{accounts::RunSetMetadataAccounts, instruction::RunSetMetadata};
 use psyche_solana_treasurer::{accounts::RunTopUpAccounts, instruction::RunTopUp};
+use psyche_solana_treasurer::{accounts::RunUpdateAccounts, instruction::RunUpdate};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::{
     instruction::Instruction,
@@ -104,18 +104,18 @@ pub async fn process_run_top_up(
         .await
 }
 
-pub async fn process_run_set_metadata(
+pub async fn process_run_update(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     authority: &Keypair,
     coordinator_account: &Pubkey,
     run_id: &str,
-    params: RunSetMetadataParams,
+    params: RunUpdateParams,
 ) -> Result<Signature, ToolboxEndpointError> {
     let run = find_pda_run(run_id);
     let coordinator_instance = find_pda_coordinator_instance(run_id);
 
-    let accounts = RunSetMetadataAccounts {
+    let accounts = RunUpdateAccounts {
         authority: authority.pubkey(),
         run,
         coordinator_instance,
@@ -124,7 +124,7 @@ pub async fn process_run_set_metadata(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: RunSetMetadata { params }.data(),
+        data: RunUpdate { params }.data(),
         program_id: psyche_solana_treasurer::ID,
     };
 

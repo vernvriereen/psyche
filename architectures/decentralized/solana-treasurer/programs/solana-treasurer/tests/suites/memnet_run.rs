@@ -5,24 +5,24 @@ use crate::api::process_instructions::process_participant_claim;
 use crate::api::process_instructions::process_participant_create;
 use crate::api::{
     create_memnet_endpoint::create_memnet_endpoint, process_instructions::process_run_create,
-    process_instructions::process_run_set_metadata, process_instructions::process_run_top_up,
+    process_instructions::process_run_top_up, process_instructions::process_run_update,
 };
-use psyche_coordinator::RunState;
-use psyche_solana_treasurer::logic::RunSetMetadataParams;
-use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer};
-use psyche_coordinator::CoordinatorConfig;
-use psyche_solana_coordinator::ClientId;
-use psyche_core::FixedVec;
-use psyche_coordinator::model::Model;
-use psyche_coordinator::model::LLM;
-use psyche_coordinator::model::LLMArchitecture;
-use psyche_coordinator::model::Checkpoint;
-use psyche_coordinator::model::LLMTrainingDataType;
-use psyche_coordinator::model::LLMTrainingDataLocation;
 use bytemuck::Zeroable;
-use psyche_coordinator::model::LearningRateSchedule;
+use psyche_coordinator::model::Checkpoint;
 use psyche_coordinator::model::ConstantLR;
+use psyche_coordinator::model::LLMArchitecture;
+use psyche_coordinator::model::LLMTrainingDataLocation;
+use psyche_coordinator::model::LLMTrainingDataType;
+use psyche_coordinator::model::LearningRateSchedule;
+use psyche_coordinator::model::Model;
 use psyche_coordinator::model::Optimizer;
+use psyche_coordinator::model::LLM;
+use psyche_coordinator::CoordinatorConfig;
+use psyche_coordinator::RunState;
+use psyche_core::FixedVec;
+use psyche_solana_coordinator::ClientId;
+use psyche_solana_treasurer::logic::RunUpdateParams;
+use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer};
 
 #[tokio::test]
 pub async fn memnet_run() {
@@ -120,6 +120,17 @@ pub async fn memnet_run() {
     )
     .await
     .unwrap();
+    process_run_top_up(
+        &mut endpoint,
+        &payer,
+        &authority,
+        &authority_collateral,
+        &collateral_mint.pubkey(),
+        &run_id,
+        5_000_000,
+    )
+    .await
+    .unwrap();
 
     // Create a user
     let user = Keypair::new();
@@ -166,13 +177,13 @@ pub async fn memnet_run() {
     .unwrap_err();
 
     // Set a bunch of stuff on the run
-    process_run_set_metadata(
+    process_run_update(
         &mut endpoint,
         &payer,
         &authority,
         &coordinator_account.pubkey(),
         &run_id,
-        RunSetMetadataParams {
+        RunUpdateParams {
             clients: Some(vec![Pubkey::new_unique()]),
             paused: None,
             config: Some(CoordinatorConfig::<ClientId> {
@@ -191,7 +202,7 @@ pub async fn memnet_run() {
                 overlapped: false.into(),
                 checkpointers: FixedVec::zeroed(),
             }),
-            model:Some(Model::LLM(LLM {
+            model: Some(Model::LLM(LLM {
                 architecture: LLMArchitecture::HfLlama,
                 checkpoint: Checkpoint::Ephemeral,
                 max_seq_len: 4096,
