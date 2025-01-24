@@ -1,14 +1,14 @@
 use psyche_solana_coordinator::CoordinatorAccount;
 
 use crate::api::accounts::get_coordinator_instance_state;
+use crate::api::process_instructions::process_participant_claim;
+use crate::api::process_instructions::process_participant_create;
 use crate::api::{
     create_memnet_endpoint::create_memnet_endpoint, process_instructions::process_run_create,
     process_instructions::process_run_fund,
 };
-
-use solana_sdk::{signature::Keypair, signer::Signer};
-
 use psyche_coordinator::RunState;
+use solana_sdk::{signature::Keypair, signer::Signer};
 
 #[tokio::test]
 pub async fn memnet_coordinator_run() {
@@ -59,6 +59,7 @@ pub async fn memnet_coordinator_run() {
         &collateral_mint.pubkey(),
         &coordinator_account.pubkey(),
         run_id,
+        42,
     )
     .await
     .unwrap();
@@ -102,5 +103,36 @@ pub async fn memnet_coordinator_run() {
         &collateral_mint.pubkey(),
         &run_id,
         5_000_000,
-    ).await.unwrap();
+    )
+    .await
+    .unwrap();
+
+    // Create a user
+    let user = Keypair::new();
+    let user_collateral = endpoint
+        .process_spl_associated_token_account_get_or_init(
+            &payer,
+            &user.pubkey(),
+            &collateral_mint.pubkey(),
+        )
+        .await
+        .unwrap();
+
+    // Create the participation manager
+    process_participant_create(&mut endpoint, &payer, &user, &run_id)
+        .await
+        .unwrap();
+
+    process_participant_claim(
+        &mut endpoint,
+        &payer,
+        &user,
+        &user_collateral,
+        &collateral_mint.pubkey(),
+        &coordinator_account.pubkey(),
+        &run_id,
+        0,
+    )
+    .await
+    .unwrap();
 }

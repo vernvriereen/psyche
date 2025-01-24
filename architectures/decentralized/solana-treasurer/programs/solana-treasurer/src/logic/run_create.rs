@@ -65,20 +65,30 @@ pub struct RunCreateAccounts<'info> {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct RunCreateParams {
     pub run_id: String,
+    pub collateral_amount_per_earned_point: u64,
 }
 
 pub fn run_create_processor(
     context: Context<RunCreateAccounts>,
-    params: &RunCreateParams,
+    params: RunCreateParams,
 ) -> Result<()> {
     let run_identity = run_identity_from_string(&params.run_id);
 
     let run = &mut context.accounts.run;
     run.bump = context.bumps.run;
+
     run.identity = run_identity;
     run.authority = context.accounts.authority.key();
+
+    run.coordinator_instance = context.accounts.coordinator_instance.key();
+    run.coordinator_account = context.accounts.coordinator_account.key();
+
     run.collateral_mint = context.accounts.collateral_mint.key();
+    run.collateral_amount_per_earned_point = params.collateral_amount_per_earned_point;
+
     run.total_funded_collateral_amount = 0;
+    run.total_claimed_collateral_amount = 0;
+    run.total_claimed_earned_points = 0;
 
     let run_signer_seeds: &[&[&[u8]]] =
         &[&[Run::SEEDS_PREFIX, &run.identity.to_bytes(), &[run.bump]]];

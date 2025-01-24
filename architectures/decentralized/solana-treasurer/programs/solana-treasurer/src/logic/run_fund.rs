@@ -17,6 +17,7 @@ pub struct RunFundAccounts<'info> {
     pub authority: Signer<'info>,
 
     #[account(
+        mut,
         constraint = authority_collateral.mint == run.collateral_mint,
         constraint = authority_collateral.owner == authority.key(),
         constraint = authority_collateral.delegate == None.into(),
@@ -30,6 +31,7 @@ pub struct RunFundAccounts<'info> {
     pub run: Box<Account<'info, Run>>,
 
     #[account(
+        mut,
         associated_token::mint = collateral_mint,
         associated_token::authority = run,
     )]
@@ -50,7 +52,7 @@ pub struct RunFundParams {
     pub collateral_amount: u64,
 }
 
-pub fn run_fund_processor(context: Context<RunFundAccounts>, params: &RunFundParams) -> Result<()> {
+pub fn run_fund_processor(context: Context<RunFundAccounts>, params: RunFundParams) -> Result<()> {
     transfer(
         CpiContext::new(
             context.accounts.token_program.to_account_info(),

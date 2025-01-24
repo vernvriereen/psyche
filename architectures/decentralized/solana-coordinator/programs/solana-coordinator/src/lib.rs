@@ -43,7 +43,7 @@ pub struct CoordinatorAccount {
 }
 impl CoordinatorAccount {
     pub fn space_with_discriminator() -> usize {
-        CoordinatorAccount::DISCRIMINATOR.len() + size_of::<CoordinatorAccount>()
+        CoordinatorAccount::DISCRIMINATOR.len() + std::mem::size_of::<CoordinatorAccount>()
     }
 }
 
@@ -58,7 +58,7 @@ pub struct CoordinatorInstance {
 }
 
 impl CoordinatorInstance {
-    pub const SEEDS_PREFIX: &[u8] = b"coordinator";
+    pub const SEEDS_PREFIX: &'static [u8] = b"coordinator";
 }
 
 #[program]
