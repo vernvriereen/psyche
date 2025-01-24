@@ -139,6 +139,7 @@ impl TryFrom<&SerializableTensor> for Tensor {
 
 #[cfg(test)]
 mod tests {
+    use psyche_modeling::set_torch_rng_seed;
     use tch::{Device, Kind, Tensor};
 
     use crate::serializable_tensor::SerializableTensor;
@@ -174,6 +175,8 @@ mod tests {
 
     #[test]
     fn test_roundtrip_tensor_manyd() {
+        set_torch_rng_seed();
+
         // some random # of dimensions
         let dims = [2, 16, 2, 25, 2, 215, 6];
 
@@ -215,6 +218,8 @@ mod tests {
 
     #[test]
     fn test_roundtrip_bool_tensor_manyd() {
+        set_torch_rng_seed();
+
         // some random # of dimensions
         let dims = [2, 16, 2, 25, 2, 215, 6];
 

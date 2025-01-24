@@ -849,6 +849,8 @@ unsafe impl Send for Distro {}
 mod tests {
     use itertools::iproduct;
 
+    use crate::set_torch_rng_seed;
+
     use super::*;
 
     #[test]
@@ -1177,6 +1179,8 @@ mod tests {
             )
         }
 
+        set_torch_rng_seed();
+
         let range_r0 = 1..10;
         let range_r1 = 0..10;
         let range_s0 = [1, 7, 512];
@@ -1207,6 +1211,7 @@ mod tests {
     }
     #[test]
     fn test_1bit_matches_non_quant() {
+        set_torch_rng_seed();
         let input = Tensor::rand(
             [51, 35, 5, 13, 6],
             (Kind::BFloat16, Device::cuda_if_available()),

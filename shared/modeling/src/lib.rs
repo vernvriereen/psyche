@@ -31,3 +31,12 @@ pub use tensor_parallelism::{
 };
 pub use token_output_stream::TokenOutputStream;
 pub use traits::{CausalLM, ConcreteCausalLM};
+
+#[cfg(test)]
+pub fn set_torch_rng_seed() {
+    use rand::Rng;
+
+    let seed: i64 = rand::thread_rng().gen();
+    tch::manual_seed(seed);
+    println!("torch seed set to: {}", seed);
+}
