@@ -5,6 +5,14 @@ use psyche_solana_coordinator::{
 use solana_sdk::pubkey::Pubkey;
 use solana_toolbox_endpoint::{ToolboxEndpoint, ToolboxEndpointError};
 
+pub fn find_pda_coordinator_instance(run_id: &str) -> Pubkey {
+    Pubkey::find_program_address(
+        &[CoordinatorInstance::SEEDS_PREFIX, bytes_from_string(run_id)],
+        &psyche_solana_coordinator::ID,
+    )
+    .0
+}
+
 pub async fn get_coordinator_instance_state(
     endpoint: &mut ToolboxEndpoint,
     coordinator_account: &Pubkey,
@@ -20,12 +28,4 @@ pub async fn get_coordinator_instance_state(
             ToolboxEndpointError::Custom("Unable to decode coordinator account data".to_string())
         })?
         .state)
-}
-
-pub fn find_pda_coordinator_instance(run_id: &str) -> Pubkey {
-    Pubkey::find_program_address(
-        &[CoordinatorInstance::SEEDS_PREFIX, bytes_from_string(run_id)],
-        &psyche_solana_coordinator::ID,
-    )
-    .0
 }

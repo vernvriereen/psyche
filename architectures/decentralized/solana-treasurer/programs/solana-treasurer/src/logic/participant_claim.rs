@@ -1,7 +1,6 @@
 use anchor_lang::prelude::*;
+use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::transfer;
-use anchor_spl::token::Mint;
-use anchor_spl::token::MintTo;
 use anchor_spl::token::Token;
 use anchor_spl::token::TokenAccount;
 use anchor_spl::token::Transfer;
@@ -31,20 +30,16 @@ pub struct ParticipantClaimAccounts<'info> {
 
     #[account(
         mut,
-        constraint = run.collateral_mint == collateral_mint.key(),
         constraint = run.coordinator_account == coordinator_account.key(),
     )]
     pub run: Box<Account<'info, Run>>,
 
     #[account(
-        mut
-        associated_token::mint = collateral_mint,
+        mut,
+        associated_token::mint = run.collateral_mint,
         associated_token::authority = run,
     )]
     pub run_collateral: Box<Account<'info, TokenAccount>>,
-
-    #[account()]
-    pub collateral_mint: Box<Account<'info, Mint>>,
 
     #[account()]
     pub coordinator_account: AccountLoader<'info, CoordinatorAccount>,
@@ -94,7 +89,7 @@ pub fn participant_claim_processor(
     let participant = &mut context.accounts.participant;
     let run = &mut context.accounts.run;
 
-    if params.claim_earned_points < participant_earned_points - participant.claimed_earned_points {
+    if params.claim_earned_points > participant_earned_points - participant.claimed_earned_points {
         return err!(ProgramError::InvalidParameter);
     }
     let claim_collateral_amount =

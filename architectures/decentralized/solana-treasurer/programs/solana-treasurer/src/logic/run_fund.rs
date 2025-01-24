@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::transfer;
 use anchor_spl::token::Mint;
 use anchor_spl::token::Token;
@@ -66,7 +67,10 @@ pub fn run_fund_processor(context: Context<RunFundAccounts>, params: RunFundPara
     )?;
 
     let run = &mut context.accounts.run;
-    run.total_funded_collateral_amount += params.collateral_amount;
+    run.total_funded_collateral_amount = run
+        .total_funded_collateral_amount
+        .checked_add(params.collateral_amount)
+        .unwrap();
 
     Ok(())
 }

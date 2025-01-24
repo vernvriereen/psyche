@@ -153,7 +153,6 @@ pub async fn process_participant_claim(
         user_collateral: *user_collateral,
         run,
         run_collateral,
-        collateral_mint: *collateral_mint,
         coordinator_account: *coordinator_account,
         participant,
         token_program: token::ID,

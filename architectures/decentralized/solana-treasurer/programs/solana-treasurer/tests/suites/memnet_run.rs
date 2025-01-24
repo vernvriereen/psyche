@@ -11,7 +11,7 @@ use psyche_coordinator::RunState;
 use solana_sdk::{signature::Keypair, signer::Signer};
 
 #[tokio::test]
-pub async fn memnet_coordinator_run() {
+pub async fn memnet_run() {
     let mut endpoint = create_memnet_endpoint().await;
 
     // Create payer key and fund it
@@ -123,6 +123,7 @@ pub async fn memnet_coordinator_run() {
         .await
         .unwrap();
 
+    // Try claiming nothing, it should work since we earned nothing
     process_participant_claim(
         &mut endpoint,
         &payer,
@@ -135,4 +136,17 @@ pub async fn memnet_coordinator_run() {
     )
     .await
     .unwrap();
+
+    process_participant_claim(
+        &mut endpoint,
+        &payer,
+        &user,
+        &user_collateral,
+        &collateral_mint.pubkey(),
+        &coordinator_account.pubkey(),
+        &run_id,
+        1,
+    )
+    .await
+    .unwrap_err();
 }

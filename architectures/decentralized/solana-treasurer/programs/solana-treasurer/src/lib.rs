@@ -2,7 +2,7 @@ pub mod logic;
 pub mod state;
 
 use anchor_lang::prelude::*;
-pub use logic::*;
+use logic::*;
 
 declare_id!("77mYTtUnEzSYVoG1JtWCjKAdakSvYDkdPPy8DoGqr5RP");
 
