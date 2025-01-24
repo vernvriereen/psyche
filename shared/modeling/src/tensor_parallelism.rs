@@ -198,7 +198,7 @@ impl ColumnParallelLinear {
                 bias,
                 shard: comm.as_ref().map(|comm| Shard {
                     dim: 0,
-                    rank: comm.rank(),
+                    rank: comm.rank() as usize,
                     world_size: comm.size() as usize,
                 }),
                 ..Default::default()
@@ -260,7 +260,7 @@ impl RowParallelLinear {
                 bias,
                 shard: comm.as_ref().map(|comm| Shard {
                     dim: 1,
-                    rank: comm.rank(),
+                    rank: comm.rank() as usize,
                     world_size: comm.size() as usize,
                 }),
                 ..Default::default()
