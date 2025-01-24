@@ -99,7 +99,7 @@ pub struct AppParams {
     pub grad_accum_in_fp32: bool,
     pub dummy_training_delay_secs: Option<u64>,
     pub discovery_mode: DiscoveryMode,
-    pub max_concurrent_parameter_requests: Option<usize>,
+    pub max_concurrent_parameter_requests: usize,
 }
 
 impl AppBuilder {

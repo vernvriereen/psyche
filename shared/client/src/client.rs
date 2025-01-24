@@ -70,8 +70,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                 let (tx_parameters_req, mut rx_parameters_req) = mpsc::unbounded_channel();
                 let (tx_params_download, mut rx_params_download) = mpsc::unbounded_channel();
 
-                let max_concurrent_downloads =
-                    init_config.max_concurrent_parameter_requests.unwrap_or(10);
+                let max_concurrent_downloads = init_config.max_concurrent_parameter_requests;
 
                 let mut run = RunManager::<T, A>::new(RunInitConfigAndIO {
                     init_config,

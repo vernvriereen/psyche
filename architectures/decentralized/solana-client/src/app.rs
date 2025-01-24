@@ -66,7 +66,7 @@ pub struct AppParams {
     pub optim_stats: Option<u32>,
     pub grad_accum_in_fp32: bool,
     pub dummy_training_delay_secs: Option<u64>,
-    pub max_concurrent_parameter_requests: Option<usize>,
+    pub max_concurrent_parameter_requests: usize,
 }
 
 impl AppBuilder {
