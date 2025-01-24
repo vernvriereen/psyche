@@ -53,6 +53,6 @@ serve_book: generate_cli_docs
 generate_cli_docs:
     echo "generating CLI --help outputs for mdbook..."
     mkdir -p psyche-book/generated/cli/
-    cargo run -p psyche-centralized-client print-all-help --markdown > psyche-book/generated/cli/centralized-client.md
-    cargo run -p psyche-centralized-server print-all-help --markdown > psyche-book/generated/cli/centralized-server.md
-    cargo run -p psyche-centralized-local-testnet print-all-help --markdown > psyche-book/generated/cli/centralized-local-testnet.md
+    cargo run -p psyche-centralized-client print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-client.md
+    cargo run -p psyche-centralized-server print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-server.md
+    cargo run -p psyche-centralized-local-testnet print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-local-testnet.md
