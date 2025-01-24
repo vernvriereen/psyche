@@ -9,4 +9,4 @@ Since we want to run many clients and the coordinator we'll need several termina
 
 > If you're using the Nix flake, tmux is already included.
 
-{{#include ./cli/centralized-local-testnet.md}}
+{{#include ../generated/cli/psyche-centralized-local-testnet.md}}
