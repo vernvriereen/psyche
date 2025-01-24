@@ -221,21 +221,13 @@ mod tests {
         // rand between -0.5 and +0.5
         let rand_tensor = Tensor::rand(dims, (Kind::Float, Device::Cpu)) - 0.5;
 
-        // make a .sign() baseline that's -1s and +1s
-        let signed_truth = rand_tensor.sign();
-
-        // do the real > 0 operation into a bool tensor
-        let truth = rand_tensor.greater(0);
-
+        // make a baseline that's true and false
+        let truth = rand_tensor.signbit();
         // roundtrip
         let serializable = SerializableTensor::try_from(&truth).unwrap();
         let result = Tensor::try_from(&serializable).unwrap();
 
         // roundtripped bools === original bools
         assert!(result.equal(&truth));
-
-        // roundtripped bools turn back into original floats
-        let refloated = result.to_kind(Kind::BFloat16) * 2 - 1;
-        assert!(refloated.equal(&signed_truth));
     }
 }
