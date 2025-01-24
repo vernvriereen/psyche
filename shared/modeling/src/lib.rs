@@ -32,7 +32,7 @@ pub use tensor_parallelism::{
 pub use token_output_stream::TokenOutputStream;
 pub use traits::{CausalLM, ConcreteCausalLM};
 
-#[cfg(test)]
+#[allow(unused)]
 pub fn set_torch_rng_seed() {
     use rand::Rng;
 

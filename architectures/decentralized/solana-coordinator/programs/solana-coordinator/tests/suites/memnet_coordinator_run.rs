@@ -240,7 +240,7 @@ pub async fn memnet_coordinator_run() {
         &ticker_keypair,
         &coordinator_account.pubkey(),
         run_id,
-        witness.clone(),
+        witness,
     )
     .await
     .is_err());
@@ -310,7 +310,7 @@ pub async fn memnet_coordinator_free() {
         .lamports;
     assert!(next_balance < start_balance);
 
-    let coordinator_instance = find_pda_coordinator_instance(&run_id);
+    let coordinator_instance = find_pda_coordinator_instance(run_id);
     assert!(endpoint
         .get_account(&coordinator_account.pubkey())
         .await

@@ -28,7 +28,7 @@ impl Communicator {
         unimplemented!()
     }
 
-    pub fn rank(&self) -> usize {
+    pub fn rank(&self) -> i64 {
         unimplemented!()
     }
 }
