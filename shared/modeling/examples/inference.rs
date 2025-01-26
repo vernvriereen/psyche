@@ -3,7 +3,7 @@ use clap::Parser;
 use psyche_data_provider::download_model_repo_sync;
 use psyche_modeling::{
     auto_tokenizer, CausalLM, CommunicatorId, LlamaEosToks, LlamaForCausalLM, LogitsProcessor,
-    Sampling, TokenOutputStream,
+    PretrainedSource, Sampling, TokenOutputStream,
 };
 use std::{
     io::Write,
@@ -104,7 +104,7 @@ fn inference(
         .map(|(_, rank, _, _)| *rank)
         .unwrap_or(0);
     let mut model: LlamaForCausalLM = LlamaForCausalLM::from_pretrained(
-        &repo_files,
+        &PretrainedSource::RepoFiles(repo_files),
         Some(Kind::BFloat16),
         None,
         tensor_parallelism.as_ref().map(|_| Device::Cuda(rank)),

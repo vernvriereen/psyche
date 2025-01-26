@@ -45,4 +45,4 @@ compression_chunk = 64
 compression_topk = 2
 compression_topk_startup = 0
 compression_topk_startup_steps = 0
-quantize = false
+quantize_1bit = false

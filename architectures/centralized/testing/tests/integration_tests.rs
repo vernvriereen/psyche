@@ -441,6 +441,7 @@ async fn client_join_in_training() {
     let batches_per_round = 2;
     let witness_nodes = 1;
     let witness_quorum = 1;
+
     let server_handle = CoordinatorServerHandle::new(
         init_min_clients,
         batches_per_round,
@@ -491,8 +492,7 @@ async fn client_join_in_training() {
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 
     // spawn new client
-    info!("spawning new client while we're in round train");
-    let [new_client_handle] =
+    let [_new_client_handle] =
         spawn_clients_with_training_delay(1, server_port, run_id, training_delay)
             .await
             .try_into()
@@ -507,28 +507,18 @@ async fn client_join_in_training() {
     info!("waiting for witness state...");
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
-    let witnesses = &server_handle.get_rounds().await[0].witnesses;
 
-    // clients spawned in RoundTrain state should not be present in the witnesses
-    let mut score = 0;
-    let pending_clients = server_handle.get_pending_clients().await;
-    pending_clients.iter().for_each(|client| {
-        score +=
-            psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(client, witnesses);
-    });
-    assert_eq!(score, init_min_clients);
+    assert_witnesses_score(&server_handle, 0, 2).await;
 
     info!("waiting for next round!");
 
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
-    // the new client tries to join the network
-    // but since the llm checkpoint is Ephemeral
-    // it results in an InitRunError::ModelIsEphemeral error
-    info!("waiting for client handle...");
-    let error = new_client_handle.client_handle.await.unwrap().unwrap_err();
-    assert!(error
-        .to_string()
-        .contains(&psyche_client::InitRunError::ModelIsEphemeral.to_string()));
+
+    // check that the run state evolves naturally to Warmup
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+
+    // check that the clients length shows the new joined client
+    assert_with_retries(|| server_handle.get_clients_len(), 3).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -600,17 +590,63 @@ async fn shutdown_node_in_training_and_complete_round() {
     .await;
 
     // spawn new client
-    let [new_client_handle] =
+    let [_new_client_handle] =
         spawn_clients_with_training_delay(1, server_port, run_id, training_delay)
             .await
             .try_into()
             .unwrap();
 
-    // the new client tries to join the network
-    // but since the llm checkpoint is Ephemeral
-    // it results in an InitRunError::ModelIsEphemeral error
-    let error = new_client_handle.client_handle.await.unwrap().unwrap_err();
-    assert!(error
-        .to_string()
-        .contains(&psyche_client::InitRunError::ModelIsEphemeral.to_string()));
+    // Now that the new client joined, we assert that the run state evolved to Warmup
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+
+    // The new clients length now includes the joined client
+    assert_with_retries(|| server_handle.get_clients_len(), 3).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn kick_node_that_dont_train() {
+    let init_min_clients = 2;
+    let batches_per_round = 2;
+    // all nodes are witness
+    let witness_nodes = 0;
+    // set witness_quorum = 1, as one node will kicked
+    let witness_quorum = 1;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
+
+    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
+
+    // spawn two clients
+    // client_1 is a normal client
+    // client_2 will take to much time to train, more than MAX_ROUND_TRAIN_TIME.
+    let training_delay_client_1 = 2;
+    let training_delay_client_2 = MAX_ROUND_TRAIN_TIME + 1;
+    let server_port = server_handle.server_port;
+    let run_id = &server_handle.run_id;
+    let _client_1 =
+        spawn_clients_with_training_delay(1, server_port, run_id, training_delay_client_1).await;
+    let _client_2 =
+        spawn_clients_with_training_delay(1, server_port, run_id, training_delay_client_2).await;
+
+    // assert that we start in the round 0 and the two clients are present
+    assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
+    assert_with_retries(|| server_handle.get_clients_len(), 2).await;
+    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
+    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
+
+    // Since client_1 dont get to train any batch in the round 0, in round 1 it should be kicked out of the network
+    assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
+    assert_with_retries(|| server_handle.get_clients_len(), 1).await;
+    assert_with_retries(|| server_handle.get_pending_clients_len(), 1).await;
 }

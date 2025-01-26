@@ -1,10 +1,15 @@
 use crate::{
     llama::{Cache, Config, Llama, Llama3RopeConfig, LlamaEosToks},
     safetensor_utils::load_safetensors_into_variables,
-    tensor_parallelism::Communicator,
+    tensor_parallelism::{tensor_shard, Communicator},
     CausalLM, CommunicatorId, ConcreteCausalLM, LoadSafetensorsError,
 };
-use std::{io, path::PathBuf, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    io,
+    path::PathBuf,
+    sync::Arc,
+};
 use tch::{
     nn::{self, Module, VarStore},
     Device, Kind, Tensor,
@@ -128,25 +133,82 @@ pub enum LoadLlamaForCausalLMError {
 
     #[error("Failed to load safetensors from disk: {0}")]
     LoadSafetensorsError(#[from] LoadSafetensorsError),
+
+    #[error("Failed to copy tensor into variable store: {0}")]
+    CopyTensorError(#[from] tch::TchError),
+
+    #[error("Some parameters were not loaded: {0:?}")]
+    LoadTensorError(HashSet<String>),
+}
+
+#[derive(Clone)]
+pub enum PretrainedSource {
+    RepoFiles(Vec<PathBuf>),
+    ConfigAndTensors(String, Arc<HashMap<String, Tensor>>),
+}
+
+unsafe impl Send for PretrainedSource {}
+
+impl PretrainedSource {
+    pub fn get_config(&self) -> Result<LlamaConfig, LoadLlamaForCausalLMError> {
+        let config_file = match self {
+            PretrainedSource::RepoFiles(repo_files) => std::fs::read_to_string(
+                repo_files
+                    .iter()
+                    .find(|x| x.ends_with("config.json"))
+                    .ok_or(LoadLlamaForCausalLMError::MissingConfigJSON)?
+                    .as_path(),
+            )?,
+            PretrainedSource::ConfigAndTensors(config_file, _) => config_file.to_owned(),
+        };
+        Ok(serde_json::from_str(&config_file)?)
+    }
+
+    pub fn load(&self, variables: &mut nn::VarStore) -> Result<(), LoadLlamaForCausalLMError> {
+        match self {
+            PretrainedSource::RepoFiles(repo_files) => {
+                load_safetensors_into_variables(variables, repo_files)?
+            }
+            PretrainedSource::ConfigAndTensors(_, parameters) => {
+                let mut unmatched = variables
+                    .variables()
+                    .keys()
+                    .cloned()
+                    .collect::<HashSet<_>>();
+
+                let _no_grad = tch::no_grad_guard();
+                let mut variables = variables.variables_.lock().unwrap();
+                let shards = variables.shards.clone();
+                for (name, var) in variables.named_variables.iter_mut() {
+                    let tensor = parameters.get(name).unwrap();
+                    if let Some(shard) = shards.get(name) {
+                        let tensor = tensor_shard(tensor, shard);
+                        var.f_copy_(&tensor)?;
+                    } else {
+                        var.f_copy_(tensor)?
+                    };
+
+                    unmatched.remove(name);
+                }
+                if !unmatched.is_empty() {
+                    return Err(LoadLlamaForCausalLMError::LoadTensorError(unmatched));
+                };
+            }
+        };
+        Ok(())
+    }
 }
 
 impl LlamaForCausalLM {
     pub fn from_pretrained(
-        repo_files: &[PathBuf],
+        source: &PretrainedSource,
         kind: Option<Kind>,
         attn_implementation: Option<AttentionImplementation>,
         device: Option<Device>,
         tensor_parallelism_world: Option<(Arc<CommunicatorId>, usize, usize)>,
         override_max_position_embeddings: Option<usize>,
     ) -> Result<Self, LoadLlamaForCausalLMError> {
-        let config_file = std::fs::read_to_string(
-            repo_files
-                .iter()
-                .find(|x| x.ends_with("config.json"))
-                .ok_or(LoadLlamaForCausalLMError::MissingConfigJSON)?
-                .as_path(),
-        )?;
-        let llama_config: LlamaConfig = serde_json::from_str(&config_file)?;
+        let llama_config = source.get_config()?;
 
         if llama_config.tie_word_embeddings {
             return Err(LoadLlamaForCausalLMError::ModelHasTiedEmbeddings);
@@ -202,7 +264,9 @@ impl LlamaForCausalLM {
                 config.vocab_size as i64,
                 c,
             );
-            load_safetensors_into_variables(&mut variables, repo_files)?;
+
+            source.load(&mut variables)?;
+
             (model, lm_head)
         };
         let cache = Cache::new(kind.unwrap_or(Kind::Float), &config, &device);

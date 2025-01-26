@@ -1,4 +1,4 @@
-use crate::{ColumnParallelLinear, Communicator, RowParallelLinear};
+use crate::{ColumnParallelLinear, Communicator, LlamaConfig, RowParallelLinear};
 
 use std::{f32::consts::PI, sync::Arc};
 use tch::nn::{self, Module};
@@ -422,4 +422,36 @@ impl Llama {
         }
         self.ln_f.forward(&x)
     }
+}
+
+// TODO: This is just a hacky solution to get the parameter names from the config
+// but it is probably overkill. We should think about a better way to get them
+// to make the p2p requests.
+pub fn get_parameter_names(
+    config_file_str: &str,
+    override_max_position_embeddings: Option<usize>,
+) -> Vec<String> {
+    let llama_config: LlamaConfig = serde_json::from_str(config_file_str).unwrap();
+    let mut config: Config = llama_config.into_config(true);
+    if let Some(override_max_position_embeddings) = override_max_position_embeddings {
+        config.max_position_embeddings = override_max_position_embeddings;
+    }
+
+    let mut variables: nn::VarStore = nn::VarStore::new(Device::Cpu);
+    variables.set_kind(Kind::BFloat16);
+    let _model = Llama::new(variables.root(), &config, None);
+    let c = nn::LinearConfig {
+        bias: false,
+        ..Default::default()
+    };
+
+    let _lm_head = nn::linear(
+        &variables.root() / "lm_head",
+        config.hidden_size as i64,
+        config.vocab_size as i64,
+        c,
+    );
+
+    let variables_lock = variables.variables_.lock().unwrap();
+    variables_lock.named_variables.keys().cloned().collect()
 }

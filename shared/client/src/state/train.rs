@@ -12,7 +12,10 @@ use psyche_coordinator::{
 };
 use psyche_core::{sha256, BatchId, Bloom, NodeIdentity};
 use psyche_modeling::DistroResult;
-use psyche_network::AuthenticatableIdentity;
+use psyche_network::{
+    distro_results_to_bytes, AuthenticatableIdentity, SerializeDistroResultError,
+    SerializedDistroResult, TransmittableDistroResult,
+};
 use thiserror::Error;
 use tokio::{
     sync::{mpsc, Mutex},
@@ -22,12 +25,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, debug_span, error, info, trace, warn, Instrument};
 
 use crate::{
-    distro_results_to_bytes,
     fetch_data::{BatchIdSet, DataFetcher, TrainingDataForStep},
-    serialized_distro::SerializeDistroResultError,
     state::types::PayloadState,
     trainer::{ApplyDistroResultError, TrainOutput, Trainer, TrainerThreadCommunicationError},
-    SerializedDistroResult, TransmittableDistroResult,
 };
 
 use super::{

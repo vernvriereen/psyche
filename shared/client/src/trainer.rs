@@ -34,7 +34,7 @@ enum Optimizer {
         compression_topk: i64,
         compression_topk_startup: i64,
         compression_topk_startup_steps: u32,
-        quantize: bool,
+        quantize_1bit: bool,
     },
     Null,
 }
@@ -156,7 +156,7 @@ impl Trainer {
                     compression_topk_startup,
                     compression_topk_startup_steps,
                     compression_chunk,
-                    quantize,
+                    quantize_1bit,
                 } => Optimizer::Distro {
                     optimizer: Distro::new(
                         model.variables(),
@@ -171,7 +171,7 @@ impl Trainer {
                     compression_topk: compression_topk as i64,
                     compression_topk_startup: compression_topk_startup as i64,
                     compression_topk_startup_steps,
-                    quantize,
+                    quantize_1bit,
                 },
                 model::Optimizer::Dummy => Optimizer::Null,
             };
@@ -504,7 +504,7 @@ impl Trainer {
                                 compression_topk,
                                 compression_topk_startup,
                                 compression_topk_startup_steps,
-                                quantize,
+                                quantize_1bit,
                             } => {
                                 let clipped = match clip_grad_norm {
                                     Some(clip_grad_norm) => match barrier.wait() {
@@ -529,7 +529,7 @@ impl Trainer {
                                             true => *compression_topk_startup,
                                             false => *compression_topk,
                                         },
-                                        *quantize,
+                                        *quantize_1bit,
                                         optim_stats_every_n_steps
                                             .map(|stats| step % stats == 0)
                                             .unwrap_or(false),

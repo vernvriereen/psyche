@@ -1,16 +1,26 @@
-use crate::{util::convert_bytes, Networkable};
+use crate::{
+    p2p_model_sharing::TransmittableModelParameter, serialized_distro::TransmittableDistroResult,
+    util::convert_bytes, Networkable,
+};
 
 use anyhow::{bail, Context, Error, Result};
 use bytes::Bytes;
 use futures_util::future::select_all;
 use iroh::PublicKey;
 use iroh_blobs::{get::db::DownloadProgress, ticket::BlobTicket};
+use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 use tokio::{
     sync::{mpsc, oneshot, Mutex},
     task::JoinHandle,
 };
 use tracing::{debug, error, info, warn};
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum TransmittableDownload {
+    DistroResult(TransmittableDistroResult),
+    ModelParameter(TransmittableModelParameter),
+}
 
 #[derive(Debug)]
 struct Download {
@@ -178,6 +188,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                 .lock()
                 .await
                 .push(Download::new(blob_ticket, progress));
+
             if let Err(e) = sender.send(()) {
                 error!("{}", e);
             }
@@ -210,6 +221,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
             return Ok(None);
         }
 
+        #[derive(Debug)]
         enum FutureResult {
             Download(usize, Result<DownloadProgress>),
             Read(usize, Result<Bytes>),
@@ -248,6 +260,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
             download_futures.chain(read_futures).collect();
 
         let result = select_all(all_futures).await.0;
+
         match result {
             FutureResult::Download(index, result) => {
                 Self::handle_download_progress(downloads, result, index)
