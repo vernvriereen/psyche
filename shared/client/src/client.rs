@@ -259,8 +259,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             peer_ids.shuffle(&mut thread_rng());
 
                             let handle: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
-                                let parameter_blob_tickets = Arc::new(Mutex::new(Vec::new()));
-                                let busy_peers = Arc::new(Mutex::new(HashSet::new()));
+                                // We use std mutex implementation here and call `.unwrap()` when acquiring the lock since there
+                                // is no chance of mutex poisoning; locks are acquired only to insert or remove items from them
+                                // and dropped immediately
+                                let parameter_blob_tickets = Arc::new(std::sync::Mutex::new(Vec::new()));
+                                let busy_peers = Arc::new(std::sync::Mutex::new(HashSet::new()));
+
                                 let peer_cycle = peer_ids.into_iter().cycle();
                                 let peer_cycle = Arc::new(Mutex::new(peer_cycle));
                                 let mut request_handles = Vec::new();
@@ -277,22 +281,22 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                                 // This should never really happen, since the only chance for calling
                                                 // `next()` on a `Cycle` iterator and return `None` is when the iterator
                                                 // is empty, which was checked previously.
-                                                break;
+                                                unreachable!();
                                             };
-                                            if !busy_peers.lock().await.insert(peer_id) {
+                                            if !busy_peers.lock().unwrap().insert(peer_id) {
                                                 continue;
                                             }
                                             debug!("Requesting parameter {param_name} from peer {peer_id}");
                                             match request_model_parameter(router.clone(), peer_id, param_name.clone()).await {
                                                 Ok(parameter_blob_ticket) => {
-                                                  parameter_blob_tickets_clone.lock().await.push(parameter_blob_ticket);
-                                                  busy_peers.lock().await.remove(&peer_id);
+                                                  parameter_blob_tickets_clone.lock().unwrap().push(parameter_blob_ticket);
+                                                  busy_peers.lock().unwrap().remove(&peer_id);
                                                   // Continue to next parameter request
                                                   break;
                                                 },
                                                 Err(e) => {
                                                   warn!("Failed to get parameter {param_name} from peer {peer_id}: {e}");
-                                                  busy_peers.lock().await.remove(&peer_id);
+                                                  busy_peers.lock().unwrap().remove(&peer_id);
                                                   // Continue to request this parameter to another peer
                                                   continue;
                                                 },
@@ -307,7 +311,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         max_concurrent_request_futures.push(request_handle);
                                         join_all(max_concurrent_request_futures).await;
                                         let current_parameter_blob_tickets: Vec<BlobTicket> = {
-                                            let mut parameter_blob_tickets_lock = parameter_blob_tickets.lock().await;
+                                            let mut parameter_blob_tickets_lock = parameter_blob_tickets.lock().unwrap();
                                             parameter_blob_tickets_lock.drain(..).collect()
                                         };
                                         tx_params_download.send(current_parameter_blob_tickets)?;
@@ -320,7 +324,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 // and download the blobs
                                 join_all(request_handles).await;
                                 let parameter_blob_tickets: Vec<BlobTicket> = {
-                                    let mut parameter_blob_tickets_lock = parameter_blob_tickets.lock().await;
+                                    let mut parameter_blob_tickets_lock = parameter_blob_tickets.lock().unwrap();
                                     parameter_blob_tickets_lock.drain(..).collect()
                                 };
                                 tx_params_download.send(parameter_blob_tickets)?;
