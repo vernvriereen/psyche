@@ -78,7 +78,8 @@
                 "http://docs.psyche.network" = caddyConfig;
                 "http://psyche-book-http.*.psyche.NousResearch.garnix.me" = caddyConfig;
                 "http://psyche.network".extraConfig = ''
-                  redir http://nousresearch.com/nous-psyche
+                  header Content-Type text/html
+                  respond "<head><meta http-equiv='refresh' content='0; url=http://nousresearch.com/nous-psyche'></head>"
                 '';
               };
             };
