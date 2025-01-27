@@ -77,6 +77,9 @@
               virtualHosts = {
                 "http://docs.psyche.network" = caddyConfig;
                 "http://psyche-book-http.*.psyche.NousResearch.garnix.me" = caddyConfig;
+                "http://psyche.network".extraConfig = ''
+                  redir https://nousresearch.com/nous-psyche
+                '';
               };
             };
             networking.firewall.allowedTCPPorts = [80];
