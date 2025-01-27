@@ -2,6 +2,10 @@
 
 Psyche is a system that empowers strangers to collaboratively train a machine learning model in a decentralized and trustless manner.
 
+Read the Psyche annoucement [here](https://nousresearch.com/nous-psyche).
+
+The Psyche code is available on GitHub at [PsycheFoundation/psyche](https://github.com/PsycheFoundation/psyche).
+
 The system is composed of three main actors:
 
 - **Coordinator**: Serves as a source of truth for global state available to all clients in a given training run. Each run has one coordinator that oversees the entire process. The coordinator is implemented as a program running on the Solana Blockchain.
@@ -31,8 +35,6 @@ flowchart TB
         DTT["Data server"] --> C11 & C22 & C33
     end
 ```
-
-# How it works
 
 # What does the training process look like?
 

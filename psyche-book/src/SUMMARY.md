@@ -1,6 +1,6 @@
 # Summary
 
-- [How it works](./how-it-works.md)
+- [Intro to Psyche](./intro.md)
 - [Psyche in depth](./psyche-in-depth.md)
     - [Coordinator](./coordinator.md)
     - [Data provider](./data-provider.md)
