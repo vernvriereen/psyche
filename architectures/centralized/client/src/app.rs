@@ -99,6 +99,7 @@ pub struct AppParams {
     pub grad_accum_in_fp32: bool,
     pub dummy_training_delay_secs: Option<u64>,
     pub discovery_mode: DiscoveryMode,
+    pub max_concurrent_parameter_requests: usize,
 }
 
 impl AppBuilder {
@@ -161,6 +162,7 @@ impl AppBuilder {
             optim_stats_every_n_steps: p.optim_stats,
             grad_accum_in_fp32: p.grad_accum_in_fp32,
             dummy_training_delay_secs: p.dummy_training_delay_secs,
+            max_concurrent_parameter_requests: p.max_concurrent_parameter_requests,
         };
 
         Ok((app, allowlist, p2p, state_options))

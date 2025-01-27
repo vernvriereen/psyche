@@ -2,24 +2,32 @@ use crate::{
     state::{DistroBroadcastAndPayload, RunManager},
     ClientTUIState, RunInitConfig, RunInitConfigAndIO, TrainingResult, NC,
 };
-use anyhow::{Error, Result};
+use anyhow::{bail, Error, Result};
+use futures::future::join_all;
 use psyche_coordinator::RunState;
 use psyche_core::NodeIdentity;
 use psyche_network::{
-    allowlist, request_model_parameter, AuthenticatableIdentity, DownloadComplete, ModelParameters,
-    NetworkConnection, NetworkEvent, NetworkTUIState, Networkable, NodeId, TransmittableDownload,
+    allowlist, request_model_parameter, AuthenticatableIdentity, BlobTicket, DownloadComplete,
+    ModelParameters, NetworkConnection, NetworkEvent, NetworkTUIState, Networkable, NodeId,
+    TransmittableDownload,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use wandb::DataValue;
 
-use std::{collections::HashMap, marker::PhantomData, sync::Arc};
+use rand::{seq::SliceRandom, thread_rng};
+use std::{
+    collections::{HashMap, HashSet},
+    marker::PhantomData,
+    sync::Arc,
+};
 use tokio::{
     select,
-    sync::{mpsc, watch, Notify},
+    sync::{mpsc, watch, Mutex, Notify},
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace, warn};
+
 pub type TUIStates = (ClientTUIState, NetworkTUIState);
 
 pub struct Client<T: NodeIdentity, A: AuthenticatableIdentity, B: Backend<T> + 'static> {
@@ -67,6 +75,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                 let (tx_request_download, mut rx_request_download) = mpsc::unbounded_channel();
                 let (tx_parameters_req, mut rx_parameters_req) = mpsc::unbounded_channel();
                 let (tx_params_download, mut rx_params_download) = mpsc::unbounded_channel();
+
+                let max_concurrent_downloads = init_config.max_concurrent_parameter_requests;
 
                 let mut run = RunManager::<T, A>::new(RunInitConfigAndIO {
                     init_config,
@@ -229,43 +239,94 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         Some((param_names, tx_params_response)) = rx_parameters_req.recv() => {
                             sharable_model.initialize_parameters(&param_names, tx_params_response);
                             let Some(coordinator_state) = watcher.coordinator_state() else {
-                                warn!("Coordinator state not yet registered, nothing to do");
-                                return Ok(());
+                                bail!("Coordinator state not yet registered, nothing to do. Try joining the run again.");
                             };
 
                             let tx_params_download = tx_params_download.clone();
                             let router = p2p.router();
 
                             let me = NodeId::from_bytes(identity.get_p2p_public_key()).unwrap();
-                            let peer_ids: Vec<NodeId> = coordinator_state.epoch_state.clients.iter().map(|client| {
+                            let mut peer_ids: Vec<NodeId> = coordinator_state.epoch_state.clients.iter().map(|client| {
                                 let peer_id_bytes = client.id.get_p2p_public_key();
                                 NodeId::from_bytes(peer_id_bytes).unwrap()
                             })
                             .filter(|peer_id| peer_id != &me)
                             .collect();
 
-                            let handle: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
-                                let mut parameter_blob_tickets = Vec::new();
-                                // TODO: The parameter requests could be done concurrently, setting some MAX_CONCURRENT_PARAM_REQUESTS
+                            if peer_ids.is_empty() {
+                                bail!("There are no peers to request parameters from. Try joining the run again.");
+                            }
+                            peer_ids.shuffle(&mut thread_rng());
 
-                                let mut peer_iter = peer_ids.into_iter().cycle(); // Iterate over peers in a cycle
+                            let handle: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
+                                // We use std mutex implementation here and call `.unwrap()` when acquiring the lock since there
+                                // is no chance of mutex poisoning; locks are acquired only to insert or remove items from them
+                                // and dropped immediately
+                                let parameter_blob_tickets = Arc::new(std::sync::Mutex::new(Vec::new()));
+                                let busy_peers = Arc::new(std::sync::Mutex::new(HashSet::new()));
+
+                                let peer_cycle = peer_ids.into_iter().cycle();
+                                let peer_cycle = Arc::new(Mutex::new(peer_cycle));
+                                let mut request_handles = Vec::new();
+
                                 for param_name in param_names {
-                                    for peer_id in peer_iter.by_ref() {
-                                            let router = router.clone();
-                                            debug!("Requesting parameter {param_name} from peer {peer_id}");
-                                            match request_model_parameter(router, peer_id, param_name.clone()).await {
-                                                Ok(parameter_blob_ticket) => {
-                                                    parameter_blob_tickets.push(parameter_blob_ticket);
-                                                    // Continue to the next parameter
-                                                    break;
-                                                }
-                                                Err(e) => {
-                                                    warn!("Failed to get parameter {param_name} from peer {peer_id}: {e}");
-                                                    // Continue to the next peer
-                                                }
+                                    let router = router.clone();
+                                    let busy_peers = busy_peers.clone();
+                                    let parameter_blob_tickets_clone = parameter_blob_tickets.clone();
+                                    let peer_cycle = peer_cycle.clone();
+
+                                    let request_handle = tokio::spawn(async move {
+                                        loop {
+                                            let Some(peer_id) = peer_cycle.lock().await.next() else {
+                                                // This should never really happen, since the only chance for calling
+                                                // `next()` on a `Cycle` iterator and return `None` is when the iterator
+                                                // is empty, which was checked previously.
+                                                unreachable!();
+                                            };
+                                            if !busy_peers.lock().unwrap().insert(peer_id) {
+                                                continue;
                                             }
+                                            debug!("Requesting parameter {param_name} from peer {peer_id}");
+                                            match request_model_parameter(router.clone(), peer_id, param_name.clone()).await {
+                                                Ok(parameter_blob_ticket) => {
+                                                  parameter_blob_tickets_clone.lock().unwrap().push(parameter_blob_ticket);
+                                                  busy_peers.lock().unwrap().remove(&peer_id);
+                                                  // Continue to next parameter request
+                                                  break;
+                                                },
+                                                Err(e) => {
+                                                  warn!("Failed to get parameter {param_name} from peer {peer_id}: {e}");
+                                                  busy_peers.lock().unwrap().remove(&peer_id);
+                                                  // Continue to request this parameter to another peer
+                                                  continue;
+                                                },
+                                            }
+                                        }
+                                    });
+
+                                    // Check if we reached the max number of concurrent requests, and if that is the case,
+                                    // await for all of them to complete and start downloading the blobs
+                                    if request_handles.len() == max_concurrent_downloads - 1 {
+                                        let mut max_concurrent_request_futures = std::mem::take(&mut request_handles);
+                                        max_concurrent_request_futures.push(request_handle);
+                                        join_all(max_concurrent_request_futures).await;
+                                        let current_parameter_blob_tickets: Vec<BlobTicket> = {
+                                            let mut parameter_blob_tickets_lock = parameter_blob_tickets.lock().unwrap();
+                                            parameter_blob_tickets_lock.drain(..).collect()
+                                        };
+                                        tx_params_download.send(current_parameter_blob_tickets)?;
+                                        continue;
                                     }
+                                    request_handles.push(request_handle);
                                 }
+
+                                // All parameters have been requested, wail all the remaining request futures to complete
+                                // and download the blobs
+                                join_all(request_handles).await;
+                                let parameter_blob_tickets: Vec<BlobTicket> = {
+                                    let mut parameter_blob_tickets_lock = parameter_blob_tickets.lock().unwrap();
+                                    parameter_blob_tickets_lock.drain(..).collect()
+                                };
                                 tx_params_download.send(parameter_blob_tickets)?;
                                 Ok(())
                             });
