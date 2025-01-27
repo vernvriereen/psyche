@@ -1,81 +1,95 @@
 # Coordinator
+The Coordinator stores metadata about the run and a list of participants.
+It handles the transition between each Phase of a Round, and provides a random seed that's used to determine data assignments, witnesses, and more.
 
-## Centralized
+It's responsible for providing a point of synchronization for all clients within a run.
 
-The coordinator is a part of the server app and it's the structure that handles the round state and manages progression through the rounds, also deciding each witness for the round.
-
-The server it first created in the `main.rs` file of the server App. It's loaded using the configuration file `data.toml`.
-
-```mermaid
-flowchart LR
-    S[Server] --run--> A[App]
-    S --new--> C[Coordinator]
-    C --run_id
-        init warmup
-        min clients
-        model--> A
-```
-
-The coordinator shares information about the model and the data server location to run the server app along with some info about the run itself, like the id, the warmup and the min clients to start training.
-
-At certain intervals the server calls a tick function that checks the state of the run and updates all the correct parameters, the tick function on the server calls the underlying tick function in the coordinator and then broadcasts the coordinator to all the connected clients to check for the actual state of the round. The coordinator checks the actual state of the run and acts in consequence.
-
-When a new client joins the run it has to communicate the `run_id` that wants to join. The server tries to match it with the one in the coordinator in order to correctly join the run. After processing the joining message the client gets added to the pending clients of the server and runs a new tick on the coordinator.
-
-At first it will be on `WaitingForMembers` state. In this state the coordinator will ask the server for those pending clients which have joined prior to this tick in the round. If the coordinator has already received enough clients to advance, then it starts the warmup state and saves it in its internal data.
-
+### Ticks
+When certain events occur or time-based conditions are met, the Coordinator can be "ticked" forwards to transition from one Phase to another Phase.
 ```mermaid
 sequenceDiagram
     loop
-        Server app->>Coordinator: tick
-        Server app->>Client1: coordinator state
-        Server app->>Client2: coordinator state
+        Note over Backend, Coordinator: Wait for a timeout or backend state
+        Backend->>Coordinator: Tick
+        Coordinator->>Backend: New state produced
+        Backend->Client1: New coordinator state consumed by Client
+        Backend->Client2: New coordinator state consumed by Client
     end
-    Client1->>Server app: Join(run_id)
-    Server app->>Coordinator: Check run_id
-    Coordinator->>Server app: OK
-    Server app->>Server app: Add to pending clients
-    Coordinator->>Server app: select_new_clients()
-    Server app->>Coordinator: Pending clients
-    Note over Server app,Coordinator: Minimum not reached
-    Client2->>Server app: Join(run_id)
-    Server app->>Coordinator: Check run_id
-    Coordinator->>Server app: OK
-    Server app->>Server app: Add to pending clients
-    Coordinator->>Server app: select_new_clients()
-    Server app->>Coordinator: Pending clients
-    Coordinator->>Coordinator: start_warmup
 ```
 
-Once the coordinator has updated its state to `Warmup` it starts to check for the warmup time to pass. If a client has dropped whilst waiting for the warmup time, the server app then removes the client from the coordinator clients list and goes back to the `WaitingForMembers` state.
+### Beginning an Epoch
+The Coordinator begins in the `WaitingForMembers` phase, with no clients connected.
 
-Once the warmup time passes, the coordinator, loads all the information for the next training round and change its state to `RoundTrain`. The app server will broadcast the coordinator state that is now indicating that we have to train and the clients will check the information of the round from the coordinator.
+Whatever backend you're running the Coordinator in should accept pending clients to be added to upcoming Epochs.
 
-From this point, the coordinator can transition to the `RoundWitness` state in two ways:  
-1. **Time-Based Transition**: After the time defined by `max_round_train_time` elapses, the coordinator automatically updates its state to `RoundWitness`, where it waits for the witness process to complete.  
-2. **Optimistic Witness Transition**: This approach allows the coordinator to transition to the `RoundWitness` state earlier if a majority of the required witnesses are received before the time limit. This enables the round to progress faster without waiting for the full duration.  
-
-The witness for each round is chosen randomly from all the clients and is assigned in the `start` function of the `TrainingStepMetadata` struct. The `CommitteeSelection` struct is responsible for defining and selecting the participants for the round. It includes the `get_witness` function, which elects the witness using a seed provided by the coordinator in the `random_seed` field.  
-
-The `WitnessProof` struct contains information about whether a client is the witness for the round, along with its position and index in the vector of clients. The elected witness is responsible for creating the bloom filters and sending them to the coordinator.
-
-The witness attempts to send an **opportunistic witness** message once it finishes training its assigned data and all the batches have been taken and trained by the other clients. This process happens in the `apply_distro_result` function.  
-
-The server receives a `Witness` message from the client and forwards it to the coordinator, along with the necessary data, by calling the `witness()` function. The coordinator validates that the message is from the actual witness for the round and then adds the result to the `witnesses` vector. If enough witness responses are received, the coordinator assumes it is safe to transition to the `RoundWitness` state.
-
-In the `RoundWitness` state, the tick function checks for a timeout using the `round_witness_time` parameter. Once the timeout expires, the coordinator identifies any clients that need to be dropped due to inactivity (e.g., no health checks sent or disconnections during training) and removes them from the list of active clients.  
-
-Depending on the stage of training, the coordinator will then:  
-- Return to the `WaitingForMembers` state if the last step was reached.  
-- Transition to the cooldown state if the height of the round has reached the epoch limit. After the cooldown period, the coordinator waits for clients to restart training.  
-- Transition back to the `RoundTrain` state and prepare the round info for the next round.  
+When inside the `WaitingForMembers` phase, your backend will pass new clients to the Coordinator until a configured `min_clients` threshold is met, at which point the coordinator's `tick` will transition it to the `Warmup` phase.
 
 ```mermaid
 sequenceDiagram
-    Server app->>Coordinator: tick
-    Coordinator->>Server app: Change state to `RoundTrain`
-    Server app->>Client1: New state
-    Server app->>Client2: New state
+    Note over Coordinator: min_clients = 2
+    Client1->>Coordinator: Join
+    Client2->>Coordinator: Join
+    Note over Coordinator: Entering Warmup
+    Client1->>Client2: Connect
+    Client2->>Client1: Connect
+    Note over Coordinator: The Warmup countdown elapses
+    Note over Coordinator: Entering Training
+```
+
+### Warmup
+This phase is designed to let all clients download the model & load it onto their GPUs.
+
+If a client has dropped whilst waiting for the warmup time, the Backend then removes the client from the Coordinator's clients list.
+If the number of clients falls below min_clients, the Coordinator goes back to the `WaitingForMembers` phase.
+
+Once the `Warmup` time passes, the Coordinator loads all the information for the next training round and change its phase to `RoundTrain`. The Server will broadcast this `Training` Coordinator state to all clients.
+
+### Training
+In this phase, the Coordinator provides a random seed. 
+Each client can use this seed, alongside the current round index and epoch index to determine which indicies of the training data to use.
+
+#### Witnessing
+As clients complete their training, they send their results to all other clients, including the Witnesses. The witnesses will each send a **witness proof** to the Coordinator, building towards a **witness quorum**.
+
+A witness proof contains a bloom filter describing which pieces of data the witness recieved training results for, and which clients did that work. Elected witnesses are responsible for creating these witness proofs and and sending them to the Coordinator.
+
+The witnesses for each round are chosen randomly from all the clients, using the same random seed as for data assignments. A witness will attempt to send an **opportunistic witness** message once it's seen a recieved a training result for every single batch in the current round. 
+
+#### Witness Quorum
+The Coordinator advances the run from the _Training_ phase to the _Witness_ phase in one of two ways:
+
+- If enough witnesses observe all results and reach a **witness quorum** for the round, they notify the Coordinator that it is safe to advance. This process, named **opportunistic witnessing**, accelerates the transition to the _Witness_ phase, rather than having to wait a fixed time for training results.
+- If witnesses do not receive all required results from other clients before the maximum time specified for the _Training_ phase, the Coordinator will nontheless transition to the _Witness_ phase after the maximum _Training_ time elapses.
+
+### Witness phase
+This phase exists to give the witnesses an opportunity to send their proofs to the Coordinator in the event that they have not received enough training results from other clients to have reached the quorum and send their proofs opportunistically.
+
+There is also brief slack period for non-witness nodes to catch up by downloading any remaining results they might have not recieved.
+
+
+When the _Witness_ phase finishes via timeout, the Coordinator transitions from _Witness_ to the _Cooldown_ phase in three cases:
+- If we are in the last round of the epoch.
+- If the clients have dropped to less than the minimum required by the config.
+- If the number of witnesses for the round is less than the quorum specified by the config.
+
+Any clients that have failed health checks will also be removed from the current epoch.
+
+### Cooldown
+
+The _Cooldown_ phase is the last phase of an epoch, during which the Cooordinator waits for either the _Cooldown_ period to elapse, or a checkpoint to have happened.
+
+When the _Cooldown_ phase begins, the Coordinator resets the current model checkpoint state to `Checkpoint::P2P`, signifying that new joiners should download the latest copy of the model from the other participants.
+
+Upon exiting the _Cooldown_ phase, the Coordinator transitions to the next epoch, saving the previous epoch state, and moving back to the _WaitingForMembers_ phase.
+
+### It all comes together!
+
+```mermaid
+sequenceDiagram
+    Backend->>Coordinator: tick
+    Coordinator->>Backend: Change state to `RoundTrain`
+    Backend->>Client1: New state
+    Backend->>Client2: New state
     par Start training
         Client1->>Client1: Start training
         Client2->>Client2: Start training
@@ -87,8 +101,8 @@ sequenceDiagram
     Note over Client1: Train
     Note over Client2: Train
     Note over Client2: Fill bloom filters
-    Client2->>Server app: try send optimistic witness
-    Server app->>Coordinator: Witness message
+    Client2->>Backend: try send optimistic witness
+    Backend->>Coordinator: Witness message
     Note over Coordinator: Enough witnesses for round
     Coordinator->>Coordinator: Update state to RoundWitness
     Note over Coordinator: Timeout round witness time
@@ -101,11 +115,35 @@ sequenceDiagram
     end
 ```
 
-In the `start` function, the client spawns a new task to repeatedly send health checks to the server. Nodes, also known as trainers in this state, are assigned a score determined by the coordinator using the `trainer_healthy_score_by_witnesses` method. This score increases as a client sends the required data to be added to the participants' bloom filters, allowing the coordinator to confirm that the client is actively participating in the training.  
 
-A node also sends a list of other nodes it considers unhealthy to the server using the `HealthCheck` message. The coordinator processes this information to determine whether those nodes are healthy. Nodes deemed inactive or non-participatory are marked for removal in the next round.
+## Centralized Backend
+In this Backend, the Coordinator is owned and ticked forwards by a Server that communicates via clients over TCP.
 
-## Decentralized
+The Server's Coordinator is initially configured in `main.rs`.
+It's loaded using the configuration file `state.toml`.
+
+```mermaid
+flowchart LR
+    S[Server] --run--> A[App]
+    S --new--> C[Coordinator]
+    C --run_id
+        init warmup
+        min clients
+        model--> A
+```
+
+The Server uses some parts of the Coordinator configuration, like the data server configuration, if enabled, to boot up all the functionality it needs.
+
+When a new client joins the run it has to communicate the `run_id` that it wants to join, to ensure the client's joining the correct run. After processing the join message, the client is added to a pending clients list, and runs the Coordinator's tick function to potentially add the client into the run.
+
+When a tick condition is met, the Server ticks the Coordinator forwards, then broadcasts the Coordinator's new state to all connected clients.
+
+## Health checks
+In the `start` function, the client spawns a new task to repeatedly send health checks to the server. Nodes, also known as trainers in this state, are assigned a score determined by the Coordinator using the `trainer_healthy_score_by_witnesses` method. This score increases as a client sends the required data to be added to the participants' bloom filters, allowing the Coordinator to confirm that the client is actively participating in the training.  
+
+A node also sends a list of other nodes it considers unhealthy to the server using the `HealthCheck` message. The Coordinator processes this information to determine whether those nodes are healthy. Nodes deemed inactive or non-participatory are marked for removal in the next round.
+
+## Decentralized Backend
 
 TODO
 

@@ -75,6 +75,7 @@
             in {
               enable = true;
               virtualHosts = {
+                "http://psyche.network" = caddyConfig;
                 "http://docs.psyche.network" = caddyConfig;
                 "http://psyche-book-http.*.psyche.NousResearch.garnix.me" = caddyConfig;
               };
