@@ -97,7 +97,3 @@ sequenceDiagram
     Note over Coordinator: Quorum reached
     Note over Coordinator: Starting Witness phase
 ```
-
-## Verifying
-
-TODO
