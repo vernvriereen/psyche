@@ -4,8 +4,7 @@ use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace}
 use bytemuck::{Zeroable, ZeroableInOption};
 use psyche_core::{
     serde_deserialize_optional_string, serde_deserialize_string, serde_serialize_optional_string,
-    serde_serialize_string, to_fixed_size_array, u8_to_string, LearningRateScheduler, Shuffle,
-    TokenSize,
+    serde_serialize_string, u8_to_string, LearningRateScheduler, Shuffle, TokenSize,
 };
 use serde::{Deserialize, Serialize};
 
@@ -23,14 +22,6 @@ use serde::{Deserialize, Serialize};
 #[repr(C)]
 pub enum Model {
     LLM(LLM),
-}
-
-impl Model {
-    pub fn checkpoint(&self) -> Checkpoint {
-        match self {
-            Model::LLM(llm) => llm.checkpoint,
-        }
-    }
 }
 
 unsafe impl ZeroableInOption for Model {}
@@ -322,15 +313,6 @@ pub struct HubRepo {
     pub revision: Option<[u8; SOLANA_MAX_STRING_LEN]>,
 }
 
-impl HubRepo {
-    pub fn dummy() -> Self {
-        Self {
-            repo_id: to_fixed_size_array("array"),
-            revision: None,
-        }
-    }
-}
-
 #[derive(
     AnchorSerialize,
     AnchorDeserialize,
@@ -338,7 +320,6 @@ impl HubRepo {
     Serialize,
     Deserialize,
     Clone,
-    PartialEq,
     Debug,
     Zeroable,
     Copy,

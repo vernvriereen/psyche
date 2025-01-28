@@ -8,7 +8,6 @@ use psyche_coordinator::{assign_data_for_state, get_batch_ids_for_node, Committe
 use psyche_network::{DiscoveryMode, SecretKey};
 use rand::distributions::{Alphanumeric, DistString};
 use std::env;
-use std::path::PathBuf;
 use tokio_util::sync::CancellationToken;
 
 pub fn repo_path() -> String {
@@ -140,13 +139,6 @@ pub fn dummy_client_app_params_with_training_delay(
         p2p_port: None,
         eval_tasks: Vec::new(),
         eval_task_max_docs: None,
-        // checkpoint_upload_info: Some(CheckpointConfig {
-        //     hub_upload: Some(HubUploadInfo {
-        //         hub_repo: "emozilla/llama2-20m-init".to_string(),
-        //         hub_token: "token".to_string(),
-        //     }),
-        //     checkpoint_dir: PathBuf::from("./checkpoints"),
-        // }),
         checkpoint_upload_info: None,
         hub_read_token: None,
         wandb_info: None,
@@ -173,13 +165,6 @@ pub fn dummy_client_app_params_default(server_port: u16, run_id: &str) -> AppPar
         eval_tasks: Vec::new(),
         eval_task_max_docs: None,
         checkpoint_upload_info: None,
-        // checkpoint_upload_info: Some(CheckpointConfig {
-        //     hub_upload: Some(HubUploadInfo {
-        //         hub_repo: "localhost".to_string(),
-        //         hub_token: "token".to_string(),
-        //     }),
-        //     checkpoint_dir: PathBuf::from("./checkpoints"),
-        // }),
         hub_read_token: None,
         wandb_info: None,
         optim_stats: None,

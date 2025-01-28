@@ -46,6 +46,26 @@ pub struct Config {
     pub use_sdpa: bool,
 }
 
+impl Config {
+    pub fn dummy() -> Self {
+        Config {
+            hidden_size: 1,
+            intermediate_size: 1,
+            vocab_size: 1,
+            num_hidden_layers: 1,
+            num_attention_heads: 1,
+            num_key_value_heads: 1,
+            rms_norm_eps: 0.00001,
+            rope_theta: 10000.0,
+            bos_token_id: Some(1),
+            eos_token_id: Some(crate::LlamaEosToks::Single(1)),
+            rope_scaling: None,
+            max_position_embeddings: 2048,
+            use_sdpa: true,
+        }
+    }
+}
+
 impl std::fmt::Display for Config {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         serde_json::to_string(self)

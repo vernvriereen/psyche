@@ -8,9 +8,9 @@ use psyche_coordinator::RunState;
 use psyche_core::NodeIdentity;
 use psyche_modeling::Config;
 use psyche_network::{
-    allowlist, request_model, AuthenticatableIdentity, DownloadComplete, ModelRequestType,
-    NetworkConnection, NetworkEvent, NetworkTUIState, Networkable, NodeId, SharableModel,
-    TransmittableDownload,
+    allowlist, request_model, AuthenticatableIdentity, BlobTicket, DownloadComplete,
+    ModelRequestType, NetworkConnection, NetworkEvent, NetworkTUIState, Networkable, NodeId,
+    SharableModel, TransmittableDownload,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use tokenizers::Tokenizer;
@@ -163,7 +163,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                             },
                                             TransmittableDownload::ModelConfig(config) => {
                                                 sharable_model.add_config(config)?;
-                                                sharable_model.send_config().unwrap();
+                                                sharable_model.send_config()?;
                                             },
                                         }
                                     }
@@ -202,7 +202,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         }
                                     },
                                     NetworkEvent::ModelConfigRequest(protocol_req_tx) => {
-                                        let transmittable_config = TransmittableDownload::ModelConfig(sharable_model.get_transmittable_config().unwrap());
+                                        let transmittable_config = TransmittableDownload::ModelConfig(sharable_model.get_transmittable_config()?);
                                         let config_ticket = p2p.add_downloadable(transmittable_config).await?;
 
                                         info!("Sending requested model config blob ticket");
@@ -312,7 +312,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                                 continue;
                                             }
                                             debug!("Requesting parameter {param_name} from peer {peer_id}");
-                                            match request_model(router.clone(), peer_id, param_name.clone()).await {
+                                            match request_model(router.clone(), peer_id, ModelRequestType::Parameter(param_name.clone())).await {
                                                 Ok(parameter_blob_ticket) => {
                                                   parameter_blob_tickets_clone.lock().unwrap().push(parameter_blob_ticket);
                                                   busy_peers.lock().unwrap().remove(&peer_id);
@@ -378,7 +378,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         p2p.start_download(ticket).await?;
                                         break;
                                     }
-                                    Err(err) => warn!("Error obtaining blob ticket for model config: {}", err)
+                                    Err(err) => warn!("Error obtaining blob ticket for model config: {}", err),
                                 }
                             }
                         }

@@ -144,7 +144,7 @@ pub enum LoadLlamaForCausalLMError {
 #[derive(Clone)]
 pub enum PretrainedSource {
     RepoFiles(Vec<PathBuf>),
-    ConfigAndTensors(String, Arc<HashMap<String, Tensor>>),
+    ConfigAndTensors(Config, Arc<HashMap<String, Tensor>>),
 }
 
 unsafe impl Send for PretrainedSource {}
@@ -211,7 +211,8 @@ impl LlamaForCausalLM {
         tensor_parallelism_world: Option<(Arc<CommunicatorId>, usize, usize)>,
         override_max_position_embeddings: Option<usize>,
     ) -> Result<Self, LoadLlamaForCausalLMError> {
-        let llama_config = source.get_config()?;
+        let config = source.get_config()?;
+        let llama_config = LlamaConfig::from(config);
 
         if llama_config.tie_word_embeddings {
             return Err(LoadLlamaForCausalLMError::ModelHasTiedEmbeddings);

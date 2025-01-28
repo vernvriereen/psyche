@@ -15,10 +15,9 @@ use psyche_data_provider::{
 };
 use psyche_modeling::{
     auto_tokenizer, get_parameter_names, AutoTokenizerError, CommunicatorId, ConcreteCausalLM,
-    Config, DummyModel, LlamaForCausalLM, LoadLlamaForCausalLMError,
+    Config, DummyModel, LlamaForCausalLM, LoadLlamaForCausalLMError, PretrainedSource,
 };
 use psyche_network::{AuthenticatableIdentity, BlobTicket};
-use std::rc::Rc;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tch::{Device, Kind, Tensor};
 use thiserror::Error;
@@ -188,7 +187,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                         WordLevel::builder().build().unwrap(),
                     )));
 
-                    Ok(RawLoadedModel {
+                    let model = RawLoadedModel {
                         models: (0..(init_config.data_parallelism
                             * init_config.tensor_parallelism))
                             .map(|_| {
@@ -203,8 +202,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             .collect(),
                         tokenizer: tokenizer.clone(),
                         checkpoint_extra_files: vec![],
-                        eval_runner: EvalRunner::new(vec![], tokenizer, None, 0),
-                    })
+                        eval_runner: EvalRunner::new(vec![], tokenizer.clone(), None, 0),
+                    };
+                    let config = Config::dummy().to_string();
+                    let tokenizer = tokenizer.to_string(false).unwrap();
+                    info!("Config Uploaded: {}", config);
+                    tx_config.send((config.to_string(), tokenizer)).unwrap();
+                    Ok(model)
                 }),
                 model::Checkpoint::Hub(_) | model::Checkpoint::P2P => {
                     let checkpoint = llm.checkpoint;
@@ -262,40 +266,18 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                                 )
                             }
                             model::Checkpoint::P2P => {
-                                let repo_id = u8_to_string(&hub_repo.repo_id);
-                                let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
-                                let builder = hf_hub::api::sync::ApiBuilder::new();
-                                let repo = match revision {
-                                    Some(revision) => Repo::with_revision(
-                                        repo_id.to_owned(),
-                                        RepoType::Model,
-                                        revision,
-                                    ),
-                                    None => Repo::new(repo_id.to_owned(), RepoType::Model),
-                                };
+                                let (tx_model_config_response, rx_model_config_response) =
+                                    oneshot::channel();
+                                tx_request_model_config
+                                    .send(tx_model_config_response)
+                                    .unwrap();
 
-                                // TODO: config and tokenizer files could be probably just shared over p2p too
-                                // instead of downloading them from HF.
-                                let api = builder
-                                    .with_cache_dir(HfCache::default().path().clone())
-                                    .with_token(init_config.hub_read_token.clone())
-                                    .with_progress(false)
-                                    .build()
-                                    .unwrap()
-                                    .repo(repo);
-
-                                let config_file = api.get("config.json").unwrap();
-                                let config_file_str =
-                                    std::fs::read_to_string(config_file.as_path())?;
-
-                                let tokenizer_file = api.get("tokenizer.json").unwrap();
-                                let tokenizer_file_str =
-                                    std::fs::read_to_string(tokenizer_file.as_path())?;
-                                let tokenizer =
-                                    Arc::new(Tokenizer::from_str(&tokenizer_file_str).unwrap());
+                                let (mut model_config, tokenizer) =
+                                    rx_model_config_response.await.unwrap();
+                                let tokenizer = Arc::new(tokenizer);
 
                                 let parameter_names = get_parameter_names(
-                                    &config_file_str,
+                                    &mut model_config,
                                     Some(llm.max_seq_len as usize),
                                 );
 
@@ -303,12 +285,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                                 tx_parameters_req
                                     .send((parameter_names, tx_params_response))
                                     .unwrap();
-
                                 #[allow(clippy::arc_with_non_send_sync)]
                                 let parameters = Arc::new(rx_params_response.await.unwrap());
 
                                 (
-                                    PretrainedSource::ConfigAndTensors(config_file_str, parameters),
+                                    PretrainedSource::ConfigAndTensors(model_config, parameters),
                                     tokenizer,
                                     vec![],
                                 )
@@ -364,7 +345,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             init_config.eval_task_max_docs,
                             init_config.data_parallelism,
                         );
-
                         let mut models: Vec<Box<dyn ConcreteCausalLM>> = Vec::new();
                         for future in futures {
                             let model = future

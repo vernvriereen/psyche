@@ -166,6 +166,7 @@ impl SharableModel {
             self.parameters = Some(parameters);
             return Ok(());
         };
+
         // validate that both models have the same parameters
         let new_parameters_names: HashSet<_> = new_parameters.keys().cloned().collect();
         let parameters_names: HashSet<_> = parameters.keys().cloned().collect();
@@ -179,7 +180,6 @@ impl SharableModel {
             parameters.insert(param_name, Some(tensor));
         });
         self.parameters = Some(parameters);
-        println!("PARAMETERS UPDATED");
         Ok(())
     }
 
@@ -377,8 +377,7 @@ impl ModelSharing {
         Box::pin(async move {
             let (mut send, mut recv) = connection.accept_bi().await?;
             let model_request_type_bytes = recv.read_to_end(1000).await?;
-            let model_request_type =
-                ModelRequestType::from_bytes(&model_request_type_bytes).unwrap();
+            let model_request_type = ModelRequestType::from_bytes(&model_request_type_bytes)?;
             let blob_ticket = match model_request_type {
                 ModelRequestType::Parameter(parameter_request) => {
                     // Create channel for requesting the model parameter to the client backend
