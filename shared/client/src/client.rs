@@ -227,11 +227,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         Some(witness) = rx_witness.recv() => {
                             watcher.backend_mut().send_witness(witness).await?;
                         }
-                        Some(witness) = rx_health_check.recv() => {
-                            watcher.backend_mut().send_health_check(witness).await?;
+                        Some(health_check) = rx_health_check.recv() => {
+                            watcher.backend_mut().send_health_check(health_check).await?;
                         }
-                        Some(witness) = rx_checkpoint.recv() => {
-                            watcher.backend_mut().send_checkpoint(witness).await?;
+                        Some(checkpoint) = rx_checkpoint.recv() => {
+                            watcher.backend_mut().send_checkpoint(checkpoint).await?;
                         }
                         Some(model) = rx_model.recv() => {
                             sharable_model.update_parameters(model)?;

@@ -82,7 +82,7 @@ pub enum TrainError {
     #[error("Healthcheck thread crashed")]
     HealthCheckCrashed,
 
-    #[error("Healthcheck thread crashed")]
+    #[error("Coordinator error: {0}")]
     CoordinatorError(CoordinatorError),
 }
 
