@@ -85,6 +85,13 @@ anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea
 anchor-client = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea308440a9fa9cb79cee7bddd30ab163d5", features = [
     "async",
 ] }
+anchor-lang-idl = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea308440a9fa9cb79cee7bddd30ab163d5", features = [
+    "build",
+] }
+
+ts-rs = { git = "https://github.com/arilotter/ts-rs.git", rev = "7a2d7840f628763fc9fa549b19dc2cb8eb7cebd5", features = [
+    "psyche-impl",
+] }
 
 # dev only
 test-log = { version = "0.2.16", features = ["trace"] }

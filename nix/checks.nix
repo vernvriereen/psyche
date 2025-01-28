@@ -16,7 +16,7 @@
       (import ./common.nix {inherit inputs system pkgs;})
       src
       craneLib
-      commonArgs
+      rustWorkspaceArgs
       cargoArtifacts
       ;
   in {
@@ -27,13 +27,13 @@
           inherit src;
         };
 
-        workspace-clippy = craneLib.cargoClippy (commonArgs
+        workspace-clippy = craneLib.cargoClippy (rustWorkspaceArgs
           // {
             inherit cargoArtifacts;
             cargoClippyExtraArgs = "--workspace -- --deny warnings";
           });
 
-        workspace-test = craneLib.cargoNextest (commonArgs
+        workspace-test = craneLib.cargoNextest (rustWorkspaceArgs
           // {
             inherit cargoArtifacts;
             RUST_LOG = "info,psyche=trace";

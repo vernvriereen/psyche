@@ -7,6 +7,7 @@ use psyche_network::{
 };
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
+use ts_rs::TS;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ClientToServerMessage {
@@ -21,7 +22,8 @@ pub enum ServerToClientMessage {
     Coordinator(Box<Coordinator<ClientId>>),
 }
 
-#[derive(Serialize, Deserialize, Clone, Hash, PartialEq, Eq, Debug, Copy)]
+#[derive(Serialize, Deserialize, Clone, Hash, PartialEq, Eq, Debug, Copy, TS)]
+#[ts(type = "string")]
 pub struct ClientId(NodeId);
 
 impl Default for ClientId {

@@ -16,9 +16,11 @@
 
       inherit (import ./common.nix { inherit inputs system pkgs; })
         craneLib
+        buildSolanaIdl
         commonArgs
         buildPackage
         useHostGpuDrivers
+        src
         ;
 
       rustPackageNames = [
@@ -51,6 +53,14 @@
         rustPackages
         // nixglhostRustPackages
         // rec {
+          solana-coordinator-idl = buildSolanaIdl rec {
+            inherit src;
+            workspaceDir = ../architectures/decentralized/solana-coordinator;
+            sourceRoot = "source/architectures/decentralized/solana-coordinator";
+            programName = "solana-coordinator";
+            keypair = workspaceDir + "/local_dev_psyche_solana_coordinator-keypair.json";
+          };
+
           stream-docker-psyche-centralized-client = pkgs.dockerTools.streamLayeredImage {
             name = "docker.io/nousresearch/psyche-centralized-client";
             tag = "latest";

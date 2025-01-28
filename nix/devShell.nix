@@ -31,6 +31,9 @@
 
         # for running pkgs on non-nix
         pkgs.nix-gl-host
+
+        # solana
+        inputs.solana-pkgs.packages.${system}.default
       ];
     };
   };

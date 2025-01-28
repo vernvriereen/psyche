@@ -16,6 +16,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use tracing::{info, Level};
+use ts_rs::TS;
 
 // Simulated backend for demonstration
 #[allow(dead_code)]
@@ -40,7 +41,9 @@ impl<T: NodeIdentity> WatcherBackend<T> for DummyBackend<T> {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq, Default, Copy, Zeroable)]
+#[derive(
+    Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq, Default, Copy, Zeroable, TS,
+)]
 struct DummyNodeIdentity(u64);
 
 impl Display for DummyNodeIdentity {

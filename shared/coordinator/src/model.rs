@@ -11,6 +11,7 @@ use psyche_core::{
     Shuffle, TokenSize,
 };
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 #[derive(
     Clone,
@@ -22,6 +23,7 @@ use serde::{Deserialize, Serialize};
     Serialize,
     Deserialize,
     InitSpace,
+    TS,
 )]
 #[repr(C)]
 pub enum Model {
@@ -40,6 +42,7 @@ unsafe impl ZeroableInOption for Model {}
     Serialize,
     Deserialize,
     InitSpace,
+    TS,
 )]
 #[repr(C)]
 pub enum LLMArchitecture {
@@ -57,6 +60,7 @@ pub enum LLMArchitecture {
     Serialize,
     Deserialize,
     InitSpace,
+    TS,
 )]
 #[repr(C)]
 pub enum LLMTrainingDataType {
@@ -74,6 +78,7 @@ pub enum LLMTrainingDataType {
     Debug,
     Zeroable,
     Copy,
+    TS,
 )]
 #[repr(C)]
 #[allow(clippy::large_enum_variant)]
@@ -84,6 +89,7 @@ pub enum LLMTrainingDataLocation {
             serialize_with = "serde_serialize_string",
             deserialize_with = "serde_deserialize_string"
         )]
+        #[ts(as = "String")]
         [u8; SOLANA_MAX_URL_STRING_LEN],
     ),
     Local(
@@ -91,6 +97,7 @@ pub enum LLMTrainingDataLocation {
             serialize_with = "serde_serialize_string",
             deserialize_with = "serde_deserialize_string"
         )]
+        #[ts(as = "String")]
         [u8; SOLANA_MAX_URL_STRING_LEN],
     ),
     Http {
@@ -111,6 +118,7 @@ pub enum LLMTrainingDataLocation {
     Debug,
     Zeroable,
     Copy,
+    TS,
 )]
 #[repr(C)]
 #[allow(clippy::large_enum_variant)]
@@ -120,6 +128,7 @@ pub enum HttpTrainingDataLocation {
             serialize_with = "serde_serialize_string",
             deserialize_with = "serde_deserialize_string"
         )]
+        #[ts(as = "String")]
         [u8; SOLANA_MAX_URL_STRING_LEN],
     ),
     NumberedFiles {
@@ -127,6 +136,7 @@ pub enum HttpTrainingDataLocation {
             serialize_with = "serde_serialize_string",
             deserialize_with = "serde_deserialize_string"
         )]
+        #[ts(as = "String")]
         url_template: [u8; SOLANA_MAX_URL_STRING_LEN],
         start_index: u32,
         n_left_pad_zeros: u8,
@@ -137,13 +147,15 @@ pub enum HttpTrainingDataLocation {
             serialize_with = "serde_serialize_string",
             deserialize_with = "serde_deserialize_string"
         )]
-        bucket_name: [u8; SOLANA_MAX_STRING_LEN],
+        #[ts(as = "String")]
+        bucket_name: [u8; SOLANA_MAX_URL_STRING_LEN],
 
         /// 0 len === no filter
         #[serde(
             serialize_with = "serde_serialize_string",
             deserialize_with = "serde_deserialize_string"
         )]
+        #[ts(as = "String")]
         filter_directory: [u8; SOLANA_MAX_URL_STRING_LEN],
     },
 }
@@ -158,6 +170,7 @@ pub enum HttpTrainingDataLocation {
     Debug,
     Zeroable,
     Copy,
+    TS,
 )]
 #[repr(C)]
 pub struct LLM {
@@ -194,18 +207,21 @@ impl LLM {
     Serialize,
     Deserialize,
     PartialEq,
+    TS,
 )]
 pub struct HubRepo {
     #[serde(
         serialize_with = "serde_serialize_string",
         deserialize_with = "serde_deserialize_string"
     )]
+    #[ts(as = "String")]
     pub repo_id: [u8; SOLANA_MAX_STRING_LEN],
     #[serde(
         serialize_with = "serde_serialize_optional_string",
         deserialize_with = "serde_deserialize_optional_string",
         default
     )]
+    #[ts(as = "Option<String>")]
     pub revision: Option<[u8; SOLANA_MAX_STRING_LEN]>,
 }
 
@@ -228,6 +244,7 @@ impl HubRepo {
     Debug,
     Zeroable,
     Copy,
+    TS,
 )]
 #[repr(C)]
 pub enum Checkpoint {

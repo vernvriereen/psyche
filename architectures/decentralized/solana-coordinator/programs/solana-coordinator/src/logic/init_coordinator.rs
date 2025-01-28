@@ -24,6 +24,7 @@ pub struct InitCoordinatorAccounts<'info> {
     )]
     pub coordinator_instance: Account<'info, CoordinatorInstance>,
 
+    /// CHECK: TODO TODO UNSAFE UNSAFE
     #[account(
         mut,
         owner = crate::ID,

@@ -1,3 +1,7 @@
+use crate::client::Client;
+use crate::clients_state::ClientsState;
+use crate::ClientId;
+use crate::ProgramError;
 use anchor_lang::prelude::*;
 use bytemuck::Pod;
 use bytemuck::Zeroable;
@@ -12,13 +16,19 @@ use psyche_coordinator::Witness;
 use psyche_core::sha256v;
 use psyche_core::SizedIterator;
 use psyche_core::SmallBoolean;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-use crate::client::Client;
-use crate::clients_state::ClientsState;
-use crate::ClientId;
-use crate::ProgramError;
-
-#[derive(Clone, Copy, Zeroable)]
+#[derive(
+    Clone,
+    Copy,
+    Zeroable,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    TS,
+)]
 #[repr(C)]
 pub struct CoordinatorInstanceState {
     pub coordinator: Coordinator<ClientId>,

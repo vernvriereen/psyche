@@ -2,11 +2,25 @@ use anchor_lang::prelude::*;
 use bytemuck::Pod;
 use bytemuck::Zeroable;
 use psyche_core::NodeIdentity;
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Copy, Default, Zeroable, InitSpace, Pod)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    Zeroable,
+    InitSpace,
+    Pod,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    TS,
+)]
 #[repr(C)]
+#[ts(rename = "SolanaClient")]
 pub struct Client {
     pub id: ClientId,
     pub staked: u64,
@@ -28,8 +42,10 @@ pub struct Client {
     Default,
     Zeroable,
     Pod,
+    TS,
 )]
 pub struct ClientId {
+    #[ts(type = "Pubkey")]
     pub signer: Pubkey,
     pub p2p_identity: [u8; 32],
 }

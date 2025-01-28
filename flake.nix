@@ -20,6 +20,7 @@
         rust-overlay.follows = "rust-overlay";
       };
     };
+    solana-pkgs.url = "github:arilotter/solana-flake";
   };
 
   outputs = inputs @ {

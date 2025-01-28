@@ -5,21 +5,18 @@ pub mod logic;
 mod program_error;
 
 use anchor_lang::prelude::*;
-pub use client::Client;
-pub use client::ClientId;
 pub use instance_state::CoordinatorInstanceState;
 use logic::*;
 pub use program_error::ProgramError;
-use psyche_coordinator::model::Model;
-use psyche_coordinator::Committee;
-use psyche_coordinator::CommitteeProof;
-use psyche_coordinator::CoordinatorConfig;
-use psyche_coordinator::Witness;
-use psyche_coordinator::WitnessBloom;
-use psyche_coordinator::WitnessProof;
-use psyche_coordinator::SOLANA_MAX_NUM_CLIENTS;
-use psyche_coordinator::SOLANA_MAX_STRING_LEN;
+use psyche_coordinator::{
+    model::Model, Committee, CommitteeProof, CoordinatorConfig, Witness,
+    WitnessBloom, WitnessProof, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
+};
 use psyche_core::MerkleRoot;
+
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+pub use {client::Client, client::ClientId};
 
 declare_id!("3RL7dHgZnuDCqT1FuKg9doJV6W7JYAxCGf2Tgq4rLfU3");
 
@@ -56,6 +53,7 @@ pub fn coordinator_account_from_bytes(
 
 #[account(zero_copy)]
 #[repr(C)]
+#[derive(Serialize, Deserialize, TS)]
 pub struct CoordinatorAccount {
     pub state: CoordinatorInstanceState,
 }

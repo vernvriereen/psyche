@@ -521,7 +521,7 @@ mod test {
         },
         CoordinatorConfig, RunState,
     };
-    use psyche_core::FixedVec;
+    use psyche_core::{FixedVec, OptimizerDefinition};
     use psyche_network::SecretKey;
     use rand::Rng;
 
@@ -572,7 +572,7 @@ mod test {
                     data_type: LLMTrainingDataType::Pretraining,
                     data_location: LLMTrainingDataLocation::Local(Zeroable::zeroed()),
                     lr_schedule: LearningRateSchedule::Constant(ConstantLR::default()),
-                    optimizer: Optimizer::Distro {
+                    optimizer: OptimizerDefinition::Distro {
                         clip_grad_norm: None,
                         compression_decay: 1.0,
                         compression_decay_warmup_steps: 0,
@@ -580,7 +580,7 @@ mod test {
                         compression_topk_startup: 0,
                         compression_topk_startup_steps: 0,
                         compression_chunk: 1,
-                        quantize: false.into(),
+                        quantize_1bit: false.into(),
                     },
                 })),
             )

@@ -1,24 +1,45 @@
 use anchor_lang::prelude::*;
-use bytemuck::Pod;
-use bytemuck::Zeroable;
-use psyche_core::FixedVec;
-use psyche_core::SizedIterator;
 
-use crate::client::Client;
-use crate::program_error::ProgramError;
-use crate::ClientId;
-use crate::SOLANA_MAX_NUM_PENDING_CLIENTS;
+use crate::{
+    client::Client, program_error::ProgramError, ClientId,
+    SOLANA_MAX_NUM_PENDING_CLIENTS,
+};
 
-#[derive(Debug, Clone, Copy, Zeroable)]
+use bytemuck::{Pod, Zeroable};
+use psyche_core::{FixedVec, SizedIterator};
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Zeroable,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    TS,
+)]
 #[repr(C)]
 pub struct ClientsState {
-    pub clients: FixedVec<Client, SOLANA_MAX_NUM_PENDING_CLIENTS>,
+    pub clients: FixedVec<Client, { SOLANA_MAX_NUM_PENDING_CLIENTS }>,
     pub next_active: u64,
     pub current_epoch_rates: ClientsEpochRates,
     pub future_epoch_rates: ClientsEpochRates,
 }
 
-#[derive(Debug, Clone, Copy, Zeroable)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Zeroable,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    TS,
+)]
 #[repr(C)]
 pub struct ClientsEpochRates {
     pub earning_rate: u64,
