@@ -213,7 +213,8 @@ pub async fn memnet_coordinator_run() {
         RunState::Warmup
     );
 
-    endpoint.move_clock_forward(1, 1).await.unwrap();
+    // Pretend 1 second passed
+    endpoint.forward_clock_unix_timestamp(1).await.unwrap();
 
     // tick should now succeed
     process_tick(

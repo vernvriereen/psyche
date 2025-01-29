@@ -1,6 +1,6 @@
 use solana_toolbox_endpoint::{
     toolbox_endpoint_program_test_builtin_program_anchor, ToolboxEndpoint,
-    ToolboxEndpointLoggerPrint,
+    ToolboxEndpointLoggerPrinter,
 };
 
 pub async fn create_memnet_endpoint() -> ToolboxEndpoint {
@@ -12,6 +12,6 @@ pub async fn create_memnet_endpoint() -> ToolboxEndpoint {
         ),
     ])
     .await;
-    endpoint.add_logger(Box::new(ToolboxEndpointLoggerPrint::default()));
+    endpoint.add_logger(Box::new(ToolboxEndpointLoggerPrinter::default()));
     endpoint
 }

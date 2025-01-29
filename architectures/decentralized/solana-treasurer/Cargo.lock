@@ -75,17 +75,6 @@ dependencies = [
 
 [[package]]
 name = "ahash"
-version = "0.7.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "891477e0c6a8957309ee5c45a6368af3ae14bb510732d2684ffa19af310920f9"
-dependencies = [
- "getrandom 0.2.15",
- "once_cell",
- "version_check",
-]
-
-[[package]]
-name = "ahash"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e89da841a80418a9b391ebaea17f5c112ffaaa96f621d2c285b5174da76b9011"
@@ -704,7 +693,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "115e54d64eb62cdebad391c19efc9dce4981c690c85a33a12199d99bb9546fee"
 dependencies = [
  "borsh-derive 0.10.4",
- "hashbrown 0.12.3",
+ "hashbrown 0.13.2",
 ]
 
 [[package]]
@@ -1825,9 +1814,6 @@ name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
-dependencies = [
- "ahash 0.7.8",
-]
 
 [[package]]
 name = "hashbrown"
@@ -1835,7 +1821,7 @@ version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43a3c133739dddd0d2990f9a4bdf8eb4b21ef50e4851ca85ab661199821d510e"
 dependencies = [
- "ahash 0.8.11",
+ "ahash",
 ]
 
 [[package]]
@@ -4031,7 +4017,7 @@ version = "2.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf3bb405824d855608d911909f4e8f97e747bdbab744dbf3113371f2c63a2de3"
 dependencies = [
- "ahash 0.8.11",
+ "ahash",
  "bincode",
  "blake3",
  "bv",
@@ -4237,7 +4223,7 @@ version = "2.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ca37c099d5136beda3db46bb7fdf2a688dd2755d6ac2f57cf341dad46261d30"
 dependencies = [
- "ahash 0.8.11",
+ "ahash",
  "lazy_static",
  "log",
  "solana-address-lookup-table-program",
@@ -4357,7 +4343,7 @@ version = "2.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b08034411a699f19c13cb9d2d6c53cacc99da8c4592c3b43ca54b17cc00bc19d"
 dependencies = [
- "ahash 0.8.11",
+ "ahash",
  "lazy_static",
  "log",
  "solana-builtins-default-costs",
@@ -4668,7 +4654,7 @@ version = "2.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70d302f5567ee9d3ffd369980f42484c81144e4a2a8f6b8dd100743bb49d54b3"
 dependencies = [
- "ahash 0.8.11",
+ "ahash",
  "bincode",
  "bv",
  "caps",
@@ -5071,7 +5057,7 @@ version = "2.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e67f5d86d10ce86b046e293867215d4bbb90eede7453d2025ac566b5f11fbfc"
 dependencies = [
- "ahash 0.8.11",
+ "ahash",
  "aquamarine",
  "arrayref",
  "base64 0.22.1",
@@ -5829,9 +5815,9 @@ dependencies = [
 
 [[package]]
 name = "solana_toolbox_endpoint"
-version = "0.1.30-solana-2.1.4"
+version = "0.1.38-solana-2.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7d87c6fdc9c8dfcadfec3fc8fb0aa93ff8bacbae1d98e8801ca53c9ed0b76f1"
+checksum = "967eafa2981e3fc19a1da74e81c86d2d77eab6309a975068366af01441025e5b"
 dependencies = [
  "async-trait",
  "bincode",
