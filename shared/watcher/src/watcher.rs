@@ -47,6 +47,10 @@ where
         Ok((prev, self.state.as_ref().unwrap()))
     }
 
+    pub fn coordinator_state(&self) -> Option<Coordinator<T>> {
+        self.state
+    }
+
     pub fn backend(&self) -> &B {
         &self.backend
     }

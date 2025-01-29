@@ -6,8 +6,8 @@ use anyhow::{Error, Result};
 use psyche_coordinator::RunState;
 use psyche_core::NodeIdentity;
 use psyche_network::{
-    allowlist, AuthenticatableIdentity, DownloadComplete, ModelParameters, NetworkConnection,
-    NetworkEvent, NetworkTUIState, Networkable, NodeId,
+    allowlist, request_model_parameter, AuthenticatableIdentity, DownloadComplete, ModelParameters,
+    NetworkConnection, NetworkEvent, NetworkTUIState, Networkable, NodeId, TransmittableDownload,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use wandb::DataValue;
@@ -51,6 +51,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
             let cancel = cancel.clone();
             let req_tui_state = req_tui_state.clone();
             async move {
+                #[cfg(not(feature = "parallelism"))]
+                if init_config.tensor_parallelism != 1 {
+                    anyhow::bail!("Tensor parallelism was set but this build does not support it (must be built with --features=parallelism)")
+                }
+
                 let mut watcher = BackendWatcher::new(backend);
 
                 // From Run
@@ -60,6 +65,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                 let (tx_model, mut rx_model) = mpsc::unbounded_channel();
                 let (tx_distro_result, mut rx_distro_result) = mpsc::unbounded_channel();
                 let (tx_request_download, mut rx_request_download) = mpsc::unbounded_channel();
+                let (tx_parameters_req, mut rx_parameters_req) = mpsc::unbounded_channel();
+                let (tx_params_download, mut rx_params_download) = mpsc::unbounded_channel();
 
                 let mut run = RunManager::<T, A>::new(RunInitConfigAndIO {
                     init_config,
@@ -68,12 +75,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                     tx_health_check,
                     tx_checkpoint,
                     tx_model,
+                    tx_parameters_req,
                     tx_distro_result,
                     tx_request_download,
                 });
 
                 let mut retried_downloads: HashMap<psyche_network::Hash, usize> = HashMap::new();
-                let mut current_model = ModelParameters::empty();
+                let mut sharable_model = ModelParameters::empty();
                 loop {
                     select! {
                         _ = cancel.cancelled() => {
@@ -123,10 +131,20 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         }
                                     }
                                     NetworkEvent::DownloadComplete(DownloadComplete {
-                                        data: distro_result, hash, ..
+                                        data: download_data, hash, ..
                                     }) => {
-                                        trace!("Download complete: step {} batch id {}", distro_result.step, distro_result.batch_id);
-                                        run.apply_distro_result(hash, distro_result).await;
+                                        match download_data {
+                                            TransmittableDownload::DistroResult(distro_result) => {
+                                                trace!("Download complete: step {} batch id {}", distro_result.step, distro_result.batch_id);
+                                                run.apply_distro_result(hash, distro_result).await;
+                                            },
+                                            TransmittableDownload::ModelParameter(parameter) => {
+                                                sharable_model.add_parameter(parameter)?;
+                                                if sharable_model.is_download_complete() {
+                                                    sharable_model.send_init_parameters()?;
+                                                }
+                                            },
+                                        }
                                     }
                                     NetworkEvent::DownloadFailed(dl) => {
                                         let retries = *retried_downloads.get(&dl.blob_ticket.hash()).unwrap_or(&0);
@@ -140,19 +158,27 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     }
                                     NetworkEvent::ParameterRequest(parameter_name, protocol_req_tx) => {
 
-                                        // We should validate things here:
-                                        //  * Make sure that the parameter is requested while we are in RunState::Warmup.
-                                        //  * Validate that the message is from a known peer.
+                                        // TODO: We should validate that the parameter is requested while we are in RunState::Warmup.
 
-                                        let transmittable_parameter = current_model.get_transmittable_parameter(&parameter_name)?;
-                                        let ticket = p2p.add_downloadable(transmittable_parameter).await?;
+                                        match sharable_model.get_transmittable_parameter(&parameter_name) {
+                                            Err(e) => {
+                                                if let Err(e) = protocol_req_tx.send(Err(e)) {
+                                                    warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e:?}");
+                                                }
+                                            },
+                                            Ok(transmittable_parameter) => {
+                                                 let transmittable_download = TransmittableDownload::ModelParameter(transmittable_parameter);
+                                            let ticket = p2p.add_downloadable(transmittable_download).await?;
 
-                                        // Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
-                                        // to the client
+                                            // TODO: Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
+                                            // to the client
 
-                                        if let Err(e) = protocol_req_tx.send(ticket) {
-                                            warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e}");
-                                        };
+                                            info!("Sending requested model parameter blob ticket");
+                                            if let Err(e) = protocol_req_tx.send(Ok(ticket)) {
+                                                warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e:?}");
+                                            };
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -163,7 +189,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         }
 
                         Some(DistroBroadcastAndPayload{ step, batch_id, commitment, proof, distro_result }) = rx_distro_result.recv() => {
-                            let ticket = p2p.add_downloadable(distro_result.clone()).await?;
+                            let transmittable_distro_result = TransmittableDownload::DistroResult(distro_result.clone());
+                            let ticket = p2p.add_downloadable(transmittable_distro_result).await?;
                             let hash = ticket.hash();
                             debug!(
                                 "Broadcasting payload step {step} batch id {batch_id} hash 0x{}",
@@ -197,8 +224,58 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             watcher.backend_mut().send_checkpoint(witness).await?;
                         }
                         Some(model) = rx_model.recv() => {
-                            current_model.update_parameters(model)?;
+                            sharable_model.update_parameters(model)?;
                         },
+                        Some((param_names, tx_params_response)) = rx_parameters_req.recv() => {
+                            sharable_model.initialize_parameters(&param_names, tx_params_response);
+                            let Some(coordinator_state) = watcher.coordinator_state() else {
+                                warn!("Coordinator state not yet registered, nothing to do");
+                                return Ok(());
+                            };
+
+                            let tx_params_download = tx_params_download.clone();
+                            let router = p2p.router();
+
+                            let me = NodeId::from_bytes(identity.get_p2p_public_key()).unwrap();
+                            let peer_ids: Vec<NodeId> = coordinator_state.epoch_state.clients.iter().map(|client| {
+                                let peer_id_bytes = client.id.get_p2p_public_key();
+                                NodeId::from_bytes(peer_id_bytes).unwrap()
+                            })
+                            .filter(|peer_id| peer_id != &me)
+                            .collect();
+
+                            let handle: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
+                                let mut parameter_blob_tickets = Vec::new();
+                                // TODO: The parameter requests could be done concurrently, setting some MAX_CONCURRENT_PARAM_REQUESTS
+
+                                let mut peer_iter = peer_ids.into_iter().cycle(); // Iterate over peers in a cycle
+                                for param_name in param_names {
+                                    for peer_id in peer_iter.by_ref() {
+                                            let router = router.clone();
+                                            debug!("Requesting parameter {param_name} from peer {peer_id}");
+                                            match request_model_parameter(router, peer_id, param_name.clone()).await {
+                                                Ok(parameter_blob_ticket) => {
+                                                    parameter_blob_tickets.push(parameter_blob_ticket);
+                                                    // Continue to the next parameter
+                                                    break;
+                                                }
+                                                Err(e) => {
+                                                    warn!("Failed to get parameter {param_name} from peer {peer_id}: {e}");
+                                                    // Continue to the next peer
+                                                }
+                                            }
+                                    }
+                                }
+                                tx_params_download.send(parameter_blob_tickets)?;
+                                Ok(())
+                            });
+                            drop(handle);
+                        }
+                        Some(param_blob_tickets) = rx_params_download.recv() => {
+                            for ticket in param_blob_tickets {
+                                p2p.start_download(ticket).await?;
+                            }
+                        }
                         else => break
                     }
                 }

@@ -108,7 +108,7 @@ pub async fn memnet_coordinator_run() {
                 compression_topk_startup: 0,
                 compression_topk_startup_steps: 0,
                 compression_chunk: 1,
-                quantize: false,
+                quantize_1bit: false,
             },
         })),
     )

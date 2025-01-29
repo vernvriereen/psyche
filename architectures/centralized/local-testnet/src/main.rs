@@ -24,7 +24,7 @@ enum Commands {
         #[command(flatten)]
         start_args: StartArgs,
     },
-    // For generating `docs/CommandLineHelp-local-testnet.md`.
+    // Prints the help, optionally as markdown. Used for docs generation.
     #[clap(hide = true)]
     PrintAllHelp {
         #[arg(long, required = true)]

@@ -122,7 +122,7 @@ impl CooldownStepMetadata {
                     checkpoint_dir,
                 }) = checkpoint_info
                 else {
-                    // Here we assume that we either we upload the model to HF or
+                    // Here we assume that either we checkpoint the model to HF or
                     // we share it by p2p.
                     tx_model
                         .send(variables)

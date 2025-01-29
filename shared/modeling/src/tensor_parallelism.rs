@@ -28,7 +28,7 @@ impl Communicator {
         unimplemented!()
     }
 
-    pub fn rank(&self) -> usize {
+    pub fn rank(&self) -> i64 {
         unimplemented!()
     }
 }
@@ -198,7 +198,7 @@ impl ColumnParallelLinear {
                 bias,
                 shard: comm.as_ref().map(|comm| Shard {
                     dim: 0,
-                    rank: comm.rank(),
+                    rank: comm.rank() as usize,
                     world_size: comm.size() as usize,
                 }),
                 ..Default::default()
@@ -260,7 +260,7 @@ impl RowParallelLinear {
                 bias,
                 shard: comm.as_ref().map(|comm| Shard {
                     dim: 1,
-                    rank: comm.rank(),
+                    rank: comm.rank() as usize,
                     world_size: comm.size() as usize,
                 }),
                 ..Default::default()
@@ -325,7 +325,6 @@ pub fn unshard_tensor(sharded_tensors: Vec<Tensor>, shard: &Shard) -> Tensor {
     full_tensor
 }
 
-#[allow(unused)]
 pub fn tensor_shard(full_tensor: &Tensor, shard: &Shard) -> Tensor {
     let Shard {
         dim,
