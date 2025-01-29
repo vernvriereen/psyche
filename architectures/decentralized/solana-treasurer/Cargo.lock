@@ -259,6 +259,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "anchor-spl"
+version = "0.30.1"
+source = "git+https://github.com/coral-xyz/anchor.git?rev=a7a23eea308440a9fa9cb79cee7bddd30ab163d5#a7a23eea308440a9fa9cb79cee7bddd30ab163d5"
+dependencies = [
+ "anchor-lang",
+ "spl-associated-token-account 6.0.0",
+ "spl-pod 0.5.0",
+ "spl-token 7.0.0",
+ "spl-token-2022 6.0.0",
+ "spl-token-group-interface 0.5.0",
+ "spl-token-metadata-interface 0.6.0",
+]
+
+[[package]]
 name = "anchor-syn"
 version = "0.30.1"
 source = "git+https://github.com/coral-xyz/anchor.git?rev=a7a23eea308440a9fa9cb79cee7bddd30ab163d5#a7a23eea308440a9fa9cb79cee7bddd30ab163d5"
@@ -3128,8 +3142,10 @@ name = "psyche-solana-treasurer"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "anchor-spl",
  "bytemuck",
  "psyche-coordinator",
+ "psyche-core",
  "psyche-solana-coordinator",
  "serde",
  "solana-sdk",
@@ -5799,9 +5815,9 @@ dependencies = [
 
 [[package]]
 name = "solana_toolbox_endpoint"
-version = "0.1.30-solana-2.1.4"
+version = "0.1.38-solana-2.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7d87c6fdc9c8dfcadfec3fc8fb0aa93ff8bacbae1d98e8801ca53c9ed0b76f1"
+checksum = "967eafa2981e3fc19a1da74e81c86d2d77eab6309a975068366af01441025e5b"
 dependencies = [
  "async-trait",
  "bincode",

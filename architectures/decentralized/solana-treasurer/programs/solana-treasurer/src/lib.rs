@@ -1,21 +1,51 @@
+pub mod logic;
+pub mod state;
+
 use anchor_lang::prelude::*;
+use logic::*;
 
 declare_id!("77mYTtUnEzSYVoG1JtWCjKAdakSvYDkdPPy8DoGqr5RP");
-
-pub mod create_run;
-
-use create_run::*;
 
 #[program]
 pub mod psyche_solana_treasurer {
     use super::*;
 
-    pub fn create_run(ctx: Context<CreateRunAccounts>, run_id: String) -> Result<()> {
-        create_run_logic(ctx, run_id)
+    pub fn run_create(context: Context<RunCreateAccounts>, params: RunCreateParams) -> Result<()> {
+        run_create_processor(context, params)
+    }
+
+    pub fn run_top_up(context: Context<RunTopUpAccounts>, params: RunTopUpParams) -> Result<()> {
+        run_top_up_processor(context, params)
+    }
+
+    pub fn run_update(context: Context<RunUpdateAccounts>, params: RunUpdateParams) -> Result<()> {
+        run_update_processor(context, params)
+    }
+
+    pub fn participant_create(
+        context: Context<ParticipantCreateAccounts>,
+        params: ParticipantCreateParams,
+    ) -> Result<()> {
+        participant_create_processor(context, params)
+    }
+
+    pub fn participant_claim(
+        context: Context<ParticipantClaimAccounts>,
+        params: ParticipantClaimParams,
+    ) -> Result<()> {
+        participant_claim_processor(context, params)
     }
 }
 
 #[error_code]
 pub enum ProgramError {
-    Overflow,
+    #[msg("Invalid parameter")]
+    InvalidParameter,
+}
+
+pub fn run_identity_from_string(string: &str) -> Pubkey {
+    let mut bytes = vec![];
+    bytes.extend_from_slice(string.as_bytes());
+    bytes.resize(32, 0);
+    Pubkey::new_from_array(bytes.try_into().unwrap())
 }

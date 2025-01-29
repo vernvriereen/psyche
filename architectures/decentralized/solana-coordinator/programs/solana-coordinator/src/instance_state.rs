@@ -155,9 +155,7 @@ impl CoordinatorInstanceState {
         if !self.clients_state.whitelist.is_empty()
             && !self.clients_state.whitelist.iter().any(|x| x == &id.signer)
         {
-            {
-                return err!(ProgramError::NotInWhitelist);
-            }
+            return err!(ProgramError::NotInWhitelist);
         }
 
         let exisiting = match self

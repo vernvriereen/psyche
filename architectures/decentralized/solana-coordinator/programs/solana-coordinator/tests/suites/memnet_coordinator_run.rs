@@ -1,7 +1,6 @@
 use crate::api::{
-    accounts::get_coordinator_instance_state,
+    accounts::{find_pda_coordinator_instance, get_coordinator_instance_state},
     create_memnet_endpoint::create_memnet_endpoint,
-    find_pda_coordinator_instance::find_pda_coordinator_instance,
     process_instructions::{
         process_free_coordinator, process_initialize_coordinator, process_join_run,
         process_set_paused, process_set_whitelist, process_tick,
@@ -25,32 +24,41 @@ use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer};
 pub async fn memnet_coordinator_run() {
     let mut endpoint = create_memnet_endpoint().await;
 
-    let run_id = "Hello World";
-
     // Create payer key and fund it
     let payer = Keypair::new();
-    let payer_lamports = 10_000_000_000;
     endpoint
-        .process_airdrop(&payer.pubkey(), payer_lamports)
+        .process_airdrop(&payer.pubkey(), 10_000_000_000)
         .await
         .unwrap();
 
-    // create the empty pre-allocated coordinator_account
+    // Run constants
+    let run_id = "Hello world!";
     let coordinator_account = Keypair::new();
+
+    // The owner authority of the run
+    let authority = Keypair::new();
+
+    // create the empty pre-allocated coordinator_account
     endpoint
         .process_system_create_exempt(
             &payer,
             &coordinator_account,
-            CoordinatorAccount::size_with_discriminator(),
+            CoordinatorAccount::space_with_discriminator(),
             &psyche_solana_coordinator::ID,
         )
         .await
         .unwrap();
 
     // initialize the coordinator
-    process_initialize_coordinator(&mut endpoint, &payer, &coordinator_account.pubkey(), run_id)
-        .await
-        .unwrap();
+    process_initialize_coordinator(
+        &mut endpoint,
+        &payer,
+        &authority,
+        &coordinator_account.pubkey(),
+        run_id,
+    )
+    .await
+    .unwrap();
 
     // verify that the run is in initialized state
     assert_eq!(
@@ -66,6 +74,7 @@ pub async fn memnet_coordinator_run() {
     process_update_coordinator_config_model(
         &mut endpoint,
         &payer,
+        &authority,
         &coordinator_account.pubkey(),
         run_id,
         Some(CoordinatorConfig::<ClientId> {
@@ -120,6 +129,7 @@ pub async fn memnet_coordinator_run() {
     process_set_whitelist(
         &mut endpoint,
         &payer,
+        &authority,
         &coordinator_account.pubkey(),
         run_id,
         vec![Pubkey::zeroed()],
@@ -130,14 +140,11 @@ pub async fn memnet_coordinator_run() {
     // Generate the client key and fund it
     let client_keypair = Keypair::new();
     let client_id = ClientId::new(client_keypair.pubkey(), Default::default());
-    endpoint
-        .process_airdrop(&client_keypair.pubkey(), payer_lamports)
-        .await
-        .unwrap();
 
     // not whitelisted, can't join
     assert!(process_join_run(
         &mut endpoint,
+        &payer,
         &payer,
         &coordinator_account.pubkey(),
         run_id,
@@ -150,6 +157,7 @@ pub async fn memnet_coordinator_run() {
     process_set_whitelist(
         &mut endpoint,
         &payer,
+        &authority,
         &coordinator_account.pubkey(),
         run_id,
         vec![client_id.signer],
@@ -160,6 +168,7 @@ pub async fn memnet_coordinator_run() {
     // Now whitelisted, can join
     process_join_run(
         &mut endpoint,
+        &payer,
         &client_keypair,
         &coordinator_account.pubkey(),
         run_id,
@@ -170,14 +179,11 @@ pub async fn memnet_coordinator_run() {
 
     // Create a ticker key and fund it
     let ticker_keypair = Keypair::new();
-    endpoint
-        .process_airdrop(&ticker_keypair.pubkey(), payer_lamports)
-        .await
-        .unwrap();
 
     // Can't tick yet because paused
     assert!(process_tick(
         &mut endpoint,
+        &payer,
         &ticker_keypair,
         &coordinator_account.pubkey(),
         run_id
@@ -189,6 +195,7 @@ pub async fn memnet_coordinator_run() {
     process_set_paused(
         &mut endpoint,
         &payer,
+        &authority,
         &coordinator_account.pubkey(),
         run_id,
         false,
@@ -196,6 +203,7 @@ pub async fn memnet_coordinator_run() {
     .await
     .unwrap();
 
+    // Coordinator should have changed
     assert_eq!(
         get_coordinator_instance_state(&mut endpoint, &coordinator_account.pubkey())
             .await
@@ -205,10 +213,13 @@ pub async fn memnet_coordinator_run() {
         RunState::Warmup
     );
 
-    endpoint.move_clock_forward(1, 1).await.unwrap();
+    // Pretend 1 second passed
+    endpoint.forward_clock_unix_timestamp(1).await.unwrap();
 
+    // tick should now succeed
     process_tick(
         &mut endpoint,
+        &payer,
         &ticker_keypair,
         &coordinator_account.pubkey(),
         run_id,
@@ -216,6 +227,7 @@ pub async fn memnet_coordinator_run() {
     .await
     .unwrap();
 
+    // Coordinator in train mode
     let coordinator = get_coordinator_instance_state(&mut endpoint, &coordinator_account.pubkey())
         .await
         .unwrap()
@@ -224,6 +236,7 @@ pub async fn memnet_coordinator_run() {
     assert_eq!(coordinator.current_round().unwrap().height, 0);
     assert_eq!(coordinator.progress.step, 1);
 
+    // Check that only the right user can successfully send a witness
     let witness = Witness {
         proof: WitnessProof {
             witness: true,
@@ -233,10 +246,9 @@ pub async fn memnet_coordinator_run() {
         participant_bloom: Default::default(),
         order_bloom: Default::default(),
     };
-
-    // invalid witness
     assert!(process_witness(
         &mut endpoint,
+        &payer,
         &ticker_keypair,
         &coordinator_account.pubkey(),
         run_id,
@@ -244,9 +256,9 @@ pub async fn memnet_coordinator_run() {
     )
     .await
     .is_err());
-
     process_witness(
         &mut endpoint,
+        &payer,
         &client_keypair,
         &coordinator_account.pubkey(),
         run_id,
@@ -255,6 +267,7 @@ pub async fn memnet_coordinator_run() {
     .await
     .unwrap();
 
+    // Coordinator state after witness should change
     assert_eq!(
         get_coordinator_instance_state(&mut endpoint, &coordinator_account.pubkey())
             .await
@@ -269,47 +282,71 @@ pub async fn memnet_coordinator_run() {
 pub async fn memnet_coordinator_free() {
     let mut endpoint = create_memnet_endpoint().await;
 
+    // Create payer key and fund it
     let payer = Keypair::new();
-    let payer_lamports = 10_000_000_000;
-
-    let run_id = "Free";
-    let coordinator_account = Keypair::new();
-
     endpoint
-        .process_airdrop(&payer.pubkey(), payer_lamports)
+        .process_airdrop(&payer.pubkey(), 10_000_000_000)
         .await
         .unwrap();
+
+    // Run constants
+    let run_id = "Hello world!";
+    let coordinator_account = Keypair::new();
+
+    // The owner authority of the run
+    let authority = Keypair::new();
+
+    // Check the payer and authority balance before paying for the coordinator
+    let payer_balance_start = endpoint
+        .get_account_or_default(&payer.pubkey())
+        .await
+        .unwrap()
+        .lamports;
+    let authority_balance_start = endpoint
+        .get_account_or_default(&authority.pubkey())
+        .await
+        .unwrap()
+        .lamports;
 
     // create the empty pre-allocated coordinator_account
     endpoint
         .process_system_create_exempt(
             &payer,
             &coordinator_account,
-            CoordinatorAccount::size_with_discriminator(),
+            CoordinatorAccount::space_with_discriminator(),
             &psyche_solana_coordinator::ID,
         )
         .await
         .unwrap();
 
-    let start_balance = endpoint
-        .get_account(&payer.pubkey())
+    // Initialize coordinator
+    process_initialize_coordinator(
+        &mut endpoint,
+        &payer,
+        &authority,
+        &coordinator_account.pubkey(),
+        run_id,
+    )
+    .await
+    .unwrap();
+
+    // Check the payer and authority balance after paying for the coordinator accounts
+    let payer_balance_after = endpoint
+        .get_account_or_default(&payer.pubkey())
         .await
         .unwrap()
+        .lamports;
+    let authority_balance_after = endpoint
+        .get_account_or_default(&authority.pubkey())
+        .await
         .unwrap()
         .lamports;
 
-    process_initialize_coordinator(&mut endpoint, &payer, &coordinator_account.pubkey(), run_id)
-        .await
-        .unwrap();
+    // Check that balance mouvements match what we expect
+    assert!(payer_balance_after < payer_balance_start);
+    assert_eq!(authority_balance_after, authority_balance_start);
 
-    let next_balance = endpoint
-        .get_account(&payer.pubkey())
-        .await
-        .unwrap()
-        .unwrap()
-        .lamports;
-    assert!(next_balance < start_balance);
-
+    // Check that the coordinator instance and account do actually exists now
     let coordinator_instance = find_pda_coordinator_instance(run_id);
     assert!(endpoint
         .get_account(&coordinator_account.pubkey())
@@ -322,18 +359,49 @@ pub async fn memnet_coordinator_free() {
         .unwrap()
         .is_some());
 
-    process_free_coordinator(&mut endpoint, &payer, &coordinator_account.pubkey(), run_id)
+    // This account will be reimbursed for the costs of the rent
+    let reimbursed = Pubkey::new_unique();
+    let reimbursed_balance_before = endpoint
+        .get_account_or_default(&reimbursed)
         .await
-        .unwrap();
-
-    let final_balance = endpoint
-        .get_account(&payer.pubkey())
-        .await
-        .unwrap()
         .unwrap()
         .lamports;
-    assert!(final_balance > next_balance);
 
+    // Free and close the coordinator account and instance
+    process_free_coordinator(
+        &mut endpoint,
+        &payer,
+        &authority,
+        &reimbursed,
+        &coordinator_account.pubkey(),
+        run_id,
+    )
+    .await
+    .unwrap();
+
+    // Check all the keys balances at the end
+    let payer_balance_final = endpoint
+        .get_account_or_default(&payer.pubkey())
+        .await
+        .unwrap()
+        .lamports;
+    let authority_balance_final = endpoint
+        .get_account_or_default(&authority.pubkey())
+        .await
+        .unwrap()
+        .lamports;
+    let reimbursed_balance_final = endpoint
+        .get_account_or_default(&reimbursed)
+        .await
+        .unwrap()
+        .lamports;
+
+    // Check that we did in fact get reimbursed to the proper account
+    assert_eq!(payer_balance_after - 5_000 * 2, payer_balance_final);
+    assert_eq!(authority_balance_after, authority_balance_final);
+    assert!(reimbursed_balance_before < reimbursed_balance_final);
+
+    // Check that the coordinator account and instances were actually closed
     assert!(endpoint
         .get_account(&coordinator_account.pubkey())
         .await
