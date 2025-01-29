@@ -6412,6 +6412,7 @@ dependencies = [
  "bytemuck",
  "fast-math",
  "fnv",
+ "postcard",
  "rand 0.8.5",
  "serde",
  "serde_arrays",
