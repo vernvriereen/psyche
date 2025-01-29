@@ -10,6 +10,7 @@ bytemuck.workspace = true
 fast-math.workspace = true
 rand = { workspace = true, optional = true }
 serde.workspace = true
+postcard.workspace = true
 fnv = "1.0.7"
 serde_arrays = "0.1.0"
 bitvec = { version = "1", features = ["serde", "std"] }
