@@ -35,7 +35,7 @@ pub enum CooldownError {
 }
 
 pub struct CooldownStepMetadata {
-    tx_checkpoint: mpsc::UnboundedSender<model::Checkpoint>,
+    tx_checkpoint: mpsc::UnboundedSender<model::HubRepo>,
     tx_model: mpsc::UnboundedSender<HashMap<String, Tensor>>,
     checkpoint_info: Option<CheckpointConfig>,
     checkpoint_extra_files: Vec<PathBuf>,
@@ -45,7 +45,7 @@ pub struct CooldownStepMetadata {
 
 impl CooldownStepMetadata {
     pub fn new(
-        tx_checkpoint: mpsc::UnboundedSender<model::Checkpoint>,
+        tx_checkpoint: mpsc::UnboundedSender<model::HubRepo>,
         tx_model: mpsc::UnboundedSender<HashMap<String, Tensor>>,
         checkpoint_info: Option<CheckpointConfig>,
         checkpoint_extra_files: Vec<PathBuf>,
@@ -114,8 +114,17 @@ impl CooldownStepMetadata {
                     .await
                     .map_err(|_| CheckpointError::ExtractThreadCrashed)??;
 
+                let variables_clone: HashMap<String, Tensor> = variables
+                    .iter()
+                    .map(|(name, var)| (name.clone(), var.shallow_clone()))
+                    .collect();
+
                 trainers.push(trainer);
                 let evals = eval_runner.start(trainers);
+
+                tx_model
+                    .send(variables_clone)
+                    .map_err(|_| CheckpointError::SendCheckpoint)?;
 
                 let Some(CheckpointConfig {
                     hub_upload,
@@ -124,10 +133,6 @@ impl CooldownStepMetadata {
                 else {
                     // Here we assume that either we checkpoint the model to HF or
                     // we share it by p2p.
-                    tx_model
-                        .send(variables)
-                        .map_err(|_| CheckpointError::SendCheckpoint)?;
-
                     return Ok(evals);
                 };
 
@@ -168,10 +173,10 @@ impl CooldownStepMetadata {
                 .await?;
 
                 tx_checkpoint
-                    .send(model::Checkpoint::Hub(HubRepo {
+                    .send(HubRepo {
                         repo_id: to_fixed_size_array(&hub_repo),
                         revision: Some(to_fixed_size_array(&revision)),
-                    }))
+                    })
                     .map_err(|_| CheckpointError::SendCheckpoint)?;
 
                 Ok(evals)

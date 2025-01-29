@@ -25,7 +25,7 @@ type TabsData = <Tabs as CustomWidget>::Data;
 pub enum ToSend {
     Witness(Box<Witness>),
     HealthCheck(HealthChecks),
-    Checkpoint(model::Checkpoint),
+    Checkpoint(model::HubRepo),
 }
 
 struct Backend {
@@ -62,7 +62,7 @@ impl WatcherBackend<ClientId> for Backend {
         Ok(())
     }
 
-    async fn send_checkpoint(&mut self, checkpoint: model::Checkpoint) -> Result<()> {
+    async fn send_checkpoint(&mut self, checkpoint: model::HubRepo) -> Result<()> {
         self.tx.send(ToSend::Checkpoint(checkpoint))?;
         Ok(())
     }

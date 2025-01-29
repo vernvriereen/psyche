@@ -1,5 +1,5 @@
 use crate::{
-    model::{self, Checkpoint, Model},
+    model::{self, Checkpoint, HubRepo, Model},
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
 
@@ -468,16 +468,18 @@ impl<T: NodeIdentity> Coordinator<T> {
     pub fn checkpoint(
         &mut self,
         from: &T,
-        checkpoint: Checkpoint,
+        hub_repo: HubRepo,
     ) -> std::result::Result<(), CoordinatorError> {
         if self.run_state == RunState::Cooldown
             && self.epoch_state.checkpointed.is_false()
             && self.config.checkpointers.iter().any(|x| x == from)
         {
             match &mut self.model {
-                Model::LLM(llm) => {
-                    llm.checkpoint = checkpoint;
-                }
+                Model::LLM(llm) => match llm.checkpoint {
+                    Checkpoint::P2P(_) => llm.checkpoint = Checkpoint::P2P(hub_repo),
+                    Checkpoint::Hub(_) => llm.checkpoint = Checkpoint::Hub(hub_repo),
+                    _ => {}
+                },
             }
             self.epoch_state.checkpointed = true.into();
             Ok(())
@@ -764,6 +766,11 @@ impl<T: NodeIdentity> Coordinator<T> {
                 || num_witnesses == 0
                 || (num_witnesses < self.config.witness_quorum)
             {
+                let Model::LLM(mut llm) = self.model;
+                if let Checkpoint::P2P(hub_repo) = llm.checkpoint {
+                    llm.checkpoint = Checkpoint::Hub(hub_repo);
+                }
+
                 self.start_cooldown(unix_timestamp);
             } else {
                 self.start_round_train(unix_timestamp, random_seed, 0);
