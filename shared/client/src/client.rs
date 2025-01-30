@@ -4,7 +4,10 @@ use crate::{
 };
 use anyhow::{bail, Error, Result};
 use futures::future::join_all;
-use psyche_coordinator::RunState;
+use psyche_coordinator::{
+    model::{Checkpoint, Model},
+    RunState,
+};
 use psyche_core::NodeIdentity;
 use psyche_network::{
     allowlist, request_model_parameter, AuthenticatableIdentity, BlobTicket, DownloadComplete,
@@ -106,6 +109,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                         state = watcher.poll_next() => {
                             let (old_state, new_state) = state?;
+                            println!("RUN STATE: {}", new_state.run_state);
+                            let Model::LLM(llm) = new_state.model;
+                            println!("Checkpoint: {}", llm.checkpoint);
+                            if matches!(llm.checkpoint, Checkpoint::P2P(_)) {
+                                panic!("p2p checkpoint!");
+                            }
                             {
                                 let node_ids: Vec<NodeId> = new_state
                                     .epoch_state
