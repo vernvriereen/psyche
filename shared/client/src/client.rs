@@ -109,12 +109,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                         state = watcher.poll_next() => {
                             let (old_state, new_state) = state?;
-                            println!("RUN STATE: {}", new_state.run_state);
-                            let Model::LLM(llm) = new_state.model;
-                            println!("Checkpoint: {}", llm.checkpoint);
-                            if matches!(llm.checkpoint, Checkpoint::P2P(_)) {
-                                panic!("p2p checkpoint!");
-                            }
                             {
                                 let node_ids: Vec<NodeId> = new_state
                                     .epoch_state
