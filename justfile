@@ -34,11 +34,11 @@ integration-test test_name="":
 
 # Deploy coordinator on localnet and create a "test" run for 1.1b model.
 setup-solana-test-run:
-    ./scripts/deploy_local_solana_coordinator.sh
+    ./scripts/deploy-solana-test.sh
 
 # Deploy coordinator on localnet and create a "test" run for 20m model.
 setup-solana-light-test-run:
-    CONFIG_FILE=./config/solana-test/light-config.toml ./scripts/deploy_local_solana_coordinator.sh
+    CONFIG_FILE=./config/solana-test/light-config.toml ./scripts/deploy-solana-test.sh
 
 # Start client for training on localnet.
 start-training-client:
