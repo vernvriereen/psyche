@@ -154,9 +154,28 @@ solana-keygen new
 solana config set --url localhost
 ```
 
-Then, in a new terminal, run a validator with `solana-test-validator`.
-Once that's running, you can deploy the solana coordinator using `just deploy-local-solana-coordinator`
-and send a basic transaction from a client running `cargo run -p psyche-solana-client`
+In a new terminal, run a validator with:
+```bash
+solana-test-validator
+```
+
+Create a local run using:
+```bash
+just setup-solana-test-run
+```
+
+And run a client to train the test model using:
+```bash
+just start-training-client
+```
+
+This will start a run to train a model of 1.1b parameters with all the parallelism features enabled.
+For a more lightweight run to avoid OOM errors, there's also:
+
+```bash
+just setup-solana-light-test-run
+just start-training-light-client
+```
 
 ## Build and Serve the Psyche Book
 

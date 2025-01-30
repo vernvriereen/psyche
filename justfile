@@ -32,12 +32,24 @@ integration-test test_name="":
         cargo test --release --test integration_tests -- --nocapture "{{test_name}}"; \
     fi
 
-# build solana coordinator. Some errors are happening trying to build the `idl` since we are not using it, we disabled it for now.
-deploy-local-solana-coordinator:
-    cd architectures/decentralized/solana-coordinator && anchor build --no-idl && anchor deploy
+# Deploy coordinator on localnet and create a "test" run for 1.1b model.
+setup-solana-test-run:
+    ./scripts/deploy_local_solana_coordinator.sh
+
+# Deploy coordinator on localnet and create a "test" run for 20m model.
+setup-solana-light-test-run:
+    CONFIG_FILE=./config/solana-test/light-config.toml ./scripts/deploy_local_solana_coordinator.sh
+
+# Start client for training on localnet.
+start-training-client:
+    ./scripts/train-solana-test.sh
+
+# Start client for training on localnet without data parallelism feature.
+start-training-light-client:
+    DP=1 ./scripts/train-solana-test.sh
 
 solana-client-tests:
-	cargo test --package psyche-solana-client
+	cargo test --package psyche-solana-client --features solana-localnet-tests
 
 # install deps for building mdbook
 book_deps:
