@@ -4,10 +4,7 @@ use crate::{
 };
 use anyhow::{bail, Error, Result};
 use futures::future::join_all;
-use psyche_coordinator::{
-    model::{Checkpoint, Model},
-    RunState,
-};
+use psyche_coordinator::RunState;
 use psyche_core::NodeIdentity;
 use psyche_network::{
     allowlist, request_model_parameter, AuthenticatableIdentity, BlobTicket, DownloadComplete,

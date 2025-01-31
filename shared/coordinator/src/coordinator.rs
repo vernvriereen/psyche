@@ -813,11 +813,10 @@ impl<T: NodeIdentity> Coordinator<T> {
             if let Checkpoint::P2P(hub_repo) = llm.checkpoint {
                 llm.checkpoint = Checkpoint::Hub(hub_repo);
             }
-            self.change_state(unix_timestamp, RunState::Cooldown);
-            return;
-        }
-        if let Checkpoint::Hub(hub_repo) = llm.checkpoint {
-            llm.checkpoint = Checkpoint::P2P(hub_repo)
+        } else {
+            if let Checkpoint::Hub(hub_repo) = llm.checkpoint {
+                llm.checkpoint = Checkpoint::P2P(hub_repo)
+            }
         }
         self.change_state(unix_timestamp, RunState::Cooldown);
     }
