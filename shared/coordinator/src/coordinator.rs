@@ -808,16 +808,16 @@ impl<T: NodeIdentity> Coordinator<T> {
     // If checkpoint was set to downloading from HuggingFace, change it to P2P
     // and change state to cooldown
     fn start_cooldown(&mut self, unix_timestamp: u64) {
-        let Model::LLM(llm) = &mut self.model;
-        if self.epoch_state.clients.len() < self.config.min_clients as usize {
-            if let Checkpoint::P2P(hub_repo) = llm.checkpoint {
-                llm.checkpoint = Checkpoint::Hub(hub_repo);
-            }
-        } else {
-            if let Checkpoint::Hub(hub_repo) = llm.checkpoint {
-                llm.checkpoint = Checkpoint::P2P(hub_repo)
-            }
-        }
+        // let Model::LLM(llm) = &mut self.model;
+        // if self.epoch_state.clients.len() < self.config.min_clients as usize {
+        //     if let Checkpoint::P2P(hub_repo) = llm.checkpoint {
+        //         llm.checkpoint = Checkpoint::Hub(hub_repo);
+        //     }
+        // } else {
+        //     if let Checkpoint::Hub(hub_repo) = llm.checkpoint {
+        //         llm.checkpoint = Checkpoint::P2P(hub_repo)
+        //     }
+        // }
         self.change_state(unix_timestamp, RunState::Cooldown);
     }
 
@@ -854,6 +854,19 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     fn start_waiting_for_members(&mut self, unix_timestamp: u64) {
+        let Model::LLM(llm) = &mut self.model;
+        if self.epoch_state.clients.len() < self.config.min_clients as usize {
+            if let Checkpoint::P2P(hub_repo) = llm.checkpoint {
+                llm.checkpoint = Checkpoint::Hub(hub_repo);
+            }
+        } else {
+            if self.progress.epoch != 0 {
+                if let Checkpoint::Hub(hub_repo) = llm.checkpoint {
+                    llm.checkpoint = Checkpoint::P2P(hub_repo)
+                }
+            }
+        }
+
         self.change_state(
             unix_timestamp,
             if self.progress.step < self.config.total_steps {
