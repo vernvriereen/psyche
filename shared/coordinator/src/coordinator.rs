@@ -474,6 +474,9 @@ impl<T: NodeIdentity> Coordinator<T> {
             && self.epoch_state.checkpointed.is_false()
             && self.config.checkpointers.iter().any(|x| x == from)
         {
+            // TODO: In the case of more than one checkpointer, this will overwrite the hub repo
+            // with the last checkpointed one. We could instead have a vector of hub repos to have
+            // more download options.
             match &mut self.model {
                 Model::LLM(llm) => match llm.checkpoint {
                     Checkpoint::P2P(_) => llm.checkpoint = Checkpoint::P2P(hub_repo),
@@ -845,11 +848,17 @@ impl<T: NodeIdentity> Coordinator<T> {
 
     fn start_waiting_for_members(&mut self, unix_timestamp: u64) {
         let Model::LLM(llm) = &mut self.model;
+        // If the number of clients is less than the min clients, then this could mean
+        // that we transitioned from another state thanks to clients disconnecting.
+        // If checkpointing was set to P2P, then we set it to HF so that when clients join
+        // the run, the trained model can be downloaded from there.
         if self.epoch_state.clients.len() < self.config.min_clients as usize {
             if let Checkpoint::P2P(hub_repo) = llm.checkpoint {
                 llm.checkpoint = Checkpoint::Hub(hub_repo);
             }
         } else {
+            // If we had done some training, then we change to P2P checkpointing
+            // so that peers can share the models to the ones that join the run
             if self.progress.epoch != 0 {
                 if let Checkpoint::Hub(hub_repo) = llm.checkpoint {
                     llm.checkpoint = Checkpoint::P2P(hub_repo)
