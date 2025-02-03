@@ -11,7 +11,7 @@ use anyhow::{anyhow, bail, Result};
 use psyche_client::{
     CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
 };
-use psyche_coordinator::Coordinator;
+use psyche_coordinator::{Coordinator, RunState};
 use psyche_network::{allowlist, DiscoveryMode, NetworkTUIState, NetworkTui, RelayMode, SecretKey};
 use psyche_tui::{logging::LoggerWidget, CustomWidget, TabbedWidget};
 use psyche_watcher::CoordinatorTui;
@@ -205,7 +205,25 @@ impl App {
                         Ok(_) => {
                             if ticked.run_state != latest_update.run_state {
                                 let backend = backend.clone();
+                                let backend_clone = backend.clone();
                                 tick_tx = Some(tokio::spawn(async move { backend.tick(instance_pda, instance.account).await }));
+                                // This means the epoch finished so we're rejoining the run to participate in the next one.
+                                if ticked.run_state == RunState::WaitingForMembers && latest_update.run_state == RunState::Cooldown {
+                                    let joined = backend_clone
+                                        .join_run(
+                                            instance_pda,
+                                            instance.account,
+                                            psyche_solana_coordinator::ClientId {
+                                                signer,
+                                                p2p_identity: *p2p_identity.as_bytes(),
+                                            },
+                                        )
+                                        .await?;
+                                    info!(
+                                        "Re-joined run for next epoch {} from {} with transaction {}",
+                                        self.run_id, signer, joined
+                                    );
+                                }
                             }
                         }
                         Err(err) => debug!("Tick simulation error: {err}")
