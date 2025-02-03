@@ -44,25 +44,28 @@ setup-solana-localnet-light-test-run run_id="test":
 start-training-localnet-client run_id="test":
     RUN_ID={{run_id}} ./scripts/train-solana-test.sh
 
-# Start client for training on localnet without data parallelism feature.
+# Start client for training on localnet without data parallelism features and using light model.
 start-training-localnet-light-client run_id="test":
     RUN_ID={{run_id}} DP=1 ./scripts/train-solana-test.sh
 
+DEVNET_RPC:="https://api.devnet.solana.com"
+DEVNET_WS_RPC:="wss://api.devnet.solana.com"
+
 # Deploy coordinator on Devnet and create a "test" run for 1.1b model.
 setup-solana-devnet-test-run run_id="test":
-    RUN_ID={{run_id}} RPC="https://api.devnet.solana.com" WS_RPC="wss://api.devnet.solana.com" ./scripts/deploy-solana-test.sh
+    RUN_ID={{run_id}} RPC={{DEVNET_RPC}} WS_RPC={{DEVNET_WS_RPC}} ./scripts/deploy-solana-test.sh
 
 # Deploy coordinator on Devnet and create a "test" run for 20m model.
 setup-solana-devnet-light-test-run run_id="test":
-    RUN_ID={{run_id}} RPC="https://api.devnet.solana.com" WS_RPC="wss://api.devnet.solana.com" CONFIG_FILE=./config/solana-test/light-config.toml ./scripts/deploy-solana-test.sh
+    RUN_ID={{run_id}} RPC={{DEVNET_RPC}} WS_RPC={{DEVNET_WS_RPC}} CONFIG_FILE=./config/solana-test/light-config.toml ./scripts/deploy-solana-test.sh
 
 # Start client for training on Devnet.
 start-training-devnet-client run_id="test":
-    RUN_ID={{run_id}} RPC="https://api.devnet.solana.com" WS_RPC="wss://api.devnet.solana.com" ./scripts/train-solana-test.sh
+    RUN_ID={{run_id}} RPC={{DEVNET_RPC}} WS_RPC={{DEVNET_WS_RPC}} ./scripts/train-solana-test.sh
 
-# Start client for training on Devnet without data parallelism feature.
+# Start client for training on localnet without data parallelism features and using light model.
 start-training-devnet-light-client run_id="test":
-    RUN_ID={{run_id}} RPC="https://api.devnet.solana.com" WS_RPC="wss://api.devnet.solana.com" DP=1 ./scripts/train-solana-test.sh
+    RUN_ID={{run_id}} RPC={{DEVNET_RPC}} WS_RPC={{DEVNET_WS_RPC}} DP=1 ./scripts/train-solana-test.sh
 
 solana-client-tests:
 	cargo test --package psyche-solana-client --features solana-localnet-tests
