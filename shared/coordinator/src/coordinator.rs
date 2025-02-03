@@ -792,7 +792,9 @@ impl<T: NodeIdentity> Coordinator<T> {
                 self.config.data_indicies_per_batch,
             );
             self.progress.epoch += 1;
-
+            let current_round = self.current_round_unchecked();
+            let height = current_round.height;
+            self.move_clients_to_exited(height);
             self.start_waiting_for_members(unix_timestamp);
             Ok(TickResult::EpochEnd(true))
         } else {
@@ -805,19 +807,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             && unix_timestamp >= duration + self.run_state_start_unix_timestamp
     }
 
-    // If checkpoint was set to downloading from HuggingFace, change it to P2P
-    // and change state to cooldown
     fn start_cooldown(&mut self, unix_timestamp: u64) {
-        // let Model::LLM(llm) = &mut self.model;
-        // if self.epoch_state.clients.len() < self.config.min_clients as usize {
-        //     if let Checkpoint::P2P(hub_repo) = llm.checkpoint {
-        //         llm.checkpoint = Checkpoint::Hub(hub_repo);
-        //     }
-        // } else {
-        //     if let Checkpoint::Hub(hub_repo) = llm.checkpoint {
-        //         llm.checkpoint = Checkpoint::P2P(hub_repo)
-        //     }
-        // }
         self.change_state(unix_timestamp, RunState::Cooldown);
     }
 
