@@ -1,8 +1,8 @@
 use anchor_spl::associated_token;
 use anchor_spl::token;
-use psyche_mining_pool::accounts::LenderClaimAccounts;
-use psyche_mining_pool::instruction::LenderClaim;
-use psyche_mining_pool::logic::LenderClaimParams;
+use psyche_solana_mining_pool::accounts::LenderClaimAccounts;
+use psyche_solana_mining_pool::instruction::LenderClaim;
+use psyche_solana_mining_pool::logic::LenderClaimParams;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
@@ -30,7 +30,7 @@ pub async fn process_lender_claim(
 
     ToolboxAnchor::process_instruction_with_signers(
         endpoint,
-        psyche_mining_pool::id(),
+        psyche_solana_mining_pool::id(),
         LenderClaimAccounts {
             user: user.pubkey(),
             user_redeemable: *user_redeemable,

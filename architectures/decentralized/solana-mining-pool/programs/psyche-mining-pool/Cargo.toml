@@ -1,12 +1,12 @@
 [package]
-name = "psyche-mining-pool"
+name = "psyche-solana-mining-pool"
 version = "0.1.1"
-description = "Nous Research - Psyche Mining Pool"
+description = "Nous Research - Psyche Solana Mining Pool"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "psyche_mining_pool"
+name = "psyche_solana_mining_pool"
 
 [features]
 default = []

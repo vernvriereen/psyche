@@ -1,10 +1,10 @@
 use anchor_spl::associated_token;
 use anchor_spl::token;
-use psyche_mining_pool::accounts::PoolCreateAccounts;
-use psyche_mining_pool::instruction::PoolCreate;
-use psyche_mining_pool::logic::PoolCreateParams;
-use psyche_mining_pool::state::Pool;
-use psyche_mining_pool::state::PoolMetadata;
+use psyche_solana_mining_pool::accounts::PoolCreateAccounts;
+use psyche_solana_mining_pool::instruction::PoolCreate;
+use psyche_solana_mining_pool::logic::PoolCreateParams;
+use psyche_solana_mining_pool::state::Pool;
+use psyche_solana_mining_pool::state::PoolMetadata;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
@@ -29,7 +29,7 @@ pub async fn process_pool_create(
 
     ToolboxAnchor::process_instruction_with_signers(
         endpoint,
-        psyche_mining_pool::id(),
+        psyche_solana_mining_pool::id(),
         PoolCreateAccounts {
             payer: payer.pubkey(),
             authority: pool_authority.pubkey(),

@@ -1,4 +1,4 @@
-use psyche_mining_pool::state::PoolMetadata;
+use psyche_solana_mining_pool::state::PoolMetadata;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 

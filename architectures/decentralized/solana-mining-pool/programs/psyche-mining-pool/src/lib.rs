@@ -7,7 +7,7 @@ use logic::*;
 declare_id!("CQy5JKR2Lrm16pqSY5nkMaMYSazRk2aYx99pJDNGupR7");
 
 #[program]
-pub mod psyche_mining_pool {
+pub mod psyche_solana_mining_pool {
     use super::*;
 
     pub fn pool_create(

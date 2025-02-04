@@ -6,9 +6,9 @@ pub async fn create_memnet_endpoint() -> ToolboxEndpoint {
     let mut endpoint =
         ToolboxEndpoint::new_program_test_with_builtin_programs(&[
             toolbox_endpoint_program_test_builtin_program_anchor!(
-                "psyche_mining_pool",
-                psyche_mining_pool::ID,
-                psyche_mining_pool::entry
+                "psyche_solana_mining_pool",
+                psyche_solana_mining_pool::ID,
+                psyche_solana_mining_pool::entry
             ),
         ])
         .await;

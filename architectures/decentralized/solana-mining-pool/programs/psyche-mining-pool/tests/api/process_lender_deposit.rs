@@ -1,8 +1,8 @@
 use anchor_spl::associated_token;
 use anchor_spl::token;
-use psyche_mining_pool::accounts::LenderDepositAccounts;
-use psyche_mining_pool::instruction::LenderDeposit;
-use psyche_mining_pool::logic::LenderDepositParams;
+use psyche_solana_mining_pool::accounts::LenderDepositAccounts;
+use psyche_solana_mining_pool::instruction::LenderDeposit;
+use psyche_solana_mining_pool::logic::LenderDepositParams;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
@@ -30,7 +30,7 @@ pub async fn process_lender_deposit(
 
     ToolboxAnchor::process_instruction_with_signers(
         endpoint,
-        psyche_mining_pool::id(),
+        psyche_solana_mining_pool::id(),
         LenderDepositAccounts {
             user: user.pubkey(),
             user_collateral: *user_collateral,

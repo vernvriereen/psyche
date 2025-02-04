@@ -1,7 +1,7 @@
-use psyche_mining_pool::accounts::PoolUpdateAccounts;
-use psyche_mining_pool::instruction::PoolUpdate;
-use psyche_mining_pool::logic::PoolUpdateParams;
-use psyche_mining_pool::state::PoolMetadata;
+use psyche_solana_mining_pool::accounts::PoolUpdateAccounts;
+use psyche_solana_mining_pool::instruction::PoolUpdate;
+use psyche_solana_mining_pool::logic::PoolUpdateParams;
+use psyche_solana_mining_pool::state::PoolMetadata;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 use solana_toolbox_anchor::ToolboxAnchor;
@@ -22,7 +22,7 @@ pub async fn process_pool_update(
 
     ToolboxAnchor::process_instruction_with_signers(
         endpoint,
-        psyche_mining_pool::id(),
+        psyche_solana_mining_pool::id(),
         PoolUpdateAccounts { authority: pool_authority.pubkey(), pool },
         PoolUpdate {
             params: PoolUpdateParams {

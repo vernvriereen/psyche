@@ -3095,7 +3095,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "psyche-mining-pool"
+name = "psyche-solana-mining-pool"
 version = "0.1.1"
 dependencies = [
  "anchor-lang",

@@ -1,6 +1,6 @@
-use psyche_mining_pool::accounts::LenderCreateAccounts;
-use psyche_mining_pool::instruction::LenderCreate;
-use psyche_mining_pool::logic::LenderCreateParams;
+use psyche_solana_mining_pool::accounts::LenderCreateAccounts;
+use psyche_solana_mining_pool::instruction::LenderCreate;
+use psyche_solana_mining_pool::logic::LenderCreateParams;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 use solana_sdk::system_program;
@@ -22,7 +22,7 @@ pub async fn process_lender_create(
 
     ToolboxAnchor::process_instruction_with_signers(
         endpoint,
-        psyche_mining_pool::id(),
+        psyche_solana_mining_pool::id(),
         LenderCreateAccounts {
             payer: payer.pubkey(),
             user: user.pubkey(),
