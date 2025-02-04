@@ -1,0 +1,55 @@
+version: "3"
+
+tasks:
+  # General check for mindless complete verification
+  check:
+    cmds:
+      - task fmt
+      - task test
+      - task lint
+
+  # Formating
+  fmt:
+    cmds:
+      - task treasurer_fmt
+      - task mining_pool_fmt
+
+  # Testing
+  test:
+    cmds:
+      - task treasurer_test
+      - task mining_pool_test
+
+  # Linting (clippy)
+  lint:
+    cmds:
+      - task treasurer_lint
+      - task mining_pool_lint
+
+  # Mining-Pool
+  mining_pool_fmt:
+    dir: "{{ .TASKFILE_DIR }}/solana-mining-pool"
+    cmds:
+      - task fmt
+  mining_pool_test:
+    dir: "{{ .TASKFILE_DIR }}/solana-mining-pool"
+    cmds:
+      - task test
+  mining_pool_lint:
+    dir: "{{ .TASKFILE_DIR }}/solana-mining-pool"
+    cmds:
+      - task lint
+
+  # Treasurer
+  treasurer_fmt:
+    dir: "{{ .TASKFILE_DIR }}/solana-treasurer"
+    cmds:
+      - task fmt
+  treasurer_test:
+    dir: "{{ .TASKFILE_DIR }}/solana-treasurer"
+    cmds:
+      - task test
+  treasurer_lint:
+    dir: "{{ .TASKFILE_DIR }}/solana-treasurer"
+    cmds:
+      - task lint
