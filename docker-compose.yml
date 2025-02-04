@@ -1,0 +1,10 @@
+services:
+  psyche-client:
+    image: psyche-client
+    build:
+      context: .
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      mode: replicated
+      replicas: ${NUM_CLIENTS:-1}
