@@ -58,14 +58,14 @@ impl CoordinatorInstanceState {
                 for client in self.clients_state.clients.iter_mut() {
                     if i < finished_clients.len() && client.id == finished_clients[i].id {
                         if finished_clients[i].state == ClientState::Healthy {
-                            client.earned += 1;
+                            client.earned += self.clients_state.epoch_earning_rate;
                         }
                         i += 1;
                     }
 
                     if j < exited_clients.len() && client.id == exited_clients[j].id {
                         if exited_clients[j].state == ClientState::Ejected {
-                            client.slashed += 1;
+                            client.earned += self.clients_state.epoch_slashing_rate;
                         }
                         j += 1;
                     }
@@ -118,6 +118,20 @@ impl CoordinatorInstanceState {
             .whitelist
             .extend(clients.into_iter())
             .map_err(|_| ProgramError::CouldNotSetWhitelist)?;
+        Ok(())
+    }
+
+    pub fn set_epoch_rates(
+        &mut self,
+        epoch_earning_rate: Option<u64>,
+        epoch_slashing_rate: Option<u64>,
+    ) -> Result<()> {
+        if let Some(epoch_earning_rate) = epoch_earning_rate {
+            self.clients_state.epoch_earning_rate = epoch_earning_rate;
+        }
+        if let Some(epoch_slashing_rate) = epoch_slashing_rate {
+            self.clients_state.epoch_slashing_rate = epoch_slashing_rate;
+        }
         Ok(())
     }
 

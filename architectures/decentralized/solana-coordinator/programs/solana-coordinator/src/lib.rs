@@ -132,6 +132,18 @@ pub mod psyche_solana_coordinator {
             .set_whitelist(clients)
     }
 
+    pub fn set_epoch_rates(
+        ctx: Context<OwnerCoordinatorAccounts>,
+        epoch_earning_rate: Option<u64>,
+        epoch_slashing_rate: Option<u64>,
+    ) -> Result<()> {
+        ctx.accounts
+            .account
+            .load_mut()?
+            .state
+            .set_epoch_rates(epoch_earning_rate, epoch_slashing_rate)
+    }
+
     pub fn join_run(ctx: Context<PermissionlessCoordinatorAccounts>, id: ClientId) -> Result<()> {
         if &id.signer != ctx.accounts.user.key {
             return err!(ProgramError::SignerMismatch);
