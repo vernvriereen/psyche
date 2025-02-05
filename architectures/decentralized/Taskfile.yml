@@ -26,20 +26,6 @@ tasks:
       - task treasurer_lint
       - task mining_pool_lint
 
-  # Mining-Pool
-  mining_pool_fmt:
-    dir: "{{ .TASKFILE_DIR }}/solana-mining-pool"
-    cmds:
-      - task fmt
-  mining_pool_test:
-    dir: "{{ .TASKFILE_DIR }}/solana-mining-pool"
-    cmds:
-      - task test
-  mining_pool_lint:
-    dir: "{{ .TASKFILE_DIR }}/solana-mining-pool"
-    cmds:
-      - task lint
-
   # Treasurer
   treasurer_fmt:
     dir: "{{ .TASKFILE_DIR }}/solana-treasurer"
@@ -51,5 +37,19 @@ tasks:
       - task test
   treasurer_lint:
     dir: "{{ .TASKFILE_DIR }}/solana-treasurer"
+    cmds:
+      - task lint
+
+  # Mining-Pool
+  mining_pool_fmt:
+    dir: "{{ .TASKFILE_DIR }}/solana-mining-pool"
+    cmds:
+      - task fmt
+  mining_pool_test:
+    dir: "{{ .TASKFILE_DIR }}/solana-mining-pool"
+    cmds:
+      - task test
+  mining_pool_lint:
+    dir: "{{ .TASKFILE_DIR }}/solana-mining-pool"
     cmds:
       - task lint
