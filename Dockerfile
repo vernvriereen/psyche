@@ -19,9 +19,8 @@ RUN cargo build --release
 FROM debian:bookworm-slim
 COPY --from=builder /usr/src/psyche/target/release/psyche-solana-client /usr/local/bin/psyche-solana-client
 COPY --from=builder /usr/src/libtorch /usr/home/libtorch
-COPY --from=builder /usr/src/psyche/id.json /usr/local
 COPY --from=builder /usr/src/psyche/docker-entrypoint.sh /usr/local
-RUN apt-get update && apt-get install -y libssl-dev libgomp1 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y libssl-dev libgomp1 curl && rm -rf /var/lib/apt/lists/* 
 
 ENV LIBTORCH=/usr/home/libtorch
 ENV LIBTORCH_INCLUDE=/usr/home/libtorch
