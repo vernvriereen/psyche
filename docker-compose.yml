@@ -3,8 +3,18 @@ services:
     image: psyche-client
     build:
       context: .
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_DRIVER_CAPABILITIES=all
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    deploy:
-      mode: replicated
-      replicas: ${NUM_CLIENTS:-1}
+    volumes:
+      - "~/.config/solana/id.json:/usr/local/id.json"
+    env_file:
+      - "config/client/client.env"
