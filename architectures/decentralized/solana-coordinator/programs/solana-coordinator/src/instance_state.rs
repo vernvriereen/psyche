@@ -65,7 +65,7 @@ impl CoordinatorInstanceState {
 
                     if j < exited_clients.len() && client.id == exited_clients[j].id {
                         if exited_clients[j].state == ClientState::Ejected {
-                            client.earned += self.clients_state.epoch_slashing_rate;
+                            client.slashed += self.clients_state.epoch_slashing_rate;
                         }
                         j += 1;
                     }

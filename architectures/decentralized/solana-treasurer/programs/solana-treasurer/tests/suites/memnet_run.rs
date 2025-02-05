@@ -228,4 +228,6 @@ pub async fn memnet_run() {
     )
     .await
     .unwrap();
+
+    // TODO - test earning point claiming mechanisms
 }
