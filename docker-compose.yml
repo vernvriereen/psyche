@@ -17,4 +17,4 @@ services:
     volumes:
       - "~/.config/solana/id.json:/usr/local/id.json"
     env_file:
-      - "config/client/client.env"
+      - "config/client/.env"
