@@ -1,8 +1,8 @@
 use psyche_solana_coordinator::CoordinatorAccount;
 use psyche_solana_testing::create_memnet_endpoint::create_memnet_endpoint;
 use psyche_solana_testing::find_pdas::find_coordinator_instance;
-use psyche_solana_testing::process_coordinator_instructions::process_coordinator_free_coordinator;
-use psyche_solana_testing::process_coordinator_instructions::process_coordinator_initialize_coordinator;
+use psyche_solana_testing::process_coordinator_instructions::process_coordinator_free;
+use psyche_solana_testing::process_coordinator_instructions::process_coordinator_initialize;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
@@ -17,9 +17,6 @@ pub async fn run() {
 
     // Run constants
     let run_id = "Hello world!";
-    let coordinator_account = Keypair::new();
-
-    // The owner authority of the run
     let authority = Keypair::new();
 
     // Check the payer and authority balance before paying for the coordinator
@@ -35,10 +32,9 @@ pub async fn run() {
         .lamports;
 
     // create the empty pre-allocated coordinator_account
-    endpoint
-        .process_system_create_exempt(
+    let coordinator_account = endpoint
+        .process_system_new_exempt(
             &payer,
-            &coordinator_account,
             CoordinatorAccount::space_with_discriminator(),
             &psyche_solana_coordinator::ID,
         )
@@ -46,11 +42,11 @@ pub async fn run() {
         .unwrap();
 
     // Initialize coordinator
-    process_coordinator_initialize_coordinator(
+    process_coordinator_initialize(
         &mut endpoint,
         &payer,
         &authority,
-        &coordinator_account.pubkey(),
+        &coordinator_account,
         run_id,
     )
     .await
@@ -75,7 +71,7 @@ pub async fn run() {
     // Check that the coordinator instance and account do actually exists now
     let coordinator_instance = find_coordinator_instance(run_id);
     assert!(endpoint
-        .get_account(&coordinator_account.pubkey())
+        .get_account(&coordinator_account)
         .await
         .unwrap()
         .is_some());
@@ -91,12 +87,12 @@ pub async fn run() {
         endpoint.get_account_or_default(&reimbursed).await.unwrap().lamports;
 
     // Free and close the coordinator account and instance
-    process_coordinator_free_coordinator(
+    process_coordinator_free(
         &mut endpoint,
         &payer,
         &authority,
         &reimbursed,
-        &coordinator_account.pubkey(),
+        &coordinator_account,
         run_id,
     )
     .await
@@ -123,7 +119,7 @@ pub async fn run() {
 
     // Check that the coordinator account and instances were actually closed
     assert!(endpoint
-        .get_account(&coordinator_account.pubkey())
+        .get_account(&coordinator_account)
         .await
         .unwrap()
         .is_none());

@@ -26,7 +26,7 @@ use solana_toolbox_endpoint::ToolboxEndpointError;
 
 use crate::find_pdas::find_coordinator_instance;
 
-pub async fn process_coordinator_initialize_coordinator(
+pub async fn process_coordinator_initialize(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     authority: &Keypair,
@@ -53,7 +53,7 @@ pub async fn process_coordinator_initialize_coordinator(
         .await
 }
 
-pub async fn process_coordinator_free_coordinator(
+pub async fn process_coordinator_free(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     authority: &Keypair,
@@ -80,7 +80,7 @@ pub async fn process_coordinator_free_coordinator(
         .await
 }
 
-pub async fn process_coordinator_update_coordinator_config_model(
+pub async fn process_coordinator_update_config_model(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     authority: &Keypair,

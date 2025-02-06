@@ -6,19 +6,6 @@ use solana_sdk::pubkey::Pubkey;
 use solana_toolbox_endpoint::ToolboxEndpoint;
 use solana_toolbox_endpoint::ToolboxEndpointError;
 
-async fn get_account_data_or_else(
-    endpoint: &mut ToolboxEndpoint,
-    address: &Pubkey,
-    name: &str,
-) -> Result<Vec<u8>, ToolboxEndpointError> {
-    endpoint.get_account_data(address).await?.ok_or_else(|| {
-        ToolboxEndpointError::Custom(format!(
-            "Account does not exist: {}",
-            name
-        ))
-    })
-}
-
 pub async fn get_coordinator_account_state(
     endpoint: &mut ToolboxEndpoint,
     coordinator_account: &Pubkey,
@@ -58,5 +45,18 @@ pub async fn get_participant(
         ToolboxEndpointError::Custom(
             "Unable to decode participant data".to_string(),
         )
+    })
+}
+
+async fn get_account_data_or_else(
+    endpoint: &mut ToolboxEndpoint,
+    address: &Pubkey,
+    name: &str,
+) -> Result<Vec<u8>, ToolboxEndpointError> {
+    endpoint.get_account_data(address).await?.ok_or_else(|| {
+        ToolboxEndpointError::Custom(format!(
+            "Account does not exist: {}",
+            name
+        ))
     })
 }
