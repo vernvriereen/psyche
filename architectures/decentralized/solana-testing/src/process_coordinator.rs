@@ -1,28 +1,32 @@
-use anchor_lang::{InstructionData, ToAccountMetas};
-use psyche_coordinator::{model::Model, CoordinatorConfig};
-use psyche_solana_coordinator::{
-    accounts::{
-        FreeCoordinatorAccounts, InitializeCoordinatorAccounts, OwnerCoordinatorAccounts,
-        PermissionlessCoordinatorAccounts,
-    },
-    instruction::{
-        FreeCoordinator, InitializeCoordinator, JoinRun, SetPaused, SetWhitelist, Tick,
-        UpdateCoordinatorConfigModel, Witness,
-    },
-    ClientId,
-};
-use solana_sdk::{
-    instruction::Instruction,
-    pubkey::Pubkey,
-    signature::{Keypair, Signature},
-    signer::Signer,
-    system_program,
-};
-use solana_toolbox_endpoint::{ToolboxEndpoint, ToolboxEndpointError};
+use anchor_lang::InstructionData;
+use anchor_lang::ToAccountMetas;
+use psyche_coordinator::model::Model;
+use psyche_coordinator::CoordinatorConfig;
+use psyche_solana_coordinator::accounts::FreeCoordinatorAccounts;
+use psyche_solana_coordinator::accounts::InitializeCoordinatorAccounts;
+use psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts;
+use psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts;
+use psyche_solana_coordinator::instruction::FreeCoordinator;
+use psyche_solana_coordinator::instruction::InitializeCoordinator;
+use psyche_solana_coordinator::instruction::JoinRun;
+use psyche_solana_coordinator::instruction::SetPaused;
+use psyche_solana_coordinator::instruction::SetWhitelist;
+use psyche_solana_coordinator::instruction::Tick;
+use psyche_solana_coordinator::instruction::UpdateCoordinatorConfigModel;
+use psyche_solana_coordinator::instruction::Witness;
+use psyche_solana_coordinator::ClientId;
+use solana_sdk::instruction::Instruction;
+use solana_sdk::pubkey::Pubkey;
+use solana_sdk::signature::Keypair;
+use solana_sdk::signature::Signature;
+use solana_sdk::signer::Signer;
+use solana_sdk::system_program;
+use solana_toolbox_endpoint::ToolboxEndpoint;
+use solana_toolbox_endpoint::ToolboxEndpointError;
 
-use crate::api::accounts::find_pda_coordinator_instance;
+use crate::find_pda::find_pda_coordinator_instance;
 
-pub async fn process_initialize_coordinator(
+pub async fn process_coordinator_initialize_coordinator(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     authority: &Keypair,
@@ -40,10 +44,7 @@ pub async fn process_initialize_coordinator(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: InitializeCoordinator {
-            run_id: run_id.to_string(),
-        }
-        .data(),
+        data: InitializeCoordinator { run_id: run_id.to_string() }.data(),
         program_id: psyche_solana_coordinator::ID,
     };
 
@@ -52,7 +53,7 @@ pub async fn process_initialize_coordinator(
         .await
 }
 
-pub async fn process_free_coordinator(
+pub async fn process_coordinator_free_coordinator(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     authority: &Keypair,
@@ -79,7 +80,7 @@ pub async fn process_free_coordinator(
         .await
 }
 
-pub async fn process_update_coordinator_config_model(
+pub async fn process_coordinator_update_coordinator_config_model(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     authority: &Keypair,
@@ -106,7 +107,7 @@ pub async fn process_update_coordinator_config_model(
         .await
 }
 
-pub async fn process_set_whitelist(
+pub async fn process_coordinator_set_whitelist(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     authority: &Keypair,
@@ -132,7 +133,7 @@ pub async fn process_set_whitelist(
         .await
 }
 
-pub async fn process_join_run(
+pub async fn process_coordinator_join_run(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     user: &Keypair,
@@ -153,12 +154,10 @@ pub async fn process_join_run(
         program_id: psyche_solana_coordinator::ID,
     };
 
-    endpoint
-        .process_instruction_with_signers(instruction, payer, &[user])
-        .await
+    endpoint.process_instruction_with_signers(instruction, payer, &[user]).await
 }
 
-pub async fn process_set_paused(
+pub async fn process_coordinator_set_paused(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     authority: &Keypair,
@@ -184,7 +183,7 @@ pub async fn process_set_paused(
         .await
 }
 
-pub async fn process_tick(
+pub async fn process_coordinator_tick(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     user: &Keypair,
@@ -204,18 +203,16 @@ pub async fn process_tick(
         program_id: psyche_solana_coordinator::ID,
     };
 
-    endpoint
-        .process_instruction_with_signers(instruction, payer, &[user])
-        .await
+    endpoint.process_instruction_with_signers(instruction, payer, &[user]).await
 }
 
-pub async fn process_witness(
+pub async fn process_coordinator_witness(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     user: &Keypair,
     coordinator_account: &Pubkey,
     run_id: &str,
-    witness: psyche_coordinator::Witness,
+    witness: &Witness,
 ) -> Result<Signature, ToolboxEndpointError> {
     let coordinator_instance = find_pda_coordinator_instance(run_id);
 
@@ -235,7 +232,5 @@ pub async fn process_witness(
         program_id: psyche_solana_coordinator::ID,
     };
 
-    endpoint
-        .process_instruction_with_signers(instruction, payer, &[user])
-        .await
+    endpoint.process_instruction_with_signers(instruction, payer, &[user]).await
 }
