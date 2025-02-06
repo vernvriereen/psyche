@@ -1,8 +1,8 @@
 use psyche_solana_coordinator::CoordinatorAccount;
 use psyche_solana_testing::create_memnet_endpoint::create_memnet_endpoint;
-use psyche_solana_testing::find_pda::find_pda_coordinator_instance;
-use psyche_solana_testing::process_coordinator::process_coordinator_free_coordinator;
-use psyche_solana_testing::process_coordinator::process_coordinator_initialize_coordinator;
+use psyche_solana_testing::find_pdas::find_coordinator_instance;
+use psyche_solana_testing::process_coordinator_instructions::process_coordinator_free_coordinator;
+use psyche_solana_testing::process_coordinator_instructions::process_coordinator_initialize_coordinator;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
@@ -73,7 +73,7 @@ pub async fn run() {
     assert_eq!(authority_balance_after, authority_balance_start);
 
     // Check that the coordinator instance and account do actually exists now
-    let coordinator_instance = find_pda_coordinator_instance(run_id);
+    let coordinator_instance = find_coordinator_instance(run_id);
     assert!(endpoint
         .get_account(&coordinator_account.pubkey())
         .await

@@ -1,3 +1,4 @@
+use bytemuck::Zeroable;
 use psyche_coordinator::model::Checkpoint;
 use psyche_coordinator::model::ConstantLR;
 use psyche_coordinator::model::LLMArchitecture;
@@ -9,20 +10,20 @@ use psyche_coordinator::model::Optimizer;
 use psyche_coordinator::model::LLM;
 use psyche_coordinator::CoordinatorConfig;
 use psyche_coordinator::RunState;
-use psyche_coordinator::Witness;
 use psyche_coordinator::WitnessProof;
 use psyche_core::FixedVec;
+use psyche_solana_coordinator::instruction::Witness;
 use psyche_solana_coordinator::ClientId;
 use psyche_solana_coordinator::CoordinatorAccount;
 use psyche_solana_testing::create_memnet_endpoint::create_memnet_endpoint;
-use psyche_solana_testing::get_data::get_data_coordinator_instance_state;
-use psyche_solana_testing::process_coordinator::process_coordinator_initialize_coordinator;
-use psyche_solana_testing::process_coordinator::process_coordinator_join_run;
-use psyche_solana_testing::process_coordinator::process_coordinator_set_paused;
-use psyche_solana_testing::process_coordinator::process_coordinator_set_whitelist;
-use psyche_solana_testing::process_coordinator::process_coordinator_tick;
-use psyche_solana_testing::process_coordinator::process_coordinator_update_coordinator_config_model;
-use psyche_solana_testing::process_coordinator::process_coordinator_witness;
+use psyche_solana_testing::get_accounts::get_coordinator_account_state;
+use psyche_solana_testing::process_coordinator_instructions::process_coordinator_initialize_coordinator;
+use psyche_solana_testing::process_coordinator_instructions::process_coordinator_join_run;
+use psyche_solana_testing::process_coordinator_instructions::process_coordinator_set_paused;
+use psyche_solana_testing::process_coordinator_instructions::process_coordinator_set_whitelist;
+use psyche_solana_testing::process_coordinator_instructions::process_coordinator_tick;
+use psyche_solana_testing::process_coordinator_instructions::process_coordinator_update_coordinator_config_model;
+use psyche_solana_testing::process_coordinator_instructions::process_coordinator_witness;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
@@ -66,7 +67,7 @@ pub async fn run() {
 
     // verify that the run is in initialized state
     assert_eq!(
-        get_data_coordinator_instance_state(
+        get_coordinator_account_state(
             &mut endpoint,
             &coordinator_account.pubkey()
         )
@@ -124,7 +125,7 @@ pub async fn run() {
 
     // Coordinator's state should now have changed
     assert_eq!(
-        get_data_coordinator_instance_state(
+        get_coordinator_account_state(
             &mut endpoint,
             &coordinator_account.pubkey()
         )
@@ -215,7 +216,7 @@ pub async fn run() {
 
     // Coordinator should have changed
     assert_eq!(
-        get_data_coordinator_instance_state(
+        get_coordinator_account_state(
             &mut endpoint,
             &coordinator_account.pubkey()
         )
@@ -241,7 +242,7 @@ pub async fn run() {
     .unwrap();
 
     // Coordinator in train mode
-    let coordinator = get_data_coordinator_instance_state(
+    let coordinator = get_coordinator_account_state(
         &mut endpoint,
         &coordinator_account.pubkey(),
     )
@@ -281,7 +282,7 @@ pub async fn run() {
 
     // Coordinator state after witness should change
     assert_eq!(
-        get_data_coordinator_instance_state(
+        get_coordinator_account_state(
             &mut endpoint,
             &coordinator_account.pubkey()
         )

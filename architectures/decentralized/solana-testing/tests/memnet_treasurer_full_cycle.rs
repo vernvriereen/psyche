@@ -1,9 +1,9 @@
 use psyche_solana_coordinator::CoordinatorAccount;
 use psyche_solana_testing::create_memnet_endpoint::create_memnet_endpoint;
-use psyche_solana_testing::process_treasurer::process_treasurer_participant_claim;
-use psyche_solana_testing::process_treasurer::process_treasurer_participant_create;
-use psyche_solana_testing::process_treasurer::process_treasurer_run_create;
-use psyche_solana_testing::process_treasurer::process_treasurer_run_top_up;
+use psyche_solana_testing::process_treasurer_instructions::process_treasurer_participant_claim;
+use psyche_solana_testing::process_treasurer_instructions::process_treasurer_participant_create;
+use psyche_solana_testing::process_treasurer_instructions::process_treasurer_run_create;
+use psyche_solana_testing::process_treasurer_instructions::process_treasurer_run_top_up;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 

@@ -6590,6 +6590,7 @@ version = "0.0.1"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
+ "bytemuck",
  "psyche-coordinator",
  "psyche-core",
  "psyche-solana-coordinator",

@@ -24,7 +24,7 @@ use solana_sdk::system_program;
 use solana_toolbox_endpoint::ToolboxEndpoint;
 use solana_toolbox_endpoint::ToolboxEndpointError;
 
-use crate::find_pda::find_pda_coordinator_instance;
+use crate::find_pdas::find_coordinator_instance;
 
 pub async fn process_coordinator_initialize_coordinator(
     endpoint: &mut ToolboxEndpoint,
@@ -33,7 +33,7 @@ pub async fn process_coordinator_initialize_coordinator(
     coordinator_account: &Pubkey,
     run_id: &str,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let coordinator_instance = find_pda_coordinator_instance(run_id);
+    let coordinator_instance = find_coordinator_instance(run_id);
 
     let accounts = InitializeCoordinatorAccounts {
         payer: payer.pubkey(),
@@ -61,7 +61,7 @@ pub async fn process_coordinator_free_coordinator(
     coordinator_account: &Pubkey,
     run_id: &str,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let coordinator_instance = find_pda_coordinator_instance(run_id);
+    let coordinator_instance = find_coordinator_instance(run_id);
 
     let accounts = FreeCoordinatorAccounts {
         authority: authority.pubkey(),
@@ -89,7 +89,7 @@ pub async fn process_coordinator_update_coordinator_config_model(
     config: Option<CoordinatorConfig<ClientId>>,
     model: Option<Model>,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let coordinator_instance = find_pda_coordinator_instance(run_id);
+    let coordinator_instance = find_coordinator_instance(run_id);
 
     let accounts = OwnerCoordinatorAccounts {
         authority: authority.pubkey(),
@@ -115,7 +115,7 @@ pub async fn process_coordinator_set_whitelist(
     run_id: &str,
     clients: Vec<Pubkey>,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let coordinator_instance = find_pda_coordinator_instance(run_id);
+    let coordinator_instance = find_coordinator_instance(run_id);
 
     let accounts = OwnerCoordinatorAccounts {
         authority: authority.pubkey(),
@@ -141,7 +141,7 @@ pub async fn process_coordinator_join_run(
     run_id: &str,
     id: ClientId,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let coordinator_instance = find_pda_coordinator_instance(run_id);
+    let coordinator_instance = find_coordinator_instance(run_id);
 
     let accounts = PermissionlessCoordinatorAccounts {
         user: user.pubkey(),
@@ -165,7 +165,7 @@ pub async fn process_coordinator_set_paused(
     run_id: &str,
     paused: bool,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let coordinator_instance = find_pda_coordinator_instance(run_id);
+    let coordinator_instance = find_coordinator_instance(run_id);
 
     let accounts = OwnerCoordinatorAccounts {
         authority: authority.pubkey(),
@@ -190,7 +190,7 @@ pub async fn process_coordinator_tick(
     coordinator_account: &Pubkey,
     run_id: &str,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let coordinator_instance = find_pda_coordinator_instance(run_id);
+    let coordinator_instance = find_coordinator_instance(run_id);
 
     let accounts = PermissionlessCoordinatorAccounts {
         user: user.pubkey(),
@@ -214,7 +214,7 @@ pub async fn process_coordinator_witness(
     run_id: &str,
     witness: &Witness,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let coordinator_instance = find_pda_coordinator_instance(run_id);
+    let coordinator_instance = find_coordinator_instance(run_id);
 
     let accounts = PermissionlessCoordinatorAccounts {
         user: user.pubkey(),

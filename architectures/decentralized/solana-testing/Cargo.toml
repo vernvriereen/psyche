@@ -22,3 +22,4 @@ psyche-solana-treasurer = { path = "../solana-treasurer/programs/solana-treasure
 
 [dev-dependencies]
 tokio = "1.42.0"
+bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
