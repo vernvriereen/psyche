@@ -15,7 +15,6 @@ use psyche_solana_coordinator::instruction::Witness;
 use psyche_solana_coordinator::ClientId;
 use psyche_solana_coordinator::CoordinatorAccount;
 use psyche_solana_testing::create_memnet_endpoint::create_memnet_endpoint;
-use psyche_solana_testing::get_accounts::get_coordinator_account_state;
 use psyche_solana_testing::process_coordinator_instructions::process_coordinator_join_run;
 use psyche_solana_testing::process_coordinator_instructions::process_coordinator_tick;
 use psyche_solana_testing::process_coordinator_instructions::process_coordinator_witness;
@@ -160,7 +159,7 @@ pub async fn run() {
     .await
     .unwrap_err();
 
-    // We should be able to to-up at any time
+    // We should be able to to-up run treasury at any time
     process_treasurer_run_top_up(
         &mut endpoint,
         &payer,
@@ -268,25 +267,6 @@ pub async fn run() {
     )
     .await
     .unwrap();
-
-    // Coordinator's state should now have changed
-    eprintln!(
-        "client: {:?}",
-        get_coordinator_account_state(&mut endpoint, &coordinator_account)
-            .await
-            .unwrap()
-            .clients_state
-            .clients
-            .get(0),
-    );
-    eprintln!(
-        "client: {:?}",
-        get_coordinator_account_state(&mut endpoint, &coordinator_account)
-            .await
-            .unwrap()
-            .coordinator
-            .run_state
-    );
 
     // Tick from witness to cooldown
     endpoint.forward_clock_unix_timestamp(10).await.unwrap();
