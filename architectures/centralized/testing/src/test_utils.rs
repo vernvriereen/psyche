@@ -2,6 +2,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use psyche_centralized_client::app::AppParams;
+use psyche_coordinator::{assign_data_for_state, get_batch_ids_for_node, CommitteeSelection};
 use psyche_network::{DiscoveryMode, SecretKey};
 use rand::distributions::{Alphanumeric, DistString};
 use std::env;
@@ -72,7 +73,8 @@ pub fn sample_rand_run_id() -> String {
     Alphanumeric.sample_string(&mut rand::thread_rng(), 16)
 }
 
-pub async fn assert_witnesses_score(
+/// Sums the healthy score of all nodes and assert it vs expected_score
+pub async fn assert_witnesses_healthy_score(
     server_handle: &CoordinatorServerHandle,
     round_number: usize,
     expected_score: u16,
@@ -83,11 +85,21 @@ pub async fn assert_witnesses_score(
     let rounds = server_handle.get_rounds().await;
     let witnesses = &rounds[round_number].witnesses;
 
+    let coordinator = server_handle.get_coordinator().await;
+    let committee_selection = CommitteeSelection::from_coordinator(&coordinator, true).unwrap();
+    let data_assignments = assign_data_for_state(&coordinator, true, &committee_selection);
+
     // calculate score
     let mut score = 0;
     clients.iter().for_each(|client| {
+        let batch_ids = get_batch_ids_for_node(
+            &data_assignments,
+            &client.id,
+            coordinator.config.data_indicies_per_batch,
+        );
+
         score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
-            &client.id, witnesses,
+            &batch_ids, &client.id, witnesses,
         );
     });
 

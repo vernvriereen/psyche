@@ -134,6 +134,10 @@ impl App {
     pub fn get_port(&self) -> u16 {
         self.backend.port()
     }
+
+    pub fn get_coordinator(&self) -> Coordinator<ClientId> {
+        self.coordinator
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]

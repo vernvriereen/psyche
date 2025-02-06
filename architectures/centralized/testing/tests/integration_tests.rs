@@ -4,7 +4,7 @@ use psyche_centralized_testing::{
     client::ClientHandle,
     server::CoordinatorServerHandle,
     test_utils::{
-        assert_with_retries, assert_witnesses_score, spawn_clients,
+        assert_with_retries, assert_witnesses_healthy_score, spawn_clients,
         spawn_clients_with_training_delay,
     },
     COOLDOWN_TIME, MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME,
@@ -16,11 +16,13 @@ use tracing::info;
 async fn connect_single_node() {
     let init_min_clients = 2;
     let batches_per_round = 4;
+    let data_indicies_per_batch = 1;
     let witness_nodes = 1;
     let witness_quorum = 1;
     let server_handle = CoordinatorServerHandle::new(
         init_min_clients,
         batches_per_round,
+        data_indicies_per_batch,
         witness_nodes,
         witness_quorum,
     )
@@ -39,11 +41,13 @@ async fn connect_multiple_nodes() {
     let number_of_nodes = 10;
     let init_min_clients = 15;
     let batches_per_round = 4;
+    let data_indicies_per_batch = 1;
     let witness_nodes = 1;
     let witness_quorum = 1;
     let server_handle = CoordinatorServerHandle::new(
         init_min_clients,
         batches_per_round,
+        data_indicies_per_batch,
         witness_nodes,
         witness_quorum,
     )
@@ -65,11 +69,13 @@ async fn state_change_waiting_for_members_to_warmup() {
     // Coordinator is initialized with some default values
     let init_min_clients = 2;
     let batches_per_round = 4;
+    let data_indicies_per_batch = 1;
     let witness_nodes = 1;
     let witness_quorum = 1;
     let server_handle = CoordinatorServerHandle::new(
         init_min_clients,
         batches_per_round,
+        data_indicies_per_batch,
         witness_nodes,
         witness_quorum,
     )
@@ -101,11 +107,13 @@ async fn state_change_shutdown_node_in_warmup() {
     // Coordinator is initialized with some default values
     let init_min_clients = 2;
     let batches_per_round = 4;
+    let data_indicies_per_batch = 1;
     let witness_nodes = 1;
     let witness_quorum = 1;
     let server_handle = CoordinatorServerHandle::new(
         init_min_clients,
         batches_per_round,
+        data_indicies_per_batch,
         witness_nodes,
         witness_quorum,
     )
@@ -149,11 +157,13 @@ async fn state_change_waiting_for_members_to_round_train() {
     // Coordinator is initialized with some default values
     let init_min_clients = 2;
     let batches_per_round = 4;
+    let data_indicies_per_batch = 1;
     let witness_nodes = 1;
     let witness_quorum = 1;
     let server_handle = CoordinatorServerHandle::new(
         init_min_clients,
         batches_per_round,
+        data_indicies_per_batch,
         witness_nodes,
         witness_quorum,
     )
@@ -184,11 +194,13 @@ async fn state_change_waiting_for_members_to_round_train() {
 async fn state_change_waiting_for_members_to_round_witness() {
     let init_min_clients = 2;
     let batches_per_round = 4;
+    let data_indicies_per_batch = 1;
     let witness_nodes = 1;
     let witness_quorum = 1;
     let server_handle = CoordinatorServerHandle::new(
         init_min_clients,
         batches_per_round,
+        data_indicies_per_batch,
         witness_nodes,
         witness_quorum,
     )
@@ -229,11 +241,13 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     // and they won't appear in the bloom filters, making the test fail
     let init_min_clients = 5;
     let batches_per_round = init_min_clients;
+    let data_indicies_per_batch = 1;
     let witness_nodes = 1;
     let witness_quorum = 1;
     let server_handle = CoordinatorServerHandle::new(
         init_min_clients,
         batches_per_round,
+        data_indicies_per_batch,
         witness_nodes,
         witness_quorum,
     )
@@ -272,35 +286,23 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     // assert round 0 finished
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
 
-    // Assert that the witness listened all the clients commitments from the previous round
-
-    // We get the list of received witnesses from round 0
-    let witnesses = &server_handle.get_rounds().await[0].witnesses;
-
-    let mut score = 0;
-    let clients = server_handle.get_clients().await;
-    clients.iter().for_each(|client| {
-        score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
-            &client.id, witnesses,
-        );
-    });
-
-    let number_of_sent_witnesses = witnesses.len();
-    let number_of_seen_clients = score as usize / number_of_sent_witnesses;
-
-    assert_eq!(number_of_seen_clients, clients.len());
+    // Assert that the witness healthy score of the previous round
+    // 1 witness, 5 clients and each one trained 1 round, expected_score = 5
+    assert_witnesses_healthy_score(&server_handle, 0, 5).await;
 }
 
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn replace_node_and_complete_round() {
     let init_min_clients = 2;
     let batches_per_round = 2;
+    let data_indicies_per_batch = 1;
     let witness_nodes = 1;
     let witness_quorum = 1;
     let training_delay = 2;
     let server_handle = CoordinatorServerHandle::new(
         init_min_clients,
         batches_per_round,
+        data_indicies_per_batch,
         witness_nodes,
         witness_quorum,
     )
@@ -368,11 +370,13 @@ async fn finish_epoch() {
     // This way, every client will be assigned with only one batch
     let init_min_clients = 2;
     let batches_per_round = 2;
+    let data_indicies_per_batch = 1;
     let witness_nodes = 1;
     let witness_quorum = 1;
     let server_handle = CoordinatorServerHandle::new(
         init_min_clients,
         batches_per_round,
+        data_indicies_per_batch,
         witness_nodes,
         witness_quorum,
     )
@@ -439,12 +443,14 @@ async fn client_join_in_training() {
     // start a normal run with 2 clients
     let init_min_clients = 2;
     let batches_per_round = 2;
+    let data_indicies_per_batch = 1;
     let witness_nodes = 1;
     let witness_quorum = 1;
 
     let server_handle = CoordinatorServerHandle::new(
         init_min_clients,
         batches_per_round,
+        data_indicies_per_batch,
         witness_nodes,
         witness_quorum,
     )
@@ -508,11 +514,11 @@ async fn client_join_in_training() {
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
 
-    assert_witnesses_score(&server_handle, 0, 2).await;
-
     info!("waiting for next round!");
-
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
+    // Assert that the witness healthy score of the previous round
+    // 1 witness, 2 clients and each one trained 1 batch, expected_score = 2
+    assert_witnesses_healthy_score(&server_handle, 0, 2).await;
 
     // check that the run state evolves naturally to Warmup
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
@@ -525,6 +531,7 @@ async fn client_join_in_training() {
 async fn shutdown_node_in_training_and_complete_round() {
     let init_min_clients = 3;
     let batches_per_round = 3;
+    let data_indicies_per_batch = 1;
     // all nodes are witness
     let witness_nodes = 0;
     // set witness_quorum = 2 witness, as one node will be shutdown
@@ -533,6 +540,7 @@ async fn shutdown_node_in_training_and_complete_round() {
     let server_handle = CoordinatorServerHandle::new(
         init_min_clients,
         batches_per_round,
+        data_indicies_per_batch,
         witness_nodes,
         witness_quorum,
     )
@@ -574,11 +582,6 @@ async fn shutdown_node_in_training_and_complete_round() {
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundWitness).await;
     tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
 
-    // assert that the shutdown node do not participate in the witnesses
-    // since two nodes must send their witness and two nodes participate in the round
-    // score should be 4
-    assert_witnesses_score(&server_handle, 0, 4).await;
-
     // since up nodes < init_min_clients
     // the network should return to Cooldown and the WaitingForMembers
     assert_with_retries(|| server_handle.get_run_state(), RunState::Cooldown).await;
@@ -607,6 +610,7 @@ async fn shutdown_node_in_training_and_complete_round() {
 async fn kick_node_that_dont_train() {
     let init_min_clients = 2;
     let batches_per_round = 2;
+    let data_indicies_per_batch = 1;
     // all nodes are witness
     let witness_nodes = 0;
     // set witness_quorum = 1, as one node will kicked
@@ -614,6 +618,7 @@ async fn kick_node_that_dont_train() {
     let server_handle = CoordinatorServerHandle::new(
         init_min_clients,
         batches_per_round,
+        data_indicies_per_batch,
         witness_nodes,
         witness_quorum,
     )
@@ -649,4 +654,110 @@ async fn kick_node_that_dont_train() {
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
     assert_with_retries(|| server_handle.get_clients_len(), 1).await;
     assert_with_retries(|| server_handle.get_pending_clients_len(), 1).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn kick_node_that_dont_train_all_batches() {
+    let init_min_clients = 3;
+    // 2 batches per client
+    // 6 batches (2 batches per client * 3 clients)
+    let batches_per_round = 6;
+    let data_indicies_per_batch = 1;
+    // all nodes are witness
+    let witness_nodes = 0;
+    let witness_quorum = 2;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        data_indicies_per_batch,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
+
+    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
+
+    // spawn three clients
+    let server_port = server_handle.server_port;
+    let run_id = &server_handle.run_id;
+    // two clients will be able to train their 2 batches assigned
+    let training_delay = 2;
+    let _healhty_clients =
+        spawn_clients_with_training_delay(2, server_port, run_id, training_delay).await;
+    // a third client will only be able to train  1/2 batches in the RoundTrain
+    let training_delay_client_3 = MAX_ROUND_TRAIN_TIME - 1;
+    let _client_3 =
+        spawn_clients_with_training_delay(1, server_port, run_id, training_delay_client_3).await;
+
+    // execute round 0
+    assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
+    assert_with_retries(|| server_handle.get_clients_len(), 3).await;
+    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
+    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
+
+    // after round completion:
+    // - slow client (only did 1/2 batches) should be kicked
+    // - only 2 healthy clients remain
+    assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
+    assert_with_retries(|| server_handle.get_clients_len(), 2).await;
+    assert_with_retries(|| server_handle.get_pending_clients_len(), 2).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn kick_node_that_dont_train_all_batches_with_two_data_indicies_per_batch() {
+    let init_min_clients = 3;
+    // 2 batches per client
+    // 6 batches (2 batches per client * 3 clients)
+    let batches_per_round = 6;
+    let data_indicies_per_batch = 2;
+    // all nodes are witness
+    let witness_nodes = 0;
+    let witness_quorum = 2;
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        data_indicies_per_batch,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
+
+    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
+
+    // spawn three clients
+    let server_port = server_handle.server_port;
+    let run_id = &server_handle.run_id;
+    // two clients will be able to train their 2 batches assigned
+    let training_delay = 2;
+    let _healhty_clients =
+        spawn_clients_with_training_delay(2, server_port, run_id, training_delay).await;
+    // a third client will only be able to train  1/2 batches in the RoundTrain
+    let training_delay_client_3 = MAX_ROUND_TRAIN_TIME - 1;
+    let _client_3 =
+        spawn_clients_with_training_delay(1, server_port, run_id, training_delay_client_3).await;
+
+    // execute round 0
+    assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
+    assert_with_retries(|| server_handle.get_clients_len(), 3).await;
+    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+    tokio::time::sleep(Duration::from_secs(MAX_ROUND_TRAIN_TIME)).await;
+    tokio::time::sleep(Duration::from_secs(ROUND_WITNESS_TIME)).await;
+
+    // after round completion:
+    // - slow client (only did 1/2 batches) should be kicked
+    // - only 2 healthy clients remain
+    assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
+    assert_with_retries(|| server_handle.get_clients_len(), 2).await;
+    assert_with_retries(|| server_handle.get_pending_clients_len(), 2).await;
 }
