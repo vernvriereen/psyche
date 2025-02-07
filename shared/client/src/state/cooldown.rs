@@ -137,7 +137,6 @@ impl CooldownStepMetadata {
                 };
 
                 tokio::task::spawn(async move {
-                    tokio::time::sleep(Duration::from_secs(30)).await;
                     let path = checkpoint_dir.join(format!("{run_id}-step{step}"));
                     info!("Saving to {}", path.display());
                     let mut local = tokio::task::spawn_blocking({
