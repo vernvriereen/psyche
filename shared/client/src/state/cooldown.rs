@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use psyche_coordinator::{
     model::{self, HubRepo},
@@ -136,48 +136,52 @@ impl CooldownStepMetadata {
                     return Ok(evals);
                 };
 
-                let path = checkpoint_dir.join(format!("{run_id}-step{step}"));
-                info!("Saving to {}", path.display());
-
-                let mut local = tokio::task::spawn_blocking({
-                    let path = path.clone();
-                    move || save_tensors_into_safetensors(variables, path)
-                })
-                .await
-                .map_err(|_| CheckpointError::WriteThreadCrashed)??;
-
-                for extra in checkpoint_extra_files {
-                    let to = path.join(extra.file_name().unwrap());
-                    tokio::fs::copy(extra.clone(), to.clone())
-                        .await
-                        .map_err(CheckpointError::WriteExtraFile)?;
-                    local.push(to);
-                }
-
-                let Some(HubUploadInfo {
-                    hub_repo,
-                    hub_token,
-                }) = hub_upload
-                else {
-                    return Ok(evals);
-                };
-
-                info!("Uploading to {}", hub_repo);
-                let revision = upload_model_repo_async(
-                    hub_repo.clone(),
-                    local,
-                    hub_token.clone(),
-                    Some(format!("step {step}")),
-                    None,
-                )
-                .await?;
-
-                tx_checkpoint
-                    .send(HubRepo {
-                        repo_id: to_fixed_size_array(&hub_repo),
-                        revision: Some(to_fixed_size_array(&revision)),
+                tokio::task::spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(30)).await;
+                    let path = checkpoint_dir.join(format!("{run_id}-step{step}"));
+                    info!("Saving to {}", path.display());
+                    let mut local = tokio::task::spawn_blocking({
+                        let path = path.clone();
+                        move || save_tensors_into_safetensors(variables, path)
                     })
-                    .map_err(|_| CheckpointError::SendCheckpoint)?;
+                    .await
+                    .map_err(|_| CheckpointError::WriteThreadCrashed)??;
+
+                    for extra in checkpoint_extra_files {
+                        let to = path.join(extra.file_name().unwrap());
+                        tokio::fs::copy(extra.clone(), to.clone())
+                            .await
+                            .map_err(CheckpointError::WriteExtraFile)?;
+                        local.push(to);
+                    }
+
+                    let Some(HubUploadInfo {
+                        hub_repo,
+                        hub_token,
+                    }) = hub_upload
+                    else {
+                        return Ok::<(), CheckpointError>(());
+                    };
+
+                    info!("Uploading to {}", hub_repo);
+                    let revision = upload_model_repo_async(
+                        hub_repo.clone(),
+                        local,
+                        hub_token.clone(),
+                        Some(format!("step {step}")),
+                        None,
+                    )
+                    .await?;
+
+                    tx_checkpoint
+                        .send(HubRepo {
+                            repo_id: to_fixed_size_array(&hub_repo),
+                            revision: Some(to_fixed_size_array(&revision)),
+                        })
+                        .map_err(|_| CheckpointError::SendCheckpoint)?;
+
+                    Ok(())
+                });
 
                 Ok(evals)
             }

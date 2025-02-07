@@ -1,7 +1,7 @@
 use crate::{
-    model::{self, Checkpoint, HubRepo, Model},
     assign_data_for_state,
     data_selection::get_batch_ids_for_node,
+    model::{self, Checkpoint, HubRepo, Model},
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
 
@@ -472,8 +472,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         from: &T,
         hub_repo: HubRepo,
     ) -> std::result::Result<(), CoordinatorError> {
-        if self.run_state == RunState::Cooldown
-            && self.epoch_state.checkpointed.is_false()
+        if self.epoch_state.checkpointed.is_false()
             && self.config.checkpointers.iter().any(|x| x == from)
         {
             // TODO: In the case of more than one checkpointer, this will overwrite the hub repo
@@ -585,9 +584,9 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
     }
 
-    /// Calculates a trainer's health score based on witness confirmations.  
-    /// Counts how many witnesses confirmed each of the trainer's batches.  
-    /// Final score = 1 point per witness confirmation per batch)  
+    /// Calculates a trainer's health score based on witness confirmations.
+    /// Counts how many witnesses confirmed each of the trainer's batches.
+    /// Final score = 1 point per witness confirmation per batch)
     pub fn trainer_healthy_score_by_witnesses(
         batch_ids: &[BatchId],
         id: &T,
