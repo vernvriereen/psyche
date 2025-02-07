@@ -165,6 +165,7 @@ pub async fn process_treasurer_participant_create(
     endpoint.process_instruction_with_signers(instruction, payer, &[user]).await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn process_treasurer_participant_claim(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
