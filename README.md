@@ -120,6 +120,20 @@ OPENSSL_LIB_DIR = <path_to_openssl>/lib/VC/x64/MT
 OPENSSL_INCLUDE_DIR <path_to_openssl>/include
 ```
 
+### Docker
+
+Create a Docker image with the necessary dependencies to run a Psyche client:  
+
+1. Install the necessary NVIDIA and CUDA drivers as explained in the previous sections.  
+2. Install the NVIDIA [container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html). If using Ubuntu, just run:  
+
+```bash
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+```
+
+4. Run `docker compose build`.
+
 ## Lints & Checks
 
 `$ just check`
@@ -154,9 +168,28 @@ solana-keygen new
 solana config set --url localhost
 ```
 
-Then, in a new terminal, run a validator with `solana-test-validator`.
-Once that's running, you can deploy the solana coordinator using `just deploy-local-solana-coordinator`
-and send a basic transaction from a client running `cargo run -p psyche-solana-client`
+In a new terminal, run a validator with:
+```bash
+solana-test-validator
+```
+
+Create a local run using:
+```bash
+just setup-solana-test-run
+```
+
+And run a client to train the test model using:
+```bash
+just start-training-client
+```
+
+This will start a run to train a model of 1.1b parameters with all the parallelism features enabled.
+For a more lightweight run to avoid OOM errors, there's also:
+
+```bash
+just setup-solana-light-test-run
+just start-training-light-client
+```
 
 ## Build and Serve the Psyche Book
 

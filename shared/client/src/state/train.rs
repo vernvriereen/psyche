@@ -82,7 +82,7 @@ pub enum TrainError {
     #[error("Healthcheck thread crashed")]
     HealthCheckCrashed,
 
-    #[error("Healthcheck thread crashed")]
+    #[error("Coordinator error: {0}")]
     CoordinatorError(CoordinatorError),
 }
 
@@ -164,7 +164,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
         )
         .map_err(TrainError::CoordinatorError)?;
 
-        let data_assignments = assign_data_for_state(state, &committee_selection);
+        let data_assignments = assign_data_for_state(state, false, &committee_selection);
 
         let TrainingDataForStep {
             step,
@@ -530,24 +530,24 @@ fn start_sending_health_checks<T: NodeIdentity>(
             let witness_quorum = state.config.witness_quorum;
             let clients = state.epoch_state.clients;
             let committee_selection = committee_selection.clone();
+            let state = *state;
             Some(tokio::task::spawn(async move {
                 let mut checks = HealthChecks::new();
                 for (index, client) in clients.iter().enumerate() {
                     let proof = committee_selection.get_committee(index as u64);
-                    if proof.committee == Committee::Trainer {
-                        debug!(
-                            "Trainer {:?} health score: {}",
-                            client,
-                            Coordinator::trainer_healthy_score_by_witnesses(&client.id, &witnesses)
-                        );
-                        if !Coordinator::trainer_healthy_by_witnesses(
+                    if proof.committee == Committee::Trainer
+                        && !Coordinator::trainer_healthy_by_witnesses(
+                            &state,
                             &client.id,
                             &witnesses,
                             witness_quorum,
-                        ) {
-                            debug!("Found unhealthy trainer at index {index}");
-                            checks.push(proof);
-                        }
+                        )
+                    {
+                        warn!(
+                            "Found unhealthy trainer at index {index} , client: {:?}",
+                            &client.id
+                        );
+                        checks.push(proof);
                     }
                 }
 

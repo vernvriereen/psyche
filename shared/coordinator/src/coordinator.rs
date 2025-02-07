@@ -1,13 +1,15 @@
 use crate::{
     model::{self, Checkpoint, HubRepo, Model},
+    assign_data_for_state,
+    data_selection::get_batch_ids_for_node,
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
 
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Pod, Zeroable};
 use psyche_core::{
-    serde_deserialize_string, serde_serialize_string, sha256, Bloom, FixedVec, NodeIdentity,
-    SmallBoolean,
+    serde_deserialize_string, serde_serialize_string, sha256, BatchId, Bloom, FixedVec,
+    NodeIdentity, SmallBoolean,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::hash::Hash;
@@ -548,6 +550,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 Committee::TieBreaker => todo!(),
                 Committee::Verifier => todo!(),
                 Committee::Trainer => Self::trainer_healthy_by_witnesses(
+                    self,
                     &client.id,
                     &round.witnesses,
                     self.config.witness_quorum,
@@ -559,27 +562,57 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     pub fn trainer_healthy_by_witnesses(
+        coordinator: &Self,
         id: &T,
         witnesses: &[Witness],
         witness_quorum: u16,
     ) -> bool {
-        let score = Self::trainer_healthy_score_by_witnesses(id, witnesses);
+        let prev_round_committee_selection =
+            CommitteeSelection::from_coordinator(coordinator, true).unwrap();
+        let prev_round_data_assignments =
+            assign_data_for_state(coordinator, true, &prev_round_committee_selection);
+
+        let batch_ids = get_batch_ids_for_node(
+            &prev_round_data_assignments,
+            id,
+            coordinator.config.data_indicies_per_batch,
+        );
+
+        let score = Self::trainer_healthy_score_by_witnesses(&batch_ids, id, witnesses);
         match witness_quorum {
-            0 => score as usize == witnesses.len(),
-            witness_quorum => score >= witness_quorum,
+            0 => score as usize == witnesses.len() * batch_ids.len(),
+            witness_quorum => score >= witness_quorum * batch_ids.len() as u16,
         }
     }
 
-    /// Computes the health score of a client based on witness confirmations.
-    /// The score increases for each witness whose participant bloom filter contains the client's hashed ID.
-    pub fn trainer_healthy_score_by_witnesses(id: &T, witnesses: &[Witness]) -> u16 {
-        let hash = sha256(id.as_ref());
+    /// Calculates a trainer's health score based on witness confirmations.  
+    /// Counts how many witnesses confirmed each of the trainer's batches.  
+    /// Final score = 1 point per witness confirmation per batch)  
+    pub fn trainer_healthy_score_by_witnesses(
+        batch_ids: &[BatchId],
+        id: &T,
+        witnesses: &[Witness],
+    ) -> u16 {
+        let mut commitments = Vec::new();
+        for batch_id in batch_ids {
+            let mut committment = Vec::with_capacity(40);
+            committment.extend_from_slice(id.as_ref());
+            committment.extend_from_slice(&u64::from(*batch_id).to_be_bytes());
+            let committment_hash = sha256(&committment);
+
+            commitments.push(committment_hash);
+        }
+
         let mut score = 0u16;
         for witness in witnesses {
-            if witness.participant_bloom.contains(&hash) {
-                score += 1;
+            for commitment in &commitments {
+                let commitment_hash = sha256(commitment.as_ref());
+                if witness.order_bloom.contains(&commitment_hash) {
+                    score += 1;
+                }
             }
         }
+
         score
     }
 
