@@ -12,7 +12,7 @@ use psyche_core::{
     NodeIdentity, SmallBoolean,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::hash::Hash;
+use std::{collections::HashSet, hash::Hash};
 
 pub const SOLANA_MAX_STRING_LEN: usize = 64;
 pub const SOLANA_MAX_URL_STRING_LEN: usize = 192;
@@ -89,7 +89,6 @@ pub struct Client<I> {
     pub id: I,
     pub state: ClientState,
     pub exited_height: u32,
-    pub joined_epoch: u16,
 }
 
 impl<I: NodeIdentity> Hash for Client<I> {
@@ -347,12 +346,11 @@ impl Default for CoordinatorProgress {
 }
 
 impl<T: NodeIdentity> Client<T> {
-    pub fn new(id: T, joined_epoch: u16) -> Self {
+    pub fn new(id: T) -> Self {
         Self {
             id,
             state: ClientState::Healthy,
             exited_height: 0,
-            joined_epoch,
         }
     }
 }
@@ -732,27 +730,45 @@ impl<T: NodeIdentity> Coordinator<T> {
         pending_clients: Option<impl ExactSizeIterator<Item = &'b T>>,
         unix_timestamp: u64,
     ) -> std::result::Result<TickResult, CoordinatorError> {
-        if let Some(pending_clients) = pending_clients {
-            if pending_clients.len() as u16 >= self.config.min_clients {
-                // let new_clients = pending_clients.filter(|client| !old_clients.contains(*client));
-                // let new_clients = pending_clients.
-                // set epoch_state to default
-                bytemuck::write_zeroes(&mut self.epoch_state);
-                self.epoch_state.first_round = true.into();
-                let joined_epoch = self.progress.epoch;
+        let Some(mut pending_clients) = pending_clients else {
+            return Ok(TickResult::Ticked);
+        };
 
-                self.epoch_state
-                    .clients
-                    .extend(
-                        pending_clients
-                            .take(SOLANA_MAX_NUM_CLIENTS)
-                            .map(|x| Client::new(*x, joined_epoch)),
-                    )
-                    .unwrap();
+        if pending_clients.len() as u16 >= self.config.min_clients {
+            let current_round = self.current_round_unchecked();
+            let height = current_round.height;
+            self.move_clients_to_exited(height);
+            let mut next_round_clients = self.epoch_state.clients.clone();
+            let prev_epoch_client_ids: HashSet<_> = self
+                .epoch_state
+                .clients
+                .into_iter()
+                .map(|client| client.id)
+                .collect();
 
-                self.start_warmup(unix_timestamp);
+            for client_id in pending_clients.by_ref() {
+                if !prev_epoch_client_ids.contains(client_id) {
+                    next_round_clients.push(Client::new(*client_id)).unwrap();
+                }
             }
+
+            let Model::LLM(llm) = &mut self.model;
+            if self.epoch_state.clients.len() == 0 {
+                if let Checkpoint::P2P(hub_repo) = llm.checkpoint {
+                    llm.checkpoint = Checkpoint::Hub(hub_repo);
+                }
+            } else if self.progress.epoch != 0 {
+                if let Checkpoint::Hub(hub_repo) = llm.checkpoint {
+                    llm.checkpoint = Checkpoint::P2P(hub_repo)
+                }
+            }
+
+            bytemuck::write_zeroes(&mut self.epoch_state);
+            self.epoch_state.first_round = true.into();
+            self.epoch_state.clients = next_round_clients;
+            self.start_warmup(unix_timestamp);
         }
+
         Ok(TickResult::Ticked)
     }
 
@@ -884,31 +900,6 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     fn start_waiting_for_members(&mut self, unix_timestamp: u64) {
-        let Model::LLM(llm) = &mut self.model;
-        // If the number of clients is less than the min clients, then this could mean
-        // that we transitioned from another state thanks to clients disconnecting.
-        // If checkpointing was set to P2P, then we set it to HF so that when clients join
-        // the run, the trained model can be downloaded from there.
-        if self.epoch_state.clients.len() < self.config.min_clients as usize {
-            if let Checkpoint::P2P(hub_repo) = llm.checkpoint {
-                if !self.epoch_state.clients.iter().any(|c| {
-                    println!("JOINED EPOCH: {}", c.joined_epoch);
-                    println!("current epoch: {}", self.progress.epoch);
-                    c.joined_epoch < self.progress.epoch
-                }) {
-                    llm.checkpoint = Checkpoint::Hub(hub_repo);
-                }
-            }
-        } else {
-            // If we had done some training, then we change to P2P checkpointing
-            // so that peers can share the models to the ones that join the run
-            if self.progress.epoch != 0 {
-                if let Checkpoint::Hub(hub_repo) = llm.checkpoint {
-                    llm.checkpoint = Checkpoint::P2P(hub_repo)
-                }
-            }
-        }
-
         self.change_state(
             unix_timestamp,
             if self.progress.step < self.config.total_steps {
@@ -960,13 +951,6 @@ impl<T: NodeIdentity> Coordinator<T> {
                     model::LLMTrainingDataType::Finetuning => todo!(),
                 },
             }
-    }
-
-    pub fn any_clients_left_with_model(&self) -> bool {
-        self.epoch_state
-            .clients
-            .iter()
-            .any(|client| client.joined_epoch < self.progress.epoch)
     }
 }
 
