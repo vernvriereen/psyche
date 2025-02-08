@@ -738,7 +738,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             let current_round = self.current_round_unchecked();
             let height = current_round.height;
             self.move_clients_to_exited(height);
-            let mut next_round_clients = self.epoch_state.clients.clone();
+            let mut next_round_clients = self.epoch_state.clients;
             let prev_epoch_client_ids: HashSet<_> = self
                 .epoch_state
                 .clients
@@ -753,7 +753,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             }
 
             let Model::LLM(llm) = &mut self.model;
-            if self.epoch_state.clients.len() == 0 {
+            if self.epoch_state.clients.is_empty() {
                 if let Checkpoint::P2P(hub_repo) = llm.checkpoint {
                     llm.checkpoint = Checkpoint::Hub(hub_repo);
                 }
