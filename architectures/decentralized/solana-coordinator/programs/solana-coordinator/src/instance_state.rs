@@ -45,10 +45,7 @@ impl CoordinatorInstanceState {
             u64::from_ne_bytes(random_seed),
         ) {
             Ok(TickResult::Ticked) => {
-                // if first round of epoch update the next active clients
-                if self.coordinator.epoch_state.first_round.is_true()
-                    && self.coordinator.run_state == RunState::WaitingForMembers
-                {
+                if self.coordinator.is_epoch_starting() {
                     msg!("First round of epoch, updating next active clients");
                     self.clients_state.next_active += 1;
                 }

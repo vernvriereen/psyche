@@ -580,9 +580,9 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
     }
 
-    /// Calculates a trainer's health score based on witness confirmations.  
-    /// Counts how many witnesses confirmed each of the trainer's batches.  
-    /// Final score = 1 point per witness confirmation per batch)  
+    /// Calculates a trainer's health score based on witness confirmations.
+    /// Counts how many witnesses confirmed each of the trainer's batches.
+    /// Final score = 1 point per witness confirmation per batch)
     pub fn trainer_healthy_score_by_witnesses(
         batch_ids: &[BatchId],
         id: &T,
@@ -933,6 +933,10 @@ impl<T: NodeIdentity> Coordinator<T> {
                     model::LLMTrainingDataType::Finetuning => todo!(),
                 },
             }
+    }
+
+    pub fn is_epoch_starting(&self) -> bool {
+        self.epoch_state.first_round.is_true() && self.run_state == RunState::WaitingForMembers
     }
 }
 

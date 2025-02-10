@@ -162,26 +162,39 @@ impl App {
         )?);
         let signer = state_options.private_key.0.pubkey();
         let p2p_identity = state_options.private_key.1.public();
-        let joined = backend
-            .join_run(
-                instance_pda,
-                instance.account,
-                psyche_solana_coordinator::ClientId {
-                    signer,
-                    p2p_identity: *p2p_identity.as_bytes(),
-                },
-            )
-            .await?;
-        info!(
-            "Joined run {} from {} with transaction {}",
-            self.run_id, signer, joined
-        );
 
+        let current_coordinator_state = backend
+            .get_coordinator_account(&instance.account)
+            .await?
+            .state
+            .coordinator;
+
+        if current_coordinator_state.run_state == RunState::WaitingForMembers {
+            let joined = backend
+                .join_run(
+                    instance_pda,
+                    instance.account,
+                    psyche_solana_coordinator::ClientId {
+                        signer,
+                        p2p_identity: *p2p_identity.as_bytes(),
+                    },
+                )
+                .await?;
+            info!(
+                "Joined run {} from {} with transaction {}",
+                self.run_id, signer, joined
+            );
+        } else {
+            info!("Waiting for the current epoch to end before joining.");
+        }
+
+        // Update the latest update after joining the run to advance the state.
         let mut latest_update = backend
             .get_coordinator_account(&instance.account)
             .await?
             .state
             .coordinator;
+
         let mut updates = backend_runner.updates();
         let mut tick_tx: Option<JoinHandle<Result<Signature>>> = None;
         let mut client = Client::new(backend_runner, allowlist, p2p, state_options);
@@ -220,7 +233,7 @@ impl App {
                                         )
                                         .await?;
                                     info!(
-                                        "Re-joined run for next epoch {} from {} with transaction {}",
+                                        "Joined run for next epoch {} from {} with transaction {}",
                                         self.run_id, signer, joined
                                     );
                                 }
