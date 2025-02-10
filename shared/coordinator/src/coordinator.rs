@@ -752,6 +752,10 @@ impl<T: NodeIdentity> Coordinator<T> {
                 }
             }
 
+            // If no clients from the previous epoch are present for the beggining
+            // of the next epoch, then we change the checkpoint to HuggingFace.
+            // This way, we are covered for a failure scenario where all clients
+            // disconnected and the trained state could be lost.
             let Model::LLM(llm) = &mut self.model;
             if self.epoch_state.clients.is_empty() {
                 if let Checkpoint::P2P(hub_repo) = llm.checkpoint {

@@ -131,11 +131,11 @@ impl CooldownStepMetadata {
                     checkpoint_dir,
                 }) = checkpoint_info
                 else {
-                    // Here we assume that either we checkpoint the model to HF or
-                    // we share it by p2p.
+                    // If there was no HF checkpointing configuration, return immediately
                     return Ok(evals);
                 };
 
+                // Start the upload process of the updated model parameters in a separate task
                 tokio::task::spawn(async move {
                     let path = checkpoint_dir.join(format!("{run_id}-step{step}"));
                     info!("Saving to {}", path.display());
