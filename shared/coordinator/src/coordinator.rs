@@ -12,7 +12,7 @@ use psyche_core::{
     NodeIdentity, SmallBoolean,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::{collections::HashSet, hash::Hash};
+use std::hash::Hash;
 
 pub const SOLANA_MAX_STRING_LEN: usize = 64;
 pub const SOLANA_MAX_URL_STRING_LEN: usize = 192;
@@ -730,27 +730,13 @@ impl<T: NodeIdentity> Coordinator<T> {
         pending_clients: Option<impl ExactSizeIterator<Item = &'b T>>,
         unix_timestamp: u64,
     ) -> std::result::Result<TickResult, CoordinatorError> {
-        let Some(mut pending_clients) = pending_clients else {
+        let Some(pending_clients) = pending_clients else {
             return Ok(TickResult::Ticked);
         };
 
         if pending_clients.len() as u16 >= self.config.min_clients {
-            let current_round = self.current_round_unchecked();
-            let height = current_round.height;
+            let height = self.current_round_unchecked().height;
             self.move_clients_to_exited(height);
-            let mut next_round_clients = self.epoch_state.clients;
-            let prev_epoch_client_ids: HashSet<_> = self
-                .epoch_state
-                .clients
-                .into_iter()
-                .map(|client| client.id)
-                .collect();
-
-            for client_id in pending_clients.by_ref() {
-                if !prev_epoch_client_ids.contains(client_id) {
-                    next_round_clients.push(Client::new(*client_id)).unwrap();
-                }
-            }
 
             // If no clients from the previous epoch are present for the beggining
             // of the next epoch, then we change the checkpoint to HuggingFace.
@@ -769,7 +755,14 @@ impl<T: NodeIdentity> Coordinator<T> {
 
             bytemuck::write_zeroes(&mut self.epoch_state);
             self.epoch_state.first_round = true.into();
-            self.epoch_state.clients = next_round_clients;
+            self.epoch_state
+                .clients
+                .extend(
+                    pending_clients
+                        .take(SOLANA_MAX_NUM_CLIENTS)
+                        .map(|x| Client::new(*x)),
+                )
+                .unwrap();
             self.start_warmup(unix_timestamp);
         }
 
