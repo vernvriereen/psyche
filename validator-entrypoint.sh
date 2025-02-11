@@ -1,3 +1,11 @@
 #! /bin/bash
 
-cd /usr/local/solana-coordinator && anchor build --no-idl && anchor deploy --provider.cluster "solana-test-validator:8899" -- --max-len 500000
+solana-keygen new --no-bip39-passphrase
+
+solana-test-validator -r &
+SOLANA_PID=$!
+
+sleep 5
+cd /usr/local/solana-coordinator && anchor deploy --provider.cluster "localnet" -- --max-len 500000
+
+wait $SOLANA_PID
