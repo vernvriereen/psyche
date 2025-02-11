@@ -3,6 +3,7 @@ services:
     image: psyche-client
     build:
       context: .
+      target: runtime
     deploy:
       resources:
         reservations:
@@ -18,3 +19,38 @@ services:
       - "~/.config/solana/id.json:/usr/local/id.json"
     env_file:
       - "config/client/.env"
+
+  psyche-test-client:
+    image: psyche-client:test
+    build:
+      context: .
+      target: test
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "~/.config/solana/id.json:/usr/local/id.json"
+    env_file:
+      - "config/client/.env"
+    networks:
+      - psyche-test-network
+
+  psyche-solana-test-validator:
+    image: psyche-client:validator
+    build:
+      context: .
+      target: validator
+    networks:
+      - psyche-test-network
+
+networks:
+  psyche-test-network:
+    driver: bridge
