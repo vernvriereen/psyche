@@ -55,7 +55,7 @@ ENTRYPOINT ["./usr/local/client-test-entrypoint.sh"]
 
 ## VALIDATOR
 FROM rust:1.82 AS validator
-COPY --from=builder /usr/src/psyche/ /usr/local/psyche
+COPY --from=builder /usr/src/psyche/architectures/decentralized/solana-coordinator /usr/local/solana-coordinator
 COPY --from=builder /usr/src/psyche/validator-entrypoint.sh /usr/local
 
 # Install solana cli
