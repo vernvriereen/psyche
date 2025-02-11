@@ -66,4 +66,4 @@ ENV PATH="/root/.local/share/solana/install/active_release/bin:$PATH"
 
 RUN chmod a+x /usr/local/validator-entrypoint.sh
 
-# ENTRYPOINT ["./usr/local/validator-entrypoint.sh"]
+ENTRYPOINT ["./usr/local/validator-entrypoint.sh"]
