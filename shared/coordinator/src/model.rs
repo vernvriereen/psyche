@@ -282,14 +282,22 @@ impl LLM {
             data_location: LLMTrainingDataLocation::Dummy,
             data_type: LLMTrainingDataType::Pretraining,
             lr_schedule: LearningRateSchedule::Constant(ConstantLR::default()),
-            max_seq_len: 512,
+            max_seq_len: 2048,
             optimizer: Optimizer::Dummy,
         }
     }
 }
 
 #[derive(
-    Clone, Debug, Copy, AnchorDeserialize, AnchorSerialize, InitSpace, Serialize, Deserialize,
+    Clone,
+    Debug,
+    Copy,
+    AnchorDeserialize,
+    AnchorSerialize,
+    InitSpace,
+    Serialize,
+    Deserialize,
+    PartialEq,
 )]
 pub struct HubRepo {
     #[serde(
@@ -321,7 +329,7 @@ pub enum Checkpoint {
     Dummy,
     Ephemeral,
     Hub(HubRepo),
-    P2P(HubRepo),
+    P2P,
 }
 
 impl std::fmt::Display for Checkpoint {
@@ -330,8 +338,8 @@ impl std::fmt::Display for Checkpoint {
             Checkpoint::Dummy => write!(f, "Dummy"),
             Checkpoint::Ephemeral => write!(f, "Ephemeral"),
             Checkpoint::Hub(hub_repo) => write!(f, "{}", u8_to_string(&hub_repo.repo_id)),
-            Checkpoint::P2P(hub_repo) => {
-                write!(f, "P2P - hub repo ID: {}", u8_to_string(&hub_repo.repo_id))
+            Checkpoint::P2P => {
+                write!(f, "P2P")
             }
         }
     }
@@ -438,7 +446,7 @@ impl Model {
                         Checkpoint::Dummy => false,
                         Checkpoint::Ephemeral => true,
                         Checkpoint::Hub(hub_repo) => hub_repo.repo_id[0] != 0,
-                        Checkpoint::P2P(hub_repo) => hub_repo.repo_id[0] != 0,
+                        Checkpoint::P2P => true,
                     }
                     && match llm.optimizer {
                         Optimizer::Dummy => false,

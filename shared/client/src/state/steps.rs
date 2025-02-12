@@ -533,7 +533,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                 ActiveStep::Cooldown(self.cooldown.start(trainers, &state)?)
             }
             // cooldown is done, we consider waiting for members and warmup to be basically the same
-            (ActiveStep::Cooldown(cooldown), RunState::WaitingForMembers) => {
+            (ActiveStep::Cooldown(cooldown), RunState::WaitingForMembers)
+            | (ActiveStep::Cooldown(cooldown), RunState::Warmup) => {
                 let trainers = cooldown.finish().await?;
                 ActiveStep::Warmup(self.warmup.start(trainers))
             }

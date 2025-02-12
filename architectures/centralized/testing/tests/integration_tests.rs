@@ -761,3 +761,179 @@ async fn kick_node_that_dont_train_all_batches_with_two_data_indicies_per_batch(
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
     assert_with_retries(|| server_handle.get_pending_clients_len(), 2).await;
 }
+
+/// A new client attempts to joins the network in the middle of a run.
+/// In the next warmup state it should request the model via P2P to the other clients.
+/// The new client can train a whole epoch with the new obtained model.
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+async fn client_join_in_training_and_get_model_using_p2p() {
+    // start a normal run with 2 clients
+    let init_min_clients = 2;
+    let batches_per_round = 3;
+    let witness_nodes = 1;
+    let witness_quorum = 1;
+    let data_indicies_per_batch = 1;
+
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        data_indicies_per_batch,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
+
+    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
+
+    let training_delay = 2;
+    let server_port = server_handle.server_port;
+    let run_id = &server_handle.run_id;
+
+    let _client_handles = spawn_clients_with_training_delay(
+        init_min_clients as usize,
+        server_port,
+        run_id,
+        training_delay,
+    )
+    .await;
+
+    info!("waiting for init min clients...");
+    assert_with_retries(
+        || server_handle.get_clients_len(),
+        init_min_clients as usize,
+    )
+    .await;
+
+    // execute round 0
+    info!("waiting for round 0...");
+    assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
+
+    // warmup
+    info!("waiting for warmup...");
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+
+    info!("waiting for end of warmup...");
+    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+
+    // train
+    info!("waiting for start of train...");
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+
+    // spawn new client
+    let [_new_client_handle] =
+        spawn_clients_with_training_delay(1, server_port, run_id, training_delay)
+            .await
+            .try_into()
+            .unwrap();
+
+    info!("waiting for round 1...");
+    assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
+
+    info!("waiting for next epoch!");
+    assert_with_retries(|| server_handle.get_current_epoch(), 1).await;
+
+    // check that the run state evolves naturally to Warmup where the model gets shared
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+
+    info!("waiting for end of round!");
+    assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
+
+    info!("waiting for next epoch!");
+    assert_with_retries(|| server_handle.get_current_epoch(), 2).await;
+
+    // check that the clients length shows the new joined client trained with new p2p shared model
+    assert_with_retries(|| server_handle.get_clients_len(), 3).await;
+}
+
+/// Two new clients attempt to join the network in the middle of a run.
+/// In the next warmup state they should request the model via P2P to the other clients.
+/// The clients should request not initialized parameters between each other but they should try with other peer.
+/// The new clients can train a whole epoch with the new obtained model.
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+async fn two_clients_join_in_training_and_get_model_using_p2p() {
+    // start a normal run with 2 clients
+    let init_min_clients = 2;
+    let batches_per_round = 4;
+    let witness_nodes = 1;
+    let witness_quorum = 1;
+    let data_indicies_per_batch = 1;
+
+    let server_handle = CoordinatorServerHandle::new(
+        init_min_clients,
+        batches_per_round,
+        data_indicies_per_batch,
+        witness_nodes,
+        witness_quorum,
+    )
+    .await;
+
+    assert_with_retries(|| server_handle.get_clients_len(), 0).await;
+    assert_with_retries(
+        || server_handle.get_run_state(),
+        RunState::WaitingForMembers,
+    )
+    .await;
+
+    let training_delay = 2;
+    let server_port = server_handle.server_port;
+    let run_id = &server_handle.run_id;
+
+    let _client_handles = spawn_clients_with_training_delay(
+        init_min_clients as usize,
+        server_port,
+        run_id,
+        training_delay,
+    )
+    .await;
+
+    info!("waiting for init min clients...");
+    assert_with_retries(
+        || server_handle.get_clients_len(),
+        init_min_clients as usize,
+    )
+    .await;
+
+    // execute round 0
+    info!("waiting for round 0...");
+    assert_with_retries(|| server_handle.get_rounds_head(), 0).await;
+
+    // warmup
+    info!("waiting for warmup...");
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+
+    info!("waiting for end of warmup...");
+    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+
+    // train
+    info!("waiting for start of train...");
+    assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
+
+    info!("waiting for round 1...");
+    assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
+
+    // spawn new client
+    let _clients_handle =
+        spawn_clients_with_training_delay(2, server_port, run_id, training_delay).await;
+
+    info!("waiting for next epoch!");
+    assert_with_retries(|| server_handle.get_current_epoch(), 1).await;
+
+    // check that the run state evolves naturally to Warmup where the model gets shared
+    assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
+    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
+
+    info!("waiting for end of round!");
+    assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
+
+    info!("waiting for next epoch!");
+    assert_with_retries(|| server_handle.get_current_epoch(), 2).await;
+
+    // check that the clients length shows the new joined client trained with new p2p shared model
+    assert_with_retries(|| server_handle.get_clients_len(), 4).await;
+}

@@ -9,7 +9,7 @@ use tracing::{debug, error, info_span, trace, warn, Instrument};
 
 use iroh::{endpoint::get_remote_node_id, protocol::ProtocolHandler, Endpoint};
 
-use crate::{p2p_model_sharing, Allowlist, ModelParameterSharing};
+use crate::{p2p_model_sharing, Allowlist, ModelSharing};
 
 /// The allowlist-enabled router.
 // This is mostly verbatim from Iroh's source, just modified to let us insert the allowlist.
@@ -72,7 +72,7 @@ impl Router {
         endpoint: Endpoint,
         gossip: Gossip,
         blobs: Blobs<Store>,
-        p2p_model_sharing: ModelParameterSharing,
+        p2p_model_sharing: ModelSharing,
         allowlist: A,
     ) -> Result<Self> {
         if let Err(err) = endpoint.set_alpns(vec![
@@ -170,7 +170,7 @@ async fn shutdown(
     endpoint: &Endpoint,
     gossip: Gossip,
     blobs: Blobs<Store>,
-    p2p_model_sharing: ModelParameterSharing,
+    p2p_model_sharing: ModelSharing,
 ) {
     // We ignore all errors during shutdown.
     let _ = tokio::join!(
@@ -187,7 +187,7 @@ async fn handle_connection<A: Allowlist + 'static + Send>(
     incoming: iroh::endpoint::Incoming,
     gossip: Gossip,
     blobs: Blobs<Store>,
-    p2p_model_sharing: ModelParameterSharing,
+    p2p_model_sharing: ModelSharing,
     allowlist: Box<A>,
 ) {
     let mut connecting = match incoming.accept() {
@@ -249,7 +249,7 @@ mod tests {
 
     use crate::{
         allowlist::{AllowAll, AllowDynamic},
-        ModelParameterSharing,
+        ModelSharing,
     };
 
     use super::*;
@@ -262,7 +262,8 @@ mod tests {
         let gossip = Gossip::builder().spawn(endpoint.clone()).await?;
         let (tx_model_parameter_req, _rx_model_parameter_req) =
             tokio::sync::mpsc::unbounded_channel();
-        let p2p_model_sharing = ModelParameterSharing::new(tx_model_parameter_req);
+        let (tx_model_config_req, _rx_model_config_req) = tokio::sync::mpsc::unbounded_channel();
+        let p2p_model_sharing = ModelSharing::new(tx_model_parameter_req, tx_model_config_req);
 
         let router = Router::spawn(
             endpoint.clone(),
@@ -328,7 +329,10 @@ mod tests {
                     let gossip = Gossip::builder().spawn(endpoint.clone()).await?;
                     let (tx_model_parameter_req, _rx_model_parameter_req) =
                         tokio::sync::mpsc::unbounded_channel();
-                    let p2p_model_sharing = ModelParameterSharing::new(tx_model_parameter_req);
+                    let (tx_model_config_req, _rx_model_parameter_req) =
+                        tokio::sync::mpsc::unbounded_channel();
+                    let p2p_model_sharing =
+                        ModelSharing::new(tx_model_parameter_req, tx_model_config_req);
 
                     Ok((
                         gossip.clone(),
