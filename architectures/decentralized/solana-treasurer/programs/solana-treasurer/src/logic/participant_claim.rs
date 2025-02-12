@@ -3,7 +3,6 @@ use anchor_spl::token::transfer;
 use anchor_spl::token::Token;
 use anchor_spl::token::TokenAccount;
 use anchor_spl::token::Transfer;
-
 use psyche_solana_coordinator::CoordinatorAccount;
 
 use crate::state::Participant;
@@ -85,7 +84,9 @@ pub fn participant_claim_processor(
     let participant = &mut context.accounts.participant;
     let run = &mut context.accounts.run;
 
-    if params.claim_earned_points > participant_earned_points - participant.claimed_earned_points {
+    if params.claim_earned_points
+        > participant_earned_points - participant.claimed_earned_points
+    {
         return err!(ProgramError::InvalidParameter);
     }
     let claim_collateral_amount =

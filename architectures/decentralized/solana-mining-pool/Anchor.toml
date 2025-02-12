@@ -6,5 +6,5 @@ resolution = true
 skip-lint = false
 
 [provider]
-cluster = "Localnet"
+cluster = "Devnet"
 wallet = "~/.config/solana/id.json"

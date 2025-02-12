@@ -10,15 +10,24 @@ declare_id!("77mYTtUnEzSYVoG1JtWCjKAdakSvYDkdPPy8DoGqr5RP");
 pub mod psyche_solana_treasurer {
     use super::*;
 
-    pub fn run_create(context: Context<RunCreateAccounts>, params: RunCreateParams) -> Result<()> {
+    pub fn run_create(
+        context: Context<RunCreateAccounts>,
+        params: RunCreateParams,
+    ) -> Result<()> {
         run_create_processor(context, params)
     }
 
-    pub fn run_top_up(context: Context<RunTopUpAccounts>, params: RunTopUpParams) -> Result<()> {
+    pub fn run_top_up(
+        context: Context<RunTopUpAccounts>,
+        params: RunTopUpParams,
+    ) -> Result<()> {
         run_top_up_processor(context, params)
     }
 
-    pub fn run_update(context: Context<RunUpdateAccounts>, params: RunUpdateParams) -> Result<()> {
+    pub fn run_update(
+        context: Context<RunUpdateAccounts>,
+        params: RunUpdateParams,
+    ) -> Result<()> {
         run_update_processor(context, params)
     }
 

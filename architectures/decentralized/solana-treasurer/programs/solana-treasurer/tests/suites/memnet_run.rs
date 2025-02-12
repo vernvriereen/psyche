@@ -1,12 +1,3 @@
-use psyche_solana_coordinator::CoordinatorAccount;
-
-use crate::api::accounts::get_coordinator_instance_state;
-use crate::api::process_instructions::process_participant_claim;
-use crate::api::process_instructions::process_participant_create;
-use crate::api::{
-    create_memnet_endpoint::create_memnet_endpoint, process_instructions::process_run_create,
-    process_instructions::process_run_top_up, process_instructions::process_run_update,
-};
 use bytemuck::Zeroable;
 use psyche_coordinator::model::Checkpoint;
 use psyche_coordinator::model::ConstantLR;
@@ -21,8 +12,19 @@ use psyche_coordinator::CoordinatorConfig;
 use psyche_coordinator::RunState;
 use psyche_core::FixedVec;
 use psyche_solana_coordinator::ClientId;
+use psyche_solana_coordinator::CoordinatorAccount;
 use psyche_solana_treasurer::logic::RunUpdateParams;
-use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer};
+use solana_sdk::pubkey::Pubkey;
+use solana_sdk::signature::Keypair;
+use solana_sdk::signer::Signer;
+
+use crate::api::accounts::get_coordinator_instance_state;
+use crate::api::create_memnet_endpoint::create_memnet_endpoint;
+use crate::api::process_instructions::process_participant_claim;
+use crate::api::process_instructions::process_participant_create;
+use crate::api::process_instructions::process_run_create;
+use crate::api::process_instructions::process_run_top_up;
+use crate::api::process_instructions::process_run_update;
 
 #[tokio::test]
 pub async fn memnet_run() {
@@ -30,10 +32,7 @@ pub async fn memnet_run() {
 
     // Create payer key and fund it
     let payer = Keypair::new();
-    endpoint
-        .process_airdrop(&payer.pubkey(), 10_000_000_000)
-        .await
-        .unwrap();
+    endpoint.process_airdrop(&payer.pubkey(), 10_000_000_000).await.unwrap();
 
     // Constants
     let run_id = "Hello world!";
@@ -80,11 +79,14 @@ pub async fn memnet_run() {
 
     // verify that the run is in initialized state
     assert_eq!(
-        get_coordinator_instance_state(&mut endpoint, &coordinator_account.pubkey())
-            .await
-            .unwrap()
-            .coordinator
-            .run_state,
+        get_coordinator_instance_state(
+            &mut endpoint,
+            &coordinator_account.pubkey()
+        )
+        .await
+        .unwrap()
+        .coordinator
+        .run_state,
         RunState::Uninitialized
     );
 
@@ -196,8 +198,12 @@ pub async fn memnet_run() {
                 checkpoint: Checkpoint::Ephemeral,
                 max_seq_len: 4096,
                 data_type: LLMTrainingDataType::Pretraining,
-                data_location: LLMTrainingDataLocation::Local(Zeroable::zeroed()),
-                lr_schedule: LearningRateSchedule::Constant(ConstantLR::default()),
+                data_location: LLMTrainingDataLocation::Local(
+                    Zeroable::zeroed(),
+                ),
+                lr_schedule: LearningRateSchedule::Constant(
+                    ConstantLR::default(),
+                ),
                 optimizer: Optimizer::Distro {
                     clip_grad_norm: None,
                     compression_decay: 1.0,
@@ -206,7 +212,7 @@ pub async fn memnet_run() {
                     compression_topk_startup: 0,
                     compression_topk_startup_steps: 0,
                     compression_chunk: 1,
-                    quantize: false,
+                    quantize_1bit: false,
                 },
             })),
         },
