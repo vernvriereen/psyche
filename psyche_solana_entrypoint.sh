@@ -5,7 +5,7 @@ set -m
 
 RPC=${RPC:-"http://localhost:8899"}
 
-solana-keygen new --no-bip39-passphrase
+solana-keygen new --no-bip39-passphrase --force
 solana config set --url localhost
 solana-test-validator -r &
 
