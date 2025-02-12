@@ -1,25 +1,4 @@
 services:
-  # psyche-client:
-  #   image: psyche-client
-  #   build:
-  #     context: .
-  #     target: runtime
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: all
-  #             capabilities: [gpu]
-  #   environment:
-  #     - NVIDIA_DRIVER_CAPABILITIES=all
-  #   extra_hosts:
-  #     - "host.docker.internal:host-gateway"
-  #   volumes:
-  #     - "~/.config/solana/id.json:/usr/local/id.json"
-  #   env_file:
-  #     - "config/client/.env"
-
   psyche-run-owner:
     image: psyche-client
     build:
@@ -27,12 +6,12 @@ services:
       target: test
     depends_on:
       psyche-solana-test-validator:
-        condition: service_healthy
+        condition: service_started
     extra_hosts:
       - "host.docker.internal:host-gateway"
     env_file:
       - "config/client/.env"
-    entrypoint: ["./usr/local/run-owner-entrypoint.sh"]
+    entrypoint: ["/bin/sh", "-c", "sleep 10 && ./usr/local/run-owner-entrypoint.sh"]
     networks:
       - psyche-test-network
 
@@ -70,17 +49,8 @@ services:
     build:
       context: .
       dockerfile: psyche_solana.Dockerfile
-    volumes:
-      - "./docker_solana_keys:/solana_keys"
     networks:
       - psyche-test-network
-    environment:
-      - IS_READY="false"
-    healthcheck:
-      test: ["CMD", "sh", "-c", "[[ \"$IS_READY\" == \"true\" ]] || exit 1"]
-      interval: 5s
-      timeout: 10s
-      retries: 5
 
 networks:
   psyche-test-network:
