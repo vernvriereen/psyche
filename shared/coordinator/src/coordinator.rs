@@ -1,6 +1,5 @@
 use crate::{
-    assign_data_for_state,
-    data_selection::get_batch_ids_for_node,
+    assign_data_for_state, get_batch_ids_for_node,
     model::{self, Checkpoint, Model},
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
@@ -840,11 +839,12 @@ impl<T: NodeIdentity> Coordinator<T> {
     // and change state to cooldown
     fn start_cooldown(&mut self, unix_timestamp: u64) {
         match &mut self.model {
-            Model::LLM(llm) => {
-                if let Checkpoint::Hub(hub_repo) = llm.checkpoint {
-                    llm.checkpoint = Checkpoint::P2P(hub_repo)
+            Model::LLM(llm) => match llm.checkpoint {
+                Checkpoint::Hub(_) | Checkpoint::Dummy => {
+                    llm.checkpoint = Checkpoint::P2P;
                 }
-            }
+                _ => {}
+            },
         }
         self.change_state(unix_timestamp, RunState::Cooldown);
     }

@@ -1,6 +1,8 @@
 use crate::{
-    p2p_model_sharing::TransmittableModelParameter, serialized_distro::TransmittableDistroResult,
-    util::convert_bytes, Networkable,
+    p2p_model_sharing::{TransmittableModelConfig, TransmittableModelParameter},
+    serialized_distro::TransmittableDistroResult,
+    util::convert_bytes,
+    Networkable,
 };
 
 use anyhow::{bail, Context, Error, Result};
@@ -20,6 +22,7 @@ use tracing::{debug, error, info, warn};
 pub enum TransmittableDownload {
     DistroResult(TransmittableDistroResult),
     ModelParameter(TransmittableModelParameter),
+    ModelConfig(TransmittableModelConfig),
 }
 
 #[derive(Debug)]

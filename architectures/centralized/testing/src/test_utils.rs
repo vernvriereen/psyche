@@ -1,15 +1,14 @@
 use std::future::Future;
 use std::time::Duration;
 
+use crate::client::ClientHandle;
+use crate::server::CoordinatorServerHandle;
 use psyche_centralized_client::app::AppParams;
 use psyche_coordinator::{assign_data_for_state, get_batch_ids_for_node, CommitteeSelection};
 use psyche_network::{DiscoveryMode, SecretKey};
 use rand::distributions::{Alphanumeric, DistString};
 use std::env;
 use tokio_util::sync::CancellationToken;
-
-use crate::client::ClientHandle;
-use crate::server::CoordinatorServerHandle;
 
 pub fn repo_path() -> String {
     let cargo_manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
@@ -49,7 +48,17 @@ pub async fn spawn_clients_with_training_delay(
     client_handles
 }
 
-pub async fn assert_with_retries<T, F, Fut>(mut function: F, y: T)
+pub async fn assert_with_retries<T, F, Fut>(function: F, y: T)
+where
+    T: PartialEq + std::fmt::Debug,
+    Fut: Future<Output = T>,
+    F: FnMut() -> Fut,
+{
+    let res = with_retries(function, y).await;
+    assert!(res);
+}
+
+pub async fn with_retries<T, F, Fut>(mut function: F, y: T) -> bool
 where
     T: PartialEq + std::fmt::Debug,
     Fut: Future<Output = T>,
@@ -60,13 +69,15 @@ where
     for attempt in 1..=retry_attempts {
         result = function().await;
         if result == y {
-            return;
+            return true;
         } else if attempt == retry_attempts {
-            panic!("assertion failed {:?} != {:?}", result, y);
+            eprintln!("assertion failed, got: {:?} but expected: {:?}", result, y);
+            return false;
         } else {
             tokio::time::sleep(Duration::from_millis(250 * attempt)).await;
         }
     }
+    false
 }
 
 pub fn sample_rand_run_id() -> String {

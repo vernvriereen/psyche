@@ -1,6 +1,13 @@
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
-use tch::{nn::VarStore, Device, Kind};
+use tch::{
+    nn::{VarStore, Variables},
+    Device, Kind, Tensor,
+};
 
 use crate::{CausalLM, ConcreteCausalLM};
 
@@ -8,6 +15,23 @@ use crate::{CausalLM, ConcreteCausalLM};
 pub struct DummyModel {
     var_store: VarStore,
     training_delay_secs: Duration,
+}
+
+pub fn get_dummy_parameters() -> [&'static str; 12] {
+    [
+        "model.norm.weight",
+        "model.layers.0.mlp.up_proj.weight",
+        "model.layers.0.post_attention_layernorm.weight",
+        "model.layers.0.self_attn.q_proj.weight",
+        "model.embed_tokens.weight",
+        "model.layers.0.self_attn.o_proj.weight",
+        "model.layers.0.self_attn.v_proj.weight",
+        "model.layers.0.self_attn.k_proj.weight",
+        "model.layers.0.mlp.gate_proj.weight",
+        "model.layers.0.mlp.down_proj.weight",
+        "lm_head.weight",
+        "model.layers.0.input_layernorm.weight",
+    ]
 }
 
 impl Default for DummyModel {
@@ -18,8 +42,20 @@ impl Default for DummyModel {
 
 impl DummyModel {
     pub fn new(training_delay: u64) -> Self {
+        let parameters = get_dummy_parameters();
+        let named_variables: HashMap<String, Tensor> = parameters
+            .into_iter()
+            .map(|p| (p.to_string(), Tensor::zeros([1], tch::kind::FLOAT_CPU)))
+            .collect();
+        let variables = Variables {
+            named_variables,
+            shards: HashMap::new(),
+            trainable_variables: Vec::new(),
+        };
+        let mut var_store = VarStore::new(Device::cuda_if_available());
+        var_store.variables_ = Arc::new(Mutex::new(variables));
         Self {
-            var_store: VarStore::new(Device::cuda_if_available()),
+            var_store,
             training_delay_secs: Duration::from_secs(training_delay),
         }
     }
