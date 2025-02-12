@@ -52,18 +52,3 @@ ENV PATH="/root/.local/share/solana/install/active_release/bin:$PATH"
 RUN chmod a+x /usr/local/client-test-entrypoint.sh
 
 ENTRYPOINT ["./usr/local/client-test-entrypoint.sh"]
-
-## VALIDATOR
-FROM rust:1.82 AS validator
-COPY --from=builder /usr/src/psyche/architectures/decentralized/solana-coordinator /usr/local/solana-coordinator
-COPY --from=builder /usr/src/psyche/validator-entrypoint.sh /usr/local
-
-# Install solana cli
-RUN apt-get update && apt install -y curl
-RUN sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
-RUN cargo install --git https://github.com/coral-xyz/anchor --tag v0.30.1 anchor-cli
-ENV PATH="/root/.local/share/solana/install/active_release/bin:$PATH"
-
-RUN chmod a+x /usr/local/validator-entrypoint.sh
-
-ENTRYPOINT ["./usr/local/validator-entrypoint.sh"]
