@@ -1,31 +1,51 @@
 services:
-  psyche-client:
+  # psyche-client:
+  #   image: psyche-client
+  #   build:
+  #     context: .
+  #     target: runtime
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
+  #   environment:
+  #     - NVIDIA_DRIVER_CAPABILITIES=all
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   volumes:
+  #     - "~/.config/solana/id.json:/usr/local/id.json"
+  #   env_file:
+  #     - "config/client/.env"
+
+  psyche-run-owner:
     image: psyche-client
     build:
       context: .
-      target: runtime
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    environment:
-      - NVIDIA_DRIVER_CAPABILITIES=all
+      target: test
+    depends_on:
+      psyche-solana-test-validator:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    volumes:
-      - "~/.config/solana/id.json:/usr/local/id.json"
     env_file:
       - "config/client/.env"
+    entrypoint: ["./usr/local/run-owner-entrypoint.sh"]
+    networks:
+      - psyche-test-network
 
   psyche-test-client:
-    image: psyche-client:test
+    image: psyche-client
     build:
       context: .
       target: test
+    depends_on:
+      psyche-run-owner:
+        condition: service_completed_successfully
     deploy:
+      replicas: ${NUM_REPLICAS:-1}
       resources:
         reservations:
           devices:
@@ -34,6 +54,7 @@ services:
               capabilities: [gpu]
     environment:
       - NVIDIA_DRIVER_CAPABILITIES=all
+      - ID=${ID:-""}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -45,6 +66,7 @@ services:
 
   psyche-solana-test-validator:
     image: psyche_solana
+    container_name: psyche-solana-test-validator
     build:
       context: .
       dockerfile: psyche_solana.Dockerfile
@@ -52,6 +74,13 @@ services:
       - "./docker_solana_keys:/solana_keys"
     networks:
       - psyche-test-network
+    environment:
+      - IS_READY="false"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "[[ \"$IS_READY\" == \"true\" ]] || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
 
 networks:
   psyche-test-network:

@@ -38,6 +38,8 @@ FROM debian:bookworm-slim AS test
 COPY --from=builder /usr/src/psyche/target/release/psyche-solana-client /usr/local/bin/psyche-solana-client
 COPY --from=builder /usr/src/libtorch /usr/home/libtorch
 COPY --from=builder /usr/src/psyche/client-test-entrypoint.sh /usr/local
+COPY --from=builder /usr/src/psyche/run-owner-entrypoint.sh /usr/local
+COPY --from=builder /usr/src/psyche/config/solana-test/light-config.toml /usr/local/config.toml
 RUN apt-get update && apt-get install -y libssl-dev libgomp1 curl && rm -rf /var/lib/apt/lists/*
 
 # Install solana cli
@@ -50,5 +52,6 @@ ENV LD_LIBRARY_PATH=/usr/home/libtorch/lib:$LD_LIBRARY_PATH
 ENV PATH="/root/.local/share/solana/install/active_release/bin:$PATH"
 
 RUN chmod a+x /usr/local/client-test-entrypoint.sh
+RUN chmod a+x /usr/local/run-owner-entrypoint.sh
 
 ENTRYPOINT ["./usr/local/client-test-entrypoint.sh"]
