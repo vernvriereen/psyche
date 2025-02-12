@@ -44,10 +44,12 @@ services:
       - psyche-test-network
 
   psyche-solana-test-validator:
-    image: psyche-client:validator
+    image: psyche_solana
     build:
       context: .
-      target: validator
+      dockerfile: psyche_solana.Dockerfile
+    volumes:
+      - "./docker_solana_keys:/solana_keys"
     networks:
       - psyche-test-network
 
