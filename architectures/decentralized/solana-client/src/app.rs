@@ -11,7 +11,7 @@ use anyhow::{anyhow, bail, Result};
 use psyche_client::{
     CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
 };
-use psyche_coordinator::Coordinator;
+use psyche_coordinator::{Coordinator, RunState};
 use psyche_network::{allowlist, DiscoveryMode, NetworkTUIState, NetworkTui, RelayMode, SecretKey};
 use psyche_tui::{logging::LoggerWidget, CustomWidget, TabbedWidget};
 use psyche_watcher::CoordinatorTui;
@@ -162,26 +162,39 @@ impl App {
         )?);
         let signer = state_options.private_key.0.pubkey();
         let p2p_identity = state_options.private_key.1.public();
-        let joined = backend
-            .join_run(
-                instance_pda,
-                instance.account,
-                psyche_solana_coordinator::ClientId {
-                    signer,
-                    p2p_identity: *p2p_identity.as_bytes(),
-                },
-            )
-            .await?;
-        info!(
-            "Joined run {} from {} with transaction {}",
-            self.run_id, signer, joined
-        );
 
+        let current_coordinator_state = backend
+            .get_coordinator_account(&instance.account)
+            .await?
+            .state
+            .coordinator;
+
+        if current_coordinator_state.run_state == RunState::WaitingForMembers {
+            let joined = backend
+                .join_run(
+                    instance_pda,
+                    instance.account,
+                    psyche_solana_coordinator::ClientId {
+                        signer,
+                        p2p_identity: *p2p_identity.as_bytes(),
+                    },
+                )
+                .await?;
+            info!(
+                "Joined run {} from {} with transaction {}",
+                self.run_id, signer, joined
+            );
+        } else {
+            info!("Waiting for the current epoch to end before joining.");
+        }
+
+        // Update the latest update after joining the run to advance the state.
         let mut latest_update = backend
             .get_coordinator_account(&instance.account)
             .await?
             .state
             .coordinator;
+
         let mut updates = backend_runner.updates();
         let mut tick_tx: Option<JoinHandle<Result<Signature>>> = None;
         let mut client = Client::new(backend_runner, allowlist, p2p, state_options);
@@ -205,7 +218,25 @@ impl App {
                         Ok(_) => {
                             if ticked.run_state != latest_update.run_state {
                                 let backend = backend.clone();
+                                let backend_clone = backend.clone();
                                 tick_tx = Some(tokio::spawn(async move { backend.tick(instance_pda, instance.account).await }));
+                                // This means the epoch finished so we're rejoining the run to participate in the next one.
+                                if ticked.run_state == RunState::WaitingForMembers && latest_update.run_state == RunState::Cooldown {
+                                    let joined = backend_clone
+                                        .join_run(
+                                            instance_pda,
+                                            instance.account,
+                                            psyche_solana_coordinator::ClientId {
+                                                signer,
+                                                p2p_identity: *p2p_identity.as_bytes(),
+                                            },
+                                        )
+                                        .await?;
+                                    info!(
+                                        "Joined run for next epoch {} from {} with transaction {}",
+                                        self.run_id, signer, joined
+                                    );
+                                }
                             }
                         }
                         Err(err) => debug!("Tick simulation error: {err}")

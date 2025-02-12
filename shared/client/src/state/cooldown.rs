@@ -1,5 +1,9 @@
 use std::{collections::HashMap, path::PathBuf};
 
+use crate::{
+    trainer::{Trainer, TrainerThreadCommunicationError},
+    HubUploadInfo,
+};
 use psyche_coordinator::{
     model::{self, HubRepo},
     Coordinator,
@@ -11,11 +15,6 @@ use tch::Tensor;
 use thiserror::Error;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{info, info_span, Instrument};
-
-use crate::{
-    trainer::{Trainer, TrainerThreadCommunicationError},
-    HubUploadInfo,
-};
 
 use super::{
     evals::{EvalRunner, RunningEvals},

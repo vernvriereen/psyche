@@ -195,7 +195,7 @@ impl App {
                     Checkpoint::Dummy => {
                         // ok!
                     }
-                    Checkpoint::P2P(_) => {
+                    Checkpoint::P2P => {
                         bail!("Can't start up a run with a P2P checkpoint.")
                     }
                 }

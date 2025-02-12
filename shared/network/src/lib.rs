@@ -5,7 +5,9 @@ use futures_util::StreamExt;
 use iroh::{endpoint::RemoteInfo, NodeAddr};
 use iroh_blobs::{net_protocol::Blobs, store::mem::Store, util::local_pool::LocalPool};
 use iroh_gossip::net::{Gossip, GossipEvent, GossipReceiver, GossipSender};
-use p2p_model_sharing::{ParameterSharingMessage, REQUEST_PARAMETER_TIMEOUT_SECS};
+use p2p_model_sharing::{
+    ModelConfigSharingMessage, ParameterSharingMessage, MODEL_REQUEST_TIMEOUT_SECS,
+};
 use router::Router;
 use state::State;
 use std::{
@@ -54,7 +56,8 @@ pub use authenticable_identity::{AuthenticatableIdentity, FromSignedBytesError};
 pub use download_manager::{DownloadComplete, DownloadFailed, TransmittableDownload};
 pub use iroh::{Endpoint, PublicKey, SecretKey};
 pub use p2p_model_sharing::{
-    ModelParameterSharing, ModelParameters, SharableModelParameterError, ALPN,
+    ModelRequestType, ModelSharing, SharableModel, SharableModelError, TransmittableModelConfig,
+    ALPN,
 };
 pub use peer_list::PeerList;
 pub use serde::Networkable;
@@ -87,6 +90,7 @@ where
     gossip_tx: GossipSender,
     gossip_rx: GossipReceiver,
     rx_model_parameter_req: UnboundedReceiver<ParameterSharingMessage>,
+    rx_model_config_req: UnboundedReceiver<ModelConfigSharingMessage>,
     download_manager: DownloadManager<Download>,
     _broadcast_message: PhantomData<BroadcastMessage>,
     _download: PhantomData<Download>,
@@ -169,7 +173,9 @@ where
 
         trace!("creating model parameter sharing...");
         let (tx_model_parameter_req, rx_model_parameter_req) = mpsc::unbounded_channel();
-        let model_parameter_sharing = ModelParameterSharing::new(tx_model_parameter_req);
+        let (tx_model_config_req, rx_model_config_req) = mpsc::unbounded_channel();
+        let model_parameter_sharing =
+            ModelSharing::new(tx_model_parameter_req, tx_model_config_req);
         trace!("model parameter sharing created!");
 
         trace!("creating router...");
@@ -215,6 +221,7 @@ where
             gossip_rx,
             gossip_tx,
             rx_model_parameter_req,
+            rx_model_config_req,
 
             router,
 
@@ -359,6 +366,9 @@ where
             Some(ParameterSharingMessage::Get(parameter_name, protocol_req_tx)) = self.rx_model_parameter_req.recv() => {
                 return Ok(Some(NetworkEvent::ParameterRequest(parameter_name, protocol_req_tx)));
             }
+            Some(ModelConfigSharingMessage::Get(protocol_req_tx)) = self.rx_model_config_req.recv() => {
+                return Ok(Some(NetworkEvent::ModelConfigRequest(protocol_req_tx)));
+            }
             _ = self.update_stats_interval.tick() => {
                 on_update_stats(self.router.endpoint(), &mut self.state).await?;
             }
@@ -431,10 +441,10 @@ where
     }
 }
 
-pub async fn request_model_parameter(
+pub async fn request_model(
     router: Arc<Router>,
     node_addr: NodeId,
-    param_name: String,
+    request_type: ModelRequestType,
 ) -> Result<BlobTicket> {
     let conn = router
         .endpoint()
@@ -444,16 +454,15 @@ pub async fn request_model_parameter(
     // Open a bidirectional QUIC stream
     let (mut send, mut recv) = conn.open_bi().await?;
 
-    // Request parameter
-    send.write_all(param_name.as_bytes()).await?;
+    send.write_all(&request_type.to_bytes()).await?;
     send.finish()?;
 
     // Receive parameter value blob ticket
     let parameter_blob_ticket_bytes = recv
         .read_to_end(500)
-        .timeout(Duration::from_secs(REQUEST_PARAMETER_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(MODEL_REQUEST_TIMEOUT_SECS))
         .await??;
-    let parameter_blob_ticket: Result<BlobTicket, SharableModelParameterError> =
+    let parameter_blob_ticket: Result<BlobTicket, SharableModelError> =
         postcard::from_bytes(&parameter_blob_ticket_bytes)?;
     parameter_blob_ticket.with_context(|| "Error parsing model parameter blob ticket".to_string())
 }
@@ -481,8 +490,9 @@ where
     DownloadFailed(DownloadFailed),
     ParameterRequest(
         String,
-        oneshot::Sender<Result<BlobTicket, SharableModelParameterError>>,
+        oneshot::Sender<Result<BlobTicket, SharableModelError>>,
     ),
+    ModelConfigRequest(oneshot::Sender<Result<BlobTicket, SharableModelError>>),
 }
 
 async fn on_update_stats(endpoint: &Endpoint, stats: &mut State) -> Result<()> {

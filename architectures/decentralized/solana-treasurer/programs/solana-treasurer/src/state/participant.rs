@@ -11,6 +11,7 @@ pub struct Participant {
 
 impl Participant {
     pub const SEEDS_PREFIX: &'static [u8] = b"Participant";
+
     pub fn space_with_discriminator() -> usize {
         8 + std::mem::size_of::<Participant>()
     }
