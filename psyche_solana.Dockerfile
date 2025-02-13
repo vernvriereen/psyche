@@ -13,8 +13,7 @@ RUN cargo install --git https://github.com/coral-xyz/anchor --tag v0.30.1 anchor
 WORKDIR /usr/src/psyche
 COPY . .
 ENV PATH="/root/.local/share/solana/install/active_release/bin:$PATH"
-RUN cd ./architectures/decentralized/solana-coordinator && anchor build --no-idl
-RUN cd -
+RUN cd ./architectures/decentralized/solana-coordinator && anchor build --no-idl && anchor keys sync
 
 # RUNTIME
 FROM debian:bookworm-slim AS runtime
