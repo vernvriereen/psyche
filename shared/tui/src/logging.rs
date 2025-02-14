@@ -15,6 +15,7 @@ use crate::CustomWidget;
 pub enum LogOutput {
     TUI,
     Console,
+    Json,
 }
 
 pub fn init_logging(output: LogOutput, level: Level, write_logs_file: Option<PathBuf>) {
@@ -27,6 +28,15 @@ pub fn init_logging(output: LogOutput, level: Level, write_logs_file: Option<Pat
     let subscriber = match output {
         LogOutput::TUI => subscriber.with(tui_logger::tracing_subscriber_layer().boxed()),
         LogOutput::Console => subscriber.with(fmt::layer().with_writer(std::io::stdout).boxed()),
+        LogOutput::Json => subscriber.with(
+            fmt::layer()
+                .json()
+                .with_ansi(true)
+                .with_writer(std::io::stdout)
+                .flatten_event(true)
+                .with_current_span(true)
+                .boxed(),
+        ),
     };
 
     if let Some(dir) = write_logs_file {
