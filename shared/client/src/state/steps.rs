@@ -482,6 +482,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         let new_step: ActiveStep = match (std::mem::take(&mut self.active_step), state.run_state) {
             // start training at the beginning of an epoch
             (ActiveStep::Warmup(warmup), RunState::RoundTrain) => {
+                info!(
+                    client_id = %self.identity,
+                    old_state= "Warmup",
+                    new_state = debug(state.run_state),
+                    "apply_state"
+                );
                 let trainers = warmup.finish().stop_evals().await?;
                 self.stats_logger.push_eval_results();
                 ActiveStep::Training(self.training.start(
@@ -495,6 +501,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
 
             // start witnessing after training is done
             (ActiveStep::Training(training), RunState::RoundWitness) => {
+                info!(
+                    client_id = %self.identity,
+                    old_state= "RoundRrain",
+                    new_state = debug(state.run_state),
+                    "apply_state"
+                );
                 let FinishedTrainers {
                     evals_or_trainers,
                     round_losses,
@@ -517,6 +529,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             }
             // within an epoch, loop back to training after witnessing
             (ActiveStep::Witness(witnessing), RunState::RoundTrain) => {
+                info!(
+                    client_id = %self.identity,
+                    old_state= "RoundWitness",
+                    new_state = debug(state.run_state),
+                    "apply_state"
+                );
                 let trainers = witnessing.finish().await?.stop_evals().await?;
                 ActiveStep::Training(self.training.start(
                     client_index,
@@ -529,12 +547,24 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
 
             // the epoch ended & we're transitioning to cooldown
             (ActiveStep::Witness(witnessing), RunState::Cooldown) => {
+                info!(
+                    client_id = %self.identity,
+                    old_state= "RoundWitness",
+                    new_state = debug(state.run_state),
+                    "apply_state"
+                );
                 let trainers = witnessing.finish().await?.stop_evals().await?;
                 ActiveStep::Cooldown(self.cooldown.start(trainers, &state)?)
             }
             // cooldown is done, we consider waiting for members and warmup to be basically the same
             (ActiveStep::Cooldown(cooldown), RunState::WaitingForMembers)
             | (ActiveStep::Cooldown(cooldown), RunState::Warmup) => {
+                info!(
+                    client_id = %self.identity,
+                    old_state= "Cooldown",
+                    new_state = debug(state.run_state),
+                    "apply_state"
+                );
                 let trainers = cooldown.finish().await?;
                 ActiveStep::Warmup(self.warmup.start(trainers))
             }
