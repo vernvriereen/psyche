@@ -2,7 +2,7 @@
 members = [
     "architectures/centralized/*",
     "architectures/decentralized/solana-client",
-    "architectures/decentralized/testing",
+    "architectures/decentralized/testing", "e2e_testing",
     "shared/*",
     "tools/rust-tools/*",
 ]

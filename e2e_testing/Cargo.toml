@@ -1,0 +1,10 @@
+[package]
+name = "e2e_testing"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+bollard = "0.18.1"
+futures-util.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
