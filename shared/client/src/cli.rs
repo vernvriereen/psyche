@@ -54,13 +54,10 @@ pub struct TrainArgs {
     /// Enables a terminal-based graphical interface for monitoring analytics.
     #[clap(
             long,
-            action = ArgAction::Set,
-            default_value_t = true,
-            default_missing_value = "true",
+            action = ArgAction::SetTrue,
             num_args = 0..=1,
             require_equals = false,
             env,
-            conflicts_with = "json",
         )]
     pub tui: bool,
     #[clap(

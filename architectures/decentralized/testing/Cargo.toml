@@ -1,0 +1,13 @@
+[package]
+name = "psyche-decentralized-testing"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+psyche-solana-coordinator.workspace = true
+psyche-coordinator.workspace = true
+anchor-client.workspace = true
+psyche-core.workspace = true
+test-log.workspace = true
+tokio-util.workspace = true
+tokio.workspace = true
