@@ -59,9 +59,16 @@ pub struct TrainArgs {
             default_missing_value = "true",
             num_args = 0..=1,
             require_equals = false,
-            env
+            env,
+            conflicts_with = "json",
         )]
     pub tui: bool,
+    #[clap(
+        long,
+        env,
+        action = ArgAction::SetTrue
+    )]
+    pub json: bool,
 
     /// A unique identifier for the training run. This ID allows the client to join a specific active run.
     #[clap(long, env)]
