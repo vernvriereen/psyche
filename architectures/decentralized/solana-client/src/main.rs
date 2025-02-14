@@ -325,7 +325,9 @@ async fn async_main() -> Result<()> {
             let eval_tasks = args.eval_tasks()?;
 
             psyche_tui::init_logging(
-                if args.tui {
+                if args.json {
+                    LogOutput::Json
+                } else if args.tui {
                     LogOutput::TUI
                 } else {
                     LogOutput::Console
