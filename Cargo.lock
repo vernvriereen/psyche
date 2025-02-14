@@ -6456,6 +6456,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "psyche-decentralized-testing"
+version = "0.0.1"
+dependencies = [
+ "anchor-client",
+ "psyche-coordinator",
+ "psyche-core",
+ "psyche-solana-coordinator",
+ "test-log",
+ "tokio",
+ "tokio-util 0.7.13",
+]
+
+[[package]]
 name = "psyche-eval"
 version = "0.1.0"
 dependencies = [
