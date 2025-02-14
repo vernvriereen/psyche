@@ -4,13 +4,13 @@ mod instance_state;
 mod program_error;
 
 use anchor_lang::{prelude::*, system_program};
-pub use client::ClientId;
 pub use instance_state::CoordinatorInstanceState;
 pub use program_error::ProgramError;
 use psyche_coordinator::{
     model::Model, Committee, CommitteeProof, CoordinatorConfig, Witness, WitnessBloom,
     WitnessProof, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
 };
+pub use {client::Client, client::ClientId};
 
 declare_id!("5gKtdi6At7WEcLE22GmkSg94rVgc2hRRo3VvKhLnoJZP");
 
