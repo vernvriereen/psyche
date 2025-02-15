@@ -21,6 +21,7 @@ pub struct Run {
 
 impl Run {
     pub const SEEDS_PREFIX: &'static [u8] = b"Run";
+
     pub fn space_with_discriminator() -> usize {
         8 + std::mem::size_of::<Run>()
     }

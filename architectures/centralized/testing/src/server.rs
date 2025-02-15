@@ -45,6 +45,9 @@ enum TestingQueryMsg {
     Epoch {
         respond_to: oneshot::Sender<u16>,
     },
+    Coordinator {
+        respond_to: oneshot::Sender<Coordinator<ClientId>>,
+    },
 }
 
 struct CoordinatorServer {
@@ -59,6 +62,7 @@ impl CoordinatorServer {
         query_chan_receiver: Receiver<TestingQueryMsg>,
         init_min_clients: u16,
         batches_per_round: u16,
+        data_indicies_per_batch: u16,
         witness_nodes: u16,
         witness_quorum: u16,
     ) -> Self {
@@ -70,7 +74,7 @@ impl CoordinatorServer {
             round_witness_time: ROUND_WITNESS_TIME,
             min_clients: init_min_clients,
             batches_per_round,
-            data_indicies_per_batch: 1,
+            data_indicies_per_batch,
             verification_percent: 0,
             witness_nodes,
             witness_quorum,
@@ -153,6 +157,10 @@ impl CoordinatorServer {
                 let current_epoch = self.inner.get_current_epoch();
                 respond_to.send(current_epoch).unwrap();
             }
+            TestingQueryMsg::Coordinator { respond_to } => {
+                let coordinator = self.inner.get_coordinator();
+                respond_to.send(coordinator).unwrap();
+            }
         }
     }
 
@@ -180,6 +188,7 @@ impl CoordinatorServerHandle {
     pub async fn new(
         init_min_clients: u16,
         batches_per_round: u16,
+        data_indicies_per_batch: u16,
         witness_nodes: u16,
         witness_quorum: u16,
     ) -> Self {
@@ -189,6 +198,7 @@ impl CoordinatorServerHandle {
             query_chan_receiver,
             init_min_clients,
             batches_per_round,
+            data_indicies_per_batch,
             witness_nodes,
             witness_quorum,
         )
@@ -257,6 +267,13 @@ impl CoordinatorServerHandle {
     pub async fn get_current_epoch(&self) -> u16 {
         let (send, recv) = oneshot::channel::<u16>();
         let msg = TestingQueryMsg::Epoch { respond_to: send };
+        let _ = self.query_chan_sender.send(msg).await;
+        recv.await.expect("Coordinator actor task has been killed")
+    }
+
+    pub async fn get_coordinator(&self) -> Coordinator<ClientId> {
+        let (send, recv) = oneshot::channel::<Coordinator<ClientId>>();
+        let msg = TestingQueryMsg::Coordinator { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
         recv.await.expect("Coordinator actor task has been killed")
     }

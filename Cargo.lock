@@ -6414,6 +6414,7 @@ dependencies = [
  "psyche-core",
  "serde",
  "serde_with",
+ "tracing",
 ]
 
 [[package]]
@@ -6534,6 +6535,7 @@ dependencies = [
  "sha2 0.10.8",
  "tch",
  "thiserror 2.0.11",
+ "tokenizers",
  "tokio",
  "tokio-stream",
  "tokio-util 0.7.13",
