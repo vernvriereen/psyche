@@ -3,7 +3,6 @@ use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::Mint;
 use anchor_spl::token::Token;
 use anchor_spl::token::TokenAccount;
-
 use psyche_solana_coordinator::cpi::accounts::InitializeCoordinatorAccounts;
 use psyche_solana_coordinator::cpi::initialize_coordinator;
 use psyche_solana_coordinator::program::PsycheSolanaCoordinator;
@@ -84,7 +83,8 @@ pub fn run_create_processor(
     run.coordinator_account = context.accounts.coordinator_account.key();
 
     run.collateral_mint = context.accounts.collateral_mint.key();
-    run.collateral_amount_per_earned_point = params.collateral_amount_per_earned_point;
+    run.collateral_amount_per_earned_point =
+        params.collateral_amount_per_earned_point;
 
     run.total_funded_collateral_amount = 0;
     run.total_claimed_collateral_amount = 0;
@@ -98,9 +98,15 @@ pub fn run_create_processor(
             InitializeCoordinatorAccounts {
                 payer: context.accounts.payer.to_account_info(),
                 authority: context.accounts.run.to_account_info(),
-                instance: context.accounts.coordinator_instance.to_account_info(),
+                instance: context
+                    .accounts
+                    .coordinator_instance
+                    .to_account_info(),
                 account: context.accounts.coordinator_account.to_account_info(),
-                system_program: context.accounts.system_program.to_account_info(),
+                system_program: context
+                    .accounts
+                    .system_program
+                    .to_account_info(),
             },
         )
         .with_signer(run_signer_seeds),

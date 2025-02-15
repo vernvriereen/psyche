@@ -134,6 +134,10 @@ impl App {
     pub fn get_port(&self) -> u16 {
         self.backend.port()
     }
+
+    pub fn get_coordinator(&self) -> Coordinator<ClientId> {
+        self.coordinator
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -191,7 +195,7 @@ impl App {
                     Checkpoint::Dummy => {
                         // ok!
                     }
-                    Checkpoint::P2P(_) => {
+                    Checkpoint::P2P => {
                         bail!("Can't start up a run with a P2P checkpoint.")
                     }
                 }

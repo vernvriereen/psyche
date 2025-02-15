@@ -120,6 +120,20 @@ OPENSSL_LIB_DIR = <path_to_openssl>/lib/VC/x64/MT
 OPENSSL_INCLUDE_DIR <path_to_openssl>/include
 ```
 
+### Docker
+
+Create a Docker image with the necessary dependencies to run a Psyche client:  
+
+1. Install the necessary NVIDIA and CUDA drivers as explained in the previous sections.  
+2. Install the NVIDIA [container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html). If using Ubuntu, just run:  
+
+```bash
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+```
+
+4. Run `docker compose build`.
+
 ## Lints & Checks
 
 `$ just check`

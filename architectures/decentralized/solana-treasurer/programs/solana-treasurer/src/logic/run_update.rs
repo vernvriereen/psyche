@@ -1,4 +1,3 @@
-use crate::state::Run;
 use anchor_lang::prelude::*;
 use psyche_coordinator::model::Model;
 use psyche_coordinator::CoordinatorConfig;
@@ -11,6 +10,8 @@ use psyche_solana_coordinator::program::PsycheSolanaCoordinator;
 use psyche_solana_coordinator::ClientId;
 use psyche_solana_coordinator::CoordinatorAccount;
 use psyche_solana_coordinator::CoordinatorInstance;
+
+use crate::state::Run;
 
 #[derive(Accounts)]
 #[instruction(params: RunUpdateParams)]
@@ -59,8 +60,14 @@ pub fn run_update_processor(
                 context.accounts.coordinator_program.to_account_info(),
                 OwnerCoordinatorAccounts {
                     authority: context.accounts.run.to_account_info(),
-                    instance: context.accounts.coordinator_instance.to_account_info(),
-                    account: context.accounts.coordinator_account.to_account_info(),
+                    instance: context
+                        .accounts
+                        .coordinator_instance
+                        .to_account_info(),
+                    account: context
+                        .accounts
+                        .coordinator_account
+                        .to_account_info(),
                 },
             )
             .with_signer(run_signer_seeds),
@@ -73,8 +80,14 @@ pub fn run_update_processor(
                 context.accounts.coordinator_program.to_account_info(),
                 OwnerCoordinatorAccounts {
                     authority: context.accounts.run.to_account_info(),
-                    instance: context.accounts.coordinator_instance.to_account_info(),
-                    account: context.accounts.coordinator_account.to_account_info(),
+                    instance: context
+                        .accounts
+                        .coordinator_instance
+                        .to_account_info(),
+                    account: context
+                        .accounts
+                        .coordinator_account
+                        .to_account_info(),
                 },
             )
             .with_signer(run_signer_seeds),
@@ -87,8 +100,14 @@ pub fn run_update_processor(
                 context.accounts.coordinator_program.to_account_info(),
                 OwnerCoordinatorAccounts {
                     authority: context.accounts.run.to_account_info(),
-                    instance: context.accounts.coordinator_instance.to_account_info(),
-                    account: context.accounts.coordinator_account.to_account_info(),
+                    instance: context
+                        .accounts
+                        .coordinator_instance
+                        .to_account_info(),
+                    account: context
+                        .accounts
+                        .coordinator_account
+                        .to_account_info(),
                 },
             )
             .with_signer(run_signer_seeds),

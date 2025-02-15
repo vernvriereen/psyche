@@ -44,11 +44,14 @@ impl CoordinatorInstanceState {
             clock.unix_timestamp as u64,
             u64::from_ne_bytes(random_seed),
         ) {
-            Ok(TickResult::Ticked) => {}
+            Ok(TickResult::Ticked) => {
+                if self.coordinator.is_epoch_starting() {
+                    msg!("First round of epoch, updating next active clients");
+                    self.clients_state.next_active += 1;
+                }
+            }
             Ok(TickResult::EpochEnd(success)) => {
                 msg!("Epoch end, sucecsss: {}", success);
-
-                self.clients_state.next_active += 1;
 
                 let mut i = 0;
                 let mut j = 0;
