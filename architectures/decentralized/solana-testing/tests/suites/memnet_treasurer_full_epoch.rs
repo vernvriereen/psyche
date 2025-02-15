@@ -40,7 +40,7 @@ pub async fn run() {
     let authority = Keypair::new();
     let client = Keypair::new();
     let ticker = Keypair::new();
-    let earned_point_per_epoch = 1;
+    let earned_point_per_epoch = 33;
     let collateral_amount_per_earned_point = 42;
 
     // Prepare the collateral mint
@@ -222,6 +222,8 @@ pub async fn run() {
                     quantize_1bit: false,
                 },
             })),
+            epoch_earning_rate: Some(earned_point_per_epoch),
+            epoch_slashing_rate: None,
             paused: Some(false),
         },
     )
