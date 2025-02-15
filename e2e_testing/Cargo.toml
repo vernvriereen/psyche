@@ -8,3 +8,4 @@ bollard = "0.18.1"
 futures-util.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+thiserror.workspace = true

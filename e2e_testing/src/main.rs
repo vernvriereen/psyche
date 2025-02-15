@@ -9,7 +9,7 @@ use futures_util::future::join_all;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
-    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let docker = Arc::new(Docker::connect_with_socket_defaults()?);
     let mut list_container_filters = HashMap::new();
     list_container_filters.insert("status", vec!["running"]);
 
@@ -24,12 +24,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     for container in containers {
         println!("Container name: {:?}", container.names);
     }
+    println!();
 
-    let filter = JsonFilter::StateFilter("RoundTrain".to_string());
-    let filter_2 = JsonFilter::StateFilter("RoundWitness".to_string());
+    // let filter = JsonFilter::State("RoundTrain".to_string());
+    // let filter_2 = JsonFilter::State("RoundWitness".to_string());
+    let state_change_filter = JsonFilter::state_change();
+
     let watcher = DockerWatcher::new(docker.clone());
-    let handle_1 = watcher.monitor_container("psyche-psyche-test-client-1", filter);
-    let handle_2 = watcher.monitor_container("psyche-psyche-test-client-2", filter_2);
+    let handle_1 = watcher
+        .monitor_container("psyche-psyche-test-client-1", state_change_filter)
+        .unwrap();
+    let handle_2 = watcher
+        .monitor_container("psyche-psyche-test-client-2", state_change_filter)
+        .unwrap();
 
     join_all(vec![handle_1, handle_2]).await;
 
