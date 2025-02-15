@@ -13,6 +13,8 @@ pub struct ClientsState {
     pub whitelist: FixedVec<Pubkey, SOLANA_MAX_NUM_WHITELISTED_CLIENTS>,
     pub clients: FixedVec<Client, SOLANA_MAX_NUM_PENDING_CLIENTS>,
     pub next_active: u64,
+    pub epoch_earning_rate: u64,
+    pub epoch_slashing_rate: u64,
 }
 
 unsafe impl Pod for ClientsState {}
