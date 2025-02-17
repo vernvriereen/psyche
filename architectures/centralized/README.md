@@ -22,7 +22,7 @@ cargo run -p psyche-centralized-local-testnet -- --help
 #### Demo
 
 ```bash
-cargo run -p psyche-centralized-local-testnet -- --num-clients 3 --config-path ../../config/llama2-20m-dolma-noverify-no-checkpointer --write-distro-data ./distro-data/llama2-20m-noverify --tui false
+cargo run -p psyche-centralized-local-testnet start --num-clients 3 --config-path ../../config/llama2-20m-dolma-noverify-no-checkpointer --write-distro-data ./distro-data/llama2-20m-noverify --tui false
 ```
 
 This command launches a server and 3 clients, using the configuration in `/path/to/config`, writing gradient data, and disabling the TUI for clients.

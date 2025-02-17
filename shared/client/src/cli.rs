@@ -54,8 +54,8 @@ pub struct TrainArgs {
 
     /// Sets clients logs interface
     /// tui: Enables a terminal-based graphical interface for monitoring analytics.
-    /// console: standards logs
-    /// json: standards logs in json format
+    /// console: standard logs
+    /// json: standard logs with json format
     #[clap(
         long,
         env,
