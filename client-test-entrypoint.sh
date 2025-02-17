@@ -1,5 +1,7 @@
 #! /bin/bash
 
+set -o errexit
+
 solana config set --url http://psyche-solana-test-validator:8899
 solana-keygen new --no-bip39-passphrase --force
 

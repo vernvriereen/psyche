@@ -1,14 +1,17 @@
+use e2e_testing::docker_setup::e2e_testing_setup;
+use e2e_testing::docker_watcher::{DockerWatcher, JsonFilter};
 use std::collections::HashMap;
 use std::default::Default;
 use std::sync::Arc;
 
 use bollard::container::ListContainersOptions;
 use bollard::Docker;
-use e2e_testing::docker_watcher::{DockerWatcher, JsonFilter};
 use futures_util::future::join_all;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
+    e2e_testing_setup(2);
+
     let docker = Arc::new(Docker::connect_with_socket_defaults()?);
     let mut list_container_filters = HashMap::new();
     list_container_filters.insert("status", vec!["running"]);
@@ -26,8 +29,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     }
     println!();
 
-    // let filter = JsonFilter::State("RoundTrain".to_string());
-    // let filter_2 = JsonFilter::State("RoundWitness".to_string());
     let state_change_filter = JsonFilter::state_change();
 
     let watcher = DockerWatcher::new(docker.clone());

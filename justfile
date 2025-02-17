@@ -89,14 +89,26 @@ generate_cli_docs:
     cargo run -p psyche-centralized-local-testnet print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-local-testnet.md
 
 setup_test_infra num_clients="1":
-    NUM_REPLICAS={{num_clients}} docker compose up -d
+    # NUM_REPLICAS={{num_clients}} docker compose up -d
+    NUM_REPLICAS={{num_clients}} docker compose --profile setup up -d
 
 run_docker_client:
     docker build --target runtime -t psyche-client .
-    docker run --rm \
+    docker run \
       --gpus all \
       -e NVIDIA_DRIVER_CAPABILITIES=all \
       --add-host host.docker.internal:host-gateway \
       -v ~/.config/solana/id.json:/usr/local/id.json \
       --env-file config/client/.env \
+      psyche-client
+
+run_docker_test_client:
+    docker build --target test -t psyche-client .
+    docker run \
+      --gpus all \
+      -e NVIDIA_DRIVER_CAPABILITIES=all \
+      --add-host host.docker.internal:host-gateway \
+      -v ~/.config/solana/id.json:/usr/local/id.json \
+      --env-file config/client/.env \
+      --network localhost \
       psyche-client
