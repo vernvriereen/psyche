@@ -324,17 +324,7 @@ async fn async_main() -> Result<()> {
             let checkpoint_upload_info = args.checkpoint_config()?;
             let eval_tasks = args.eval_tasks()?;
 
-            psyche_tui::init_logging(
-                if args.json {
-                    LogOutput::Json
-                } else if args.tui {
-                    LogOutput::TUI
-                } else {
-                    LogOutput::Console
-                },
-                Level::INFO,
-                args.write_log.clone(),
-            );
+            psyche_tui::init_logging(args.logs, Level::INFO, args.write_log.clone());
 
             info!(
                 "============ Client Startup at {} ============",
@@ -354,7 +344,7 @@ async fn async_main() -> Result<()> {
             ))?;
 
             let (cancel, tx_tui_state) = maybe_start_render_loop(
-                args.tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)),
+                (args.logs == LogOutput::TUI).then(|| Tabs::new(Default::default(), &TAB_NAMES)),
             )?;
 
             let (mut app, allowlist, p2p, state_options) = AppBuilder::new(AppParams {

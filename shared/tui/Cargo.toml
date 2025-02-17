@@ -13,6 +13,8 @@ anyhow.workspace = true
 tokio-util.workspace = true
 tokio.workspace = true
 futures.workspace = true
+clap.workspace = true
+
 
 [dev-dependencies]
 rand.workspace = true
