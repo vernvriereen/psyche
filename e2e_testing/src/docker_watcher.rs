@@ -4,6 +4,7 @@ use std::{sync::Arc, time::Duration};
 use bollard::{container::LogsOptions, Docker};
 use futures_util::StreamExt;
 use serde_json::Value;
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 #[derive(Clone, Copy)]
@@ -54,13 +55,14 @@ pub enum DockerWatcherError {
 // struct DockerWatcher<T> {
 pub struct DockerWatcher {
     client: Arc<Docker>,
+    log_sender: mpsc::Sender<String>,
     // channel: Sender<T>,
 }
 
 // impl<T> DockerWatcher<T> {
 impl DockerWatcher {
-    pub fn new(client: Arc<Docker>) -> Self {
-        Self { client }
+    pub fn new(client: Arc<Docker>, log_sender: mpsc::Sender<String>) -> Self {
+        Self { client, log_sender }
     }
 
     pub fn monitor_container(
@@ -68,6 +70,7 @@ impl DockerWatcher {
         name: &str,
         filter: JsonFilter,
     ) -> Result<JoinHandle<Result<(), DockerWatcherError>>, DockerWatcherError> {
+        println!("EMPEZO monitor_container");
         let Ok(duration) = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) else {
             return Err(DockerWatcherError::UnixTimestampError);
         };
@@ -85,7 +88,9 @@ impl DockerWatcher {
 
         let name = name.to_string();
         let client = self.client.clone();
+        let log_sender = self.log_sender.clone();
         let monitor_handle = tokio::spawn(async move {
+            println!("spawn task monitor_handle");
             let mut logs = client.logs(&name, log_options);
             while let Some(log) = logs.next().await {
                 let log = match log {
@@ -97,6 +102,8 @@ impl DockerWatcher {
                 else {
                     continue;
                 };
+
+                println!("Logs: {:?}", &parsed_log);
 
                 match filter {
                     JsonFilter::State(ref state) => {
@@ -128,9 +135,11 @@ impl DockerWatcher {
                                 .and_then(|v| v.as_str())
                                 .unwrap();
 
-                            println!(
+                            let message = format!(
                                 "[CLIENT {client_id}] state change: {old_state} -> {new_state}"
                             );
+                            println!("{:?}", message);
+                            log_sender.send(message).await.unwrap()
                             // client.
                         }
                     }

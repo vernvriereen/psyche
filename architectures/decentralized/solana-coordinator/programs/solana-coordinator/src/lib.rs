@@ -12,7 +12,7 @@ use psyche_coordinator::{
 };
 pub use {client::Client, client::ClientId};
 
-declare_id!("5gKtdi6At7WEcLE22GmkSg94rVgc2hRRo3VvKhLnoJZP");
+declare_id!("9irXBiWYnXsojsjLQs9gfjr8gYbzJwBGBZMrw7x8YrBi");
 
 pub const SOLANA_MAX_NUM_PENDING_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 pub const SOLANA_MAX_NUM_WHITELISTED_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;

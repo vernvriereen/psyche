@@ -3,6 +3,7 @@ use e2e_testing::docker_watcher::{DockerWatcher, JsonFilter};
 use std::collections::HashMap;
 use std::default::Default;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 
 use bollard::container::ListContainersOptions;
 use bollard::Docker;
@@ -31,7 +32,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
 
     let state_change_filter = JsonFilter::state_change();
 
-    let watcher = DockerWatcher::new(docker.clone());
+    let (tx, _rx) = mpsc::channel(100);
+    let watcher = DockerWatcher::new(docker.clone(), tx);
     let handle_1 = watcher
         .monitor_container("psyche-psyche-test-client-1", state_change_filter)
         .unwrap();

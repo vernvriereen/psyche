@@ -4,6 +4,7 @@ edition = "2021"
 version.workspace = true
 
 [dependencies]
+e2e_testing.workspace = true
 psyche-solana-coordinator.workspace = true
 psyche-coordinator.workspace = true
 anchor-client.workspace = true
@@ -11,3 +12,4 @@ psyche-core.workspace = true
 test-log.workspace = true
 tokio-util.workspace = true
 tokio.workspace = true
+bollard = "0.18.1"

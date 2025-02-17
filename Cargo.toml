@@ -24,6 +24,7 @@ psyche-network = { path = "./shared/network" }
 psyche-modeling = { path = "./shared/modeling" }
 psyche-tui = { path = "./shared/tui" }
 psyche-watcher = { path = "./shared/watcher" }
+e2e_testing = { path = "./e2e_testing" }
 
 psyche-solana-coordinator = { path = "./architectures/decentralized/solana-coordinator/programs/solana-coordinator" }
 psyche-solana-client = { path = "./architectures/decentralized/solana-client" }

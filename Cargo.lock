@@ -6545,6 +6545,8 @@ name = "psyche-decentralized-testing"
 version = "0.0.1"
 dependencies = [
  "anchor-client",
+ "bollard",
+ "e2e_testing",
  "psyche-coordinator",
  "psyche-core",
  "psyche-solana-coordinator",

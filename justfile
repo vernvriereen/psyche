@@ -90,7 +90,7 @@ generate_cli_docs:
 
 setup_test_infra num_clients="1":
     # NUM_REPLICAS={{num_clients}} docker compose up -d
-    NUM_REPLICAS={{num_clients}} docker compose --profile setup up -d
+    NUM_REPLICAS={{num_clients}} docker compose --profile setup up -d --build
 
 run_docker_client:
     docker build --target runtime -t psyche-client .
