@@ -202,12 +202,21 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         }
                                     },
                                     NetworkEvent::ModelConfigRequest(protocol_req_tx) => {
-                                        let transmittable_config = TransmittableDownload::ModelConfig(sharable_model.get_transmittable_config()?);
-                                        let config_ticket = p2p.add_downloadable(transmittable_config).await?;
+                                        match sharable_model.get_transmittable_config() {
+                                            Err(e) => {
+                                                if let Err(e) = protocol_req_tx.send(Err(e)) {
+                                                    warn!("Could not send model config blob ticket. Error: {e:?}");
+                                                }
+                                            },
+                                            Ok(sharable_config) => {
+                                                let transmittable_config = TransmittableDownload::ModelConfig(sharable_config);
+                                                let config_ticket = p2p.add_downloadable(transmittable_config).await?;
 
-                                        info!("Sending requested model config blob ticket");
-                                        if let Err(e) = protocol_req_tx.send(Ok(config_ticket)) {
-                                            warn!("Could not send model config blob ticket. Error: {e:?}");
+                                                info!("Sending requested model config blob ticket");
+                                                if let Err(e) = protocol_req_tx.send(Ok(config_ticket)) {
+                                                    warn!("Could not send model config blob ticket. Error: {e:?}");
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -364,7 +373,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 return Ok(());
                             };
                             let router = p2p.router();
-                            let me = NodeId::from_bytes(identity.get_p2p_public_key()).unwrap();
+                            let me = NodeId::from_bytes(identity.get_p2p_public_key())?;
                             let peer_ids: Vec<NodeId> = coordinator_state.epoch_state.clients.iter().map(|client| {
                                 let peer_id_bytes = client.id.get_p2p_public_key();
                                 NodeId::from_bytes(peer_id_bytes).unwrap()
