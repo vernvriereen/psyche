@@ -14,7 +14,7 @@ pub struct ClientsState {
     pub clients: FixedVec<Client, SOLANA_MAX_NUM_PENDING_CLIENTS>,
     pub next_active: u64,
     pub current_epoch_rates: ClientsEpochRates,
-    pub next_epoch_rates: ClientsEpochRates,
+    pub future_epoch_rates: ClientsEpochRates,
 }
 
 #[derive(Clone, Copy, Zeroable)]

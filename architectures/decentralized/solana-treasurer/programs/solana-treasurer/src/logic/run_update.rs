@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use psyche_coordinator::model::Model;
 use psyche_coordinator::CoordinatorConfig;
 use psyche_solana_coordinator::cpi::accounts::OwnerCoordinatorAccounts;
-use psyche_solana_coordinator::cpi::set_next_epoch_rates;
+use psyche_solana_coordinator::cpi::set_future_epoch_rates;
 use psyche_solana_coordinator::cpi::set_paused;
 use psyche_solana_coordinator::cpi::set_whitelist;
 use psyche_solana_coordinator::cpi::update_coordinator_config_model;
@@ -118,7 +118,7 @@ pub fn run_update_processor(
     if params.epoch_earning_rate.is_some()
         || params.epoch_slashing_rate.is_some()
     {
-        set_next_epoch_rates(
+        set_future_epoch_rates(
             CpiContext::new(
                 context.accounts.coordinator_program.to_account_info(),
                 OwnerCoordinatorAccounts {

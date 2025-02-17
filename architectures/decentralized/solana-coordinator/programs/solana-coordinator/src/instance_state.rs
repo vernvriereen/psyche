@@ -48,7 +48,7 @@ impl CoordinatorInstanceState {
                 if self.coordinator.is_epoch_starting() {
                     msg!("First round of epoch, updating next active clients");
                     self.clients_state.next_active += 1;
-                    self.clients_state.current_epoch_rates = self.clients_state.next_epoch_rates;
+                    self.clients_state.current_epoch_rates = self.clients_state.future_epoch_rates;
                 }
             }
             Ok(TickResult::EpochEnd(success)) => {
@@ -125,16 +125,16 @@ impl CoordinatorInstanceState {
         Ok(())
     }
 
-    pub fn set_next_epoch_rates(
+    pub fn set_future_epoch_rates(
         &mut self,
         epoch_earning_rate: Option<u64>,
         epoch_slashing_rate: Option<u64>,
     ) -> Result<()> {
         if let Some(epoch_earning_rate) = epoch_earning_rate {
-            self.clients_state.next_epoch_rates.earning_rate = epoch_earning_rate;
+            self.clients_state.future_epoch_rates.earning_rate = epoch_earning_rate;
         }
         if let Some(epoch_slashing_rate) = epoch_slashing_rate {
-            self.clients_state.next_epoch_rates.slashing_rate = epoch_slashing_rate;
+            self.clients_state.future_epoch_rates.slashing_rate = epoch_slashing_rate;
         }
         Ok(())
     }
