@@ -12,5 +12,13 @@ psyche-solana-client train \
     --ws-rpc "ws://psyche-solana-test-validator:8900" \
     --run-id ${RUN_ID} \
     --ticker \
-    --tui false \
-    --json
+    --logs json
+
+
+psyche-solana-client train \
+    --wallet-private-key-path "/root/.config/solana/id.json" \
+    --rpc "http://psyche-solana-test-validator:8899" \
+    --ws-rpc "ws://psyche-solana-test-validator:8900" \
+    --run-id test \
+    --ticker \
+    --logs json

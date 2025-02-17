@@ -1,5 +1,7 @@
 use std::{fs::OpenOptions, path::PathBuf};
 
+use crate::CustomWidget;
+use clap::ValueEnum;
 use crossterm::event::{Event, KeyCode, MouseEventKind};
 use ratatui::{
     buffer::Buffer,
@@ -10,8 +12,7 @@ use tracing::Level;
 use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Layer};
 use tui_logger::{TuiLoggerLevelOutput, TuiLoggerWidget, TuiWidgetEvent, TuiWidgetState};
 
-use crate::CustomWidget;
-
+#[derive(Clone, Debug, Copy, ValueEnum, PartialEq)]
 pub enum LogOutput {
     TUI,
     Console,
