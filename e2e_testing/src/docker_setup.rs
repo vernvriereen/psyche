@@ -1,9 +1,26 @@
 use std::process::Command;
 use tokio::signal;
 
-pub fn e2e_testing_setup(init_num_clients: usize) {
+pub struct DockerTestCleanup;
+impl Drop for DockerTestCleanup {
+    fn drop(&mut self) {
+        println!("\nStopping containers...");
+        let output = Command::new("docker")
+            .args(["compose", "--profile", "all", "stop"])
+            .output()
+            .expect("Failed stop docker compose instances");
+
+        if !output.status.success() {
+            eprintln!("Error: {}", String::from_utf8_lossy(&output.stderr));
+        }
+    }
+}
+
+pub fn e2e_testing_setup(init_num_clients: usize) -> DockerTestCleanup {
     spawn_psyche_network(init_num_clients);
     spawn_ctrl_c_task();
+
+    DockerTestCleanup {}
 }
 
 pub fn spawn_psyche_network(init_num_clients: usize) {
