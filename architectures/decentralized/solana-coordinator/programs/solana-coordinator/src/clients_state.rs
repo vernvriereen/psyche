@@ -7,7 +7,7 @@ use anchor_lang::prelude::*;
 use bytemuck::{Pod, Zeroable};
 use psyche_core::{FixedVec, SizedIterator};
 
-#[derive(Clone, Copy, Zeroable)]
+#[derive(Debug, Clone, Copy, Zeroable)]
 #[repr(C)]
 pub struct ClientsState {
     pub whitelist: FixedVec<Pubkey, SOLANA_MAX_NUM_WHITELISTED_CLIENTS>,
@@ -17,7 +17,7 @@ pub struct ClientsState {
     pub future_epoch_rates: ClientsEpochRates,
 }
 
-#[derive(Clone, Copy, Zeroable)]
+#[derive(Debug, Clone, Copy, Zeroable)]
 #[repr(C)]
 pub struct ClientsEpochRates {
     pub earning_rate: u64,

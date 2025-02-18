@@ -1,5 +1,5 @@
 [package]
-name = "psyche-solana-testing"
+name = "psyche-solana-tooling"
 edition = "2021"
 version.workspace = true
 

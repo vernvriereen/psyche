@@ -1,8 +1,8 @@
 use psyche_solana_coordinator::CoordinatorAccount;
-use psyche_solana_testing::create_memnet_endpoint::create_memnet_endpoint;
-use psyche_solana_testing::find_pdas::find_coordinator_instance;
-use psyche_solana_testing::process_coordinator_instructions::process_coordinator_free;
-use psyche_solana_testing::process_coordinator_instructions::process_coordinator_initialize;
+use psyche_solana_tooling::create_memnet_endpoint::create_memnet_endpoint;
+use psyche_solana_tooling::find_pdas::find_coordinator_instance;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_free;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_initialize;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
