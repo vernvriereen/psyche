@@ -18,7 +18,7 @@ for i in $(seq 1 "$num_clients"); do
         --name psyche-test-client-${i} \
         --gpus "device=$gpu_id" \
         --env NVIDIA_DRIVER_CAPABILITIES=all \
-        --env-file config/client/.env.local \
+        --env-file ./config/client/.env \
         --network test_psyche-test-network \
         psyche-client
     echo "Started psyche-test-client-${i} on GPU $gpu_id"
