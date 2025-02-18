@@ -71,31 +71,31 @@ services:
     networks:
       - psyche-test-network
     
-    psyche-test-client-pending:
-      image: psyche-client
-      profiles: ["join", "all"]
-      build:
-        context:  ../..
-        dockerfile: ./docker/test/psyche_client.Dockerfile
-      deploy:
-          replicas: ${NUM_REPLICAS:-1}
-          resources:
-              reservations:
-                  devices:
-                      - driver: nvidia
-                        count: all
-                        capabilities: [gpu]
-      environment:
-          - NVIDIA_DRIVER_CAPABILITIES=all
-          - ID=${ID:-""}
-      extra_hosts:
-          - "host.docker.internal:host-gateway"
-      volumes:
-          - "~/.config/solana/id.json:/usr/local/id.json"
-      env_file:
-          - "config/client/.env"
-      networks:
-          - psyche-test-network
+  psyche-test-client-pending:
+    image: psyche-client
+    profiles: ["join", "all"]
+    build:
+      context:  ../..
+      dockerfile: ./docker/test/psyche_client.Dockerfile
+    deploy:
+        replicas: ${NUM_REPLICAS:-1}
+        resources:
+            reservations:
+                devices:
+                    - driver: nvidia
+                      count: all
+                      capabilities: [gpu]
+    environment:
+        - NVIDIA_DRIVER_CAPABILITIES=all
+        - ID=${ID:-""}
+    extra_hosts:
+        - "host.docker.internal:host-gateway"
+    volumes:
+        - "~/.config/solana/id.json:/usr/local/id.json"
+    env_file:
+        - "config/client/.env"
+    networks:
+        - psyche-test-network
 
 networks:
     psyche-test-network:
