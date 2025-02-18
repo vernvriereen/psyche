@@ -103,6 +103,22 @@ enum Commands {
         #[clap(long, env)]
         members_path: PathBuf,
     },
+    SetEpochRates {
+        #[clap(flatten)]
+        cluster: ClusterArgs,
+
+        #[clap(flatten)]
+        wallet: WalletArgs,
+
+        #[clap(short, long, env)]
+        run_id: String,
+
+        #[clap(short, long, env)]
+        earning_rate: Option<u64>,
+
+        #[clap(short, long, env)]
+        slashing_rate: Option<u64>,
+    },
     SetPaused {
         #[clap(flatten)]
         cluster: ClusterArgs,
@@ -255,6 +271,30 @@ async fn async_main() -> Result<()> {
             println!(
                 "Set whitelist of {} members on run {} with transaction {}",
                 num_members, run_id, set
+            );
+            Ok(())
+        }
+        Commands::SetEpochRates {
+            cluster,
+            wallet,
+            run_id,
+            earning_rate,
+            slashing_rate,
+        } => {
+            let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
+            let backend = SolanaBackend::new(
+                cluster.into(),
+                key_pair.clone(),
+                CommitmentConfig::confirmed(),
+            )
+            .unwrap();
+            let (instance_pda, instance) = backend.get_coordinator_instance(&run_id).await?;
+            let set = backend
+                .set_epoch_rates(instance_pda, instance.account, earning_rate, slashing_rate)
+                .await?;
+            println!(
+                "Set epoch rates of earning:{} slashing:{} on run {} with transaction {}",
+                earning_rate, slashing_rate, run_id, set
             );
             Ok(())
         }
