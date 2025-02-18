@@ -132,7 +132,7 @@ pub mod psyche_solana_coordinator {
             .set_whitelist(clients)
     }
 
-    pub fn set_epoch_rates(
+    pub fn set_future_epoch_rates(
         ctx: Context<OwnerCoordinatorAccounts>,
         epoch_earning_rate: Option<u64>,
         epoch_slashing_rate: Option<u64>,
@@ -141,7 +141,7 @@ pub mod psyche_solana_coordinator {
             .account
             .load_mut()?
             .state
-            .set_epoch_rates(epoch_earning_rate, epoch_slashing_rate)
+            .set_future_epoch_rates(epoch_earning_rate, epoch_slashing_rate)
     }
 
     pub fn join_run(ctx: Context<PermissionlessCoordinatorAccounts>, id: ClientId) -> Result<()> {
