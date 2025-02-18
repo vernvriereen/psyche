@@ -46,9 +46,9 @@ impl CoordinatorInstanceState {
         ) {
             Ok(TickResult::Ticked) => {
                 if self.coordinator.is_epoch_started() {
-                    msg!("First round of epoch, freezing epoch's rewards rate");
+                    msg!("First round of epoch, freezing epoch rewards rate");
                     self.clients_state.current_epoch_rates = self.clients_state.future_epoch_rates;
-                    msg!("First round of epoch, updating next active clients");
+                    msg!("First round of epoch, freezing epoch active clients");
                     self.clients_state.next_active += 1;
                 }
             }
