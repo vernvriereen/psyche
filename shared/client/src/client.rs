@@ -6,7 +6,6 @@ use anyhow::{bail, Error, Result};
 use futures::future::join_all;
 use psyche_coordinator::RunState;
 use psyche_core::NodeIdentity;
-use psyche_modeling::Config;
 use psyche_network::{
     allowlist, request_model, AuthenticatableIdentity, BlobTicket, DownloadComplete,
     ModelRequestType, NetworkConnection, NetworkEvent, NetworkTUIState, Networkable, NodeId,
@@ -266,9 +265,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             sharable_model.update_parameters(model)?;
                         },
                         Some((config_string, tokenizer_string)) = rx_config.recv() => {
-                            let config: Config = serde_json::from_str(&config_string)?;
                             let tokenizer: Tokenizer = serde_json::from_str(&tokenizer_string)?;
-                            sharable_model.update_config(config, tokenizer)?;
+                            sharable_model.update_config(config_string, tokenizer)?;
                         }
                         Some((param_names, tx_params_response)) = rx_parameters_req.recv() => {
                             sharable_model.initialize_parameters(&param_names, tx_params_response);
