@@ -935,8 +935,8 @@ impl<T: NodeIdentity> Coordinator<T> {
             }
     }
 
-    pub fn is_epoch_starting(&self) -> bool {
-        self.epoch_state.first_round.is_true() && self.run_state == RunState::WaitingForMembers
+    pub fn has_epoch_started(&self) -> bool {
+        self.epoch_state.first_round.is_true() && self.run_state == RunState::Warmup
     }
 }
 
