@@ -218,10 +218,8 @@ impl SolanaBackend {
             .args(psyche_solana_coordinator::instruction::JoinRun { id })
             .send()
             .await?;
-
         Ok(signature)
     }
-
     pub async fn update_config_and_model(
         &self,
         instance: Pubkey,
@@ -243,35 +241,6 @@ impl SolanaBackend {
                 psyche_solana_coordinator::instruction::UpdateCoordinatorConfigModel {
                     config,
                     model,
-                },
-            )
-            .send()
-            .await?;
-
-        Ok(signature)
-    }
-
-    pub async fn set_epoch_rates(
-        &self,
-        instance: Pubkey,
-        account: Pubkey,
-        earning_rate: Option<u64>,
-        slashing_rate: Option<u64>,
-    ) -> Result<Signature> {
-        let signature = self
-            .program
-            .request()
-            .accounts(
-                psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
-                    authority: self.program.payer(),
-                    instance,
-                    account,
-                },
-            )
-            .args(
-                psyche_solana_coordinator::instruction::SetFutureEpochRates {
-                    epoch_earning_rate: earning_rate,
-                    epoch_slashing_rate: slashing_rate,
                 },
             )
             .send()
