@@ -45,7 +45,7 @@ impl CoordinatorInstanceState {
             u64::from_ne_bytes(random_seed),
         ) {
             Ok(TickResult::Ticked) => {
-                if self.coordinator.has_epoch_started() {
+                if self.coordinator.has_epoch_just_started() {
                     msg!("First round of epoch, freezing epoch's rewards rate");
                     self.clients_state.current_epoch_rates = self.clients_state.future_epoch_rates;
                     msg!("First round of epoch, updating next active clients");
