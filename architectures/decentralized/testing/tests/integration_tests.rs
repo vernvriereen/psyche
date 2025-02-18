@@ -25,10 +25,10 @@ async fn happy_path() {
     let (tx, mut rx) = mpsc::channel(100);
     let watcher = DockerWatcher::new(docker.clone(), tx);
     let handle_1 = watcher
-        .monitor_container("psyche-psyche-test-client-1", state_change_filter)
+        .monitor_container("test-psyche-test-client-1", state_change_filter)
         .unwrap();
     let handle_2 = watcher
-        .monitor_container("psyche-psyche-test-client-2", state_change_filter)
+        .monitor_container("test-psyche-test-client-2", state_change_filter)
         .unwrap();
 
     while let Some(message) = rx.recv().await {
