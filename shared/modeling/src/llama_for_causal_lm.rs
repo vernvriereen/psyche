@@ -1,15 +1,9 @@
 use crate::{
-    llama::{Cache, Config, Llama, Llama3RopeConfig, LlamaEosToks},
-    safetensor_utils::load_safetensors_into_variables,
-    tensor_parallelism::{tensor_shard, Communicator},
-    CausalLM, CommunicatorId, ConcreteCausalLM, LoadSafetensorsError,
+    tensor_parallelism::Communicator, AttentionImplementation, AutoConfig, CausalLM,
+    ColumnParallelLinear, CommunicatorId, ConcreteCausalLM, ModelConfig, ModelLoadError,
+    PretrainedSource, RowParallelLinear,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    io,
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{f32::consts::PI, sync::Arc};
 use tch::{
     nn::{self, Module, VarStore},
     Device, Kind, Tensor,
@@ -17,7 +11,31 @@ use tch::{
 
 #[cfg(feature = "parallelism")]
 use tch::CNCCL;
-use thiserror::Error;
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
+pub enum LlamaRopeType {
+    #[serde(rename = "llama3")]
+    Llama3,
+    #[default]
+    #[serde(rename = "default")]
+    Default,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
+pub struct LlamaRopeConfig {
+    pub factor: f32,
+    pub low_freq_factor: f32,
+    pub high_freq_factor: f32,
+    pub original_max_position_embeddings: usize,
+    pub rope_type: LlamaRopeType,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(untagged)]
+pub enum LlamaEosToks {
+    Single(u32),
+    Multiple(Vec<u32>),
+}
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct LlamaConfig {
@@ -32,19 +50,9 @@ pub struct LlamaConfig {
     pub rope_theta: f32,
     pub bos_token_id: Option<u32>,
     pub eos_token_id: Option<LlamaEosToks>,
-    pub rope_scaling: Option<Llama3RopeConfig>,
+    pub rope_scaling: Option<LlamaRopeConfig>,
     pub max_position_embeddings: usize,
     pub tie_word_embeddings: bool,
-}
-
-#[derive(serde::Deserialize)]
-pub enum AttentionImplementation {
-    #[serde(rename = "eager")]
-    Eager,
-    #[serde(rename = "sdpa")]
-    Sdpa,
-    #[serde(rename = "flash_attention_2")]
-    FlashAttention2,
 }
 
 impl LlamaConfig {
@@ -52,40 +60,20 @@ impl LlamaConfig {
         self.num_key_value_heads.unwrap_or(self.num_attention_heads)
     }
 
-    pub fn into_config(self, use_sdpa: bool) -> Config {
-        Config {
-            hidden_size: self.hidden_size,
-            intermediate_size: self.intermediate_size,
-            vocab_size: self.vocab_size,
-            num_hidden_layers: self.num_hidden_layers,
-            num_attention_heads: self.num_attention_heads,
-            num_key_value_heads: self.num_key_value_heads(),
-            rms_norm_eps: self.rms_norm_eps,
-            rope_theta: self.rope_theta,
-            bos_token_id: self.bos_token_id,
-            eos_token_id: self.eos_token_id,
-            rope_scaling: self.rope_scaling,
-            max_position_embeddings: self.max_position_embeddings,
-            use_sdpa,
-        }
-    }
-}
-
-impl From<Config> for LlamaConfig {
-    fn from(value: Config) -> Self {
+    pub fn dummy() -> Self {
         Self {
-            hidden_size: value.hidden_size,
-            intermediate_size: value.intermediate_size,
-            vocab_size: value.vocab_size,
-            num_hidden_layers: value.num_hidden_layers,
-            num_attention_heads: value.num_attention_heads,
-            num_key_value_heads: Some(value.num_key_value_heads),
-            rms_norm_eps: value.rms_norm_eps,
-            rope_theta: value.rope_theta,
-            bos_token_id: value.bos_token_id,
-            eos_token_id: value.eos_token_id,
-            rope_scaling: value.rope_scaling,
-            max_position_embeddings: value.max_position_embeddings,
+            hidden_size: 1,
+            intermediate_size: 1,
+            vocab_size: 1,
+            num_hidden_layers: 1,
+            num_attention_heads: 1,
+            num_key_value_heads: Some(1),
+            rms_norm_eps: 0.00001,
+            rope_theta: 10000.0,
+            bos_token_id: Some(1),
+            eos_token_id: Some(crate::LlamaEosToks::Single(1)),
+            rope_scaling: None,
+            max_position_embeddings: 2048,
             tie_word_embeddings: false,
         }
     }
@@ -96,9 +84,399 @@ fn default_rope() -> f32 {
 }
 
 #[derive(Debug)]
+pub struct Cache {
+    cos: Tensor,
+    sin: Tensor,
+}
+
+fn calculate_default_inv_freq(cfg: &LlamaConfig) -> Vec<f32> {
+    let head_dim = cfg.hidden_size / cfg.num_attention_heads;
+    (0..head_dim)
+        .step_by(2)
+        .map(|i| 1f32 / cfg.rope_theta.powf(i as f32 / head_dim as f32))
+        .collect()
+}
+
+impl Cache {
+    pub fn new(kind: Kind, config: &LlamaConfig, device: &Device) -> Self {
+        let theta = match &config.rope_scaling {
+            None
+            | Some(LlamaRopeConfig {
+                rope_type: LlamaRopeType::Default,
+                ..
+            }) => calculate_default_inv_freq(config),
+            Some(rope_scaling) => {
+                let low_freq_wavelen = rope_scaling.original_max_position_embeddings as f32
+                    / rope_scaling.low_freq_factor;
+                let high_freq_wavelen = rope_scaling.original_max_position_embeddings as f32
+                    / rope_scaling.high_freq_factor;
+
+                calculate_default_inv_freq(config)
+                    .into_iter()
+                    .map(|freq| {
+                        let wavelen = 2. * PI / freq;
+                        if wavelen < high_freq_wavelen {
+                            freq
+                        } else if wavelen > low_freq_wavelen {
+                            freq / rope_scaling.factor
+                        } else {
+                            let smooth = (rope_scaling.original_max_position_embeddings as f32
+                                / wavelen
+                                - rope_scaling.low_freq_factor)
+                                / (rope_scaling.high_freq_factor - rope_scaling.low_freq_factor);
+                            (1. - smooth) * freq / rope_scaling.factor + smooth * freq
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            }
+        };
+
+        let theta = Tensor::from_slice(&theta).to(*device);
+
+        let idx_theta = Tensor::arange(
+            (config.max_position_embeddings + 1) as i64,
+            (Kind::Float, *device),
+        )
+        .reshape([(config.max_position_embeddings + 1) as i64, 1])
+        .matmul(&theta.reshape([1i64, theta.numel() as i64]));
+        // This is different from the paper, see:
+        // https://github.com/huggingface/transformers/blob/6112b1c6442aaf7affd2b0676a1cd4eee30c45cf/src/transformers/models/llama/modeling_llama.py#L112
+        let cos = idx_theta.cos().to_kind(kind);
+        let sin = idx_theta.sin().to_kind(kind);
+        Self { cos, sin }
+    }
+}
+
+fn repeat_kv(hidden_states: &Tensor, n_rep: i64) -> Tensor {
+    let (batch, num_key_value_heads, slen, head_dim) = hidden_states.size4().unwrap();
+
+    if n_rep == 1 {
+        return hidden_states.shallow_clone();
+    }
+
+    let hidden_states = hidden_states
+        .unsqueeze(2)
+        .expand([batch, num_key_value_heads, n_rep, slen, head_dim], false);
+
+    hidden_states.reshape([batch, num_key_value_heads * n_rep, slen, head_dim])
+}
+
+fn rotate_half(xs: &Tensor) -> Tensor {
+    let last_dim = *xs.size().last().unwrap();
+    let xs1 = xs.narrow(-1, 0, last_dim / 2);
+    let xs2 = xs.narrow(-1, last_dim / 2, last_dim - last_dim / 2);
+    Tensor::cat(&[&xs2.neg(), &xs1], -1)
+}
+
+#[derive(Debug)]
+struct RmsNorm {
+    weight: Tensor,
+    eps: f64,
+}
+
+impl RmsNorm {
+    fn new(vs: nn::Path, size: i64, eps: f64) -> Self {
+        let weight = vs.ones("weight", &[size]);
+        Self { weight, eps }
+    }
+}
+
+impl Module for RmsNorm {
+    fn forward(&self, xs: &Tensor) -> Tensor {
+        let kind = xs.kind();
+        let xs = xs.to_kind(Kind::Float);
+        let variance = xs.pow_tensor_scalar(2).mean_dim(-1, true, Kind::Float);
+        let xs_normed = xs * (variance + self.eps).rsqrt();
+        let xs_normed = xs_normed.to_kind(kind);
+        &self.weight * xs_normed
+    }
+}
+
+#[derive(Debug)]
+struct Mlp {
+    gate_proj: ColumnParallelLinear,
+    up_proj: ColumnParallelLinear,
+    down_proj: RowParallelLinear,
+}
+
+impl Mlp {
+    fn new(vs: nn::Path, n_embd: i64, n_hidden: i64, comm: Option<Arc<Communicator>>) -> Self {
+        let tp_size = comm.as_ref().map(|x| x.size()).unwrap_or(1);
+        assert_eq!(
+            n_hidden % tp_size,
+            0,
+            "n_hidden must be divisible by tp_size"
+        );
+
+        let gate_proj = ColumnParallelLinear::new(
+            &vs / "gate_proj",
+            n_embd,
+            n_hidden,
+            false,
+            false,
+            comm.clone(),
+        );
+        let up_proj = ColumnParallelLinear::new(
+            &vs / "up_proj",
+            n_embd,
+            n_hidden,
+            false,
+            false,
+            comm.clone(),
+        );
+        let down_proj =
+            RowParallelLinear::new(&vs / "down_proj", n_hidden, n_embd, false, true, comm);
+        Self {
+            gate_proj,
+            up_proj,
+            down_proj,
+        }
+    }
+}
+
+impl Module for Mlp {
+    fn forward(&self, xs: &Tensor) -> Tensor {
+        self.down_proj
+            .forward(&(self.gate_proj.forward(xs).silu() * self.up_proj.forward(xs)))
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct CausalSelfAttention {
+    q_proj: ColumnParallelLinear,
+    k_proj: ColumnParallelLinear,
+    v_proj: ColumnParallelLinear,
+    o_proj: RowParallelLinear,
+    n_head: i64,
+    n_kvhead: i64,
+    n_embd: i64,
+    n_max_seq_len: i64,
+    head_dim: i64,
+    device: Device,
+    use_sdpa: bool,
+    tp_size: i64,
+}
+
+impl CausalSelfAttention {
+    fn new(
+        vs: nn::Path,
+        n_head: i64,
+        n_kvheads: i64,
+        n_embd: i64,
+        n_max_seq_len: i64,
+        use_sdpa: bool,
+        comm: Option<Arc<Communicator>>,
+    ) -> Self {
+        let tp_size = comm.as_ref().map(|x| x.size()).unwrap_or(1);
+        assert_eq!(n_head % tp_size, 0, "n_head must be divisible by tp_size");
+        assert_eq!(
+            n_kvheads % tp_size,
+            0,
+            "n_kvheads must be divisible by tp_size"
+        );
+
+        let head_dim = n_embd / n_head;
+        let size_q = head_dim * n_head;
+        let size_kv = head_dim * n_kvheads;
+
+        let q_proj =
+            ColumnParallelLinear::new(&vs / "q_proj", n_embd, size_q, false, false, comm.clone());
+        let k_proj =
+            ColumnParallelLinear::new(&vs / "k_proj", n_embd, size_kv, false, false, comm.clone());
+        let v_proj =
+            ColumnParallelLinear::new(&vs / "v_proj", n_embd, size_kv, false, false, comm.clone());
+        let o_proj = RowParallelLinear::new(&vs / "o_proj", size_q, n_embd, false, true, comm);
+
+        Self {
+            q_proj,
+            k_proj,
+            v_proj,
+            o_proj,
+            n_head,
+            n_kvhead: n_kvheads,
+            n_embd,
+            n_max_seq_len,
+            head_dim,
+            device: vs.device(),
+            use_sdpa,
+            tp_size,
+        }
+    }
+
+    fn apply_rotary_emb(&self, x: &Tensor, index_pos: i64, cache: &Cache) -> Tensor {
+        let (_b_sz, _, seq_len, _hidden_size) = x.size4().unwrap();
+        let cos = cache.cos.narrow(0, index_pos, seq_len);
+        let sin = cache.sin.narrow(0, index_pos, seq_len);
+        let cos = Tensor::cat(&[&cos, &cos], -1);
+        let sin = Tensor::cat(&[&sin, &sin], -1);
+        let cos = cos.unsqueeze(0).unsqueeze(0);
+        let sin = sin.unsqueeze(0).unsqueeze(0);
+        (x * cos) + (rotate_half(x) * sin)
+    }
+
+    fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut Cache) -> Tensor {
+        let (b, t, c) = x.size3().unwrap();
+        assert_eq!(c, self.n_embd, "Input hidden size mismatch");
+        let kind = x.kind();
+
+        let q = self.q_proj.forward(x);
+        let k = self.k_proj.forward(x);
+        let v = self.v_proj.forward(x);
+
+        let local_n_head = self.n_head / self.tp_size;
+        let local_n_kvhead = self.n_kvhead / self.tp_size;
+
+        let q = q
+            .contiguous()
+            .reshape([b, t, local_n_head, self.head_dim])
+            .transpose(1, 2);
+        let k = k
+            .contiguous()
+            .reshape([b, t, local_n_kvhead, self.head_dim])
+            .transpose(1, 2);
+        let v = v
+            .contiguous()
+            .reshape([b, t, local_n_kvhead, self.head_dim])
+            .transpose(1, 2);
+
+        let q = self.apply_rotary_emb(&q, index_pos, cache).to_kind(kind);
+        let k = self.apply_rotary_emb(&k, index_pos, cache).to_kind(kind);
+
+        let k = repeat_kv(&k, local_n_head / local_n_kvhead);
+        let v = repeat_kv(&v, local_n_head / local_n_kvhead);
+
+        let scale = 1.0 / (self.head_dim as f64).sqrt();
+
+        let y = if self.use_sdpa {
+            let att = Tensor::scaled_dot_product_attention::<Tensor>(
+                &q,
+                &k,
+                &v,
+                None,
+                0.0,
+                t > 1,
+                Some(scale),
+            );
+            att.transpose(1, 2)
+                .contiguous()
+                .reshape([b, t, local_n_head * self.head_dim])
+        } else {
+            let att = q.matmul(&k.transpose(-2, -1)) * scale;
+            let mask = Tensor::ones([t, t], (kind, self.device))
+                .tril(0)
+                .reshape([1, 1, t, t]);
+            let att = att.masked_fill(&mask.eq(0.), f64::NEG_INFINITY);
+            let y = att.softmax(-1, kind).matmul(&v);
+            y.transpose(1, 2)
+                .contiguous()
+                .reshape([b, t, local_n_head * self.head_dim])
+        };
+
+        self.o_proj.forward(&y)
+    }
+}
+
+#[derive(Debug)]
+struct Block {
+    rms_1: RmsNorm,
+    attn: CausalSelfAttention,
+    rms_2: RmsNorm,
+    mlp: Mlp,
+}
+
+impl Block {
+    fn new(
+        vs: nn::Path,
+        config: &LlamaConfig,
+        use_sdpa: bool,
+        comm: Option<Arc<Communicator>>,
+    ) -> Self {
+        let rms_1 = RmsNorm::new(
+            &vs / "input_layernorm",
+            config.hidden_size as i64,
+            config.rms_norm_eps,
+        );
+        let attn = CausalSelfAttention::new(
+            &vs / "self_attn",
+            config.num_attention_heads as i64,
+            config
+                .num_key_value_heads
+                .unwrap_or(config.num_attention_heads) as i64,
+            config.hidden_size as i64,
+            (config.max_position_embeddings + 1) as i64,
+            use_sdpa,
+            comm.clone(),
+        );
+        let rms_2 = RmsNorm::new(
+            &vs / "post_attention_layernorm",
+            config.hidden_size as i64,
+            config.rms_norm_eps,
+        );
+        let mlp = Mlp::new(
+            &vs / "mlp",
+            config.hidden_size as i64,
+            config.intermediate_size as i64,
+            comm,
+        );
+        Self {
+            rms_1,
+            attn,
+            rms_2,
+            mlp,
+        }
+    }
+
+    fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut Cache) -> Tensor {
+        let x = self.attn.forward(&self.rms_1.forward(x), index_pos, cache) + x;
+        self.mlp.forward(&self.rms_2.forward(&x)) + x
+    }
+}
+
+#[derive(Debug)]
+pub struct Llama {
+    wte: nn::Embedding,
+    blocks: Vec<Block>,
+    ln_f: RmsNorm,
+}
+
+impl Llama {
+    pub fn new(
+        vs: nn::Path,
+        config: &LlamaConfig,
+        use_sdpa: bool,
+        comm: Option<Arc<Communicator>>,
+    ) -> Self {
+        let wte = nn::embedding(
+            &vs / "model" / "embed_tokens",
+            config.vocab_size as i64,
+            config.hidden_size as i64,
+            Default::default(),
+        );
+        let ln_f = RmsNorm::new(
+            &vs / "model" / "norm",
+            config.hidden_size as i64,
+            config.rms_norm_eps,
+        );
+        let blocks = (0..config.num_hidden_layers)
+            .map(|i| Block::new(&vs / "model" / "layers" / i, config, use_sdpa, comm.clone()))
+            .collect::<Vec<_>>();
+        Self { wte, blocks, ln_f }
+    }
+
+    pub fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut Cache) -> Tensor {
+        let mut x = self.wte.forward(x);
+        for block in &self.blocks {
+            x = block.forward(&x, index_pos, cache);
+        }
+        self.ln_f.forward(&x)
+    }
+}
+
+#[derive(Debug)]
 pub struct LlamaForCausalLM {
     pub model: Llama,
-    pub config: Config,
+    pub config: LlamaConfig,
     pub variables: VarStore,
     pub device: Device,
     pub lm_head: nn::Linear,
@@ -106,127 +484,20 @@ pub struct LlamaForCausalLM {
     pub comm: Option<Arc<Communicator>>,
 }
 
-#[derive(Debug, Error)]
-pub enum LoadLlamaForCausalLMError {
-    #[error("missing config.json")]
-    MissingConfigJSON,
-
-    #[error("failed to read file config.json")]
-    FailedToReadConfig(#[from] io::Error),
-
-    #[error("could not parse config.json")]
-    FailedToParseConfig(#[from] serde_json::Error),
-
-    #[error("this model uses tied embeddings, which aren't supported.")]
-    ModelHasTiedEmbeddings,
-
-    #[error(
-        "Directly setting attention implementation to FlashAttention-2 is unsupported for now"
-    )]
-    ModelExplicitlyUsesFA2,
-
-    #[error("Failed to initialize CNCCL for tensor parallelism {0}")]
-    TensorParallelismFailedInit(tch::TchError),
-
-    #[error("Tried to use tensor parallelism with feature \"parallelism\" disabled")]
-    TensorParallelismNotEnabled,
-
-    #[error("Failed to load safetensors from disk: {0}")]
-    LoadSafetensorsError(#[from] LoadSafetensorsError),
-
-    #[error("Failed to copy tensor into variable store: {0}")]
-    CopyTensorError(#[from] tch::TchError),
-
-    #[error("Some parameters were not loaded: {0:?}")]
-    LoadTensorError(HashSet<String>),
-}
-
-#[derive(Clone)]
-pub enum PretrainedSource {
-    RepoFiles(Vec<PathBuf>),
-    ConfigAndTensors(Config, Arc<HashMap<String, Tensor>>),
-}
-
-unsafe impl Send for PretrainedSource {}
-
-impl PretrainedSource {
-    pub fn get_config(&self) -> Result<Config, LoadLlamaForCausalLMError> {
-        match self {
-            PretrainedSource::RepoFiles(repo_files) => {
-                let config_file = std::fs::read_to_string(
-                    repo_files
-                        .iter()
-                        .find(|x| x.ends_with("config.json"))
-                        .ok_or(LoadLlamaForCausalLMError::MissingConfigJSON)?
-                        .as_path(),
-                )?;
-                let llama_config: LlamaConfig = serde_json::from_str(&config_file)?;
-                Ok(llama_config.into_config(true))
-            }
-            PretrainedSource::ConfigAndTensors(config, _) => Ok(config.to_owned()),
-        }
-    }
-
-    pub fn load(&self, variables: &mut nn::VarStore) -> Result<(), LoadLlamaForCausalLMError> {
-        match self {
-            PretrainedSource::RepoFiles(repo_files) => {
-                load_safetensors_into_variables(variables, repo_files)?
-            }
-            PretrainedSource::ConfigAndTensors(_, parameters) => {
-                let mut unmatched = variables
-                    .variables()
-                    .keys()
-                    .cloned()
-                    .collect::<HashSet<_>>();
-
-                let _no_grad = tch::no_grad_guard();
-                let mut variables = variables.variables_.lock().unwrap();
-                let shards = variables.shards.clone();
-                for (name, var) in variables.named_variables.iter_mut() {
-                    let tensor = parameters.get(name).unwrap();
-                    if let Some(shard) = shards.get(name) {
-                        let tensor = tensor_shard(tensor, shard);
-                        var.f_copy_(&tensor)?;
-                    } else {
-                        var.f_copy_(tensor)?
-                    };
-
-                    unmatched.remove(name);
-                }
-                if !unmatched.is_empty() {
-                    return Err(LoadLlamaForCausalLMError::LoadTensorError(unmatched));
-                };
-            }
-        };
-        Ok(())
-    }
-}
-
 impl LlamaForCausalLM {
     pub fn from_pretrained(
-        source: &PretrainedSource,
+        source: &PretrainedSource<LlamaConfig>,
         kind: Option<Kind>,
         attn_implementation: Option<AttentionImplementation>,
         device: Option<Device>,
         tensor_parallelism_world: Option<(Arc<CommunicatorId>, usize, usize)>,
         override_max_position_embeddings: Option<usize>,
-    ) -> Result<Self, LoadLlamaForCausalLMError> {
-        let config = source.get_config()?;
-        let llama_config = LlamaConfig::from(config);
+    ) -> Result<Self, ModelLoadError> {
+        let mut config = source.get_config()?;
 
-        if llama_config.tie_word_embeddings {
-            return Err(LoadLlamaForCausalLMError::ModelHasTiedEmbeddings);
+        if config.tie_word_embeddings {
+            return Err(ModelLoadError::ModelHasTiedEmbeddings);
         }
-
-        let mut config: Config = llama_config.into_config(
-            match attn_implementation.unwrap_or(AttentionImplementation::Sdpa) {
-                AttentionImplementation::Eager => false,
-                AttentionImplementation::Sdpa => true,
-                AttentionImplementation::FlashAttention2 => {
-                    return Err(LoadLlamaForCausalLMError::ModelExplicitlyUsesFA2)
-                }
-            },
-        );
 
         if let Some(override_max_position_embeddings) = override_max_position_embeddings {
             config.max_position_embeddings = override_max_position_embeddings;
@@ -241,14 +512,14 @@ impl LlamaForCausalLM {
             #[allow(clippy::arc_with_non_send_sync)]
             Some((id, rank, world_size)) => Some(Arc::new(
                 CNCCL::new(id, rank as i64, world_size as i64, device)
-                    .map_err(LoadLlamaForCausalLMError::TensorParallelismFailedInit)?,
+                    .map_err(ModelLoadError::TensorParallelismFailedInit)?,
             )),
             None => None,
         };
 
         #[cfg(not(feature = "parallelism"))]
         let comm = match tensor_parallelism_world {
-            Some(_) => return Err(LoadLlamaForCausalLMError::TensorParallelismNotEnabled),
+            Some(_) => return Err(ModelLoadError::TensorParallelismNotEnabled),
             None => None,
         };
         let mut variables: nn::VarStore = nn::VarStore::new(device);
@@ -257,7 +528,19 @@ impl LlamaForCausalLM {
         }
         let (model, lm_head) = {
             let _no_grad = tch::no_grad_guard();
-            let model = Llama::new(variables.root(), &config, comm.clone());
+            let model = Llama::new(
+                variables.root(),
+                &config,
+                match attn_implementation {
+                    Some(AttentionImplementation::Eager) => false,
+                    Some(AttentionImplementation::FlashAttention2) => {
+                        return Err(ModelLoadError::ModelExplicitlyUsesFA2);
+                    }
+                    Some(AttentionImplementation::Sdpa) => true,
+                    None => true,
+                },
+                comm.clone(),
+            );
             let c = nn::LinearConfig {
                 bias: false,
                 ..Default::default()
@@ -344,3 +627,53 @@ impl ConcreteCausalLM for LlamaForCausalLM {
 
 // this is absolutely unsafe, if you use it across threads with NCCL you will have a bad day
 unsafe impl Send for LlamaForCausalLM {}
+
+impl ModelConfig for LlamaConfig {
+    // TODO: This is just a hacky solution to get the parameter names from the config
+    // but it is probably overkill. We should think about a better way to get them
+    // to make the p2p requests.
+    fn get_parameter_names(&self) -> Vec<String> {
+        let mut variables: nn::VarStore = nn::VarStore::new(Device::Cpu);
+        variables.set_kind(Kind::BFloat16);
+        let _model = Llama::new(variables.root(), self, false, None);
+        let c = nn::LinearConfig {
+            bias: false,
+            ..Default::default()
+        };
+
+        let _lm_head = nn::linear(
+            &variables.root() / "lm_head",
+            self.hidden_size as i64,
+            self.vocab_size as i64,
+            c,
+        );
+
+        let variables_lock = variables.variables_.lock().unwrap();
+        variables_lock.named_variables.keys().cloned().collect()
+    }
+}
+
+impl TryFrom<AutoConfig> for LlamaConfig {
+    type Error = ModelLoadError;
+
+    fn try_from(value: AutoConfig) -> Result<Self, Self::Error> {
+        match value {
+            AutoConfig::Llama(llama_config) => Ok(llama_config),
+            _ => Err(ModelLoadError::WrongConfigType),
+        }
+    }
+}
+
+impl TryFrom<PretrainedSource<AutoConfig>> for PretrainedSource<LlamaConfig> {
+    type Error = ModelLoadError;
+
+    fn try_from(value: PretrainedSource<AutoConfig>) -> Result<Self, Self::Error> {
+        match value {
+            PretrainedSource::RepoFiles(path_bufs) => Ok(PretrainedSource::RepoFiles(path_bufs)),
+            PretrainedSource::ConfigAndTensors(AutoConfig::Llama(config), hash_map) => {
+                Ok(PretrainedSource::ConfigAndTensors(config, hash_map))
+            }
+            _ => Err(ModelLoadError::WrongConfigType),
+        }
+    }
+}
