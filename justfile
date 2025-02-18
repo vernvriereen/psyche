@@ -92,6 +92,9 @@ generate_cli_docs:
 setup_test_infra num_clients="1":
     cd docker/test && NUM_REPLICAS={{num_clients}} docker compose --profile setup up -d --force-recreate
 
+stop_test_infra:
+    cd docker/test && docker compose --profile all stop
+
 # Run a client to start training inside a Docker container.
 run_docker_client:
     docker build -t nous-base -f docker/nous_base.Dockerfile .

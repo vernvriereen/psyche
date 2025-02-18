@@ -7,8 +7,8 @@ pub struct DockerTestCleanup;
 impl Drop for DockerTestCleanup {
     fn drop(&mut self) {
         println!("\nStopping containers...");
-        let output = Command::new("docker")
-            .args(["compose", "--profile", "all", "stop"])
+        let output = Command::new("just")
+            .args(["stop_test_infra"])
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .output()
@@ -21,7 +21,7 @@ impl Drop for DockerTestCleanup {
 }
 
 pub fn e2e_testing_setup(init_num_clients: usize) -> DockerTestCleanup {
-    spawn_psyche_network(init_num_clients);
+    spawn_psyche_network(init_num_clients).unwrap();
     spawn_ctrl_c_task();
 
     DockerTestCleanup {}
@@ -50,8 +50,8 @@ pub fn spawn_ctrl_c_task() {
     tokio::spawn(async {
         signal::ctrl_c().await.expect("Failed to listen for Ctrl+C");
         println!("\nCtrl+C received. Stopping containers...");
-        let output = Command::new("docker")
-            .args(["compose", "--profile", "all", "stop"])
+        let output = Command::new("just")
+            .args(["stop_test_infra"])
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .output()
