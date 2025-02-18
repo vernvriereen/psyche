@@ -90,7 +90,7 @@ generate_cli_docs:
 
 setup_test_infra num_clients="1":
     # NUM_REPLICAS={{num_clients}} docker compose up -d
-    NUM_REPLICAS={{num_clients}} docker compose --profile setup up -d --build
+    NUM_REPLICAS={{num_clients}} docker compose --profile setup up -d
 
 run_docker_client:
     docker build --target runtime -t psyche-client .
@@ -110,5 +110,4 @@ run_docker_test_client:
       --add-host host.docker.internal:host-gateway \
       -v ~/.config/solana/id.json:/usr/local/id.json \
       --env-file config/client/.env \
-      --network localhost \
       psyche-client
