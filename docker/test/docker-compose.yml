@@ -43,11 +43,8 @@ services:
               capabilities: [gpu]
     environment:
       - NVIDIA_DRIVER_CAPABILITIES=all
-      - ID=${ID:-""}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    volumes:
-      - "~/.config/solana/id.json:/usr/local/id.json"
     env_file:
       - "../../config/client/.env.local"
     networks:
