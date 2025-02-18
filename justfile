@@ -88,11 +88,14 @@ generate_cli_docs:
     cargo run -p psyche-centralized-server print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-server.md
     cargo run -p psyche-centralized-local-testnet print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-local-testnet.md
 
+# Setup the infrastructure for testing locally using Docker.
 setup_test_infra num_clients="1":
-    NUM_REPLICAS={{num_clients}} docker compose up -d
+    cd docker/test && NUM_REPLICAS={{num_clients}} docker compose up -d --force-recreate
 
+# Run a client to start training inside a Docker container.
 run_docker_client:
-    docker build --target runtime -t psyche-client .
+    docker build -t nous-base -f docker/nous_base.Dockerfile .
+    docker build -t psyche-client -f docker/Dockerfile .
     docker run --rm \
       --gpus all \
       -e NVIDIA_DRIVER_CAPABILITIES=all \
