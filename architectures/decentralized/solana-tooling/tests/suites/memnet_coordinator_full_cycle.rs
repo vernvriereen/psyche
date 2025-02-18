@@ -179,6 +179,16 @@ pub async fn run() {
     .await
     .unwrap();
 
+    // Coordinator should still not be ready
+    assert_eq!(
+        get_coordinator_account_state(&mut endpoint, &coordinator_account)
+            .await
+            .unwrap()
+            .coordinator
+            .run_state,
+        RunState::Uninitialized
+    );
+
     // Can't tick yet because paused
     assert!(process_coordinator_tick(
         &mut endpoint,
