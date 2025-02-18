@@ -139,6 +139,29 @@ pub enum AttentionImplementation {
     FlashAttention2,
 }
 
+pub trait UseSDPA {
+    fn use_sdpa(&self) -> Result<bool, ModelLoadError>;
+}
+
+impl UseSDPA for AttentionImplementation {
+    fn use_sdpa(&self) -> Result<bool, ModelLoadError> {
+        match self {
+            AttentionImplementation::Eager => Ok(false),
+            AttentionImplementation::FlashAttention2 => Err(ModelLoadError::ModelExplicitlyUsesFA2),
+            AttentionImplementation::Sdpa => Ok(true),
+        }
+    }
+}
+
+impl UseSDPA for Option<AttentionImplementation> {
+    fn use_sdpa(&self) -> Result<bool, ModelLoadError> {
+        match self {
+            Some(x) => x.use_sdpa(),
+            None => Ok(true),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum AutoConfig {
     Llama(LlamaConfig),

@@ -1,0 +1,196 @@
+use crate::{
+    AttentionImplementation, CausalLM, Communicator, CommunicatorId, ConcreteCausalLM, ModelConfig,
+    ModelLoadError, PretrainedSource, RoPECache, RoPEConfig,
+};
+use std::fmt::Debug;
+use std::sync::Arc;
+use tch::{
+    nn::{self, Module, VarStore},
+    Device, Kind, Tensor,
+};
+
+#[cfg(feature = "parallelism")]
+use tch::CNCCL;
+
+pub trait LanguageModelForward<T>: Send + Debug {
+    fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut T) -> Tensor;
+}
+
+pub trait LanguageModelConfig: ModelConfig + Send + Debug + serde::de::DeserializeOwned {
+    fn tie_word_embeddings(&self) -> bool;
+    fn set_max_position_embeddings(&mut self, set: usize);
+    fn hidden_size(&self) -> usize;
+    fn vocab_size(&self) -> usize;
+
+    fn rope_config(&self) -> Option<RoPEConfig>;
+    fn num_attention_heads(&self) -> usize;
+    fn rope_theta(&self) -> f32;
+    fn max_position_embeddings(&self) -> usize;
+    fn bos_token_id(&self) -> Option<u32>;
+}
+
+#[derive(Debug)]
+pub struct CausalLanguageModel<M: LanguageModelForward<RoPECache>, C: LanguageModelConfig> {
+    pub model: M,
+    pub config: C,
+    pub variables: VarStore,
+    pub device: Device,
+    pub lm_head: nn::Linear,
+    pub cache: RoPECache,
+    pub comm: Option<Arc<Communicator>>,
+}
+
+// this is absolutely unsafe, if you use it across threads with NCCL you will have a bad day
+unsafe impl<M: LanguageModelForward<RoPECache>, C: LanguageModelConfig> Send
+    for CausalLanguageModel<M, C>
+{
+}
+
+pub type LanguageModelBuilder<M, C> = fn(
+    vs: nn::Path,
+    config: &C,
+    attn_implementation: Option<AttentionImplementation>,
+    comm: Option<Arc<Communicator>>,
+) -> Result<M, ModelLoadError>;
+
+impl<M: LanguageModelForward<RoPECache>, C: LanguageModelConfig> CausalLanguageModel<M, C> {
+    pub fn from_builder(
+        builder: LanguageModelBuilder<M, C>,
+        source: &PretrainedSource<C>,
+        kind: Option<Kind>,
+        attn_implementation: Option<AttentionImplementation>,
+        device: Option<Device>,
+        tensor_parallelism_world: Option<(Arc<CommunicatorId>, usize, usize)>,
+        override_max_position_embeddings: Option<usize>,
+    ) -> Result<Self, ModelLoadError> {
+        let mut config = source.get_config()?;
+
+        if config.tie_word_embeddings() {
+            return Err(ModelLoadError::ModelHasTiedEmbeddings);
+        }
+
+        if let Some(override_max_position_embeddings) = override_max_position_embeddings {
+            config.set_max_position_embeddings(override_max_position_embeddings);
+        }
+
+        let device = device.unwrap_or(Device::cuda_if_available());
+        #[cfg(feature = "parallelism")]
+        let comm = match tensor_parallelism_world {
+            // TODO: CNCCL is not Sync, though it is Send.
+            // since we can't safely use it on two threads at once,
+            // we should either wrap it in a Mutex, or just switch to Rc if we don't need mutability.
+            #[allow(clippy::arc_with_non_send_sync)]
+            Some((id, rank, world_size)) => Some(Arc::new(
+                CNCCL::new(id, rank as i64, world_size as i64, device)
+                    .map_err(ModelLoadError::TensorParallelismFailedInit)?,
+            )),
+            None => None,
+        };
+
+        #[cfg(not(feature = "parallelism"))]
+        let comm = match tensor_parallelism_world {
+            Some(_) => return Err(ModelLoadError::TensorParallelismNotEnabled),
+            None => None,
+        };
+        let mut variables: nn::VarStore = nn::VarStore::new(device);
+        if let Some(kind) = kind {
+            variables.set_kind(kind);
+        }
+        let (model, lm_head) = {
+            let _no_grad = tch::no_grad_guard();
+            let model = builder(variables.root(), &config, attn_implementation, comm.clone())?;
+            let c = nn::LinearConfig {
+                bias: false,
+                ..Default::default()
+            };
+            let lm_head = nn::linear(
+                &variables.root() / "lm_head",
+                config.hidden_size() as i64,
+                config.vocab_size() as i64,
+                c,
+            );
+
+            source.load(&mut variables)?;
+
+            (model, lm_head)
+        };
+        let cache = RoPECache::new(
+            kind.unwrap_or(Kind::Float),
+            &config.rope_config(),
+            config.hidden_size(),
+            config.num_attention_heads(),
+            config.rope_theta(),
+            config.max_position_embeddings(),
+            &device,
+        );
+        Ok(Self {
+            model,
+            config,
+            variables,
+            device,
+            lm_head,
+            cache,
+            comm,
+        })
+    }
+}
+
+impl<M: LanguageModelForward<RoPECache>, C: LanguageModelConfig> CausalLM
+    for CausalLanguageModel<M, C>
+{
+    fn forward(
+        &mut self,
+        x: &Tensor,
+        labels: Option<&Tensor>,
+        num_logits_to_keep: Option<i64>,
+    ) -> (Tensor, Option<Tensor>) {
+        let (_, t) = x.size2().unwrap();
+        let mut x = self.model.forward(x, 0, &mut self.cache);
+        if let Some(num_logits_to_keep) = num_logits_to_keep {
+            // Only compute necessary logits, and do not upcast them to float if we are not computing the loss
+            x = x.slice(1, t - num_logits_to_keep, t, 1);
+        }
+        let mut logits = self.lm_head.forward(&x);
+        let loss = match labels {
+            Some(labels) => {
+                // Upcast to float if we need to compute the loss to avoid potential precision issues
+                logits = logits.to_kind(Kind::Float);
+                // Shift so that tokens < n predict n
+                let shift_logits = logits.slice(1, 0, -1, 1).contiguous();
+                let shift_labels = labels.slice(1, 1, None, 1).contiguous();
+                let shift_logits = shift_logits.view([-1i64, self.config.vocab_size() as i64]);
+                let shift_targets = shift_labels.view(-1).to_kind(Kind::Int64);
+                let loss = shift_logits.cross_entropy_loss::<Tensor>(
+                    &shift_targets,
+                    None,
+                    tch::Reduction::Mean,
+                    -100,
+                    0.0,
+                );
+                Some(loss)
+            }
+            None => None,
+        };
+        (logits, loss)
+    }
+
+    fn bos_token_id(&self) -> Option<i64> {
+        self.config.bos_token_id().map(|x| x as i64)
+    }
+
+    fn device(&self) -> Device {
+        self.device
+    }
+}
+
+impl<M: LanguageModelForward<RoPECache>, C: LanguageModelConfig> ConcreteCausalLM
+    for CausalLanguageModel<M, C>
+{
+    fn variables(&self) -> &VarStore {
+        &self.variables
+    }
+
+    fn communicator(&self) -> Option<Arc<Communicator>> {
+        self.comm.clone()
+    }
+}
