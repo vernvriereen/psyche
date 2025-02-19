@@ -22,5 +22,3 @@ COPY --from=base /usr/src/psyche/target/release/psyche-solana-client /usr/local/
 
 WORKDIR /usr/src/psyche
 COPY . .
-
-RUN cd architectures/decentralized/solana-coordinator && anchor keys sync && anchor build --no-idl
