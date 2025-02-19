@@ -26,18 +26,8 @@ impl StateFilter {
 
 #[derive(Clone, Copy)]
 pub enum JsonFilter {
-    State(StateFilter),
     StateChange,
-}
-
-impl JsonFilter {
-    pub fn state_change() -> Self {
-        Self::StateChange
-    }
-
-    pub fn state(state: StateFilter) -> Self {
-        Self::State(state)
-    }
+    Loss,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -52,16 +42,20 @@ pub enum DockerWatcherError {
     LogsError { inner: bollard::errors::Error },
 }
 
-// struct DockerWatcher<T> {
 pub struct DockerWatcher {
     client: Arc<Docker>,
-    log_sender: mpsc::Sender<String>,
-    // channel: Sender<T>,
+    log_sender: mpsc::Sender<Response>,
+}
+
+#[derive(Debug)]
+pub enum Response {
+    StateChange(String, String, String),
+    Loss(String, u64, u64, f64),
 }
 
 // impl<T> DockerWatcher<T> {
 impl DockerWatcher {
-    pub fn new(client: Arc<Docker>, log_sender: mpsc::Sender<String>) -> Self {
+    pub fn new(client: Arc<Docker>, log_sender: mpsc::Sender<Response>) -> Self {
         Self { client, log_sender }
     }
 
@@ -90,7 +84,6 @@ impl DockerWatcher {
         let client = self.client.clone();
         let log_sender = self.log_sender.clone();
         let monitor_handle = tokio::spawn(async move {
-            println!("spawn task monitor_handle");
             let mut logs = client.logs(&name, log_options);
             while let Some(log) = logs.next().await {
                 let log = match log {
@@ -103,19 +96,7 @@ impl DockerWatcher {
                     continue;
                 };
 
-                println!("Logs: {:?}", &parsed_log);
-
                 match filter {
-                    JsonFilter::State(ref state) => {
-                        let Some(parsed_new_state) =
-                            parsed_log.get("new_state").and_then(|v| v.as_str())
-                        else {
-                            continue;
-                        };
-                        if state.compare_state(parsed_new_state) {
-                            println!("NEW STATE: {}", parsed_new_state);
-                        }
-                    }
                     JsonFilter::StateChange => {
                         let Some(old_state) = parsed_log.get("old_state").and_then(|v| v.as_str())
                         else {
@@ -135,13 +116,28 @@ impl DockerWatcher {
                                 .and_then(|v| v.as_str())
                                 .unwrap();
 
-                            let message = format!(
-                                "[CLIENT {client_id}] state change: {old_state} -> {new_state}"
+                            let response = Response::StateChange(
+                                client_id.to_string(),
+                                old_state.to_string(),
+                                new_state.to_string(),
                             );
-                            println!("{:?}", message);
-                            log_sender.send(message).await.unwrap()
-                            // client.
+                            log_sender.send(response).await.unwrap()
                         }
+                    }
+                    JsonFilter::Loss => {
+                        let Some(loss) = parsed_log.get("loss").and_then(|v| v.as_f64()) else {
+                            continue;
+                        };
+
+                        let client_id = parsed_log
+                            .get("client_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap()
+                            .to_string();
+                        let epoch = parsed_log.get("epoch").and_then(|v| v.as_u64()).unwrap();
+                        let step = parsed_log.get("step").and_then(|v| v.as_u64()).unwrap();
+                        let response = Response::Loss(client_id, epoch, step, loss);
+                        log_sender.send(response).await.unwrap()
                     }
                 }
             }
