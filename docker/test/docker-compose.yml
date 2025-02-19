@@ -4,6 +4,8 @@ services:
     build:
       context: ../..
       dockerfile: ./docker/nous_base.Dockerfile
+    volumes:
+      - "../../architectures/decentralized/solana-coordinator/target/deploy/psyche_solana_coordinator-keypair.json:/usr/src/psyche/architectures/decentralized/solana-coordinator/target/deploy/psyche_solana_coordinator-keypair.json"
 
   psyche-run-owner:
     image: psyche-client

@@ -48,6 +48,6 @@ ENV LIBTORCH_INCLUDE=/usr/src/libtorch
 ENV LIBTORCH_LIB=/usr/src/libtorch
 ENV LD_LIBRARY_PATH=/usr/src/libtorch/lib:$LD_LIBRARY_PATH
 
-RUN cd ./architectures/decentralized/solana-coordinator && anchor keys sync && anchor build --no-idl
+RUN cd ./architectures/decentralized/solana-coordinator && anchor build --no-idl
 
 RUN cargo build --release
