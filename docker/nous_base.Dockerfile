@@ -6,13 +6,8 @@ RUN wget https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-w
     && unzip libtorch-cxx11-abi-shared-with-deps-2.4.1+cu124.zip \
     && rm -rf libtorch-cxx11-abi-shared-with-deps-2.4.1+cu124.zip
 
-RUN sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
-RUN . /root/.profile
-
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
-
-RUN cargo install --git https://github.com/coral-xyz/anchor --tag v0.30.1 anchor-cli
 
 ## Chef Planner
 FROM lukemathwalker/cargo-chef:latest-rust-1 AS chef
@@ -40,14 +35,10 @@ WORKDIR /usr/src/psyche
 
 COPY . .
 COPY --from=chef_builder /usr/src/psyche/target ./target
-COPY --from=base /root/.local/share/solana/install/active_release/bin/ /usr/local/bin
-COPY --from=base /root/.cargo/bin/anchor /usr/local/bin
 
 ENV LIBTORCH=/usr/src/libtorch
 ENV LIBTORCH_INCLUDE=/usr/src/libtorch
 ENV LIBTORCH_LIB=/usr/src/libtorch
 ENV LD_LIBRARY_PATH=/usr/src/libtorch/lib:$LD_LIBRARY_PATH
-
-RUN cd ./architectures/decentralized/solana-coordinator && anchor build --no-idl
 
 RUN cargo build --release
