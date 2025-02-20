@@ -1,7 +1,7 @@
 use std::{str::FromStr, sync::Arc, time::Duration};
 
 use anchor_client::{
-    solana_sdk::{pubkey::Pubkey, signature::Keypair},
+    solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Keypair},
     Cluster, Program,
 };
 use psyche_coordinator::{Round, RunState, NUM_STORED_ROUNDS};
@@ -16,11 +16,13 @@ pub struct SolanaTestClient {
 impl SolanaTestClient {
     pub async fn new(run_id: String) -> Self {
         let key_pair = Arc::new(Keypair::new());
-        // let cluster = Cluster::Localnet;
         tokio::time::sleep(Duration::from_secs(10)).await;
         let cluster = Cluster::Localnet;
-        // println!("Cluster: {}", cluster);
-        let client = anchor_client::Client::new(cluster, key_pair.clone());
+        let client = anchor_client::Client::new_with_options(
+            cluster.clone(),
+            key_pair.clone(),
+            CommitmentConfig::confirmed(),
+        );
         let program = client.program(psyche_solana_coordinator::ID).unwrap();
         let seeds = &[
             psyche_solana_coordinator::CoordinatorInstance::SEEDS_PREFIX,
