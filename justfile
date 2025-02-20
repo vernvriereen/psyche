@@ -87,3 +87,27 @@ generate_cli_docs:
     cargo run -p psyche-centralized-client print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-client.md
     cargo run -p psyche-centralized-server print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-server.md
     cargo run -p psyche-centralized-local-testnet print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-local-testnet.md
+
+# Setup clients using assigning one available GPU to each of them.
+# There's no way to do this using the replicas from docker-compose file, so we have to do it manually.
+setup_clients num_clients="1":
+    docker build -t nous-base -f docker/nous_base.Dockerfile .
+    docker build -t nous-base-test -f docker/test/nous_base_test.Dockerfile .
+    docker build -t psyche-client -f docker/test/psyche_client.Dockerfile .
+    ./scripts/train-multiple-gpu.sh {{num_clients}}
+
+# Setup the infrastructure for testing locally using Docker.
+setup_test_infra num_clients="1":
+    cd docker/test && NUM_REPLICAS={{num_clients}} docker compose up -d --force-recreate
+
+# Run a client to start training inside a Docker container.
+run_docker_client:
+    docker build -t nous-base -f docker/nous_base.Dockerfile .
+    docker build -t psyche-client -f docker/Dockerfile .
+    docker run --rm \
+      --gpus all \
+      -e NVIDIA_DRIVER_CAPABILITIES=all \
+      --add-host host.docker.internal:host-gateway \
+      -v ~/.config/solana/id.json:/usr/local/id.json \
+      --env-file config/client/.env \
+      psyche-client

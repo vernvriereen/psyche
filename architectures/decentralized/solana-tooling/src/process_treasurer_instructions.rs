@@ -26,11 +26,11 @@ use solana_sdk::system_program;
 use solana_toolbox_endpoint::ToolboxEndpoint;
 use solana_toolbox_endpoint::ToolboxEndpointError;
 
-use crate::api::accounts::find_pda_coordinator_instance;
-use crate::api::accounts::find_pda_participant;
-use crate::api::accounts::find_pda_run;
+use crate::find_pdas::find_coordinator_instance;
+use crate::find_pdas::find_participant;
+use crate::find_pdas::find_run;
 
-pub async fn process_run_create(
+pub async fn process_treasurer_run_create(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     authority: &Keypair,
@@ -39,12 +39,12 @@ pub async fn process_run_create(
     run_id: &str,
     collateral_amount_per_earned_point: u64,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let run = find_pda_run(run_id);
+    let run = find_run(run_id);
     let run_collateral = ToolboxEndpoint::find_spl_associated_token_account(
         &run,
         collateral_mint,
     );
-    let coordinator_instance = find_pda_coordinator_instance(run_id);
+    let coordinator_instance = find_coordinator_instance(run_id);
 
     let accounts = RunCreateAccounts {
         payer: payer.pubkey(),
@@ -76,7 +76,7 @@ pub async fn process_run_create(
         .await
 }
 
-pub async fn process_run_top_up(
+pub async fn process_treasurer_run_top_up(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     authority: &Keypair,
@@ -85,7 +85,7 @@ pub async fn process_run_top_up(
     run_id: &str,
     collateral_amount: u64,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let run = find_pda_run(run_id);
+    let run = find_run(run_id);
     let run_collateral = ToolboxEndpoint::find_spl_associated_token_account(
         &run,
         collateral_mint,
@@ -111,7 +111,7 @@ pub async fn process_run_top_up(
         .await
 }
 
-pub async fn process_run_update(
+pub async fn process_treasurer_run_update(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     authority: &Keypair,
@@ -119,8 +119,8 @@ pub async fn process_run_update(
     run_id: &str,
     params: RunUpdateParams,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let run = find_pda_run(run_id);
-    let coordinator_instance = find_pda_coordinator_instance(run_id);
+    let run = find_run(run_id);
+    let coordinator_instance = find_coordinator_instance(run_id);
 
     let accounts = RunUpdateAccounts {
         authority: authority.pubkey(),
@@ -140,14 +140,14 @@ pub async fn process_run_update(
         .await
 }
 
-pub async fn process_participant_create(
+pub async fn process_treasurer_participant_create(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     user: &Keypair,
     run_id: &str,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let run = find_pda_run(run_id);
-    let participant = find_pda_participant(&run, &user.pubkey());
+    let run = find_run(run_id);
+    let participant = find_participant(&run, &user.pubkey());
 
     let accounts = ParticipantCreateAccounts {
         payer: payer.pubkey(),
@@ -165,7 +165,8 @@ pub async fn process_participant_create(
     endpoint.process_instruction_with_signers(instruction, payer, &[user]).await
 }
 
-pub async fn process_participant_claim(
+#[allow(clippy::too_many_arguments)]
+pub async fn process_treasurer_participant_claim(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     user: &Keypair,
@@ -175,12 +176,12 @@ pub async fn process_participant_claim(
     run_id: &str,
     claim_earned_points: u64,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let run = find_pda_run(run_id);
+    let run = find_run(run_id);
     let run_collateral = ToolboxEndpoint::find_spl_associated_token_account(
         &run,
         collateral_mint,
     );
-    let participant = find_pda_participant(&run, &user.pubkey());
+    let participant = find_participant(&run, &user.pubkey());
 
     let accounts = ParticipantClaimAccounts {
         payer: payer.pubkey(),

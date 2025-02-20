@@ -13,18 +13,21 @@ tasks:
     cmds:
       - task treasurer_fmt
       - task mining_pool_fmt
+      - task tooling_fmt
 
   # Testing
   test:
     cmds:
       - task treasurer_test
       - task mining_pool_test
+      - task tooling_test
 
   # Linting (clippy)
   lint:
     cmds:
       - task treasurer_lint
       - task mining_pool_lint
+      - task tooling_lint
 
   # Treasurer
   treasurer_fmt:
@@ -51,5 +54,19 @@ tasks:
       - task test
   mining_pool_lint:
     dir: "{{ .TASKFILE_DIR }}/solana-mining-pool"
+    cmds:
+      - task lint
+
+  # Tooling
+  tooling_fmt:
+    dir: "{{ .TASKFILE_DIR }}/solana-tooling"
+    cmds:
+      - task fmt
+  tooling_test:
+    dir: "{{ .TASKFILE_DIR }}/solana-tooling"
+    cmds:
+      - task test
+  tooling_lint:
+    dir: "{{ .TASKFILE_DIR }}/solana-tooling"
     cmds:
       - task lint
