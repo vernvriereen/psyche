@@ -3,7 +3,7 @@ FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y unzip zip libssl-dev libgomp1 curl wget build-essential && rm -rf /var/lib/apt/lists/*
 
-COPY --from=base /usr/src/libtorch /usr/home/libtorch
+COPY --from=base /usr/home/libtorch /usr/home/libtorch
 COPY --chmod=755 --from=base /usr/src/psyche/docker/client_entrypoint.sh /usr/local
 COPY --from=base /usr/src/psyche/target/release/psyche-solana-client /usr/local/bin/psyche-solana-client
 
