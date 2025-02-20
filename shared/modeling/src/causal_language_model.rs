@@ -1,6 +1,6 @@
 use crate::{
-    AttentionImplementation, CausalLM, Communicator, CommunicatorId, ConcreteCausalLM, EosToks,
-    ModelConfig, ModelLoadError, PretrainedSource, RoPEConfig,
+    AttentionImplementation, Communicator, CommunicatorId, ModelConfig, ModelLoadError,
+    PretrainedSource, RoPEConfig,
 };
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -11,6 +11,31 @@ use tch::{
 
 #[cfg(feature = "parallelism")]
 use tch::CNCCL;
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(untagged)]
+pub enum EosToks {
+    Single(i64),
+    Multiple(Vec<i64>),
+}
+
+/// This trait is for any Causal Language Model that can be inferred,
+/// and thus can have backprop run on it.
+/// Its internal implementation is completely hidden, so this can be impl'd
+/// for a wrapper struct that does something like data parallelism.
+pub trait CausalLM: Send + std::fmt::Debug {
+    fn forward(
+        &mut self,
+        x: &Tensor,
+        labels: Option<&Tensor>,
+        num_logits_to_keep: Option<i64>,
+    ) -> (Tensor, Option<Tensor>);
+    fn bos_token_id(&self) -> Option<i64>;
+    fn eos_token_ids(&self) -> Option<EosToks>;
+    fn device(&self) -> Device;
+    fn variables(&self) -> &VarStore;
+    fn communicator(&self) -> Option<Arc<Communicator>>;
+}
 
 pub trait LanguageModelForward: Send + Debug {
     fn forward(&self, x: &Tensor, index_pos: i64) -> Tensor;
@@ -170,11 +195,7 @@ impl<M: LanguageModelForward, C: LanguageModelConfig> CausalLM for CausalLanguag
     fn device(&self) -> Device {
         self.device
     }
-}
 
-impl<M: LanguageModelForward, C: LanguageModelConfig> ConcreteCausalLM
-    for CausalLanguageModel<M, C>
-{
     fn variables(&self) -> &VarStore {
         &self.variables
     }

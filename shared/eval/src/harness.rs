@@ -1,7 +1,7 @@
 use crate::traits::{Document, LogLikelihoodTask};
 use indicatif::{ProgressBar, ProgressStyle};
 use psyche_core::RunningAverage;
-use psyche_modeling::ConcreteCausalLM;
+use psyche_modeling::CausalLM;
 use rand::{seq::SliceRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::{collections::HashMap, fmt::Display, sync::Arc};
@@ -159,7 +159,7 @@ impl Task {
 }
 
 pub struct EvalTaskOptions<'a> {
-    pub model: &'a mut dyn ConcreteCausalLM,
+    pub model: &'a mut dyn CausalLM,
     pub skip_and_step_by: Option<(usize, usize)>,
     pub live_results: Option<Arc<RunningAverage>>,
     pub cancel: Option<CancellationToken>,

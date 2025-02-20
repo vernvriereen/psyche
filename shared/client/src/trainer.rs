@@ -3,7 +3,8 @@ use anyhow::{Error, Result};
 use psyche_coordinator::model::{self, AnyLearningRateScheduler};
 use psyche_core::{BatchId, CancellableBarrier, LearningRateScheduler};
 use psyche_modeling::{
-    unsharded_cpu_variables, CausalLM, ConcreteCausalLM, Distro, DistroResult, EosToks, Fp32GradientAccumulator
+    unsharded_cpu_variables, CausalLM, Communicator, Distro, DistroResult, EosToks,
+    Fp32GradientAccumulator,
 };
 use std::{
     collections::HashMap,
@@ -19,7 +20,7 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
 
-pub type ParallelModels = Vec<Box<dyn ConcreteCausalLM>>;
+pub type ParallelModels = Vec<Box<dyn CausalLM>>;
 
 enum Optimizer {
     AdamW {
@@ -213,7 +214,7 @@ impl Trainer {
     }
 
     fn forward_backward(
-        model: &mut dyn ConcreteCausalLM,
+        model: &mut dyn CausalLM,
         data: &[Vec<i32>],
         barrier: &Arc<CancellableBarrier>,
         loss_scale: Option<f64>,
@@ -240,7 +241,7 @@ impl Trainer {
     }
 
     fn forward(
-        model: &mut dyn ConcreteCausalLM,
+        model: &mut dyn CausalLM,
         data: &Tensor,
         labels: Option<&Tensor>,
         barrier: &Arc<CancellableBarrier>,
@@ -383,7 +384,7 @@ impl Trainer {
     // todo: refactor args into a struct
     #[allow(clippy::too_many_arguments)]
     fn model_thread(
-        mut model: Box<dyn ConcreteCausalLM>,
+        mut model: Box<dyn CausalLM>,
         assignment: mpsc::Receiver<ParallelAssignment>,
         submission: mpsc::Sender<ParallelResult>,
         mut optimizer: Optimizer,
@@ -691,14 +692,12 @@ impl CausalLM for Trainer {
     fn device(&self) -> tch::Device {
         self.first_model_device
     }
-}
 
-impl ConcreteCausalLM for Trainer {
     fn variables(&self) -> &nn::VarStore {
         unimplemented!()
     }
 
-    fn communicator(&self) -> Option<Arc<psyche_modeling::Communicator>> {
+    fn communicator(&self) -> Option<Arc<Communicator>> {
         unimplemented!()
     }
 }

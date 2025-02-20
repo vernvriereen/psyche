@@ -14,7 +14,6 @@ mod safetensor_utils;
 mod sampling;
 mod tensor_parallelism;
 mod token_output_stream;
-mod traits;
 
 pub use attention::CausalSelfAttention;
 pub use auto_config::{
@@ -24,7 +23,8 @@ pub use auto_model::auto_model_for_causal_lm_from_pretrained;
 pub use auto_tokenizer::{auto_tokenizer, AutoTokenizerError};
 pub use batcher::Batcher;
 pub use causal_language_model::{
-    CausalLanguageModel, LanguageModelBuilder, LanguageModelConfig, LanguageModelForward,
+    CausalLM, CausalLanguageModel, EosToks, LanguageModelBuilder, LanguageModelConfig,
+    LanguageModelForward,
 };
 pub use distro::{CompressDCT, Distro, DistroResult, TransformDCT};
 pub use dummy::DummyModel;
@@ -42,7 +42,6 @@ pub use tensor_parallelism::{
     CudaSynchronize, RowParallelLinear,
 };
 pub use token_output_stream::TokenOutputStream;
-pub use traits::{CausalLM, ConcreteCausalLM, EosToks};
 
 #[allow(unused)]
 pub fn set_torch_rng_seed() {

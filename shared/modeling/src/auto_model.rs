@@ -1,6 +1,6 @@
 use crate::{
-    AttentionImplementation, CommunicatorId, ConcreteCausalLM, DeepseekForCausalLM,
-    LlamaForCausalLM, ModelLoadError, PretrainedSource,
+    AttentionImplementation, CausalLM, CommunicatorId, DeepseekForCausalLM, LlamaForCausalLM,
+    ModelLoadError, PretrainedSource,
 };
 use std::{path::PathBuf, sync::Arc};
 use tch::{Device, Kind};
@@ -12,7 +12,7 @@ pub fn auto_model_for_causal_lm_from_pretrained(
     device: Option<Device>,
     tensor_parallelism_world: Option<(Arc<CommunicatorId>, usize, usize)>,
     override_max_position_embeddings: Option<usize>,
-) -> Result<Box<dyn ConcreteCausalLM>, ModelLoadError> {
+) -> Result<Box<dyn CausalLM>, ModelLoadError> {
     let config_json = std::fs::read_to_string(
         repo_files
             .iter()
@@ -37,7 +37,7 @@ pub fn auto_model_for_causal_lm_from_pretrained(
             tensor_parallelism_world,
             override_max_position_embeddings,
         )
-        .map(|x| Box::new(x) as Box<dyn ConcreteCausalLM>),
+        .map(|x| Box::new(x) as Box<dyn CausalLM>),
         "deepseek_v2" | "deepseek_v3" => DeepseekForCausalLM::from_pretrained(
             &PretrainedSource::RepoFiles(repo_files),
             kind,
@@ -46,7 +46,7 @@ pub fn auto_model_for_causal_lm_from_pretrained(
             tensor_parallelism_world,
             override_max_position_embeddings,
         )
-        .map(|x| Box::new(x) as Box<dyn ConcreteCausalLM>),
+        .map(|x| Box::new(x) as Box<dyn CausalLM>),
         _ => Err(ModelLoadError::WrongConfigType),
     }
 }
