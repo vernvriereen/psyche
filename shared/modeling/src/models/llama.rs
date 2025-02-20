@@ -162,7 +162,7 @@ pub struct Llama {
     wte: nn::Embedding,
     blocks: Vec<Block>,
     ln_f: RMSNorm,
-    rope_cache: RoPECache
+    rope_cache: RoPECache,
 }
 
 impl Llama {
@@ -194,7 +194,12 @@ impl Llama {
             config.max_position_embeddings(),
             &vs.device(),
         );
-        Self { wte, blocks, ln_f, rope_cache }
+        Self {
+            wte,
+            blocks,
+            ln_f,
+            rope_cache,
+        }
     }
 }
 

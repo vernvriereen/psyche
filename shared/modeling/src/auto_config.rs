@@ -1,5 +1,6 @@
 use crate::{
-    safetensor_utils::load_safetensors_into_variables, tensor_parallelism::tensor_shard, DeepseekConfig, LlamaConfig, LoadSafetensorsError
+    safetensor_utils::load_safetensors_into_variables, tensor_parallelism::tensor_shard,
+    DeepseekConfig, LlamaConfig, LoadSafetensorsError,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -186,7 +187,7 @@ impl ModelConfig for AutoConfig {
         match self {
             AutoConfig::Llama(config) => config.get_parameter_names(),
             AutoConfig::Dummy(config) => config.get_parameter_names(),
-            AutoConfig::Deepseek(config) => config.get_parameter_names()
+            AutoConfig::Deepseek(config) => config.get_parameter_names(),
         }
     }
 }

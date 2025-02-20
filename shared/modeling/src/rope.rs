@@ -31,10 +31,7 @@ pub fn default_rope() -> f32 {
     10_000.0
 }
 
-fn calculate_default_inv_freq(
-    head_dim: usize,
-    rope_theta: f32,
-) -> Vec<f32> {
+fn calculate_default_inv_freq(head_dim: usize, rope_theta: f32) -> Vec<f32> {
     (0..head_dim)
         .step_by(2)
         .map(|i| 1f32 / rope_theta.powf(i as f32 / head_dim as f32))
@@ -149,13 +146,10 @@ impl RoPECache {
                 mscale_all_dim,
                 ..
             }) => {
-
                 let freq_extra = Tensor::from_slice(&inv_freq).to(*device);
 
-                let theta_inter = calculate_default_inv_freq(
-                    head_dim,
-                    rope_theta * factor.unwrap(),
-                );
+                let theta_inter =
+                    calculate_default_inv_freq(head_dim, rope_theta * factor.unwrap());
                 let freq_inter = Tensor::from_slice(&theta_inter).to(*device);
 
                 let (low, high) = yarn_find_correction_range(

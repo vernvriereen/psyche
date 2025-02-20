@@ -1,4 +1,7 @@
-use tch::{nn::{self, Module}, Kind, Tensor};
+use tch::{
+    nn::{self, Module},
+    Kind, Tensor,
+};
 
 #[derive(Debug)]
 pub struct RMSNorm {
