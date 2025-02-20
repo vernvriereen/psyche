@@ -2,64 +2,25 @@ imports_granularity = "Item"
 imports_layout = "Vertical"
 group_imports = "StdExternalCrate"
 
-reorder_imports = true
 reorder_impl_items = true
-reorder_modules = true
 
-wrap_comments = false
-comment_width = 0
-max_width = 80
-
-control_brace_style = "AlwaysSameLine"
-empty_item_single_line = false
-
-fn_params_layout = "Vertical"
-
-force_multiline_blocks = true
-format_macro_bodies = true
-format_strings = false
 hex_literal_case = "Upper"
-
-match_arm_leading_pipes = "Never"
-match_arm_blocks = true
-
-trailing_comma = "Vertical"
-trailing_semicolon = true
-
-match_block_trailing_comma = true
-
 use_small_heuristics = "Max"
-fn_single_line = false
-where_single_line = false
-struct_lit_single_line = true
-
-indent_style = "Block"
-brace_style = "SameLineWhere"
+match_block_trailing_comma = true
 use_field_init_shorthand = true
-
 use_try_shorthand = true
 combine_control_expr = false
 condense_wildcard_suffixes = true
-
-binop_separator = "Front"
-spaces_around_ranges = false
-space_after_colon = true
-space_before_colon = false
-type_punctuation_density = "Wide"
-remove_nested_parens = true
-
-tab_spaces = 4
 show_parse_errors = true
+format_macro_matchers = true
+fn_params_layout = "Vertical"
+empty_item_single_line = false
+
+normalize_comments = true
+normalize_doc_attributes = true
 
 blank_lines_lower_bound = 0
 blank_lines_upper_bound = 1
 
-merge_derives = true
-overflow_delimited_expr = false
-format_macro_matchers = true
-
-normalize_comments = false
-normalize_doc_attributes = true
-
-struct_field_align_threshold = 0
-enum_discrim_align_threshold = 0
+tab_spaces = 4
+max_width = 80

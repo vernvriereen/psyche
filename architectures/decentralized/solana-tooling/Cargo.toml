@@ -1,0 +1,25 @@
+[package]
+name = "psyche-solana-tooling"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+solana-sdk = "=2.1.4"
+solana_toolbox_endpoint = "=0.1.38-solana-2.1.4"
+
+anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea308440a9fa9cb79cee7bddd30ab163d5" }
+anchor-spl = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea308440a9fa9cb79cee7bddd30ab163d5" }
+
+psyche-core = { path = "../../../shared/core" }
+psyche-coordinator = { path = "../../../shared/coordinator" }
+
+psyche-solana-coordinator = { path = "../solana-coordinator/programs/solana-coordinator", features = [
+  "cpi",
+] }
+psyche-solana-treasurer = { path = "../solana-treasurer/programs/solana-treasurer", features = [
+  "cpi",
+] }
+
+[dev-dependencies]
+tokio = "1.42.0"
+bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
