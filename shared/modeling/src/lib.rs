@@ -1,25 +1,31 @@
+mod attention;
+mod auto_config;
 mod auto_tokenizer;
 mod batcher;
+mod causal_language_model;
 mod distro;
 mod dummy;
 mod fp32_gradient_accumulator;
-mod llama;
-mod llama_for_causal_lm;
+mod models;
+mod rope;
 mod safetensor_utils;
 mod sampling;
 mod tensor_parallelism;
 mod token_output_stream;
 mod traits;
 
+pub use attention::CausalSelfAttention;
+pub use auto_config::{
+    AttentionImplementation, AutoConfig, ModelConfig, ModelLoadError, PretrainedSource,
+};
 pub use auto_tokenizer::{auto_tokenizer, AutoTokenizerError};
 pub use batcher::Batcher;
+pub use causal_language_model::{CausalLanguageModel, LanguageModelConfig, LanguageModelForward};
 pub use distro::{CompressDCT, Distro, DistroResult, TransformDCT};
 pub use dummy::DummyModel;
 pub use fp32_gradient_accumulator::Fp32GradientAccumulator;
-pub use llama::{get_parameter_names, Cache, Config, Llama, LlamaEosToks};
-pub use llama_for_causal_lm::{
-    LlamaConfig, LlamaForCausalLM, LoadLlamaForCausalLMError, PretrainedSource,
-};
+pub use models::*;
+pub use rope::{default_rope, RoPECache, RoPEConfig};
 pub use safetensor_utils::{
     load_safetensors_into_variables, save_tensors_into_safetensors, LoadSafetensorsError,
     SaveSafetensorsError,

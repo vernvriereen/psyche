@@ -3,6 +3,7 @@ use crate::{ColumnParallelLinear, Communicator, RowParallelLinear};
 use std::{f32::consts::PI, sync::Arc};
 use tch::nn::{self, Module};
 use tch::{Device, Kind, Tensor};
+use torch_sys::IntList;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
 pub enum Llama3RopeType {
@@ -44,6 +45,12 @@ pub struct Config {
     pub rope_scaling: Option<Llama3RopeConfig>,
     pub max_position_embeddings: usize,
     pub use_sdpa: bool,
+    pub q_lora_rank: Option<usize>,
+    pub kv_lora_rank: Option<usize>,
+    pub qk_nope_head_dim: Option<usize>,
+    pub qk_rope_head_dim: Option<usize>,
+    pub v_head_dim: Option<usize>,
+    pub attention_bias: bool,
 }
 
 impl Config {
@@ -62,6 +69,12 @@ impl Config {
             rope_scaling: None,
             max_position_embeddings: 2048,
             use_sdpa: true,
+            q_lora_rank: None,
+            kv_lora_rank: None,
+            qk_nope_head_dim: None,
+            qk_rope_head_dim: None,
+            v_head_dim: None,
+            attention_bias: false,
         }
     }
 }
@@ -86,6 +99,17 @@ fn calculate_default_inv_freq(cfg: &Config) -> Vec<f32> {
         .step_by(2)
         .map(|i| 1f32 / cfg.rope_theta.powf(i as f32 / head_dim as f32))
         .collect()
+}
+
+fn apply_rotary_emb(x: &Tensor, index_pos: i64, cache: &Cache) -> Tensor {
+    let (_b_sz, _, seq_len, _hidden_size) = x.size4().unwrap();
+    let cos = cache.cos.narrow(0, index_pos, seq_len);
+    let sin = cache.sin.narrow(0, index_pos, seq_len);
+    let cos = Tensor::cat(&[&cos, &cos], -1);
+    let sin = Tensor::cat(&[&sin, &sin], -1);
+    let cos = cos.unsqueeze(0).unsqueeze(0);
+    let sin = sin.unsqueeze(0).unsqueeze(0);
+    (x * cos) + (rotate_half(x) * sin)
 }
 
 impl Cache {
@@ -295,17 +319,6 @@ impl CausalSelfAttention {
         }
     }
 
-    fn apply_rotary_emb(&self, x: &Tensor, index_pos: i64, cache: &Cache) -> Tensor {
-        let (_b_sz, _, seq_len, _hidden_size) = x.size4().unwrap();
-        let cos = cache.cos.narrow(0, index_pos, seq_len);
-        let sin = cache.sin.narrow(0, index_pos, seq_len);
-        let cos = Tensor::cat(&[&cos, &cos], -1);
-        let sin = Tensor::cat(&[&sin, &sin], -1);
-        let cos = cos.unsqueeze(0).unsqueeze(0);
-        let sin = sin.unsqueeze(0).unsqueeze(0);
-        (x * cos) + (rotate_half(x) * sin)
-    }
-
     fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut Cache) -> Tensor {
         let (b, t, c) = x.size3().unwrap();
         assert_eq!(c, self.n_embd, "Input hidden size mismatch");
@@ -331,8 +344,8 @@ impl CausalSelfAttention {
             .reshape([b, t, local_n_kvhead, self.head_dim])
             .transpose(1, 2);
 
-        let q = self.apply_rotary_emb(&q, index_pos, cache).to_kind(kind);
-        let k = self.apply_rotary_emb(&k, index_pos, cache).to_kind(kind);
+        let q = apply_rotary_emb(&q, index_pos, cache).to_kind(kind);
+        let k = apply_rotary_emb(&k, index_pos, cache).to_kind(kind);
 
         let k = repeat_kv(&k, local_n_head / local_n_kvhead);
         let v = repeat_kv(&v, local_n_head / local_n_kvhead);
@@ -369,9 +382,225 @@ impl CausalSelfAttention {
 }
 
 #[derive(Debug)]
+struct MLA {
+    q_a_proj: ColumnParallelLinear,
+    q_a_layernorm: RmsNorm,
+    q_b_proj: ColumnParallelLinear,
+
+    kv_a_proj_with_mqa: ColumnParallelLinear,
+    kv_a_layernorm: RmsNorm,
+    kv_b_proj: ColumnParallelLinear,
+
+    o_proj: RowParallelLinear,
+
+    num_heads: i64,
+    head_v_dim: i64,
+    qk_rope_head_dim: i64,
+    qk_nope_head_dim: i64,
+    softmax_scale: f64,
+    device: Device,
+    use_sdpa: bool,
+    kv_lora_rank: i64,
+}
+
+impl MLA {
+    fn new(vs: nn::Path, config: &Config, comm: Option<Arc<Communicator>>) -> Self {
+        let hidden_size = config.hidden_size as i64;
+        let num_heads = config.num_attention_heads as i64;
+        let qk_rope_head_dim = config.qk_rope_head_dim.unwrap() as i64;
+        let qk_nope_head_dim = config.qk_nope_head_dim.unwrap() as i64;
+        let v_head_dim = config.v_head_dim.unwrap() as i64;
+        let q_head_dim = qk_nope_head_dim + qk_rope_head_dim;
+        let kv_lora_rank = config.kv_lora_rank.unwrap() as i64;
+
+        let q_a_proj = ColumnParallelLinear::new(
+            &vs / "q_a_proj",
+            hidden_size,
+            config.q_lora_rank.unwrap() as i64,
+            config.attention_bias,
+            false,
+            comm.clone(),
+        );
+
+        let q_a_layernorm = RmsNorm::new(
+            &vs / "q_a_layernorm",
+            config.q_lora_rank.unwrap() as i64,
+            config.rms_norm_eps,
+        );
+
+        let q_b_proj = ColumnParallelLinear::new(
+            &vs / "q_b_proj",
+            config.q_lora_rank.unwrap() as i64,
+            num_heads * q_head_dim,
+            false,
+            false,
+            comm.clone(),
+        );
+
+        let kv_a_proj_with_mqa = ColumnParallelLinear::new(
+            &vs / "kv_a_proj_with_mqa",
+            hidden_size,
+            config.kv_lora_rank.unwrap() as i64 + qk_rope_head_dim,
+            config.attention_bias,
+            false,
+            comm.clone(),
+        );
+
+        let kv_a_layernorm = RmsNorm::new(
+            &vs / "kv_a_layernorm",
+            config.kv_lora_rank.unwrap() as i64,
+            config.rms_norm_eps,
+        );
+
+        let kv_b_proj = ColumnParallelLinear::new(
+            &vs / "kv_b_proj",
+            config.kv_lora_rank.unwrap() as i64,
+            num_heads * (q_head_dim - qk_rope_head_dim + v_head_dim),
+            false,
+            false,
+            comm.clone(),
+        );
+
+        let o_proj = RowParallelLinear::new(
+            &vs / "o_proj",
+            num_heads * v_head_dim,
+            hidden_size,
+            config.attention_bias,
+            true,
+            comm,
+        );
+
+        let softmax_scale = 1.0 / (q_head_dim as f64).sqrt();
+
+        Self {
+            q_a_proj,
+            q_a_layernorm,
+            q_b_proj,
+            kv_a_proj_with_mqa,
+            kv_a_layernorm,
+            kv_b_proj,
+            o_proj,
+            num_heads,
+            head_v_dim: v_head_dim,
+            qk_rope_head_dim,
+            qk_nope_head_dim,
+            softmax_scale,
+            device: vs.device(),
+            use_sdpa: config.use_sdpa,
+            kv_lora_rank,
+        }
+    }
+
+    fn split_with_sizes_2(tensor: Tensor, split_sizes: impl IntList, dim: i64) -> (Tensor, Tensor) {
+        let mut tensors = tensor.split_with_sizes(split_sizes, dim);
+        let b = tensors.pop().unwrap();
+        let a = tensors.pop().unwrap();
+        (a, b)
+    }
+
+    fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut Cache) -> Tensor {
+        let (b, t, _) = x.size3().unwrap();
+        let kind = x.kind();
+
+        let q_compressed = self.q_a_proj.forward(x);
+        let q_compressed = self.q_a_layernorm.forward(&q_compressed);
+        let q = self.q_b_proj.forward(&q_compressed);
+        let q = q.view([b, t, self.num_heads, -1]).transpose(1, 2);
+        let (q_nope, q_pe) =
+            Self::split_with_sizes_2(q, &[self.qk_nope_head_dim, self.qk_rope_head_dim], -1);
+
+        let compressed_kv = self.kv_a_proj_with_mqa.forward(x);
+        let (compressed_kv, k_pe) = Self::split_with_sizes_2(
+            compressed_kv,
+            &[self.kv_lora_rank as i64, self.qk_rope_head_dim],
+            -1,
+        );
+        let k_pe = k_pe.view([b, t, 1, self.qk_rope_head_dim]).transpose(1, 2);
+
+        let compressed_kv = self.kv_a_layernorm.forward(&compressed_kv);
+        let kv = self
+            .kv_b_proj
+            .forward(&compressed_kv)
+            .view([
+                b,
+                t,
+                self.num_heads,
+                self.qk_nope_head_dim + self.head_v_dim,
+            ])
+            .transpose(1, 2);
+
+        let (k_nope, value_states) =
+            Self::split_with_sizes_2(kv, &[self.qk_nope_head_dim, self.head_v_dim], -1);
+
+        let q_pe = apply_rotary_emb(&q_pe, index_pos, cache).to_kind(kind);
+        let k_pe = apply_rotary_emb(&k_pe, index_pos, cache).to_kind(kind);
+
+        let query_states = Tensor::cat(&[&q_nope, &q_pe], -1);
+        let key_states = Tensor::cat(&[&k_nope, &k_pe], -1);
+
+        let y = if self.use_sdpa {
+            Tensor::scaled_dot_product_attention::<Tensor>(
+                &query_states,
+                &key_states,
+                &value_states,
+                None,
+                0.0,
+                t > 1,
+                Some(self.softmax_scale),
+            )
+        } else {
+            let att = query_states.matmul(&key_states.transpose(-2, -1)) * self.softmax_scale;
+            let mask = Tensor::ones([t, t], (kind, self.device))
+                .tril(0)
+                .reshape([1, 1, t, t]);
+            let att = att.masked_fill(&mask.eq(0.), f64::NEG_INFINITY);
+            att.softmax(-1, kind).matmul(&value_states)
+        };
+
+        let y = y
+            .transpose(1, 2)
+            .contiguous()
+            .reshape([b, t, self.num_heads * self.head_v_dim]);
+
+        self.o_proj.forward(&y)
+    }
+}
+
+#[derive(Debug)]
+enum Attention {
+    MQA(CausalSelfAttention),
+    MLA(MLA)
+}
+
+impl Attention {
+    fn new(vs: nn::Path, config: &Config, comm: Option<Arc<Communicator>>) -> Self {
+        if config.q_lora_rank.is_some() {
+            Self::MLA(MLA::new(vs, config, comm))
+        } else {
+            Self::MQA(CausalSelfAttention::new(
+                &vs / "self_attn",
+                config.num_attention_heads as i64,
+                config.num_key_value_heads as i64,
+                config.hidden_size as i64,
+                (config.max_position_embeddings + 1) as i64,
+                config.use_sdpa,
+                comm,
+            ))
+        }
+    }
+
+    fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut Cache) -> Tensor {
+        match self {
+            Attention::MQA(mqa) => mqa.forward(x, index_pos, cache),
+            Attention::MLA(mla) => mla.forward(x, index_pos, cache),
+        }
+    }
+}
+
+#[derive(Debug)]
 struct Block {
     rms_1: RmsNorm,
-    attn: CausalSelfAttention,
+    attn: Attention,
     rms_2: RmsNorm,
     mlp: Mlp,
 }
@@ -383,15 +612,6 @@ impl Block {
             config.hidden_size as i64,
             config.rms_norm_eps,
         );
-        let attn = CausalSelfAttention::new(
-            &vs / "self_attn",
-            config.num_attention_heads as i64,
-            config.num_key_value_heads as i64,
-            config.hidden_size as i64,
-            (config.max_position_embeddings + 1) as i64,
-            config.use_sdpa,
-            comm.clone(),
-        );
         let rms_2 = RmsNorm::new(
             &vs / "post_attention_layernorm",
             config.hidden_size as i64,
@@ -401,8 +621,9 @@ impl Block {
             &vs / "mlp",
             config.hidden_size as i64,
             config.intermediate_size as i64,
-            comm,
+            comm.clone(),
         );
+        let attn = Attention::new(vs, config, comm);
         Self {
             rms_1,
             attn,

@@ -45,8 +45,10 @@ impl CoordinatorInstanceState {
             u64::from_ne_bytes(random_seed),
         ) {
             Ok(TickResult::Ticked) => {
-                if self.coordinator.is_epoch_starting() {
-                    msg!("First round of epoch, updating next active clients");
+                if self.coordinator.is_epoch_just_starting() {
+                    msg!("New epoch just starting, save epoch rewards rate");
+                    self.clients_state.current_epoch_rates = self.clients_state.future_epoch_rates;
+                    msg!("New epoch just starting, save epoch active clients");
                     self.clients_state.next_active += 1;
                 }
             }
@@ -61,14 +63,14 @@ impl CoordinatorInstanceState {
                 for client in self.clients_state.clients.iter_mut() {
                     if i < finished_clients.len() && client.id == finished_clients[i].id {
                         if finished_clients[i].state == ClientState::Healthy {
-                            client.earned += 1;
+                            client.earned += self.clients_state.current_epoch_rates.earning_rate;
                         }
                         i += 1;
                     }
 
                     if j < exited_clients.len() && client.id == exited_clients[j].id {
                         if exited_clients[j].state == ClientState::Ejected {
-                            client.slashed += 1;
+                            client.slashed += self.clients_state.current_epoch_rates.slashing_rate;
                         }
                         j += 1;
                     }
@@ -123,6 +125,20 @@ impl CoordinatorInstanceState {
             .whitelist
             .extend(clients.into_iter())
             .map_err(|_| ProgramError::CouldNotSetWhitelist)?;
+        Ok(())
+    }
+
+    pub fn set_future_epoch_rates(
+        &mut self,
+        epoch_earning_rate: Option<u64>,
+        epoch_slashing_rate: Option<u64>,
+    ) -> Result<()> {
+        if let Some(epoch_earning_rate) = epoch_earning_rate {
+            self.clients_state.future_epoch_rates.earning_rate = epoch_earning_rate;
+        }
+        if let Some(epoch_slashing_rate) = epoch_slashing_rate {
+            self.clients_state.future_epoch_rates.slashing_rate = epoch_slashing_rate;
+        }
         Ok(())
     }
 

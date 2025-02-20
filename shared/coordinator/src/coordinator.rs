@@ -1,6 +1,7 @@
 use crate::{
-    assign_data_for_state, get_batch_ids_for_node,
-    model::{self, Checkpoint, Model},
+    assign_data_for_state,
+    data_selection::get_batch_ids_for_node,
+    model::{self, Checkpoint, HubRepo, Model},
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
 
@@ -462,16 +463,20 @@ impl<T: NodeIdentity> Coordinator<T> {
     pub fn checkpoint(
         &mut self,
         from: &T,
-        checkpoint: Checkpoint,
+        hub_repo: HubRepo,
     ) -> std::result::Result<(), CoordinatorError> {
-        if self.run_state == RunState::Cooldown
-            && self.epoch_state.checkpointed.is_false()
+        if self.epoch_state.checkpointed.is_false()
             && self.config.checkpointers.iter().any(|x| x == from)
         {
+            // TODO: In the case of more than one checkpointer, this will overwrite the hub repo
+            // with the last checkpointed one. We could instead have a vector of hub repos to have
+            // more download options.
             match &mut self.model {
-                Model::LLM(llm) => {
-                    llm.checkpoint = checkpoint;
-                }
+                Model::LLM(llm) => match llm.checkpoint {
+                    Checkpoint::P2P(_) => llm.checkpoint = Checkpoint::P2P(hub_repo),
+                    Checkpoint::Hub(_) => llm.checkpoint = Checkpoint::Hub(hub_repo),
+                    _ => {}
+                },
             }
             self.epoch_state.checkpointed = true.into();
             Ok(())
@@ -713,27 +718,45 @@ impl<T: NodeIdentity> Coordinator<T> {
 
     fn tick_waiting_for_members<'a, 'b>(
         &'a mut self,
-        new_clients: Option<impl ExactSizeIterator<Item = &'b T>>,
+        pending_clients: Option<impl ExactSizeIterator<Item = &'b T>>,
         unix_timestamp: u64,
     ) -> std::result::Result<TickResult, CoordinatorError> {
-        if let Some(new_clients) = new_clients {
-            if new_clients.len() as u16 >= self.config.min_clients {
-                // set epoch_state to default
-                bytemuck::write_zeroes(&mut self.epoch_state);
-                self.epoch_state.first_round = true.into();
+        let Some(pending_clients) = pending_clients else {
+            return Ok(TickResult::Ticked);
+        };
 
-                self.epoch_state
-                    .clients
-                    .extend(
-                        new_clients
-                            .take(SOLANA_MAX_NUM_CLIENTS)
-                            .map(|x| Client::new(*x)),
-                    )
-                    .unwrap();
+        if pending_clients.len() as u16 >= self.config.min_clients {
+            let height = self.current_round_unchecked().height;
+            self.move_clients_to_exited(height);
 
-                self.start_warmup(unix_timestamp);
+            // If no clients from the previous epoch are present for the beggining
+            // of the next epoch, then we change the checkpoint to HuggingFace.
+            // This way, we are covered for a failure scenario where all clients
+            // disconnected and the trained state could be lost.
+            let Model::LLM(llm) = &mut self.model;
+            if self.epoch_state.clients.is_empty() {
+                if let Checkpoint::P2P(hub_repo) = llm.checkpoint {
+                    llm.checkpoint = Checkpoint::Hub(hub_repo);
+                }
+            } else if self.progress.epoch != 0 {
+                if let Checkpoint::Hub(hub_repo) = llm.checkpoint {
+                    llm.checkpoint = Checkpoint::P2P(hub_repo)
+                }
             }
+
+            bytemuck::write_zeroes(&mut self.epoch_state);
+            self.epoch_state.first_round = true.into();
+            self.epoch_state
+                .clients
+                .extend(
+                    pending_clients
+                        .take(SOLANA_MAX_NUM_CLIENTS)
+                        .map(|x| Client::new(*x)),
+                )
+                .unwrap();
+            self.start_warmup(unix_timestamp);
         }
+
         Ok(TickResult::Ticked)
     }
 
@@ -813,12 +836,17 @@ impl<T: NodeIdentity> Coordinator<T> {
             );
             self.progress.epoch += 1;
 
+            let current_round = self.current_round_unchecked();
+            let height = current_round.height;
+            self.move_clients_to_exited(height);
+
             if self.pause_at_epoch_end.is_true() {
                 self.change_state(unix_timestamp, RunState::Paused);
                 self.pause_at_epoch_end = false.into();
             } else {
                 self.start_waiting_for_members(unix_timestamp);
             }
+
             Ok(TickResult::EpochEnd(true))
         } else {
             Ok(TickResult::Ticked)
@@ -830,17 +858,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             && unix_timestamp >= duration + self.run_state_start_unix_timestamp
     }
 
-    // If checkpoint was set to downloading from HuggingFace, change it to P2P
-    // and change state to cooldown
     fn start_cooldown(&mut self, unix_timestamp: u64) {
-        match &mut self.model {
-            Model::LLM(llm) => match llm.checkpoint {
-                Checkpoint::Hub(_) | Checkpoint::Dummy => {
-                    llm.checkpoint = Checkpoint::P2P;
-                }
-                _ => {}
-            },
-        }
         self.change_state(unix_timestamp, RunState::Cooldown);
     }
 
@@ -930,8 +948,8 @@ impl<T: NodeIdentity> Coordinator<T> {
             }
     }
 
-    pub fn is_epoch_starting(&self) -> bool {
-        self.epoch_state.first_round.is_true() && self.run_state == RunState::WaitingForMembers
+    pub fn is_epoch_just_starting(&self) -> bool {
+        self.epoch_state.first_round.is_true() && self.run_state == RunState::Warmup
     }
 }
 

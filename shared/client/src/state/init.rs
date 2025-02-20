@@ -14,8 +14,8 @@ use psyche_data_provider::{
     DataProvider, DataProviderTcpClient, DummyDataProvider,
 };
 use psyche_modeling::{
-    auto_tokenizer, get_parameter_names, AutoTokenizerError, CommunicatorId, ConcreteCausalLM,
-    Config, DummyModel, LlamaForCausalLM, LoadLlamaForCausalLMError, PretrainedSource,
+    auto_tokenizer, AutoConfig, AutoTokenizerError, CommunicatorId, ConcreteCausalLM, DummyModel,
+    LlamaConfig, LlamaForCausalLM, ModelConfig, ModelLoadError, PretrainedSource,
 };
 use psyche_network::{AuthenticatableIdentity, BlobTicket};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
@@ -27,7 +27,7 @@ use tokio::{
     sync::{mpsc::UnboundedSender, oneshot},
     task::{JoinError, JoinHandle},
 };
-use tracing::info;
+use tracing::{debug, info};
 
 use super::{
     cooldown::CooldownStepMetadata, evals::EvalRunner, stats::StatsLogger, steps::StepStateMachine,
@@ -87,7 +87,7 @@ pub enum InitRunError {
     ModelLoadingThreadCrashed(JoinError),
 
     #[error("failed to load model: {0}")]
-    ModelLoad(#[from] LoadLlamaForCausalLMError),
+    ModelLoad(#[from] ModelLoadError),
 
     #[error("Couldn't load tokenizer: {0}")]
     TokenizerLoad(#[from] AutoTokenizerError),
@@ -101,6 +101,9 @@ pub enum InitRunError {
 
     #[error("wandb failed to create run: {0}")]
     WandbLoad(#[from] wandb::ApiError),
+
+    #[error("could not parse config")]
+    FailedToParseConfig(#[from] serde_json::Error),
 }
 
 struct RawLoadedModel {
@@ -111,14 +114,14 @@ struct RawLoadedModel {
 }
 
 type OneshotModelParameterSender = oneshot::Sender<HashMap<String, Tensor>>;
-type OneShotModelConfigSender = oneshot::Sender<(Config, Tokenizer)>;
+type OneShotModelConfigSender = oneshot::Sender<(String, Tokenizer)>;
 
 pub struct RunInitConfigAndIO<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub init_config: RunInitConfig<T, A>,
 
     pub tx_witness: UnboundedSender<Witness>,
     pub tx_health_check: UnboundedSender<HealthChecks>,
-    pub tx_checkpoint: UnboundedSender<model::Checkpoint>,
+    pub tx_checkpoint: UnboundedSender<model::HubRepo>,
     pub tx_model: UnboundedSender<HashMap<String, Tensor>>,
     pub tx_parameters_req: UnboundedSender<(Vec<String>, OneshotModelParameterSender)>,
     pub tx_config: UnboundedSender<(String, String)>,
@@ -204,13 +207,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                         checkpoint_extra_files: vec![],
                         eval_runner: EvalRunner::new(vec![], tokenizer.clone(), None, 0),
                     };
-                    let config = Config::dummy().to_string();
+                    let config =
+                        serde_json::to_string(&AutoConfig::Dummy(LlamaConfig::dummy())).unwrap();
                     let tokenizer = tokenizer.to_string(false).unwrap();
                     info!("Config Uploaded: {}", config);
                     tx_config.send((config.to_string(), tokenizer)).unwrap();
                     Ok(model)
                 }),
-                model::Checkpoint::Hub(_) | model::Checkpoint::P2P => {
+                model::Checkpoint::Hub(_) | model::Checkpoint::P2P(_) => {
                     let checkpoint = llm.checkpoint;
                     tokio::spawn(async move {
                         let (source, tokenizer, checkpoint_extra_files) = match checkpoint {
@@ -260,26 +264,35 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                                     .collect();
                                 let tokenizer = Arc::new(auto_tokenizer(&repo_files)?);
                                 (
-                                    PretrainedSource::RepoFiles(repo_files),
+                                    PretrainedSource::<AutoConfig>::RepoFiles(repo_files),
                                     tokenizer,
                                     checkpoint_extra_files,
                                 )
                             }
-                            model::Checkpoint::P2P => {
+                            model::Checkpoint::P2P(_) => {
                                 let (tx_model_config_response, rx_model_config_response) =
                                     oneshot::channel();
                                 tx_request_model_config
                                     .send(tx_model_config_response)
                                     .unwrap();
 
-                                let (mut model_config, tokenizer) =
+                                let (model_config, tokenizer) =
                                     rx_model_config_response.await.unwrap();
                                 let tokenizer = Arc::new(tokenizer);
 
-                                let parameter_names = get_parameter_names(
-                                    &mut model_config,
-                                    Some(llm.max_seq_len as usize),
-                                );
+                                debug!("Got p2p info, model_config: {}", model_config);
+
+                                let model_config = match llm.architecture {
+                                    model::LLMArchitecture::HfLlama => match llm.checkpoint {
+                                        model::Checkpoint::Dummy => {
+                                            AutoConfig::Dummy(serde_json::from_str(&model_config)?)
+                                        }
+                                        _ => {
+                                            AutoConfig::Llama(serde_json::from_str(&model_config)?)
+                                        }
+                                    },
+                                };
+                                let parameter_names = model_config.get_parameter_names();
 
                                 let (tx_params_response, rx_params_response) = oneshot::channel();
                                 tx_parameters_req
@@ -289,7 +302,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                                 let parameters = Arc::new(rx_params_response.await.unwrap());
 
                                 (
-                                    PretrainedSource::ConfigAndTensors(model_config, parameters),
+                                    PretrainedSource::<AutoConfig>::ConfigAndTensors(
+                                        model_config,
+                                        parameters,
+                                    ),
                                     tokenizer,
                                     vec![],
                                 )
@@ -327,14 +343,18 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                                     } else {
                                         Device::Cuda(dp * init_config.tensor_parallelism + tp)
                                     };
-                                    LlamaForCausalLM::from_pretrained(
-                                        &source,
-                                        Some(Kind::BFloat16),
-                                        None,
-                                        Some(device),
-                                        tensor_parallelism_world,
-                                        Some(llm.max_seq_len as usize),
-                                    )
+                                    match llm.architecture {
+                                        model::LLMArchitecture::HfLlama => {
+                                            LlamaForCausalLM::from_pretrained(
+                                                &source.try_into()?,
+                                                Some(Kind::BFloat16),
+                                                None,
+                                                Some(device),
+                                                tensor_parallelism_world,
+                                                Some(llm.max_seq_len as usize),
+                                            )
+                                        }
+                                    }
                                 }));
                             }
                         }
@@ -350,8 +370,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             let model = future
                                 .await
                                 .map_err(InitRunError::ModelLoadingThreadCrashed)??;
-                            let config = model.config.to_string();
-                            info!("Config Uploaded: {}", config);
+                            let config =
+                                serde_json::to_string(&source.serialize_config()?).unwrap();
+                            debug!("Config uploaded: {}", config);
                             let tokenizer = tokenizer.to_string(false).unwrap();
                             tx_config.send((config, tokenizer)).unwrap();
                             models.push(Box::new(model));
