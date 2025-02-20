@@ -176,7 +176,6 @@ pub struct CoordinatorConfig<I> {
 
     pub overlapped: SmallBoolean,
 
-    // TODO: remove when we implement parameter sharing over p2p
     #[serde(default)]
     pub checkpointers: FixedVec<I, SOLANA_MAX_NUM_CHECKPOINTERS>,
 }
@@ -191,7 +190,6 @@ pub struct CoordinatorEpochState<T> {
     pub rounds_head: u32,
     pub first_round: SmallBoolean,
     pub checkpointed: SmallBoolean,
-    pub pause: SmallBoolean,
 }
 
 #[derive(Clone, Debug, Zeroable, Copy, Serialize, Deserialize)]
@@ -220,8 +218,6 @@ pub struct Coordinator<T> {
 
     #[serde(default)]
     pub progress: CoordinatorProgress,
-    #[serde(default)]
-    pub prev_epoch_progress: CoordinatorProgress,
 
     #[serde(default)]
     pub epoch_state: CoordinatorEpochState<T>,
@@ -234,6 +230,8 @@ pub struct Coordinator<T> {
     pub last_tick_unix_timestamp: u64,
     #[serde(default)]
     pub last_step_unix_timestamp: u64,
+
+    pub pause_at_epoch_end: SmallBoolean,
 }
 
 unsafe impl<T: NodeIdentity + Zeroable> Pod for Coordinator<T> {}
@@ -326,7 +324,6 @@ impl<T: NodeIdentity> Default for CoordinatorEpochState<T> {
             rounds: Default::default(),
             rounds_head: Default::default(),
             first_round: true.into(),
-            pause: Default::default(),
             checkpointed: Default::default(),
             clients: Default::default(),
             exited_clients: Default::default(),
@@ -366,11 +363,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 Err(CoordinatorError::Halted)
             }
             run_state => {
-                if self.epoch_state.pause.into() {
-                    self.epoch_state.pause = false.into();
-                    self.change_state(unix_timestamp, RunState::Paused);
-                    Ok(TickResult::EpochEnd(false))
-                } else if run_state == RunState::WaitingForMembers {
+                if run_state == RunState::WaitingForMembers {
                     self.tick_waiting_for_members(new_clients, unix_timestamp)
                 } else if run_state == RunState::Cooldown {
                     self.tick_cooldown(unix_timestamp)
@@ -500,7 +493,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     pub fn pause(&mut self) -> std::result::Result<(), CoordinatorError> {
-        self.epoch_state.pause = true.into();
+        self.pause_at_epoch_end = true.into();
         Ok(())
     }
 
@@ -508,8 +501,6 @@ impl<T: NodeIdentity> Coordinator<T> {
         if self.run_state != RunState::Paused {
             return Err(CoordinatorError::CannotResume);
         }
-        // resume from previous epoch's progress
-        self.progress = self.prev_epoch_progress;
         self.start_waiting_for_members(unix_timestamp);
         Ok(())
     }
@@ -815,7 +806,6 @@ impl<T: NodeIdentity> Coordinator<T> {
             || (self.config.cooldown_time > 0
                 && self.check_timeout(unix_timestamp, self.config.cooldown_time))
         {
-            self.prev_epoch_progress = self.progress;
             self.progress.epoch_start_data_index = Self::get_next_round_data_index(
                 self.current_round_unchecked().data_index,
                 self.config.batches_per_round,
@@ -823,7 +813,12 @@ impl<T: NodeIdentity> Coordinator<T> {
             );
             self.progress.epoch += 1;
 
-            self.start_waiting_for_members(unix_timestamp);
+            if self.pause_at_epoch_end.is_true() {
+                self.change_state(unix_timestamp, RunState::Paused);
+                self.pause_at_epoch_end = false.into();
+            } else {
+                self.start_waiting_for_members(unix_timestamp);
+            }
             Ok(TickResult::EpochEnd(true))
         } else {
             Ok(TickResult::Ticked)

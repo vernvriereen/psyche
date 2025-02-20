@@ -93,10 +93,12 @@ impl CoordinatorInstanceState {
                 }
 
                 if self.coordinator.run_state == RunState::Uninitialized {
+                    // this is the only way to get out of RunState::Uninitialized
+                    // by doing this we force the sanity checks on the config and model
+                    // pass before starting the first step
                     self.coordinator.run_state = RunState::Paused;
-                    // resume() copies the previous epoch's progress
                     // step 1 is the first valid step
-                    self.coordinator.prev_epoch_progress.step = 1;
+                    self.coordinator.progress.step = 1;
                 }
                 self.coordinator.resume(Clock::get()?.unix_timestamp as u64)
             }
