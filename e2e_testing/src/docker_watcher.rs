@@ -49,7 +49,7 @@ pub struct DockerWatcher {
 
 #[derive(Debug)]
 pub enum Response {
-    StateChange(String, String, String),
+    StateChange(String, String, String, String),
     Loss(String, u64, u64, f64),
 }
 
@@ -64,7 +64,6 @@ impl DockerWatcher {
         name: &str,
         filter: JsonFilter,
     ) -> Result<JoinHandle<Result<(), DockerWatcherError>>, DockerWatcherError> {
-        println!("EMPEZO monitor_container");
         let Ok(duration) = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) else {
             return Err(DockerWatcherError::UnixTimestampError);
         };
@@ -116,11 +115,18 @@ impl DockerWatcher {
                                 .and_then(|v| v.as_str())
                                 .unwrap();
 
+                            let timestamp = parsed_log
+                                .get("timestamp")
+                                .and_then(|v| v.as_str())
+                                .unwrap();
+
                             let response = Response::StateChange(
+                                timestamp.to_string(),
                                 client_id.to_string(),
                                 old_state.to_string(),
                                 new_state.to_string(),
                             );
+
                             log_sender.send(response).await.unwrap()
                         }
                     }

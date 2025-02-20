@@ -98,7 +98,7 @@ setup_clients num_clients="1":
 
 # Setup the infrastructure for testing locally using Docker.
 setup_test_infra num_clients="1":
-    cd docker/test && NUM_REPLICAS={{num_clients}} docker compose --profile setup up -d --force-recreate
+    cd docker/test && NUM_REPLICAS={{num_clients}} docker compose --profile setup up -d
 
 stop_test_infra:
     cd docker/test && docker compose --profile all stop
