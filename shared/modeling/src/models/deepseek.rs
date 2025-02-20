@@ -511,6 +511,7 @@ struct DeepseekMoE {
     experts: Vec<Option<MLP>>,
     gate: MoEGate,
     shared_experts: Option<MLP>,
+    #[allow(unused)]
     ep_size: i64,
     #[allow(unused)]
     experts_per_rank: i64,

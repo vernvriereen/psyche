@@ -2,8 +2,8 @@ use anyhow::{Error, Result};
 use clap::Parser;
 use psyche_data_provider::download_model_repo_sync;
 use psyche_modeling::{
-    auto_model_for_causal_lm_from_pretrained, auto_tokenizer, CausalLM, CommunicatorId,
-    EosToks, LlamaForCausalLM, LogitsProcessor, PretrainedSource, Sampling, TokenOutputStream,
+    auto_model_for_causal_lm_from_pretrained, auto_tokenizer, CommunicatorId, EosToks,
+    LogitsProcessor, Sampling, TokenOutputStream,
 };
 use std::{
     io::Write,

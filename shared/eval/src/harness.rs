@@ -1,7 +1,7 @@
 use crate::traits::{Document, LogLikelihoodTask};
 use indicatif::{ProgressBar, ProgressStyle};
 use psyche_core::RunningAverage;
-use psyche_modeling::CausalLM;
+use psyche_modeling::ConcreteCausalLM;
 use rand::{seq::SliceRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::{collections::HashMap, fmt::Display, sync::Arc};
@@ -158,8 +158,8 @@ impl Task {
     }
 }
 
-pub struct EvalTaskOptions<'a, M: CausalLM> {
-    pub model: &'a mut M,
+pub struct EvalTaskOptions<'a> {
+    pub model: &'a mut Box<dyn ConcreteCausalLM>,
     pub skip_and_step_by: Option<(usize, usize)>,
     pub live_results: Option<Arc<RunningAverage>>,
     pub cancel: Option<CancellationToken>,
@@ -168,11 +168,7 @@ pub struct EvalTaskOptions<'a, M: CausalLM> {
 }
 
 impl PreparedTask {
-    pub fn run<M: CausalLM>(
-        &self,
-        options: EvalTaskOptions<'_, M>,
-        progress_bar: bool,
-    ) -> PreparedTaskResult {
+    pub fn run(&self, options: EvalTaskOptions, progress_bar: bool) -> PreparedTaskResult {
         let pbar = match progress_bar {
             false => None,
             true => {
@@ -194,8 +190,8 @@ impl PreparedTask {
         }
     }
 
-    fn run_log_likelihood<M: CausalLM>(
-        options: EvalTaskOptions<'_, M>,
+    fn run_log_likelihood(
+        options: EvalTaskOptions,
         docs: &[TokenizedLLHDocument],
         tokenized_fewshot: &[i64],
         pbar: Option<ProgressBar>,
