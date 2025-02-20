@@ -39,7 +39,7 @@ pub use safetensor_utils::{
 pub use sampling::{LogitsProcessor, Sampling};
 pub use tensor_parallelism::{
     unsharded_cpu_variables, AllReduce, ColumnParallelLinear, Communicator, CommunicatorId,
-    CudaSynchronize, RowParallelLinear,
+    CudaSynchronize, RMSNormParallelInput, RowParallelLinear,
 };
 pub use token_output_stream::TokenOutputStream;
 

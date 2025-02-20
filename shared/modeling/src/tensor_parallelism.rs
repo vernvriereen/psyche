@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use std::{collections::HashMap, sync::Arc};
 use tch::{
     nn::{self, Module, Shard, VarStore},
-    Device, Tensor,
+    Device, Kind, Tensor,
 };
 
 #[cfg(feature = "parallelism")]
@@ -174,6 +174,13 @@ pub struct RowParallelLinear {
     input_is_parallel: bool,
 }
 
+#[derive(Debug)]
+pub struct RMSNormParallelInput {
+    weight: Tensor,
+    eps: f64,
+    comm: Option<Arc<Communicator>>,
+}
+
 impl ColumnParallelLinear {
     pub fn new(
         vs: nn::Path,
@@ -189,6 +196,11 @@ impl ColumnParallelLinear {
             0,
             "out_features must be divisible by world_size"
         );
+
+        let comm = match world_size {
+            1 => None,
+            _ => comm,
+        };
 
         let linear = nn::linear(
             &vs,
@@ -252,6 +264,11 @@ impl RowParallelLinear {
             "in_features must be divisible by world_size"
         );
 
+        let comm = match world_size {
+            1 => None,
+            _ => comm,
+        };
+
         let linear = nn::linear(
             &vs,
             in_features,
@@ -298,6 +315,54 @@ impl Module for RowParallelLinear {
 }
 
 unsafe impl Send for RowParallelLinear {}
+
+impl RMSNormParallelInput {
+    pub fn new(vs: nn::Path, size: i64, eps: f64, comm: Option<Arc<Communicator>>) -> Self {
+        let world_size = comm.as_ref().map(|c| c.size()).unwrap_or(1);
+        assert_eq!(size % world_size, 0, "size must be divisible by world_size");
+
+        let comm = match world_size {
+            1 => None,
+            _ => comm,
+        };
+
+        let weight = vs.var_with_shard(
+            "weight",
+            &[size],
+            nn::Init::Const(1.),
+            comm.as_ref().map(|comm| Shard {
+                dim: 0,
+                rank: comm.rank() as usize,
+                world_size: comm.size() as usize,
+            }),
+        );
+
+        Self { weight, eps, comm }
+    }
+}
+
+impl Module for RMSNormParallelInput {
+    fn forward(&self, xs: &Tensor) -> Tensor {
+        let kind = xs.kind();
+        let xs = xs.to_kind(Kind::Float);
+
+        let local_variance = xs.pow_tensor_scalar(2).mean_dim(-1, true, Kind::Float);
+
+        let variance = if let Some(comm) = &self.comm {
+            let mut variance = local_variance.shallow_clone();
+            variance.all_reduce_(&self.comm, ReduceType::Sum);
+            variance / comm.size() as f64 // average across ranks
+        } else {
+            local_variance
+        };
+
+        let xs_normed = xs * (variance + self.eps).rsqrt();
+        let xs_normed = xs_normed.to_kind(kind);
+        &self.weight * xs_normed
+    }
+}
+
+unsafe impl Send for RMSNormParallelInput {}
 
 #[allow(unused)]
 pub fn unshard_tensor(sharded_tensors: Vec<Tensor>, shard: &Shard) -> Tensor {

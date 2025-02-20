@@ -3,8 +3,8 @@ use clap::Parser;
 use psyche_core::{CancellableBarrier, CosineLR, LearningRateScheduler, Shuffle};
 use psyche_data_provider::{download_model_repo_sync, LocalDataProvider};
 use psyche_modeling::{
-    Batcher, CausalLM, CommunicatorId, Distro, Fp32GradientAccumulator, LlamaForCausalLM,
-    PretrainedSource,
+    auto_model_for_causal_lm_from_pretrained, Batcher, CommunicatorId, Distro,
+    Fp32GradientAccumulator,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -128,8 +128,8 @@ fn train(
         .as_ref()
         .map(|(_, rank, _, _)| *rank)
         .unwrap_or_default();
-    let mut model = LlamaForCausalLM::from_pretrained(
-        &PretrainedSource::RepoFiles(repo_files),
+    let mut model = auto_model_for_causal_lm_from_pretrained(
+        repo_files,
         Some(Kind::BFloat16),
         None,
         args.cpu
@@ -167,18 +167,18 @@ fn train(
                 amsgrad: false,
             };
 
-            Some(adamw.build(&model.variables, args.learning_rate)?)
+            Some(adamw.build(&model.variables(), args.learning_rate)?)
         }
         true => None,
     };
 
     let mut distro = match args.distro {
         true => Some(Distro::new(
-            &model.variables,
+            &model.variables(),
             args.compression_decay,
             args.compression_chunk,
             0.0,
-            model.comm.clone(),
+            model.communicator(),
         )),
         false => None,
     };
@@ -189,7 +189,11 @@ fn train(
     };
 
     let mut index_to_name = HashMap::new();
-    let named_variables = model.variables.variables().into_iter().collect::<Vec<_>>();
+    let named_variables = model
+        .variables()
+        .variables()
+        .into_iter()
+        .collect::<Vec<_>>();
 
     for (index, (variable, _)) in variables.iter().enumerate() {
         if let Some(var) = named_variables

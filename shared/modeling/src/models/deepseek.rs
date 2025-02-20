@@ -114,13 +114,13 @@ struct MLAAttention {
     o_proj: RowParallelLinear,
 
     kv_lora_rank: i64,
-    num_heads: i64,
     head_v_dim: i64,
     qk_rope_head_dim: i64,
     qk_nope_head_dim: i64,
     softmax_scale: f64,
     device: Device,
     use_sdpa: bool,
+    num_local_heads: i64,
 }
 
 impl MLAAttention {
@@ -130,7 +130,10 @@ impl MLAAttention {
         use_sdpa: bool,
         comm: Option<Arc<Communicator>>,
     ) -> Self {
+        let tp_size = comm.as_ref().map(|x| x.size()).unwrap_or(1);
         let num_heads = config.num_attention_heads as i64;
+        assert_eq!(num_heads % tp_size, 0, "n_head must be divisible by tp_size");
+        let num_local_heads = num_heads / tp_size;
         let qk_rope_head_dim = config.qk_rope_head_dim.unwrap() as i64;
         let qk_nope_head_dim = config.qk_nope_head_dim.unwrap() as i64;
         let v_head_dim = config.v_head_dim.unwrap() as i64;
@@ -147,7 +150,7 @@ impl MLAAttention {
                     q_lora_rank as i64,
                     attention_bias,
                     false,
-                    comm.clone(),
+                    None, // explicitly NOT parallel
                 );
 
                 let q_a_layernorm = RMSNorm::new(
@@ -187,7 +190,7 @@ impl MLAAttention {
             kv_lora_rank + qk_rope_head_dim,
             attention_bias,
             false,
-            comm.clone(),
+            None, // explicitly NOT parallel
         );
 
         let kv_a_layernorm =
@@ -231,7 +234,6 @@ impl MLAAttention {
             kv_a_layernorm,
             kv_b_proj,
             o_proj,
-            num_heads,
             head_v_dim: v_head_dim,
             qk_rope_head_dim,
             qk_nope_head_dim,
@@ -239,6 +241,7 @@ impl MLAAttention {
             softmax_scale,
             device: vs.device(),
             use_sdpa,
+            num_local_heads,
         }
     }
 
@@ -268,24 +271,25 @@ impl MLAAttention {
             _ => panic!("Unexpected MLA proj combination"),
         };
 
-        let q = q.view([b, t, self.num_heads, -1]).transpose(1, 2);
-        let (q_nope, q_pe) =
-            Self::split_with_sizes_2(q, [self.qk_nope_head_dim, self.qk_rope_head_dim], -1);
+        let q = q.view([b, t, self.num_local_heads, -1]).transpose(1, 2);
+        let (q_nope, q_pe) = Self::split_with_sizes_2(
+            q,
+            [
+                self.qk_nope_head_dim,
+                self.qk_rope_head_dim,
+            ],
+            -1,
+        );
 
         let compressed_kv = self.kv_a_proj_with_mqa.forward(x);
         let (compressed_kv, k_pe) = Self::split_with_sizes_2(
             compressed_kv,
-            [self.kv_lora_rank, self.qk_rope_head_dim],
+            [
+                self.kv_lora_rank,
+                self.qk_rope_head_dim,
+            ],
             -1,
         );
-        let k_pe = k_pe
-            .view([b, t, 1, self.qk_rope_head_dim])
-            // matches the expansion
-            //    query_states[:, :, :, : self.qk_nope_head_dim] = q_nope
-            //    query_states[:, :, :, self.qk_nope_head_dim :] = q_pe
-            .expand([b, t, self.num_heads, self.qk_rope_head_dim], false)
-            .transpose(1, 2);
-
         let compressed_kv = self.kv_a_layernorm.forward(&compressed_kv);
         let kv = self
             .kv_b_proj
@@ -293,13 +297,30 @@ impl MLAAttention {
             .view([
                 b,
                 t,
-                self.num_heads,
+                self.num_local_heads,
                 self.qk_nope_head_dim + self.head_v_dim,
             ])
             .transpose(1, 2);
 
-        let (k_nope, value_states) =
-            Self::split_with_sizes_2(kv, [self.qk_nope_head_dim, self.head_v_dim], -1);
+        let (k_nope, value_states) = Self::split_with_sizes_2(
+            kv,
+            [
+                self.qk_nope_head_dim,
+                self.head_v_dim,
+            ],
+            -1,
+        );
+
+        let k_pe = k_pe
+            .view([b, t, 1, self.qk_rope_head_dim])
+            // matches the expansion
+            //    query_states[:, :, :, : self.qk_nope_head_dim] = q_nope
+            //    query_states[:, :, :, self.qk_nope_head_dim :] = q_pe
+            .expand(
+                [b, t, self.num_local_heads, self.qk_rope_head_dim],
+                false,
+            )
+            .transpose(1, 2);
 
         let (q_pe, k_pe) = apply_rotary_pos_emb(&q_pe, &k_pe, index_pos, cache);
 
@@ -326,10 +347,11 @@ impl MLAAttention {
         };
 
         // Project back to hidden size
-        let y = y
-            .transpose(1, 2)
-            .contiguous()
-            .reshape([b, t, self.num_heads * self.head_v_dim]);
+        let y = y.transpose(1, 2).contiguous().reshape([
+            b,
+            t,
+            self.num_local_heads * self.head_v_dim,
+        ]);
 
         self.o_proj.forward(&y)
     }
@@ -442,7 +464,6 @@ impl MoEGate {
     fn forward(&self, hidden_states: &Tensor) -> (Tensor, Tensor) {
         let (bsz, seq_len, _) = hidden_states.size3().unwrap();
 
-        // Compute gating scores
         let hidden_states = hidden_states.view([-1, hidden_states.size()[2]]);
         let logits = hidden_states.matmul(&self.weight.transpose(-2, -1));
         let scores = match self.scoring_func {
@@ -450,7 +471,6 @@ impl MoEGate {
             ScoringFunc::Softmax => logits.softmax(-1, Kind::Float),
         };
 
-        // Select top-k experts
         let (topk_idx, topk_weight) = match self.topk_method {
             TopKMethod::NoAuxTC => {
                 // assert not training
@@ -460,11 +480,10 @@ impl MoEGate {
                     scores.view([bsz * seq_len, -1])
                 };
 
-                // Compute group scores and select top groups
                 let group_scores = scores_for_choice
                     .view([bsz * seq_len, self.n_group, -1])
                     .topk(2, -1, true, true)
-                    .0 // Get values from (values, indices) tuple
+                    .0 // values
                     .sum_dim_intlist(-1, false, Kind::Float);
 
                 let group_idx = group_scores.topk(self.topk_group, -1, true, false).1;
@@ -472,7 +491,6 @@ impl MoEGate {
                 let mut group_mask = Tensor::zeros_like(&group_scores);
                 let _ = group_mask.scatter_(-1, &group_idx, &Tensor::ones_like(&group_idx));
 
-                // Create score mask based on selected groups
                 let score_mask = group_mask
                     .unsqueeze(-1)
                     .expand(
@@ -496,7 +514,6 @@ impl MoEGate {
             }
         };
 
-        // Normalize weights if needed
         let topk_weight = if self.top_k > 1 && self.norm_topk_prob {
             let denominator = topk_weight.sum_dim_intlist(-1, true, Kind::Float) + 1e-20;
             topk_weight / denominator
@@ -523,10 +540,12 @@ struct DeepseekMoE {
 
 impl DeepseekMoE {
     fn new(vs: nn::Path, config: &DeepseekConfig, comm: Option<Arc<Communicator>>) -> Self {
-        let (ep_size, ep_rank) = comm
-            .as_ref()
-            .map(|c| (c.size(), c.rank()))
-            .unwrap_or((1, 0));
+        // let (ep_size, ep_rank) = comm
+        //     .as_ref()
+        //     .map(|c| (c.size(), c.rank()))
+        //     .unwrap_or((1, 0));
+        // TODO: EP
+        let (ep_size, ep_rank) = (1, 0);
 
         let experts_per_rank = config.n_routed_experts.unwrap() as i64 / ep_size;
 
