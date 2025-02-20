@@ -1,9 +1,9 @@
 services:
-    nous-base:
-        image: nous-base
-        build:
-            context: ../..
-            dockerfile: ./docker/nous_base.Dockerfile
+  nous-base:
+    image: nous-base
+    build:
+      context: ../..
+      dockerfile: ./docker/nous_base.Dockerfile
 
   nous-base-test:
     image: nous-base-test
@@ -76,7 +76,7 @@ services:
       - "8900:8900"
     networks:
       - psyche-test-network
-    
+
   psyche-test-client-pending:
     image: psyche-client
     profiles: ["join", "all"]
