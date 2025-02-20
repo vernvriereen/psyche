@@ -5,6 +5,15 @@ services:
       context: ../..
       dockerfile: ./docker/nous_base.Dockerfile
 
+  nous-base-test:
+    image: nous-base-test
+    build:
+      context: ../..
+      dockerfile: ./docker/test/nous_base_test.Dockerfile
+    depends_on:
+      nous-base:
+        condition: service_completed_successfully
+
   psyche-run-owner:
     image: psyche-client
     profiles: ["setup", "all"]
@@ -14,7 +23,7 @@ services:
     depends_on:
       psyche-solana-test-validator:
         condition: service_started
-      nous-base:
+      nous-base-test:
         condition: service_completed_successfully
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -33,7 +42,7 @@ services:
     depends_on:
       psyche-run-owner:
         condition: service_completed_successfully
-      nous-base:
+      nous-base-test:
         condition: service_completed_successfully
     deploy:
       replicas: ${NUM_REPLICAS:-1}
@@ -45,11 +54,8 @@ services:
               capabilities: [gpu]
     environment:
       - NVIDIA_DRIVER_CAPABILITIES=all
-      - ID=${ID:-""}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    volumes:
-      - "~/.config/solana/id.json:/usr/local/id.json"
     env_file:
       - "../../config/client/.env.local"
     networks:
@@ -63,7 +69,7 @@ services:
       context: ../..
       dockerfile: ./docker/test/psyche_solana_validator.Dockerfile
     depends_on:
-      nous-base:
+      nous-base-test:
         condition: service_completed_successfully
     ports:
       - "8899:8899"
@@ -71,31 +77,33 @@ services:
     networks:
       - psyche-test-network
     
-    psyche-test-client-pending:
-      image: psyche-client
-      profiles: ["join", "all"]
-      build:
-        context:  ../..
-        dockerfile: ./docker/test/psyche_client.Dockerfile
-      deploy:
-          replicas: ${NUM_REPLICAS:-1}
-          resources:
-              reservations:
-                  devices:
-                      - driver: nvidia
-                        count: all
-                        capabilities: [gpu]
-      environment:
-          - NVIDIA_DRIVER_CAPABILITIES=all
-          - ID=${ID:-""}
-      extra_hosts:
-          - "host.docker.internal:host-gateway"
-      volumes:
-          - "~/.config/solana/id.json:/usr/local/id.json"
-      env_file:
-          - "config/client/.env"
-      networks:
-          - psyche-test-network
+  psyche-test-client-pending:
+    image: psyche-client
+    profiles: ["join", "all"]
+    build:
+      context:  ../..
+      dockerfile: ./docker/test/psyche_client.Dockerfile
+    depends_on:
+      psyche-run-owner:
+        condition: service_completed_successfully
+      nous-base-test:
+        condition: service_completed_successfully
+    deploy:
+        replicas: ${NUM_REPLICAS:-1}
+        resources:
+            reservations:
+                devices:
+                    - driver: nvidia
+                      count: all
+                      capabilities: [gpu]
+    environment:
+        - NVIDIA_DRIVER_CAPABILITIES=all
+    extra_hosts:
+        - "host.docker.internal:host-gateway"
+    env_file:
+        - "config/client/.env.local"
+    networks:
+        - psyche-test-network
 
 networks:
     psyche-test-network:

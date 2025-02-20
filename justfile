@@ -27,7 +27,7 @@ local-testnet +args:
 # run integration tests
 integration-test test_name="":
     if [ "{{test_name}}" = "" ]; then \
-        cargo test --release --test integration_tests -- --nocapture; \
+        cargo test --release --test integration_tests; \
     else \
         cargo test --release --test integration_tests -- --nocapture "{{test_name}}"; \
     fi
@@ -87,6 +87,14 @@ generate_cli_docs:
     cargo run -p psyche-centralized-client print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-client.md
     cargo run -p psyche-centralized-server print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-server.md
     cargo run -p psyche-centralized-local-testnet print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-local-testnet.md
+
+# Setup clients using assigning one available GPU to each of them.
+# There's no way to do this using the replicas from docker-compose file, so we have to do it manually.
+setup_clients num_clients="1":
+    docker build -t nous-base -f docker/nous_base.Dockerfile .
+    docker build -t nous-base-test -f docker/test/nous_base_test.Dockerfile .
+    docker build -t psyche-client -f docker/test/psyche_client.Dockerfile .
+    ./scripts/train-multiple-gpu.sh {{num_clients}}
 
 # Setup the infrastructure for testing locally using Docker.
 setup_test_infra num_clients="1":
