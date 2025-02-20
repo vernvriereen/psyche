@@ -270,12 +270,12 @@ impl MLAAttention {
 
         let q = q.view([b, t, self.num_heads, -1]).transpose(1, 2);
         let (q_nope, q_pe) =
-            Self::split_with_sizes_2(q, &[self.qk_nope_head_dim, self.qk_rope_head_dim], -1);
+            Self::split_with_sizes_2(q, [self.qk_nope_head_dim, self.qk_rope_head_dim], -1);
 
         let compressed_kv = self.kv_a_proj_with_mqa.forward(x);
         let (compressed_kv, k_pe) = Self::split_with_sizes_2(
             compressed_kv,
-            &[self.kv_lora_rank, self.qk_rope_head_dim],
+            [self.kv_lora_rank, self.qk_rope_head_dim],
             -1,
         );
         let k_pe = k_pe
@@ -299,7 +299,7 @@ impl MLAAttention {
             .transpose(1, 2);
 
         let (k_nope, value_states) =
-            Self::split_with_sizes_2(kv, &[self.qk_nope_head_dim, self.head_v_dim], -1);
+            Self::split_with_sizes_2(kv, [self.qk_nope_head_dim, self.head_v_dim], -1);
 
         let (q_pe, k_pe) = apply_rotary_pos_emb(&q_pe, &k_pe, index_pos, cache);
 
@@ -334,7 +334,9 @@ impl MLAAttention {
         self.o_proj.forward(&y)
     }
 }
+
 #[derive(Debug)]
+#[allow(clippy::upper_case_acronyms)]
 struct MLP {
     gate_proj: ColumnParallelLinear,
     up_proj: ColumnParallelLinear,
@@ -474,14 +476,14 @@ impl MoEGate {
                 let score_mask = group_mask
                     .unsqueeze(-1)
                     .expand(
-                        &[
+                        [
                             bsz * seq_len,
                             self.n_group,
                             self.n_routed_experts / self.n_group,
                         ],
                         true,
                     )
-                    .reshape(&[bsz * seq_len, -1]);
+                    .reshape([bsz * seq_len, -1]);
 
                 let tmp_scores = scores_for_choice.masked_fill(&score_mask.eq(0.), 0.);
                 let (_, topk_idx) = tmp_scores.topk(self.top_k, -1, true, false);
@@ -576,7 +578,7 @@ impl DeepseekMoE {
         let hidden_states = hidden_states.view([-1, hidden_states.size()[2]]);
 
         let mut cnts = Tensor::zeros(
-            &[topk_idx.size()[0], self.experts.len() as i64],
+            [topk_idx.size()[0], self.experts.len() as i64],
             (topk_idx.kind(), topk_idx.device()),
         );
         let _ = cnts.scatter_add_(1, &topk_idx, &Tensor::ones_like(&topk_idx));
@@ -653,6 +655,7 @@ impl DeepseekMoE {
 
 #[derive(Debug)]
 enum NetworkBlock {
+    #[allow(clippy::upper_case_acronyms)]
     MLP(MLP),
     MoE(DeepseekMoE),
 }

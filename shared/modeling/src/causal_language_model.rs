@@ -160,7 +160,7 @@ impl<M: LanguageModelForward, C: LanguageModelConfig> CausalLM for CausalLanguag
     }
 
     fn bos_token_id(&self) -> Option<i64> {
-        self.config.bos_token_id().map(|x| x as i64)
+        self.config.bos_token_id()
     }
 
     fn eos_token_ids(&self) -> Option<EosToks> {

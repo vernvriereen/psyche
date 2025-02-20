@@ -163,6 +163,7 @@ impl UseSDPA for Option<AttentionImplementation> {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum AutoConfig {
     Llama(LlamaConfig),
     Dummy(LlamaConfig),
