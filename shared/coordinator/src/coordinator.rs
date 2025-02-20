@@ -232,7 +232,7 @@ pub struct Coordinator<T> {
     #[serde(default)]
     pub last_step_unix_timestamp: u64,
 
-    pub pause_at_epoch_end: SmallBoolean,
+    pub pending_pause: SmallBoolean,
 }
 
 unsafe impl<T: NodeIdentity + Zeroable> Pod for Coordinator<T> {}
@@ -498,7 +498,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     pub fn pause(&mut self) -> std::result::Result<(), CoordinatorError> {
-        self.pause_at_epoch_end = true.into();
+        self.pending_pause = true.into();
         Ok(())
     }
 
@@ -809,6 +809,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 || self.epoch_state.clients.len() < self.config.min_clients as usize
                 || num_witnesses == 0
                 || (num_witnesses < self.config.witness_quorum)
+                || self.pending_pause.is_true()
             {
                 self.start_cooldown(unix_timestamp);
             } else {
@@ -840,9 +841,9 @@ impl<T: NodeIdentity> Coordinator<T> {
             let height = current_round.height;
             self.move_clients_to_exited(height);
 
-            if self.pause_at_epoch_end.is_true() {
+            if self.pending_pause.is_true() {
                 self.change_state(unix_timestamp, RunState::Paused);
-                self.pause_at_epoch_end = false.into();
+                self.pending_pause = false.into();
             } else {
                 self.start_waiting_for_members(unix_timestamp);
             }
