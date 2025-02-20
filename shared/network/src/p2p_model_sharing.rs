@@ -5,7 +5,6 @@ use iroh::{
 };
 use iroh_blobs::ticket::BlobTicket;
 use psyche_core::BoxedFuture;
-use psyche_modeling::Config;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::io::{Cursor, Write};
 use tch::Tensor;
@@ -130,9 +129,9 @@ impl TransmittableModelConfig {
 #[derive(Debug)]
 pub struct SharableModel {
     parameters: Option<HashMap<String, Option<Tensor>>>,
-    model_config: Option<Config>,
+    model_config: Option<String>,
     tokenizer_config: Option<Tokenizer>,
-    pub tx_model_config_response: Option<oneshot::Sender<(Config, Tokenizer)>>,
+    pub tx_model_config_response: Option<oneshot::Sender<(String, Tokenizer)>>,
     tx_params_response: Option<oneshot::Sender<HashMap<String, Tensor>>>,
 }
 
@@ -185,7 +184,7 @@ impl SharableModel {
 
     pub fn update_config(
         &mut self,
-        model_config: Config,
+        model_config: String,
         tokenizer_config: Tokenizer,
     ) -> Result<(), SharableModelError> {
         self.model_config = Some(model_config);
@@ -233,7 +232,7 @@ impl SharableModel {
             .to_string(false)
             .map_err(|err| SharableModelError::ParseConfig(err.to_string()))?;
         let transmittable_config: TransmittableModelConfig =
-            TransmittableModelConfig::new(config.to_string(), raw_tokenizer);
+            TransmittableModelConfig::new(config.clone(), raw_tokenizer);
         Ok(transmittable_config)
     }
 }
@@ -292,7 +291,7 @@ impl SharableModel {
         &mut self,
         transmittable_config: TransmittableModelConfig,
     ) -> Result<(), SharableModelError> {
-        let config: Config = serde_json::from_str(&transmittable_config.config)?;
+        let config = transmittable_config.config;
         let tokenizer: Tokenizer = serde_json::from_str(&transmittable_config.tokenizer)?;
 
         self.model_config = Some(config);
