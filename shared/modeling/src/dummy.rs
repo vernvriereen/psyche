@@ -9,7 +9,7 @@ use tch::{
     Device, Kind, Tensor,
 };
 
-use crate::{CausalLM, ConcreteCausalLM};
+use crate::{CausalLM, ConcreteCausalLM, EosToks};
 
 #[derive(Debug)]
 pub struct DummyModel {
@@ -79,6 +79,10 @@ impl CausalLM for DummyModel {
     }
 
     fn bos_token_id(&self) -> Option<i64> {
+        None
+    }
+
+    fn eos_token_ids(&self) -> Option<EosToks> {
         None
     }
 

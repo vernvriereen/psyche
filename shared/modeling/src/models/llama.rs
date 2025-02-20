@@ -1,21 +1,14 @@
 use crate::{
     auto_config::UseSDPA, default_rope, tensor_parallelism::Communicator, AttentionImplementation,
     AutoConfig, CausalLanguageModel, CausalSelfAttention, ColumnParallelLinear, CommunicatorId,
-    LanguageModelConfig, LanguageModelForward, ModelConfig, ModelLoadError, PretrainedSource,
-    RoPECache, RoPEConfig, RowParallelLinear,
+    EosToks, LanguageModelConfig, LanguageModelForward, ModelConfig, ModelLoadError,
+    PretrainedSource, RMSNorm, RoPECache, RoPEConfig, RowParallelLinear,
 };
 use std::sync::Arc;
 use tch::{
     nn::{self, Module},
     Device, Kind, Tensor,
 };
-
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-#[serde(untagged)]
-pub enum LlamaEosToks {
-    Single(u32),
-    Multiple(Vec<u32>),
-}
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct LlamaConfig {
@@ -28,8 +21,8 @@ pub struct LlamaConfig {
     pub rms_norm_eps: f64,
     #[serde(default = "default_rope")]
     pub rope_theta: f32,
-    pub bos_token_id: Option<u32>,
-    pub eos_token_id: Option<LlamaEosToks>,
+    pub bos_token_id: Option<i64>,
+    pub eos_token_id: Option<EosToks>,
     pub rope_scaling: Option<RoPEConfig>,
     pub max_position_embeddings: usize,
     pub tie_word_embeddings: bool,
@@ -51,35 +44,11 @@ impl LlamaConfig {
             rms_norm_eps: 0.00001,
             rope_theta: 10000.0,
             bos_token_id: Some(1),
-            eos_token_id: Some(crate::LlamaEosToks::Single(1)),
+            eos_token_id: Some(EosToks::Single(1)),
             rope_scaling: None,
             max_position_embeddings: 2048,
             tie_word_embeddings: false,
         }
-    }
-}
-
-#[derive(Debug)]
-struct RmsNorm {
-    weight: Tensor,
-    eps: f64,
-}
-
-impl RmsNorm {
-    fn new(vs: nn::Path, size: i64, eps: f64) -> Self {
-        let weight = vs.ones("weight", &[size]);
-        Self { weight, eps }
-    }
-}
-
-impl Module for RmsNorm {
-    fn forward(&self, xs: &Tensor) -> Tensor {
-        let kind = xs.kind();
-        let xs = xs.to_kind(Kind::Float);
-        let variance = xs.pow_tensor_scalar(2).mean_dim(-1, true, Kind::Float);
-        let xs_normed = xs * (variance + self.eps).rsqrt();
-        let xs_normed = xs_normed.to_kind(kind);
-        &self.weight * xs_normed
     }
 }
 
@@ -134,9 +103,9 @@ impl Module for Mlp {
 
 #[derive(Debug)]
 struct Block {
-    rms_1: RmsNorm,
+    rms_1: RMSNorm,
     attn: CausalSelfAttention,
-    rms_2: RmsNorm,
+    rms_2: RMSNorm,
     mlp: Mlp,
 }
 
@@ -147,7 +116,7 @@ impl Block {
         use_sdpa: bool,
         comm: Option<Arc<Communicator>>,
     ) -> Self {
-        let rms_1 = RmsNorm::new(
+        let rms_1 = RMSNorm::new(
             &vs / "input_layernorm",
             config.hidden_size as i64,
             config.rms_norm_eps,
@@ -163,7 +132,7 @@ impl Block {
             use_sdpa,
             comm.clone(),
         );
-        let rms_2 = RmsNorm::new(
+        let rms_2 = RMSNorm::new(
             &vs / "post_attention_layernorm",
             config.hidden_size as i64,
             config.rms_norm_eps,
@@ -182,7 +151,7 @@ impl Block {
         }
     }
 
-    fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut RoPECache) -> Tensor {
+    fn forward(&self, x: &Tensor, index_pos: i64, cache: &RoPECache) -> Tensor {
         let x = self.attn.forward(&self.rms_1.forward(x), index_pos, cache) + x;
         self.mlp.forward(&self.rms_2.forward(&x)) + x
     }
@@ -192,7 +161,8 @@ impl Block {
 pub struct Llama {
     wte: nn::Embedding,
     blocks: Vec<Block>,
-    ln_f: RmsNorm,
+    ln_f: RMSNorm,
+    rope_cache: RoPECache
 }
 
 impl Llama {
@@ -208,7 +178,7 @@ impl Llama {
             config.hidden_size as i64,
             Default::default(),
         );
-        let ln_f = RmsNorm::new(
+        let ln_f = RMSNorm::new(
             &vs / "model" / "norm",
             config.hidden_size as i64,
             config.rms_norm_eps,
@@ -216,15 +186,23 @@ impl Llama {
         let blocks = (0..config.num_hidden_layers)
             .map(|i| Block::new(&vs / "model" / "layers" / i, config, use_sdpa, comm.clone()))
             .collect::<Vec<_>>();
-        Self { wte, blocks, ln_f }
+        let rope_cache = RoPECache::new(
+            vs.kind(),
+            &config.rope_config(),
+            config.hidden_size() / config.num_attention_heads(),
+            config.rope_theta(),
+            config.max_position_embeddings(),
+            &vs.device(),
+        );
+        Self { wte, blocks, ln_f, rope_cache }
     }
 }
 
-impl LanguageModelForward<RoPECache> for Llama {
-    fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut RoPECache) -> Tensor {
+impl LanguageModelForward for Llama {
+    fn forward(&self, x: &Tensor, index_pos: i64) -> Tensor {
         let mut x = self.wte.forward(x);
         for block in &self.blocks {
-            x = block.forward(&x, index_pos, cache);
+            x = block.forward(&x, index_pos, &self.rope_cache);
         }
         self.ln_f.forward(&x)
     }
@@ -350,7 +328,11 @@ impl LanguageModelConfig for LlamaConfig {
         self.max_position_embeddings
     }
 
-    fn bos_token_id(&self) -> Option<u32> {
+    fn bos_token_id(&self) -> Option<i64> {
         self.bos_token_id
+    }
+
+    fn eos_token_ids(&self) -> Option<EosToks> {
+        self.eos_token_id.clone()
     }
 }

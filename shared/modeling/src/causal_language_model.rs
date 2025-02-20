@@ -1,6 +1,6 @@
 use crate::{
-    AttentionImplementation, CausalLM, Communicator, CommunicatorId, ConcreteCausalLM, ModelConfig,
-    ModelLoadError, PretrainedSource, RoPECache, RoPEConfig,
+    AttentionImplementation, CausalLM, Communicator, CommunicatorId, ConcreteCausalLM, EosToks,
+    ModelConfig, ModelLoadError, PretrainedSource, RoPEConfig,
 };
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -12,8 +12,8 @@ use tch::{
 #[cfg(feature = "parallelism")]
 use tch::CNCCL;
 
-pub trait LanguageModelForward<T>: Send + Debug {
-    fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut T) -> Tensor;
+pub trait LanguageModelForward: Send + Debug {
+    fn forward(&self, x: &Tensor, index_pos: i64) -> Tensor;
 }
 
 pub trait LanguageModelConfig: ModelConfig + Send + Debug + serde::de::DeserializeOwned {
@@ -26,25 +26,22 @@ pub trait LanguageModelConfig: ModelConfig + Send + Debug + serde::de::Deseriali
     fn num_attention_heads(&self) -> usize;
     fn rope_theta(&self) -> f32;
     fn max_position_embeddings(&self) -> usize;
-    fn bos_token_id(&self) -> Option<u32>;
+    fn bos_token_id(&self) -> Option<i64>;
+    fn eos_token_ids(&self) -> Option<EosToks>;
 }
 
 #[derive(Debug)]
-pub struct CausalLanguageModel<M: LanguageModelForward<RoPECache>, C: LanguageModelConfig> {
+pub struct CausalLanguageModel<M: LanguageModelForward, C: LanguageModelConfig> {
     pub model: M,
     pub config: C,
     pub variables: VarStore,
     pub device: Device,
     pub lm_head: nn::Linear,
-    pub cache: RoPECache,
     pub comm: Option<Arc<Communicator>>,
 }
 
 // this is absolutely unsafe, if you use it across threads with NCCL you will have a bad day
-unsafe impl<M: LanguageModelForward<RoPECache>, C: LanguageModelConfig> Send
-    for CausalLanguageModel<M, C>
-{
-}
+unsafe impl<M: LanguageModelForward, C: LanguageModelConfig> Send for CausalLanguageModel<M, C> {}
 
 pub type LanguageModelBuilder<M, C> = fn(
     vs: nn::Path,
@@ -53,7 +50,7 @@ pub type LanguageModelBuilder<M, C> = fn(
     comm: Option<Arc<Communicator>>,
 ) -> Result<M, ModelLoadError>;
 
-impl<M: LanguageModelForward<RoPECache>, C: LanguageModelConfig> CausalLanguageModel<M, C> {
+impl<M: LanguageModelForward, C: LanguageModelConfig> CausalLanguageModel<M, C> {
     pub fn from_builder(
         builder: LanguageModelBuilder<M, C>,
         source: &PretrainedSource<C>,
@@ -114,30 +111,18 @@ impl<M: LanguageModelForward<RoPECache>, C: LanguageModelConfig> CausalLanguageM
 
             (model, lm_head)
         };
-        let cache = RoPECache::new(
-            kind.unwrap_or(Kind::Float),
-            &config.rope_config(),
-            config.hidden_size(),
-            config.num_attention_heads(),
-            config.rope_theta(),
-            config.max_position_embeddings(),
-            &device,
-        );
         Ok(Self {
             model,
             config,
             variables,
             device,
             lm_head,
-            cache,
             comm,
         })
     }
 }
 
-impl<M: LanguageModelForward<RoPECache>, C: LanguageModelConfig> CausalLM
-    for CausalLanguageModel<M, C>
-{
+impl<M: LanguageModelForward, C: LanguageModelConfig> CausalLM for CausalLanguageModel<M, C> {
     fn forward(
         &mut self,
         x: &Tensor,
@@ -145,7 +130,7 @@ impl<M: LanguageModelForward<RoPECache>, C: LanguageModelConfig> CausalLM
         num_logits_to_keep: Option<i64>,
     ) -> (Tensor, Option<Tensor>) {
         let (_, t) = x.size2().unwrap();
-        let mut x = self.model.forward(x, 0, &mut self.cache);
+        let mut x = self.model.forward(x, 0);
         if let Some(num_logits_to_keep) = num_logits_to_keep {
             // Only compute necessary logits, and do not upcast them to float if we are not computing the loss
             x = x.slice(1, t - num_logits_to_keep, t, 1);
@@ -178,12 +163,16 @@ impl<M: LanguageModelForward<RoPECache>, C: LanguageModelConfig> CausalLM
         self.config.bos_token_id().map(|x| x as i64)
     }
 
+    fn eos_token_ids(&self) -> Option<EosToks> {
+        self.config.eos_token_ids()
+    }
+
     fn device(&self) -> Device {
         self.device
     }
 }
 
-impl<M: LanguageModelForward<RoPECache>, C: LanguageModelConfig> ConcreteCausalLM
+impl<M: LanguageModelForward, C: LanguageModelConfig> ConcreteCausalLM
     for CausalLanguageModel<M, C>
 {
     fn variables(&self) -> &VarStore {

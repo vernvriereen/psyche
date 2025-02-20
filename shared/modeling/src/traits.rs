@@ -1,8 +1,13 @@
+use crate::Communicator;
 use std::sync::Arc;
-
 use tch::{nn::VarStore, Device, Tensor};
 
-use crate::Communicator;
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(untagged)]
+pub enum EosToks {
+    Single(i64),
+    Multiple(Vec<i64>),
+}
 
 /// This trait is for any Causal Language Model that can be inferred,
 /// and thus can have backprop run on it.
@@ -16,6 +21,7 @@ pub trait CausalLM: Send + std::fmt::Debug {
         num_logits_to_keep: Option<i64>,
     ) -> (Tensor, Option<Tensor>);
     fn bos_token_id(&self) -> Option<i64>;
+    fn eos_token_ids(&self) -> Option<EosToks>;
     fn device(&self) -> Device;
 }
 
