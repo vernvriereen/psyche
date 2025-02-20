@@ -3,7 +3,7 @@ use anyhow::{Error, Result};
 use psyche_coordinator::model::{self, AnyLearningRateScheduler};
 use psyche_core::{BatchId, CancellableBarrier, LearningRateScheduler};
 use psyche_modeling::{
-    unsharded_cpu_variables, CausalLM, ConcreteCausalLM, Distro, DistroResult,
+    unsharded_cpu_variables, CausalLM, Communicator, Distro, DistroResult, EosToks,
     Fp32GradientAccumulator,
 };
 use std::{
@@ -20,7 +20,7 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
 
-pub type ParallelModels = Vec<Box<dyn ConcreteCausalLM>>;
+pub type ParallelModels = Vec<Box<dyn CausalLM>>;
 
 enum Optimizer {
     AdamW {
@@ -214,7 +214,7 @@ impl Trainer {
     }
 
     fn forward_backward(
-        model: &mut dyn ConcreteCausalLM,
+        model: &mut dyn CausalLM,
         data: &[Vec<i32>],
         barrier: &Arc<CancellableBarrier>,
         loss_scale: Option<f64>,
@@ -241,7 +241,7 @@ impl Trainer {
     }
 
     fn forward(
-        model: &mut dyn ConcreteCausalLM,
+        model: &mut dyn CausalLM,
         data: &Tensor,
         labels: Option<&Tensor>,
         barrier: &Arc<CancellableBarrier>,
@@ -384,7 +384,7 @@ impl Trainer {
     // todo: refactor args into a struct
     #[allow(clippy::too_many_arguments)]
     fn model_thread(
-        mut model: Box<dyn ConcreteCausalLM>,
+        mut model: Box<dyn CausalLM>,
         assignment: mpsc::Receiver<ParallelAssignment>,
         submission: mpsc::Sender<ParallelResult>,
         mut optimizer: Optimizer,
@@ -400,6 +400,7 @@ impl Trainer {
             error!("Incorrect model_thread boot");
             return;
         }
+        model.prepare_for_training();
         let mut grad_accum: Option<Fp32GradientAccumulator> = None;
         loop {
             match assignment.recv() {
@@ -685,9 +686,23 @@ impl CausalLM for Trainer {
         None
     }
 
+    fn eos_token_ids(&self) -> Option<EosToks> {
+        None
+    }
+
     fn device(&self) -> tch::Device {
         self.first_model_device
     }
+
+    fn variables(&self) -> &nn::VarStore {
+        unimplemented!()
+    }
+
+    fn communicator(&self) -> Option<Arc<Communicator>> {
+        unimplemented!()
+    }
+
+    fn prepare_for_training(&mut self) {}
 }
 
 fn optimize_step(

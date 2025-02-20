@@ -1,15 +1,13 @@
+use crate::{CausalLM, EosToks};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
     time::Duration,
 };
-
 use tch::{
     nn::{VarStore, Variables},
     Device, Kind, Tensor,
 };
-
-use crate::{CausalLM, ConcreteCausalLM};
 
 #[derive(Debug)]
 pub struct DummyModel {
@@ -82,12 +80,14 @@ impl CausalLM for DummyModel {
         None
     }
 
+    fn eos_token_ids(&self) -> Option<EosToks> {
+        None
+    }
+
     fn device(&self) -> tch::Device {
         Device::cuda_if_available()
     }
-}
 
-impl ConcreteCausalLM for DummyModel {
     fn variables(&self) -> &tch::nn::VarStore {
         &self.var_store
     }
@@ -95,4 +95,6 @@ impl ConcreteCausalLM for DummyModel {
     fn communicator(&self) -> Option<std::sync::Arc<crate::Communicator>> {
         None
     }
+
+    fn prepare_for_training(&mut self) {}
 }
