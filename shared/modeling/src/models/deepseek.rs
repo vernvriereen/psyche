@@ -132,7 +132,11 @@ impl MLAAttention {
     ) -> Self {
         let tp_size = comm.as_ref().map(|x| x.size()).unwrap_or(1);
         let num_heads = config.num_attention_heads as i64;
-        assert_eq!(num_heads % tp_size, 0, "n_head must be divisible by tp_size");
+        assert_eq!(
+            num_heads % tp_size,
+            0,
+            "n_head must be divisible by tp_size"
+        );
         let num_local_heads = num_heads / tp_size;
         let qk_rope_head_dim = config.qk_rope_head_dim.unwrap() as i64;
         let qk_nope_head_dim = config.qk_nope_head_dim.unwrap() as i64;
@@ -272,22 +276,13 @@ impl MLAAttention {
         };
 
         let q = q.view([b, t, self.num_local_heads, -1]).transpose(1, 2);
-        let (q_nope, q_pe) = Self::split_with_sizes_2(
-            q,
-            [
-                self.qk_nope_head_dim,
-                self.qk_rope_head_dim,
-            ],
-            -1,
-        );
+        let (q_nope, q_pe) =
+            Self::split_with_sizes_2(q, [self.qk_nope_head_dim, self.qk_rope_head_dim], -1);
 
         let compressed_kv = self.kv_a_proj_with_mqa.forward(x);
         let (compressed_kv, k_pe) = Self::split_with_sizes_2(
             compressed_kv,
-            [
-                self.kv_lora_rank,
-                self.qk_rope_head_dim,
-            ],
+            [self.kv_lora_rank, self.qk_rope_head_dim],
             -1,
         );
         let compressed_kv = self.kv_a_layernorm.forward(&compressed_kv);
@@ -302,24 +297,15 @@ impl MLAAttention {
             ])
             .transpose(1, 2);
 
-        let (k_nope, value_states) = Self::split_with_sizes_2(
-            kv,
-            [
-                self.qk_nope_head_dim,
-                self.head_v_dim,
-            ],
-            -1,
-        );
+        let (k_nope, value_states) =
+            Self::split_with_sizes_2(kv, [self.qk_nope_head_dim, self.head_v_dim], -1);
 
         let k_pe = k_pe
             .view([b, t, 1, self.qk_rope_head_dim])
             // matches the expansion
             //    query_states[:, :, :, : self.qk_nope_head_dim] = q_nope
             //    query_states[:, :, :, self.qk_nope_head_dim :] = q_pe
-            .expand(
-                [b, t, self.num_local_heads, self.qk_rope_head_dim],
-                false,
-            )
+            .expand([b, t, self.num_local_heads, self.qk_rope_head_dim], false)
             .transpose(1, 2);
 
         let (q_pe, k_pe) = apply_rotary_pos_emb(&q_pe, &k_pe, index_pos, cache);
@@ -347,11 +333,10 @@ impl MLAAttention {
         };
 
         // Project back to hidden size
-        let y = y.transpose(1, 2).contiguous().reshape([
-            b,
-            t,
-            self.num_local_heads * self.head_v_dim,
-        ]);
+        let y =
+            y.transpose(1, 2)
+                .contiguous()
+                .reshape([b, t, self.num_local_heads * self.head_v_dim]);
 
         self.o_proj.forward(&y)
     }

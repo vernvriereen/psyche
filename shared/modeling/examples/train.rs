@@ -167,14 +167,14 @@ fn train(
                 amsgrad: false,
             };
 
-            Some(adamw.build(&model.variables(), args.learning_rate)?)
+            Some(adamw.build(model.variables(), args.learning_rate)?)
         }
         true => None,
     };
 
     let mut distro = match args.distro {
         true => Some(Distro::new(
-            &model.variables(),
+            model.variables(),
             args.compression_decay,
             args.compression_chunk,
             0.0,
