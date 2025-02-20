@@ -204,7 +204,7 @@ impl Llama {
 }
 
 impl LanguageModelForward for Llama {
-    fn forward(&self, x: &Tensor, index_pos: i64) -> Tensor {
+    fn forward(&self, x: &Tensor, index_pos: i64, _training: bool) -> Tensor {
         let mut x = self.wte.forward(x);
         for block in &self.blocks {
             x = block.forward(&x, index_pos, &self.rope_cache);

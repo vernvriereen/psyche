@@ -140,6 +140,7 @@ fn train(
             .map(|(id, rank, size, _)| (id.clone(), *rank, *size)),
         None,
     )?;
+    model.prepare_for_training();
     let device = model.device();
     let iter = dataset.into_iter().map(|tokens| {
         Ok((

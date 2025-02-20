@@ -400,6 +400,7 @@ impl Trainer {
             error!("Incorrect model_thread boot");
             return;
         }
+        model.prepare_for_training();
         let mut grad_accum: Option<Fp32GradientAccumulator> = None;
         loop {
             match assignment.recv() {
@@ -700,6 +701,8 @@ impl CausalLM for Trainer {
     fn communicator(&self) -> Option<Arc<Communicator>> {
         unimplemented!()
     }
+
+    fn prepare_for_training(&mut self) {}
 }
 
 fn optimize_step(

@@ -789,7 +789,10 @@ impl Deepseek {
 }
 
 impl LanguageModelForward for Deepseek {
-    fn forward(&self, x: &Tensor, index_pos: i64) -> Tensor {
+    fn forward(&self, x: &Tensor, index_pos: i64, training: bool) -> Tensor {
+        if let NetworkBlock::MoE(_) = &self.blocks[0].network {
+            assert!(!training, "DeepseekMoE training not yet supported");
+        }
         let mut hidden_states = self.embed_tokens.forward(x);
 
         for block in &self.blocks {

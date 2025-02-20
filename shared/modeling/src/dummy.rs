@@ -95,4 +95,6 @@ impl CausalLM for DummyModel {
     fn communicator(&self) -> Option<std::sync::Arc<crate::Communicator>> {
         None
     }
+
+    fn prepare_for_training(&mut self) {}
 }

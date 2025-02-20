@@ -35,10 +35,11 @@ pub trait CausalLM: Send + std::fmt::Debug {
     fn device(&self) -> Device;
     fn variables(&self) -> &VarStore;
     fn communicator(&self) -> Option<Arc<Communicator>>;
+    fn prepare_for_training(&mut self);
 }
 
 pub trait LanguageModelForward: Send + Debug {
-    fn forward(&self, x: &Tensor, index_pos: i64) -> Tensor;
+    fn forward(&self, x: &Tensor, index_pos: i64, training: bool) -> Tensor;
 }
 
 pub trait LanguageModelConfig: ModelConfig + Send + Debug + serde::de::DeserializeOwned {
@@ -63,6 +64,7 @@ pub struct CausalLanguageModel<M: LanguageModelForward, C: LanguageModelConfig> 
     pub device: Device,
     pub lm_head: nn::Linear,
     pub comm: Option<Arc<Communicator>>,
+    pub training: bool,
 }
 
 // this is absolutely unsafe, if you use it across threads with NCCL you will have a bad day
@@ -143,6 +145,7 @@ impl<M: LanguageModelForward, C: LanguageModelConfig> CausalLanguageModel<M, C> 
             device,
             lm_head,
             comm,
+            training: false,
         })
     }
 }
@@ -155,7 +158,7 @@ impl<M: LanguageModelForward, C: LanguageModelConfig> CausalLM for CausalLanguag
         num_logits_to_keep: Option<i64>,
     ) -> (Tensor, Option<Tensor>) {
         let (_, t) = x.size2().unwrap();
-        let mut x = self.model.forward(x, 0);
+        let mut x = self.model.forward(x, 0, self.training);
         if let Some(num_logits_to_keep) = num_logits_to_keep {
             // Only compute necessary logits, and do not upcast them to float if we are not computing the loss
             x = x.slice(1, t - num_logits_to_keep, t, 1);
@@ -202,5 +205,9 @@ impl<M: LanguageModelForward, C: LanguageModelConfig> CausalLM for CausalLanguag
 
     fn communicator(&self) -> Option<Arc<Communicator>> {
         self.comm.clone()
+    }
+
+    fn prepare_for_training(&mut self) {
+        self.training = true;
     }
 }
