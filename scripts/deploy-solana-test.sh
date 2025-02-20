@@ -5,7 +5,7 @@ set -e
 WALLET_FILE=${KEY_FILE:-"$HOME/.config/solana/id.json"}
 RPC=${RPC:-"http://127.0.0.1:8899"}
 WS_RPC=${WS_RPC:-"ws://127.0.0.1:8900"}
-RUN_ID=${RUN_ID:-"test2"}
+RUN_ID=${RUN_ID:-"test"}
 CONFIG_FILE=${CONFIG_FILE:-"./config/solana-test/config.toml"}
 
 pushd architectures/decentralized/solana-coordinator
