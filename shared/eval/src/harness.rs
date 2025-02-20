@@ -159,7 +159,7 @@ impl Task {
 }
 
 pub struct EvalTaskOptions<'a> {
-    pub model: &'a mut Box<dyn ConcreteCausalLM>,
+    pub model: &'a mut dyn ConcreteCausalLM,
     pub skip_and_step_by: Option<(usize, usize)>,
     pub live_results: Option<Arc<RunningAverage>>,
     pub cancel: Option<CancellationToken>,

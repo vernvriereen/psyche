@@ -3,8 +3,7 @@ use anyhow::{Error, Result};
 use psyche_coordinator::model::{self, AnyLearningRateScheduler};
 use psyche_core::{BatchId, CancellableBarrier, LearningRateScheduler};
 use psyche_modeling::{
-    unsharded_cpu_variables, CausalLM, ConcreteCausalLM, Distro, DistroResult,
-    Fp32GradientAccumulator,
+    unsharded_cpu_variables, CausalLM, ConcreteCausalLM, Distro, DistroResult, EosToks, Fp32GradientAccumulator
 };
 use std::{
     collections::HashMap,
@@ -685,8 +684,22 @@ impl CausalLM for Trainer {
         None
     }
 
+    fn eos_token_ids(&self) -> Option<EosToks> {
+        None
+    }
+
     fn device(&self) -> tch::Device {
         self.first_model_device
+    }
+}
+
+impl ConcreteCausalLM for Trainer {
+    fn variables(&self) -> &nn::VarStore {
+        unimplemented!()
+    }
+
+    fn communicator(&self) -> Option<Arc<psyche_modeling::Communicator>> {
+        unimplemented!()
     }
 }
 

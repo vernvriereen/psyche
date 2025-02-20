@@ -46,7 +46,7 @@ fn main() -> Result<()> {
         let name = format!("{task}");
         let result = task.prepare(&tokenizer, bos_token_id, None).run(
             EvalTaskOptions {
-                model: &mut model,
+                model: model.as_mut(),
                 skip_and_step_by: None,
                 live_results: None,
                 cancel: None,
