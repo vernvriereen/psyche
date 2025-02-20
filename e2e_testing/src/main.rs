@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + 'static>> {
     }
     println!();
 
-    let state_change_filter = JsonFilter::state_change();
+    let state_change_filter = JsonFilter::StateChange;
 
     let (tx, _rx) = mpsc::channel(100);
     let watcher = DockerWatcher::new(docker.clone(), tx);

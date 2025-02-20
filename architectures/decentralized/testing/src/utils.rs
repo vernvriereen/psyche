@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use anchor_client::{
     solana_sdk::{pubkey::Pubkey, signature::Keypair},
@@ -16,16 +16,21 @@ pub struct SolanaTestClient {
 impl SolanaTestClient {
     pub async fn new(run_id: String) -> Self {
         let key_pair = Arc::new(Keypair::new());
+        // let cluster = Cluster::Localnet;
+        tokio::time::sleep(Duration::from_secs(10)).await;
         let cluster = Cluster::Localnet;
-        let client = anchor_client::Client::new(cluster.clone(), key_pair.clone());
+        // println!("Cluster: {}", cluster);
+        let client = anchor_client::Client::new(cluster, key_pair.clone());
         let program = client.program(psyche_solana_coordinator::ID).unwrap();
         let seeds = &[
             psyche_solana_coordinator::CoordinatorInstance::SEEDS_PREFIX,
             psyche_solana_coordinator::bytes_from_string(&run_id),
         ];
         let (account, _) = Pubkey::find_program_address(seeds, &program.id());
+        println!("ACCOUNT: {}", account);
         let instance: psyche_solana_coordinator::CoordinatorInstance =
             program.account(account).await.unwrap();
+        println!("Instance: {}", account);
         Self {
             program,
             account: instance.account,
