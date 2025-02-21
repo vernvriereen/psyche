@@ -15,7 +15,7 @@ WORKDIR /usr/src/psyche
 
 FROM chef AS planner
 COPY . .
-RUN cargo chef prepare --recipe-path client-recipe.json
+RUN cargo chef prepare --bin psyche-solana-client --recipe-path client-recipe.json
 
 ## Chef builder
 FROM chef AS chef_builder
@@ -30,4 +30,4 @@ COPY --from=planner /usr/src/psyche/client-recipe.json client-recipe.json
 RUN cargo chef cook --release --recipe-path client-recipe.json
 
 COPY . .
-RUN cargo build --release
+RUN cargo build -p psyche-solana-client --release

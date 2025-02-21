@@ -91,8 +91,8 @@ generate_cli_docs:
 # Setup clients using assigning one available GPU to each of them.
 # There's no way to do this using the replicas from docker-compose file, so we have to do it manually.
 setup_clients num_clients="1":
-    docker build -t nous-base -f docker/nous_base.Dockerfile .
-    docker build -t psyche-client -f docker/test/psyche_client.Dockerfile .
+    docker build -t nous-base -f docker/psyche_base.Dockerfile .
+    docker build -t psyche-test-client -f docker/test/psyche_test_client.Dockerfile .
     ./scripts/train-multiple-gpu.sh {{num_clients}}
 
 # Setup the infrastructure for testing locally using Docker.
@@ -101,8 +101,8 @@ setup_test_infra num_clients="1":
 
 # Run a client to start training inside a Docker container.
 run_docker_client:
-    docker build -t nous-base -f docker/nous_base.Dockerfile .
-    docker build -t psyche-client -f docker/test/psyche_client.Dockerfile .
+    docker build -t nous-base -f docker/psyche_base.Dockerfile .
+    docker build -t psyche-client -f docker/test/psyche_test_client.Dockerfile .
     docker run --rm \
       --gpus all \
       -e NVIDIA_DRIVER_CAPABILITIES=all \
