@@ -92,7 +92,6 @@ generate_cli_docs:
 # There's no way to do this using the replicas from docker-compose file, so we have to do it manually.
 setup_clients num_clients="1":
     docker build -t nous-base -f docker/nous_base.Dockerfile .
-    docker build -t nous-base-test -f docker/test/nous_base_test.Dockerfile .
     docker build -t psyche-client -f docker/test/psyche_client.Dockerfile .
     ./scripts/train-multiple-gpu.sh {{num_clients}}
 
@@ -106,18 +105,8 @@ stop_test_infra:
 # Run a client to start training inside a Docker container.
 run_docker_client:
     docker build -t nous-base -f docker/nous_base.Dockerfile .
-    docker build -t psyche-client -f docker/Dockerfile .
-    docker run \
-      --gpus all \
-      -e NVIDIA_DRIVER_CAPABILITIES=all \
-      --add-host host.docker.internal:host-gateway \
-      -v ~/.config/solana/id.json:/usr/local/id.json \
-      --env-file config/client/.env \
-      psyche-client
-
-run_docker_test_client:
-    docker build --target test -t psyche-client .
-    docker run \
+    docker build -t psyche-client -f docker/test/psyche_client.Dockerfile .
+    docker run --rm \
       --gpus all \
       -e NVIDIA_DRIVER_CAPABILITIES=all \
       --add-host host.docker.internal:host-gateway \

@@ -415,7 +415,7 @@ impl WatcherBackend<psyche_solana_coordinator::ClientId> for SolanaBackendRunner
         Ok(())
     }
 
-    async fn send_checkpoint(&mut self, _checkpoint: model::Checkpoint) -> Result<()> {
+    async fn send_checkpoint(&mut self, _checkpoint: model::HubRepo) -> Result<()> {
         unimplemented!();
     }
 }

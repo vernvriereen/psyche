@@ -14,7 +14,7 @@ use psyche_data_provider::{
     DataProvider, DataProviderTcpClient, DummyDataProvider,
 };
 use psyche_modeling::{
-    auto_tokenizer, AutoConfig, AutoTokenizerError, CommunicatorId, ConcreteCausalLM, DummyModel,
+    auto_tokenizer, AutoConfig, AutoTokenizerError, CausalLM, CommunicatorId, DummyModel,
     LlamaConfig, LlamaForCausalLM, ModelConfig, ModelLoadError, PretrainedSource,
 };
 use psyche_network::{AuthenticatableIdentity, BlobTicket};
@@ -107,7 +107,7 @@ pub enum InitRunError {
 }
 
 struct RawLoadedModel {
-    models: Vec<Box<dyn ConcreteCausalLM>>,
+    models: Vec<Box<dyn CausalLM>>,
     tokenizer: Arc<Tokenizer>,
     eval_runner: EvalRunner,
     checkpoint_extra_files: Vec<PathBuf>,
@@ -121,7 +121,7 @@ pub struct RunInitConfigAndIO<T: NodeIdentity, A: AuthenticatableIdentity> {
 
     pub tx_witness: UnboundedSender<Witness>,
     pub tx_health_check: UnboundedSender<HealthChecks>,
-    pub tx_checkpoint: UnboundedSender<model::Checkpoint>,
+    pub tx_checkpoint: UnboundedSender<model::HubRepo>,
     pub tx_model: UnboundedSender<HashMap<String, Tensor>>,
     pub tx_parameters_req: UnboundedSender<(Vec<String>, OneshotModelParameterSender)>,
     pub tx_config: UnboundedSender<(String, String)>,
@@ -196,10 +196,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             .map(|_| {
                                 if let Some(training_delay) = init_config.dummy_training_delay_secs
                                 {
-                                    Box::new(DummyModel::new(training_delay))
-                                        as Box<dyn ConcreteCausalLM>
+                                    Box::new(DummyModel::new(training_delay)) as Box<dyn CausalLM>
                                 } else {
-                                    Box::new(DummyModel::default()) as Box<dyn ConcreteCausalLM>
+                                    Box::new(DummyModel::default()) as Box<dyn CausalLM>
                                 }
                             })
                             .collect(),
@@ -214,7 +213,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                     tx_config.send((config.to_string(), tokenizer)).unwrap();
                     Ok(model)
                 }),
-                model::Checkpoint::Hub(_) | model::Checkpoint::P2P => {
+                model::Checkpoint::Hub(_) | model::Checkpoint::P2P(_) => {
                     let checkpoint = llm.checkpoint;
                     tokio::spawn(async move {
                         let (source, tokenizer, checkpoint_extra_files) = match checkpoint {
@@ -269,7 +268,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                                     checkpoint_extra_files,
                                 )
                             }
-                            model::Checkpoint::P2P => {
+                            model::Checkpoint::P2P(_) => {
                                 let (tx_model_config_response, rx_model_config_response) =
                                     oneshot::channel();
                                 tx_request_model_config
@@ -365,7 +364,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             init_config.eval_task_max_docs,
                             init_config.data_parallelism,
                         );
-                        let mut models: Vec<Box<dyn ConcreteCausalLM>> = Vec::new();
+                        let mut models: Vec<Box<dyn CausalLM>> = Vec::new();
                         for future in futures {
                             let model = future
                                 .await
@@ -436,7 +435,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
             eval_runner,
         } = models.map_err(InitRunError::ModelLoadingThreadCrashed)??;
 
-        let mut tp_models: Vec<Vec<Box<dyn ConcreteCausalLM>>> = Vec::new();
+        let mut tp_models: Vec<Vec<Box<dyn CausalLM>>> = Vec::new();
         for model in models {
             if tp_models
                 .last()

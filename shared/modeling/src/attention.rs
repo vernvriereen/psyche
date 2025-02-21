@@ -79,7 +79,7 @@ impl CausalSelfAttention {
         }
     }
 
-    pub fn forward(&self, x: &Tensor, index_pos: i64, cache: &mut RoPECache) -> Tensor {
+    pub fn forward(&self, x: &Tensor, index_pos: i64, cache: &RoPECache) -> Tensor {
         let (b, t, c) = x.size3().unwrap();
         assert_eq!(c, self.n_embd, "Input hidden size mismatch");
         let kind = x.kind();

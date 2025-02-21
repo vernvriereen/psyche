@@ -1,6 +1,6 @@
 use crate::{
     safetensor_utils::load_safetensors_into_variables, tensor_parallelism::tensor_shard,
-    LlamaConfig, LoadSafetensorsError,
+    DeepseekConfig, LlamaConfig, LoadSafetensorsError,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -163,9 +163,11 @@ impl UseSDPA for Option<AttentionImplementation> {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum AutoConfig {
     Llama(LlamaConfig),
     Dummy(LlamaConfig),
+    Deepseek(DeepseekConfig),
 }
 
 impl serde::Serialize for AutoConfig {
@@ -174,8 +176,9 @@ impl serde::Serialize for AutoConfig {
         S: serde::Serializer,
     {
         match self {
-            AutoConfig::Llama(llama_config) => llama_config.serialize(serializer),
-            AutoConfig::Dummy(llama_config) => llama_config.serialize(serializer),
+            AutoConfig::Llama(config) => config.serialize(serializer),
+            AutoConfig::Dummy(config) => config.serialize(serializer),
+            AutoConfig::Deepseek(config) => config.serialize(serializer),
         }
     }
 }
@@ -183,8 +186,9 @@ impl serde::Serialize for AutoConfig {
 impl ModelConfig for AutoConfig {
     fn get_parameter_names(&self) -> Vec<String> {
         match self {
-            AutoConfig::Llama(llama_config) => llama_config.get_parameter_names(),
-            AutoConfig::Dummy(llama_config) => llama_config.get_parameter_names(),
+            AutoConfig::Llama(config) => config.get_parameter_names(),
+            AutoConfig::Dummy(config) => config.get_parameter_names(),
+            AutoConfig::Deepseek(config) => config.get_parameter_names(),
         }
     }
 }

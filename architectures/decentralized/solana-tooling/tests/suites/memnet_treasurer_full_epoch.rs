@@ -1,0 +1,338 @@
+use bytemuck::Zeroable;
+use psyche_coordinator::model::Checkpoint;
+use psyche_coordinator::model::ConstantLR;
+use psyche_coordinator::model::LLMArchitecture;
+use psyche_coordinator::model::LLMTrainingDataLocation;
+use psyche_coordinator::model::LLMTrainingDataType;
+use psyche_coordinator::model::LearningRateSchedule;
+use psyche_coordinator::model::Model;
+use psyche_coordinator::model::Optimizer;
+use psyche_coordinator::model::LLM;
+use psyche_coordinator::CoordinatorConfig;
+use psyche_coordinator::WitnessProof;
+use psyche_core::FixedVec;
+use psyche_solana_coordinator::instruction::Witness;
+use psyche_solana_coordinator::ClientId;
+use psyche_solana_coordinator::CoordinatorAccount;
+use psyche_solana_tooling::create_memnet_endpoint::create_memnet_endpoint;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_join_run;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_tick;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_witness;
+use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_participant_claim;
+use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_participant_create;
+use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_run_create;
+use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_run_top_up;
+use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_run_update;
+use psyche_solana_treasurer::logic::RunUpdateParams;
+use solana_sdk::signature::Keypair;
+use solana_sdk::signer::Signer;
+
+#[tokio::test]
+pub async fn run() {
+    let mut endpoint = create_memnet_endpoint().await;
+
+    // Create payer key and fund it
+    let payer = Keypair::new();
+    endpoint.process_airdrop(&payer.pubkey(), 10_000_000_000).await.unwrap();
+
+    // Constants
+    let run_id = "Hello world!";
+    let authority = Keypair::new();
+    let client = Keypair::new();
+    let ticker = Keypair::new();
+    let earned_point_per_epoch = 33;
+    let collateral_amount_per_earned_point = 42;
+
+    // Prepare the collateral mint
+    let collateral_mint_authority = Keypair::new();
+    let collateral_mint = endpoint
+        .process_spl_token_mint_new(
+            &payer,
+            &collateral_mint_authority.pubkey(),
+            None,
+            6,
+        )
+        .await
+        .unwrap();
+
+    // create the empty pre-allocated coordinator_account
+    let coordinator_account = endpoint
+        .process_system_new_exempt(
+            &payer,
+            CoordinatorAccount::space_with_discriminator(),
+            &psyche_solana_coordinator::ID,
+        )
+        .await
+        .unwrap();
+
+    // Create a run (it should create the underlying coordinator)
+    process_treasurer_run_create(
+        &mut endpoint,
+        &payer,
+        &authority,
+        &collateral_mint,
+        &coordinator_account,
+        run_id,
+        collateral_amount_per_earned_point,
+    )
+    .await
+    .unwrap();
+
+    // Give the authority some collateral
+    let authority_collateral = endpoint
+        .process_spl_associated_token_account_get_or_init(
+            &payer,
+            &authority.pubkey(),
+            &collateral_mint,
+        )
+        .await
+        .unwrap();
+    endpoint
+        .process_spl_token_mint_to(
+            &payer,
+            &collateral_mint,
+            &collateral_mint_authority,
+            &authority_collateral,
+            10_000_000,
+        )
+        .await
+        .unwrap();
+
+    // Fund the run with some newly minted collateral
+    process_treasurer_run_top_up(
+        &mut endpoint,
+        &payer,
+        &authority,
+        &authority_collateral,
+        &collateral_mint,
+        run_id,
+        5_000_000,
+    )
+    .await
+    .unwrap();
+
+    // Create the client ATA
+    let client_collateral = endpoint
+        .process_spl_associated_token_account_get_or_init(
+            &payer,
+            &client.pubkey(),
+            &collateral_mint,
+        )
+        .await
+        .unwrap();
+
+    // Create the participation account
+    process_treasurer_participant_create(
+        &mut endpoint,
+        &payer,
+        &client,
+        run_id,
+    )
+    .await
+    .unwrap();
+
+    // Try claiming nothing, it should work since we earned nothing
+    process_treasurer_participant_claim(
+        &mut endpoint,
+        &payer,
+        &client,
+        &client_collateral,
+        &collateral_mint,
+        &coordinator_account,
+        run_id,
+        0,
+    )
+    .await
+    .unwrap();
+
+    // Claiming something while we havent earned anything should fail
+    process_treasurer_participant_claim(
+        &mut endpoint,
+        &payer,
+        &client,
+        &client_collateral,
+        &collateral_mint,
+        &coordinator_account,
+        run_id,
+        1,
+    )
+    .await
+    .unwrap_err();
+
+    // We should be able to to-up run treasury at any time
+    process_treasurer_run_top_up(
+        &mut endpoint,
+        &payer,
+        &authority,
+        &authority_collateral,
+        &collateral_mint,
+        run_id,
+        5_000_000,
+    )
+    .await
+    .unwrap();
+
+    // Generate the client key
+    let client_id = ClientId::new(client.pubkey(), Default::default());
+
+    // Prepare the coordinator's config
+    process_treasurer_run_update(
+        &mut endpoint,
+        &payer,
+        &authority,
+        &coordinator_account,
+        run_id,
+        RunUpdateParams {
+            whitelist_clients: Some(vec![client_id.signer]),
+            config: Some(CoordinatorConfig::<ClientId> {
+                warmup_time: 1,
+                cooldown_time: 1,
+                max_round_train_time: 3,
+                round_witness_time: 1,
+                min_clients: 1,
+                batches_per_round: 1,
+                data_indicies_per_batch: 1,
+                verification_percent: 0,
+                witness_nodes: 0,
+                witness_quorum: 0,
+                rounds_per_epoch: 1,
+                total_steps: 100,
+                overlapped: false.into(),
+                checkpointers: FixedVec::zeroed(),
+            }),
+            model: Some(Model::LLM(LLM {
+                architecture: LLMArchitecture::HfLlama,
+                checkpoint: Checkpoint::Ephemeral,
+                max_seq_len: 4096,
+                data_type: LLMTrainingDataType::Pretraining,
+                data_location: LLMTrainingDataLocation::Local(
+                    Zeroable::zeroed(),
+                ),
+                lr_schedule: LearningRateSchedule::Constant(
+                    ConstantLR::default(),
+                ),
+                optimizer: Optimizer::Distro {
+                    clip_grad_norm: None,
+                    compression_decay: 1.0,
+                    compression_decay_warmup_steps: 0,
+                    compression_topk: 1,
+                    compression_topk_startup: 0,
+                    compression_topk_startup_steps: 0,
+                    compression_chunk: 1,
+                    quantize_1bit: false,
+                },
+            })),
+            epoch_earning_rate: Some(earned_point_per_epoch),
+            epoch_slashing_rate: None,
+            paused: Some(false),
+        },
+    )
+    .await
+    .unwrap();
+
+    // The client can now join the run
+    process_coordinator_join_run(
+        &mut endpoint,
+        &payer,
+        &client,
+        &coordinator_account,
+        run_id,
+        client_id,
+    )
+    .await
+    .unwrap();
+
+    // Tick to witness
+    endpoint.forward_clock_unix_timestamp(10).await.unwrap();
+    process_coordinator_tick(
+        &mut endpoint,
+        &payer,
+        &ticker,
+        &coordinator_account,
+        run_id,
+    )
+    .await
+    .unwrap();
+
+    // Witness
+    process_coordinator_witness(
+        &mut endpoint,
+        &payer,
+        &client,
+        &coordinator_account,
+        run_id,
+        &Witness {
+            proof: WitnessProof { witness: true, position: 0, index: 0 },
+            participant_bloom: Default::default(),
+            order_bloom: Default::default(),
+        },
+    )
+    .await
+    .unwrap();
+
+    // Tick from witness to cooldown
+    endpoint.forward_clock_unix_timestamp(10).await.unwrap();
+    process_coordinator_tick(
+        &mut endpoint,
+        &payer,
+        &ticker,
+        &coordinator_account,
+        run_id,
+    )
+    .await
+    .unwrap();
+
+    // Not yet earned the credit, claiming anything should fail
+    process_treasurer_participant_claim(
+        &mut endpoint,
+        &payer,
+        &client,
+        &client_collateral,
+        &collateral_mint,
+        &coordinator_account,
+        run_id,
+        1,
+    )
+    .await
+    .unwrap_err();
+
+    // Tick from cooldown to new epoch (should increment the earned)
+    endpoint.forward_clock_unix_timestamp(10).await.unwrap();
+    process_coordinator_tick(
+        &mut endpoint,
+        &payer,
+        &ticker,
+        &coordinator_account,
+        run_id,
+    )
+    .await
+    .unwrap();
+
+    // Now that a new epoch has started, we can claim our earned point
+    process_treasurer_participant_claim(
+        &mut endpoint,
+        &payer,
+        &client,
+        &client_collateral,
+        &collateral_mint,
+        &coordinator_account,
+        run_id,
+        earned_point_per_epoch,
+    )
+    .await
+    .unwrap();
+
+    // Can't claim anything past the earned points
+    process_treasurer_participant_claim(
+        &mut endpoint,
+        &payer,
+        &client,
+        &client_collateral,
+        &collateral_mint,
+        &coordinator_account,
+        run_id,
+        1,
+    )
+    .await
+    .unwrap_err();
+}

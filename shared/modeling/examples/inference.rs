@@ -2,8 +2,8 @@ use anyhow::{Error, Result};
 use clap::Parser;
 use psyche_data_provider::download_model_repo_sync;
 use psyche_modeling::{
-    auto_tokenizer, CausalLM, CommunicatorId, LlamaEosToks, LlamaForCausalLM, LogitsProcessor,
-    PretrainedSource, Sampling, TokenOutputStream,
+    auto_model_for_causal_lm_from_pretrained, auto_tokenizer, CommunicatorId, EosToks,
+    LogitsProcessor, Sampling, TokenOutputStream,
 };
 use std::{
     io::Write,
@@ -103,17 +103,18 @@ fn inference(
         .as_ref()
         .map(|(_, rank, _, _)| *rank)
         .unwrap_or(0);
-    let mut model: LlamaForCausalLM = LlamaForCausalLM::from_pretrained(
-        &PretrainedSource::RepoFiles(repo_files),
+    let device = Device::Cuda(rank);
+    let mut model = auto_model_for_causal_lm_from_pretrained(
+        repo_files,
         Some(Kind::BFloat16),
         None,
-        tensor_parallelism.as_ref().map(|_| Device::Cuda(rank)),
+        tensor_parallelism.as_ref().map(|_| device),
         tensor_parallelism
             .as_ref()
             .map(|(id, rank, size, _)| (id.clone(), *rank, *size)),
         None,
     )?;
-    let eos_token_id = model.config.eos_token_id.clone();
+    let eos_token_id = model.eos_token_ids();
     let mut logits_processor = {
         let temperature = args.temperature;
         let sampling = if temperature <= 0. {
@@ -136,7 +137,7 @@ fn inference(
                 break;
             }
         }
-        let input = Tensor::from_slice(&tokens).to(model.device).unsqueeze(0);
+        let input = Tensor::from_slice(&tokens).to(device).unsqueeze(0);
         if let Some((_, _, _, barrier)) = tensor_parallelism.as_ref() {
             barrier.wait();
         }
@@ -150,7 +151,7 @@ fn inference(
         tokens.push(next_token as i64);
 
         match eos_token_id {
-            Some(LlamaEosToks::Single(eos_tok_id)) if next_token == eos_tok_id => {
+            Some(EosToks::Single(eos_tok_id)) if next_token as i64 == eos_tok_id => {
                 if rank == 0 {
                     println!(
                         "{}",
@@ -159,7 +160,7 @@ fn inference(
                 }
                 break;
             }
-            Some(LlamaEosToks::Multiple(ref eos_ids)) if eos_ids.contains(&next_token) => {
+            Some(EosToks::Multiple(ref eos_ids)) if eos_ids.contains(&(next_token as i64)) => {
                 if rank == 0 {
                     println!(
                         "{}",

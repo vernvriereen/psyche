@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use psyche_data_provider::download_model_repo_sync;
 use psyche_eval::{tasktype_from_name, EvalTaskOptions, Task, ALL_TASK_NAMES};
-use psyche_modeling::{auto_tokenizer, CausalLM, LlamaForCausalLM, PretrainedSource};
+use psyche_modeling::{auto_model_for_causal_lm_from_pretrained, auto_tokenizer};
 use tch::{Device, Kind};
 
 #[derive(Parser, Debug, Clone)]
@@ -33,19 +33,20 @@ fn main() -> Result<()> {
     let tasks = tasks?;
     let repo = download_model_repo_sync(&args.model, None, None, None, true)?;
     let tokenizer = auto_tokenizer(&repo)?;
-    let mut model = LlamaForCausalLM::from_pretrained(
-        &PretrainedSource::RepoFiles(repo),
+    let mut model = auto_model_for_causal_lm_from_pretrained(
+        repo,
         Some(Kind::BFloat16),
         None,
-        Some(Device::Cuda(0)),
+        Some(Device::cuda_if_available()),
         None,
         None,
     )?;
+    let bos_token_id = model.bos_token_id();
     for task in tasks {
         let name = format!("{task}");
-        let result = task.prepare(&tokenizer, model.bos_token_id(), None).run(
+        let result = task.prepare(&tokenizer, bos_token_id, None).run(
             EvalTaskOptions {
-                model: &mut model,
+                model: model.as_mut(),
                 skip_and_step_by: None,
                 live_results: None,
                 cancel: None,
