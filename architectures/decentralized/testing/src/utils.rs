@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use anchor_client::{
     solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Keypair},
@@ -29,10 +29,8 @@ impl SolanaTestClient {
             psyche_solana_coordinator::bytes_from_string(&run_id),
         ];
         let (account, _) = Pubkey::find_program_address(seeds, &program.id());
-        println!("ACCOUNT: {}", account);
         let instance: psyche_solana_coordinator::CoordinatorInstance =
             program.account(account).await.unwrap();
-        println!("Instance: {}", account);
         Self {
             program,
             account: instance.account,

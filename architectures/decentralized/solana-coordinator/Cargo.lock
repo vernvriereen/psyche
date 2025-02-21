@@ -3155,6 +3155,7 @@ dependencies = [
  "psyche-core",
  "serde",
  "serde_with",
+ "tracing",
 ]
 
 [[package]]

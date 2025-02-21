@@ -506,7 +506,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                         .push_round_stats(&round_losses, round_duration, optim_stats);
                 info!(
                     client_id = %self.identity,
-                    epoch = %state.progress.epoch,
+                    epoch = state.progress.epoch,
                     step = state.progress.step,
                     loss = loss,
                     "client_loss",

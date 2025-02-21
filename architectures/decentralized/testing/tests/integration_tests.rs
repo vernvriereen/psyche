@@ -1,78 +1,68 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use bollard::Docker;
 use e2e_testing::{
     docker_setup::e2e_testing_setup,
     docker_watcher::{DockerWatcher, JsonFilter, Response},
 };
+use psyche_coordinator::RunState;
 use psyche_decentralized_testing::utils::SolanaTestClient;
 use tokio::sync::mpsc;
 
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
-async fn get_state() {
-    let run_id = String::from("test");
-    let client = SolanaTestClient::new(run_id).await;
-    println!("state: {:?}", client.get_run_state().await);
-}
-
-#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn happy_path() {
+    // set test variables
     let run_id = "test".to_string();
+    // epochs the test will run
+    let num_of_epochs_to_run = 3;
+    let mut current_epoch = -1;
+    let mut last_epoch_loss = f64::MAX;
+
+    // initialize a Solana run with 1 client
     let _cleanup = e2e_testing_setup(1);
 
+    // initialize DockerWatcher
     let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
-    let state_change_filter = JsonFilter::StateChange;
-    let loss_filter = JsonFilter::Loss;
-
     let (tx, mut rx) = mpsc::channel(100);
     let watcher = DockerWatcher::new(docker.clone(), tx);
-    let handle_1 = watcher
-        .monitor_container("test-psyche-test-client-1", state_change_filter)
+    let _monitor_client_1 = watcher
+        .monitor_container(
+            "test-psyche-test-client-1",
+            vec![JsonFilter::StateChange, JsonFilter::Loss],
+        )
         .unwrap();
-    // let handle_2 = watcher
-    //     .monitor_container("test-psyche-test-client-1", loss_filter)
-    //     .unwrap();
-    // let handle_3 = watcher
-    //     .monitor_container("test-psyche-test-client-2", state_change_filter)
-    //     .unwrap();
 
-    let solana_network = SolanaTestClient::new(run_id).await;
-
-    // let client_1 = solana_network.get_clients().await[0].id.to_string();
-    // let client_2 = solana_network.get_clients().await[1].id.to_string();
-    // while solana_network.get_clients_len().await < 2 {
-    //     println!(
-    //         "Waiting for members, actual: {}",
-    //         solana_network.get_clients_len().await
-    //     );
-    //     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-    // }
+    // initialize solana client to query the coordinator state
+    let solana_client = SolanaTestClient::new(run_id).await;
 
     while let Some(response) = rx.recv().await {
         match response {
-            Response::StateChange(timestamp, client_1, old_state, new_state) => {
-                let coordinator_state = solana_network.get_run_state().await;
-                // assert_eq!(new_state, coordinator_state.to_string());
-                println!();
+            Response::StateChange(timestamp, _client_1, old_state, new_state) => {
+                let coordinator_state = solana_client.get_run_state().await;
                 println!(
-                    "[LOG] NEW STATE: {}, old_state: {}, timestamp: {}",
+                    "client: new_state: {}, old_state: {}, timestamp: {}",
                     new_state, old_state, timestamp
                 );
-                println!("COORDINATOR STATE: {}", coordinator_state);
+                if new_state != RunState::WaitingForMembers.to_string() {
+                    assert_eq!(coordinator_state.to_string(), new_state.to_string());
+                }
             }
-            Response::StateChange(timestamp, client_2, old_state, new_state) => {
-                let coordinator_state = solana_network.get_run_state().await;
-                println!("COORDINATOR STATE: {}", coordinator_state);
-                // assert_eq!(new_state, coordinator_state.to_string());
-            }
-            // let response = Response::Loss(client_id, epoch, step, loss);
-            Response::Loss(client_1, epoch, step, loss) => {
-                println!("Client: {:?}, Loss: {}", client_1, loss);
-            }
-            Response::Loss(client_2, epoch, step, loss) => {
-                println!("Client: {:?}, Loss: {}", client_2, loss);
+
+            Response::Loss(client, epoch, step, loss) => {
+                println!(
+                    "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                    client, epoch, step, loss
+                );
+                // assert that the loss decreases each epoch
+                if epoch as i64 > current_epoch {
+                    current_epoch = epoch as i64;
+                    assert!(loss < last_epoch_loss);
+                    last_epoch_loss = loss;
+                    if epoch == num_of_epochs_to_run {
+                        break;
+                    }
+                }
             }
         }
-        // println!("{:?}", response)
     }
 }

@@ -14,16 +14,6 @@ pub enum StateFilter {
     RoundWitness,
 }
 
-impl StateFilter {
-    fn compare_state(&self, state: &str) -> bool {
-        match self {
-            Self::Warmup => "Warmup" == state,
-            Self::RoundTrain => "RoundTrain" == state,
-            Self::RoundWitness => "RoundWitness" == state,
-        }
-    }
-}
-
 #[derive(Clone, Copy)]
 pub enum JsonFilter {
     StateChange,
@@ -62,7 +52,7 @@ impl DockerWatcher {
     pub fn monitor_container(
         &self,
         name: &str,
-        filter: JsonFilter,
+        filters: Vec<JsonFilter>,
     ) -> Result<JoinHandle<Result<(), DockerWatcherError>>, DockerWatcherError> {
         let Ok(duration) = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) else {
             return Err(DockerWatcherError::UnixTimestampError);
@@ -95,55 +85,57 @@ impl DockerWatcher {
                     continue;
                 };
 
-                match filter {
-                    JsonFilter::StateChange => {
-                        let Some(old_state) = parsed_log.get("old_state").and_then(|v| v.as_str())
-                        else {
-                            continue;
-                        };
+                for filter in &filters {
+                    match filter {
+                        JsonFilter::StateChange => {
+                            let Some(old_state) =
+                                parsed_log.get("old_state").and_then(|v| v.as_str())
+                            else {
+                                continue;
+                            };
 
-                        // unwraping here, it should not be possible for a log to have new_state
-                        // but no old_state
-                        let new_state = parsed_log
-                            .get("new_state")
-                            .and_then(|v| v.as_str())
-                            .unwrap();
+                            // unwraping here, it should not be possible for a log to have new_state
+                            // but no old_state
+                            let new_state = parsed_log
+                                .get("new_state")
+                                .and_then(|v| v.as_str())
+                                .unwrap();
 
-                        if old_state != new_state {
+                            if old_state != new_state {
+                                let client_id = parsed_log
+                                    .get("client_id")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap();
+
+                                let timestamp = parsed_log
+                                    .get("timestamp")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap();
+
+                                let response = Response::StateChange(
+                                    timestamp.to_string(),
+                                    client_id.to_string(),
+                                    old_state.to_string(),
+                                    new_state.to_string(),
+                                );
+
+                                log_sender.send(response).await.unwrap()
+                            }
+                        }
+                        JsonFilter::Loss => {
+                            let Some(loss) = parsed_log.get("loss").and_then(|v| v.as_f64()) else {
+                                continue;
+                            };
                             let client_id = parsed_log
                                 .get("client_id")
                                 .and_then(|v| v.as_str())
-                                .unwrap();
-
-                            let timestamp = parsed_log
-                                .get("timestamp")
-                                .and_then(|v| v.as_str())
-                                .unwrap();
-
-                            let response = Response::StateChange(
-                                timestamp.to_string(),
-                                client_id.to_string(),
-                                old_state.to_string(),
-                                new_state.to_string(),
-                            );
-
+                                .unwrap()
+                                .to_string();
+                            let epoch = parsed_log.get("epoch").and_then(|v| v.as_u64()).unwrap();
+                            let step = parsed_log.get("step").and_then(|v| v.as_u64()).unwrap();
+                            let response = Response::Loss(client_id, epoch, step, loss);
                             log_sender.send(response).await.unwrap()
                         }
-                    }
-                    JsonFilter::Loss => {
-                        let Some(loss) = parsed_log.get("loss").and_then(|v| v.as_f64()) else {
-                            continue;
-                        };
-
-                        let client_id = parsed_log
-                            .get("client_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap()
-                            .to_string();
-                        let epoch = parsed_log.get("epoch").and_then(|v| v.as_u64()).unwrap();
-                        let step = parsed_log.get("step").and_then(|v| v.as_u64()).unwrap();
-                        let response = Response::Loss(client_id, epoch, step, loss);
-                        log_sender.send(response).await.unwrap()
                     }
                 }
             }
