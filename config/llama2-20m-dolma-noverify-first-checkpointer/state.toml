@@ -1,12 +1,12 @@
 run_id = "llama2-20m-dolma"
 run_state = "WaitingForMembers"
 [config]
-warmup_time = 30
+warmup_time = 15
 cooldown_time = 5
 checkpointers = [
     "4cb5abf6ad79fbf5abbccafcc269d85cd2651ed4b885b5869f241aedf0a5ba29",
 ] # secret key "0000000000000000000000000000000000000000000000000000000000000001"
-rounds_per_epoch = 20
+rounds_per_epoch = 4
 max_round_train_time = 30
 round_witness_time = 2
 round_apply_time = 4
