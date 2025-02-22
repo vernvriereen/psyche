@@ -102,7 +102,7 @@ pub enum InitRunError {
     #[error("wandb failed to create run: {0}")]
     WandbLoad(#[from] wandb::ApiError),
 
-    #[error("could not parse config")]
+    #[error("could not parse config: {0}")]
     FailedToParseConfig(#[from] serde_json::Error),
 }
 
@@ -369,8 +369,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             let model = future
                                 .await
                                 .map_err(InitRunError::ModelLoadingThreadCrashed)??;
-                            let config =
-                                serde_json::to_string(&source.serialize_config()?).unwrap();
+                            let config = source.serialize_config()?;
                             debug!("Config uploaded: {}", config);
                             let tokenizer = tokenizer.to_string(false).unwrap();
                             tx_config.send((config, tokenizer)).unwrap();
