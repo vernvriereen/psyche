@@ -817,10 +817,14 @@ impl<T: NodeIdentity> Coordinator<T> {
             let num_witnesses = current_round.witnesses.len() as u16;
             self.move_clients_to_exited(height);
 
+            if height == self.config.rounds_per_epoch - 1 {
+                self.start_cooldown(unix_timestamp);
+                return Ok(TickResult::Ticked);
+            }
+
             // if we finish an epoch or some clients disconnect and we don't
             // reach the minimum number of clients we change state to cooldown.
-            if height == self.config.rounds_per_epoch - 1
-                || self.epoch_state.clients.len() < self.config.min_clients as usize
+            if self.epoch_state.clients.len() < self.config.min_clients as usize
                 || num_witnesses == 0
                 || (num_witnesses < self.config.witness_quorum)
                 || self.pending_pause.is_true()

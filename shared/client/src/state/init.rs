@@ -377,10 +377,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             models.push(Box::new(model));
                         }
                         info!(
-                            "Loaded model onto {} gpu(s) (dp={},tp={})",
+                            "Loaded model onto {} gpu(s) (dp={},tp={}) - Checkpoint: {}",
                             init_config.data_parallelism * init_config.tensor_parallelism,
                             init_config.data_parallelism,
-                            init_config.tensor_parallelism
+                            init_config.tensor_parallelism,
+                            llm.checkpoint,
                         );
 
                         Ok(RawLoadedModel {
