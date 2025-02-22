@@ -5,7 +5,10 @@ use crate::{
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
 
-use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
+use anchor_lang::{
+    prelude::{borsh, msg},
+    AnchorDeserialize, AnchorSerialize, InitSpace,
+};
 use bytemuck::{Pod, Zeroable};
 use psyche_core::{
     serde_deserialize_string, serde_serialize_string, sha256, BatchId, Bloom, FixedVec,
@@ -497,6 +500,17 @@ impl<T: NodeIdentity> Coordinator<T> {
         Err(CoordinatorError::InvalidWithdraw)
     }
 
+    pub fn withdraw_all(&mut self) -> std::result::Result<(), CoordinatorError> {
+        if self.epoch_state.clients.is_empty() {
+            return Err(CoordinatorError::InvalidWithdraw);
+        }
+        let clients_max_index = self.epoch_state.clients.len() - 1;
+        for client_index in 0..=clients_max_index {
+            self.withdraw(client_index as u64)?;
+        }
+        Ok(())
+    }
+
     pub fn pause(&mut self) -> std::result::Result<(), CoordinatorError> {
         self.pending_pause = true.into();
         Ok(())
@@ -811,6 +825,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 || (num_witnesses < self.config.witness_quorum)
                 || self.pending_pause.is_true()
             {
+                self.withdraw_all()?;
                 self.start_cooldown(unix_timestamp);
             } else {
                 self.start_round_train(unix_timestamp, random_seed, 0);
@@ -840,7 +855,6 @@ impl<T: NodeIdentity> Coordinator<T> {
             let current_round = self.current_round_unchecked();
             let height = current_round.height;
             self.move_clients_to_exited(height);
-
             if self.pending_pause.is_true() {
                 self.change_state(unix_timestamp, RunState::Paused);
                 self.pending_pause = false.into();
