@@ -102,7 +102,7 @@ pub enum InitRunError {
     #[error("wandb failed to create run: {0}")]
     WandbLoad(#[from] wandb::ApiError),
 
-    #[error("could not parse config")]
+    #[error("could not parse config: {0}")]
     FailedToParseConfig(#[from] serde_json::Error),
 }
 
@@ -271,14 +271,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             model::Checkpoint::P2P(_) => {
                                 let (tx_model_config_response, rx_model_config_response) =
                                     oneshot::channel();
+                                info!("Checkpoint is p2p, requesting model config over network");
+
                                 tx_request_model_config
                                     .send(tx_model_config_response)
                                     .unwrap();
 
                                 let (model_config, tokenizer) =
                                     rx_model_config_response.await.unwrap();
-                                let tokenizer = Arc::new(tokenizer);
-
                                 debug!("Got p2p info, model_config: {}", model_config);
 
                                 let model_config = match llm.architecture {
@@ -292,6 +292,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                                     },
                                 };
                                 let parameter_names = model_config.get_parameter_names();
+                                info!(
+                                    "Requesting {} parameters over p2p network",
+                                    parameter_names.len()
+                                );
 
                                 let (tx_params_response, rx_params_response) = oneshot::channel();
                                 tx_parameters_req
@@ -305,7 +309,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                                         model_config,
                                         parameters,
                                     ),
-                                    tokenizer,
+                                    Arc::new(tokenizer),
                                     vec![],
                                 )
                             }
@@ -369,8 +373,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             let model = future
                                 .await
                                 .map_err(InitRunError::ModelLoadingThreadCrashed)??;
-                            let config =
-                                serde_json::to_string(&source.serialize_config()?).unwrap();
+                            let config = source.serialize_config()?;
                             debug!("Config uploaded: {}", config);
                             let tokenizer = tokenizer.to_string(false).unwrap();
                             tx_config.send((config, tokenizer)).unwrap();
