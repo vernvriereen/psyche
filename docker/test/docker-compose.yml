@@ -10,8 +10,8 @@ services:
         build:
             context: ../..
             dockerfile: ./docker/test/psyche_test_client.Dockerfile
-        args:
-          CONFIG_PATH: ${CONFIG_PATH:-/usr/src/psyche/config/solana-test/light-config.toml}
+            args:
+                CONFIG_PATH: ${CONFIG_PATH:-/usr/src/psyche/config/solana-test/light-config.toml}
         depends_on:
             psyche-solana-test-validator:
                 condition: service_started
