@@ -64,7 +64,7 @@ impl SolanaBackend {
         let (instance_pda, instance) = self.get_coordinator_instance(&run_id).await?;
         info!(
             "Coordinator instance address for run \"{}\": {}",
-            run_id, coordinator
+            run_id, instance_pda
         );
         let commitment = self.program.rpc().commitment();
 
