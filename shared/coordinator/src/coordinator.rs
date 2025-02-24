@@ -739,8 +739,11 @@ impl<T: NodeIdentity> Coordinator<T> {
                     llm.checkpoint = Checkpoint::Hub(hub_repo);
                 }
             } else if self.progress.epoch != 0 {
-                if let Checkpoint::Hub(hub_repo) = llm.checkpoint {
-                    llm.checkpoint = Checkpoint::P2P(hub_repo)
+                match llm.checkpoint {
+                    Checkpoint::Hub(hub_repo) | Checkpoint::Dummy(hub_repo) => {
+                        llm.checkpoint = Checkpoint::P2P(hub_repo)
+                    }
+                    _ => {}
                 }
             }
 
