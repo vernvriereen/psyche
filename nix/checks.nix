@@ -39,7 +39,7 @@
             RUST_LOG = "info,psyche=trace";
             partitions = 1;
             partitionType = "count";
-            cargoNextestExtraArgs = "--exclude-package psyche-decentralized-testing"; 
+            cargoNextestExtraArgs = "--workspace --release --exclude psyche-decentralized-testing";
           });
 
         validate-all-configs = pkgs.runCommand "validate-configs" {} ''
