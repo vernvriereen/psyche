@@ -1,4 +1,4 @@
-FROM nous-base AS base
+FROM psyche-base AS base
 
 FROM debian:bookworm-slim
 

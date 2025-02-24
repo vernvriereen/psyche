@@ -1,7 +1,7 @@
-FROM nous-base AS base
+FROM psyche-base AS base
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y unzip zip libssl-dev libgomp1 curl wget build-essential && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y libssl-dev libgomp1 curl wget build-essential && rm -rf /var/lib/apt/lists/*
 
 # Copy and set libtorch from base
 COPY --from=base /usr/home/libtorch /usr/home/libtorch
