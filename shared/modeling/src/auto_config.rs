@@ -19,7 +19,7 @@ pub enum ModelLoadError {
     #[error("failed to read file config.json")]
     FailedToReadConfig(#[from] io::Error),
 
-    #[error("could not parse config.json")]
+    #[error("could not parse config.json: {0}")]
     FailedToParseConfig(#[from] serde_json::Error),
 
     #[error("this model uses tied embeddings, which aren't supported.")]

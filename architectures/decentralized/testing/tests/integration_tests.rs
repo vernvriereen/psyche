@@ -13,7 +13,7 @@ use tokio::sync::mpsc;
 /// assert client and coordinator state synchronization
 /// assert that the loss decreases in each epoch
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
-async fn one_client_normal_run() {
+async fn one_client_three_epochs_run() {
     // set test variables
     let run_id = "test".to_string();
     // epochs the test will run

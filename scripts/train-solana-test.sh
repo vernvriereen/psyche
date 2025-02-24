@@ -18,10 +18,5 @@ export RUST_LOG="info,psyche=debug"
 
 cargo run --release --bin psyche-solana-client -- \
     train \
-        --wallet-private-key-path ${WALLET_FILE} \
-        --rpc ${RPC} \
-        --ws-rpc ${WS_RPC} \
-        --run-id ${RUN_ID} \
-        --data-parallelism ${DP} \
-        --tensor-parallelism ${TP} \
-        --ticker
+        --wallet-private-key-path ${WALLET_FILE} --rpc ${RPC} --ws-rpc ${WS_RPC} \
+        --run-id ${RUN_ID} --data-parallelism ${DP} --tensor-parallelism ${TP} --micro-batch-size ${BATCH_SIZE} --ticker $@
