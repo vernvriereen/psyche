@@ -9,8 +9,11 @@ use psyche_coordinator::RunState;
 use psyche_decentralized_testing::utils::SolanaTestClient;
 use tokio::sync::mpsc;
 
+/// spawn 1 client and run 3 epochs
+/// assert client and coordinator state synchronization
+/// assert that the loss decreases in each epoch
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
-async fn happy_path() {
+async fn one_client_normal_run() {
     // set test variables
     let run_id = "test".to_string();
     // epochs the test will run
@@ -43,6 +46,7 @@ async fn happy_path() {
                     "client: new_state: {}, old_state: {}, timestamp: {}",
                     new_state, old_state, timestamp
                 );
+                // assert client and coordinator state synchronization
                 if new_state != RunState::WaitingForMembers.to_string() {
                     assert_eq!(coordinator_state.to_string(), new_state.to_string());
                 }
