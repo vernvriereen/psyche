@@ -273,7 +273,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                                 )
                             }
                             model::Checkpoint::P2P(_) => {
-                                info!("CHEKPOINT ID P2P");
                                 let (tx_model_config_response, rx_model_config_response) =
                                     oneshot::channel();
                                 info!("Checkpoint is p2p, requesting model config over network");
