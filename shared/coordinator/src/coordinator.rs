@@ -963,5 +963,7 @@ impl<I> CoordinatorConfig<I> {
             && self.data_indicies_per_batch != 0
             && self.rounds_per_epoch != 0
             && self.total_steps != 0
+            && self.witness_nodes <= self.min_clients
+            && self.witness_quorum <= self.witness_nodes
     }
 }
