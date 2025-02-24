@@ -43,7 +43,6 @@ pub enum Response {
     Loss(String, u64, u64, f64),
 }
 
-// impl<T> DockerWatcher<T> {
 impl DockerWatcher {
     pub fn new(client: Arc<Docker>, log_sender: mpsc::Sender<Response>) -> Self {
         Self { client, log_sender }

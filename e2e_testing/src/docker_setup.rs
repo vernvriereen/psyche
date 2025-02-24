@@ -32,7 +32,6 @@ pub fn spawn_psyche_network(init_num_clients: usize) -> Result<(), DockerWatcher
         .args(["setup_test_infra", &format!("{}", init_num_clients)])
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
-        // .status()
         .output()
         .expect("Failed spawn docker compose command");
 
