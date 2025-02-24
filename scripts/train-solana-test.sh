@@ -12,8 +12,7 @@ DP=${DP:-"8"}
 TP=${TP:-"1"}
 BATCH_SIZE=${BATCH_SIZE:-"8"}
 
-# export RUST_LOG="warn,psyche_client=info,psyche_solana_client=info,psyche_network=info,psyche_data_provider=info"
-export RUST_LOG="info,psyche=debug"
+export RUST_LOG="warn,psyche_client=info,psyche_solana_client=info,psyche_network=info,psyche_data_provider=info"
 
 cargo run --release --bin psyche-solana-client -- \
     train \
@@ -24,5 +23,5 @@ cargo run --release --bin psyche-solana-client -- \
         --data-parallelism ${DP} \
         --tensor-parallelism ${TP} \
         --ticker \
+        --micro-batch-size ${BATCH_SIZE} \
         --tui false
-        # --micro-batch-size ${BATCH_SIZE} \
