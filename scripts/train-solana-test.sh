@@ -23,5 +23,4 @@ cargo run --release --bin psyche-solana-client -- \
         --data-parallelism ${DP} \
         --tensor-parallelism ${TP} \
         --ticker \
-        --micro-batch-size ${BATCH_SIZE} \
-        --tui false
+        --micro-batch-size ${BATCH_SIZE}
