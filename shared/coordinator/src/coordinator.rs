@@ -5,10 +5,7 @@ use crate::{
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
 
-use anchor_lang::{
-    prelude::{borsh, msg},
-    AnchorDeserialize, AnchorSerialize, InitSpace,
-};
+use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Pod, Zeroable};
 use psyche_core::{
     serde_deserialize_string, serde_serialize_string, sha256, BatchId, Bloom, FixedVec,
@@ -817,23 +814,28 @@ impl<T: NodeIdentity> Coordinator<T> {
             let num_witnesses = current_round.witnesses.len() as u16;
             self.move_clients_to_exited(height);
 
-            if height == self.config.rounds_per_epoch - 1 {
+            // If there are not witnesses, then we can't distinguish from
+            // the situation where only witness nodes disconnected or everyone
+            // disconnected. We just set everyone to withdrawn state and change
+            // to Cooldown.
+            if num_witnesses == 0 {
+                self.withdraw_all()?;
                 self.start_cooldown(unix_timestamp);
                 return Ok(TickResult::Ticked);
             }
 
-            // if we finish an epoch or some clients disconnect and we don't
-            // reach the minimum number of clients we change state to cooldown.
-            if self.epoch_state.clients.len() < self.config.min_clients as usize
-                || num_witnesses == 0
+            // If we reach the end of an epoch or if we don't reach the min number of
+            // clients or registered witnesses for the current round, we change to Cooldown
+            if height == self.config.rounds_per_epoch - 1
+                || self.epoch_state.clients.len() < self.config.min_clients as usize
                 || (num_witnesses < self.config.witness_quorum)
                 || self.pending_pause.is_true()
             {
-                self.withdraw_all()?;
                 self.start_cooldown(unix_timestamp);
-            } else {
-                self.start_round_train(unix_timestamp, random_seed, 0);
+                return Ok(TickResult::Ticked);
             }
+
+            self.start_round_train(unix_timestamp, random_seed, 0);
         }
         Ok(TickResult::Ticked)
     }
