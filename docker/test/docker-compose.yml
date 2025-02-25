@@ -6,7 +6,7 @@ services:
             dockerfile: ./docker/psyche_base.Dockerfile
 
     psyche-run-owner:
-        image: psyche-test-base
+        image: psyche-test-client
         build:
             context: ../..
             dockerfile: ./docker/test/psyche_test_client.Dockerfile
@@ -27,7 +27,7 @@ services:
             - psyche-test-network
 
     psyche-test-client:
-        image: psyche-test-base
+        image: psyche-test-client
         build:
             context: ../..
             dockerfile: ./docker/test/psyche_test_client.Dockerfile

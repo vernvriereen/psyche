@@ -42,3 +42,7 @@ config/testing/dolma/
 test-ledger
 
 book
+
+**/.rustc_info.json
+
+config/client/.env

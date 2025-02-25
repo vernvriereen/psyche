@@ -188,6 +188,7 @@ async fn async_main() -> Result<()> {
             wallet,
             run_id,
         } => {
+            let run_id = run_id.trim_matches('"').to_string(); // Trim quotes, if any
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
             let backend = SolanaBackend::new(
                 cluster.into(),
@@ -211,6 +212,7 @@ async fn async_main() -> Result<()> {
             wallet,
             run_id,
         } => {
+            let run_id = run_id.trim_matches('"').to_string(); // Trim quotes, if any
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
             let backend = SolanaBackend::new(
                 cluster.into(),
@@ -232,6 +234,7 @@ async fn async_main() -> Result<()> {
             run_id,
             members_path,
         } => {
+            let run_id = run_id.trim_matches('"').to_string(); // Trim quotes, if any
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
             let backend = SolanaBackend::new(
                 cluster.into(),
@@ -264,6 +267,7 @@ async fn async_main() -> Result<()> {
             run_id,
             config_path,
         } => {
+            let run_id = run_id.trim_matches('"').to_string(); // Trim quotes, if any
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
             let backend = SolanaBackend::new(
                 cluster.into(),
@@ -294,6 +298,7 @@ async fn async_main() -> Result<()> {
             run_id,
             resume,
         } => {
+            let run_id = run_id.trim_matches('"').to_string(); // Trim quotes, if any
             let paused = !resume;
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
             let backend = SolanaBackend::new(
@@ -339,17 +344,14 @@ async fn async_main() -> Result<()> {
                 OffsetDateTime::now_utc()
             );
 
+            let run_id = args.run_id.trim_matches('"').to_string(); // Trim quotes, if any
             let identity_secret_key: SecretKey =
                 read_identity_secret_key(args.identity_secret_key_path.as_ref())?
                     .unwrap_or_else(|| SecretKey::generate(&mut rand::rngs::OsRng));
 
             let wallet_keypair: Arc<Keypair> = Arc::new(wallet.try_into()?);
 
-            let wandb_info = args.wandb_info(format!(
-                "{}-{}",
-                args.run_id.clone(),
-                wallet_keypair.pubkey()
-            ))?;
+            let wandb_info = args.wandb_info(format!("{}-{}", run_id, wallet_keypair.pubkey()))?;
 
             let (cancel, tx_tui_state) = maybe_start_render_loop(
                 args.tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)),
@@ -362,7 +364,7 @@ async fn async_main() -> Result<()> {
                 wallet_keypair,
                 cluster: cluster.into(),
                 ticker,
-                run_id: args.run_id,
+                run_id: run_id,
                 p2p_port: args.bind_p2p_port,
                 data_parallelism: args.data_parallelism,
                 tensor_parallelism: args.tensor_parallelism,

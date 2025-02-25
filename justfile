@@ -88,15 +88,23 @@ generate_cli_docs:
     cargo run -p psyche-centralized-server print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-server.md
     cargo run -p psyche-centralized-local-testnet print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-local-testnet.md
 
+build_docker_test_client:
+    ./scripts/coordinator-address-check.sh
+    docker build -t psyche-base -f docker/psyche_base.Dockerfile .
+    docker build -t psyche-test-client -f docker/test/psyche_test_client.Dockerfile .
+
 # Setup the infrastructure for testing locally using Docker.
+# setup_test_infra num_clients="1": build_docker_test_client
 setup_test_infra num_clients="1":
+    cd docker/test && docker compose build
     cd docker/test && NUM_REPLICAS={{num_clients}} docker compose up -d --force-recreate
+
+stop_test_infra:
+    cd docker/test && docker compose stop
 
 # Setup clients assigning one available GPU to each of them.
 # There's no way to do this using the replicas from docker-compose file, so we have to do it manually.
-setup_clients num_clients="1":
-    docker build -t psyche-base -f docker/psyche_base.Dockerfile .
-    docker build -t psyche-test-client -f docker/test/psyche_test_client.Dockerfile .
+setup_clients num_clients="1": build_docker_test_client
     ./scripts/train-multiple-gpu.sh {{num_clients}}
 
 # Run a client to start training inside a Docker container.

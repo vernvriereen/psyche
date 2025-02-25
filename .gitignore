@@ -50,3 +50,6 @@ test-ledger
 
 ### Book ###
 book
+
+### Env files ###
+config/client/.env
