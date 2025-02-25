@@ -9,7 +9,7 @@ check:
 fmt:
 	cargo clippy --fix --allow-staged --all-targets
 	cargo fmt
-	alejandra .
+	nixfmt .
 
 # build the centralized client Docker image
 docker-build-centralized-client:
