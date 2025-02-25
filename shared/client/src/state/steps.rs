@@ -504,7 +504,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                 let loss =
                     self.stats_logger
                         .push_round_stats(&round_losses, round_duration, optim_stats);
-                info!("Step {} loss: {}", state.progress.step, loss);
+                info!(
+                    client_id = %self.identity,
+                    epoch = state.progress.epoch,
+                    step = state.progress.step,
+                    loss = loss,
+                    "client_loss",
+                );
                 self.stats_logger
                     .publish_round_stats(&state, &self.node_info);
                 ActiveStep::Witness(self.witness.start(

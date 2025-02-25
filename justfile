@@ -97,7 +97,11 @@ setup_clients num_clients="1":
 
 # Setup the infrastructure for testing locally using Docker.
 setup_test_infra num_clients="1":
-    cd docker/test && NUM_REPLICAS={{num_clients}} docker compose up -d --force-recreate
+    cd architectures/decentralized/solana-coordinator && anchor build --no-idl && anchor keys sync
+    cd docker/test && NUM_REPLICAS={{num_clients}} docker compose --profile setup up -d
+
+stop_test_infra:
+    cd docker/test && docker compose --profile all stop
 
 # Run a client to start training inside a Docker container.
 run_docker_client:
@@ -110,3 +114,7 @@ run_docker_client:
       -v ~/.config/solana/id.json:/usr/local/id.json \
       --env-file config/client/.env \
       psyche-client
+
+rebuild_docker_images:
+    docker build -t nous-base -f docker/nous_base.Dockerfile .
+    docker build -t psyche-client -f docker/test/psyche_client.Dockerfile .

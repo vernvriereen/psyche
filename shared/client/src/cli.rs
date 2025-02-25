@@ -1,9 +1,10 @@
 use crate::{CheckpointConfig, HubUploadInfo, WandBInfo};
 
 use anyhow::{anyhow, bail, Result};
-use clap::{ArgAction, Args};
+use clap::Args;
 use psyche_eval::tasktype_from_name;
 use psyche_network::SecretKey;
+use psyche_tui::LogOutput;
 use std::path::PathBuf;
 
 pub fn read_identity_secret_key(
@@ -51,17 +52,18 @@ pub struct TrainArgs {
     #[clap(short, long, env)]
     pub bind_p2p_port: Option<u16>,
 
-    /// Enables a terminal-based graphical interface for monitoring analytics.
+    /// Sets clients logs interface
+    /// tui: Enables a terminal-based graphical interface for monitoring analytics.
+    /// console: standard logs
+    /// json: standard logs with json format
     #[clap(
-            long,
-            action = ArgAction::Set,
-            default_value_t = true,
-            default_missing_value = "true",
-            num_args = 0..=1,
-            require_equals = false,
-            env
-        )]
-    pub tui: bool,
+        long,
+        env,
+        default_value_t = LogOutput::TUI,
+        value_enum,
+        ignore_case = true
+    )]
+    pub logs: LogOutput,
 
     /// A unique identifier for the training run. This ID allows the client to join a specific active run.
     #[clap(long, env)]

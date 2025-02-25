@@ -15,4 +15,5 @@ pushd /usr/local/solana-coordinator
 anchor deploy --provider.cluster ${RPC} -- --max-len 500000
 popd
 
-fg %1
+# fg %1
+solana logs | grep -E "Pre-tick run state|Post-tick run state"
