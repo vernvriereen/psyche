@@ -7,7 +7,6 @@ use e2e_testing::{
 };
 use psyche_coordinator::RunState;
 use psyche_decentralized_testing::utils::SolanaTestClient;
-use tokio::sync::mpsc;
 
 /// spawn 1 client and run 3 epochs
 /// assert client and coordinator state synchronization
@@ -26,8 +25,7 @@ async fn one_client_three_epochs_run() {
 
     // initialize DockerWatcher
     let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
-    let (tx, mut rx) = mpsc::channel(100);
-    let watcher = DockerWatcher::new(docker.clone(), tx);
+    let mut watcher = DockerWatcher::new(docker.clone());
     let _monitor_client_1 = watcher
         .monitor_container(
             "test-psyche-test-client-1",
@@ -38,7 +36,7 @@ async fn one_client_three_epochs_run() {
     // initialize solana client to query the coordinator state
     let solana_client = SolanaTestClient::new(run_id).await;
 
-    while let Some(response) = rx.recv().await {
+    while let Some(response) = watcher.log_rx.recv().await {
         match response {
             Response::StateChange(timestamp, _client_1, old_state, new_state) => {
                 let coordinator_state = solana_client.get_run_state().await;
