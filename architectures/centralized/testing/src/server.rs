@@ -2,12 +2,12 @@ use bytemuck::Zeroable;
 use psyche_centralized_server::app::App as ServerApp;
 use psyche_centralized_shared::ClientId;
 use psyche_coordinator::{
-    model::{Model, LLM},
+    model::{Checkpoint, Model, LLM},
     Coordinator, CoordinatorConfig, CoordinatorEpochState, RunState, SOLANA_MAX_NUM_CLIENTS,
 };
 use psyche_coordinator::{Client, Round};
 use psyche_core::FixedVec;
-use std::{collections::HashSet, ops::ControlFlow};
+use std::{collections::HashSet, mem::Discriminant, ops::ControlFlow};
 use tokio::{
     select,
     sync::{
@@ -44,6 +44,9 @@ enum TestingQueryMsg {
     },
     Epoch {
         respond_to: oneshot::Sender<u16>,
+    },
+    Checkpoint {
+        respond_to: oneshot::Sender<Checkpoint>,
     },
     Coordinator {
         respond_to: oneshot::Sender<Coordinator<ClientId>>,
@@ -157,6 +160,10 @@ impl CoordinatorServer {
                 let current_epoch = self.inner.get_current_epoch();
                 respond_to.send(current_epoch).unwrap();
             }
+            TestingQueryMsg::Checkpoint { respond_to } => {
+                let checkpoint = self.inner.get_checkpoint();
+                respond_to.send(checkpoint).unwrap();
+            }
             TestingQueryMsg::Coordinator { respond_to } => {
                 let coordinator = self.inner.get_coordinator();
                 respond_to.send(coordinator).unwrap();
@@ -269,6 +276,15 @@ impl CoordinatorServerHandle {
         let msg = TestingQueryMsg::Epoch { respond_to: send };
         let _ = self.query_chan_sender.send(msg).await;
         recv.await.expect("Coordinator actor task has been killed")
+    }
+
+    // We only care about checking the checkpoint variant but not the hub repo value so we get the discriminant.
+    pub async fn get_checkpoint(&self) -> Discriminant<Checkpoint> {
+        let (send, recv) = oneshot::channel::<Checkpoint>();
+        let msg = TestingQueryMsg::Checkpoint { respond_to: send };
+        let _ = self.query_chan_sender.send(msg).await;
+        let checkpoint = recv.await.expect("Coordinator actor task has been killed");
+        std::mem::discriminant(&checkpoint)
     }
 
     pub async fn get_coordinator(&self) -> Coordinator<ClientId> {

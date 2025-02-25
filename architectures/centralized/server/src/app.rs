@@ -131,6 +131,12 @@ impl App {
         self.coordinator.progress.epoch
     }
 
+    pub fn get_checkpoint(&self) -> Checkpoint {
+        match self.coordinator.model {
+            Model::LLM(llm) => llm.checkpoint,
+        }
+    }
+
     pub fn get_port(&self) -> u16 {
         self.backend.port()
     }
@@ -192,7 +198,7 @@ impl App {
                     Checkpoint::Ephemeral => {
                         bail!("Can't start up a run with an Ephemeral checkpoint.")
                     }
-                    Checkpoint::Dummy => {
+                    Checkpoint::Dummy(_) => {
                         // ok!
                     }
                     Checkpoint::P2P(_) => {

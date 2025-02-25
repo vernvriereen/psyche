@@ -166,7 +166,6 @@ impl UseSDPA for Option<AttentionImplementation> {
 #[allow(clippy::large_enum_variant)]
 pub enum AutoConfig {
     Llama(LlamaConfig),
-    Dummy(LlamaConfig),
     Deepseek(DeepseekConfig),
 }
 
@@ -177,7 +176,6 @@ impl serde::Serialize for AutoConfig {
     {
         match self {
             AutoConfig::Llama(config) => config.serialize(serializer),
-            AutoConfig::Dummy(config) => config.serialize(serializer),
             AutoConfig::Deepseek(config) => config.serialize(serializer),
         }
     }
@@ -187,7 +185,6 @@ impl ModelConfig for AutoConfig {
     fn get_parameter_names(&self) -> Vec<String> {
         match self {
             AutoConfig::Llama(config) => config.get_parameter_names(),
-            AutoConfig::Dummy(config) => config.get_parameter_names(),
             AutoConfig::Deepseek(config) => config.get_parameter_names(),
         }
     }

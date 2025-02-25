@@ -27,7 +27,7 @@ pub use causal_language_model::{
     LanguageModelForward,
 };
 pub use distro::{CompressDCT, Distro, DistroResult, TransformDCT};
-pub use dummy::DummyModel;
+pub use dummy::{get_dummy_parameters, DummyModel};
 pub use fp32_gradient_accumulator::Fp32GradientAccumulator;
 pub use models::*;
 pub use rms_norm::RMSNorm;

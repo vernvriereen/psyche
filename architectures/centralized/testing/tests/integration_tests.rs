@@ -9,7 +9,10 @@ use psyche_centralized_testing::{
     },
     COOLDOWN_TIME, MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME,
 };
-use psyche_coordinator::RunState;
+use psyche_coordinator::{
+    model::{Checkpoint, HubRepo},
+    RunState,
+};
 use tracing::info;
 
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
@@ -837,6 +840,12 @@ async fn client_join_in_training_and_get_model_using_p2p() {
     info!("waiting for next epoch!");
     assert_with_retries(|| server_handle.get_current_epoch(), 1).await;
 
+    assert_with_retries(
+        || server_handle.get_checkpoint(),
+        std::mem::discriminant(&Checkpoint::P2P(HubRepo::dummy())),
+    )
+    .await;
+
     // check that the run state evolves naturally to Warmup where the model gets shared
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
     tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
@@ -923,6 +932,12 @@ async fn two_clients_join_in_training_and_get_model_using_p2p() {
 
     info!("waiting for next epoch!");
     assert_with_retries(|| server_handle.get_current_epoch(), 1).await;
+
+    assert_with_retries(
+        || server_handle.get_checkpoint(),
+        std::mem::discriminant(&Checkpoint::P2P(HubRepo::dummy())),
+    )
+    .await;
 
     // check that the run state evolves naturally to Warmup where the model gets shared
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
