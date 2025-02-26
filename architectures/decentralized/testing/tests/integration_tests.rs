@@ -73,14 +73,14 @@ async fn one_client_three_epochs_run() {
 
 // Test p2p model sharing process
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
-async fn test_p2p() {
+async fn test_client_join_and_get_model_p2p() {
     // set test variables
     let run_id = "test".to_string();
 
     // initialize a Solana run with 1 client
     let _cleanup = e2e_testing_setup(1);
 
-    println!("Waiting for run to go on");
+    println!("Waiting for run to go on with the first client");
     tokio::time::sleep(Duration::from_secs(20)).await;
 
     println!("Adding new client");
@@ -97,15 +97,14 @@ async fn test_p2p() {
         .monitor_container("test-psyche-test-client-2", vec![JsonFilter::LoadedModel])
         .unwrap();
 
-    let mut interval = time::interval(Duration::from_secs(20)); // Adjust the duration as needed
-    println!("Waiting for model log to be received");
+    let mut interval = time::interval(Duration::from_secs(20));
     loop {
         tokio::select! {
            _ = interval.tick() => {
                    let current_epoch = solana_client.get_current_epoch().await;
-                   println!("Current epoch: {}", current_epoch);
-                   if current_epoch > 1 {
-                       panic!("Model not loaded for new client");
+                   println!("Waiting for epoch to finish");
+                   if current_epoch >= 1 {
+                       panic!("Client couldn't load the model");
                }
            }
            response = watcher.log_rx.recv() => {
@@ -114,6 +113,66 @@ async fn test_p2p() {
                    assert!(checkpoint.starts_with("P2P"), "The model should be obtained from P2P");
                    assert!(matches!(solana_client.get_checkpoint().await, Checkpoint::P2P(_)), "The coordinator must be on P2P");
                    return;
+               }
+           }
+        }
+    }
+}
+
+// Test p2p model sharing process
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+async fn test_two_client_join_and_get_model_p2p() {
+    // set test variables
+    let run_id = "test".to_string();
+
+    // initialize a Solana run with 1 client
+    let _cleanup = e2e_testing_setup(1);
+
+    println!("Waiting for run to go on with the first client");
+    tokio::time::sleep(Duration::from_secs(20)).await;
+
+    // initialize DockerWatcher
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+
+    println!("Adding new first client");
+    spawn_new_client(docker.clone()).await.unwrap();
+
+    println!("Adding new second client");
+    spawn_new_client(docker).await.unwrap();
+
+    // initialize solana client to query the coordinator state
+    let solana_client = SolanaTestClient::new(run_id).await;
+
+    let _monitor_client_2 = watcher
+        .monitor_container("test-psyche-test-client-2", vec![JsonFilter::LoadedModel])
+        .unwrap();
+
+    let _monitor_client_3 = watcher
+        .monitor_container("test-psyche-test-client-3", vec![JsonFilter::LoadedModel])
+        .unwrap();
+
+    let mut clients_with_model = 0_u8;
+    let mut interval = time::interval(Duration::from_secs(20));
+    loop {
+        tokio::select! {
+           _ = interval.tick() => {
+                   let current_epoch = solana_client.get_current_epoch().await;
+                   println!("Waiting for epoch to finish");
+                   if current_epoch >= 1 {
+                    panic!("Client couldn't load the model");
+            }
+           }
+           response = watcher.log_rx.recv() => {
+               if let Some(Response::LoadedModel(checkpoint)) = response {
+                   // assert client and coordinator state synchronization
+                   assert!(checkpoint.starts_with("P2P"), "The model should be obtained from P2P");
+                   assert!(matches!(solana_client.get_checkpoint().await, Checkpoint::P2P(_)), "The coordinator must be on P2P");
+                   clients_with_model += 1;
+                   if clients_with_model == 2 {
+                        println!("Both new clients got the model with P2P");
+                        return;
+                   }
                }
            }
         }
