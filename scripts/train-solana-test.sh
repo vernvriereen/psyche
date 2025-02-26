@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -e
+set -euo pipefail
 
 WALLET_FILE=${WALLET_FILE:-"$HOME/.config/solana/id.json"}
 RPC=${RPC:-"http://127.0.0.1:8899"}
@@ -26,4 +26,4 @@ cargo run --release --bin psyche-solana-client -- \
         --tensor-parallelism ${TP} \
         --micro-batch-size ${BATCH_SIZE} \
         --logs "console" \
-        --ticker
+        --ticker "$@"
