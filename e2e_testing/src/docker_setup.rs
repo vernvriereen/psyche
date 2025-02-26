@@ -1,12 +1,12 @@
+use bollard::container::{ListContainersOptions, RemoveContainerOptions};
 use bollard::models::DeviceRequest;
+use bollard::Docker;
 use bollard::{
-    container::{Config, CreateContainerOptions, ListContainersOptions},
-    secret::{ContainerSummary, HostConfig},
+    container::{Config, CreateContainerOptions},
+    secret::HostConfig,
 };
-use std::{
-    collections::HashMap,
-    process::{Command, Stdio},
-};
+use std::process::{Command, Stdio};
+use std::sync::Arc;
 use tokio::signal;
 
 use crate::docker_watcher::DockerWatcherError;
@@ -35,23 +35,58 @@ pub fn e2e_testing_setup(init_num_clients: usize) -> DockerTestCleanup {
     DockerTestCleanup {}
 }
 
-pub async fn spawn_new_client() -> Result<(), DockerWatcherError> {
-    let docker_client = bollard::Docker::connect_with_socket_defaults().unwrap();
-    let containers: Vec<ContainerSummary> =
-        docker_client.list_containers::<String>(None).await.unwrap();
-    let container_names: Vec<String> = containers
-        .into_iter()
-        .filter_map(|cont| {
-            cont.names
-                .clone()
-                .unwrap_or_default()
-                .get(0)
-                .filter(|name| name.starts_with("/test-psyche-test-client"))
-                .cloned()
-        })
-        .collect();
+pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWatcherError> {
+    let all_containers = docker_client
+        .list_containers::<String>(Some(ListContainersOptions {
+            all: true, // Include stopped containers as well
+            ..Default::default()
+        }))
+        .await
+        .unwrap();
 
-    // Define GPU capabilities
+    let mut running_containers = Vec::new();
+    let mut all_container_names = Vec::new();
+
+    for cont in all_containers {
+        if let Some(names) = &cont.names {
+            if let Some(name) = names.first() {
+                let trimmed_name = name.trim_start_matches('/').to_string();
+
+                if trimmed_name.starts_with("test-psyche-test-client") {
+                    all_container_names.push(trimmed_name.clone());
+
+                    if cont
+                        .state
+                        .as_deref()
+                        .map_or(false, |state| state.eq_ignore_ascii_case("running"))
+                    {
+                        running_containers.push(trimmed_name);
+                    }
+                }
+            }
+        }
+    }
+
+    // Set the container name based on the ones that are already running.
+    let new_container_name = format!("test-psyche-test-client-{}", running_containers.len() + 1);
+    // Check if container was already created.
+    let container_exists = all_container_names.contains(&new_container_name);
+
+    if container_exists {
+        println!("Removing existing container: {}", new_container_name);
+        docker_client
+            .remove_container(
+                &new_container_name,
+                Some(RemoveContainerOptions {
+                    force: true, // Ensure it's removed even if running
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap();
+    }
+
+    // Setting nvidia usage parameters
     let device_request = DeviceRequest {
         driver: Some("nvidia".to_string()),
         count: Some(1),
@@ -59,28 +94,25 @@ pub async fn spawn_new_client() -> Result<(), DockerWatcherError> {
         ..Default::default()
     };
 
-    let network_name = "test_psyche-test-network"; // Replace with your actual network
-                                                   // Define host configuration
+    // Setting extra hosts and nvidia request
+    let network_name = "test_psyche-test-network";
     let host_config = HostConfig {
         device_requests: Some(vec![device_request]),
         extra_hosts: Some(vec!["host.docker.internal:host-gateway".to_string()]),
-        network_mode: Some(network_name.to_string()), // Attach container to the network
+        network_mode: Some(network_name.to_string()),
         ..Default::default()
     };
 
-    // Read environment variables from `.env` file
-    let a = std::env::current_dir();
-    println!("{}", a.unwrap().display());
+    // Get env vars from config file
     let env_vars = std::fs::read_to_string("../../../config/client/.env.local")
         .unwrap()
         .lines()
         .map(|s| s.to_string())
         .collect::<Vec<String>>();
-
-    let envs = vec![env_vars, vec!["NVIDIA_DRIVER_CAPABILITIES=all".to_string()]].concat();
+    let envs = [env_vars, vec!["NVIDIA_DRIVER_CAPABILITIES=all".to_string()]].concat();
 
     let options = Some(CreateContainerOptions {
-        name: format!("test-psyche-test-client-{}", container_names.len() + 1),
+        name: new_container_name.clone(),
         platform: None,
     });
     let config = Config {
@@ -93,11 +125,9 @@ pub async fn spawn_new_client() -> Result<(), DockerWatcherError> {
         .create_container(options, config)
         .await
         .unwrap();
+    // Start the container
     docker_client
-        .start_container::<String>(
-            &format!("test-psyche-test-client-{}", container_names.len() + 1),
-            None,
-        )
+        .start_container::<String>(&new_container_name, None)
         .await
         .unwrap();
     Ok(())
