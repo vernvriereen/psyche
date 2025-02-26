@@ -544,8 +544,9 @@ fn start_sending_health_checks<T: NodeIdentity>(
                         )
                     {
                         warn!(
-                            "Found unhealthy trainer at index {index} , client: {:?}",
-                            &client.id
+                            unhealthy_warn = "Found unhealthy trainer at",
+                            index = index,
+                            client_id = %&client.id,
                         );
                         checks.push(proof);
                     }

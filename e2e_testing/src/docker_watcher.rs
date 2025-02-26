@@ -19,6 +19,7 @@ pub enum StateFilter {
 pub enum JsonFilter {
     StateChange,
     Loss,
+    HealthCheck,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -43,6 +44,7 @@ pub struct DockerWatcher {
 pub enum Response {
     StateChange(String, String, String, String),
     Loss(String, u64, u64, f64),
+    HealthCheck(String, u64),
 }
 
 impl DockerWatcher {
@@ -141,6 +143,19 @@ impl DockerWatcher {
                             let epoch = parsed_log.get("epoch").and_then(|v| v.as_u64()).unwrap();
                             let step = parsed_log.get("step").and_then(|v| v.as_u64()).unwrap();
                             let response = Response::Loss(client_id, epoch, step, loss);
+                            log_sender.send(response).await.unwrap()
+                        }
+                        JsonFilter::HealthCheck => {
+                            let Some(_) = parsed_log.get("unhealthy_warn") else {
+                                continue;
+                            };
+                            let client_id = parsed_log
+                                .get("client_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap()
+                                .to_string();
+                            let index = parsed_log.get("index").and_then(|v| v.as_u64()).unwrap();
+                            let response = Response::HealthCheck(client_id, index);
                             log_sender.send(response).await.unwrap()
                         }
                     }
