@@ -66,8 +66,14 @@ pub fn lender_claim_processor(
     let lender = &mut context.accounts.lender;
     let pool = &mut context.accounts.pool;
 
+    if pool.freeze {
+        return err!(ProgramError::PoolFreezeIsTrue);
+    }
     if !pool.claiming_enabled {
         return err!(ProgramError::PoolClaimingEnabledIsFalse);
+    }
+    if pool.total_deposited_collateral_amount == 0 {
+        return err!(ProgramError::PoolTotalDepositedCollateralAmountIsZero);
     }
 
     let total_repayed_redeemable_amount = pool.total_claimed_redeemable_amount

@@ -19,6 +19,7 @@ pub struct PoolUpdateAccounts<'info> {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
 pub struct PoolUpdateParams {
     pub max_deposit_collateral_amount: Option<u64>,
+    pub freeze: Option<bool>,
     pub metadata: Option<PoolMetadata>,
 }
 
@@ -31,8 +32,16 @@ pub fn pool_update_processor(
     if let Some(max_deposit_collateral_amount) =
         params.max_deposit_collateral_amount
     {
-        msg!("max_deposit_collateral_amount:{}", max_deposit_collateral_amount);
+        msg!(
+            "max_deposit_collateral_amount: {}",
+            max_deposit_collateral_amount
+        );
         pool.max_deposit_collateral_amount = max_deposit_collateral_amount;
+    }
+
+    if let Some(freeze) = params.freeze {
+        msg!("freeze: {}", freeze);
+        pool.freeze = freeze;
     }
 
     if let Some(metadata) = params.metadata {

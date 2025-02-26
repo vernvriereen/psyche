@@ -17,6 +17,7 @@ pub struct Pool {
     pub redeemable_mint: Pubkey,
     pub total_claimed_redeemable_amount: u64,
 
+    pub freeze: bool,
     pub metadata: PoolMetadata,
 }
 

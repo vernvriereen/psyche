@@ -72,6 +72,7 @@ pub fn pool_create_processor(
     pool.redeemable_mint = Pubkey::default();
     pool.total_claimed_redeemable_amount = 0;
 
+    pool.freeze = false;
     pool.metadata = params.metadata;
 
     Ok(())
