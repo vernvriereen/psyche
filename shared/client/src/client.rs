@@ -112,6 +112,19 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                         state = watcher.poll_next() => {
                             let (old_state, new_state) = state?;
+                            let old_run_state = if let Some(old_state) = old_state {
+                                old_state.run_state.to_string()
+                            } else {
+                                String::from(" - ")
+                            };
+
+                            info!(
+                                client_id = %identity,
+                                old_state = old_run_state,
+                                new_state = new_state.run_state.to_string(),
+                                "apply_state"
+                            );
+
                             {
                                 let node_ids: Vec<NodeId> = new_state
                                     .epoch_state

@@ -1,4 +1,4 @@
-#! /bin/bash
+#!/bin/bash
 
 set -o errexit
 
@@ -12,4 +12,4 @@ psyche-solana-client train \
     --ws-rpc "${WS_RPC}" \
     --run-id "${RUN_ID}" \
     --ticker \
-    --tui "false"
+    --logs "json"

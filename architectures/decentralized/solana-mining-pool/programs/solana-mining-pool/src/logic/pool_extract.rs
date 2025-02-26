@@ -5,6 +5,7 @@ use anchor_spl::token::TokenAccount;
 use anchor_spl::token::Transfer;
 
 use crate::state::Pool;
+use crate::ProgramError;
 
 #[derive(Accounts)]
 #[instruction(params: PoolExtractParams)]
@@ -47,6 +48,10 @@ pub fn pool_extract_processor(
     params: PoolExtractParams,
 ) -> Result<()> {
     let pool = &mut context.accounts.pool;
+
+    if pool.freeze {
+        return err!(ProgramError::PoolFreezeIsTrue);
+    }
 
     pool.total_extracted_collateral_amount += params.collateral_amount;
 

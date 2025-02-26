@@ -15,7 +15,7 @@ pub struct DummyModel {
     training_delay_secs: Duration,
 }
 
-pub fn get_dummy_parameters() -> [&'static str; 12] {
+pub fn get_dummy_parameters() -> HashMap<String, Tensor> {
     [
         "model.norm.weight",
         "model.layers.0.mlp.up_proj.weight",
@@ -30,6 +30,9 @@ pub fn get_dummy_parameters() -> [&'static str; 12] {
         "lm_head.weight",
         "model.layers.0.input_layernorm.weight",
     ]
+    .into_iter()
+    .map(|p| (p.to_string(), Tensor::zeros([1], tch::kind::FLOAT_CPU)))
+    .collect()
 }
 
 impl Default for DummyModel {
@@ -41,12 +44,8 @@ impl Default for DummyModel {
 impl DummyModel {
     pub fn new(training_delay: u64) -> Self {
         let parameters = get_dummy_parameters();
-        let named_variables: HashMap<String, Tensor> = parameters
-            .into_iter()
-            .map(|p| (p.to_string(), Tensor::zeros([1], tch::kind::FLOAT_CPU)))
-            .collect();
         let variables = Variables {
-            named_variables,
+            named_variables: parameters,
             shards: HashMap::new(),
             trainable_variables: Vec::new(),
         };

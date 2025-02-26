@@ -2,7 +2,7 @@
 members = [
     "architectures/centralized/*",
     "architectures/decentralized/solana-client",
-    "architectures/decentralized/solana-tooling",
+    "architectures/decentralized/testing", "architectures/decentralized/solana-tooling", "e2e_testing",
     "shared/*",
     "tools/rust-tools/*",
 ]
@@ -24,6 +24,7 @@ psyche-network = { path = "./shared/network" }
 psyche-modeling = { path = "./shared/modeling" }
 psyche-tui = { path = "./shared/tui" }
 psyche-watcher = { path = "./shared/watcher" }
+e2e_testing = { path = "./e2e_testing" }
 
 psyche-solana-client = { path = "./architectures/decentralized/solana-client" }
 psyche-solana-coordinator = { path = "./architectures/decentralized/solana-coordinator/programs/solana-coordinator" }
@@ -38,6 +39,7 @@ tokio = { version = "1", features = [
     "net",
     "macros",
     "time",
+    "signal",
 ] }
 tokio-stream = "0.1"
 tokio-util = "0.7.12"

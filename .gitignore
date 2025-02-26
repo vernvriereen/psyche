@@ -44,6 +44,7 @@ checkpoints/
 logs/
 txt/
 config/testing/dolma/
+scripts/keys/
 
 ### Solana ###
 test-ledger

@@ -43,8 +43,10 @@ where
                     .map(|client| (*client.id.get_p2p_public_key(), *client)),
             );
         }
-        let prev = replace(&mut self.state, Some(new_state));
-        Ok((prev, self.state.as_ref().unwrap()))
+        let old_state = replace(&mut self.state, Some(new_state));
+        let new_state = self.state.as_ref().unwrap();
+
+        Ok((old_state, new_state))
     }
 
     pub fn coordinator_state(&self) -> Option<Coordinator<T>> {

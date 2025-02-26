@@ -102,7 +102,7 @@ pub enum InitRunError {
     #[error("wandb failed to create run: {0}")]
     WandbLoad(#[from] wandb::ApiError),
 
-    #[error("could not parse config")]
+    #[error("could not parse config: {0}")]
     FailedToParseConfig(#[from] serde_json::Error),
 }
 
@@ -185,7 +185,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
         let model_future: JoinHandle<Result<RawLoadedModel, InitRunError>> = match &llm.architecture
         {
             model::LLMArchitecture::HfLlama => match &llm.checkpoint {
-                model::Checkpoint::Dummy => tokio::spawn(async move {
+                model::Checkpoint::Dummy(_) => tokio::spawn(async move {
                     let tokenizer = Arc::new(Tokenizer::new(ModelWrapper::WordLevel(
                         WordLevel::builder().build().unwrap(),
                     )));
@@ -206,8 +206,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                         checkpoint_extra_files: vec![],
                         eval_runner: EvalRunner::new(vec![], tokenizer.clone(), None, 0),
                     };
-                    let config =
-                        serde_json::to_string(&AutoConfig::Dummy(LlamaConfig::dummy())).unwrap();
+                    #[allow(clippy::arc_with_non_send_sync)]
+                    let config = &PretrainedSource::ConfigAndTensors(
+                        AutoConfig::Llama(LlamaConfig::dummy()),
+                        Arc::new(psyche_modeling::get_dummy_parameters()),
+                    )
+                    .serialize_config()?;
                     let tokenizer = tokenizer.to_string(false).unwrap();
                     info!("Config Uploaded: {}", config);
                     tx_config.send((config.to_string(), tokenizer)).unwrap();
@@ -271,27 +275,23 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             model::Checkpoint::P2P(_) => {
                                 let (tx_model_config_response, rx_model_config_response) =
                                     oneshot::channel();
+                                info!("Checkpoint is p2p, requesting model config over network");
+
                                 tx_request_model_config
                                     .send(tx_model_config_response)
                                     .unwrap();
 
                                 let (model_config, tokenizer) =
                                     rx_model_config_response.await.unwrap();
-                                let tokenizer = Arc::new(tokenizer);
-
                                 debug!("Got p2p info, model_config: {}", model_config);
 
-                                let model_config = match llm.architecture {
-                                    model::LLMArchitecture::HfLlama => match llm.checkpoint {
-                                        model::Checkpoint::Dummy => {
-                                            AutoConfig::Dummy(serde_json::from_str(&model_config)?)
-                                        }
-                                        _ => {
-                                            AutoConfig::Llama(serde_json::from_str(&model_config)?)
-                                        }
-                                    },
-                                };
+                                let model_config =
+                                    AutoConfig::Llama(serde_json::from_str(&model_config)?);
                                 let parameter_names = model_config.get_parameter_names();
+                                info!(
+                                    "Requesting {} parameters over p2p network",
+                                    parameter_names.len()
+                                );
 
                                 let (tx_params_response, rx_params_response) = oneshot::channel();
                                 tx_parameters_req
@@ -305,7 +305,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                                         model_config,
                                         parameters,
                                     ),
-                                    tokenizer,
+                                    Arc::new(tokenizer),
                                     vec![],
                                 )
                             }
@@ -369,18 +369,18 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             let model = future
                                 .await
                                 .map_err(InitRunError::ModelLoadingThreadCrashed)??;
-                            let config =
-                                serde_json::to_string(&source.serialize_config()?).unwrap();
+                            let config = source.serialize_config()?;
                             debug!("Config uploaded: {}", config);
                             let tokenizer = tokenizer.to_string(false).unwrap();
                             tx_config.send((config, tokenizer)).unwrap();
                             models.push(Box::new(model));
                         }
                         info!(
-                            "Loaded model onto {} gpu(s) (dp={},tp={})",
+                            "Loaded model onto {} gpu(s) (dp={},tp={}) - Checkpoint: {}",
                             init_config.data_parallelism * init_config.tensor_parallelism,
                             init_config.data_parallelism,
-                            init_config.tensor_parallelism
+                            init_config.tensor_parallelism,
+                            llm.checkpoint,
                         );
 
                         Ok(RawLoadedModel {

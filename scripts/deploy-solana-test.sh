@@ -1,6 +1,16 @@
 #! /bin/bash
 
+set -o errexit
 set -e
+set -m
+
+cleanup() {
+    echo -e "\nCleaning up background processes...\n"
+    kill $(jobs -p) 2>/dev/null
+    wait
+}
+
+trap cleanup INT EXIT
 
 WALLET_FILE=${KEY_FILE:-"$HOME/.config/solana/id.json"}
 RPC=${RPC:-"http://127.0.0.1:8899"}
@@ -8,21 +18,39 @@ WS_RPC=${WS_RPC:-"ws://127.0.0.1:8900"}
 RUN_ID=${RUN_ID:-"test"}
 CONFIG_FILE=${CONFIG_FILE:-"./config/solana-test/config.toml"}
 
+solana-keygen new --no-bip39-passphrase --force
+solana config set --url localhost
+solana-test-validator -r 1>/dev/null &
+
+sleep 3
+
 pushd architectures/decentralized/solana-coordinator
-anchor build --no-idl && anchor deploy --provider.cluster ${RPC} -- --max-len 500000
+anchor build --no-idl && anchor keys sync && anchor deploy --provider.cluster ${RPC} -- --max-len 500000
 popd
 
 sleep 10
 
 cargo run --release --bin psyche-solana-client -- \
     create-run \
-       --wallet-private-key-path ${WALLET_FILE} --rpc ${RPC} --ws-rpc ${WS_RPC} \
+       --wallet-private-key-path ${WALLET_FILE} \
+       --rpc ${RPC} \
+       --ws-rpc ${WS_RPC} \
        --run-id ${RUN_ID}
+
 cargo run --release --bin psyche-solana-client -- \
     update-config \
-        --wallet-private-key-path ${WALLET_FILE} --rpc ${RPC} --ws-rpc ${WS_RPC} \
-        --run-id ${RUN_ID} --config-path ${CONFIG_FILE}
+        --wallet-private-key-path ${WALLET_FILE} \
+        --rpc ${RPC} \
+        --ws-rpc ${WS_RPC} \
+        --run-id ${RUN_ID} \
+        --config-path ${CONFIG_FILE}
+
 cargo run --release --bin psyche-solana-client -- \
     set-paused \
-        --wallet-private-key-path ${WALLET_FILE} --rpc ${RPC} --ws-rpc ${WS_RPC} \
-        --run-id ${RUN_ID} --resume
+        --wallet-private-key-path ${WALLET_FILE} \
+        --rpc ${RPC} \
+        --ws-rpc ${WS_RPC} \
+        --run-id ${RUN_ID} \
+        --resume
+
+solana logs

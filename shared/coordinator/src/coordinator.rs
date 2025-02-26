@@ -497,6 +497,17 @@ impl<T: NodeIdentity> Coordinator<T> {
         Err(CoordinatorError::InvalidWithdraw)
     }
 
+    pub fn withdraw_all(&mut self) -> std::result::Result<(), CoordinatorError> {
+        if self.epoch_state.clients.is_empty() {
+            return Err(CoordinatorError::InvalidWithdraw);
+        }
+        let clients_max_index = self.epoch_state.clients.len() - 1;
+        for client_index in 0..=clients_max_index {
+            self.withdraw(client_index as u64)?;
+        }
+        Ok(())
+    }
+
     pub fn pause(&mut self) -> std::result::Result<(), CoordinatorError> {
         self.pending_pause = true.into();
         Ok(())
@@ -739,8 +750,11 @@ impl<T: NodeIdentity> Coordinator<T> {
                     llm.checkpoint = Checkpoint::Hub(hub_repo);
                 }
             } else if self.progress.epoch != 0 {
-                if let Checkpoint::Hub(hub_repo) = llm.checkpoint {
-                    llm.checkpoint = Checkpoint::P2P(hub_repo)
+                match llm.checkpoint {
+                    Checkpoint::Hub(hub_repo) | Checkpoint::Dummy(hub_repo) => {
+                        llm.checkpoint = Checkpoint::P2P(hub_repo)
+                    }
+                    _ => {}
                 }
             }
 
@@ -803,18 +817,28 @@ impl<T: NodeIdentity> Coordinator<T> {
             let num_witnesses = current_round.witnesses.len() as u16;
             self.move_clients_to_exited(height);
 
-            // if we finish an epoch or some clients disconnect and we don't
-            // reach the minimum number of clients we change state to cooldown.
+            // If there are not witnesses, then we can't distinguish from
+            // the situation where only witness nodes disconnected or everyone
+            // disconnected. We just set everyone to withdrawn state and change
+            // to Cooldown.
+            if num_witnesses == 0 {
+                self.withdraw_all()?;
+                self.start_cooldown(unix_timestamp);
+                return Ok(TickResult::Ticked);
+            }
+
+            // If we reach the end of an epoch or if we don't reach the min number of
+            // clients or registered witnesses for the current round, we change to Cooldown
             if height == self.config.rounds_per_epoch - 1
                 || self.epoch_state.clients.len() < self.config.min_clients as usize
-                || num_witnesses == 0
                 || (num_witnesses < self.config.witness_quorum)
                 || self.pending_pause.is_true()
             {
                 self.start_cooldown(unix_timestamp);
-            } else {
-                self.start_round_train(unix_timestamp, random_seed, 0);
+                return Ok(TickResult::Ticked);
             }
+
+            self.start_round_train(unix_timestamp, random_seed, 0);
         }
         Ok(TickResult::Ticked)
     }
@@ -840,7 +864,6 @@ impl<T: NodeIdentity> Coordinator<T> {
             let current_round = self.current_round_unchecked();
             let height = current_round.height;
             self.move_clients_to_exited(height);
-
             if self.pending_pause.is_true() {
                 self.change_state(unix_timestamp, RunState::Paused);
                 self.pending_pause = false.into();
@@ -963,5 +986,7 @@ impl<I> CoordinatorConfig<I> {
             && self.data_indicies_per_batch != 0
             && self.rounds_per_epoch != 0
             && self.total_steps != 0
+            && self.witness_nodes <= self.min_clients
+            && self.witness_quorum <= self.witness_nodes
     }
 }

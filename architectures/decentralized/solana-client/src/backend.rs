@@ -12,7 +12,7 @@ use anchor_client::{
     },
     Client, Cluster, Program,
 };
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use futures_util::StreamExt;
 use psyche_coordinator::{
     model::{self, Model},
@@ -22,6 +22,7 @@ use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
 use std::sync::Arc;
 use tokio::sync::broadcast;
+use tracing::{debug, info};
 
 pub struct SolanaBackend {
     program: Program<Arc<Keypair>>,
@@ -59,7 +60,12 @@ impl SolanaBackend {
         let sub_client = PubsubClient::new(self.cluster.ws_url()).await?;
         let (tx, rx) = broadcast::channel(32);
 
+        info!("Coordinator address: {}", coordinator);
         let (instance_pda, instance) = self.get_coordinator_instance(&run_id).await?;
+        info!(
+            "Coordinator instance address for run \"{}\": {}",
+            run_id, instance_pda
+        );
         let commitment = self.program.rpc().commitment();
 
         let init = self.program.rpc().get_account_data(&coordinator).await?;
@@ -351,7 +357,11 @@ impl SolanaBackend {
         let (instance_pda, _) = self.find_instance_from_run_id(run_id);
 
         let instance: psyche_solana_coordinator::CoordinatorInstance =
-            self.program.account(instance_pda).await?;
+            self.program.account(instance_pda).await.context(format!(
+                "Finding coordinator instance for run {} on coordinator {}",
+                run_id,
+                self.program.id()
+            ))?;
         Ok((instance_pda, instance))
     }
 
@@ -396,7 +406,11 @@ impl WatcherBackend<psyche_solana_coordinator::ClientId> for SolanaBackendRunner
 
         psyche_solana_coordinator::coordinator_account_from_bytes(&data)
             .map_err(|_| anyhow!("Unable to decode coordinator account data"))
-            .map(|x| x.state.coordinator)
+            .map(|x| {
+                let update = x.state.coordinator;
+                debug!("Coordinator account update, run_state={}", update.run_state);
+                update
+            })
     }
 
     async fn send_witness(&mut self, witness: Witness) -> Result<()> {

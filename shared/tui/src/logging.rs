@@ -1,5 +1,7 @@
 use std::{fs::OpenOptions, path::PathBuf};
 
+use crate::CustomWidget;
+use clap::ValueEnum;
 use crossterm::event::{Event, KeyCode, MouseEventKind};
 use ratatui::{
     buffer::Buffer,
@@ -10,11 +12,11 @@ use tracing::Level;
 use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Layer};
 use tui_logger::{TuiLoggerLevelOutput, TuiLoggerWidget, TuiWidgetEvent, TuiWidgetState};
 
-use crate::CustomWidget;
-
+#[derive(Clone, Debug, Copy, ValueEnum, PartialEq)]
 pub enum LogOutput {
     TUI,
     Console,
+    Json,
 }
 
 pub fn init_logging(output: LogOutput, level: Level, write_logs_file: Option<PathBuf>) {
@@ -27,6 +29,15 @@ pub fn init_logging(output: LogOutput, level: Level, write_logs_file: Option<Pat
     let subscriber = match output {
         LogOutput::TUI => subscriber.with(tui_logger::tracing_subscriber_layer().boxed()),
         LogOutput::Console => subscriber.with(fmt::layer().with_writer(std::io::stdout).boxed()),
+        LogOutput::Json => subscriber.with(
+            fmt::layer()
+                .json()
+                .with_ansi(true)
+                .with_writer(std::io::stdout)
+                .flatten_event(true)
+                .with_current_span(true)
+                .boxed(),
+        ),
     };
 
     if let Some(dir) = write_logs_file {

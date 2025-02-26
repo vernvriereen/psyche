@@ -278,7 +278,7 @@ impl LLM {
     pub fn dummy() -> Self {
         Self {
             architecture: LLMArchitecture::HfLlama,
-            checkpoint: Checkpoint::Dummy,
+            checkpoint: Checkpoint::Dummy(HubRepo::dummy()),
             data_location: LLMTrainingDataLocation::Dummy,
             data_type: LLMTrainingDataType::Pretraining,
             lr_schedule: LearningRateSchedule::Constant(ConstantLR::default()),
@@ -313,6 +313,15 @@ pub struct HubRepo {
     pub revision: Option<[u8; SOLANA_MAX_STRING_LEN]>,
 }
 
+impl HubRepo {
+    pub fn dummy() -> Self {
+        Self {
+            repo_id: [0; SOLANA_MAX_STRING_LEN],
+            revision: None,
+        }
+    }
+}
+
 #[derive(
     AnchorSerialize,
     AnchorDeserialize,
@@ -326,8 +335,8 @@ pub struct HubRepo {
 )]
 #[repr(C)]
 pub enum Checkpoint {
-    Dummy,
     Ephemeral,
+    Dummy(HubRepo),
     Hub(HubRepo),
     P2P(HubRepo),
 }
@@ -335,7 +344,7 @@ pub enum Checkpoint {
 impl std::fmt::Display for Checkpoint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Checkpoint::Dummy => write!(f, "Dummy"),
+            Checkpoint::Dummy(_hub_repo) => write!(f, "Dummy"),
             Checkpoint::Ephemeral => write!(f, "Ephemeral"),
             Checkpoint::Hub(hub_repo) => write!(f, "{}", u8_to_string(&hub_repo.repo_id)),
             Checkpoint::P2P(hub_repo) => {
@@ -443,7 +452,7 @@ impl Model {
                         },
                     }
                     && match llm.checkpoint {
-                        Checkpoint::Dummy => false,
+                        Checkpoint::Dummy(_hub_repo) => false,
                         Checkpoint::Ephemeral => true,
                         Checkpoint::Hub(hub_repo) => hub_repo.repo_id[0] != 0,
                         Checkpoint::P2P(hub_repo) => hub_repo.repo_id[0] != 0,

@@ -12,9 +12,17 @@ DP=${DP:-"8"}
 TP=${TP:-"1"}
 BATCH_SIZE=${BATCH_SIZE:-"8"}
 
-export RUST_LOG="warn,psyche_client=info,psyche_solana_client=info,psyche_network=info,psyche_data_provider=info"
+solana airdrop 10 $"(solana-keygen pubkey ${WALLET_FILE})"
+
+export RUST_LOG="info,psyche=debug"
 
 cargo run --release --bin psyche-solana-client -- \
     train \
-        --wallet-private-key-path ${WALLET_FILE} --rpc ${RPC} --ws-rpc ${WS_RPC} \
-        --run-id ${RUN_ID} --data-parallelism ${DP} --tensor-parallelism ${TP} --micro-batch-size ${BATCH_SIZE} --ticker
+        --wallet-private-key-path ${WALLET_FILE} \
+        --rpc ${RPC} \
+        --ws-rpc ${WS_RPC} \
+        --run-id ${RUN_ID} \
+        --data-parallelism ${DP} \
+        --tensor-parallelism ${TP} \
+        --micro-batch-size ${BATCH_SIZE} \
+        --ticker
