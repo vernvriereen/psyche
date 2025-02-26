@@ -44,3 +44,9 @@ deposits some funds in it and then starts training. This is done only for conven
 The `psyche_solana_validator.Dockerfile` is meant to build a Solana validator image which will be only used for testing
 when spawning a whole network using `docker compose`.
 Its main task is to spawn the `solana-test-validator` and deploy the coordinator Solana program.
+
+---
+
+## Running a localnet using Pysche test client
+
+If you want to running a validator in your local machine,

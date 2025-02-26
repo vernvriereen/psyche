@@ -46,3 +46,5 @@ book
 **/.rustc_info.json
 
 config/client/.env
+
+**/README.md
