@@ -34,7 +34,8 @@ pub enum DockerWatcherError {
 
 pub struct DockerWatcher {
     client: Arc<Docker>,
-    log_sender: mpsc::Sender<Response>,
+    log_tx: mpsc::Sender<Response>,
+    pub log_rx: mpsc::Receiver<Response>,
 }
 
 #[derive(Debug)]
@@ -44,8 +45,14 @@ pub enum Response {
 }
 
 impl DockerWatcher {
-    pub fn new(client: Arc<Docker>, log_sender: mpsc::Sender<Response>) -> Self {
-        Self { client, log_sender }
+    pub fn new(client: Arc<Docker>) -> Self {
+        let (log_tx, log_rx) = mpsc::channel(100);
+
+        Self {
+            client,
+            log_tx,
+            log_rx,
+        }
     }
 
     pub fn monitor_container(
@@ -70,7 +77,7 @@ impl DockerWatcher {
 
         let name = name.to_string();
         let client = self.client.clone();
-        let log_sender = self.log_sender.clone();
+        let log_sender = self.log_tx.clone();
         let monitor_handle = tokio::spawn(async move {
             let mut logs = client.logs(&name, log_options);
             while let Some(log) = logs.next().await {
@@ -93,7 +100,7 @@ impl DockerWatcher {
                                 continue;
                             };
 
-                            // unwraping here, it should not be possible for a log to have new_state
+                            // unwrapping here, it should not be possible for a log to have new_state
                             // but no old_state
                             let new_state = parsed_log
                                 .get("new_state")

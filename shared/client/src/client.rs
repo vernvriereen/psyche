@@ -112,11 +112,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                         state = watcher.poll_next() => {
                             let (old_state, new_state) = state?;
-                            let old_run_state = if let Some(old_state) = old_state {
-                                old_state.run_state.to_string()
-                            } else {
-                                String::from(" - ")
-                            };
+                            let old_run_state = old_state
+                                .map(|s| s.run_state.to_string())
+                                .unwrap_or_else(|| String::from(" - "));
 
                             info!(
                                 client_id = %identity,
