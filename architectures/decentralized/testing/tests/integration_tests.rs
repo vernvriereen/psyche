@@ -70,7 +70,7 @@ async fn one_client_three_epochs_run() {
 }
 
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
-async fn disconect_client() {
+async fn disconnect_client() {
     // set test variables
     let run_id = "test".to_string();
     // epochs the test will run
