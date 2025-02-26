@@ -147,7 +147,7 @@ enum Commands {
 impl From<ClusterArgs> for Cluster {
     fn from(val: ClusterArgs) -> Self {
         let rpc = val.rpc.trim_matches('"').to_string();
-        let ws_rpc = val.rpc.trim_matches('"').to_string();
+        let ws_rpc = val.ws_rpc.trim_matches('"').to_string();
         Cluster::Custom(rpc, ws_rpc)
     }
 }

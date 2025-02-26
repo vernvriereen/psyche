@@ -95,7 +95,7 @@ build_docker_test_client:
 
 # Setup the infrastructure for testing locally using Docker.
 setup_test_infra num_clients="1":
-    cd architectures/decentralized/solana-coordinator && anchor build --no-idl && anchor keys sync
+    cd architectures/decentralized/solana-coordinator && anchor keys sync && anchor build --no-idl
     cd docker/test && COMPOSE_BAKE=true docker compose build
     cd docker/test && NUM_REPLICAS={{num_clients}} docker compose up -d --force-recreate
 
