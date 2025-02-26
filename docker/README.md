@@ -6,7 +6,7 @@ The purpose of using docker is two-fold:
   * implementing end-to-end tests that are as close as possible to a production environment.
 
 There are three concrete use-cases for the docker containers that are generated with these Dockerfiles:
-  * spawning a whole dockerized network with all the components: Solana validator and varios clients. These should
+  * spawning a whole dockerized network with all the components: Solana validator and various clients. These should
   be done via `docker compose`.
   * booting a testing client in a Solana localnet: basically to join and train in a run with some local or remote
   `solana-test-validator`. In short, it solves some Solana chores such as generating a key pair and adding funds to it.
