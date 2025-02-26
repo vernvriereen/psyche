@@ -25,7 +25,7 @@ solana-test-validator -r 1>/dev/null &
 sleep 3
 
 pushd architectures/decentralized/solana-coordinator
-anchor build --no-idl && anchor keys sync && anchor deploy --provider.cluster ${RPC} -- --max-len 500000
+anchor keys sync && anchor build --no-idl && anchor deploy --provider.cluster ${RPC} -- --max-len 500000
 popd
 
 echo -e "\n[+] Coordinator program deployed successfully!"
