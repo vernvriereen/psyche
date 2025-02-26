@@ -17,8 +17,9 @@ use bytemuck::Zeroable;
 use clap::{Args, Parser, Subcommand};
 use psyche_client::{print_identity_keys, read_identity_secret_key, TrainArgs};
 use psyche_coordinator::{model::Model, CoordinatorConfig};
+use psyche_core::try_to_fixed_size_array;
 use psyche_network::SecretKey;
-use psyche_solana_coordinator::{find_coordinator_instance, ClientId};
+use psyche_solana_coordinator::{find_coordinator_instance, ClientId, RunMetadata};
 use psyche_tui::{maybe_start_render_loop, LogOutput};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -76,6 +77,18 @@ enum Commands {
 
         #[clap(short, long, env)]
         run_id: String,
+
+        #[clap(long)]
+        name: Option<String>,
+
+        #[clap(long)]
+        description: Option<String>,
+
+        #[clap(long)]
+        num_parameters: Option<u64>,
+
+        #[clap(long)]
+        vocab_size: Option<u64>,
     },
     CloseRun {
         #[clap(flatten)]
@@ -173,6 +186,10 @@ async fn async_main() -> Result<()> {
             cluster,
             wallet,
             run_id,
+            name,
+            description,
+            num_parameters,
+            vocab_size,
         } => {
             let run_id = run_id.trim_matches('"').to_string(); // Trim quotes, if any
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
@@ -182,7 +199,20 @@ async fn async_main() -> Result<()> {
                 CommitmentConfig::confirmed(),
             )
             .unwrap();
-            let created = backend.create_run(run_id.clone()).await?;
+            let created = backend
+                .create_run(
+                    run_id.clone(),
+                    RunMetadata {
+                        name: try_to_fixed_size_array(name.as_ref().unwrap_or(&run_id)).unwrap(),
+                        description: try_to_fixed_size_array(
+                            &description.unwrap_or(format!("run {run_id}")),
+                        )
+                        .unwrap(),
+                        num_parameters: num_parameters.unwrap_or(0),
+                        vocab_size: vocab_size.unwrap_or(0),
+                    },
+                )
+                .await?;
             let locked = backend.get_balance(&created.account).await?;
             println!(
                 "Created run {} with transaction {}",

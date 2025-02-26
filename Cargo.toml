@@ -89,7 +89,7 @@ anchor-lang-idl = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a2
     "build",
 ] }
 
-ts-rs = { git = "https://github.com/arilotter/ts-rs.git", rev = "7a2d7840f628763fc9fa549b19dc2cb8eb7cebd5", features = [
+ts-rs = { git = "https://github.com/arilotter/ts-rs.git", rev = "92ce1752227fec9bb868ad8f25b26f110a795099", features = [
     "psyche-impl",
 ] }
 

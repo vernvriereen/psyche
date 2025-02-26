@@ -4,7 +4,9 @@ mod instance_state;
 pub mod logic;
 mod program_error;
 
-use anchor_lang::prelude::*;
+pub use crate::instance_state::RunMetadata;
+
+use anchor_lang::{prelude::*, system_program};
 pub use instance_state::CoordinatorInstanceState;
 use logic::*;
 pub use program_error::ProgramError;

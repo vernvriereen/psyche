@@ -11873,7 +11873,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 [[package]]
 name = "ts-rs"
 version = "10.1.0"
-source = "git+https://github.com/arilotter/ts-rs.git?rev=7a2d7840f628763fc9fa549b19dc2cb8eb7cebd5#7a2d7840f628763fc9fa549b19dc2cb8eb7cebd5"
+source = "git+https://github.com/arilotter/ts-rs.git?rev=92ce1752227fec9bb868ad8f25b26f110a795099#92ce1752227fec9bb868ad8f25b26f110a795099"
 dependencies = [
  "anchor-lang",
  "bytemuck",
@@ -11886,7 +11886,7 @@ dependencies = [
 [[package]]
 name = "ts-rs-macros"
 version = "10.1.0"
-source = "git+https://github.com/arilotter/ts-rs.git?rev=7a2d7840f628763fc9fa549b19dc2cb8eb7cebd5#7a2d7840f628763fc9fa549b19dc2cb8eb7cebd5"
+source = "git+https://github.com/arilotter/ts-rs.git?rev=92ce1752227fec9bb868ad8f25b26f110a795099#92ce1752227fec9bb868ad8f25b26f110a795099"
 dependencies = [
  "proc-macro2",
  "quote",

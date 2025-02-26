@@ -7,6 +7,7 @@ use psyche_solana_coordinator::cpi::accounts::InitCoordinatorAccounts;
 use psyche_solana_coordinator::cpi::init_coordinator;
 use psyche_solana_coordinator::logic::InitCoordinatorParams;
 use psyche_solana_coordinator::program::PsycheSolanaCoordinator;
+use psyche_solana_coordinator::RunMetadata;
 
 use crate::run_identity_from_string;
 use crate::state::Run;
@@ -64,6 +65,7 @@ pub struct RunCreateParams {
     pub run_id: String,
     pub main_authority: Pubkey,
     pub join_authority: Pubkey,
+    pub metadata: RunMetadata,
     pub collateral_amount_per_earned_point: u64,
 }
 
@@ -117,6 +119,7 @@ pub fn run_create_processor(
             main_authority: context.accounts.run.key(),
             join_authority: params.join_authority,
             run_id: params.run_id.clone(),
+            metadata: params.metadata,
         },
     )?;
 

@@ -66,6 +66,18 @@ pub fn to_fixed_size_array(s: &str) -> [u8; 64] {
     array
 }
 
+/// tries to fit a string as bytes into the target array size.
+/// fills any remaining bytes with \0
+pub fn try_to_fixed_size_array<const N: usize>(s: &str) -> Result<[u8; N], ()> {
+    let mut array = [0u8; N];
+    let bytes = s.as_bytes();
+    if bytes.len() > N {
+        return Err(());
+    }
+    array[..bytes.len()].copy_from_slice(bytes);
+    Ok(array)
+}
+
 #[cfg(test)]
 mod tests {
     /// A lot of the code here assumes that usize is u64. This should be true on every platform we support.

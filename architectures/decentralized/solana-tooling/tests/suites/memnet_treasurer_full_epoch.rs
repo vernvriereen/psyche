@@ -7,6 +7,7 @@ use psyche_coordinator::model::Model;
 use psyche_coordinator::model::LLM;
 use psyche_coordinator::CoordinatorConfig;
 use psyche_coordinator::WitnessProof;
+use psyche_coordinator::SOLANA_MAX_STRING_LEN;
 use psyche_core::ConstantLR;
 use psyche_core::FixedVec;
 use psyche_core::LearningRateSchedule;
@@ -86,6 +87,7 @@ pub async fn run() {
             main_authority: main_authority.pubkey(),
             join_authority: join_authority.pubkey(),
             collateral_amount_per_earned_point,
+            metadata: Default::default(),
         },
     )
     .await

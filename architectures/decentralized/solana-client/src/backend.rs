@@ -19,7 +19,6 @@ use psyche_coordinator::{
     model::{self, Model},
     CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks, Witness,
 };
-
 use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
 use std::sync::Arc;
@@ -122,7 +121,11 @@ impl SolanaBackend {
         })
     }
 
-    pub async fn create_run(&self, run_id: String) -> Result<CreatedRun> {
+    pub async fn create_run(
+        &self,
+        run_id: String,
+        metadata: psyche_solana_coordinator::RunMetadata,
+    ) -> Result<CreatedRun> {
         let space = psyche_solana_coordinator::CoordinatorAccount::space_with_discriminator();
         let rent = self
             .program_coordinator
@@ -171,6 +174,7 @@ impl SolanaBackend {
                             main_authority,
                             join_authority,
                             run_id,
+                            metadata,
                         },
                     })
                     .instructions()
