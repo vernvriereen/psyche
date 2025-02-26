@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 
 use crate::state::Pool;
 use crate::state::PoolMetadata;
+use crate::ProgramError;
 
 #[derive(Accounts)]
 #[instruction(params: PoolUpdateParams)]
@@ -45,6 +46,9 @@ pub fn pool_update_processor(
     }
 
     if let Some(metadata) = params.metadata {
+        if usize::from(metadata.length) > PoolMetadata::BYTES {
+            return err!(ProgramError::ParamsMetadataLengthIsTooLarge);
+        }
         pool.metadata = metadata;
     }
 

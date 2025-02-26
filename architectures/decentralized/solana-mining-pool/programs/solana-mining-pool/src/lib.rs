@@ -66,6 +66,8 @@ pub enum ProgramError {
     ParamsCollateralAmountIsTooLarge,
     #[msg("params.redeemable_amount is too large")]
     ParamsRedeemableAmountIsTooLarge,
+    #[msg("params.metadata.length is too large")]
+    ParamsMetadataLengthIsTooLarge,
     #[msg("pool.claiming_enabled is true")]
     PoolClaimingEnabledIsTrue,
     #[msg("pool.claiming_enabled is false")]

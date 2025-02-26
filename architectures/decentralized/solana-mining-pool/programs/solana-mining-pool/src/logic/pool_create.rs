@@ -6,6 +6,7 @@ use anchor_spl::token::TokenAccount;
 
 use crate::state::Pool;
 use crate::state::PoolMetadata;
+use crate::ProgramError;
 
 #[derive(Accounts)]
 #[instruction(params: PoolCreateParams)]
@@ -56,6 +57,10 @@ pub fn pool_create_processor(
     context: Context<PoolCreateAccounts>,
     params: PoolCreateParams,
 ) -> Result<()> {
+    if usize::from(params.metadata.length) > PoolMetadata::BYTES {
+        return err!(ProgramError::ParamsMetadataLengthIsTooLarge);
+    }
+
     let pool = &mut context.accounts.pool;
 
     pool.bump = context.bumps.pool;
