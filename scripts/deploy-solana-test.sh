@@ -28,14 +28,19 @@ pushd architectures/decentralized/solana-coordinator
 anchor build --no-idl && anchor keys sync && anchor deploy --provider.cluster ${RPC} -- --max-len 500000
 popd
 
+echo -e "\n[+] Coordinator program deployed successfully!"
+
 sleep 10
 
+echo -e "\n[+] Creating training run..."
 cargo run --release --bin psyche-solana-client -- \
     create-run \
        --wallet-private-key-path ${WALLET_FILE} \
        --rpc ${RPC} \
        --ws-rpc ${WS_RPC} \
        --run-id ${RUN_ID}
+
+echo -e "\n[+] Training run created successfully"
 
 cargo run --release --bin psyche-solana-client -- \
     update-config \
@@ -52,5 +57,7 @@ cargo run --release --bin psyche-solana-client -- \
         --ws-rpc ${WS_RPC} \
         --run-id ${RUN_ID} \
         --resume
+
+echo -e "\n[+] Testing Solana setup ready, starting Solana logs...\n"
 
 solana logs

@@ -47,6 +47,90 @@ Its main task is to spawn the `solana-test-validator` and deploy the coordinator
 
 ---
 
-## Running a localnet using Pysche test client
+## Running a localnet using Pysche dockerized test clients
 
-If you want to running a validator in your local machine,
+### Starting solana-test-validator and deploying Coordinator
+
+If you want to running a validator in your machine, then you will need to start the `solana-test-validator`
+binary and then deploy the coordinator program. If you have started the validator and deployed the Coordinator
+in another machine, you can skip to the next section.
+
+The script `deploy-solana-test.sh` can be used to set everything; this will essentially start the Solana test
+validator, build and deploy the Coordinator program and create a training run.
+
+For creating a lightweight run, you can use
+
+```bash
+just setup-solana-localnet-light-test-run
+```
+
+When the Solana setup finishes, you will see a log saying
+
+```bash
+[+] Testing Solana setup ready, starting Solana logs...
+Streaming transaction logs. Confirmed commitment
+```
+
+In one of the logs when the Coordinator was deployed, you should see the **Program ID**. Knowing
+it is useful to be sure that things are being set correctly.
+
+### Starting N dockerized clients
+
+The first thing you should do now is to create an env file in `config/client/.env`. Here you should set
+the environment variables `RPC`, `WS_RPC` and `RUN_ID` accordingly:
+* `RPC`: The RPC endpoint of your Solana test validator.
+* `WS_RPC`: The websocket endpoint of your Solana test validator.
+* `RUN_ID`: The name of the training run created previously. Usually set to "test" as a default.
+
+There is an example env file `config/client/.env.example` that you can use as a template.
+
+> [!NOTE]
+> If you want to run the network using a local Solana test validator, then you can just copy the `.env.example`
+file as it is:
+```bash
+cp config/client/.env.example config/client/.env
+```
+
+Once you have your `.env` file set, you can build and spawn the dockerized clients for training.
+For a computer with N GPUs, you can spawn up to N clients and each one will use one GPU.
+
+This can be done using:
+
+```bash
+just setup_clients <num_clients>
+```
+
+where `<num_clients>` should be replaced with the number of clients you want spawn.
+
+As soon as you run the previous `just` command, you will be prompted with a message saying something like
+
+```bash
+"<some_program_id>" is the address of the coordinator program that will be used in the psyche test client binary.
+Continue? [y/N]
+```
+
+Check that it is the same as the **Program ID** from the deployed Coordinator. If it is not, then you should go
+to `architectures/decentralized/solana-coordinator/programs/solana-coordinator/src/lib.rs` and change the program ID
+being used in the `declare_id!()` macro to the one of the deployed Coordinator.
+
+Once you accept, the docker images will start building and then containers will be started.
+
+---
+
+## Running a whole network with docker compose (mostly used in the testing framework)
+
+To spawn a whole network with all the services included, you can run
+
+```bash
+just setup_test_infra <num_clients>
+```
+
+where `<num_clients>` is the number of clients you want in the run.
+
+You could then check the logs of each container using `docker logs`.
+
+To stop the docker compose network, run
+
+```bash
+just stop_test_infra
+```

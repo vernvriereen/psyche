@@ -11,7 +11,7 @@ if [ -z "$coordinator_address" ]; then
   exit 1
 fi
 
-echo -e "\n[+] ${coordinator_address} is the address of the coordinator program that will be used in the psyche test client binary.\n"
+echo -e "\n${coordinator_address} is the address of the coordinator program that will be used in the psyche test client binary.\n"
 read -p "Continue? [y/N] " answer
 
 if [[ "$answer" =~ ^[Yy]$ || -z "$answer" ]]; then

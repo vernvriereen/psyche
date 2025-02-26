@@ -27,5 +27,6 @@ for i in $(seq 1 "$num_clients"); do
         --env-file ./config/client/.env \
         --add-host=host.docker.internal:host-gateway \
         psyche-test-client
+
     echo "Started psyche-test-client-${i} on GPU $gpu_id"
 done
