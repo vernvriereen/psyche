@@ -146,7 +146,9 @@ enum Commands {
 
 impl From<ClusterArgs> for Cluster {
     fn from(val: ClusterArgs) -> Self {
-        Cluster::Custom(val.rpc, val.ws_rpc)
+        let rpc = val.rpc.trim_matches('"').to_string();
+        let ws_rpc = val.rpc.trim_matches('"').to_string();
+        Cluster::Custom(rpc, ws_rpc)
     }
 }
 
@@ -356,7 +358,7 @@ async fn async_main() -> Result<()> {
                 wallet_keypair,
                 cluster: cluster.into(),
                 ticker,
-                run_id: run_id,
+                run_id,
                 p2p_port: args.bind_p2p_port,
                 data_parallelism: args.data_parallelism,
                 tensor_parallelism: args.tensor_parallelism,
