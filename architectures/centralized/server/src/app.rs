@@ -9,7 +9,7 @@ use psyche_coordinator::{
     Witness, SOLANA_MAX_NUM_CLIENTS,
 };
 
-use psyche_core::{u8_to_string, FixedVec, Shuffle, SizedIterator, TokenSize};
+use psyche_core::{FixedVec, Shuffle, SizedIterator, TokenSize};
 use psyche_data_provider::{
     download_model_repo_async, DataProviderTcpServer, DataServerTui, LocalDataProvider,
 };
@@ -188,8 +188,8 @@ impl App {
 
                 match checkpoint {
                     Checkpoint::Hub(hub_repo) => {
-                        let repo_id = u8_to_string(&hub_repo.repo_id);
-                        let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
+                        let repo_id = String::from(&hub_repo.repo_id);
+                        let revision = hub_repo.revision.map(|bytes| (&bytes).into());
                         if revision.is_some()
                             || !tokio::fs::try_exists(PathBuf::from(repo_id.clone()))
                                 .await
@@ -210,7 +210,7 @@ impl App {
                     }
                 }
 
-                let server_addr: SocketAddr = u8_to_string(url).parse().map_err(|e| {
+                let server_addr: SocketAddr = String::from(url).parse().map_err(|e| {
                     anyhow!("Failed to parse training data server URL {:?}: {}", url, e)
                 })?;
                 let data_server_port = server_addr.port();
@@ -367,7 +367,7 @@ impl App {
         let broadcast = match event {
             ClientToServerMessage::Join { run_id } => {
                 // TODO: check whitelist
-                let coord_run_id = u8_to_string(&self.coordinator.run_id);
+                let coord_run_id = String::from(&self.coordinator.run_id);
                 if coord_run_id == run_id {
                     info!("added pending client {from}");
                     self.backend.pending_clients.insert(from);

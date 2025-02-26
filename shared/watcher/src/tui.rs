@@ -4,7 +4,7 @@ use std::{
 };
 
 use psyche_coordinator::{model::Model, Coordinator, RunState};
-use psyche_core::{u8_to_string, NodeIdentity};
+use psyche_core::NodeIdentity;
 use psyche_tui::ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
@@ -179,7 +179,7 @@ pub struct CoordinatorTuiState {
 impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
     fn from(value: &Coordinator<T>) -> Self {
         Self {
-            run_id: u8_to_string(&value.run_id),
+            run_id: (&value.run_id).into(),
             run_state: value.into(),
             height: value.epoch_state.rounds[value.epoch_state.rounds_head as usize].height,
             clients: value

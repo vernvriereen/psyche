@@ -17,7 +17,6 @@ use bytemuck::Zeroable;
 use clap::{Args, Parser, Subcommand};
 use psyche_client::{print_identity_keys, read_identity_secret_key, TrainArgs};
 use psyche_coordinator::{model::Model, CoordinatorConfig};
-use psyche_core::try_to_fixed_size_array;
 use psyche_network::SecretKey;
 use psyche_solana_coordinator::{find_coordinator_instance, ClientId, RunMetadata};
 use psyche_tui::{maybe_start_render_loop, LogOutput};
@@ -203,11 +202,16 @@ async fn async_main() -> Result<()> {
                 .create_run(
                     run_id.clone(),
                     RunMetadata {
-                        name: try_to_fixed_size_array(name.as_ref().unwrap_or(&run_id)).unwrap(),
-                        description: try_to_fixed_size_array(
-                            &description.unwrap_or(format!("run {run_id}")),
-                        )
-                        .unwrap(),
+                        name: name
+                            .as_deref()
+                            .unwrap_or(run_id.as_str())
+                            .try_into()
+                            .unwrap(),
+                        description: description
+                            .unwrap_or(format!("run {run_id}"))
+                            .as_str()
+                            .try_into()
+                            .unwrap(),
                         num_parameters: num_parameters.unwrap_or(0),
                         vocab_size: vocab_size.unwrap_or(0),
                     },

@@ -8,10 +8,7 @@ use psyche_coordinator::{
     model::Model, ClientState, Coordinator, CoordinatorConfig, HealthChecks,
     RunState, TickResult, Witness, SOLANA_MAX_STRING_LEN,
 };
-use psyche_core::{
-    serde_deserialize_string, serde_serialize_string, sha256v, SizedIterator,
-    SmallBoolean,
-};
+use psyche_core::{FixedString, SizedIterator, SmallBoolean};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -24,22 +21,13 @@ use ts_rs::TS;
     Serialize,
     Deserialize,
     TS,
+    Default,
 )]
 #[repr(C)]
 pub struct RunMetadata {
-    #[serde(
-        serialize_with = "serde_serialize_string",
-        deserialize_with = "serde_deserialize_string"
-    )]
-    #[ts(as = "String")]
-    pub name: [u8; SOLANA_MAX_STRING_LEN],
+    pub name: FixedString<{ SOLANA_MAX_STRING_LEN }>,
 
-    #[serde(
-        serialize_with = "serde_serialize_string",
-        deserialize_with = "serde_deserialize_string"
-    )]
-    #[ts(as = "String")]
-    pub description: [u8; 280],
+    pub description: FixedString<280>,
 
     pub num_parameters: u64,
     pub vocab_size: u64,

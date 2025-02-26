@@ -7,7 +7,6 @@ use psyche_coordinator::model::Model;
 use psyche_coordinator::model::LLM;
 use psyche_coordinator::CoordinatorConfig;
 use psyche_coordinator::WitnessProof;
-use psyche_coordinator::SOLANA_MAX_STRING_LEN;
 use psyche_core::ConstantLR;
 use psyche_core::FixedVec;
 use psyche_core::LearningRateSchedule;
