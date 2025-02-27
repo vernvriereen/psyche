@@ -24,7 +24,10 @@ ehthumbs_vista.db
 
 ### Tooling ###
 result
+result-*
 nix-results/
+after_drv
+before_drv
 .direnv/
 .aider*
 flamegraph.svg
