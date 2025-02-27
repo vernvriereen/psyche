@@ -18,6 +18,7 @@ pub enum StateFilter {
 pub enum JsonFilter {
     StateChange,
     Loss,
+    LoadedModel,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -42,6 +43,7 @@ pub struct DockerWatcher {
 pub enum Response {
     StateChange(String, String, String, String),
     Loss(String, u64, u64, f64),
+    LoadedModel(String),
 }
 
 impl DockerWatcher {
@@ -140,6 +142,14 @@ impl DockerWatcher {
                             let epoch = parsed_log.get("epoch").and_then(|v| v.as_u64()).unwrap();
                             let step = parsed_log.get("step").and_then(|v| v.as_u64()).unwrap();
                             let response = Response::Loss(client_id, epoch, step, loss);
+                            log_sender.send(response).await.unwrap()
+                        }
+                        JsonFilter::LoadedModel => {
+                            let Some(checkpoint) = parsed_log.get("checkpoint") else {
+                                continue;
+                            };
+                            let checkpoint = serde_json::from_value(checkpoint.clone()).unwrap();
+                            let response = Response::LoadedModel(checkpoint);
                             log_sender.send(response).await.unwrap()
                         }
                     }
