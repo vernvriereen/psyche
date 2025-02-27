@@ -2,9 +2,9 @@ FROM debian:bookworm-slim AS base
 WORKDIR /usr/src
 
 RUN apt-get update && apt-get install -y unzip libssl-dev libgomp1 curl wget build-essential && rm -rf /var/lib/apt/lists/*
-RUN wget https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.4.1%2Bcu124.zip \
-    && unzip libtorch-cxx11-abi-shared-with-deps-2.4.1+cu124.zip \
-    && rm -rf libtorch-cxx11-abi-shared-with-deps-2.4.1+cu124.zip
+RUN wget https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.6.0%2Bcu124.zip \
+    && unzip libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip \
+    && rm -rf libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
