@@ -4,24 +4,11 @@ set -o errexit
 set -e
 set -m
 
-cleanup() {
-    echo -e "\nCleaning up background processes...\n"
-    kill $(jobs -p) 2>/dev/null
-    wait
-}
-
-trap cleanup INT EXIT
-
 WALLET_FILE=${KEY_FILE:-"$HOME/.config/solana/id.json"}
 RPC=${RPC:-"http://127.0.0.1:8899"}
 WS_RPC=${WS_RPC:-"ws://127.0.0.1:8900"}
 RUN_ID=${RUN_ID:-"test"}
 CONFIG_FILE=${CONFIG_FILE:-"./config/solana-test/config.toml"}
-
-solana-test-validator -r 1>/dev/null &
-echo -e "\n[+] Started test validator!"
-
-sleep 3
 
 pushd architectures/decentralized/solana-authorizer
 anchor keys sync && anchor build --no-idl && anchor deploy --provider.cluster ${RPC} -- --max-len 500000
@@ -60,7 +47,3 @@ cargo run --release --bin psyche-solana-client -- \
         --ws-rpc ${WS_RPC} \
         --run-id ${RUN_ID} \
         --resume
-
-echo -e "\n[+] Testing Solana setup ready, starting Solana logs...\n"
-
-solana logs --url ${RPC}
