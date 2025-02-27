@@ -10,9 +10,11 @@
 # Remember to set Solana CLI to Devnet
 # solana config set --url https://api.devnet.solana.com
 
-AMOUNT=1 # Amount of SOL to send to each recipient after airdrop
+set -o errexit
 
-usage() {
+AMOUNT=0.1 # Amount of SOL to send to each recipient after airdrop
+
+_usage() {
     echo "Usage: $0 <SENDER_KEYPAIR> <NUM_ACCOUNTS> optional:[RECIPIENTS_FILE]"
     echo "  SENDER_KEYPAIR: Path to the sender keypair file (e.g., devnet-wallet.json)"
     echo "  NUM_ACCOUNTS: Number of accounts to create (if RECIPIENTS_FILE is present this will be ignored)"
@@ -20,9 +22,23 @@ usage() {
     exit 1
 }
 
+_continue?() {
+    read -p "Continue? [y/N] " answer
+    if [[ "$answer" =~ ^[Yy]$ || -z "$answer" ]]; then
+        echo "Continuing..."
+    else
+        echo "Exiting."
+        exit 1
+    fi
+}
+
 if [[ "$#" -lt 2 || "$#" -gt 3 ]]; then
-    usage
+    _usage
 fi
+
+echo -e "\nThis is the current Solana configuration. Ensure that you are in the correct network:\n"
+solana config get
+_continue?
 
 SENDER_KEYPAIR="$1"
 NUM_ACCOUNTS="$2"
@@ -42,7 +58,9 @@ fi
 
 # If recipients file is not provided, generate new keypairs
 if [[ -z "$RECIPIENTS_FILE" ]]; then
-  echo "Recipients file not provided. Generating $NUM_ACCOUNTS new keypairs..."
+  echo "Recipients file not provided. The script will generate $NUM_ACCOUNTS new keypairs"
+  _continue?
+
   KEY_DIR="keys"
   mkdir -p "$KEY_DIR"
   RECIPIENTS_FILE="$KEY_DIR/pubkeys.txt"
@@ -65,22 +83,10 @@ if [[ ! -f "$RECIPIENTS_FILE" ]]; then
   exit 1
 fi
 
-# Attempt to airdrop 2 SOL to each recipient
-echo "Attempting to airdrop 2 SOL to each recipient..."
-while IFS= read -r RECIPIENT; do
-  if [[ -z "$RECIPIENT" ]]; then # Skip empty lines
-    continue
-  fi
-
-  echo "Airdropping 2 SOL to $RECIPIENT..."
-  solana airdrop 2 "$RECIPIENT"
-  if [[ $? -eq 0 ]]; then
-    echo "Success: Airdropped 2 SOL to $RECIPIENT"
-  else
-    echo "Error: Failed to airdrop 2 SOL to $RECIPIENT"
-  fi
-  echo "----------------------------------------"
-done < "$RECIPIENTS_FILE"
+num_accounts=$(grep -cve '^$' "$RECIPIENTS_FILE")
+total_solana_cost=$((num_accounts*AMOUNT))
+echo -e "\nWe will be using a total of ${total_solana_cost} SOL for funding accounts"
+_continue?
 
 # Fund each recipient with the specified amount of SOL
 echo "Funding recipients..."
