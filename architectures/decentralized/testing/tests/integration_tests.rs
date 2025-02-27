@@ -1,8 +1,12 @@
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use bollard::Docker;
 use e2e_testing::{
-    docker_setup::{e2e_testing_setup, spawn_new_client, CLIENT_CONTAINER_PREFIX},
+    docker_setup::{
+        add_delay, e2e_testing_setup, is_client_healthy, restart_solana_validator,
+        spawn_new_client, stop_solana_validator, CLIENT_CONTAINER_PREFIX,
+        VALIDATOR_CONTAINER_PREFIX,
+    },
     docker_watcher::{DockerWatcher, JsonFilter, Response},
 };
 use psyche_coordinator::{model::Checkpoint, RunState};
@@ -24,7 +28,7 @@ async fn test_one_client_three_epochs_run() {
     let mut last_epoch_loss = f64::MAX;
 
     // initialize a Solana run with 1 client
-    let _cleanup = e2e_testing_setup(1);
+    let _cleanup = e2e_testing_setup(1, None);
 
     // initialize DockerWatcher
     let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
@@ -81,7 +85,7 @@ async fn test_client_join_and_get_model_p2p() {
     let run_id = "test".to_string();
 
     // initialize a Solana run with 1 client
-    let _cleanup = e2e_testing_setup(1);
+    let _cleanup = e2e_testing_setup(1, None);
 
     println!("Waiting for run to go on with the first client");
     tokio::time::sleep(Duration::from_secs(20)).await;
@@ -129,12 +133,12 @@ async fn test_client_join_and_get_model_p2p() {
 // Test p2p model sharing process
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
-async fn test_two_client_join_and_get_model_p2p() {
+async fn test_two_clients_join_and_get_model_p2p() {
     // set test variables
     let run_id = "test".to_string();
 
     // initialize a Solana run with 1 client
-    let _cleanup = e2e_testing_setup(1);
+    let _cleanup = e2e_testing_setup(1, None);
 
     println!("Waiting for run to go on with the first client");
     tokio::time::sleep(Duration::from_secs(20)).await;
@@ -186,6 +190,268 @@ async fn test_two_client_join_and_get_model_p2p() {
                    if clients_with_model == 2 {
                         println!("Both new clients got the model with P2P");
                         return;
+                   }
+               }
+           }
+        }
+    }
+}
+
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
+async fn test_kill_solana_validator() {
+    // epochs the test will run
+    let num_of_epochs_to_run = 2;
+    let mut current_epoch = -1;
+    let mut last_epoch_loss = f64::MAX;
+
+    // initialize a Solana run with 1 client
+    let _cleanup = e2e_testing_setup(1, None);
+
+    // initialize DockerWatcher
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+
+    let _monitor_client_1 = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-1"),
+            vec![JsonFilter::Loss],
+        )
+        .unwrap();
+
+    stop_solana_validator(docker.clone(), Some(20))
+        .await
+        .unwrap();
+    println!("Waiting 10 seconds before starting the validator again");
+
+    let mut interval = time::interval(Duration::from_secs(10));
+    restart_solana_validator(docker.clone()).await.unwrap();
+
+    println!("Waiting for training to resume");
+    loop {
+        tokio::select! {
+           _ = interval.tick() => {
+                if !is_client_healthy(docker.clone(), 1).await.unwrap() {
+                    panic!("Client 1 crashed");
+                }
+           }
+           response = watcher.log_rx.recv() => {
+               if let Some(Response::Loss(client, epoch, step, loss)) = response {
+                   println!(
+                       "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                       client, epoch, step, loss
+                   );
+                   if epoch as i64 > current_epoch {
+                       current_epoch = epoch as i64;
+                       assert!(loss < last_epoch_loss);
+                       last_epoch_loss = loss;
+                       if epoch == num_of_epochs_to_run {
+                           break;
+                       }
+                   }
+               }
+           }
+        }
+    }
+}
+
+// Test p2p model sharing process
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
+async fn test_delay_solana_test_validator() {
+    // epochs the test will run
+    let num_of_epochs_to_run = 2;
+    let mut current_epoch = -1;
+    let mut last_epoch_loss = f64::MAX;
+
+    // initialize a Solana run with 1 client
+    let _cleanup = e2e_testing_setup(1, None);
+
+    // initialize DockerWatcher
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+
+    let _monitor_client_1 = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-1"),
+            vec![JsonFilter::LoadedModel],
+        )
+        .unwrap();
+
+    add_delay(
+        docker.clone(),
+        &[&format!("{VALIDATOR_CONTAINER_PREFIX}-1")],
+        120,
+        1000,
+    )
+    .await
+    .unwrap();
+
+    let mut interval = time::interval(Duration::from_secs(10));
+    restart_solana_validator(docker.clone()).await.unwrap();
+
+    println!("Waiting for training to resume");
+    loop {
+        tokio::select! {
+           _ = interval.tick() => {
+                if !is_client_healthy(docker.clone(), 1).await.unwrap() {
+                    panic!("Client 1 crashed");
+                }
+           }
+           response = watcher.log_rx.recv() => {
+               if let Some(Response::Loss(client, epoch, step, loss)) = response {
+                   println!(
+                       "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                       client, epoch, step, loss
+                   );
+                   if epoch as i64 > current_epoch {
+                       current_epoch = epoch as i64;
+                       assert!(loss < last_epoch_loss);
+                       last_epoch_loss = loss;
+                       if epoch == num_of_epochs_to_run {
+                           break;
+                       }
+                   }
+               }
+           }
+        }
+    }
+}
+
+// Test p2p model sharing process
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
+async fn test_delay_solana_client() {
+    // epochs the test will run
+    let num_of_epochs_to_run = 2;
+    let mut current_epoch = -1;
+    let mut last_epoch_loss = f64::MAX;
+
+    // initialize a Solana run with 1 client
+    let _cleanup = e2e_testing_setup(1, None);
+
+    // initialize DockerWatcher
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+
+    let _monitor_client_1 = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-1"),
+            vec![JsonFilter::Loss],
+        )
+        .unwrap();
+
+    add_delay(
+        docker.clone(),
+        &[&format!("{VALIDATOR_CONTAINER_PREFIX}-1")],
+        120,
+        1000,
+    )
+    .await
+    .unwrap();
+
+    let mut interval = time::interval(Duration::from_secs(10));
+    println!("Waiting for training to start");
+    loop {
+        tokio::select! {
+           _ = interval.tick() => {
+                if !is_client_healthy(docker.clone(), 1).await.unwrap() {
+                    panic!("Client 1 crashed");
+                }
+           }
+           response = watcher.log_rx.recv() => {
+               if let Some(Response::Loss(client, epoch, step, loss)) = response {
+                   println!(
+                       "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                       client, epoch, step, loss
+                   );
+                   if epoch as i64 > current_epoch {
+                       current_epoch = epoch as i64;
+                       assert!(loss < last_epoch_loss);
+                       last_epoch_loss = loss;
+                       if epoch == num_of_epochs_to_run {
+                           break;
+                       }
+                   }
+               }
+           }
+        }
+    }
+}
+
+// Test p2p model sharing process
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
+async fn test_delay_two_solana_clients() {
+    // epochs the test will run
+    let num_of_epochs_to_run = 2;
+    let mut current_epoch = -1;
+    let mut last_epoch_loss = f64::MAX;
+
+    let config_file = Some(PathBuf::from(
+        "../../config/solana-test/light-two-min-clients.toml",
+    ));
+    // initialize a Solana run with 1 client
+    let _cleanup = e2e_testing_setup(2, config_file);
+
+    // initialize DockerWatcher
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+
+    let _monitor_client_1 = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-1"),
+            vec![JsonFilter::Loss],
+        )
+        .unwrap();
+
+    let _monitor_client_2 = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-2"),
+            vec![JsonFilter::Loss],
+        )
+        .unwrap();
+
+    add_delay(
+        docker.clone(),
+        &[
+            &format!("{CLIENT_CONTAINER_PREFIX}-1"),
+            &format!("{CLIENT_CONTAINER_PREFIX}-2"),
+        ],
+        120,
+        1000,
+    )
+    .await
+    .unwrap();
+
+    let mut interval = time::interval(Duration::from_secs(10));
+
+    println!("Waiting for training to start");
+    loop {
+        tokio::select! {
+           _ = interval.tick() => {
+                let is_first_healthy = is_client_healthy(docker.clone(), 1).await.unwrap();
+                if !is_first_healthy {
+                    panic!("Client 1 crashed");
+                }
+                let is_second_healthy = is_client_healthy(docker.clone(), 2).await.unwrap();
+                if !is_second_healthy {
+                    panic!("Client 2 crashed");
+                }
+           }
+           response = watcher.log_rx.recv() => {
+               if let Some(Response::Loss(client, epoch, step, loss)) = response {
+                   println!(
+                       "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                       client, epoch, step, loss
+                   );
+                   if epoch as i64 > current_epoch {
+                       current_epoch = epoch as i64;
+                       assert!(loss < last_epoch_loss);
+                       last_epoch_loss = loss;
+                       if epoch == num_of_epochs_to_run {
+                           break;
+                       }
                    }
                }
            }

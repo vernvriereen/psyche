@@ -127,7 +127,7 @@ impl DockerWatcher {
                                     new_state.to_string(),
                                 );
 
-                                log_sender.send(response).await.unwrap()
+                                log_sender.send(response).await.unwrap();
                             }
                         }
                         JsonFilter::Loss => {
