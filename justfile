@@ -54,7 +54,7 @@ start-training-localnet-client run_id="test" *args='':
 
 # Start client for training on localnet without data parallelism features and using light model.
 start-training-localnet-light-client run_id="test" *args='':
-    RUN_ID={{run_id}} DP=1 ./scripts/train-solana-test.sh {{args}}
+    RUN_ID={{run_id}} BATCH_SIZE=1 DP=1 ./scripts/train-solana-test.sh {{args}}
 
 DEVNET_RPC:="https://api.devnet.solana.com"
 DEVNET_WS_RPC:="wss://api.devnet.solana.com"
@@ -74,7 +74,7 @@ start-training-devnet-client run_id="test" *args='':
 
 # Start client for training on localnet without data parallelism features and using light model.
 start-training-devnet-light-client run_id="test" *args='':
-    RUN_ID={{run_id}} RPC={{DEVNET_RPC}} WS_RPC={{DEVNET_WS_RPC}} DP=1 ./scripts/train-solana-test.sh {{args}}
+    RUN_ID={{run_id}} RPC={{DEVNET_RPC}} WS_RPC={{DEVNET_WS_RPC}} BATCH_SIZE=1 DP=1 ./scripts/train-solana-test.sh {{args}}
 
 solana-client-tests:
 	cargo test --package psyche-solana-client --features solana-localnet-tests
