@@ -11,6 +11,7 @@ pub struct FreeCoordinatorAccounts<'info> {
     #[account()]
     pub authority: Signer<'info>,
 
+    /// CHECK: TODO why is this ok to be unchecked?
     #[account(mut)]
     pub spill: SystemAccount<'info>,
 

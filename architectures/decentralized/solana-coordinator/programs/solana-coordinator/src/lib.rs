@@ -34,21 +34,41 @@ pub fn find_coordinator_instance(run_id: &str) -> Pubkey {
     .0
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum DeserializeCoordinatorFromBytes {
+    #[error(
+        "Coordinator has an incorrect size. Expected {expected}, got {actual}."
+    )]
+    IncorrectSize { expected: usize, actual: usize },
+
+    #[error("Coordinator has an invalid discriminator. Expected {expected:?}, got {actual:?}.")]
+    InvalidDiscriminator { expected: Vec<u8>, actual: Vec<u8> },
+
+    #[error("Failed to cast bytes into CoordinatorAccount: {0}")]
+    CastError(#[from] bytemuck::PodCastError),
+}
+
 pub fn coordinator_account_from_bytes(
     bytes: &[u8],
-) -> std::result::Result<&CoordinatorAccount, ProgramError> {
+) -> std::result::Result<&CoordinatorAccount, DeserializeCoordinatorFromBytes> {
     if bytes.len() != CoordinatorAccount::space_with_discriminator() {
-        return Err(ProgramError::CoordinatorAccountIncorrectSize);
+        return Err(DeserializeCoordinatorFromBytes::IncorrectSize {
+            expected: CoordinatorAccount::space_with_discriminator(),
+            actual: bytes.len(),
+        });
     }
     if &bytes[..CoordinatorAccount::DISCRIMINATOR.len()]
         != CoordinatorAccount::DISCRIMINATOR
     {
-        return Err(ProgramError::CoordinatorAccountInvalidDiscriminator);
+        return Err(DeserializeCoordinatorFromBytes::InvalidDiscriminator {
+            expected: CoordinatorAccount::DISCRIMINATOR.to_vec(),
+            actual: bytes[..CoordinatorAccount::DISCRIMINATOR.len()].to_vec(),
+        });
     }
-    Ok(bytemuck::from_bytes(
+    Ok(bytemuck::try_from_bytes(
         &bytes[CoordinatorAccount::DISCRIMINATOR.len()
             ..CoordinatorAccount::space_with_discriminator()],
-    ))
+    )?)
 }
 
 #[account(zero_copy)]
