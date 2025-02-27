@@ -1,13 +1,19 @@
 use crate::{
+    client::P2PNodeInfo,
     state::{train::FinishedTrainers, types::DeserializeError},
     Broadcast, BroadcastType, ClientTUIState,
 };
 
-use psyche_coordinator::{Committee, Coordinator, RunState, Witness};
+use psyche_coordinator::{Committee, Coordinator, RunState, Witness, WitnessMetadata};
 use psyche_core::{sha256, MerkleRoot, MerkleTree, NodeIdentity};
 use psyche_modeling::{DistroResult, Trainer};
 use psyche_network::{AuthenticatableIdentity, BlobTicket, Hash, TransmittableDistroResult};
-use std::{collections::HashMap, fmt, time::Instant};
+use std::{
+    collections::HashMap,
+    fmt,
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 use tch::TchError;
 use thiserror::Error;
 use tokio::{
@@ -15,7 +21,6 @@ use tokio::{
     task::JoinHandle,
 };
 use tracing::{debug, error, info, info_span, trace, warn, Instrument};
-use wandb::DataValue;
 
 use super::{
     cooldown::{CooldownError, CooldownStep, CooldownStepMetadata},
@@ -33,7 +38,7 @@ use super::{
 pub struct StepStateMachine<T: NodeIdentity, A: AuthenticatableIdentity + 'static> {
     identity: T,
 
-    stats_logger: StatsLogger,
+    stats_logger: Arc<Mutex<StatsLogger>>,
 
     warmup: WarmupStepMetadata,
     training: TrainingStepMetadata<T, A>,
@@ -43,7 +48,7 @@ pub struct StepStateMachine<T: NodeIdentity, A: AuthenticatableIdentity + 'stati
     active_step: ActiveStep,
 
     tx_request_download: mpsc::UnboundedSender<(BlobTicket, u32)>,
-    tx_witness: mpsc::UnboundedSender<Witness>,
+    tx_witness: mpsc::UnboundedSender<(Witness, WitnessMetadata)>,
     tx_broadcast_finished: mpsc::UnboundedSender<FinishedBroadcast>,
 
     current_round: RoundState<T>,
@@ -53,8 +58,6 @@ pub struct StepStateMachine<T: NodeIdentity, A: AuthenticatableIdentity + 'stati
     sent_warmup_witness: bool,
 
     coordinator_state: Coordinator<T>,
-
-    node_info: HashMap<String, DataValue>,
 }
 
 #[derive(Error, Debug)]
@@ -76,6 +79,9 @@ pub enum StepError {
 
     #[error("Evals error: {0}")]
     Evals(#[from] EvalError),
+
+    #[error("Stats logger mutex is poisoned")]
+    StatsLoggerMutex,
 }
 
 #[derive(Error, Debug)]
@@ -91,6 +97,9 @@ pub enum OpportunisticWitnessError {
 
     #[error("Failed to send broadcast finished, channel must be closed")]
     Finished,
+
+    #[error("Stats logger mutex is poisoned")]
+    StatsLoggerMutex,
 }
 
 impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, A> {
@@ -104,7 +113,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         trainers: Vec<Trainer>,
         coordinator_state: Coordinator<T>,
         tx_request_download: mpsc::UnboundedSender<(BlobTicket, u32)>,
-        tx_witness: mpsc::UnboundedSender<Witness>,
+        tx_witness: mpsc::UnboundedSender<(Witness, WitnessMetadata)>,
         tx_broadcast_finished: mpsc::UnboundedSender<FinishedBroadcast>,
         stats_logger: StatsLogger,
     ) -> Self {
@@ -117,7 +126,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         Self {
             identity,
 
-            stats_logger,
+            stats_logger: Arc::new(Mutex::new(stats_logger)),
 
             warmup,
             training,
@@ -133,8 +142,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             tx_broadcast_finished,
 
             coordinator_state,
-
-            node_info: HashMap::new(),
 
             step_finish_time: None,
             sent_warmup_finished: false,
@@ -204,8 +211,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     ) {
                         debug!("Sending opportunistic witness");
 
+                        let metadata = self
+                            .stats_logger
+                            .lock()
+                            .map_err(|_| OpportunisticWitnessError::StatsLoggerMutex)?
+                            .get_witness_metadata(&self.coordinator_state);
                         self.tx_witness
-                            .send(witness)
+                            .send((witness, metadata))
                             .map_err(|_| OpportunisticWitnessError::Send)?;
                     }
                 }
@@ -250,12 +262,18 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     .unwrap_or(MerkleRoot::default());
 
                 self.tx_witness
-                    .send(Witness {
-                        proof: Default::default(),
-                        participant_bloom: Default::default(),
-                        broadcast_bloom: Default::default(),
-                        broadcast_merkle: merkle,
-                    })
+                    .send((
+                        Witness {
+                            proof: Default::default(),
+                            participant_bloom: Default::default(),
+                            broadcast_bloom: Default::default(),
+                            broadcast_merkle: merkle,
+                        },
+                        self.stats_logger
+                            .lock()
+                            .unwrap()
+                            .get_witness_metadata(&self.coordinator_state),
+                    ))
                     .map_err(|_| OpportunisticWitnessError::Send)?;
 
                 self.sent_warmup_witness = true;
@@ -641,10 +659,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             // start training at the beginning of an epoch
             (ActiveStep::Warmup(warmup), RunState::RoundTrain) => {
                 let trainers = warmup.finish().stop_evals().await?;
-                self.stats_logger.push_eval_results();
                 self.step_finish_time = None;
                 self.sent_warmup_finished = false;
                 self.sent_warmup_witness = false;
+                self.stats_logger
+                    .lock()
+                    .map_err(|_| StepError::StatsLoggerMutex)?
+                    .push_eval_results();
                 ActiveStep::Training(self.training.start(
                     client_index,
                     &state,
@@ -666,12 +687,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     .step_finish_time
                     .map(|step_finish_time| Instant::now() - step_finish_time);
                 self.step_finish_time = Some(Instant::now());
-                let loss = self.stats_logger.push_round_stats(
-                    &round_losses,
-                    round_duration,
-                    step_duration,
-                    optim_stats,
-                );
+                let loss = self
+                    .stats_logger
+                    .lock()
+                    .map_err(|_| StepError::StatsLoggerMutex)?
+                    .push_round_stats(&round_losses, round_duration, step_duration, optim_stats);
                 info!(
                     client_id = %self.identity,
                     epoch = state.progress.epoch,
@@ -680,13 +700,21 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     "client_loss",
                 );
                 self.stats_logger
-                    .publish_round_stats(&state, &self.node_info);
+                    .lock()
+                    .map_err(|_| StepError::StatsLoggerMutex)?
+                    .publish_round_stats(&state);
+                let witness_metadata = self
+                    .stats_logger
+                    .lock()
+                    .map_err(|_| StepError::StatsLoggerMutex)?
+                    .get_witness_metadata(&state);
                 ActiveStep::Witness(self.witness.start(
                     client_index,
                     &state,
                     evals_or_trainers,
                     &mut self.previous_round,
                     &mut self.current_round,
+                    witness_metadata,
                 )?)
             }
             // within an epoch, loop back to training after witnessing
@@ -736,8 +764,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         Ok(())
     }
 
-    pub fn set_node_info(&mut self, node_info: HashMap<String, DataValue>) {
-        self.node_info = node_info;
+    pub fn set_node_info(&mut self, node_info: HashMap<String, P2PNodeInfo>) -> anyhow::Result<()> {
+        self.stats_logger
+            .lock()
+            .map_err(|_| anyhow::anyhow!("stats logger mutex poisoned"))?
+            .node_info = node_info;
+        Ok(())
     }
 }
 
@@ -902,17 +934,18 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunManager<T, A> {
         Ok(())
     }
 
-    pub fn stats(&self) -> Option<&StatsLogger> {
+    pub fn stats(&self) -> Option<Arc<Mutex<StatsLogger>>> {
         match &self.0 {
-            InitStage::Running(run) => Some(&run.stats_logger),
+            InitStage::Running(run) => Some(run.stats_logger.clone()),
             _ => None,
         }
     }
 
-    pub fn set_node_info(&mut self, node_info: HashMap<String, DataValue>) {
+    pub fn set_node_info(&mut self, node_info: HashMap<String, P2PNodeInfo>) -> anyhow::Result<()> {
         if let InitStage::Running(run) = &mut self.0 {
-            run.set_node_info(node_info)
+            run.set_node_info(node_info)?;
         }
+        Ok(())
     }
 }
 
@@ -929,24 +962,36 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> From<&RunManager<T, 
                     .as_ref()
                     .map(|x| x.0.committee);
                 let stats = run.stats();
+                let stats = stats.as_ref();
+                let stats_guard = stats.and_then(|s| s.lock().ok());
 
                 ClientTUIState {
                     step: coordinator.progress.step,
                     committee,
                     run_state: coordinator.into(),
-                    loss: stats.map(|s| s.losses().to_vec()).unwrap_or_default(),
+                    loss: stats_guard
+                        .as_ref()
+                        .map(|s| s.losses().to_vec())
+                        .unwrap_or_default(),
                     batches_left: state_machine
                         .current_round
                         .batch_ids_not_yet_trained_on
                         .as_ref()
                         .map(|x| x.0)
                         .unwrap_or_default(),
-                    global_tokens_per_second: stats
+                    global_tokens_per_second: stats_guard
+                        .as_ref()
                         .map(|s| s.global_tokens_per_second(coordinator))
                         .unwrap_or_default(),
-                    efficency: stats.map(|x| x.efficency()).unwrap_or_default(),
+                    efficency: stats_guard
+                        .as_ref()
+                        .map(|x| x.efficency())
+                        .unwrap_or_default(),
                     total_tokens: coordinator.total_tokens(),
-                    evals: stats.map(|s| s.eval_history().clone()).unwrap_or_default(),
+                    evals: stats_guard
+                        .as_ref()
+                        .map(|s| s.eval_history().clone())
+                        .unwrap_or_default(),
                 }
             }
             _ => Default::default(),

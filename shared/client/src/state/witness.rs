@@ -1,4 +1,4 @@
-use psyche_coordinator::{Coordinator, Witness};
+use psyche_coordinator::{Coordinator, Witness, WitnessMetadata};
 use psyche_core::{MerkleRoot, MerkleTree, NodeIdentity};
 use thiserror::Error;
 use tokio::{
@@ -30,7 +30,7 @@ pub enum WitnessingError {
 pub struct WitnessStepMetadata<T: NodeIdentity> {
     pub identity: T,
     pub eval_runner: EvalRunner,
-    pub tx_witness: mpsc::UnboundedSender<Witness>,
+    pub tx_witness: mpsc::UnboundedSender<(Witness, WitnessMetadata)>,
 }
 
 #[derive(Debug)]
@@ -47,6 +47,7 @@ impl<T: NodeIdentity> WitnessStepMetadata<T> {
         trainers: MaybeRunningEvals,
         previous_round: &mut RoundState<T>,
         current_round: &mut RoundState<T>,
+        metadata: WitnessMetadata,
     ) -> Result<WitnessStep, WitnessingError> {
         if trainers.is_empty() {
             return Err(WitnessingError::NoTrainers);
@@ -59,7 +60,9 @@ impl<T: NodeIdentity> WitnessStepMetadata<T> {
         {
             let tx_witness = self.tx_witness.clone();
             Some(tokio::task::spawn(async move {
-                tx_witness.send(witness).map_err(|_| WitnessingError::Send)
+                tx_witness
+                    .send((witness, metadata))
+                    .map_err(|_| WitnessingError::Send)
             }))
         } else {
             None

@@ -17,7 +17,7 @@ use anyhow::{anyhow, bail, Result};
 use futures_util::StreamExt;
 use psyche_coordinator::{
     model::{self, Model},
-    CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks, Witness,
+    CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks, Witness, WitnessMetadata,
 };
 use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
@@ -368,6 +368,7 @@ impl SolanaBackend {
         coordinator_instance: Pubkey,
         coordinator_account: Pubkey,
         witness: Witness,
+        metadata: WitnessMetadata,
     ) -> Result<Signature> {
         let signature = self
             .program_coordinator
@@ -384,6 +385,7 @@ impl SolanaBackend {
                 participant_bloom: witness.participant_bloom,
                 broadcast_bloom: witness.broadcast_bloom,
                 broadcast_merkle: witness.broadcast_merkle,
+                metadata,
             })
             .send()
             .await?;
@@ -479,9 +481,9 @@ impl WatcherBackend<psyche_solana_coordinator::ClientId> for SolanaBackendRunner
             })
     }
 
-    async fn send_witness(&mut self, witness: Witness) -> Result<()> {
+    async fn send_witness(&mut self, witness: Witness, metadata: WitnessMetadata) -> Result<()> {
         self.backend
-            .witness(self.instance, self.account, witness)
+            .witness(self.instance, self.account, witness, metadata)
             .await?;
         Ok(())
     }

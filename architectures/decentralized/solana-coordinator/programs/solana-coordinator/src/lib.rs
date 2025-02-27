@@ -12,7 +12,8 @@ use logic::*;
 pub use program_error::ProgramError;
 use psyche_coordinator::{
     model::Model, Committee, CommitteeProof, CoordinatorConfig, Witness,
-    WitnessBloom, WitnessProof, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
+    WitnessBloom, WitnessMetadata, WitnessProof, SOLANA_MAX_NUM_CLIENTS,
+    SOLANA_MAX_STRING_LEN,
 };
 use psyche_core::MerkleRoot;
 
@@ -167,12 +168,14 @@ pub mod psyche_solana_coordinator {
         ctx.accounts.coordinator_account.load_mut()?.state.tick()
     }
 
+    #[allow(unused_variables)] // for the metadata field. adding a _ prefix results in anchor's IDL not matching the actual types. lol.
     pub fn witness(
         ctx: Context<PermissionlessCoordinatorAccounts>,
         proof: WitnessProof,
         participant_bloom: WitnessBloom,
         broadcast_bloom: WitnessBloom,
         broadcast_merkle: MerkleRoot,
+        metadata: WitnessMetadata,
     ) -> Result<()> {
         ctx.accounts.coordinator_account.load_mut()?.state.witness(
             ctx.accounts.user.key,

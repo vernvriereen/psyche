@@ -189,13 +189,7 @@ pub async fn process_coordinator_witness(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: Witness {
-            proof: witness.proof,
-            participant_bloom: witness.participant_bloom,
-            broadcast_bloom: witness.broadcast_bloom,
-            broadcast_merkle: witness.broadcast_merkle,
-        }
-        .data(),
+        data: witness.data(),
         program_id: psyche_solana_coordinator::ID,
     };
     endpoint

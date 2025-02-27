@@ -141,6 +141,57 @@ pub struct Witness {
     pub broadcast_merkle: MerkleRoot,
 }
 
+#[derive(
+    Clone,
+    Copy,
+    Zeroable,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    TS,
+    Default,
+    Debug,
+)]
+#[repr(C)]
+pub struct WitnessMetadata {
+    pub step: u32,
+    pub tokens_per_sec: f32,
+    pub bandwidth_per_sec: f32,
+    pub loss: f32,
+    pub perplexity: f32,
+    pub confidence: f32,
+    pub evals: FixedVec<WitnessEvalResult, 8>,
+    pub efficency: f32,
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Zeroable,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    TS,
+    Default,
+    Debug,
+)]
+#[repr(C)]
+pub struct WitnessEvalResult {
+    pub name: FixedString<32>,
+    pub value: f32,
+}
+
+impl WitnessEvalResult {
+    pub fn new_trunc_name(name: &str, value: f32) -> Self {
+        Self {
+            name: FixedString::from_str_truncated(name),
+            value,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum CoordinatorError {
     NoActiveRound,

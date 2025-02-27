@@ -8,6 +8,7 @@ use psyche_coordinator::{
     model::Model, ClientState, Coordinator, CoordinatorConfig, HealthChecks,
     RunState, TickResult, Witness, SOLANA_MAX_STRING_LEN,
 };
+use psyche_core::sha256v;
 use psyche_core::{FixedString, SizedIterator, SmallBoolean};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

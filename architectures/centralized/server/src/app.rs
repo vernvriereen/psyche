@@ -6,7 +6,7 @@ use psyche_coordinator::model::{
 };
 use psyche_coordinator::{
     Client, ClientState, Coordinator, CoordinatorError, HealthChecks, Round, RunState, TickResult,
-    Witness, SOLANA_MAX_NUM_CLIENTS,
+    Witness, WitnessMetadata, SOLANA_MAX_NUM_CLIENTS,
 };
 
 use psyche_core::{FixedVec, Shuffle, SizedIterator, TokenSize};
@@ -71,7 +71,7 @@ impl psyche_watcher::Backend<ClientId> for ChannelCoordinatorBackend {
         Ok(self.rx.recv().await.expect("channel closed? :("))
     }
 
-    async fn send_witness(&mut self, _witness: Witness) -> Result<()> {
+    async fn send_witness(&mut self, _witness: Witness, _metadata: WitnessMetadata) -> Result<()> {
         bail!("Server does not send witnesses");
     }
 
