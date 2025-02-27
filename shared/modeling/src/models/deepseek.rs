@@ -322,6 +322,7 @@ impl MLAAttention {
                 0.0,
                 t > 1,
                 Some(self.softmax_scale),
+                false,
             )
         } else {
             let att = query_states.matmul(&key_states.transpose(-2, -1)) * self.softmax_scale;

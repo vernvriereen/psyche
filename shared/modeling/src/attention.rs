@@ -121,6 +121,7 @@ impl CausalSelfAttention {
                 0.0,
                 t > 1,
                 Some(scale),
+                false,
             );
             att.transpose(1, 2)
                 .contiguous()
