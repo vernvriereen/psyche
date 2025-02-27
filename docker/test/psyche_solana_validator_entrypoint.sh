@@ -12,7 +12,7 @@ solana-test-validator -r &
 sleep 3
 
 pushd /usr/local/solana-coordinator
-anchor deploy --provider.cluster ${RPC} -- --max-len 500000
+anchor deploy --provider.cluster "${RPC}" -- --max-len 500000
 popd
 
 # fg %1

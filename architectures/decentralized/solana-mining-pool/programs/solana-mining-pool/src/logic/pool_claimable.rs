@@ -29,6 +29,9 @@ pub fn pool_claimable_processor(
 ) -> Result<()> {
     let pool = &mut context.accounts.pool;
 
+    if pool.freeze {
+        return err!(ProgramError::PoolFreezeIsTrue);
+    }
     if pool.claiming_enabled {
         return err!(ProgramError::PoolClaimingEnabledIsTrue);
     }

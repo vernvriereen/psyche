@@ -1,19 +1,21 @@
 services:
-    nous-base:
-        image: nous-base
+    psyche-base:
+        image: psyche-base
         build:
             context: ../..
-            dockerfile: ./docker/nous_base.Dockerfile
+            dockerfile: ./docker/psyche_base.Dockerfile
 
     psyche-run-owner:
-        image: psyche-client
+        image: psyche-test-client
         build:
             context: ../..
-            dockerfile: ./docker/test/psyche_client.Dockerfile
+            dockerfile: ./docker/test/psyche_test_client.Dockerfile
+            args:
+                CONFIG_PATH: ${CONFIG_PATH:-/usr/src/psyche/config/solana-test/light-config.toml}
         depends_on:
             psyche-solana-test-validator:
                 condition: service_started
-            nous-base:
+            psyche-base:
                 condition: service_completed_successfully
         extra_hosts:
             - "host.docker.internal:host-gateway"
@@ -25,14 +27,14 @@ services:
             - psyche-test-network
 
     psyche-test-client:
-        image: psyche-client
+        image: psyche-test-client
         build:
             context: ../..
-            dockerfile: ./docker/test/psyche_client.Dockerfile
+            dockerfile: ./docker/test/psyche_test_client.Dockerfile
         depends_on:
             psyche-run-owner:
                 condition: service_completed_successfully
-            nous-base:
+            psyche-base:
                 condition: service_completed_successfully
         deploy:
             replicas: ${NUM_REPLICAS:-1}
@@ -57,7 +59,7 @@ services:
             context: ../..
             dockerfile: ./docker/test/psyche_solana_validator.Dockerfile
         depends_on:
-            nous-base:
+            psyche-base:
                 condition: service_completed_successfully
         ports:
             - "8899:8899"

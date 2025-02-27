@@ -80,6 +80,35 @@ impl FileURLs {
         Ok(Self(urls_with_sizes))
     }
 
+    pub fn split_gcp_url(url: &str) -> (String, Option<String>) {
+        const GS_BASE_PREFIX: &str = "gs://";
+        const BASE_PREFIX: &str = "https://storage.googleapis.com/";
+
+        if !url.starts_with(GS_BASE_PREFIX) {
+            return (url.to_string(), None);
+        }
+
+        let path = &url[GS_BASE_PREFIX.len()..];
+
+        match path.split_once('/') {
+            Some((bucket, directory)) => {
+                let bucket_url = format!("{}{}", BASE_PREFIX, bucket);
+                let directory = if directory.is_empty() {
+                    None
+                } else {
+                    Some(directory.to_string())
+                };
+                (bucket_url, directory)
+            }
+            None => (format!("{}{}", BASE_PREFIX, path), None),
+        }
+    }
+
+    pub async fn from_gcp_url(gcp_url: &str) -> Result<Self> {
+        let (bucket_url, directory) = Self::split_gcp_url(gcp_url);
+        Self::from_gcp_bucket(&bucket_url, directory).await
+    }
+
     pub async fn from_gcp_bucket(bucket_url: &str, directory: Option<String>) -> Result<Self> {
         let bucket_url = match bucket_url.ends_with("/") {
             true => bucket_url.to_owned(),

@@ -4,7 +4,10 @@ use anchor_client::{
     solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Keypair},
     Cluster, Program,
 };
-use psyche_coordinator::{Round, RunState, NUM_STORED_ROUNDS};
+use psyche_coordinator::{
+    model::{Checkpoint, Model},
+    Round, RunState, NUM_STORED_ROUNDS,
+};
 use psyche_core::FixedVec;
 use psyche_solana_coordinator::SOLANA_MAX_NUM_PENDING_CLIENTS;
 
@@ -45,6 +48,13 @@ impl SolanaTestClient {
             .await
             .unwrap();
         *psyche_solana_coordinator::coordinator_account_from_bytes(&data).unwrap()
+    }
+
+    pub async fn get_checkpoint(&self) -> Checkpoint {
+        let coordinator = self.get_coordinator_account().await;
+        match coordinator.state.coordinator.model {
+            Model::LLM(llm) => llm.checkpoint,
+        }
     }
 
     pub async fn get_clients(

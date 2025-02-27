@@ -322,6 +322,7 @@ impl MLAAttention {
                 0.0,
                 t > 1,
                 Some(self.softmax_scale),
+                false,
             )
         } else {
             let att = query_states.matmul(&key_states.transpose(-2, -1)) * self.softmax_scale;
@@ -505,6 +506,8 @@ impl MoEGate {
         } else {
             topk_weight
         } * self.routed_scaling_factor;
+
+        // TODO (if needed): DeepseekV2 aux loss
 
         (topk_idx, topk_weight)
     }

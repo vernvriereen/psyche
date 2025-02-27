@@ -20,6 +20,7 @@ pub enum JsonFilter {
     JoinRun,
     StateChange,
     Loss,
+    LoadedModel,
     HealthCheck,
 }
 
@@ -28,6 +29,7 @@ pub enum Response {
     JoinRun(String, String),
     StateChange(String, String, String, String, u64, u64),
     Loss(String, u64, u64, f64),
+    LoadedModel(String),
     HealthCheck(String, u64),
 }
 
@@ -180,6 +182,15 @@ impl DockerWatcher {
                                 .unwrap()
                                 .to_string();
                             let response = Response::JoinRun(client_id, run_id);
+                            log_sender.send(response).await.unwrap()
+                        }
+
+                        JsonFilter::LoadedModel => {
+                            let Some(checkpoint) = parsed_log.get("checkpoint") else {
+                                continue;
+                            };
+                            let checkpoint = serde_json::from_value(checkpoint.clone()).unwrap();
+                            let response = Response::LoadedModel(checkpoint);
                             log_sender.send(response).await.unwrap()
                         }
                     }

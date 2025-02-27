@@ -16,6 +16,7 @@ pub async fn process_pool_update(
     pool_index: u64,
     pool_authority: &Keypair,
     pool_max_deposit_collateral_amount: Option<u64>,
+    pool_freeze: Option<bool>,
     pool_metadata: Option<PoolMetadata>,
 ) -> Result<(), ToolboxAnchorError> {
     let pool = find_pda_pool(pool_index);
@@ -28,6 +29,7 @@ pub async fn process_pool_update(
             params: PoolUpdateParams {
                 max_deposit_collateral_amount:
                     pool_max_deposit_collateral_amount,
+                freeze: pool_freeze,
                 metadata: pool_metadata,
             },
         },

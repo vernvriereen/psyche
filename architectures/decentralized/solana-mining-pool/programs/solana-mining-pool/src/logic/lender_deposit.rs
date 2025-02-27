@@ -59,6 +59,9 @@ pub fn lender_deposit_processor(
     let lender = &mut context.accounts.lender;
     let pool = &mut context.accounts.pool;
 
+    if pool.freeze {
+        return err!(ProgramError::PoolFreezeIsTrue);
+    }
     if pool.total_deposited_collateral_amount + params.collateral_amount
         > pool.max_deposit_collateral_amount
     {

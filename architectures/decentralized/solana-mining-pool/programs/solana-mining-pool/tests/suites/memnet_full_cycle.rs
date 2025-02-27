@@ -77,6 +77,7 @@ pub async fn run() {
         &pool_authority,
         Some(user1_collateral_amount + user2_collateral_amount),
         None,
+        None,
     )
     .await
     .unwrap();
@@ -118,6 +119,7 @@ pub async fn run() {
     )
     .await
     .unwrap();
+
     // Deposit all remaining the User1's collateral
     process_lender_deposit(
         &mut endpoint,

@@ -97,6 +97,7 @@ pub async fn run() {
         &pool_authority,
         Some(1),
         None,
+        None,
     )
     .await
     .unwrap();
@@ -147,6 +148,7 @@ pub async fn run() {
         pool_index,
         &pool_authority,
         Some(user_collateral_amount),
+        None,
         None,
     )
     .await

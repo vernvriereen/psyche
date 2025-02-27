@@ -65,8 +65,8 @@ impl TryFrom<&SerializedDistroResult> for DistroResult {
         // don't pin - it would crash if no CUDA is available.
         if Device::cuda_if_available().is_cuda() {
             // the index of the CUDA device doesn't matter here.
-            distro_result.sparse_idx = distro_result.sparse_idx.pin_memory(Device::Cuda(0));
-            distro_result.sparse_val = distro_result.sparse_val.pin_memory(Device::Cuda(0));
+            distro_result.sparse_idx = distro_result.sparse_idx.pin_memory(None);
+            distro_result.sparse_val = distro_result.sparse_val.pin_memory(None);
         }
         Ok(distro_result)
     }
