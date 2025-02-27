@@ -1,9 +1,9 @@
+use bollard::container::{ListContainersOptions, RemoveContainerOptions};
+use bollard::models::DeviceRequest;
+use bollard::Docker;
 use bollard::{
     container::{Config, CreateContainerOptions},
-    container::{ListContainersOptions, RemoveContainerOptions},
-    models::DeviceRequest,
     secret::{ContainerSummary, HostConfig},
-    Docker,
 };
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -43,6 +43,23 @@ pub async fn e2e_testing_setup(
     spawn_ctrl_c_task();
 
     DockerTestCleanup {}
+}
+
+pub async fn is_client_healthy(
+    docker_client: Arc<Docker>,
+    client_number: u8,
+) -> Result<bool, DockerWatcherError> {
+    let container_name = format!("{CLIENT_CONTAINER_PREFIX}-{}", client_number);
+    let container = docker_client
+        .inspect_container(&container_name, None)
+        .await
+        .unwrap();
+    let state = container.state.unwrap();
+    match state.status {
+        Some(bollard::secret::ContainerStateStatusEnum::DEAD)
+        | Some(bollard::secret::ContainerStateStatusEnum::EXITED) => Ok(false),
+        _ => Ok(true),
+    }
 }
 
 pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWatcherError> {
