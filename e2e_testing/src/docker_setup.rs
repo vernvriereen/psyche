@@ -11,6 +11,8 @@ use tokio::signal;
 
 use crate::docker_watcher::DockerWatcherError;
 
+pub const CLIENT_CONTAINER_PREFIX: &str = "test-psyche-test-client";
+
 pub struct DockerTestCleanup;
 impl Drop for DockerTestCleanup {
     fn drop(&mut self) {
@@ -52,13 +54,13 @@ pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWa
             if let Some(name) = names.first() {
                 let trimmed_name = name.trim_start_matches('/').to_string();
 
-                if trimmed_name.starts_with("test-psyche-test-client") {
+                if trimmed_name.starts_with(CLIENT_CONTAINER_PREFIX) {
                     all_container_names.push(trimmed_name.clone());
 
                     if cont
                         .state
                         .as_deref()
-                        .map_or(false, |state| state.eq_ignore_ascii_case("running"))
+                        .is_some_and(|state| state.eq_ignore_ascii_case("running"))
                     {
                         running_containers.push(trimmed_name);
                     }
@@ -68,7 +70,7 @@ pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWa
     }
 
     // Set the container name based on the ones that are already running.
-    let new_container_name = format!("test-psyche-test-client-{}", running_containers.len() + 1);
+    let new_container_name = format!("{CLIENT_CONTAINER_PREFIX}-{}", running_containers.len() + 1);
     // Check if container was already created.
     let container_exists = all_container_names.contains(&new_container_name);
 

@@ -27,9 +27,17 @@ local-testnet +args:
 # run integration tests
 integration-test test_name="":
     if [ "{{test_name}}" = "" ]; then \
-        cargo test --release --test integration_tests; \
+        cargo test --release -p psyche-centralized-testing --test integration_tests; \
     else \
-        cargo test --release --test integration_tests -- --nocapture "{{test_name}}"; \
+        cargo test --release -p psyche-centralized-testing --test integration_tests -- --nocapture "{{test_name}}"; \
+    fi
+
+# run integration decentralized tests
+decentralized-integration-test test_name="":
+    if [ "{{test_name}}" = "" ]; then \
+        cargo test --release -p psyche-decentralized-testing --test integration_tests -- --nocapture; \
+    else \
+        cargo test --release -p psyche-decentralized-testing --test integration_tests -- --nocapture "{{test_name}}"; \
     fi
 
 # Deploy coordinator on localnet and create a "test" run for 1.1b model.

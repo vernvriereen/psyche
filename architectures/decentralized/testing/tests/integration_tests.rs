@@ -2,18 +2,20 @@ use std::{sync::Arc, time::Duration};
 
 use bollard::Docker;
 use e2e_testing::{
-    docker_setup::{e2e_testing_setup, spawn_new_client},
+    docker_setup::{e2e_testing_setup, spawn_new_client, CLIENT_CONTAINER_PREFIX},
     docker_watcher::{DockerWatcher, JsonFilter, Response},
 };
 use psyche_coordinator::{model::Checkpoint, RunState};
 use psyche_decentralized_testing::utils::SolanaTestClient;
+use serial_test::serial;
 use tokio::time;
 
 /// spawn 1 client and run 3 epochs
 /// assert client and coordinator state synchronization
 /// assert that the loss decreases in each epoch
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
-async fn one_client_three_epochs_run() {
+#[serial]
+async fn test_one_client_three_epochs_run() {
     // set test variables
     let run_id = "test".to_string();
     // epochs the test will run
@@ -29,7 +31,7 @@ async fn one_client_three_epochs_run() {
     let mut watcher = DockerWatcher::new(docker.clone());
     let _monitor_client_1 = watcher
         .monitor_container(
-            "test-psyche-test-client-1",
+            &format!("{CLIENT_CONTAINER_PREFIX}-1"),
             vec![JsonFilter::StateChange, JsonFilter::Loss],
         )
         .unwrap();
@@ -73,6 +75,7 @@ async fn one_client_three_epochs_run() {
 
 // Test p2p model sharing process
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
 async fn test_client_join_and_get_model_p2p() {
     // set test variables
     let run_id = "test".to_string();
@@ -94,7 +97,10 @@ async fn test_client_join_and_get_model_p2p() {
     let solana_client = SolanaTestClient::new(run_id).await;
 
     let _monitor_client_2 = watcher
-        .monitor_container("test-psyche-test-client-2", vec![JsonFilter::LoadedModel])
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-2"),
+            vec![JsonFilter::LoadedModel],
+        )
         .unwrap();
 
     let mut interval = time::interval(Duration::from_secs(20));
@@ -112,6 +118,7 @@ async fn test_client_join_and_get_model_p2p() {
                    // assert client and coordinator state synchronization
                    assert!(checkpoint.starts_with("P2P"), "The model should be obtained from P2P");
                    assert!(matches!(solana_client.get_checkpoint().await, Checkpoint::P2P(_)), "The coordinator must be on P2P");
+                   println!("Client got the model with P2P");
                    return;
                }
            }
@@ -121,6 +128,7 @@ async fn test_client_join_and_get_model_p2p() {
 
 // Test p2p model sharing process
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
 async fn test_two_client_join_and_get_model_p2p() {
     // set test variables
     let run_id = "test".to_string();
@@ -145,11 +153,17 @@ async fn test_two_client_join_and_get_model_p2p() {
     let solana_client = SolanaTestClient::new(run_id).await;
 
     let _monitor_client_2 = watcher
-        .monitor_container("test-psyche-test-client-2", vec![JsonFilter::LoadedModel])
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-2"),
+            vec![JsonFilter::LoadedModel],
+        )
         .unwrap();
 
     let _monitor_client_3 = watcher
-        .monitor_container("test-psyche-test-client-3", vec![JsonFilter::LoadedModel])
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-3"),
+            vec![JsonFilter::LoadedModel],
+        )
         .unwrap();
 
     let mut clients_with_model = 0_u8;
