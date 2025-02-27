@@ -36,7 +36,7 @@ if [[ "$#" -lt 2 || "$#" -gt 3 ]]; then
     _usage
 fi
 
-echo -e "\nThis is the current Solana configuration. Ensure that you are in the correct network:\n"
+echo -e "\nThis is the current Solana configuration. Ensure that everything is OK:\n"
 solana config get
 _continue?
 
@@ -61,7 +61,7 @@ if [[ -z "$RECIPIENTS_FILE" ]]; then
   echo "Recipients file not provided. The script will generate $NUM_ACCOUNTS new keypairs"
   _continue?
 
-  KEY_DIR="keys"
+  KEY_DIR="devnet_funded_accounts"
   mkdir -p "$KEY_DIR"
   RECIPIENTS_FILE="$KEY_DIR/pubkeys.txt"
   > "$RECIPIENTS_FILE" # Clear the file if it exists
