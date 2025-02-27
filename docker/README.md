@@ -1,0 +1,136 @@
+# Docker Psyche
+
+This folder contains all the docker related files and scripts.
+The purpose of using docker is two-fold:
+  * compartmentalize psyche client to be deployed and used in testing and production environments easily.
+  * implementing end-to-end tests that are as close as possible to a production environment.
+
+There are three concrete use-cases for the docker containers that are generated with these Dockerfiles:
+  * spawning a whole dockerized network with all the components: Solana validator and various clients. These should
+  be done via `docker compose`.
+  * booting a testing client in a Solana localnet: basically to join and train in a run with some local or remote
+  `solana-test-validator`. In short, it solves some Solana chores such as generating a key pair and adding funds to it.
+  * booting a production client: these can be used either on the Solana devnet or mainnet. There is no automatic
+  management of Solana keys or funds. This should be set manually by the user.
+
+## Dockerfiles
+
+### Psyche base dockerfile
+
+The `psyche_base.Dockerfile` is used for building the base image which will be used by almost all
+the other docker images.
+This image collects all Linux and Rust dependencies needed to build the `psyche-solana-client` binary.
+It uses [cargo-chef](https://github.com/LukeMathWalker/cargo-chef), an
+utility for caching Rust dependencies for Docker builds.
+
+## Psyche Solana client
+
+The `psyche_client.Dockerfile` is the dockerfile used to build the image for the client that would be used by
+end users, in a production-like environment.
+In essence, the image is built installing some basic OS dependencies and then copying the client binary from
+the `psyche-base` image.
+The `client_entrypoint.sh` script runs as the default entrypoint for the container, which is no more than a
+call to the `psyche-solana-client` binary to start training.
+
+## Psyche Solana test client
+
+The `psyche_test_client.Dockerfile` is essentially the same as the `psyche_client.Dockerfile`, but adds a thin
+layer of Solana dev tools like the Solana CLI to make things a little easier in testing scenarios.
+The `client_test_entrypoint.sh` script runs as the default entrypoint, which basically generates a Solana key pair,
+deposits some funds in it and then starts training. This is done only for convenience in testin scenarios.
+
+## Psyche Solana test validator
+
+The `psyche_solana_validator.Dockerfile` is meant to build a Solana validator image which will be only used for testing
+when spawning a whole network using `docker compose`.
+Its main task is to spawn the `solana-test-validator` and deploy the coordinator Solana program.
+
+---
+
+## Running a localnet using Pysche dockerized test clients
+
+### Starting solana-test-validator and deploying Coordinator
+
+If you want to running a validator in your machine, then you will need to start the `solana-test-validator`
+binary and then deploy the coordinator program. If you have started the validator and deployed the Coordinator
+in another machine, you can skip to the next section.
+
+The script `deploy-solana-test.sh` can be used to set everything; this will essentially start the Solana test
+validator, build and deploy the Coordinator program and create a training run.
+
+For creating a lightweight run, you can use
+
+```bash
+just setup-solana-localnet-light-test-run
+```
+
+When the Solana setup finishes, you will see a log saying
+
+```bash
+[+] Testing Solana setup ready, starting Solana logs...
+Streaming transaction logs. Confirmed commitment
+```
+
+In one of the logs when the Coordinator was deployed, you should see the **Program ID**. Knowing
+it is useful to be sure that things are being set correctly.
+
+### Starting N dockerized clients
+
+The first thing you should do now is to create an env file in `config/client/.env`. Here you should set
+the environment variables `RPC`, `WS_RPC` and `RUN_ID` accordingly:
+* `RPC`: The RPC endpoint of your Solana test validator.
+* `WS_RPC`: The websocket endpoint of your Solana test validator.
+* `RUN_ID`: The name of the training run created previously. Usually set to "test" as a default.
+
+There is an example env file `config/client/.env.example` that you can use as a template.
+
+> [!NOTE]
+> If you want to run the network using a local Solana test validator, then you can just copy the `.env.example`
+file as it is:
+```bash
+cp config/client/.env.example config/client/.env
+```
+
+Once you have your `.env` file set, you can build and spawn the dockerized clients for training.
+For a computer with N GPUs, you can spawn up to N clients and each one will use one GPU.
+
+This can be done using:
+
+```bash
+just setup_clients <num_clients>
+```
+
+where `<num_clients>` should be replaced with the number of clients you want spawn.
+
+As soon as you run the previous `just` command, you will be prompted with a message saying something like
+
+```bash
+"<some_program_id>" is the address of the coordinator program that will be used in the psyche test client binary.
+Continue? [y/N]
+```
+
+Check that it is the same as the **Program ID** from the deployed Coordinator. If it is not, then you should go
+to `architectures/decentralized/solana-coordinator/programs/solana-coordinator/src/lib.rs` and change the program ID
+being used in the `declare_id!()` macro to the one of the deployed Coordinator.
+
+Once you accept, the docker images will start building and then containers will be started.
+
+---
+
+## Running a whole network with docker compose (mostly used in the testing framework)
+
+To spawn a whole network with all the services included, you can run
+
+```bash
+just setup_test_infra <num_clients>
+```
+
+where `<num_clients>` is the number of clients you want in the run.
+
+You could then check the logs of each container using `docker logs`.
+
+To stop the docker compose network, run
+
+```bash
+just stop_test_infra
+```

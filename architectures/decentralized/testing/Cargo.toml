@@ -9,7 +9,10 @@ psyche-solana-coordinator.workspace = true
 psyche-coordinator.workspace = true
 anchor-client.workspace = true
 psyche-core.workspace = true
-test-log.workspace = true
 tokio-util.workspace = true
 tokio.workspace = true
 bollard = "0.18.1"
+
+[dev-dependencies]
+test-log.workspace = true
+serial_test.workspace = true

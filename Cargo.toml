@@ -85,6 +85,7 @@ anchor-client = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23e
 # dev only
 test-log = { version = "0.2.16", features = ["trace"] }
 pretty_assertions = "1.4.1"
+serial_test = "3.2.0"
 
 
 [profile.release]

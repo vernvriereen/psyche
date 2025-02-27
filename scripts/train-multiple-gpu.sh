@@ -1,5 +1,8 @@
 #!/bin/bash
 
+set -o errexit
+set -o pipefail
+
 num_clients=$1
 
 # Get the number of available GPUs
@@ -13,14 +16,17 @@ for i in $(seq 1 "$num_clients"); do
         exit 1
     fi
 
-    docker rm -f psyche-test-client-${i}
+    if docker ps -a --format '{{.Names}}' | grep -q "^psyche-test-client-${i}$"; then
+        docker rm -f psyche-test-client-"${i}"
+    fi
+
     docker run -d \
-        --name psyche-test-client-${i} \
+        --name psyche-test-client-"${i}" \
         --gpus "device=$gpu_id" \
         --env NVIDIA_DRIVER_CAPABILITIES=all \
         --env-file ./config/client/.env \
-        --network test_psyche-test-network \
         --add-host=host.docker.internal:host-gateway \
-        psyche-client
+        psyche-test-client
+
     echo "Started psyche-test-client-${i} on GPU $gpu_id"
 done
