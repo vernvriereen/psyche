@@ -104,7 +104,7 @@ build_docker_test_client:
 # Setup the infrastructure for testing locally using Docker.
 setup_test_infra num_clients="1":
     cd architectures/decentralized/solana-coordinator && anchor keys sync && anchor build --no-idl
-    cd docker/test && COMPOSE_BAKE=true docker compose build
+    cd docker/test && docker compose build
     cd docker/test && NUM_REPLICAS={{num_clients}} docker compose up -d --force-recreate
 
 stop_test_infra:
@@ -129,3 +129,11 @@ run_docker_client:
 
 clean_stale_images:
     docker rmi $(docker images -f dangling=true -q)
+
+# Define the target to get the latest version of Pumba
+install_pumba:
+    @echo "Fetching the latest Pumba version..."
+    curl -LO https://github.com/alexei-led/pumba/releases/download/0.10.1/pumba_linux_amd64
+    chmod a+x pumba_linux_amd64
+    sudo mv pumba_linux_amd64 /usr/local/bin/pumba
+    echo "Pumba installed successfully."

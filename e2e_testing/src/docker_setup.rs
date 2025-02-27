@@ -1,4 +1,4 @@
-use bollard::container::{ListContainersOptions, RemoveContainerOptions};
+use bollard::container::{ListContainersOptions, RemoveContainerOptions, StopContainerOptions};
 use bollard::models::DeviceRequest;
 use bollard::Docker;
 use bollard::{
@@ -12,6 +12,7 @@ use tokio::signal;
 use crate::docker_watcher::DockerWatcherError;
 
 pub const CLIENT_CONTAINER_PREFIX: &str = "test-psyche-test-client";
+pub const VALIDATOR_CONTAINER_PREFIX: &str = "test-psyche-solana-test-validator";
 
 pub struct DockerTestCleanup;
 impl Drop for DockerTestCleanup {
@@ -35,6 +36,49 @@ pub fn e2e_testing_setup(init_num_clients: usize) -> DockerTestCleanup {
     spawn_ctrl_c_task();
 
     DockerTestCleanup {}
+}
+
+pub async fn stop_solana_validator(
+    docker_client: Arc<Docker>,
+    after_secs: Option<i64>,
+) -> Result<(), DockerWatcherError> {
+    let options = after_secs.map(|time| StopContainerOptions { t: time });
+    docker_client
+        .stop_container(&format!("{VALIDATOR_CONTAINER_PREFIX}-1"), options)
+        .await
+        .unwrap();
+    Ok(())
+}
+
+pub async fn restart_solana_validator(
+    docker_client: Arc<Docker>,
+) -> Result<(), DockerWatcherError> {
+    docker_client
+        .start_container::<String>(&format!("{VALIDATOR_CONTAINER_PREFIX}-1"), None)
+        .await
+        .unwrap();
+    Ok(())
+}
+
+pub async fn add_solana_delay(duration: u64, delay_milis: u64) -> Result<(), DockerWatcherError> {
+    let mut command = Command::new("pumba");
+    let command = command
+        .args([
+            "netem",
+            "-d",
+            &format!("{duration}s"),
+            "delay",
+            "-t",
+            &format!("{delay_milis}"),
+            &format!("{VALIDATOR_CONTAINER_PREFIX}-1"),
+        ])
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+
+    println!("Command: {:?}", command);
+    let _ = command.spawn().expect("Failed to add delay to solana");
+    println!("Delay added to the validator");
+    Ok(())
 }
 
 pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWatcherError> {
@@ -118,7 +162,7 @@ pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWa
         platform: None,
     });
     let config = Config {
-        image: Some("psyche-client"),
+        image: Some("psyche-test-client"),
         env: Some(envs.iter().map(|s| s.as_str()).collect()),
         host_config: Some(host_config),
         ..Default::default()
