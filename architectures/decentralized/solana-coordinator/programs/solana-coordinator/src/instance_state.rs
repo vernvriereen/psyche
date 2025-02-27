@@ -10,6 +10,7 @@ use psyche_coordinator::RunState;
 use psyche_coordinator::TickResult;
 use psyche_coordinator::Witness;
 use psyche_core::sha256v;
+use psyche_core::SmallBoolean;
 
 use crate::client::Client;
 use crate::clients_state::ClientsState;
@@ -53,12 +54,17 @@ impl CoordinatorInstanceState {
             u64::from_ne_bytes(random_seed),
         ) {
             Ok(TickResult::Ticked) => {
-                if self.coordinator.is_epoch_just_starting() {
+                if self.coordinator.is_warmup_just_starting() {
                     msg!("New epoch just starting, save epoch rewards rate");
                     self.clients_state.current_epoch_rates =
                         self.clients_state.future_epoch_rates;
                     msg!("New epoch just starting, save epoch active clients");
+                    self.coordinator.epoch_state.warmup_just_starting = SmallBoolean(0);
+                }
+                if self.coordinator.is_training_just_starting() {
+                    msg!("Training just starting");
                     self.clients_state.next_active += 1;
+                    self.coordinator.epoch_state.training_just_starting = SmallBoolean(0);
                 }
             },
             Ok(TickResult::EpochEnd(success)) => {

@@ -439,3 +439,381 @@ async fn test_delay_solana_client(#[values(1, 2)] n_clients: u8, #[values(0, 10)
         }
     }
 }
+
+#[rstest]
+#[trace]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
+async fn test_pause_solana_validator(
+    #[values(1, 2)] n_clients: u8,
+    #[values(0, 10)] pause_step: u64,
+) {
+    // epochs the test will run
+    let num_of_epochs_to_run = 2;
+    let mut current_epoch = -1;
+    let mut last_epoch_loss = f64::MAX;
+
+    // initialize a Solana run with 1 client
+    let _cleanup = if n_clients == 1 {
+        e2e_testing_setup(1, None)
+    } else {
+        e2e_testing_setup(
+            2,
+            Some(PathBuf::from(
+                "../../config/solana-test/light-two-min-clients.toml",
+            )),
+        )
+    };
+
+    // initialize DockerWatcher
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+
+    for i in 1..=n_clients {
+        let _monitor_client = watcher
+            .monitor_container(
+                &format!("{CLIENT_CONTAINER_PREFIX}-{}", i),
+                vec![JsonFilter::Loss],
+            )
+            .unwrap();
+    }
+
+    if pause_step == 0 {
+        // This sleep is to avoid pausing validator while deploying the coordinator and starting the run.
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        println!("Pausing validator before start training");
+        // Pause validator for 60 seconds
+        execute_chaos_action(
+            docker.clone(),
+            ChaosAction::Pause(60),
+            vec![format!("{VALIDATOR_CONTAINER_PREFIX}-1")],
+        )
+        .await;
+    }
+
+    let mut chaos_already_executed = false;
+    let mut interval = time::interval(Duration::from_secs(10));
+    loop {
+        tokio::select! {
+           _ = interval.tick() => {
+                for i in 1..=n_clients {
+                    if !is_client_healthy(docker.clone(), i).await.unwrap() {
+                        panic!("Client {} crashed", i);
+                    }
+                }
+           }
+           response = watcher.log_rx.recv() => {
+               if let Some(Response::Loss(client, epoch, step, loss)) = response {
+                   println!(
+                       "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                       client, epoch, step, loss
+                   );
+                   if step == pause_step && !chaos_already_executed {
+                       println!("Pausing validator in step: {}", step);
+                       // Pause validator for 60 seconds
+                       execute_chaos_action(
+                           docker.clone(),
+                           ChaosAction::Pause(60),
+                           vec![format!("{VALIDATOR_CONTAINER_PREFIX}-1")],
+                       )
+                       .await;
+                       chaos_already_executed = true;
+                   }
+                   if epoch as i64 > current_epoch {
+                       current_epoch = epoch as i64;
+                       assert!(loss < last_epoch_loss);
+                       last_epoch_loss = loss;
+                       if epoch == num_of_epochs_to_run {
+                           break;
+                       }
+                   }
+               }
+           }
+        }
+    }
+}
+
+#[rstest]
+#[trace]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
+async fn test_delay_solana_test_validator(
+    #[values(1, 2)] n_clients: u8,
+    #[values(0, 10)] delay_step: u64,
+    #[values(1000, 5000)] delay_milis: i64,
+) {
+    // epochs the test will run
+    let num_of_epochs_to_run = 2;
+    let mut current_epoch = -1;
+    let mut last_epoch_loss = f64::MAX;
+
+    // initialize a Solana run with 1 client
+    let _cleanup = if n_clients == 1 {
+        e2e_testing_setup(1, None)
+    } else {
+        e2e_testing_setup(
+            2,
+            Some(PathBuf::from(
+                "../../config/solana-test/light-two-min-clients.toml",
+            )),
+        )
+    };
+
+    // initialize DockerWatcher
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+
+    for i in 1..=n_clients {
+        let _monitor_client = watcher
+            .monitor_container(
+                &format!("{CLIENT_CONTAINER_PREFIX}-{}", i),
+                vec![JsonFilter::Loss],
+            )
+            .unwrap();
+    }
+
+    if delay_step == 0 {
+        // This sleep is to avoid delaying validator while deploying the coordinator and starting the run.
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        println!("Delaying validator before start training");
+        execute_chaos_action(
+            docker.clone(),
+            ChaosAction::Delay(120, delay_milis),
+            vec![format!("{VALIDATOR_CONTAINER_PREFIX}-1")],
+        )
+        .await;
+    }
+
+    let mut chaos_already_executed = false;
+    let mut interval = time::interval(Duration::from_secs(10));
+    println!("Waiting for training to start");
+
+    loop {
+        tokio::select! {
+           _ = interval.tick() => {
+               for i in 1..=n_clients {
+                   if !is_client_healthy(docker.clone(), i).await.unwrap() {
+                       panic!("Client {} crashed", i);
+                   }
+               }
+           }
+           response = watcher.log_rx.recv() => {
+               if let Some(Response::Loss(client, epoch, step, loss)) = response {
+                   println!(
+                       "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                       client, epoch, step, loss
+                   );
+                   if step == delay_step && !chaos_already_executed {
+                       println!("Delaying validator in step: {}", step);
+                       // Pause validator for 60 seconds
+                       execute_chaos_action(
+                           docker.clone(),
+                           ChaosAction::Delay(120, delay_milis),
+                           vec![format!("{VALIDATOR_CONTAINER_PREFIX}-1")],
+                       )
+                       .await;
+                       chaos_already_executed = true;
+                   }
+                   if epoch as i64 > current_epoch {
+                       current_epoch = epoch as i64;
+                       assert!(loss < last_epoch_loss);
+                       last_epoch_loss = loss;
+                       if epoch == num_of_epochs_to_run {
+                           break;
+                       }
+                   }
+               }
+           }
+        }
+    }
+}
+
+#[rstest]
+#[trace]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
+async fn test_delay_solana_client(#[values(1, 2)] n_clients: u8, #[values(0, 10)] delay_step: u64) {
+    // epochs the test will run
+    let num_of_epochs_to_run = 2;
+    let mut current_epoch = -1;
+    let mut last_epoch_loss = f64::MAX;
+
+    // initialize a Solana run with 1 client
+    let _cleanup = if n_clients == 1 {
+        e2e_testing_setup(1, None)
+    } else {
+        e2e_testing_setup(
+            2,
+            Some(PathBuf::from(
+                "../../config/solana-test/light-two-min-clients.toml",
+            )),
+        )
+    };
+
+    // initialize DockerWatcher
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+
+    for i in 1..=n_clients {
+        let _monitor_client = watcher
+            .monitor_container(
+                &format!("{CLIENT_CONTAINER_PREFIX}-{}", i),
+                vec![JsonFilter::Loss],
+            )
+            .unwrap();
+    }
+
+    let targets = (1..=n_clients)
+        .map(|i| format!("{CLIENT_CONTAINER_PREFIX}-{}", i))
+        .collect::<Vec<String>>();
+
+    if delay_step == 0 {
+        // This sleep is to avoid delaying clients while deploying the coordinator and starting the run.
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        println!("Delaying validator before start training");
+        // Add delay to the client of 1 second for 2 minutes.
+        execute_chaos_action(
+            docker.clone(),
+            ChaosAction::Delay(120, 1000),
+            targets.clone(),
+        )
+        .await;
+    }
+
+    let mut interval = time::interval(Duration::from_secs(10));
+    let mut chaos_already_executed = false;
+    println!("Waiting for training to start");
+    loop {
+        tokio::select! {
+           _ = interval.tick() => {
+               for i in 1..=n_clients {
+                   if !is_client_healthy(docker.clone(), i).await.unwrap() {
+                       panic!("Client {} crashed", i);
+                   }
+               }
+           }
+           response = watcher.log_rx.recv() => {
+               if let Some(Response::Loss(client, epoch, step, loss)) = response {
+                   println!(
+                       "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                       client, epoch, step, loss
+                   );
+
+                   if step == delay_step && !chaos_already_executed {
+                       println!("Delaying validator in step: {}", step);
+                       // Pause validator for 60 seconds
+                           // Add delay to the client of 1 second for 2 minutes.
+                           execute_chaos_action(
+                               docker.clone(),
+                               ChaosAction::Delay(120, 1000),
+                               targets.clone(),
+                           )
+                           .await;
+                       chaos_already_executed = true;
+                   }
+                   if epoch as i64 > current_epoch {
+                       current_epoch = epoch as i64;
+                       assert!(loss < last_epoch_loss);
+                       last_epoch_loss = loss;
+                       if epoch == num_of_epochs_to_run {
+                           break;
+                       }
+                   }
+               }
+           }
+        }
+    }
+}
+
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
+async fn test_delay_new_client() {
+    // epochs the test will run
+    let num_of_epochs_to_run = 2;
+    let mut current_epoch = -1;
+    let mut last_epoch_loss = f64::MAX;
+
+    // initialize a Solana run with 1 client
+    let _cleanup = e2e_testing_setup(1, None);
+
+    // initialize DockerWatcher
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+
+    let _monitor_client = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-{}", 1),
+            vec![JsonFilter::Loss],
+        )
+        .unwrap();
+
+    // This sleep is to avoid delaying clients while deploying the coordinator and starting the run.
+    tokio::time::sleep(Duration::from_secs(20)).await;
+
+    // Spawn client
+    spawn_new_client(docker.clone()).await.unwrap();
+
+    let _monitor_client = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-{}", 2),
+            vec![JsonFilter::LoadedModel],
+        )
+        .unwrap();
+
+    let mut interval = time::interval(Duration::from_secs(10));
+    let mut chaos_already_executed = false;
+    println!("Waiting for training to start");
+    loop {
+        tokio::select! {
+           _ = interval.tick() => {
+                if !is_client_healthy(docker.clone(), 1).await.unwrap() {
+                    panic!("Client {} crashed", 1);
+                }
+                if !is_client_healthy(docker.clone(), 2).await.unwrap() {
+                    panic!("Client {} crashed", 2);
+                }
+           }
+           response = watcher.log_rx.recv() => {
+               match response {
+                   Some(Response::Loss(client, epoch, step, loss)) => {
+                       println!(
+                           "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                           client, epoch, step, loss
+                       );
+
+                       if step == 20 && !chaos_already_executed {
+                           println!("Delaying client in step: {}", step);
+                           // Pause validator for 60 seconds
+                               // Add delay to the client of 1 second for 2 minutes.
+                               execute_chaos_action(
+                                   docker.clone(),
+                                   ChaosAction::Delay(30, 5000),
+                                   vec![format!("{CLIENT_CONTAINER_PREFIX}-{}", 1)],
+                               )
+                               .await;
+                           chaos_already_executed = true;
+                       }
+                       if epoch as i64 > current_epoch {
+                           current_epoch = epoch as i64;
+                           assert!(loss < last_epoch_loss);
+                           last_epoch_loss = loss;
+                           if epoch == num_of_epochs_to_run {
+                               break;
+                           }
+                       }
+                   }
+                   Some(Response::LoadedModel(checkpoint)) => {
+                       // assert client and coordinator state synchronization
+                       assert!(checkpoint.starts_with("P2P"), "The model should be obtained from P2P");
+                       println!("Client got the model with P2P");
+                       return;
+                   }
+                   _ => {}
+               }
+           }
+        }
+    }
+}
