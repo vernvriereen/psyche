@@ -17,9 +17,18 @@ pub enum StateFilter {
 
 #[derive(Clone, Copy)]
 pub enum JsonFilter {
+    JoinRun,
     StateChange,
     Loss,
     HealthCheck,
+}
+
+#[derive(Debug)]
+pub enum Response {
+    JoinRun(String, String),
+    StateChange(String, String, String, String, u64, u64),
+    Loss(String, u64, u64, f64),
+    HealthCheck(String, u64),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -38,13 +47,6 @@ pub struct DockerWatcher {
     client: Arc<Docker>,
     log_tx: mpsc::Sender<Response>,
     pub log_rx: mpsc::Receiver<Response>,
-}
-
-#[derive(Debug)]
-pub enum Response {
-    StateChange(String, String, String, String),
-    Loss(String, u64, u64, f64),
-    HealthCheck(String, u64),
 }
 
 impl DockerWatcher {
@@ -120,12 +122,17 @@ impl DockerWatcher {
                                     .get("timestamp")
                                     .and_then(|v| v.as_str())
                                     .unwrap();
+                                let epoch =
+                                    parsed_log.get("epoch").and_then(|v| v.as_u64()).unwrap();
+                                let step = parsed_log.get("step").and_then(|v| v.as_u64()).unwrap();
 
                                 let response = Response::StateChange(
                                     timestamp.to_string(),
                                     client_id.to_string(),
                                     old_state.to_string(),
                                     new_state.to_string(),
+                                    epoch,
+                                    step,
                                 );
 
                                 log_sender.send(response).await.unwrap()
@@ -156,6 +163,23 @@ impl DockerWatcher {
                                 .to_string();
                             let index = parsed_log.get("index").and_then(|v| v.as_u64()).unwrap();
                             let response = Response::HealthCheck(client_id, index);
+                            log_sender.send(response).await.unwrap()
+                        }
+                        JsonFilter::JoinRun => {
+                            let Some(_) = parsed_log.get("join_run") else {
+                                continue;
+                            };
+                            let client_id = parsed_log
+                                .get("client_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap()
+                                .to_string();
+                            let run_id = parsed_log
+                                .get("client_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap()
+                                .to_string();
+                            let response = Response::JoinRun(client_id, run_id);
                             log_sender.send(response).await.unwrap()
                         }
                     }
