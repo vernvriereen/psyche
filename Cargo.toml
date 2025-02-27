@@ -66,8 +66,8 @@ indicatif = "0.17.5"
 tokenizers = { version = "0.20.0", default-features = false, features = [
     "onig",
 ] }
-tch = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "5d3895bfac94c7c8ea0c3e6c95b961045fa710bc" }
-torch-sys = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "5d3895bfac94c7c8ea0c3e6c95b961045fa710bc" }
+tch = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "1d816484d2a19e0a4412052ee2ea6c469c4d179f" }
+torch-sys = { git = "https://github.com/jquesnelle/tch-rs.git", rev = "1d816484d2a19e0a4412052ee2ea6c469c4d179f" }
 # tch = { path = "../tch-rs" }
 # torch-sys = { path = "../tch-rs/torch-sys" }
 time = { version = "0.3.36", features = ["formatting", "macros"] }
