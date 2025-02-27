@@ -506,6 +506,8 @@ impl MoEGate {
             topk_weight
         } * self.routed_scaling_factor;
 
+        // TODO (if needed): DeepseekV2 aux loss
+
         (topk_idx, topk_weight)
     }
 }
