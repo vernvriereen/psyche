@@ -159,8 +159,6 @@ pub struct WitnessMetadata {
     pub tokens_per_sec: f32,
     pub bandwidth_per_sec: f32,
     pub loss: f32,
-    pub perplexity: f32,
-    pub confidence: f32,
     pub evals: FixedVec<WitnessEvalResult, 8>,
     pub efficency: f32,
 }

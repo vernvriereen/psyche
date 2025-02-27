@@ -39,6 +39,7 @@ perf.data.*
 libtorch*
 slurm*
 *.key
+node_modules/
 
 ### Data folders ###
 /data

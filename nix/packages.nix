@@ -1,40 +1,38 @@
-{ inputs, ... }:
+{ self, inputs, ... }:
 {
   perSystem =
-    { system, ... }:
+    { system, pkgs, ... }:
     let
-      pkgs = import inputs.nixpkgs {
-        inherit system;
-        overlays = [
-          (import inputs.rust-overlay)
-          inputs.nix-gl-host.overlays.default
-        ];
-        config.allowUnfree = true;
-        config.cudaSupport = true;
-        config.cudaVersion = "12.4";
-      };
 
-      inherit (import ./common.nix { inherit inputs system pkgs; })
+      inherit (pkgs.psycheLib)
+        cargoArtifacts
+        rustToolchain
         craneLib
         buildSolanaIdl
         commonArgs
-        buildPackage
+        buildRustPackage
+        buildRustWasmTsPackage
         useHostGpuDrivers
         src
         ;
 
+      solana-cli = inputs.solana-pkgs.packages.${system}.solana;
+
       rustPackageNames = [
+        "psyche-solana-client"
         "psyche-centralized-client"
         "psyche-centralized-server"
         "psyche-centralized-local-testnet"
         "expand-distro"
       ];
+
       rustPackages = builtins.listToAttrs (
         map (name: {
           inherit name;
-          value = buildPackage name;
+          value = buildRustPackage name;
         }) rustPackageNames
       );
+
       nixglhostRustPackages = builtins.listToAttrs (
         map (name: {
           name = "${name}-nixglhost";
@@ -53,14 +51,7 @@
         rustPackages
         // nixglhostRustPackages
         // rec {
-          solana-coordinator-idl = buildSolanaIdl rec {
-            inherit src;
-            workspaceDir = ../architectures/decentralized/solana-coordinator;
-            sourceRoot = "source/architectures/decentralized/solana-coordinator";
-            programName = "solana-coordinator";
-            keypair = workspaceDir + "/local_dev_psyche_solana_coordinator-keypair.json";
-          };
-
+          cargo-artifacts = cargoArtifacts;
           stream-docker-psyche-centralized-client = pkgs.dockerTools.streamLayeredImage {
             name = "docker.io/nousresearch/psyche-centralized-client";
             tag = "latest";
@@ -79,6 +70,27 @@
               ];
             };
           };
+
+          # stream-docker-psyche-solana-client = pkgs.dockerTools.streamLayeredImage {
+          #   name = "docker.io/nousresearch/psyche-solana-client";
+          #   tag = "latest";
+
+          #   contents = [
+          #     pkgs.bashInteractive
+          #     pkgs.coreutils
+          #     solana-cli
+          #     rustPackages.psyche-solana-client
+          #   ];
+
+          #   config = {
+          #     Entrypoint = [
+          #       "${pkgs.bashInteractive}/bin/bash"
+          #       # "/bin/sh"
+          #       # "-c"
+          #       # "sleep 10 && /usr/local/run_owner_entrypoint.sh"
+          #     ];
+          #   };
+          # };
 
           psyche-book = pkgs.stdenv.mkDerivation {
             name = "psyche-book";

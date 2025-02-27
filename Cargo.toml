@@ -6,6 +6,7 @@ members = [
     "architectures/decentralized/solana-tooling",
     "shared/*",
     "tools/rust-tools/*",
+    "website/wasm",
 ]
 resolver = "2"
 

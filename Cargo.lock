@@ -6732,6 +6732,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "psyche-deserialize-zerocopy-wasm"
+version = "0.0.1"
+dependencies = [
+ "psyche-solana-coordinator",
+ "serde",
+ "serde-wasm-bindgen",
+ "ts-rs",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "psyche-eval"
 version = "0.1.0"
 dependencies = [
@@ -8031,6 +8042,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "342110fb7a5d801060c885da03bf91bfa7c7ca936deafcc64bb6706375605d47"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
 ]
 
 [[package]]

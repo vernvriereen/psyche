@@ -1,8 +1,15 @@
 servers:
-  - configuration: psyche-book-http-authed
+  - configuration: psyche-http-devnet-authed
     deployment:
-      type: on-pull-request
-  - configuration: psyche-book-http
+      type: on-branch
+      branch: test-deploy-devnet
+
+  - configuration: psyche-http-mainnet-authed
+    deployment:
+      type: on-branch
+      branch: test-deploy-mainnet
+
+  - configuration: psyche-http-mainnet
     deployment:
       type: on-branch
       branch: main

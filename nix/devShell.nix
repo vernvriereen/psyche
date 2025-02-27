@@ -5,20 +5,9 @@
 }:
 {
   perSystem =
-    { system, ... }:
+    { system, pkgs, ... }:
     let
-      pkgs = import inputs.nixpkgs {
-        inherit system;
-        overlays = [
-          (import inputs.rust-overlay)
-          inputs.nix-gl-host.overlays.default
-        ];
-        config.allowUnfree = true;
-        config.cudaSupport = true;
-        config.cudaVersion = "12.4";
-      };
-
-      inherit (import ./common.nix { inherit inputs system pkgs; })
+      inherit (pkgs.psycheLib)
         buildWholeWorkspace
         env
         ;
@@ -46,6 +35,11 @@
 
           # nixfmt
           nixfmt-rfc-style
+
+          # for pnpm stuff
+          nodejs
+          pnpm
+          wasm-pack
         ];
       };
     };

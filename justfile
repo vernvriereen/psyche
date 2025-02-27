@@ -20,6 +20,11 @@ docker-build-centralized-client:
 docker-push-centralized-client: docker-build-centralized-client
 	docker push docker.io/nousresearch/psyche-centralized-client
 
+
+# build the solana client Docker image
+docker-build-solana-client:
+	nix build .#stream-docker-psyche-solana-client --out-link nix-results/stream-docker-psyche-solana-client
+	nix-results/stream-docker-psyche-solana-client | docker load
 # spin up a local testnet
 local-testnet *args='':
 	cargo run -p psyche-centralized-local-testnet -- start {{args}}

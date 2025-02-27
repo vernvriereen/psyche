@@ -136,16 +136,6 @@ impl StatsLogger {
             },
             bandwidth_per_sec: bandwidth_total as f32,
             loss: self.losses().last().copied().unwrap_or(f32::INFINITY),
-            confidence: self
-                .losses()
-                .last()
-                .map(|l| self.confidence(*l))
-                .unwrap_or(f32::NEG_INFINITY),
-            perplexity: self
-                .losses()
-                .last()
-                .map(|l| perplexity(*l))
-                .unwrap_or(f32::INFINITY),
             efficency: self.efficency(),
             evals,
         }
