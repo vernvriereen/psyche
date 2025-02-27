@@ -12,7 +12,7 @@
 
 set -o errexit
 
-AMOUNT=0.1 # Amount of SOL to send to each recipient after airdrop
+AMOUNT=1 # Amount of SOL to send to each recipient after airdrop
 
 _usage() {
     echo "Usage: $0 <SENDER_KEYPAIR> <NUM_ACCOUNTS> optional:[RECIPIENTS_FILE]"
