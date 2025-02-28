@@ -278,8 +278,8 @@ impl Model {
                 if !match llm.checkpoint {
                     Checkpoint::Dummy(_hub_repo) => false,
                     Checkpoint::Ephemeral => true,
-                    Checkpoint::Hub(hub_repo) => !hub_repo.repo_id[0] == 0,
-                    Checkpoint::P2P(hub_repo) => !hub_repo.repo_id[0] == 0,
+                    Checkpoint::Hub(hub_repo) => !hub_repo.repo_id[0] != 0,
+                    Checkpoint::P2P(hub_repo) => !hub_repo.repo_id[0] != 0,
                 } {
                     msg!("model check failed: bad checkpoint");
                     return false;
