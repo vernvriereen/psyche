@@ -151,6 +151,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
         let model::Model::LLM(llm) = state.model;
 
         let data_future = async {
+            debug!("Setting up data provider from {:?}", llm.data_location);
             let data_provider = match &llm.data_location {
                 LLMTrainingDataLocation::Server(data_server) => DataProvider::Server(
                     DataProviderTcpClient::connect(
