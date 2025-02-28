@@ -10,8 +10,6 @@ ENV PATH="/root/.local/share/solana/install/active_release/bin:$PATH"
 # Copy and set libtorch from base
 COPY --from=base /usr/home/libtorch /usr/home/libtorch
 
-ARG CONFIG_PATH=/usr/src/psyche/config/solana-test/light-config.toml
-
 ENV LIBTORCH=/usr/home/libtorch
 ENV LIBTORCH_INCLUDE=/usr/home/libtorch
 ENV LIBTORCH_LIB=/usr/home/libtorch
@@ -19,7 +17,6 @@ ENV LD_LIBRARY_PATH=/usr/home/libtorch/lib
 
 ENV RUST_BACKTRACE=1
 
-COPY --from=base ${CONFIG_PATH} /usr/local/config.toml
 COPY --from=base /usr/src/psyche/target/release/psyche-solana-client /usr/local/bin
 
 # Copy the entrypoint scripts from host machine.

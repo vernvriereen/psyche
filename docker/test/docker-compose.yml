@@ -10,8 +10,6 @@ services:
         build:
             context: ../..
             dockerfile: ./docker/test/psyche_test_client.Dockerfile
-            args:
-                CONFIG_PATH: ${CONFIG_PATH:-/usr/src/psyche/config/solana-test/light-config.toml}
         depends_on:
             psyche-solana-test-validator:
                 condition: service_started
@@ -21,6 +19,8 @@ services:
             - "host.docker.internal:host-gateway"
         env_file:
             - "../../config/client/.env.local"
+        volumes:
+          - ${CONFIG_PATH:-../../config/solana-test/light-config.toml}:/usr/local/config.toml
         entrypoint:
             ["/bin/sh", "-c", "sleep 10 && /usr/local/run_owner_entrypoint.sh"]
         networks:
@@ -64,18 +64,6 @@ services:
         ports:
             - "8899:8899"
             - "8900:8900"
-        networks:
-            - psyche-test-network
-
-    nginx:
-        image: nginx:latest
-        container_name: validator_proxy
-        ports:
-            - "8080:8080"
-        volumes:
-            - ./nginx.conf:/etc/nginx/nginx.conf:ro
-        depends_on:
-            - psyche-solana-test-validator
         networks:
             - psyche-test-network
 
