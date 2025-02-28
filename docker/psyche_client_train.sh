@@ -2,12 +2,14 @@
 
 set -o errexit
 
-if [[ ! -f ".env" ]]; then
+env_file="./config/client/.env"
+
+if [[ ! -f "$env_file" ]]; then
     echo -e "\nEnvironment file does not exist. You must provide one."
     exit 1
 fi
 
-source .env
+source "$env_file"
 
 if [[ ! -f "$WALLET_FILE" ]]; then
     echo -e "\n[!] The file that was set in the WALLET_FILE env variable does not exist."
@@ -32,6 +34,7 @@ fi
 docker run -v "$WALLET_FILE":/keys/id.json \
     --gpus all \
     -e NVIDIA_DRIVER_CAPABILITIES=all \
+    --name psyche-client \
     psyche-client train \
         --wallet-private-key-path "/keys/id.json" \
         --rpc ${RPC} \
