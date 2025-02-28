@@ -1,28 +1,32 @@
 use bytemuck::Zeroable;
-use psyche_coordinator::{
-    model::{
-        Checkpoint, LLMArchitecture, LLMTrainingDataLocation,
-        LLMTrainingDataType, Model, LLM,
-    },
-    CoordinatorConfig, RunState, WitnessProof,
-};
-use psyche_core::{
-    ConstantLR, FixedVec, LearningRateSchedule, OptimizerDefinition,
-};
-use psyche_solana_coordinator::{
-    instruction::Witness, ClientId, CoordinatorAccount,
-};
-use psyche_solana_tooling::{
-    create_memnet_endpoint::create_memnet_endpoint,
-    get_accounts::get_coordinator_account_state,
-    process_coordinator_instructions::{
-        process_coordinator_initialize, process_coordinator_join_run,
-        process_coordinator_set_paused, process_coordinator_set_whitelist,
-        process_coordinator_tick, process_coordinator_update_config_model,
-        process_coordinator_witness,
-    },
-};
-use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer};
+use psyche_coordinator::model::Checkpoint;
+use psyche_coordinator::model::LLMArchitecture;
+use psyche_coordinator::model::LLMTrainingDataLocation;
+use psyche_coordinator::model::LLMTrainingDataType;
+use psyche_coordinator::model::Model;
+use psyche_coordinator::model::LLM;
+use psyche_coordinator::CoordinatorConfig;
+use psyche_coordinator::RunState;
+use psyche_coordinator::WitnessProof;
+use psyche_core::ConstantLR;
+use psyche_core::FixedVec;
+use psyche_core::LearningRateSchedule;
+use psyche_core::OptimizerDefinition;
+use psyche_solana_coordinator::instruction::Witness;
+use psyche_solana_coordinator::ClientId;
+use psyche_solana_coordinator::CoordinatorAccount;
+use psyche_solana_tooling::create_memnet_endpoint::create_memnet_endpoint;
+use psyche_solana_tooling::get_accounts::get_coordinator_account_state;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_initialize;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_join_run;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_set_paused;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_set_whitelist;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_tick;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_update_config_model;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_witness;
+use solana_sdk::pubkey::Pubkey;
+use solana_sdk::signature::Keypair;
+use solana_sdk::signer::Signer;
 
 #[tokio::test]
 pub async fn run() {

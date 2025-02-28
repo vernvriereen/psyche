@@ -1,4 +1,6 @@
-use bollard::container::{ListContainersOptions, RemoveContainerOptions, StartContainerOptions, StopContainerOptions};
+use bollard::container::{
+    ListContainersOptions, RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
+};
 use bollard::models::DeviceRequest;
 use bollard::Docker;
 use bollard::{
@@ -40,12 +42,19 @@ pub fn e2e_testing_setup(init_num_clients: usize, config: Option<PathBuf>) -> Do
     DockerTestCleanup {}
 }
 
-pub async fn is_client_healthy(docker_client: Arc<Docker>, client_number: u8) -> Result<bool, DockerWatcherError> {
+pub async fn is_client_healthy(
+    docker_client: Arc<Docker>,
+    client_number: u8,
+) -> Result<bool, DockerWatcherError> {
     let container_name = format!("{CLIENT_CONTAINER_PREFIX}-{}", client_number);
-    let container = docker_client.inspect_container(&container_name, None).await.unwrap();
+    let container = docker_client
+        .inspect_container(&container_name, None)
+        .await
+        .unwrap();
     let state = container.state.unwrap();
     match state.status {
-        Some(bollard::secret::ContainerStateStatusEnum::DEAD) | Some(bollard::secret::ContainerStateStatusEnum::EXITED) => Ok(false),
+        Some(bollard::secret::ContainerStateStatusEnum::DEAD)
+        | Some(bollard::secret::ContainerStateStatusEnum::EXITED) => Ok(false),
         _ => Ok(true),
     }
 }
@@ -73,7 +82,12 @@ pub async fn restart_solana_validator(
     Ok(())
 }
 
-pub async fn add_delay(docker_client: Arc<Docker>, target: &[&str], duration_secs: u64, delay_milis: u64) -> Result<(), DockerWatcherError> {
+pub async fn add_delay(
+    docker_client: Arc<Docker>,
+    target: &[&str],
+    duration_secs: u64,
+    delay_milis: u64,
+) -> Result<(), DockerWatcherError> {
     let container_name = "pumba-chaos";
 
     let network_name = "test_psyche-test-network";
@@ -114,19 +128,24 @@ pub async fn add_delay(docker_client: Arc<Docker>, target: &[&str], duration_sec
     for target in target.iter() {
         entry_command.push(target);
     }
-    let container = docker_client.create_container(
-        Some(create_options),
-        bollard::container::Config {
-            image: Some("gaiaadm/pumba:latest"),
-            cmd: Some(entry_command),
-            host_config: Some(host_config),
-            ..Default::default()
-        }
-    ).await.unwrap();
+    let container = docker_client
+        .create_container(
+            Some(create_options),
+            bollard::container::Config {
+                image: Some("gaiaadm/pumba:latest"),
+                cmd: Some(entry_command),
+                host_config: Some(host_config),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
 
     // Start the container
-    docker_client.start_container(&container.id, None::<StartContainerOptions<&str>>).await.unwrap();
-
+    docker_client
+        .start_container(&container.id, None::<StartContainerOptions<&str>>)
+        .await
+        .unwrap();
 
     println!("Delay applied for containers: {:?}", target.to_vec());
     Ok(())
@@ -230,9 +249,13 @@ pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWa
     Ok(())
 }
 
-pub fn spawn_psyche_network(init_num_clients: usize, config: Option<PathBuf>) -> Result<(), DockerWatcherError> {
+pub fn spawn_psyche_network(
+    init_num_clients: usize,
+    config: Option<PathBuf>,
+) -> Result<(), DockerWatcherError> {
     let mut command = Command::new("just");
-    let command = command.args(["setup_test_infra", &format!("{}", init_num_clients)])
+    let command = command
+        .args(["setup_test_infra", &format!("{}", init_num_clients)])
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
 
@@ -240,7 +263,9 @@ pub fn spawn_psyche_network(init_num_clients: usize, config: Option<PathBuf>) ->
         command.env("CONFIG_PATH", config);
     }
 
-    let output = command.output().expect("Failed to spawn docker compose instances");
+    let output = command
+        .output()
+        .expect("Failed to spawn docker compose instances");
     if !output.status.success() {
         panic!("Error: {}", String::from_utf8_lossy(&output.stderr));
     }
