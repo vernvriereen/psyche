@@ -472,7 +472,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
 
         let wandb_run = wandb_run.map_err(InitRunError::WandbThreadCrashed)??;
 
-        let stats_logger = StatsLogger::new(tokenizer, eval_runner.clone(), wandb_run);
+        let stats_logger = StatsLogger::new(
+            tokenizer,
+            eval_runner.clone(),
+            llm.lr_schedule.into(),
+            wandb_run,
+        );
 
         let warmup = WarmupStepMetadata {
             eval_runner: eval_runner.clone(),
