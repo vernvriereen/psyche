@@ -1,6 +1,7 @@
 use psyche_coordinator::{get_batch_ids_for_round, Coordinator};
 use psyche_core::{BatchId, IntervalTree, NodeIdentity};
 use psyche_data_provider::{DataProvider, TokenizedDataProvider};
+use psyche_modeling::{Batch, BatchData};
 use psyche_network::AuthenticatableIdentity;
 use std::{collections::HashSet, marker::PhantomData, sync::Arc};
 use tokio::{
@@ -11,12 +12,6 @@ use tracing::{debug, error, info_span, Instrument};
 
 pub type BatchStep = u32;
 pub type BatchIdSet = HashSet<BatchId>;
-
-#[derive(Debug, Clone)]
-pub struct Batch {
-    pub id: BatchId,
-    pub data: Vec<Vec<i32>>,
-}
 
 pub struct DataFetcher<T: NodeIdentity, A: AuthenticatableIdentity> {
     data_provider: Arc<Mutex<DataProvider<A>>>,
@@ -126,7 +121,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> DataFetcher<T, A> {
                                 if tx_next_sample
                                     .send(Batch {
                                         id: batch_id,
-                                        data: batch,
+                                        data: BatchData::CPU(batch),
                                     })
                                     .await
                                     .is_err()

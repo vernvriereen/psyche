@@ -1,6 +1,11 @@
+use crate::{
+    state::{train::FinishedTrainers, types::DeserializeError},
+    ClientTUIState, TrainingResult,
+};
+
 use psyche_coordinator::{Committee, Coordinator, RunState, Witness};
 use psyche_core::{sha256, BatchId, NodeIdentity};
-use psyche_modeling::DistroResult;
+use psyche_modeling::{DistroResult, Trainer};
 use psyche_network::{AuthenticatableIdentity, BlobTicket, Hash, TransmittableDistroResult};
 use std::{collections::HashMap, fmt, sync::Arc};
 use tch::TchError;
@@ -14,12 +19,6 @@ use tokio::{
 };
 use tracing::{debug, error, info, info_span, trace, warn, Instrument};
 use wandb::DataValue;
-
-use crate::{
-    state::{train::FinishedTrainers, types::DeserializeError},
-    trainer::Trainer,
-    ClientTUIState, TrainingResult,
-};
 
 use super::{
     cooldown::{CooldownError, CooldownStep, CooldownStepMetadata},

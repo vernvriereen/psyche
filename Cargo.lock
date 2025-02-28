@@ -6617,6 +6617,7 @@ dependencies = [
  "tch",
  "thiserror 2.0.11",
  "tokenizers",
+ "tokio-util 0.7.13",
  "torch-sys",
  "tracing",
 ]

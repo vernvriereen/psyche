@@ -36,6 +36,7 @@ pub trait CausalLM: Send + std::fmt::Debug {
     fn variables(&self) -> &VarStore;
     fn communicator(&self) -> Option<Arc<Communicator>>;
     fn prepare_for_training(&mut self);
+    fn clip_grad_norm(&mut self, max_grad_norm: f64);
 }
 
 pub trait LanguageModelForward: Send + Debug {
@@ -209,5 +210,79 @@ impl<M: LanguageModelForward, C: LanguageModelConfig> CausalLM for CausalLanguag
 
     fn prepare_for_training(&mut self) {
         self.training = true;
+    }
+
+    /// Clips gradient norm, properly handling tensor-parallel parameters.
+    ///
+    /// For a model with both sharded and replicated parameters, the true L2 norm is:
+    /// sqrt(||w_shared||^2 + ||w_replicated||^2) where:
+    /// - w_shared are parameters sharded across ranks (like TP linear layers)
+    /// - w_replicated are parameters replicated on all ranks (like layernorms)
+    ///
+    /// For sharded parameters, since each rank has an orthogonal slice of the full parameter:
+    /// ||w_shared||^2 = ||w_shared_1||^2 + ||w_shared_2||^2 + ... + ||w_shared_n||^2
+    /// where w_shared_i is the shard on rank i. We compute this via all_reduce_sum of local squared norms.
+    ///
+    /// For replicated parameters:
+    /// ||w_replicated||^2 is identical on all ranks, so we compute it locally.
+    ///
+    /// The orthogonality of sharded parameters across ranks ensures that:
+    /// total_norm = sqrt(all_reduce(||w_shared_local||^2) + ||w_replicated||^2)
+    /// gives us the correct global L2 norm as if all parameters were on a single device.
+    fn clip_grad_norm(&mut self, max_norm: f64) {
+        let vars = {
+            let variables = self.variables().variables_.lock().unwrap();
+            variables
+                .trainable_variables
+                .iter()
+                .map(|v| (v.0.tensor.shallow_clone(), v.1))
+                .collect::<Vec<_>>()
+        };
+
+        let device = if !vars.is_empty() {
+            vars[0].0.device()
+        } else {
+            return;
+        };
+
+        let mut sharded_norm_sq = Tensor::zeros([], (Kind::Float, device));
+        let mut replicated_norm_sq = Tensor::zeros([], (Kind::Float, device));
+
+        for (param, shard) in &vars {
+            let grad = param.grad();
+            if grad.defined() {
+                let local_norm = grad.norm();
+                let local_norm_sq = &local_norm * &local_norm;
+
+                match shard {
+                    Some(_) => sharded_norm_sq += local_norm_sq,
+                    None => replicated_norm_sq += local_norm_sq,
+                }
+            }
+        }
+        #[cfg(feature = "parallelism")]
+        if let Some(comm) = &self.comm {
+            comm.all_reduce(&[&sharded_norm_sq], tch::ReduceOpType::Sum)
+                .unwrap();
+        }
+        #[cfg(not(feature = "parallelism"))]
+        if self.comm.is_some() {
+            panic!("communicator passed, but parallelism is not enabled.");
+        }
+
+        let total_norm: f64 = (sharded_norm_sq + replicated_norm_sq)
+            .sqrt()
+            .try_into()
+            .unwrap();
+
+        if total_norm > max_norm {
+            let scale = max_norm / (total_norm + 1e-6);
+            for (param, _) in vars {
+                let mut grad = param.grad();
+                if grad.defined() {
+                    let _t = grad.g_mul_scalar_(scale);
+                }
+            }
+        }
     }
 }
