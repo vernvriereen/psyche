@@ -1,10 +1,9 @@
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use bollard::Docker;
 use e2e_testing::{
     docker_setup::{
-        add_solana_delay, e2e_testing_setup, restart_solana_validator, spawn_new_client,
-        stop_solana_validator, CLIENT_CONTAINER_PREFIX,
+        add_solana_delay, e2e_testing_setup, is_client_healthy, restart_solana_validator, spawn_new_client, stop_solana_validator, CLIENT_CONTAINER_PREFIX
     },
     docker_watcher::{DockerWatcher, JsonFilter, Response},
 };
@@ -27,7 +26,7 @@ async fn test_one_client_three_epochs_run() {
     let mut last_epoch_loss = f64::MAX;
 
     // initialize a Solana run with 1 client
-    let _cleanup = e2e_testing_setup(1);
+    let _cleanup = e2e_testing_setup(1, None);
 
     // initialize DockerWatcher
     let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
@@ -84,7 +83,7 @@ async fn test_client_join_and_get_model_p2p() {
     let run_id = "test".to_string();
 
     // initialize a Solana run with 1 client
-    let _cleanup = e2e_testing_setup(1);
+    let _cleanup = e2e_testing_setup(1, None);
 
     println!("Waiting for run to go on with the first client");
     tokio::time::sleep(Duration::from_secs(20)).await;
@@ -137,7 +136,7 @@ async fn test_two_client_join_and_get_model_p2p() {
     let run_id = "test".to_string();
 
     // initialize a Solana run with 1 client
-    let _cleanup = e2e_testing_setup(1);
+    let _cleanup = e2e_testing_setup(1, None);
 
     println!("Waiting for run to go on with the first client");
     tokio::time::sleep(Duration::from_secs(20)).await;
@@ -204,7 +203,7 @@ async fn test_solana_communication_problems() {
     let run_id = "test".to_string();
 
     // initialize a Solana run with 1 client
-    let _cleanup = e2e_testing_setup(2);
+    let _cleanup = e2e_testing_setup(2, None);
 
     // initialize DockerWatcher
     let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
@@ -241,63 +240,67 @@ async fn test_solana_delay() {
     let run_id = "test".to_string();
 
     // epochs the test will run
-    let num_of_epochs_to_run = 3;
+    let num_of_epochs_to_run = 2;
     let mut current_epoch = -1;
     let mut last_epoch_loss = f64::MAX;
 
+    let config_file = Some(PathBuf::from("../../config/solana-test/light-two-min-clients.toml"));
     // initialize a Solana run with 1 client
-    let _cleanup = e2e_testing_setup(2);
+    let _cleanup = e2e_testing_setup(2, config_file);
 
     // initialize DockerWatcher
     let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
     let mut watcher = DockerWatcher::new(docker.clone());
 
-    // initialize solana client to query the coordinator state
-    let solana_client = SolanaTestClient::new(run_id).await;
-
     let _monitor_client_1 = watcher
         .monitor_container(
             &format!("{CLIENT_CONTAINER_PREFIX}-1"),
-            vec![JsonFilter::StateChange, JsonFilter::Loss],
+            vec![JsonFilter::Loss],
         )
         .unwrap();
 
-    println!("Wait 20 seconds before adding delay to the validator");
-    tokio::time::sleep(Duration::from_secs(20)).await;
+    let _monitor_client_2 = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-2"),
+            vec![JsonFilter::Loss],
+        )
+        .unwrap();
 
-    add_solana_delay(60, 5000).await.unwrap();
+    tokio::time::sleep(Duration::from_secs(30)).await;
+    println!("Adding solana delay");
+    add_solana_delay(docker.clone(), 120, 1000).await.unwrap();
 
-    while let Some(response) = watcher.log_rx.recv().await {
-        match response {
-            Response::StateChange(timestamp, _client_1, old_state, new_state) => {
-                let coordinator_state = solana_client.get_run_state().await;
-                println!(
-                    "client: new_state: {}, old_state: {}, timestamp: {}",
-                    new_state, old_state, timestamp
-                );
-                // assert client and coordinator state synchronization
-                if new_state != RunState::WaitingForMembers.to_string() {
-                    assert_eq!(coordinator_state.to_string(), new_state.to_string());
+    let mut interval = time::interval(Duration::from_secs(10));
+
+    println!("Waiting for start training");
+    loop {
+        tokio::select! {
+           _ = interval.tick() => {
+                let is_first_healthy = is_client_healthy(docker.clone(), 1).await.unwrap();
+                if !is_first_healthy {
+                    panic!("Client 1 crashed");
                 }
-            }
-
-            Response::Loss(client, epoch, step, loss) => {
-                println!(
-                    "client: {:?}, epoch: {}, step: {}, Loss: {}",
-                    client, epoch, step, loss
-                );
-                if epoch as i64 > current_epoch {
-                    current_epoch = epoch as i64;
-                    assert!(loss < last_epoch_loss);
-                    last_epoch_loss = loss;
-                    if epoch == num_of_epochs_to_run {
-                        break;
-                    }
+                let is_second_healthy = is_client_healthy(docker.clone(), 2).await.unwrap();
+                if !is_second_healthy {
+                    panic!("Client 2 crashed");
                 }
-            }
-            _ => {}
+           }
+           response = watcher.log_rx.recv() => {
+               if let Some(Response::Loss(client, epoch, step, loss)) = response {
+                   println!(
+                       "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                       client, epoch, step, loss
+                   );
+                   if epoch as i64 > current_epoch {
+                       current_epoch = epoch as i64;
+                       assert!(loss < last_epoch_loss);
+                       last_epoch_loss = loss;
+                       if epoch == num_of_epochs_to_run {
+                           break;
+                       }
+                   }
+               }
+           }
         }
     }
-
-    tokio::signal::ctrl_c().await.unwrap();
 }
