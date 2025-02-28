@@ -218,7 +218,7 @@ impl Trainer {
         if barrier.wait().is_err() {
             return Ok(None);
         }
-        Ok(Some(loss.try_into()?))
+        Ok(Some(loss.detach().try_into()?))
     }
 
     fn forward(
@@ -239,7 +239,7 @@ impl Trainer {
         if barrier.wait().is_err() {
             return None;
         }
-        Some((logits, loss))
+        Some((logits, loss.map(|x| x.detach())))
     }
 
     pub fn train(
