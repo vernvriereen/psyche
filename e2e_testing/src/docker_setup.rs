@@ -1,11 +1,12 @@
-use bollard::container::{ListContainersOptions, RemoveContainerOptions, StartContainerOptions, StopContainerOptions};
+use bollard::container::{
+    ListContainersOptions, RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
+};
 use bollard::models::DeviceRequest;
 use bollard::Docker;
 use bollard::{
     container::{Config, CreateContainerOptions},
     secret::HostConfig,
 };
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -33,6 +34,7 @@ impl Drop for DockerTestCleanup {
     }
 }
 
+/// FIXME: The config path must be relative to the compose file for now.
 pub fn e2e_testing_setup(init_num_clients: usize, config: Option<PathBuf>) -> DockerTestCleanup {
     spawn_psyche_network(init_num_clients, config).unwrap();
     spawn_ctrl_c_task();
@@ -40,12 +42,19 @@ pub fn e2e_testing_setup(init_num_clients: usize, config: Option<PathBuf>) -> Do
     DockerTestCleanup {}
 }
 
-pub async fn is_client_healthy(docker_client: Arc<Docker>, client_number: u8) -> Result<bool, DockerWatcherError> {
+pub async fn is_client_healthy(
+    docker_client: Arc<Docker>,
+    client_number: u8,
+) -> Result<bool, DockerWatcherError> {
     let container_name = format!("{CLIENT_CONTAINER_PREFIX}-{}", client_number);
-    let container = docker_client.inspect_container(&container_name, None).await.unwrap();
+    let container = docker_client
+        .inspect_container(&container_name, None)
+        .await
+        .unwrap();
     let state = container.state.unwrap();
     match state.status {
-        Some(bollard::secret::ContainerStateStatusEnum::DEAD) | Some(bollard::secret::ContainerStateStatusEnum::EXITED) => Ok(false),
+        Some(bollard::secret::ContainerStateStatusEnum::DEAD)
+        | Some(bollard::secret::ContainerStateStatusEnum::EXITED) => Ok(false),
         _ => Ok(true),
     }
 }
@@ -59,6 +68,7 @@ pub async fn stop_solana_validator(
         .stop_container(&format!("{VALIDATOR_CONTAINER_PREFIX}-1"), options)
         .await
         .unwrap();
+    println!("Validator stopped");
     Ok(())
 }
 
@@ -72,25 +82,12 @@ pub async fn restart_solana_validator(
     Ok(())
 }
 
-pub async fn add_solana_delay(docker_client: Arc<Docker>, duration_secs: u64, delay_milis: u64) -> Result<(), DockerWatcherError> {
-    // let mut command = Command::new("pumba");
-    // let command = command
-    //     .args([
-    //         "netem",
-    //         "-d",
-    //         &format!("{duration_secs}s"),
-    //         "delay",
-    //         "-t",
-    //         &format!("{delay_milis}"),
-    //         &format!("{VALIDATOR_CONTAINER_PREFIX}-1"),
-    //     ])
-    //     .stdout(Stdio::inherit())
-    //     .stderr(Stdio::inherit());
-
-    // let _ = command.spawn().expect("Failed to add delay to solana");
-    // println!("Delay added to the validator");
-    let target =format!("{VALIDATOR_CONTAINER_PREFIX}-1");
-    // Define the container name and the command you want to run
+pub async fn add_delay(
+    docker_client: Arc<Docker>,
+    target: &[&str],
+    duration_secs: u64,
+    delay_milis: u64,
+) -> Result<(), DockerWatcherError> {
     let container_name = "pumba-chaos";
 
     let network_name = "test_psyche-test-network";
@@ -106,41 +103,51 @@ pub async fn add_solana_delay(docker_client: Arc<Docker>, duration_secs: u64, de
         ..Default::default()
     };
 
-        let _ = docker_client
-            .remove_container(
-                &container_name,
-                Some(RemoveContainerOptions {
-                    force: true, // Ensure it's removed even if running
-                    ..Default::default()
-                }),
-            )
-            .await;
+    let _ = docker_client
+        .remove_container(
+            container_name,
+            Some(RemoveContainerOptions {
+                force: true, // Ensure it's removed even if running
+                ..Default::default()
+            }),
+        )
+        .await;
 
-    let container = docker_client.create_container(
-        Some(create_options),
-        bollard::container::Config {
-            image: Some("gaiaadm/pumba:latest"),
-            cmd: Some(vec![
-                "netem",
-                "--duration",
-                &format!("{duration_secs}s"),
-                "delay",
-                "--jitter",
-                "500",
-                "--time",
-                &format!("{delay_milis}"),
-                &target,
-            ]),
-            host_config: Some(host_config),
-            ..Default::default()
-        }
-    ).await.unwrap();
+    let duration = format!("{duration_secs}s");
+    let delay_milis = format!("{delay_milis}");
+    let mut entry_command = vec![
+        "netem",
+        "--duration",
+        &duration,
+        "delay",
+        "--jitter",
+        "500",
+        "--time",
+        &delay_milis,
+    ];
+    for target in target.iter() {
+        entry_command.push(target);
+    }
+    let container = docker_client
+        .create_container(
+            Some(create_options),
+            bollard::container::Config {
+                image: Some("gaiaadm/pumba:latest"),
+                cmd: Some(entry_command),
+                host_config: Some(host_config),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
 
     // Start the container
-    docker_client.start_container(&container.id, None::<StartContainerOptions<&str>>).await.unwrap();
+    docker_client
+        .start_container(&container.id, None::<StartContainerOptions<&str>>)
+        .await
+        .unwrap();
 
-
-    println!("Started container with Pumba to apply delay on validator.");
+    println!("Delay applied for containers: {:?}", target.to_vec());
     Ok(())
 }
 
@@ -242,9 +249,13 @@ pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWa
     Ok(())
 }
 
-pub fn spawn_psyche_network(init_num_clients: usize, config: Option<PathBuf>) -> Result<(), DockerWatcherError> {
+pub fn spawn_psyche_network(
+    init_num_clients: usize,
+    config: Option<PathBuf>,
+) -> Result<(), DockerWatcherError> {
     let mut command = Command::new("just");
-    let command = command.args(["setup_test_infra", &format!("{}", init_num_clients)])
+    let command = command
+        .args(["setup_test_infra", &format!("{}", init_num_clients)])
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
 
@@ -252,7 +263,9 @@ pub fn spawn_psyche_network(init_num_clients: usize, config: Option<PathBuf>) ->
         command.env("CONFIG_PATH", config);
     }
 
-    let output = command.output().expect("Failed to spawn docker compose instances");
+    let output = command
+        .output()
+        .expect("Failed to spawn docker compose instances");
     if !output.status.success() {
         panic!("Error: {}", String::from_utf8_lossy(&output.stderr));
     }
