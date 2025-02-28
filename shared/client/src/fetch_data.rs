@@ -3,15 +3,19 @@ use psyche_core::{BatchId, IntervalTree, NodeIdentity};
 use psyche_data_provider::{DataProvider, TokenizedDataProvider};
 use psyche_modeling::{Batch, BatchData};
 use psyche_network::AuthenticatableIdentity;
-use std::{collections::HashSet, marker::PhantomData, sync::Arc};
+use std::{collections::HashSet, marker::PhantomData, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, Mutex},
     task::JoinHandle,
+    time::sleep,
 };
-use tracing::{debug, error, info_span, Instrument};
+use tracing::{debug, error, info_span, warn, Instrument};
 
 pub type BatchStep = u32;
 pub type BatchIdSet = HashSet<BatchId>;
+
+const MAX_RETRIES: u32 = 5;
+const BASE_DELAY_MS: u64 = 1000;
 
 pub struct DataFetcher<T: NodeIdentity, A: AuthenticatableIdentity> {
     data_provider: Arc<Mutex<DataProvider<A>>>,
@@ -107,33 +111,46 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> DataFetcher<T, A> {
                             .map(|d| BatchId::from_u64(d as u64))
                             .collect::<Vec<_>>();
 
-                        match data_provider.lock().await.get_samples(&data_ids).await {
-                            Ok(batch) => {
-                                if !batch_ids_not_yet_trained_on
-                                    .lock()
-                                    .await
-                                    .contains(&batch_id)
-                                {
-                                    // in the time between picking the sample and fetching it, someone else trained on it.
-                                    // go pick another one.
+                        let mut retry_count = 0;
+                        let batch = loop {
+                            match data_provider.lock().await.get_samples(&data_ids).await {
+                                Ok(batch) => break batch,
+                                Err(err) if retry_count < MAX_RETRIES => {
+                                    retry_count += 1;
+                                    let delay_ms = BASE_DELAY_MS * 2u64.pow(retry_count - 1);
+                                    warn!(
+                                        "Data fetch error (attempt {}/{}): \"{}\". Retrying in {}ms",
+                                        retry_count, MAX_RETRIES, err, delay_ms
+                                    );
+                                    sleep(Duration::from_millis(delay_ms)).await;
                                     continue;
                                 }
-                                if tx_next_sample
-                                    .send(Batch {
-                                        id: batch_id,
-                                        data: BatchData::CPU(batch),
-                                    })
-                                    .await
-                                    .is_err()
-                                {
-                                    debug!("Data loop finished");
+                                Err(err) => {
+                                    error!("Data fetch error: {}", err);
                                     return;
                                 }
                             }
-                            Err(err) => {
-                                error!("Data fetch error: {}", err);
-                                return;
-                            }
+                        };
+
+                        if !batch_ids_not_yet_trained_on
+                            .lock()
+                            .await
+                            .contains(&batch_id)
+                        {
+                            // in the time between picking the sample and fetching it, someone else trained on it.
+                            // go pick another one.
+                            continue;
+                        }
+                        if tx_next_sample
+                            .send(Batch {
+                                id: batch_id,
+                                data: BatchData::CPU(batch),
+                            })
+                            .await
+                            .is_err()
+                        {
+                            debug!("Data loop finished");
+                            return;
                         }
                     }
                 }
