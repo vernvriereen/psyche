@@ -27,7 +27,7 @@ token_size_in_bytes = "TwoBytes"
 shuffle = "DontShuffle"
 
 [model.LLM.data_location.Http.location.Gcp]
-bucket_url = "https://storage.googleapis.com/nous-pretraining-public-us"
+bucket_name = "nous-pretraining-public-us"
 filter_directory = "fineweb-edu-tokenized-llama2"
 
 [model.LLM.lr_schedule.Cosine]
