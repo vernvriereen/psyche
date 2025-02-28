@@ -1,8 +1,4 @@
-use crate::{
-    fetch_data::DataFetcher,
-    trainer::{ParallelModels, Trainer},
-    WandBInfo,
-};
+use crate::{fetch_data::DataFetcher, WandBInfo};
 use psyche_coordinator::{
     model::{self, LLMTrainingDataLocation},
     Coordinator, HealthChecks, Witness,
@@ -15,7 +11,8 @@ use psyche_data_provider::{
 };
 use psyche_modeling::{
     auto_tokenizer, AutoConfig, AutoTokenizerError, CausalLM, CommunicatorId, DummyModel,
-    LlamaConfig, LlamaForCausalLM, ModelConfig, ModelLoadError, PretrainedSource,
+    LlamaConfig, LlamaForCausalLM, ModelConfig, ModelLoadError, ParallelModels, PretrainedSource,
+    Trainer,
 };
 use psyche_network::{AuthenticatableIdentity, BlobTicket};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
@@ -458,7 +455,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
             .map(|models| {
                 Trainer::new(
                     models,
-                    llm.lr_schedule.into(),
+                    llm.lr_schedule,
                     llm.optimizer,
                     init_config
                         .micro_batch_size
@@ -472,7 +469,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
 
         let wandb_run = wandb_run.map_err(InitRunError::WandbThreadCrashed)??;
 
-        let stats_logger = StatsLogger::new(tokenizer, eval_runner.clone(), wandb_run);
+        let stats_logger =
+            StatsLogger::new(tokenizer, eval_runner.clone(), llm.lr_schedule, wandb_run);
 
         let warmup = WarmupStepMetadata {
             eval_runner: eval_runner.clone(),

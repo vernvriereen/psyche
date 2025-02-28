@@ -2,13 +2,13 @@ use std::str::FromStr;
 
 use anyhow::{anyhow, bail, Result};
 use futures::future::join_all;
+use google_cloud_storage::http::objects::list::ListObjectsRequest;
 use psyche_coordinator::model::HttpTrainingDataLocation;
 use psyche_core::{u8_to_string, BatchId, Shuffle, TokenSize};
 use rand::seq::SliceRandom;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use regex::Regex;
-use reqwest::{IntoUrl, Url};
+use reqwest::IntoUrl;
 use tokio::task::JoinHandle;
 use tracing::{info, trace};
 
@@ -80,71 +80,49 @@ impl FileURLs {
         Ok(Self(urls_with_sizes))
     }
 
-    pub fn split_gcp_url(url: &str) -> (String, Option<String>) {
-        const GS_BASE_PREFIX: &str = "gs://";
-        const BASE_PREFIX: &str = "https://storage.googleapis.com/";
+    pub async fn from_gcp_bucket(bucket_name: &str, directory: Option<String>) -> Result<Self> {
+        let config = google_cloud_storage::client::ClientConfig::default().anonymous();
+        let client = google_cloud_storage::client::Client::new(config);
+        let mut data_files_matching_directory = {
+            let mut all_results = vec![];
+            // the outer option is if we should continue looping
+            // the inner option is if we have a "next page token"
+            let mut next_page_token: Option<Option<String>> = Some(None);
 
-        if !url.starts_with(GS_BASE_PREFIX) {
-            return (url.to_string(), None);
-        }
-
-        let path = &url[GS_BASE_PREFIX.len()..];
-
-        match path.split_once('/') {
-            Some((bucket, directory)) => {
-                let bucket_url = format!("{}{}", BASE_PREFIX, bucket);
-                let directory = if directory.is_empty() {
-                    None
-                } else {
-                    Some(directory.to_string())
-                };
-                (bucket_url, directory)
-            }
-            None => (format!("{}{}", BASE_PREFIX, path), None),
-        }
-    }
-
-    pub async fn from_gcp_url(gcp_url: &str) -> Result<Self> {
-        let (bucket_url, directory) = Self::split_gcp_url(gcp_url);
-        Self::from_gcp_bucket(&bucket_url, directory).await
-    }
-
-    pub async fn from_gcp_bucket(bucket_url: &str, directory: Option<String>) -> Result<Self> {
-        let bucket_url = match bucket_url.ends_with("/") {
-            true => bucket_url.to_owned(),
-            false => format!("{bucket_url}/"),
-        };
-        let bucket_url = Url::from_str(&bucket_url)?;
-        let gcp_xml_contents = reqwest::get(bucket_url.clone()).await?.text().await?;
-        if gcp_xml_contents.contains("<IsTruncated>true</IsTruncated>") {
-            bail!("Received truncated manifest from GCP bucket");
-        }
-        let files_in_bucket: Vec<(String, u64)> = parse_gcp_xml(&gcp_xml_contents);
-        let data_files_matching_directory: Result<Vec<(reqwest::Url, u64)>, anyhow::Error> =
-            files_in_bucket
-                .into_iter()
-                .filter_map(|(file_path, size)| {
-                    let path_parts: Vec<&str> = file_path.split('/').collect();
-
-                    if let Some(match_dir) = &directory {
-                        if path_parts.is_empty() || path_parts[0] != match_dir {
-                            return None;
-                        }
-                    }
-
-                    let file_ext = path_parts.last()?.split('.').last()?;
+            while let Some(maybe_next_page_token) = next_page_token {
+                let this_results = client
+                    .list_objects(&ListObjectsRequest {
+                        bucket: bucket_name.to_owned(),
+                        prefix: directory.clone(),
+                        page_token: maybe_next_page_token,
+                        ..Default::default()
+                    })
+                    .await?;
+                all_results.extend(this_results.items.iter().flatten().filter_map(|obj| {
+                    let file_ext = obj.name.split('.').last()?;
                     if !DATA_FILE_EXTENSIONS.contains(&file_ext) {
                         return None;
                     }
 
-                    let full_url = bucket_url
-                        .join(&file_path)
-                        .map_err(|_| anyhow!("invalid url part {file_path}"));
-                    Some(full_url.map(|full_url| (full_url, size)))
-                })
-                .collect();
-        let mut data_files_matching_directory = data_files_matching_directory?;
+                    Some(
+                        obj.media_link
+                            .parse::<reqwest::Url>()
+                            .map(|full_url| (full_url, obj.size as u64))
+                            .map_err(anyhow::Error::from),
+                    )
+                }));
+
+                // if we have a token, Some(Some(String)),
+                // if not, None
+                next_page_token = this_results.next_page_token.map(Some)
+            }
+            all_results
+        }
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?;
+
         data_files_matching_directory.sort_by(|a, b| a.0.cmp(&b.0));
+
         Ok(Self(data_files_matching_directory))
     }
 
@@ -166,12 +144,12 @@ impl FileURLs {
             }
             HttpTrainingDataLocation::SingleUrl(url) => Self::from_list(&[u8_to_string(url)]).await,
             HttpTrainingDataLocation::Gcp {
-                bucket_url,
+                bucket_name,
                 filter_directory,
             } => {
                 let filter_directory = u8_to_string(filter_directory);
                 Self::from_gcp_bucket(
-                    &u8_to_string(bucket_url),
+                    &u8_to_string(bucket_name),
                     if filter_directory.is_empty() {
                         None
                     } else {
@@ -182,13 +160,6 @@ impl FileURLs {
             }
         }
     }
-}
-
-fn parse_gcp_xml(xml: &str) -> Vec<(String, u64)> {
-    let re = Regex::new(r"(?s)<Key>([^<]+)</Key>.*?<Size>(\d+)</Size>").unwrap();
-    re.captures_iter(xml)
-        .map(|cap| (cap[1].to_string(), cap[2].parse().unwrap()))
-        .collect()
 }
 
 impl HttpDataProvider {
@@ -419,38 +390,4 @@ async fn with_file_sizes(
     }
 
     Ok(results)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_gcp_xml() {
-        let xml = r#"
-        <ListBucketResult xmlns="http://doc.s3.amazonaws.com/2006-03-01"><Name>nous-pretraining-public-us</Name><Prefix /><Marker /><IsTruncated>false</IsTruncated><Contents><Key>fineweb-1pct-tokenized-llama3/000_fineweb.ds.index</Key><Generation>1736437740991720</Generation><MetaGeneration>1</MetaGeneration><LastModified>2025-01-09T15:49:01.055Z</LastModified><ETag>"58bfa7b320e9ddf7163d67cb95f5c4ac"</ETag><Size>118694800</Size>
-        </Contents>
-        <Contents>
-            <Key>fineweb-1pct-tokenized-llama3/000_fineweb.ds.metadata</Key>
-            <Generation>1736437738841326</Generation>
-            <MetaGeneration>1</MetaGeneration>
-            <LastModified>2025-01-09T15:48:58.887Z</LastModified>
-            <ETag>"333054bbb946a240ca09e6c312135314"</ETag>
-            <Size>50</Size>
-        </Contents>
-        "#;
-
-        let expected = vec![
-            (
-                "fineweb-1pct-tokenized-llama3/000_fineweb.ds.index".to_string(),
-                118694800,
-            ),
-            (
-                "fineweb-1pct-tokenized-llama3/000_fineweb.ds.metadata".to_string(),
-                50,
-            ),
-        ];
-
-        assert_eq!(parse_gcp_xml(xml), expected);
-    }
 }

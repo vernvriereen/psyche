@@ -1,8 +1,6 @@
-use std::{
-    collections::HashMap,
-    path::PathBuf,
-    sync::Arc,
-    time::{Duration, Instant},
+use crate::{
+    fetch_data::{BatchIdSet, DataFetcher, TrainingDataForStep},
+    state::types::PayloadState,
 };
 
 use futures::{future::try_join_all, stream::FuturesUnordered, StreamExt};
@@ -11,10 +9,18 @@ use psyche_coordinator::{
     Coordinator, CoordinatorError, HealthChecks, RunState, BLOOM_FALSE_RATE,
 };
 use psyche_core::{sha256, BatchId, Bloom, NodeIdentity};
-use psyche_modeling::DistroResult;
+use psyche_modeling::{
+    ApplyDistroResultError, DistroResult, TrainOutput, Trainer, TrainerThreadCommunicationError,
+};
 use psyche_network::{
     distro_results_to_bytes, AuthenticatableIdentity, SerializeDistroResultError,
     SerializedDistroResult, TransmittableDistroResult,
+};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
 };
 use thiserror::Error;
 use tokio::{
@@ -23,12 +29,6 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, debug_span, error, info, trace, warn, Instrument};
-
-use crate::{
-    fetch_data::{BatchIdSet, DataFetcher, TrainingDataForStep},
-    state::types::PayloadState,
-    trainer::{ApplyDistroResultError, TrainOutput, Trainer, TrainerThreadCommunicationError},
-};
 
 use super::{
     evals::{EvalRunner, MaybeRunningEvals},
@@ -278,18 +278,16 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                         } = completed_trainer.map_err(|_| TrainError::TrainCrashed)??;
 
                         let res: Result<(), TrainError> = async {
-                            trace!(
-                                "trainer on device {:?} finished training",
-                                trainer.device(),
-                            );
 
                             available_trainers.push(trainer);
 
                             if cancelled {
-                                trace!("however, we were cancelled, so we're throwing away this result.");
+                                trace!("However, we were cancelled, so we're throwing away this result.");
                                 // we're throwing away this result.
                                 return Ok(());
                             }
+
+                            let distro_results = distro_results.unwrap_or_default();
 
                             let distro_result = TransmittableDistroResult {
                                 step,
@@ -362,6 +360,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     MaybeRunningEvals::Running(eval_runner.start(available_trainers))
                 };
                 let round_duration = Instant::now() - round_start;
+                debug!("Training for round finished, duration {:?}", round_duration);
                 Ok(FinishedTrainers {
                     evals_or_trainers: evals,
                     round_losses,
@@ -486,10 +485,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     trainers
                         .into_iter()
                         .map(|trainer| {
-                            let distro_results = distro_results.clone();
+                            let distro_results = Some(distro_results.clone());
 
                             tokio::task::spawn_blocking(move || {
-                                trainer.apply_distro_results(step, distro_results)
+                                trainer.optimize(step, distro_results)
                             })
                         })
                         .collect::<Vec<_>>();
