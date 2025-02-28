@@ -74,9 +74,7 @@ impl AllReduce for Tensor {
     #[cfg(feature = "parallelism")]
     fn all_reduce_(&mut self, comm: &Option<Arc<Communicator>>, op: ReduceType) {
         if let Some(comm) = comm {
-            let device = self.device();
             comm.all_reduce(&[self], op.into()).unwrap();
-            device.cuda_synchronize();
         }
     }
 
@@ -229,17 +227,14 @@ impl Module for ColumnParallelLinear {
     fn forward(&self, input: &Tensor) -> Tensor {
         match &self.comm {
             Some(_) => {
-                let device = input.device();
                 let input_parallel = input.copy_to_model_parallel_region(&self.comm).contiguous();
                 let output_parallel = self.linear.forward(&input_parallel);
 
-                let ret = if self.gather_output {
+                if self.gather_output {
                     output_parallel.gather_from_model_parallel_region(&self.comm)
                 } else {
                     output_parallel
-                };
-                device.cuda_synchronize();
-                ret
+                }
             }
             None => self.linear.forward(input),
         }
@@ -296,8 +291,6 @@ impl Module for RowParallelLinear {
     fn forward(&self, input: &Tensor) -> Tensor {
         match &self.comm {
             Some(_) => {
-                let device = input.device();
-
                 let input_parallel = if self.input_is_parallel {
                     input.shallow_clone()
                 } else {
@@ -305,9 +298,8 @@ impl Module for RowParallelLinear {
                 };
 
                 let output_parallel = self.linear.forward(&input_parallel);
-                let ret = output_parallel.reduce_from_model_parallel_region(&self.comm);
-                device.cuda_synchronize();
-                ret
+
+                output_parallel.reduce_from_model_parallel_region(&self.comm)
             }
             None => self.linear.forward(input),
         }

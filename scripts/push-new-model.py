@@ -1,14 +1,12 @@
 from transformers import LlamaConfig, LlamaForCausalLM, AutoTokenizer
-from transformers.models.llama.modeling_llama import (
-    LlamaMLP,
-    LlamaAttention,
-    LlamaModel,
-)
+from transformers.models.llama.modeling_llama import LlamaDecoderLayer
+from configuration_deepseek import DeepseekV3Config
+from modeling_deepseek import DeepseekV3ForCausalLM
 from torch import nn
 import argparse
 import torch
 import math
-
+import json
 
 def _init_normal(module, std: float, cutoff_factor: float = 3.0):
     with torch.no_grad():
@@ -20,22 +18,24 @@ def _init_normal(module, std: float, cutoff_factor: float = 3.0):
             module.bias.zero_()
 
 
-def initialize_weights(model: LlamaForCausalLM):
+def initialize_llama_weights(model: LlamaForCausalLM, config: LlamaConfig):
     """Initialize model weights using the "Mitchell" initialization scheme"""
 
-    wte_std = 1 / math.sqrt(model.config.hidden_size)
+    wte_std = 1 / math.sqrt(config.hidden_size)
     _init_normal(model.model.embed_tokens, std=wte_std)
 
     for layer_id, layer in enumerate(model.model.layers):
-        attn_std = 1 / math.sqrt(model.config.hidden_size)
+        layer: LlamaDecoderLayer = layer
+
+        attn_std = 1 / math.sqrt(config.hidden_size)
         _init_normal(layer.self_attn.q_proj, std=attn_std)
         _init_normal(layer.self_attn.k_proj, std=attn_std)
         _init_normal(layer.self_attn.v_proj, std=attn_std)
 
-        attn_out_std = 1 / (math.sqrt(2 * model.config.hidden_size * (layer_id + 1)))
+        attn_out_std = 1 / (math.sqrt(2 * config.hidden_size * (layer_id + 1)))
         _init_normal(layer.self_attn.o_proj, std=attn_out_std)
 
-        ff_std = 1 / math.sqrt(model.config.hidden_size)
+        ff_std = 1 / math.sqrt(config.hidden_size)
         _init_normal(layer.mlp.gate_proj, std=ff_std)
         _init_normal(layer.mlp.up_proj, std=ff_std)
 
@@ -50,23 +50,45 @@ def initialize_weights(model: LlamaForCausalLM):
     nn.init.ones_(model.model.norm.weight)
 
     if model.lm_head is not None:
-        lm_std = 1 / math.sqrt(model.config.hidden_size)
+        lm_std = 1 / math.sqrt(config.hidden_size)
         _init_normal(model.lm_head, std=lm_std)
 
 
 def main(args):
     if not args.config:
         raise RuntimeError("No config provided")
-    config = LlamaConfig.from_pretrained(args.config)
+    config = json.load(open(args.config))
+    model_type = config["model_type"]
+
+    if model_type == "llama":
+        config = LlamaConfig.from_pretrained(args.config)
+    elif model_type == "deepseek_v3":
+        config = DeepseekV3Config.from_pretrained(args.config)
+    else:
+        raise ValueError(f"Unsupported model type `{model_type}`")
+
     torch.set_default_dtype(args.dtype)
     if args.device:
         torch.set_default_device(args.device)
+
     print("Initializing random model...")
-    model = LlamaForCausalLM(config)
-    print("OLMo initialization...")
-    initialize_weights(model)
+    if model_type == "llama":
+        model = LlamaForCausalLM(config)
+    elif model_type == "deepseek_v3":
+        model = DeepseekV3ForCausalLM(config)
+
+    if model_type == "llama":
+        print("OLMo initialization...")
+        initialize_llama_weights(model, config)
+    elif model_type == "deepseek_v3":
+        # according to the dsv3 paper all learnable params were initialized with std dev 0.006
+        # so will just rely on initializer_range being right and init_weights() being called in
+        # the constructor. who am I to question the great whale?
+        pass
+
     print(model)
     total_params = sum(p.numel() for p in model.parameters())
+
     print(f"Model has {total_params} parameters")
     if not args.dry_run:
         if not args.repo:

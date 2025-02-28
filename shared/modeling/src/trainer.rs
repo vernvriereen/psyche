@@ -1,10 +1,10 @@
-use crate::fetch_data::Batch;
+use crate::{
+    unsharded_cpu_variables, CausalLM, Communicator, DistroResult, EosToks,
+    Fp32GradientAccumulator, Optimizer,
+};
 use anyhow::{Error, Result};
-use psyche_coordinator::model::{self, AnyLearningRateScheduler};
-use psyche_core::{BatchId, CancellableBarrier, LearningRateScheduler};
-use psyche_modeling::{
-    unsharded_cpu_variables, CausalLM, Communicator, Distro, DistroResult, EosToks,
-    Fp32GradientAccumulator,
+use psyche_core::{
+    BatchId, CancellableBarrier, LearningRateSchedule, LearningRateScheduler, OptimizerDefinition,
 };
 use std::{
     collections::HashMap,
@@ -12,34 +12,62 @@ use std::{
     sync::{mpsc, Arc},
     time::Instant,
 };
-use tch::{
-    nn::{self, OptimizerConfig},
-    Device, Tensor,
-};
+use tch::{Device, Tensor};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
 
 pub type ParallelModels = Vec<Box<dyn CausalLM>>;
+pub type DistroResults = Vec<DistroResult>;
 
-enum Optimizer {
-    AdamW {
-        optimizer: nn::Optimizer,
-        clip_grad_norm: Option<f32>,
-    },
-    Distro {
-        optimizer: Box<Distro>,
-        clip_grad_norm: Option<f32>,
-        compression_decay_warmup_steps: u32,
-        compression_topk: i64,
-        compression_topk_startup: i64,
-        compression_topk_startup_steps: u32,
-        quantize_1bit: bool,
-    },
-    Null,
+#[derive(Debug)]
+pub enum BatchData {
+    CPU(Vec<Vec<i32>>),
+    GPU(Tensor),
 }
 
-pub type DistroResults = Vec<DistroResult>;
+impl BatchData {
+    pub fn size(&self) -> usize {
+        match self {
+            BatchData::CPU(items) => items.len(),
+            BatchData::GPU(tensor) => tensor.size()[0] as usize,
+        }
+    }
+
+    pub fn gpu(self, device: Device) -> Self {
+        Self::GPU(
+            match self {
+                BatchData::CPU(cpu) => Tensor::from_slice2(&cpu),
+                BatchData::GPU(tensor) => tensor,
+            }
+            .to(device),
+        )
+    }
+}
+
+impl Clone for BatchData {
+    fn clone(&self) -> Self {
+        match self {
+            Self::CPU(cpu) => Self::CPU(cpu.clone()),
+            Self::GPU(gpu) => Self::GPU(gpu.shallow_clone()),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Batch {
+    pub id: BatchId,
+    pub data: BatchData,
+}
+
+impl Batch {
+    pub fn gpu(self, device: Device) -> Self {
+        Self {
+            id: self.id,
+            data: self.data.gpu(device),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct TrainOutput {
@@ -47,7 +75,7 @@ pub struct TrainOutput {
     pub trainer: Trainer,
     pub loss: f32,
     pub step: u32,
-    pub distro_results: DistroResults,
+    pub distro_results: Option<DistroResults>,
     pub cancelled: bool,
 }
 
@@ -111,8 +139,8 @@ pub enum TrainerThreadCommunicationError {
 impl Trainer {
     pub fn new(
         models: ParallelModels,
-        lr_scheduler: AnyLearningRateScheduler,
-        optimizer: model::Optimizer,
+        lr_scheduler: LearningRateSchedule,
+        optimizer: OptimizerDefinition,
         micro_batch_size: usize,
         stats: Option<u32>,
         grad_accum_in_fp32: bool,
@@ -130,53 +158,8 @@ impl Trainer {
             let (result_tx, result_rx) = mpsc::channel();
             ret.push((assignment_tx, result_rx));
 
-            let optimizer = match optimizer {
-                model::Optimizer::AdamW {
-                    betas,
-                    weight_decay,
-                    eps,
-                    clip_grad_norm,
-                } => Optimizer::AdamW {
-                    optimizer: nn::AdamW {
-                        beta1: betas[0] as f64,
-                        beta2: betas[1] as f64,
-                        wd: weight_decay as f64,
-                        eps: eps as f64,
-                        amsgrad: false,
-                    }
-                    .build(model.variables(), 1.0e-1)
-                    .unwrap(),
-                    clip_grad_norm: Some(clip_grad_norm),
-                },
-                model::Optimizer::Distro {
-                    clip_grad_norm,
-                    compression_decay,
-                    compression_decay_warmup_steps,
-                    compression_topk,
-                    compression_topk_startup,
-                    compression_topk_startup_steps,
-                    compression_chunk,
-                    quantize_1bit,
-                } => Optimizer::Distro {
-                    optimizer: Distro::new(
-                        model.variables(),
-                        compression_decay as f64,
-                        compression_chunk as i64,
-                        0.0,
-                        model.communicator(),
-                    )
-                    .into(),
-                    clip_grad_norm,
-                    compression_decay_warmup_steps,
-                    compression_topk: compression_topk as i64,
-                    compression_topk_startup: compression_topk_startup as i64,
-                    compression_topk_startup_steps,
-                    quantize_1bit,
-                },
-                model::Optimizer::Dummy => Optimizer::Null,
-            };
+            let optimizer = Optimizer::new(optimizer, model.as_ref());
 
-            let lr_scheduler = lr_scheduler.clone();
             let barrier = barrier.clone();
             let lr_warmup = warmup_starting_at_step.map(|step| {
                 (
@@ -215,12 +198,10 @@ impl Trainer {
 
     fn forward_backward(
         model: &mut dyn CausalLM,
-        data: &[Vec<i32>],
+        inputs: Tensor,
         barrier: &Arc<CancellableBarrier>,
         loss_scale: Option<f64>,
     ) -> Result<Option<f32>> {
-        let device = model.device();
-        let inputs = Tensor::from_slice2(data).to(device);
         let targets = inputs.copy();
         if barrier.wait().is_err() {
             return Ok(None);
@@ -237,7 +218,7 @@ impl Trainer {
         if barrier.wait().is_err() {
             return Ok(None);
         }
-        Ok(Some(loss.try_into()?))
+        Ok(Some(loss.detach().try_into()?))
     }
 
     fn forward(
@@ -258,7 +239,7 @@ impl Trainer {
         if barrier.wait().is_err() {
             return None;
         }
-        Some((logits, loss))
+        Some((logits, loss.map(|x| x.detach())))
     }
 
     pub fn train(
@@ -316,20 +297,20 @@ impl Trainer {
             trainer: self,
             loss: final_loss,
             step,
-            distro_results: final_distro_results.unwrap_or_default(),
+            distro_results: final_distro_results,
             cancelled: final_cancelled,
         })
     }
 
-    pub fn apply_distro_results(
+    pub fn optimize(
         self,
         step: u32,
-        results: Vec<DistroResults>,
+        results: Option<Vec<DistroResults>>,
     ) -> Result<Self, ApplyDistroResultError> {
         self.barrier.reset();
         for (tx, _) in &self.models {
             tx.send(ParallelAssignment::Optimize {
-                distro_results: Some(results.clone()),
+                distro_results: results.clone(),
                 step,
             })
             .map_err(|_| ApplyDistroResultError::SendOptimize)?;
@@ -390,7 +371,7 @@ impl Trainer {
         mut optimizer: Optimizer,
         index: usize,
         micro_batch_size: usize,
-        lr_scheduler: AnyLearningRateScheduler,
+        lr_scheduler: LearningRateSchedule,
         barrier: Arc<CancellableBarrier>,
         optim_stats_every_n_steps: Option<u32>,
         grad_accum_in_fp32: bool,
@@ -414,35 +395,43 @@ impl Trainer {
                         // TODO freeze the optimizer and prevent this from modifying its internal state, methinks, right? or maybe save it and restore it later?
                         // we just want to have the same optimizer state wyhen we exit, save for the main operation (if not frozen. hmm)
                         let lr = lr_scheduler.get_lr(*step);
-                        if optimize_step(lr, &mut optimizer, Some(result), &barrier).is_break() {
+                        if optimize_step(&mut model, lr, &mut optimizer, Some(result), &barrier)
+                            .is_break()
+                        {
                             panic!("Failed to roll back.")
                         };
                     }
 
-                    if micro_batch_size > 0 && batch.data.len() % micro_batch_size != 0 {
-                        error!("Micro batch size doesn't evenly divide batch size");
+                    let batch_size = batch.data.size();
+                    if micro_batch_size > 0 && batch_size % micro_batch_size != 0 {
+                        error!("Micro batch size {micro_batch_size} doesn't evenly divide batch size {batch_size}");
                         return;
                     }
 
-                    let grad_accum_steps = batch.data.len() / micro_batch_size;
+                    let grad_accum_steps = batch_size / micro_batch_size;
                     if grad_accum_in_fp32 && grad_accum_steps != 1 && grad_accum.is_none() {
                         debug!("Allocating FP32 gradient accumulator");
-                        let parameters = match &mut optimizer {
-                            Optimizer::AdamW { optimizer, .. } => optimizer.trainable_variables(),
-                            Optimizer::Distro { optimizer, .. } => optimizer.trainable_variables(),
-                            Optimizer::Null => Vec::new(),
-                        };
-                        grad_accum = Some(Fp32GradientAccumulator::new(&parameters, model.device()))
+                        grad_accum = Some(Fp32GradientAccumulator::new(
+                            &model.variables().trainable_variables(),
+                            model.device(),
+                        ))
                     }
                     let grad_accum_divisor = grad_accum_steps as f64;
-                    let micro_batches = batch.data.chunks_exact(micro_batch_size);
+
+                    let micro_batches = match batch.data {
+                        BatchData::CPU(data) => data
+                            .chunks_exact(micro_batch_size)
+                            .map(|chunk| Tensor::from_slice2(chunk).to(model.device()))
+                            .collect::<Vec<_>>(),
+                        BatchData::GPU(tensor) => tensor.chunk(grad_accum_steps as i64, 0),
+                    };
                     assert_eq!(micro_batches.len(), grad_accum_steps);
 
                     if let Some(grad_accum) = &mut grad_accum {
                         grad_accum.zero_grad();
                     }
                     match &mut optimizer {
-                        Optimizer::AdamW { optimizer, .. } => optimizer.zero_grad(),
+                        Optimizer::Torch { optimizer, .. } => optimizer.zero_grad().unwrap(),
                         Optimizer::Distro { optimizer, .. } => optimizer.zero_grad(),
                         _ => (),
                     };
@@ -494,7 +483,7 @@ impl Trainer {
 
                     let distro_results = match cancelled {
                         false => match &mut optimizer {
-                            Optimizer::AdamW {
+                            Optimizer::Torch {
                                 optimizer: _,
                                 clip_grad_norm: _,
                             } => None,
@@ -510,7 +499,7 @@ impl Trainer {
                                 let clipped = match clip_grad_norm {
                                     Some(clip_grad_norm) => match barrier.wait() {
                                         Ok(_) => {
-                                            optimizer.clip_grad_norm(*clip_grad_norm as f64);
+                                            model.clip_grad_norm(*clip_grad_norm as f64);
                                             barrier.wait().is_ok()
                                         }
                                         Err(_) => false,
@@ -563,7 +552,9 @@ impl Trainer {
                     for (_, result) in rollback.iter() {
                         // TODO freeze the optimizer and prevent this from modifying its internal state, methinks, right? or maybe save it and restore it later?
                         // we just want to have the same optimizer state wyhen we exit, save for the main operation (if not frozen. hmm)
-                        if optimize_step(lr, &mut optimizer, Some(result), &barrier).is_break() {
+                        if optimize_step(&mut model, lr, &mut optimizer, Some(result), &barrier)
+                            .is_break()
+                        {
                             panic!("Failed to roll forwards.")
                         };
                     }
@@ -581,8 +572,14 @@ impl Trainer {
                         }
                         None => lr_scheduler.get_lr(step),
                     };
-                    if optimize_step(lr, &mut optimizer, distro_results.as_ref(), &barrier)
-                        .is_break()
+                    if optimize_step(
+                        &mut model,
+                        lr,
+                        &mut optimizer,
+                        distro_results.as_ref(),
+                        &barrier,
+                    )
+                    .is_break()
                     {
                         return;
                     }
@@ -694,7 +691,7 @@ impl CausalLM for Trainer {
         self.first_model_device
     }
 
-    fn variables(&self) -> &nn::VarStore {
+    fn variables(&self) -> &tch::nn::VarStore {
         unimplemented!()
     }
 
@@ -703,25 +700,34 @@ impl CausalLM for Trainer {
     }
 
     fn prepare_for_training(&mut self) {}
+
+    fn clip_grad_norm(&mut self, _max_grad_norm: f64) {}
 }
 
 fn optimize_step(
+    model: &mut Box<dyn CausalLM>,
     lr: f64,
     optimizer: &mut Optimizer,
     distro_results: Option<&Vec<Vec<DistroResult>>>,
     barrier: &Arc<CancellableBarrier>,
 ) -> ControlFlow<()> {
     match optimizer {
-        Optimizer::AdamW {
+        Optimizer::Torch {
             optimizer,
             clip_grad_norm,
         } => {
-            optimizer.set_lr(lr);
+            optimizer.set_learning_rate(lr).unwrap();
             if let Some(clip_grad_norm) = clip_grad_norm {
-                optimizer.clip_grad_norm(*clip_grad_norm as f64);
+                if barrier.wait().is_err() {
+                    return ControlFlow::Break(());
+                }
+                model.clip_grad_norm(*clip_grad_norm as f64);
+                if barrier.wait().is_err() {
+                    return ControlFlow::Break(());
+                }
             }
-            optimizer.step();
-            optimizer.zero_grad();
+            optimizer.step().unwrap();
+            optimizer.zero_grad().unwrap();
         }
         Optimizer::Distro { optimizer, .. } => match distro_results {
             Some(results) => {

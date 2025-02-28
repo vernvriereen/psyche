@@ -16,17 +16,21 @@
     filter = path: type: (testResourcesFilter path type) || (craneLib.filterCargoSources path type);
   };
 
-  torch = pkgs.libtorch-bin.dev.overrideAttrs (old: let
-    version = "2.4.1";
-    cuda = "124";
-  in {
-    version = version;
-    src = pkgs.fetchzip {
-      name = "libtorch-cxx11-abi-shared-with-deps-${version}-cu${cuda}.zip";
-      url = "https://download.pytorch.org/libtorch/cu${cuda}/libtorch-cxx11-abi-shared-with-deps-${version}%2Bcu${cuda}.zip";
-      hash = "sha256-/MKmr4RnF2FSGjheJc4221K38TWweWAtAbCVYzGSPZM=";
-    };
-  });
+  torch = pkgs.libtorch-bin.dev.overrideAttrs (
+    old:
+    let
+      version = "2.6.0";
+      cuda = "124";
+    in
+    {
+      version = version;
+      src = pkgs.fetchzip {
+        name = "libtorch-cxx11-abi-shared-with-deps-${version}-cu${cuda}.zip";
+        url = "https://download.pytorch.org/libtorch/cu${cuda}/libtorch-cxx11-abi-shared-with-deps-${version}%2Bcu${cuda}.zip";
+        hash = "sha256-rJIvNGcR/xFfkr/O2a32CmO5/5Fv24Y7+efOtYgGO6A=";
+      };
+    }
+  );
 
   env = {
     CUDA_ROOT = pkgs.cudaPackages.cudatoolkit.out;

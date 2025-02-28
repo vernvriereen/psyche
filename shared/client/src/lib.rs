@@ -3,7 +3,6 @@ mod client;
 mod fetch_data;
 mod protocol;
 mod state;
-mod trainer;
 mod tui;
 
 pub use cli::{exercise_sdpa_if_needed, print_identity_keys, read_identity_secret_key, TrainArgs};
