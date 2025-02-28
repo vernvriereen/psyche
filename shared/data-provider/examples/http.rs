@@ -55,8 +55,8 @@ enum Commands {
     },
     /// A public GCP bucket
     Gcp {
-        /// The URL of the GCP bucket
-        bucket_url: String,
+        /// The name of the GCP bucket
+        bucket_name: String,
         /// An optional directory to filter by
         directory: Option<String>,
     },
@@ -87,9 +87,9 @@ async fn main() -> Result<()> {
             FileURLs::from_list(&urls).await?
         }
         Commands::Gcp {
-            bucket_url,
+            bucket_name,
             directory,
-        } => FileURLs::from_gcp_bucket(&bucket_url, directory).await?,
+        } => FileURLs::from_gcp_bucket(&bucket_name, directory).await?,
     };
     let mut provider =
         HttpDataProvider::new(urls, token_size, cli.sequence_length, Shuffle::DontShuffle)?;
