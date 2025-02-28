@@ -133,7 +133,7 @@ async fn test_client_join_and_get_model_p2p() {
 // Test p2p model sharing process
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
-async fn test_two_client_join_and_get_model_p2p() {
+async fn test_two_clients_join_and_get_model_p2p() {
     // set test variables
     let run_id = "test".to_string();
 
@@ -197,41 +197,6 @@ async fn test_two_client_join_and_get_model_p2p() {
     }
 }
 
-// Test p2p model sharing process
-#[test_log::test(tokio::test(flavor = "multi_thread"))]
-#[serial]
-async fn test_delay_solana_test_validator() {
-    // initialize a Solana run with 1 client
-    let _cleanup = e2e_testing_setup(2, None);
-
-    // initialize DockerWatcher
-    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
-    let watcher = DockerWatcher::new(docker.clone());
-
-    // initialize solana client to query the coordinator state
-    // let solana_client = SolanaTestClient::new(run_id).await;
-
-    let _monitor_client_1 = watcher
-        .monitor_container(
-            &format!("{CLIENT_CONTAINER_PREFIX}-1"),
-            vec![JsonFilter::LoadedModel],
-        )
-        .unwrap();
-
-    println!("Wait 20 seconds before stopping the validator");
-    stop_solana_validator(docker.clone(), Some(20))
-        .await
-        .unwrap();
-
-    println!("Validator dead, waiting 10 seconds before starting the validator");
-
-    tokio::time::sleep(Duration::from_secs(10)).await;
-    restart_solana_validator(docker).await.unwrap();
-
-    tokio::signal::ctrl_c().await.unwrap();
-}
-
-// Test p2p model sharing process
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
 async fn test_kill_solana_validator() {
@@ -258,6 +223,69 @@ async fn test_kill_solana_validator() {
         .await
         .unwrap();
     println!("Waiting 10 seconds before starting the validator again");
+
+    let mut interval = time::interval(Duration::from_secs(10));
+    restart_solana_validator(docker.clone()).await.unwrap();
+
+    println!("Waiting for training to resume");
+    loop {
+        tokio::select! {
+           _ = interval.tick() => {
+                if !is_client_healthy(docker.clone(), 1).await.unwrap() {
+                    panic!("Client 1 crashed");
+                }
+           }
+           response = watcher.log_rx.recv() => {
+               if let Some(Response::Loss(client, epoch, step, loss)) = response {
+                   println!(
+                       "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                       client, epoch, step, loss
+                   );
+                   if epoch as i64 > current_epoch {
+                       current_epoch = epoch as i64;
+                       assert!(loss < last_epoch_loss);
+                       last_epoch_loss = loss;
+                       if epoch == num_of_epochs_to_run {
+                           break;
+                       }
+                   }
+               }
+           }
+        }
+    }
+}
+
+// Test p2p model sharing process
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
+async fn test_delay_solana_test_validator() {
+    // epochs the test will run
+    let num_of_epochs_to_run = 2;
+    let mut current_epoch = -1;
+    let mut last_epoch_loss = f64::MAX;
+
+    // initialize a Solana run with 1 client
+    let _cleanup = e2e_testing_setup(1, None);
+
+    // initialize DockerWatcher
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+
+    let _monitor_client_1 = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-1"),
+            vec![JsonFilter::LoadedModel],
+        )
+        .unwrap();
+
+    add_delay(
+        docker.clone(),
+        &[&format!("{VALIDATOR_CONTAINER_PREFIX}-1")],
+        120,
+        1000,
+    )
+    .await
+    .unwrap();
 
     let mut interval = time::interval(Duration::from_secs(10));
     restart_solana_validator(docker.clone()).await.unwrap();
