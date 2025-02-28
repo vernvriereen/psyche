@@ -8,12 +8,14 @@ mod distro;
 mod dummy;
 mod fp32_gradient_accumulator;
 mod models;
+mod optimizer;
 mod rms_norm;
 mod rope;
 mod safetensor_utils;
 mod sampling;
 mod tensor_parallelism;
 mod token_output_stream;
+mod trainer;
 
 pub use attention::CausalSelfAttention;
 pub use auto_config::{
@@ -30,6 +32,7 @@ pub use distro::{CompressDCT, Distro, DistroResult, TransformDCT};
 pub use dummy::{get_dummy_parameters, DummyModel};
 pub use fp32_gradient_accumulator::Fp32GradientAccumulator;
 pub use models::*;
+pub use optimizer::Optimizer;
 pub use rms_norm::RMSNorm;
 pub use rope::{default_rope, rotate_half, yarn_get_mscale, RoPECache, RoPEConfig, RoPEType};
 pub use safetensor_utils::{
@@ -42,6 +45,10 @@ pub use tensor_parallelism::{
     CudaSynchronize, RMSNormParallelInput, RowParallelLinear,
 };
 pub use token_output_stream::TokenOutputStream;
+pub use trainer::{
+    ApplyDistroResultError, Batch, BatchData, ParallelModels, TrainOutput, Trainer,
+    TrainerThreadCommunicationError,
+};
 
 #[allow(unused)]
 pub fn set_torch_rng_seed() {

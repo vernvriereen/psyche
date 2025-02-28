@@ -388,6 +388,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34ac096ce696dc2fcabef30516bb13c0a68a11d30131d3df6f04711467681b04"
 
 [[package]]
+name = "approx"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cab112f0a86d568ea0e627cc1d6be74a1e9cd55214684db5561995f6dad897c6"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "aquamarine"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -768,6 +777,28 @@ name = "async-recursion"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b43422f69d8ff38f95f1b2bb76517c91589a924d1559a0e935d7c8ce0274c11"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.96",
+]
+
+[[package]]
+name = "async-stream"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b5a71a6f37880a80d1d7f19efd781e4b5de42c88f0722cc13bcb6cc2cfe8476"
+dependencies = [
+ "async-stream-impl",
+ "futures-core",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "async-stream-impl"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7c24de15d275a1ecfd47a380fb4d5ec9bfe0933f309ed5e705b775596a3574d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1993,6 +2024,7 @@ checksum = "f55bf8e7b65898637379c1b74eb1551107c8294ed26d855ceb9fd1a09cfc9bc0"
 dependencies = [
  "const-oid",
  "der_derive",
+ "pem-rfc7468",
  "zeroize",
 ]
 
@@ -3054,6 +3086,81 @@ dependencies = [
  "regex-automata 0.4.9",
  "regex-syntax 0.8.5",
  "serde",
+]
+
+[[package]]
+name = "google-cloud-auth"
+version = "0.17.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e57a13fbacc5e9c41ded3ad8d0373175a6b7a6ad430d99e89d314ac121b7ab06"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "google-cloud-metadata",
+ "google-cloud-token",
+ "home",
+ "jsonwebtoken",
+ "reqwest 0.12.12",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "time",
+ "tokio",
+ "tracing",
+ "urlencoding",
+]
+
+[[package]]
+name = "google-cloud-metadata"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d901aeb453fd80e51d64df4ee005014f6cf39f2d736dd64f7239c132d9d39a6a"
+dependencies = [
+ "reqwest 0.12.12",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
+name = "google-cloud-storage"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34a73d9e94d35665909050f02e035d8bdc82e419241b1b027ebf1ea51dc8a470"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "base64 0.21.7",
+ "bytes",
+ "futures-util",
+ "google-cloud-auth",
+ "google-cloud-metadata",
+ "google-cloud-token",
+ "hex",
+ "once_cell",
+ "percent-encoding",
+ "pkcs8",
+ "regex",
+ "reqwest 0.12.12",
+ "reqwest-middleware 0.4.1",
+ "ring",
+ "serde",
+ "serde_json",
+ "sha2 0.10.8",
+ "thiserror 1.0.69",
+ "time",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "google-cloud-token"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f49c12ba8b21d128a2ce8585955246977fbce4415f680ebf9199b6f9d6d725f"
+dependencies = [
+ "async-trait",
 ]
 
 [[package]]
@@ -4526,6 +4633,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonwebtoken"
+version = "9.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a87cc7a48537badeae96744432de36f4be2b4a34a05a5ef32e9dd8a1c169dde"
+dependencies = [
+ "base64 0.22.1",
+ "js-sys",
+ "pem 3.0.4",
+ "ring",
+ "serde",
+ "serde_json",
+ "simple_asn1",
+]
+
+[[package]]
 name = "keccak"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5116,14 +5238,16 @@ dependencies = [
 
 [[package]]
 name = "ndarray"
-version = "0.15.6"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "adb12d4e967ec485a5f71c6311fe28158e9d6f4bc4a447b474184d0f91a8fa32"
+checksum = "882ed72dce9365842bf196bdeedf5055305f11fc8c03dee7bb0194a6cad34841"
 dependencies = [
  "matrixmultiply",
  "num-complex 0.4.6",
  "num-integer",
  "num-traits",
+ "portable-atomic",
+ "portable-atomic-util",
  "rawpointer",
 ]
 
@@ -6082,6 +6206,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "280dc24453071f1b63954171985a0b0d30058d287960968b9b2aca264c8d4ee6"
 
 [[package]]
+name = "portable-atomic-util"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8a2f0d8d040d7848a709caf78912debcc3f33ee4b3cac47d73d1e1069e83507"
+dependencies = [
+ "portable-atomic",
+]
+
+[[package]]
 name = "portmapper"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6507,6 +6640,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anyhow",
+ "approx",
  "bitvec",
  "bytemuck",
  "fast-math",
@@ -6528,6 +6662,7 @@ dependencies = [
  "bytemuck",
  "clap",
  "futures",
+ "google-cloud-storage",
  "hf-hub",
  "memmap2 0.9.5",
  "parquet",
@@ -6540,7 +6675,6 @@ dependencies = [
  "psyche-watcher",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
- "regex",
  "reqwest 0.12.12",
  "serde",
  "static-web-server",
@@ -6606,6 +6740,7 @@ dependencies = [
  "tch",
  "thiserror 2.0.11",
  "tokenizers",
+ "tokio-util 0.7.13",
  "torch-sys",
  "tracing",
 ]
@@ -7250,6 +7385,7 @@ dependencies = [
  "js-sys",
  "log",
  "mime",
+ "mime_guess",
  "native-tls",
  "once_cell",
  "percent-encoding",
@@ -7266,11 +7402,13 @@ dependencies = [
  "tokio",
  "tokio-native-tls",
  "tokio-rustls 0.26.1",
+ "tokio-util 0.7.13",
  "tower",
  "tower-service",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wasm-streams",
  "web-sys",
  "webpki-roots 0.26.7",
  "windows-registry",
@@ -7289,6 +7427,21 @@ dependencies = [
  "serde",
  "task-local-extensions",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "reqwest-middleware"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64e8975513bd9a7a43aad01030e79b3498e05db14e9d945df6483e8cf9b8c4c4"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "http 1.2.0",
+ "reqwest 0.12.12",
+ "serde",
+ "thiserror 1.0.69",
+ "tower-service",
 ]
 
 [[package]]
@@ -8058,6 +8211,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dee851d0e5e7af3721faea1843e8015e820a234f81fda3dea9247e15bac9a86a"
 dependencies = [
  "bitflags 2.8.0",
+]
+
+[[package]]
+name = "simple_asn1"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "297f631f50729c8c99b84667867963997ec0b50f32b2a7dbcab828ef0541e8bb"
+dependencies = [
+ "num-bigint 0.4.6",
+ "num-traits",
+ "thiserror 2.0.11",
+ "time",
 ]
 
 [[package]]
@@ -9181,7 +9346,7 @@ dependencies = [
  "indicatif",
  "log",
  "reqwest 0.11.27",
- "reqwest-middleware",
+ "reqwest-middleware 0.2.5",
  "semver",
  "serde",
  "serde_derive",
@@ -9206,7 +9371,7 @@ dependencies = [
  "bs58",
  "jsonrpc-core",
  "reqwest 0.11.27",
- "reqwest-middleware",
+ "reqwest-middleware 0.2.5",
  "semver",
  "serde",
  "serde_derive",
@@ -10969,8 +11134,8 @@ dependencies = [
 
 [[package]]
 name = "tch"
-version = "0.17.0"
-source = "git+https://github.com/jquesnelle/tch-rs.git?rev=e8b64d8dedccbc0092ad43b49a01a5355f0feee7#e8b64d8dedccbc0092ad43b49a01a5355f0feee7"
+version = "0.19.0"
+source = "git+https://github.com/jquesnelle/tch-rs.git?rev=8abe326afb45736b4d0280683a79d1f3823f3e1a#8abe326afb45736b4d0280683a79d1f3823f3e1a"
 dependencies = [
  "half",
  "lazy_static",
@@ -11420,8 +11585,8 @@ dependencies = [
 
 [[package]]
 name = "torch-sys"
-version = "0.17.0"
-source = "git+https://github.com/jquesnelle/tch-rs.git?rev=e8b64d8dedccbc0092ad43b49a01a5355f0feee7#e8b64d8dedccbc0092ad43b49a01a5355f0feee7"
+version = "0.19.0"
+source = "git+https://github.com/jquesnelle/tch-rs.git?rev=8abe326afb45736b4d0280683a79d1f3823f3e1a#8abe326afb45736b4d0280683a79d1f3823f3e1a"
 dependencies = [
  "anyhow",
  "cc",
@@ -12006,6 +12171,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a05d73b933a847d6cccdda8f838a22ff101ad9bf93e33684f39c1f5f0eece3d"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "wasm-streams"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15053d8d85c7eccdbefef60f06769760a563c7f0a9d6902a13d35c7800b0ad65"
+dependencies = [
+ "futures-util",
+ "js-sys",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

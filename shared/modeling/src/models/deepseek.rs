@@ -314,15 +314,38 @@ impl MLAAttention {
         let key_states = Tensor::cat(&[&k_nope, &k_pe], -1);
 
         let y = if self.use_sdpa {
-            Tensor::scaled_dot_product_attention::<Tensor>(
+            // Flash Attention only supports equal dimensions for query, keys, and values.
+            // It's actually more efficient to pad to these dimensions so that SDPA will use FA
+            // rather than doing vanilla math attention on the smaller value dimension
+
+            let mut padded_value_states = value_states.shallow_clone();
+            if self.qk_nope_head_dim + self.qk_rope_head_dim != self.head_v_dim {
+                let pad_size = self.qk_nope_head_dim + self.qk_rope_head_dim - self.head_v_dim;
+                padded_value_states = Tensor::cat(
+                    &[
+                        &value_states,
+                        &Tensor::zeros([b, self.num_local_heads, t, pad_size], (kind, self.device)),
+                    ],
+                    -1,
+                );
+            }
+
+            let att = Tensor::scaled_dot_product_attention::<Tensor>(
                 &query_states,
                 &key_states,
-                &value_states,
+                &padded_value_states,
                 None,
                 0.0,
-                t > 1,
+                true,
                 Some(self.softmax_scale),
-            )
+                false,
+            );
+
+            if self.qk_nope_head_dim + self.qk_rope_head_dim != self.head_v_dim {
+                att.narrow(-1, 0, self.head_v_dim)
+            } else {
+                att
+            }
         } else {
             let att = query_states.matmul(&key_states.transpose(-2, -1)) * self.softmax_scale;
             let mask = Tensor::ones([t, t], (kind, self.device))
@@ -505,6 +528,8 @@ impl MoEGate {
         } else {
             topk_weight
         } * self.routed_scaling_factor;
+
+        // TODO (if needed): DeepseekV2 aux loss
 
         (topk_idx, topk_weight)
     }

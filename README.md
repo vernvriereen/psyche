@@ -36,9 +36,9 @@ sudo apt install nvidia-cuda-toolkit
 3. Download libtorch & extract
 
 ```bash
-wget https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.4.1%2Bcu124.zip
-unzip libtorch-cxx11-abi-shared-with-deps-2.4.1%2Bcu124.zip
-rm libtorch-cxx11-abi-shared-with-deps-2.4.1%2Bcu124.zip
+wget https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.6.0%2Bcu124.zip
+unzip libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip
+rm libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip
 ```
 
 4. In the `.bashrc` file, set the following libtorch environment variables. Here `<path_to_libtorch>` is the absolute path
@@ -103,7 +103,7 @@ cargo install --git https://github.com/coral-xyz/anchor --rev a7a23eea308440a9fa
 
 1. Install CUDA libraries: https://developer.nvidia.com/cuda-12-4-1-download-archive?target_os=Windows&target_arch=x86_64&target_version=11
 
-2. Download libtorch & extract: https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.4.1%2Bcu124.zip
+2. Download libtorch & extract: https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.6.0%2Bcu124.zip
 
 3. Download OpenSSL: https://slproweb.com/download/Win64OpenSSL-3_3_2.exe
 

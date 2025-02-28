@@ -19,7 +19,7 @@ pub struct RoPEConfig {
     pub low_freq_factor: Option<f32>,
     pub high_freq_factor: Option<f32>,
     pub original_max_position_embeddings: Option<usize>,
-    #[serde(rename = "type")]
+    #[serde(alias = "type")]
     pub rope_type: RoPEType,
     pub beta_fast: Option<f32>,
     pub beta_slow: Option<f32>,
