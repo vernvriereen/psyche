@@ -200,10 +200,7 @@ async fn test_two_client_join_and_get_model_p2p() {
 // Test p2p model sharing process
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
-async fn test_solana_communication_problems() {
-    // set test variables
-    let run_id = "test".to_string();
-
+async fn test_delay_solana_test_validator() {
     // initialize a Solana run with 1 client
     let _cleanup = e2e_testing_setup(2, None);
 
@@ -237,7 +234,7 @@ async fn test_solana_communication_problems() {
 // Test p2p model sharing process
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
-async fn test_kill_solana() {
+async fn test_kill_solana_validator() {
     // epochs the test will run
     let num_of_epochs_to_run = 2;
     let mut current_epoch = -1;
@@ -296,20 +293,14 @@ async fn test_kill_solana() {
 // Test p2p model sharing process
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
-async fn test_solana_delay() {
-    // set test variables
-    let run_id = "test".to_string();
-
+async fn test_delay_solana_client() {
     // epochs the test will run
     let num_of_epochs_to_run = 2;
     let mut current_epoch = -1;
     let mut last_epoch_loss = f64::MAX;
 
-    let config_file = Some(PathBuf::from(
-        "../../config/solana-test/light-two-min-clients.toml",
-    ));
     // initialize a Solana run with 1 client
-    let _cleanup = e2e_testing_setup(2, config_file);
+    let _cleanup = e2e_testing_setup(1, None);
 
     // initialize DockerWatcher
     let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
@@ -318,13 +309,6 @@ async fn test_solana_delay() {
     let _monitor_client_1 = watcher
         .monitor_container(
             &format!("{CLIENT_CONTAINER_PREFIX}-1"),
-            vec![JsonFilter::Loss],
-        )
-        .unwrap();
-
-    let _monitor_client_2 = watcher
-        .monitor_container(
-            &format!("{CLIENT_CONTAINER_PREFIX}-2"),
             vec![JsonFilter::Loss],
         )
         .unwrap();
@@ -339,18 +323,12 @@ async fn test_solana_delay() {
     .unwrap();
 
     let mut interval = time::interval(Duration::from_secs(10));
-
     println!("Waiting for training to start");
     loop {
         tokio::select! {
            _ = interval.tick() => {
-                let is_first_healthy = is_client_healthy(docker.clone(), 1).await.unwrap();
-                if !is_first_healthy {
+                if !is_client_healthy(docker.clone(), 1).await.unwrap() {
                     panic!("Client 1 crashed");
-                }
-                let is_second_healthy = is_client_healthy(docker.clone(), 2).await.unwrap();
-                if !is_second_healthy {
-                    panic!("Client 2 crashed");
                 }
            }
            response = watcher.log_rx.recv() => {
@@ -376,7 +354,7 @@ async fn test_solana_delay() {
 // Test p2p model sharing process
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
-async fn test_clients_delay() {
+async fn test_delay_two_solana_clients() {
     // epochs the test will run
     let num_of_epochs_to_run = 2;
     let mut current_epoch = -1;
@@ -412,7 +390,7 @@ async fn test_clients_delay() {
             &format!("{CLIENT_CONTAINER_PREFIX}-1"),
             &format!("{CLIENT_CONTAINER_PREFIX}-2"),
         ],
-        60,
+        120,
         1000,
     )
     .await
