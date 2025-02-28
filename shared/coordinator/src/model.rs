@@ -1,6 +1,9 @@
 use crate::{coordinator::SOLANA_MAX_URL_STRING_LEN, SOLANA_MAX_STRING_LEN};
 
-use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
+use anchor_lang::{
+    prelude::{borsh, msg},
+    AnchorDeserialize, AnchorSerialize, InitSpace,
+};
 use bytemuck::{Zeroable, ZeroableInOption};
 use psyche_core::{
     serde_deserialize_optional_string, serde_deserialize_string, serde_serialize_optional_string,
@@ -133,7 +136,7 @@ pub enum HttpTrainingDataLocation {
             serialize_with = "serde_serialize_string",
             deserialize_with = "serde_deserialize_string"
         )]
-        bucket_url: [u8; SOLANA_MAX_URL_STRING_LEN],
+        bucket_name: [u8; SOLANA_MAX_STRING_LEN],
 
         /// 0 len === no filter
         #[serde(
@@ -250,32 +253,46 @@ impl Model {
     pub fn check(&self) -> bool {
         match self {
             Model::LLM(llm) => {
-                llm.max_seq_len != 0
-                    && match llm.data_location {
-                        LLMTrainingDataLocation::Dummy => false,
-                        LLMTrainingDataLocation::Server(url) => url[0] != 0,
-                        LLMTrainingDataLocation::Local(_) => true,
-                        LLMTrainingDataLocation::Http { location, .. } => match location {
-                            HttpTrainingDataLocation::SingleUrl(url) => url[0] != 0,
-                            HttpTrainingDataLocation::NumberedFiles {
-                                url_template,
-                                num_files,
-                                ..
-                            } => url_template[0] != 0 && num_files > 0,
-                            HttpTrainingDataLocation::Gcp { bucket_url, .. } => bucket_url[0] != 0,
-                        },
-                    }
-                    && match llm.checkpoint {
-                        Checkpoint::Dummy(_hub_repo) => false,
-                        Checkpoint::Ephemeral => true,
-                        Checkpoint::Hub(hub_repo) => hub_repo.repo_id[0] != 0,
-                        Checkpoint::P2P(hub_repo) => hub_repo.repo_id[0] != 0,
-                    }
-                    && match llm.optimizer {
-                        OptimizerDefinition::Dummy => false,
-                        OptimizerDefinition::AdamW { .. } => true,
-                        OptimizerDefinition::Distro { .. } => true,
-                    }
+                if llm.max_seq_len == 0 {
+                    msg!("model check failed: max_seq_len is 0.");
+                    return false;
+                }
+                let bad_data_location = match llm.data_location {
+                    LLMTrainingDataLocation::Dummy => false,
+                    LLMTrainingDataLocation::Server(url) => url[0] == 0,
+                    LLMTrainingDataLocation::Local(_) => false,
+                    LLMTrainingDataLocation::Http { location, .. } => match location {
+                        HttpTrainingDataLocation::SingleUrl(url) => url[0] == 0,
+                        HttpTrainingDataLocation::NumberedFiles {
+                            url_template,
+                            num_files,
+                            ..
+                        } => url_template[0] == 0 || num_files == 0,
+                        HttpTrainingDataLocation::Gcp { bucket_name, .. } => bucket_name[0] == 0,
+                    },
+                };
+                if bad_data_location {
+                    msg!("model check failed: bad LLM training data location.");
+                    return false;
+                }
+                if !match llm.checkpoint {
+                    Checkpoint::Dummy(_hub_repo) => false,
+                    Checkpoint::Ephemeral => true,
+                    Checkpoint::Hub(hub_repo) => !hub_repo.repo_id[0] == 0,
+                    Checkpoint::P2P(hub_repo) => !hub_repo.repo_id[0] == 0,
+                } {
+                    msg!("model check failed: bad checkpoint");
+                    return false;
+                }
+                if !match llm.optimizer {
+                    OptimizerDefinition::Dummy => false,
+                    OptimizerDefinition::AdamW { .. } => true,
+                    OptimizerDefinition::Distro { .. } => true,
+                } {
+                    msg!("model check failed: bad optimizer");
+                    return false;
+                }
+                true
             }
         }
     }
