@@ -1,5 +1,5 @@
 use psyche_coordinator::{model, Coordinator};
-use psyche_core::{BoundedQueue, NodeIdentity};
+use psyche_core::{BoundedQueue, LearningRateSchedule, NodeIdentity};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokenizers::Tokenizer;
 use tracing::warn;
@@ -16,14 +16,14 @@ pub struct StatsLogger {
     losses: Vec<f32>,
     last_optim_stats: HashMap<String, f64>,
     eval_history: HashMap<String, Vec<f64>>,
-    lr_scheduler: model::AnyLearningRateScheduler,
+    lr_schedule: LearningRateSchedule,
 }
 
 impl StatsLogger {
     pub fn new(
         tokenizer: Arc<Tokenizer>,
         eval_runner: EvalRunner,
-        lr_scheduler: model::AnyLearningRateScheduler,
+        lr_schedule: LearningRateSchedule,
         wandb_run: Option<wandb::Run>,
     ) -> Self {
         Self {
@@ -32,7 +32,7 @@ impl StatsLogger {
             losses: Vec::new(),
             round_durations: Default::default(),
             eval_runner,
-            lr_scheduler,
+            lr_schedule,
             eval_history: HashMap::new(),
             last_optim_stats: HashMap::new(),
         }
@@ -52,7 +52,7 @@ impl StatsLogger {
             round_log.insert("train/perplexity", perplexity(*loss));
             round_log.insert("train/confidence", self.confidence(*loss));
         }
-        round_log.insert("train/lr", self.lr_scheduler.get_lr(state.progress.step));
+        round_log.insert("train/lr", self.lr_schedule.get_lr(state.progress.step));
 
         round_log.insert("train/total_tokens", total_tokens(state));
         round_log.insert("train/tokens_per_sec", self.global_tokens_per_second(state));

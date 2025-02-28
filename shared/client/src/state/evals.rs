@@ -1,12 +1,12 @@
+use futures::future::try_join_all;
+use psyche_core::RunningAverage;
+use psyche_eval::{EvalTaskOptions, Task};
+use psyche_modeling::Trainer;
+use rand::{seq::SliceRandom, thread_rng};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
-
-use futures::future::try_join_all;
-use psyche_core::RunningAverage;
-use psyche_eval::{EvalTaskOptions, Task};
-use rand::{seq::SliceRandom, thread_rng};
 use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::{
@@ -15,8 +15,6 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, span, trace, Level};
-
-use crate::trainer::Trainer;
 
 #[derive(Debug)]
 pub struct EvalTask {

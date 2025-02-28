@@ -6,11 +6,11 @@ mod bounded_queue;
 mod boxed_future;
 mod cancellable_barrier;
 mod data_shuffle;
+mod definitions;
 mod deterministic_shuffle;
 mod fixed_vec;
 mod interval_tree;
 mod lcg;
-mod lr_scheduler;
 mod merkle_tree;
 mod node_identity;
 mod running_average;
@@ -28,11 +28,14 @@ pub use bounded_queue::BoundedQueue;
 pub use boxed_future::BoxedFuture;
 pub use cancellable_barrier::{CancellableBarrier, CancelledBarrier};
 pub use data_shuffle::Shuffle;
+pub use definitions::{
+    ConstantLR, CosineLR, LearningRateSchedule, LearningRateScheduler, LinearLR,
+    OptimizerDefinition,
+};
 pub use deterministic_shuffle::deterministic_shuffle;
 pub use fixed_vec::FixedVec;
 pub use interval_tree::{ClosedInterval, IntervalTree};
 pub use lcg::LCG;
-pub use lr_scheduler::*;
 pub use merkle_tree::{HashWrapper as RootType, MerkleTree, OwnedProof, Proof};
 pub use node_identity::NodeIdentity;
 pub use running_average::RunningAverage;
