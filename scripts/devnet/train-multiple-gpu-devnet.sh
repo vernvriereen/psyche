@@ -1,15 +1,33 @@
 #!/bin/bash
 
+# ---------------------------------------------------------- #
+# This script should be run from the root of the Psyche repo #
+# ---------------------------------------------------------- #
+
 set -o errexit
 set -o pipefail
 
-rpc="https://devnet.solana"
-ws_rpc="wss://devnet.solana"
-run_id="test"
-
 funded_accounts_folder="./devnet_funded_accounts"
+# funded_accounts_folder=".scripts/devnet/devnet_funded_accounts"
 
 num_clients=$1
+
+source ./config/client/.env
+
+if [[ "$RPC" == "" ]]; then
+   echo -e "\n[!] The RPC env variable was not set."
+   exit 1
+fi
+
+if [[ "$WS_RPC" == "" ]]; then
+   echo -e "\n[!] The WS_RPC env variable was not set."
+   exit 1
+fi
+
+if [[ "$RUN_ID" == "" ]]; then
+   echo -e "\n[!] The RUN_ID env variable was not set."
+   exit 1
+fi
 
 if [[ ! -d "$funded_accounts_folder" ]]; then
     echo -e "\nFunded accounts folder does not exist. To fund accounts, run the 'fund_accounts.sh' script."
@@ -30,7 +48,7 @@ fi
 
 # Get the number of available GPUs
 num_gpus=$(nvidia-smi --query-gpu=index --format=csv,noheader | wc -l)
-if [ "$num_clients" -gt "$num_wallets" ]; then
+if [ "$num_clients" -gt "$num_gpus" ]; then
     echo -e "\n[!] There are not enough GPUs for the desired number of clients"
     echo -e "Number of GPUs: $num_gpus - Number of desired clients: $num_clients"
     exit 1
@@ -48,14 +66,18 @@ for i in $(seq 1 "$num_clients"); do
         docker rm -f psyche-client-"${i}"
     fi
 
-    docker run -d -v "$funded_accounts_folder"/keypair_"${i}":/keys/id.json \
+    # [!] To try it in localnet, add the following docker argument:
+    #   --add-host=host.docker.internal:host-gateway \
+    docker run -d -v "$funded_accounts_folder"/keypair_"${i}.json":/keys/id.json \
+        --name psyche-client-"${i}" \
         --gpus "device=$gpu_id" \
         -e NVIDIA_DRIVER_CAPABILITIES=all \
+        --add-host=host.docker.internal:host-gateway \
         psyche-client train \
             --wallet-private-key-path "/keys/id.json" \
-            --rpc ${rpc} \
-            --ws-rpc ${ws_rpc} \
-            --run-id ${run_id} \
+            --rpc ${RPC} \
+            --ws-rpc ${WS_RPC} \
+            --run-id ${RUN_ID} \
             --ticker \
             --logs "json"
 

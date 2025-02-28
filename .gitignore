@@ -44,7 +44,7 @@ checkpoints/
 logs/
 txt/
 config/testing/dolma/
-scripts/devnet/devnet_funded_accounts
+**/devnet_funded_accounts
 
 ### Solana ###
 test-ledger

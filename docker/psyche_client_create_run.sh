@@ -2,12 +2,14 @@
 
 set -o errexit
 
-if [[ ! -f ".env" ]]; then
+env_path="./config/client/.env"
+
+if [[ ! -f "$env_path" ]]; then
     echo -e "\nEnvironment file does not exist. You must provide one."
     exit 1
 fi
 
-source .env
+source "$env_path"
 
 if [[ "$WALLET_FILE" == "" ]]; then
     echo -e "\n[!] The WALLET_FILE env variable was not set."
@@ -45,8 +47,13 @@ if [[ ! -f "$CONFIG_PATH" ]]; then
     exit 1
 fi
 
+# [!] NOTE: To try it in localnet, add the following docker argument to
+#     every command:
+#     --add-host=host.docker.internal:host-gateway \
+
 echo -e "\n[+] Creating training run with run ID ${RUN_ID}"
 docker run -v "$WALLET_FILE":/keys/id.json \
+    --add-host=host.docker.internal:host-gateway \
     psyche-client create-run \
         --wallet-private-key-path "/keys/id.json" \
         --rpc ${RPC} \
@@ -58,6 +65,7 @@ echo -e "\n[+] Uploading model config..."
 
 docker run -v "$WALLET_FILE":/keys/id.json \
            -v "$CONFIG_PATH":/model_config/config.toml \
+           --add-host=host.docker.internal:host-gateway \
     psyche-client update-config \
         --wallet-private-key-path "/keys/id.json" \
         --rpc ${RPC} \
@@ -67,7 +75,8 @@ docker run -v "$WALLET_FILE":/keys/id.json \
 
 echo -e "\n[+] Model config uploaded successfully"
 
-docker run -v "$WALLET_FILE":/keys/id.json \
+docker run --rm -v "$WALLET_FILE":/keys/id.json \
+    --add-host=host.docker.internal:host-gateway \
     psyche-client set-paused \
         --wallet-private-key-path "/keys/id.json" \
         --rpc ${RPC} \
@@ -75,4 +84,4 @@ docker run -v "$WALLET_FILE":/keys/id.json \
         --run-id ${RUN_ID} \
         --resume
 
-echo -e "\n[+] Training run with run ID ${RUN_ID} was set up succesfully!"
+echo -e "\n[+] Training run with run ID '${RUN_ID}' was set up succesfully!"
