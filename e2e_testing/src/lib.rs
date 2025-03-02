@@ -1,3 +1,4 @@
+pub mod chaos;
 pub mod docker_setup;
 pub mod docker_watcher;
 
