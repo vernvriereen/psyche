@@ -1,6 +1,4 @@
-use bollard::container::{
-    ListContainersOptions, RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
-};
+use bollard::container::{ListContainersOptions, RemoveContainerOptions};
 use bollard::models::DeviceRequest;
 use bollard::Docker;
 use bollard::{
@@ -57,98 +55,6 @@ pub async fn is_client_healthy(
         | Some(bollard::secret::ContainerStateStatusEnum::EXITED) => Ok(false),
         _ => Ok(true),
     }
-}
-
-pub async fn stop_solana_validator(
-    docker_client: Arc<Docker>,
-    after_secs: Option<i64>,
-) -> Result<(), DockerWatcherError> {
-    let options = after_secs.map(|time| StopContainerOptions { t: time });
-    docker_client
-        .stop_container(&format!("{VALIDATOR_CONTAINER_PREFIX}-1"), options)
-        .await
-        .unwrap();
-    println!("Validator stopped");
-    Ok(())
-}
-
-pub async fn restart_solana_validator(
-    docker_client: Arc<Docker>,
-) -> Result<(), DockerWatcherError> {
-    docker_client
-        .start_container::<String>(&format!("{VALIDATOR_CONTAINER_PREFIX}-1"), None)
-        .await
-        .unwrap();
-    Ok(())
-}
-
-pub async fn add_delay(
-    docker_client: Arc<Docker>,
-    target: &[&str],
-    duration_secs: u64,
-    delay_milis: u64,
-) -> Result<(), DockerWatcherError> {
-    let container_name = "pumba-chaos";
-
-    let network_name = "test_psyche-test-network";
-    let host_config = HostConfig {
-        network_mode: Some(network_name.to_string()),
-        binds: Some(vec!["/var/run/docker.sock:/var/run/docker.sock".to_string()]),
-        ..Default::default()
-    };
-
-    // Create the container with the Pumba image
-    let create_options = CreateContainerOptions {
-        name: container_name,
-        ..Default::default()
-    };
-
-    let _ = docker_client
-        .remove_container(
-            container_name,
-            Some(RemoveContainerOptions {
-                force: true, // Ensure it's removed even if running
-                ..Default::default()
-            }),
-        )
-        .await;
-
-    let duration = format!("{duration_secs}s");
-    let delay_milis = format!("{delay_milis}");
-    let mut entry_command = vec![
-        "netem",
-        "--duration",
-        &duration,
-        "delay",
-        "--jitter",
-        "500",
-        "--time",
-        &delay_milis,
-    ];
-    for target in target.iter() {
-        entry_command.push(target);
-    }
-    let container = docker_client
-        .create_container(
-            Some(create_options),
-            bollard::container::Config {
-                image: Some("gaiaadm/pumba:latest"),
-                cmd: Some(entry_command),
-                host_config: Some(host_config),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-
-    // Start the container
-    docker_client
-        .start_container(&container.id, None::<StartContainerOptions<&str>>)
-        .await
-        .unwrap();
-
-    println!("Delay applied for containers: {:?}", target.to_vec());
-    Ok(())
 }
 
 pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWatcherError> {
