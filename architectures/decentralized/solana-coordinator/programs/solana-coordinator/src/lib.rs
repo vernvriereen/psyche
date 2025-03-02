@@ -21,6 +21,14 @@ pub fn bytes_from_string(str: &str) -> &[u8] {
     &str.as_bytes()[..SOLANA_MAX_STRING_LEN.min(str.len())]
 }
 
+pub fn find_coordinator_instance(run_id: &str) -> Pubkey {
+    Pubkey::find_program_address(
+        &[CoordinatorInstance::SEEDS_PREFIX, bytes_from_string(run_id)],
+        &crate::ID,
+    )
+    .0
+}
+
 pub fn coordinator_account_from_bytes(
     bytes: &[u8],
 ) -> std::result::Result<&CoordinatorAccount, ProgramError> {

@@ -11,6 +11,7 @@ tasks:
   # Formating
   fmt:
     cmds:
+      - task authorizer_fmt
       - task treasurer_fmt
       - task mining_pool_fmt
       - task tooling_fmt
@@ -18,6 +19,7 @@ tasks:
   # Testing
   test:
     cmds:
+      - task authorizer_test
       - task treasurer_test
       - task mining_pool_test
       - task tooling_test
@@ -25,9 +27,24 @@ tasks:
   # Linting (clippy)
   lint:
     cmds:
+      - task authorizer_lint
       - task treasurer_lint
       - task mining_pool_lint
       - task tooling_lint
+
+  # Authorizer
+  authorizer_fmt:
+    dir: "{{ .TASKFILE_DIR }}/solana-authorizer"
+    cmds:
+      - task fmt
+  authorizer_test:
+    dir: "{{ .TASKFILE_DIR }}/solana-authorizer"
+    cmds:
+      - task test
+  authorizer_lint:
+    dir: "{{ .TASKFILE_DIR }}/solana-authorizer"
+    cmds:
+      - task lint
 
   # Treasurer
   treasurer_fmt:

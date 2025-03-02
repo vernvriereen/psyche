@@ -6,6 +6,7 @@ use psyche_solana_coordinator::accounts::FreeCoordinatorAccounts;
 use psyche_solana_coordinator::accounts::InitializeCoordinatorAccounts;
 use psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts;
 use psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts;
+use psyche_solana_coordinator::find_coordinator_instance;
 use psyche_solana_coordinator::instruction::FreeCoordinator;
 use psyche_solana_coordinator::instruction::InitializeCoordinator;
 use psyche_solana_coordinator::instruction::JoinRun;
@@ -23,8 +24,6 @@ use solana_sdk::signer::Signer;
 use solana_sdk::system_program;
 use solana_toolbox_endpoint::ToolboxEndpoint;
 use solana_toolbox_endpoint::ToolboxEndpointError;
-
-use crate::find_pdas::find_coordinator_instance;
 
 pub async fn process_coordinator_initialize(
     endpoint: &mut ToolboxEndpoint,

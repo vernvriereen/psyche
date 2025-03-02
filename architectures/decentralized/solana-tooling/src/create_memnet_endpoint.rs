@@ -6,6 +6,11 @@ pub async fn create_memnet_endpoint() -> ToolboxEndpoint {
     let mut endpoint =
         ToolboxEndpoint::new_program_test_with_builtin_programs(&[
             toolbox_endpoint_program_test_builtin_program_anchor!(
+                "psyche_solana_authorizer",
+                psyche_solana_authorizer::ID,
+                psyche_solana_authorizer::entry
+            ),
+            toolbox_endpoint_program_test_builtin_program_anchor!(
                 "psyche_solana_coordinator",
                 psyche_solana_coordinator::ID,
                 psyche_solana_coordinator::entry
