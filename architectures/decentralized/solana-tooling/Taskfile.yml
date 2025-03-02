@@ -1,20 +1,24 @@
 version: "3"
 
 tasks:
+  # General check for mindless complete verification
   check:
     cmds:
       - task fmt
-      - task test
       - task lint
+      - task test
 
+  # Formatting
   fmt:
     cmds:
       - cargo +nightly fmt
 
-  test:
-    cmds:
-      - cargo test
-
+  # Linting
   lint:
     cmds:
       - cargo +nightly clippy --all-targets
+
+  # Testing
+  test:
+    cmds:
+      - cargo +nightly test

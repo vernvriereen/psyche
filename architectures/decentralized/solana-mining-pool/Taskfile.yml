@@ -5,20 +5,20 @@ tasks:
   check:
     cmds:
       - task fmt
-      - task test
       - task lint
+      - task test
 
-  # Testing
-  test:
+  # Formatting
+  fmt:
     cmds:
-      - cargo +nightly test
+      - cargo +nightly fmt
 
   # Linting
   lint:
     cmds:
       - cargo +nightly clippy --all-targets
 
-  # Formatting
-  fmt:
+  # Testing
+  test:
     cmds:
-      - cargo +nightly fmt
+      - cargo +nightly test
