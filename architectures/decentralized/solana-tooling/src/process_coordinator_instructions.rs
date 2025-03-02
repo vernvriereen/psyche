@@ -43,7 +43,10 @@ pub async fn process_coordinator_initialize(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: InitializeCoordinator { run_id: run_id.to_string() }.data(),
+        data: InitializeCoordinator {
+            run_id: run_id.to_string(),
+        }
+        .data(),
         program_id: psyche_solana_coordinator::ID,
     };
 
@@ -153,7 +156,9 @@ pub async fn process_coordinator_join_run(
         program_id: psyche_solana_coordinator::ID,
     };
 
-    endpoint.process_instruction_with_signers(instruction, payer, &[user]).await
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[user])
+        .await
 }
 
 pub async fn process_coordinator_set_paused(
@@ -202,7 +207,9 @@ pub async fn process_coordinator_tick(
         program_id: psyche_solana_coordinator::ID,
     };
 
-    endpoint.process_instruction_with_signers(instruction, payer, &[user]).await
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[user])
+        .await
 }
 
 pub async fn process_coordinator_witness(
@@ -231,5 +238,7 @@ pub async fn process_coordinator_witness(
         program_id: psyche_solana_coordinator::ID,
     };
 
-    endpoint.process_instruction_with_signers(instruction, payer, &[user]).await
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[user])
+        .await
 }

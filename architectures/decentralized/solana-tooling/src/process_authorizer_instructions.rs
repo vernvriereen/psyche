@@ -101,8 +101,10 @@ pub async fn process_authorizer_authorization_revoke(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: AuthorizationRevoke { params: AuthorizationRevokeParams {} }
-            .data(),
+        data: AuthorizationRevoke {
+            params: AuthorizationRevokeParams {},
+        }
+        .data(),
         program_id: psyche_solana_authorizer::ID,
     };
 

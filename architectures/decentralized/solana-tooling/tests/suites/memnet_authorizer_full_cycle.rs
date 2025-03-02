@@ -14,7 +14,10 @@ pub async fn run() {
 
     // Create payer key and fund it
     let payer = Keypair::new();
-    endpoint.process_airdrop(&payer.pubkey(), 10_000_000_000).await.unwrap();
+    endpoint
+        .process_airdrop(&payer.pubkey(), 10_000_000_000)
+        .await
+        .unwrap();
 
     // The accounts involved in our authorization
     let grantor = Keypair::new();

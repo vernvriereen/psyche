@@ -27,7 +27,9 @@ pub async fn process_pool_claimable(
             redeemable_mint: *redeemable_mint,
             pool,
         },
-        PoolClaimable { params: PoolClaimableParams {} },
+        PoolClaimable {
+            params: PoolClaimableParams {},
+        },
         payer,
         &[pool_authority],
     )

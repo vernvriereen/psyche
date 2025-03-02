@@ -13,7 +13,10 @@ pub async fn run() {
 
     // Create payer key and fund it
     let payer = Keypair::new();
-    endpoint.process_airdrop(&payer.pubkey(), 10_000_000_000).await.unwrap();
+    endpoint
+        .process_airdrop(&payer.pubkey(), 10_000_000_000)
+        .await
+        .unwrap();
 
     // Run constants
     let run_id = "Hello world!";
@@ -83,8 +86,11 @@ pub async fn run() {
 
     // This account will be reimbursed for the costs of the rent
     let reimbursed = Pubkey::new_unique();
-    let reimbursed_balance_before =
-        endpoint.get_account_or_default(&reimbursed).await.unwrap().lamports;
+    let reimbursed_balance_before = endpoint
+        .get_account_or_default(&reimbursed)
+        .await
+        .unwrap()
+        .lamports;
 
     // Free and close the coordinator account and instance
     process_coordinator_free(
@@ -109,8 +115,11 @@ pub async fn run() {
         .await
         .unwrap()
         .lamports;
-    let reimbursed_balance_final =
-        endpoint.get_account_or_default(&reimbursed).await.unwrap().lamports;
+    let reimbursed_balance_final = endpoint
+        .get_account_or_default(&reimbursed)
+        .await
+        .unwrap()
+        .lamports;
 
     // Check that we did in fact get reimbursed to the proper account
     assert_eq!(payer_balance_after - 5_000 * 2, payer_balance_final);

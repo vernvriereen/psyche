@@ -24,7 +24,10 @@ pub async fn process_pool_update(
     ToolboxAnchor::process_instruction_with_signers(
         endpoint,
         psyche_solana_mining_pool::id(),
-        PoolUpdateAccounts { authority: pool_authority.pubkey(), pool },
+        PoolUpdateAccounts {
+            authority: pool_authority.pubkey(),
+            pool,
+        },
         PoolUpdate {
             params: PoolUpdateParams {
                 max_deposit_collateral_amount:

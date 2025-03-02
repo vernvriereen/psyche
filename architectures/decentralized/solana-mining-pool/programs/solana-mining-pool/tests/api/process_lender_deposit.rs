@@ -39,7 +39,9 @@ pub async fn process_lender_deposit(
             lender,
             token_program: token::ID,
         },
-        LenderDeposit { params: LenderDepositParams { collateral_amount } },
+        LenderDeposit {
+            params: LenderDepositParams { collateral_amount },
+        },
         payer,
         &[user],
     )

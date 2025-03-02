@@ -3,14 +3,21 @@ mod clients_state;
 mod instance_state;
 mod program_error;
 
-use anchor_lang::{prelude::*, system_program};
+use anchor_lang::prelude::*;
+use anchor_lang::system_program;
+pub use client::Client;
+pub use client::ClientId;
 pub use instance_state::CoordinatorInstanceState;
 pub use program_error::ProgramError;
-use psyche_coordinator::{
-    model::Model, Committee, CommitteeProof, CoordinatorConfig, Witness, WitnessBloom,
-    WitnessProof, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
-};
-pub use {client::Client, client::ClientId};
+use psyche_coordinator::model::Model;
+use psyche_coordinator::Committee;
+use psyche_coordinator::CommitteeProof;
+use psyche_coordinator::CoordinatorConfig;
+use psyche_coordinator::Witness;
+use psyche_coordinator::WitnessBloom;
+use psyche_coordinator::WitnessProof;
+use psyche_coordinator::SOLANA_MAX_NUM_CLIENTS;
+use psyche_coordinator::SOLANA_MAX_STRING_LEN;
 
 declare_id!("EqoKSxNdRmX1zSRKSppNCKBpGcciqCwYAjZWUkHoa2ox");
 
@@ -35,7 +42,9 @@ pub fn coordinator_account_from_bytes(
     if bytes.len() != CoordinatorAccount::space_with_discriminator() {
         return Err(ProgramError::CoordinatorAccountIncorrectSize);
     }
-    if &bytes[..CoordinatorAccount::DISCRIMINATOR.len()] != CoordinatorAccount::DISCRIMINATOR {
+    if &bytes[..CoordinatorAccount::DISCRIMINATOR.len()]
+        != CoordinatorAccount::DISCRIMINATOR
+    {
         return Err(ProgramError::CoordinatorAccountInvalidDiscriminator);
     }
     Ok(bytemuck::from_bytes(
@@ -51,7 +60,8 @@ pub struct CoordinatorAccount {
 }
 impl CoordinatorAccount {
     pub fn space_with_discriminator() -> usize {
-        CoordinatorAccount::DISCRIMINATOR.len() + std::mem::size_of::<CoordinatorAccount>()
+        CoordinatorAccount::DISCRIMINATOR.len()
+            + std::mem::size_of::<CoordinatorAccount>()
     }
 }
 
@@ -97,7 +107,8 @@ pub mod psyche_solana_coordinator {
         data_disc.copy_from_slice(disc);
         // Ready to prepare the coordinator content
         let account = bytemuck::from_bytes_mut::<CoordinatorAccount>(
-            &mut data[disc.len()..CoordinatorAccount::space_with_discriminator()],
+            &mut data
+                [disc.len()..CoordinatorAccount::space_with_discriminator()],
         );
         // Setup the run_id const
         let mut array = [0u8; SOLANA_MAX_STRING_LEN];
@@ -108,7 +119,9 @@ pub mod psyche_solana_coordinator {
         Ok(())
     }
 
-    pub fn free_coordinator(ctx: Context<FreeCoordinatorAccounts>) -> Result<()> {
+    pub fn free_coordinator(
+        ctx: Context<FreeCoordinatorAccounts>,
+    ) -> Result<()> {
         if !&ctx.accounts.account.load()?.state.coordinator.halted() {
             return err!(ProgramError::CloseCoordinatorNotHalted);
         }
@@ -152,14 +165,20 @@ pub mod psyche_solana_coordinator {
             .set_future_epoch_rates(epoch_earning_rate, epoch_slashing_rate)
     }
 
-    pub fn join_run(ctx: Context<PermissionlessCoordinatorAccounts>, id: ClientId) -> Result<()> {
+    pub fn join_run(
+        ctx: Context<PermissionlessCoordinatorAccounts>,
+        id: ClientId,
+    ) -> Result<()> {
         if &id.signer != ctx.accounts.user.key {
             return err!(ProgramError::SignerMismatch);
         }
         ctx.accounts.account.load_mut()?.state.join_run(id)
     }
 
-    pub fn set_paused(ctx: Context<OwnerCoordinatorAccounts>, paused: bool) -> Result<()> {
+    pub fn set_paused(
+        ctx: Context<OwnerCoordinatorAccounts>,
+        paused: bool,
+    ) -> Result<()> {
         ctx.accounts.account.load_mut()?.state.set_paused(paused)
     }
 

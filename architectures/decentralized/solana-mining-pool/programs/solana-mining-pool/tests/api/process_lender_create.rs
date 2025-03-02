@@ -30,7 +30,9 @@ pub async fn process_lender_create(
             lender,
             system_program: system_program::ID,
         },
-        LenderCreate { params: LenderCreateParams {} },
+        LenderCreate {
+            params: LenderCreateParams {},
+        },
         payer,
         &[user],
     )

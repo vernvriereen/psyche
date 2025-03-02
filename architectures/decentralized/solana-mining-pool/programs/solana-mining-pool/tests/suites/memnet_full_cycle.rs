@@ -44,7 +44,10 @@ pub async fn run() {
         / (user1_collateral_amount + user2_collateral_amount);
 
     // Prepare the payer
-    endpoint.process_airdrop(&payer.pubkey(), payer_lamports).await.unwrap();
+    endpoint
+        .process_airdrop(&payer.pubkey(), payer_lamports)
+        .await
+        .unwrap();
 
     // Create the global collateral mint
     let collateral_mint = endpoint
@@ -63,7 +66,10 @@ pub async fn run() {
         &payer,
         pool_index,
         &pool_authority,
-        PoolMetadata { length: 0, bytes: [0u8; PoolMetadata::BYTES] },
+        PoolMetadata {
+            length: 0,
+            bytes: [0u8; PoolMetadata::BYTES],
+        },
         &collateral_mint,
     )
     .await

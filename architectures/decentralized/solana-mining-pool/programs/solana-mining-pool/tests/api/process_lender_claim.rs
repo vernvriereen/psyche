@@ -40,7 +40,9 @@ pub async fn process_lender_claim(
             lender,
             token_program: token::ID,
         },
-        LenderClaim { params: LenderClaimParams { redeemable_amount } },
+        LenderClaim {
+            params: LenderClaimParams { redeemable_amount },
+        },
         payer,
         &[user],
     )

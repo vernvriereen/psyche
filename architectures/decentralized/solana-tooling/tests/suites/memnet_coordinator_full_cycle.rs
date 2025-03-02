@@ -34,7 +34,10 @@ pub async fn run() {
 
     // Create payer key and fund it
     let payer = Keypair::new();
-    endpoint.process_airdrop(&payer.pubkey(), 10_000_000_000).await.unwrap();
+    endpoint
+        .process_airdrop(&payer.pubkey(), 10_000_000_000)
+        .await
+        .unwrap();
 
     // Run constants
     let run_id = "Hello world!";
@@ -253,7 +256,11 @@ pub async fn run() {
 
     // Check that only the right user can successfully send a witness
     let witness = Witness {
-        proof: WitnessProof { witness: true, position: 0, index: 0 },
+        proof: WitnessProof {
+            witness: true,
+            position: 0,
+            index: 0,
+        },
         participant_bloom: Default::default(),
         order_bloom: Default::default(),
     };

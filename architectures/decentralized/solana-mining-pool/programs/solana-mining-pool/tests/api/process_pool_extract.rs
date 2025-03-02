@@ -35,7 +35,9 @@ pub async fn process_pool_extract(
             pool_collateral,
             token_program: token::ID,
         },
-        PoolExtract { params: PoolExtractParams { collateral_amount } },
+        PoolExtract {
+            params: PoolExtractParams { collateral_amount },
+        },
         payer,
         &[pool_authority],
     )

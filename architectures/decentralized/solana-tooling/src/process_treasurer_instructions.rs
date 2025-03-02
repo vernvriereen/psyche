@@ -101,7 +101,10 @@ pub async fn process_treasurer_run_top_up(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: RunTopUp { params: RunTopUpParams { collateral_amount } }.data(),
+        data: RunTopUp {
+            params: RunTopUpParams { collateral_amount },
+        }
+        .data(),
         program_id: psyche_solana_treasurer::ID,
     };
 
@@ -157,11 +160,16 @@ pub async fn process_treasurer_participant_create(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: ParticipantCreate { params: ParticipantCreateParams {} }.data(),
+        data: ParticipantCreate {
+            params: ParticipantCreateParams {},
+        }
+        .data(),
         program_id: psyche_solana_treasurer::ID,
     };
 
-    endpoint.process_instruction_with_signers(instruction, payer, &[user]).await
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[user])
+        .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -195,11 +203,15 @@ pub async fn process_treasurer_participant_claim(
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
         data: ParticipantClaim {
-            params: ParticipantClaimParams { claim_earned_points },
+            params: ParticipantClaimParams {
+                claim_earned_points,
+            },
         }
         .data(),
         program_id: psyche_solana_treasurer::ID,
     };
 
-    endpoint.process_instruction_with_signers(instruction, payer, &[user]).await
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[user])
+        .await
 }
