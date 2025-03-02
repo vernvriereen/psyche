@@ -3,7 +3,7 @@ use crate::{
     ClientTUIState, TrainingResult,
 };
 
-use psyche_coordinator::{Committee, Coordinator, RunState, Witness};
+use psyche_coordinator::{Committee, CommitteeSelection, Coordinator, RunState, Witness};
 use psyche_core::{sha256, BatchId, NodeIdentity};
 use psyche_modeling::{DistroResult, Trainer};
 use psyche_network::{AuthenticatableIdentity, BlobTicket, Hash, TransmittableDistroResult};
@@ -199,6 +199,21 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                         debug!("Committee verification failed for commitment 0x{} (step={},batch_id={}) received from {}", hex::encode(training_result.commitment),                              training_result.step,
                                 training_result.batch_id,
                                 from_client_id);
+
+                        let client_verified = CommitteeSelection::verify_client(
+                            &from_client_id,
+                            training_result.proof.index,
+                            &self.coordinator_state.epoch_state.clients,
+                        );
+                        let committee_verified =
+                            committee_info.verify_committee(&training_result.proof);
+
+                        error!(
+                            "THERE WAS AN ERROR WITH THE VERIFICATION OF THE COMMITTEE FOR CLIENT"
+                        );
+                        error!("CLIENT VERIFIED?: {client_verified}");
+                        error!("COMMITTEE VERIFIED?: {committee_verified}");
+                        panic!();
                         return Ok(());
                     }
                 }
