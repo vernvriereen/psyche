@@ -17,6 +17,7 @@ COPY --from=base /usr/src/psyche/target/release/psyche-solana-client /usr/local/
 # COPY --chmod=755 --from=base /usr/src/psyche/docker/client_entrypoint.sh /usr/local
 
 ENV RUST_BACKTRACE=1
+ENV RUST_LOG=info,psyche=debug
 
 ENTRYPOINT ["/usr/local/bin/psyche-solana-client"]
 CMD ["--help"]

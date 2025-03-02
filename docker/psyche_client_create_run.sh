@@ -51,8 +51,8 @@ fi
 #     every command:
 #     --add-host=host.docker.internal:host-gateway \
 
-echo -e "\n[+] Creating training run with run ID ${RUN_ID}"
-docker run -v "$WALLET_FILE":/keys/id.json \
+echo -e "\n[+] Creating training run with run ID '${RUN_ID}'"
+docker run --rm -v "$WALLET_FILE":/keys/id.json \
     --add-host=host.docker.internal:host-gateway \
     psyche-client create-run \
         --wallet-private-key-path "/keys/id.json" \
@@ -63,7 +63,7 @@ docker run -v "$WALLET_FILE":/keys/id.json \
 echo -e "\n[+] Training run created successfully!"
 echo -e "\n[+] Uploading model config..."
 
-docker run -v "$WALLET_FILE":/keys/id.json \
+docker run --rm -v "$WALLET_FILE":/keys/id.json \
            -v "$CONFIG_PATH":/model_config/config.toml \
            --add-host=host.docker.internal:host-gateway \
     psyche-client update-config \

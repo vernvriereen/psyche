@@ -61,4 +61,4 @@ docker run --rm -v "$WALLET_FILE":/keys/id.json \
         --ws-rpc ${WS_RPC} \
         --run-id ${RUN_ID} \
         --ticker \
-        --logs "json"
+        --logs "console"

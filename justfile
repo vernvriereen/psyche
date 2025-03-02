@@ -117,6 +117,7 @@ setup_clients num_clients="1": build_docker_test_client
 
 # Build the docker psyche client
 build_docker_psyche_client:
+    ./scripts/coordinator-address-check.sh
     docker build -t psyche-base -f docker/psyche_base.Dockerfile .
     docker build -t psyche-client -f docker/psyche_client.Dockerfile .
 
