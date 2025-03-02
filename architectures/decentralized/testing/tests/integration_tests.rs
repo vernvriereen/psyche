@@ -2,9 +2,9 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use bollard::Docker;
 use e2e_testing::{
+    chaos::{execute_chaos_action, ChaosAction},
     docker_setup::{
-        add_delay, e2e_testing_setup, is_client_healthy, restart_solana_validator,
-        spawn_new_client, stop_solana_validator, CLIENT_CONTAINER_PREFIX,
+        e2e_testing_setup, is_client_healthy, spawn_new_client, CLIENT_CONTAINER_PREFIX,
         VALIDATOR_CONTAINER_PREFIX,
     },
     docker_watcher::{DockerWatcher, JsonFilter, Response},
@@ -199,7 +199,7 @@ async fn test_two_clients_join_and_get_model_p2p() {
 
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
-async fn test_kill_solana_validator() {
+async fn test_pause_solana_validator() {
     // epochs the test will run
     let num_of_epochs_to_run = 2;
     let mut current_epoch = -1;
@@ -219,15 +219,15 @@ async fn test_kill_solana_validator() {
         )
         .unwrap();
 
-    stop_solana_validator(docker.clone(), Some(20))
-        .await
-        .unwrap();
-    println!("Waiting 10 seconds before starting the validator again");
+    // Pause validator for 20 seconds
+    execute_chaos_action(
+        docker.clone(),
+        ChaosAction::Pause(20),
+        vec![format!("{VALIDATOR_CONTAINER_PREFIX}-1")],
+    )
+    .await;
 
     let mut interval = time::interval(Duration::from_secs(10));
-    restart_solana_validator(docker.clone()).await.unwrap();
-
-    println!("Waiting for training to resume");
     loop {
         tokio::select! {
            _ = interval.tick() => {
@@ -255,7 +255,6 @@ async fn test_kill_solana_validator() {
     }
 }
 
-// Test p2p model sharing process
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
 async fn test_delay_solana_test_validator() {
@@ -278,17 +277,15 @@ async fn test_delay_solana_test_validator() {
         )
         .unwrap();
 
-    add_delay(
+    // Add delay to validator of 1 second for 2 minutes.
+    execute_chaos_action(
         docker.clone(),
-        &[&format!("{VALIDATOR_CONTAINER_PREFIX}-1")],
-        120,
-        1000,
+        ChaosAction::Delay(120, 1000),
+        vec![format!("{VALIDATOR_CONTAINER_PREFIX}-1")],
     )
-    .await
-    .unwrap();
+    .await;
 
     let mut interval = time::interval(Duration::from_secs(10));
-    restart_solana_validator(docker.clone()).await.unwrap();
 
     println!("Waiting for training to resume");
     loop {
@@ -318,7 +315,6 @@ async fn test_delay_solana_test_validator() {
     }
 }
 
-// Test p2p model sharing process
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
 async fn test_delay_solana_client() {
@@ -341,14 +337,13 @@ async fn test_delay_solana_client() {
         )
         .unwrap();
 
-    add_delay(
+    // Add delay to the client of 1 second for 2 minutes.
+    execute_chaos_action(
         docker.clone(),
-        &[&format!("{VALIDATOR_CONTAINER_PREFIX}-1")],
-        120,
-        1000,
+        ChaosAction::Delay(120, 1000),
+        vec![format!("{CLIENT_CONTAINER_PREFIX}-1")],
     )
-    .await
-    .unwrap();
+    .await;
 
     let mut interval = time::interval(Duration::from_secs(10));
     println!("Waiting for training to start");
@@ -379,7 +374,6 @@ async fn test_delay_solana_client() {
     }
 }
 
-// Test p2p model sharing process
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
 async fn test_delay_two_solana_clients() {
@@ -412,17 +406,16 @@ async fn test_delay_two_solana_clients() {
         )
         .unwrap();
 
-    add_delay(
+    // Add delay to both clients of 1 second for 2 minutes.
+    execute_chaos_action(
         docker.clone(),
-        &[
-            &format!("{CLIENT_CONTAINER_PREFIX}-1"),
-            &format!("{CLIENT_CONTAINER_PREFIX}-2"),
+        ChaosAction::Delay(120, 1000),
+        vec![
+            format!("{CLIENT_CONTAINER_PREFIX}-1"),
+            format!("{CLIENT_CONTAINER_PREFIX}-2"),
         ],
-        120,
-        1000,
     )
-    .await
-    .unwrap();
+    .await;
 
     let mut interval = time::interval(Duration::from_secs(10));
 
