@@ -16,7 +16,7 @@ tasks:
   # Linting
   lint:
     cmds:
-      - cargo +nightly clippy --all-targets
+      - cargo +nightly clippy --all-targets -- --deny=warnings --allow=unexpected-cfgs
 
   # Testing
   test:
