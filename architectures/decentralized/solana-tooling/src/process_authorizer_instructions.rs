@@ -1,15 +1,18 @@
 use anchor_lang::InstructionData;
 use anchor_lang::ToAccountMetas;
+use psyche_solana_authorizer::accounts::AuthorizationCloseAccounts;
 use psyche_solana_authorizer::accounts::AuthorizationCreateAccounts;
-use psyche_solana_authorizer::accounts::AuthorizationDelegatesAccounts;
-use psyche_solana_authorizer::accounts::AuthorizationRevokeAccounts;
+use psyche_solana_authorizer::accounts::AuthorizationGranteeUpdateAccounts;
+use psyche_solana_authorizer::accounts::AuthorizationGrantorUpdateAccounts;
 use psyche_solana_authorizer::find_authorization;
+use psyche_solana_authorizer::instruction::AuthorizationClose;
 use psyche_solana_authorizer::instruction::AuthorizationCreate;
-use psyche_solana_authorizer::instruction::AuthorizationDelegates;
-use psyche_solana_authorizer::instruction::AuthorizationRevoke;
+use psyche_solana_authorizer::instruction::AuthorizationGranteeUpdate;
+use psyche_solana_authorizer::instruction::AuthorizationGrantorUpdate;
+use psyche_solana_authorizer::logic::AuthorizationCloseParams;
 use psyche_solana_authorizer::logic::AuthorizationCreateParams;
-use psyche_solana_authorizer::logic::AuthorizationDelegatesParams;
-use psyche_solana_authorizer::logic::AuthorizationRevokeParams;
+use psyche_solana_authorizer::logic::AuthorizationGranteeUpdateParams;
+use psyche_solana_authorizer::logic::AuthorizationGrantorUpdateParams;
 use solana_sdk::instruction::Instruction;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
@@ -51,7 +54,35 @@ pub async fn process_authorizer_authorization_create(
         .await
 }
 
-pub async fn process_authorizer_authorization_delegates(
+pub async fn process_authorizer_authorization_grantor_update(
+    endpoint: &mut ToolboxEndpoint,
+    payer: &Keypair,
+    grantor: &Keypair,
+    grantee: &Pubkey,
+    scope: &[u8],
+    active: bool,
+) -> Result<Signature, ToolboxEndpointError> {
+    let authorization = find_authorization(&grantor.pubkey(), grantee, scope);
+
+    let accounts = AuthorizationGrantorUpdateAccounts {
+        grantor: grantor.pubkey(),
+        authorization,
+    };
+    let instruction = Instruction {
+        accounts: accounts.to_account_metas(None),
+        data: AuthorizationGrantorUpdate {
+            params: AuthorizationGrantorUpdateParams { active },
+        }
+        .data(),
+        program_id: psyche_solana_authorizer::ID,
+    };
+
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[grantor])
+        .await
+}
+
+pub async fn process_authorizer_authorization_grantee_update(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     grantor: &Pubkey,
@@ -61,7 +92,7 @@ pub async fn process_authorizer_authorization_delegates(
 ) -> Result<Signature, ToolboxEndpointError> {
     let authorization = find_authorization(grantor, &grantee.pubkey(), scope);
 
-    let accounts = AuthorizationDelegatesAccounts {
+    let accounts = AuthorizationGranteeUpdateAccounts {
         payer: payer.pubkey(),
         grantee: grantee.pubkey(),
         authorization,
@@ -69,8 +100,8 @@ pub async fn process_authorizer_authorization_delegates(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: AuthorizationDelegates {
-            params: AuthorizationDelegatesParams {
+        data: AuthorizationGranteeUpdate {
+            params: AuthorizationGranteeUpdateParams {
                 delegates: delegates.to_vec(),
             },
         }
@@ -83,7 +114,7 @@ pub async fn process_authorizer_authorization_delegates(
         .await
 }
 
-pub async fn process_authorizer_authorization_revoke(
+pub async fn process_authorizer_authorization_close(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     grantor: &Keypair,
@@ -93,7 +124,7 @@ pub async fn process_authorizer_authorization_revoke(
 ) -> Result<Signature, ToolboxEndpointError> {
     let authorization = find_authorization(&grantor.pubkey(), grantee, scope);
 
-    let accounts = AuthorizationRevokeAccounts {
+    let accounts = AuthorizationCloseAccounts {
         grantor: grantor.pubkey(),
         spill: *spill,
         authorization,
@@ -101,8 +132,8 @@ pub async fn process_authorizer_authorization_revoke(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: AuthorizationRevoke {
-            params: AuthorizationRevokeParams {},
+        data: AuthorizationClose {
+            params: AuthorizationCloseParams {},
         }
         .data(),
         program_id: psyche_solana_authorizer::ID,

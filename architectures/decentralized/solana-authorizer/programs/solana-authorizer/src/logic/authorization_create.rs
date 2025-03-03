@@ -44,9 +44,12 @@ pub fn authorization_create_processor(
 ) -> Result<()> {
     let authorization = &mut context.accounts.authorization;
     authorization.bump = context.bumps.authorization;
+
     authorization.grantor = context.accounts.grantor.key();
     authorization.grantee = params.grantee;
     authorization.scope = params.scope;
+
+    authorization.active = false;
     authorization.delegates = vec![];
     Ok(())
 }

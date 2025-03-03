@@ -3,8 +3,8 @@ use anchor_lang::prelude::*;
 use crate::state::Authorization;
 
 #[derive(Accounts)]
-#[instruction(params: AuthorizationDelegatesParams)]
-pub struct AuthorizationDelegatesAccounts<'info> {
+#[instruction(params: AuthorizationGranteeUpdateParams)]
+pub struct AuthorizationGranteeUpdateAccounts<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
 
@@ -28,13 +28,13 @@ pub struct AuthorizationDelegatesAccounts<'info> {
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
-pub struct AuthorizationDelegatesParams {
+pub struct AuthorizationGranteeUpdateParams {
     pub delegates: Vec<Pubkey>,
 }
 
-pub fn authorization_delegates_processor(
-    context: Context<AuthorizationDelegatesAccounts>,
-    params: AuthorizationDelegatesParams,
+pub fn authorization_grantee_update_processor(
+    context: Context<AuthorizationGranteeUpdateAccounts>,
+    params: AuthorizationGranteeUpdateParams,
 ) -> Result<()> {
     let authorization = &mut context.accounts.authorization;
     authorization.delegates = params.delegates;

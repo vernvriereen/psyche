@@ -17,18 +17,25 @@ pub mod psyche_solana_authorizer {
         authorization_create_processor(context, params)
     }
 
-    pub fn authorization_delegates(
-        context: Context<AuthorizationDelegatesAccounts>,
-        params: AuthorizationDelegatesParams,
+    pub fn authorization_grantor_update(
+        context: Context<AuthorizationGrantorUpdateAccounts>,
+        params: AuthorizationGrantorUpdateParams,
     ) -> Result<()> {
-        authorization_delegates_processor(context, params)
+        authorization_grantor_update_processor(context, params)
     }
 
-    pub fn authorization_revoke(
-        context: Context<AuthorizationRevokeAccounts>,
-        params: AuthorizationRevokeParams,
+    pub fn authorization_grantee_update(
+        context: Context<AuthorizationGranteeUpdateAccounts>,
+        params: AuthorizationGranteeUpdateParams,
     ) -> Result<()> {
-        authorization_revoke_processor(context, params)
+        authorization_grantee_update_processor(context, params)
+    }
+
+    pub fn authorization_close(
+        context: Context<AuthorizationCloseAccounts>,
+        params: AuthorizationCloseParams,
+    ) -> Result<()> {
+        authorization_close_processor(context, params)
     }
 }
 

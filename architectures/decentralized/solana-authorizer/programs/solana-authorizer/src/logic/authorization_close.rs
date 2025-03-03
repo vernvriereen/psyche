@@ -3,8 +3,8 @@ use anchor_lang::prelude::*;
 use crate::state::Authorization;
 
 #[derive(Accounts)]
-#[instruction(params: AuthorizationRevokeParams)]
-pub struct AuthorizationRevokeAccounts<'info> {
+#[instruction(params: AuthorizationCloseParams)]
+pub struct AuthorizationCloseAccounts<'info> {
     #[account()]
     pub grantor: Signer<'info>,
 
@@ -14,6 +14,7 @@ pub struct AuthorizationRevokeAccounts<'info> {
     #[account(
         mut,
         constraint = authorization.grantor == grantor.key(),
+        constraint = authorization.delegates.len() == 0,
         close = spill,
     )]
     pub authorization: Box<Account<'info, Authorization>>,
@@ -23,11 +24,11 @@ pub struct AuthorizationRevokeAccounts<'info> {
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
-pub struct AuthorizationRevokeParams {}
+pub struct AuthorizationCloseParams {}
 
-pub fn authorization_revoke_processor(
-    _context: Context<AuthorizationRevokeAccounts>,
-    _params: AuthorizationRevokeParams,
+pub fn authorization_close_processor(
+    _context: Context<AuthorizationCloseAccounts>,
+    _params: AuthorizationCloseParams,
 ) -> Result<()> {
     Ok(())
 }

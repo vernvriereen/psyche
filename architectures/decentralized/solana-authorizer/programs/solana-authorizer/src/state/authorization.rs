@@ -7,8 +7,9 @@ pub struct Authorization {
 
     pub grantor: Pubkey,
     pub grantee: Pubkey,
-
     pub scope: Vec<u8>,
+
+    pub active: bool,
     pub delegates: Vec<Pubkey>,
 }
 
@@ -19,6 +20,11 @@ impl Authorization {
         scope_len: usize,
         delegates_len: usize,
     ) -> usize {
-        8 + 1 + 32 + 32 + 4 + scope_len + 4 + delegates_len * 32
+        8 + std::mem::size_of::<bool>()
+            + std::mem::size_of::<Pubkey>()
+            + std::mem::size_of::<Pubkey>()
+            + (4 + scope_len * std::mem::size_of::<u8>())
+            + std::mem::size_of::<bool>()
+            + (4 + delegates_len * std::mem::size_of::<Pubkey>())
     }
 }
