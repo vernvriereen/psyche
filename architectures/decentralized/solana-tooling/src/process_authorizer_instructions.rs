@@ -28,9 +28,8 @@ pub async fn process_authorizer_authorization_create(
     grantor: &Keypair,
     grantee: &Pubkey,
     scope: &[u8],
-) -> Result<Signature, ToolboxEndpointError> {
+) -> Result<Pubkey, ToolboxEndpointError> {
     let authorization = find_authorization(&grantor.pubkey(), grantee, scope);
-
     let accounts = AuthorizationCreateAccounts {
         payer: payer.pubkey(),
         grantor: grantor.pubkey(),
@@ -48,25 +47,22 @@ pub async fn process_authorizer_authorization_create(
         .data(),
         program_id: psyche_solana_authorizer::ID,
     };
-
     endpoint
         .process_instruction_with_signers(instruction, payer, &[grantor])
-        .await
+        .await?;
+    Ok(authorization)
 }
 
 pub async fn process_authorizer_authorization_grantor_update(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     grantor: &Keypair,
-    grantee: &Pubkey,
-    scope: &[u8],
+    authorization: &Pubkey,
     active: bool,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let authorization = find_authorization(&grantor.pubkey(), grantee, scope);
-
     let accounts = AuthorizationGrantorUpdateAccounts {
         grantor: grantor.pubkey(),
-        authorization,
+        authorization: *authorization,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
@@ -76,7 +72,6 @@ pub async fn process_authorizer_authorization_grantor_update(
         .data(),
         program_id: psyche_solana_authorizer::ID,
     };
-
     endpoint
         .process_instruction_with_signers(instruction, payer, &[grantor])
         .await
@@ -85,17 +80,14 @@ pub async fn process_authorizer_authorization_grantor_update(
 pub async fn process_authorizer_authorization_grantee_update(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
-    grantor: &Pubkey,
     grantee: &Keypair,
-    scope: &[u8],
+    authorization: &Pubkey,
     delegates: &[Pubkey],
 ) -> Result<Signature, ToolboxEndpointError> {
-    let authorization = find_authorization(grantor, &grantee.pubkey(), scope);
-
     let accounts = AuthorizationGranteeUpdateAccounts {
         payer: payer.pubkey(),
         grantee: grantee.pubkey(),
-        authorization,
+        authorization: *authorization,
         system_program: system_program::ID,
     };
     let instruction = Instruction {
@@ -108,7 +100,6 @@ pub async fn process_authorizer_authorization_grantee_update(
         .data(),
         program_id: psyche_solana_authorizer::ID,
     };
-
     endpoint
         .process_instruction_with_signers(instruction, payer, &[grantee])
         .await
@@ -118,16 +109,13 @@ pub async fn process_authorizer_authorization_close(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     grantor: &Keypair,
-    grantee: &Pubkey,
-    scope: &[u8],
+    authorization: &Pubkey,
     spill: &Pubkey,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let authorization = find_authorization(&grantor.pubkey(), grantee, scope);
-
     let accounts = AuthorizationCloseAccounts {
         grantor: grantor.pubkey(),
         spill: *spill,
-        authorization,
+        authorization: *authorization,
         system_program: system_program::ID,
     };
     let instruction = Instruction {
@@ -138,7 +126,6 @@ pub async fn process_authorizer_authorization_close(
         .data(),
         program_id: psyche_solana_authorizer::ID,
     };
-
     endpoint
         .process_instruction_with_signers(instruction, payer, &[grantor])
         .await

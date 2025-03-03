@@ -62,7 +62,7 @@ pub async fn process_pool_create(
     assert_eq!(pool_data_after.total_deposited_collateral_amount, 0);
     assert_eq!(pool_data_after.total_extracted_collateral_amount, 0);
 
-    assert!(!pool_data_after.claiming_enabled);
+    assert_eq!(pool_data_after.claiming_enabled, false);
     assert_eq!(pool_data_after.redeemable_mint, Pubkey::default());
     assert_eq!(pool_data_after.total_claimed_redeemable_amount, 0);
 

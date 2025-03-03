@@ -1,6 +1,7 @@
 mod client;
 mod clients_state;
 mod instance_state;
+pub mod logic;
 mod program_error;
 
 use anchor_lang::prelude::*;
@@ -8,6 +9,7 @@ use anchor_lang::system_program;
 pub use client::Client;
 pub use client::ClientId;
 pub use instance_state::CoordinatorInstanceState;
+use logic::*;
 pub use program_error::ProgramError;
 use psyche_coordinator::model::Model;
 use psyche_coordinator::Committee;
@@ -127,7 +129,7 @@ pub mod psyche_solana_coordinator {
         }
         ctx.accounts
             .account
-            .close(ctx.accounts.reimbursed.to_account_info())
+            .close(ctx.accounts.spill.to_account_info())
     }
 
     pub fn update_coordinator_config_model(
@@ -140,17 +142,6 @@ pub mod psyche_solana_coordinator {
             .load_mut()?
             .state
             .update_coordinator_config_model(config, model)
-    }
-
-    pub fn set_whitelist(
-        ctx: Context<OwnerCoordinatorAccounts>,
-        clients: Vec<Pubkey>,
-    ) -> Result<()> {
-        ctx.accounts
-            .account
-            .load_mut()?
-            .state
-            .set_whitelist(clients)
     }
 
     pub fn set_future_epoch_rates(
@@ -166,13 +157,10 @@ pub mod psyche_solana_coordinator {
     }
 
     pub fn join_run(
-        ctx: Context<PermissionlessCoordinatorAccounts>,
-        id: ClientId,
+        context: Context<JoinRunAccounts>,
+        params: JoinRunParams,
     ) -> Result<()> {
-        if &id.signer != ctx.accounts.user.key {
-            return err!(ProgramError::SignerMismatch);
-        }
-        ctx.accounts.account.load_mut()?.state.join_run(id)
+        join_run_processor(context, params)
     }
 
     pub fn set_paused(
@@ -289,7 +277,7 @@ pub struct FreeCoordinatorAccounts<'info> {
     #[account()]
     pub authority: Signer<'info>,
     #[account(mut)]
-    pub reimbursed: UncheckedAccount<'info>,
+    pub spill: UncheckedAccount<'info>,
     #[account(
         mut,
         seeds = [
@@ -298,7 +286,7 @@ pub struct FreeCoordinatorAccounts<'info> {
         ],
         bump = instance.bump,
         constraint = instance.authority == *authority.key,
-        close = reimbursed
+        close = spill
     )]
     pub instance: Account<'info, CoordinatorInstance>,
     #[account(

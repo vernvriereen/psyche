@@ -26,5 +26,6 @@ pub fn authorization_grantor_update_processor(
 ) -> Result<()> {
     let authorization = &mut context.accounts.authorization;
     authorization.active = params.active;
+    authorization.grantor_update_unix_timestamp = Clock::get()?.unix_timestamp;
     Ok(())
 }

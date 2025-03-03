@@ -55,3 +55,11 @@ pub mod psyche_solana_authorizer {
         authorization_close_processor(context, params)
     }
 }
+
+#[error_code]
+pub enum ProgramError {
+    #[msg("AuthorizationActive is true")]
+    AuthorizationActiveIsTrue,
+    #[msg("Authorization closing conditions not reached yet")]
+    AuthorizationClosingConditionsNotReachedYet,
+}

@@ -4,7 +4,6 @@ use psyche_coordinator::CoordinatorConfig;
 use psyche_solana_coordinator::cpi::accounts::OwnerCoordinatorAccounts;
 use psyche_solana_coordinator::cpi::set_future_epoch_rates;
 use psyche_solana_coordinator::cpi::set_paused;
-use psyche_solana_coordinator::cpi::set_whitelist;
 use psyche_solana_coordinator::cpi::update_coordinator_config_model;
 use psyche_solana_coordinator::program::PsycheSolanaCoordinator;
 use psyche_solana_coordinator::ClientId;
@@ -38,7 +37,6 @@ pub struct RunUpdateAccounts<'info> {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct RunUpdateParams {
-    pub whitelist_clients: Option<Vec<Pubkey>>,
     pub config: Option<CoordinatorConfig<ClientId>>,
     pub model: Option<Model>,
     pub epoch_earning_rate: Option<u64>,
@@ -53,27 +51,6 @@ pub fn run_update_processor(
     let run = &context.accounts.run;
     let run_signer_seeds: &[&[&[u8]]] =
         &[&[Run::SEEDS_PREFIX, &run.identity.to_bytes(), &[run.bump]]];
-
-    if let Some(whitelist_clients) = params.whitelist_clients {
-        set_whitelist(
-            CpiContext::new(
-                context.accounts.coordinator_program.to_account_info(),
-                OwnerCoordinatorAccounts {
-                    authority: context.accounts.run.to_account_info(),
-                    instance: context
-                        .accounts
-                        .coordinator_instance
-                        .to_account_info(),
-                    account: context
-                        .accounts
-                        .coordinator_account
-                        .to_account_info(),
-                },
-            )
-            .with_signer(run_signer_seeds),
-            whitelist_clients,
-        )?;
-    }
 
     if params.config.is_some() || params.model.is_some() {
         update_coordinator_config_model(

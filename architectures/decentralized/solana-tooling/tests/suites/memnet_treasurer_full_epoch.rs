@@ -15,14 +15,18 @@ use psyche_solana_coordinator::instruction::Witness;
 use psyche_solana_coordinator::ClientId;
 use psyche_solana_coordinator::CoordinatorAccount;
 use psyche_solana_tooling::create_memnet_endpoint::create_memnet_endpoint;
+use psyche_solana_tooling::process_authorizer_instructions::process_authorizer_authorization_grantee_update;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_join_run;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_tick;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_witness;
 use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_participant_claim;
 use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_participant_create;
+use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_run_authorize;
 use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_run_create;
 use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_run_top_up;
 use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_run_update;
+use psyche_solana_treasurer::logic::RunAuthorizeAction;
+use psyche_solana_treasurer::logic::RunAuthorizeParams;
 use psyche_solana_treasurer::logic::RunUpdateParams;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
@@ -39,8 +43,8 @@ pub async fn run() {
         .unwrap();
 
     // Constants
-    let run_id = "Hello world!";
     let authority = Keypair::new();
+    let participant = Keypair::new();
     let client = Keypair::new();
     let ticker = Keypair::new();
     let earned_point_per_epoch = 33;
@@ -69,13 +73,13 @@ pub async fn run() {
         .unwrap();
 
     // Create a run (it should create the underlying coordinator)
-    process_treasurer_run_create(
+    let (run, coordinator_instance) = process_treasurer_run_create(
         &mut endpoint,
         &payer,
         &authority,
         &collateral_mint,
         &coordinator_account,
-        run_id,
+        "This is my run's dummy run_id",
         collateral_amount_per_earned_point,
     )
     .await
@@ -108,7 +112,7 @@ pub async fn run() {
         &authority,
         &authority_collateral,
         &collateral_mint,
-        run_id,
+        &run,
         5_000_000,
     )
     .await
@@ -125,14 +129,9 @@ pub async fn run() {
         .unwrap();
 
     // Create the participation account
-    process_treasurer_participant_create(
-        &mut endpoint,
-        &payer,
-        &client,
-        run_id,
-    )
-    .await
-    .unwrap();
+    process_treasurer_participant_create(&mut endpoint, &payer, &client, &run)
+        .await
+        .unwrap();
 
     // Try claiming nothing, it should work since we earned nothing
     process_treasurer_participant_claim(
@@ -141,8 +140,8 @@ pub async fn run() {
         &client,
         &client_collateral,
         &collateral_mint,
+        &run,
         &coordinator_account,
-        run_id,
         0,
     )
     .await
@@ -155,38 +154,35 @@ pub async fn run() {
         &client,
         &client_collateral,
         &collateral_mint,
+        &run,
         &coordinator_account,
-        run_id,
         1,
     )
     .await
     .unwrap_err();
 
-    // We should be able to to-up run treasury at any time
+    // We should be able to top-up run treasury at any time
     process_treasurer_run_top_up(
         &mut endpoint,
         &payer,
         &authority,
         &authority_collateral,
         &collateral_mint,
-        run_id,
+        &run,
         5_000_000,
     )
     .await
     .unwrap();
-
-    // Generate the client key
-    let client_id = ClientId::new(client.pubkey(), Default::default());
 
     // Prepare the coordinator's config
     process_treasurer_run_update(
         &mut endpoint,
         &payer,
         &authority,
+        &run,
+        &coordinator_instance,
         &coordinator_account,
-        run_id,
         RunUpdateParams {
-            whitelist_clients: Some(vec![client_id.signer]),
             config: Some(CoordinatorConfig::<ClientId> {
                 warmup_time: 1,
                 cooldown_time: 1,
@@ -233,13 +229,54 @@ pub async fn run() {
     .await
     .unwrap();
 
+    // Generate the client key
+    let client_id = ClientId::new(client.pubkey(), Default::default());
+
+    // Add a participant key to whitelist
+    let authorization = process_treasurer_run_authorize(
+        &mut endpoint,
+        &payer,
+        &authority,
+        &run,
+        RunAuthorizeParams {
+            user: participant.pubkey(),
+            action: RunAuthorizeAction::Create,
+        },
+    )
+    .await
+    .unwrap();
+    process_treasurer_run_authorize(
+        &mut endpoint,
+        &payer,
+        &authority,
+        &run,
+        RunAuthorizeParams {
+            user: participant.pubkey(),
+            action: RunAuthorizeAction::Update { active: true },
+        },
+    )
+    .await
+    .unwrap();
+
+    // Make the client a delegate of the participant key
+    process_authorizer_authorization_grantee_update(
+        &mut endpoint,
+        &payer,
+        &participant,
+        &authorization,
+        &[client.pubkey()],
+    )
+    .await
+    .unwrap();
+
     // The client can now join the run
     process_coordinator_join_run(
         &mut endpoint,
         &payer,
         &client,
+        &authorization,
+        &coordinator_instance,
         &coordinator_account,
-        run_id,
         client_id,
     )
     .await
@@ -251,8 +288,8 @@ pub async fn run() {
         &mut endpoint,
         &payer,
         &ticker,
+        &coordinator_instance,
         &coordinator_account,
-        run_id,
     )
     .await
     .unwrap();
@@ -262,8 +299,8 @@ pub async fn run() {
         &mut endpoint,
         &payer,
         &client,
+        &coordinator_instance,
         &coordinator_account,
-        run_id,
         &Witness {
             proof: WitnessProof {
                 witness: true,
@@ -283,8 +320,8 @@ pub async fn run() {
         &mut endpoint,
         &payer,
         &ticker,
+        &coordinator_instance,
         &coordinator_account,
-        run_id,
     )
     .await
     .unwrap();
@@ -296,8 +333,8 @@ pub async fn run() {
         &client,
         &client_collateral,
         &collateral_mint,
+        &coordinator_instance,
         &coordinator_account,
-        run_id,
         1,
     )
     .await
@@ -309,8 +346,8 @@ pub async fn run() {
         &mut endpoint,
         &payer,
         &ticker,
+        &coordinator_instance,
         &coordinator_account,
-        run_id,
     )
     .await
     .unwrap();
@@ -322,8 +359,8 @@ pub async fn run() {
         &client,
         &client_collateral,
         &collateral_mint,
+        &run,
         &coordinator_account,
-        run_id,
         earned_point_per_epoch,
     )
     .await
@@ -336,8 +373,8 @@ pub async fn run() {
         &client,
         &client_collateral,
         &collateral_mint,
+        &run,
         &coordinator_account,
-        run_id,
         1,
     )
     .await

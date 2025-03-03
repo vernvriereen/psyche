@@ -16,9 +16,12 @@ tasks:
   # Linting
   lint:
     cmds:
-      - cargo +nightly clippy --all-targets -- --deny=warnings --allow=unexpected-cfgs
+      - cargo clippy --all-targets --
+        --deny=warnings
+        --allow=unexpected-cfgs
+        --allow=clippy::bool_assert_comparison
 
   # Testing
   test:
     cmds:
-      - cargo +nightly test
+      - cargo test

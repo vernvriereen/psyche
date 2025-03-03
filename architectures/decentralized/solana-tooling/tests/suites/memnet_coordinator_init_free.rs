@@ -1,4 +1,3 @@
-use psyche_solana_coordinator::find_coordinator_instance;
 use psyche_solana_coordinator::CoordinatorAccount;
 use psyche_solana_tooling::create_memnet_endpoint::create_memnet_endpoint;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_free;
@@ -19,7 +18,6 @@ pub async fn run() {
         .unwrap();
 
     // Run constants
-    let run_id = "Hello world!";
     let authority = Keypair::new();
 
     // Check the payer and authority balance before paying for the coordinator
@@ -45,12 +43,12 @@ pub async fn run() {
         .unwrap();
 
     // Initialize coordinator
-    process_coordinator_initialize(
+    let coordinator_instance = process_coordinator_initialize(
         &mut endpoint,
         &payer,
         &authority,
         &coordinator_account,
-        run_id,
+        "this is a dummy run_id",
     )
     .await
     .unwrap();
@@ -72,22 +70,21 @@ pub async fn run() {
     assert_eq!(authority_balance_after, authority_balance_start);
 
     // Check that the coordinator instance and account do actually exists now
-    let coordinator_instance = find_coordinator_instance(run_id);
-    assert!(endpoint
-        .get_account(&coordinator_account)
-        .await
-        .unwrap()
-        .is_some());
     assert!(endpoint
         .get_account(&coordinator_instance)
         .await
         .unwrap()
         .is_some());
+    assert!(endpoint
+        .get_account(&coordinator_account)
+        .await
+        .unwrap()
+        .is_some());
 
-    // This account will be reimbursed for the costs of the rent
-    let reimbursed = Pubkey::new_unique();
-    let reimbursed_balance_before = endpoint
-        .get_account_or_default(&reimbursed)
+    // This spill account will be reimbursed for the costs of the rent
+    let spill = Pubkey::new_unique();
+    let spill_balance_before = endpoint
+        .get_account_or_default(&spill)
         .await
         .unwrap()
         .lamports;
@@ -97,9 +94,9 @@ pub async fn run() {
         &mut endpoint,
         &payer,
         &authority,
-        &reimbursed,
+        &spill,
+        &coordinator_instance,
         &coordinator_account,
-        run_id,
     )
     .await
     .unwrap();
@@ -115,8 +112,8 @@ pub async fn run() {
         .await
         .unwrap()
         .lamports;
-    let reimbursed_balance_final = endpoint
-        .get_account_or_default(&reimbursed)
+    let spill_balance_final = endpoint
+        .get_account_or_default(&spill)
         .await
         .unwrap()
         .lamports;
@@ -124,16 +121,16 @@ pub async fn run() {
     // Check that we did in fact get reimbursed to the proper account
     assert_eq!(payer_balance_after - 5_000 * 2, payer_balance_final);
     assert_eq!(authority_balance_after, authority_balance_final);
-    assert!(reimbursed_balance_before < reimbursed_balance_final);
+    assert!(spill_balance_before < spill_balance_final);
 
     // Check that the coordinator account and instances were actually closed
     assert!(endpoint
-        .get_account(&coordinator_account)
+        .get_account(&coordinator_instance)
         .await
         .unwrap()
         .is_none());
     assert!(endpoint
-        .get_account(&coordinator_instance)
+        .get_account(&coordinator_account)
         .await
         .unwrap()
         .is_none());

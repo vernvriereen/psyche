@@ -31,18 +31,17 @@ pub async fn run() {
         delegates.push(Pubkey::new_unique());
     }
 
-    // Authorization PDA
-    let authorization =
-        find_authorization(&grantor.pubkey(), &grantee.pubkey(), &scope);
-
     // Authorization PDA doesnt exist at the start
-    assert!(get_authorization(&mut endpoint, &authorization)
-        .await
-        .unwrap()
-        .is_none());
+    assert!(get_authorization(
+        &mut endpoint,
+        &find_authorization(&grantor.pubkey(), &grantee.pubkey(), &scope)
+    )
+    .await
+    .unwrap()
+    .is_none());
 
     // Create the authorization
-    process_authorizer_authorization_create(
+    let authorization = process_authorizer_authorization_create(
         &mut endpoint,
         &payer,
         &grantor,
@@ -52,7 +51,7 @@ pub async fn run() {
     .await
     .unwrap();
 
-    // Authorization PDA now hydrated with proper keys
+    // Authorization PDA has proper keys, scope, validity and delegates
     let authorization_state = get_authorization(&mut endpoint, &authorization)
         .await
         .unwrap()
@@ -63,19 +62,36 @@ pub async fn run() {
     assert_eq!(authorization_state.active, false);
     assert_eq!(authorization_state.delegates, vec![]);
 
+    // Check the function is_valid_for returns the expected values
+    assert_eq!(
+        authorization_state.is_valid_for(
+            &grantor.pubkey(),
+            &grantee.pubkey(),
+            &scope
+        ),
+        false,
+    );
+    assert_eq!(
+        authorization_state.is_valid_for(
+            &grantor.pubkey(),
+            &delegates[1],
+            &scope
+        ),
+        false,
+    );
+
     // The grantee can now set the delegates
     process_authorizer_authorization_grantee_update(
         &mut endpoint,
         &payer,
-        &grantor.pubkey(),
         &grantee,
-        &scope,
+        &authorization,
         &delegates[..5],
     )
     .await
     .unwrap();
 
-    // Authorization PDA now hydrated with proper keys, scope, validity and delegates
+    // Authorization PDA has proper keys, scope, validity and delegates
     let authorization_state = get_authorization(&mut endpoint, &authorization)
         .await
         .unwrap()
@@ -86,19 +102,36 @@ pub async fn run() {
     assert_eq!(authorization_state.active, false);
     assert_eq!(authorization_state.delegates, delegates[..5]);
 
+    // Check the function is_valid_for returns the expected values
+    assert_eq!(
+        authorization_state.is_valid_for(
+            &grantor.pubkey(),
+            &grantee.pubkey(),
+            &scope
+        ),
+        false,
+    );
+    assert_eq!(
+        authorization_state.is_valid_for(
+            &grantor.pubkey(),
+            &delegates[1],
+            &scope
+        ),
+        false,
+    );
+
     // The grantee can increase the set the delegates
     process_authorizer_authorization_grantee_update(
         &mut endpoint,
         &payer,
-        &grantor.pubkey(),
         &grantee,
-        &scope,
+        &authorization,
         &delegates[10..90],
     )
     .await
     .unwrap();
 
-    // Authorization PDA now hydrated with proper keys, scope, validity and delegates
+    // Authorization PDA has proper keys, scope, validity and delegates
     let authorization_state = get_authorization(&mut endpoint, &authorization)
         .await
         .unwrap()
@@ -109,19 +142,28 @@ pub async fn run() {
     assert_eq!(authorization_state.active, false);
     assert_eq!(authorization_state.delegates, delegates[10..90]);
 
+    // Check the function is_valid_for returns the expected values
+    assert_eq!(
+        authorization_state.is_valid_for(
+            &grantor.pubkey(),
+            &delegates[80],
+            &scope
+        ),
+        false,
+    );
+
     // The grantor can enable the authorization at any time
     process_authorizer_authorization_grantor_update(
         &mut endpoint,
         &payer,
         &grantor,
-        &grantee.pubkey(),
-        &scope,
+        &authorization,
         true,
     )
     .await
     .unwrap();
 
-    // Authorization PDA now hydrated with proper keys, scope, validity and delegates
+    // Authorization PDA has proper keys, scope, validity and delegates
     let authorization_state = get_authorization(&mut endpoint, &authorization)
         .await
         .unwrap()
@@ -132,19 +174,44 @@ pub async fn run() {
     assert_eq!(authorization_state.active, true);
     assert_eq!(authorization_state.delegates, delegates[10..90]);
 
+    // Check the function is_valid_for returns the expected values
+    assert_eq!(
+        authorization_state.is_valid_for(
+            &grantor.pubkey(),
+            &grantee.pubkey(),
+            &scope
+        ),
+        true,
+    );
+    assert_eq!(
+        authorization_state.is_valid_for(
+            &grantor.pubkey(),
+            &delegates[3],
+            &scope
+        ),
+        false,
+    );
+    assert_eq!(
+        authorization_state.is_valid_for(
+            &grantor.pubkey(),
+            &delegates[75],
+            &scope
+        ),
+        true,
+    );
+
     // The grantee can decrease the set the delegates
     process_authorizer_authorization_grantee_update(
         &mut endpoint,
         &payer,
-        &grantor.pubkey(),
         &grantee,
-        &scope,
+        &authorization,
         &delegates[3..5],
     )
     .await
     .unwrap();
 
-    // Authorization PDA now hydrated with proper keys, scope, validity and delegates
+    // Authorization PDA has proper keys, scope, validity and delegates
     let authorization_state = get_authorization(&mut endpoint, &authorization)
         .await
         .unwrap()
@@ -152,27 +219,89 @@ pub async fn run() {
     assert_eq!(authorization_state.grantor, grantor.pubkey());
     assert_eq!(authorization_state.grantee, grantee.pubkey());
     assert_eq!(authorization_state.scope, scope);
+    assert_eq!(authorization_state.active, true);
     assert_eq!(authorization_state.delegates, delegates[3..5]);
+
+    // Check the function is_valid_for returns the expected values
+    assert_eq!(
+        authorization_state.is_valid_for(
+            &grantor.pubkey(),
+            &grantee.pubkey(),
+            &scope
+        ),
+        true,
+    );
+    assert_eq!(
+        authorization_state.is_valid_for(
+            &grantor.pubkey(),
+            &delegates[3],
+            &scope
+        ),
+        true,
+    );
+    assert_eq!(
+        authorization_state.is_valid_for(
+            &grantor.pubkey(),
+            &delegates[75],
+            &scope
+        ),
+        false,
+    );
 
     // The grantor can disable the authorization at any time
     process_authorizer_authorization_grantor_update(
         &mut endpoint,
         &payer,
         &grantor,
-        &grantee.pubkey(),
-        &scope,
+        &authorization,
         false,
     )
     .await
     .unwrap();
+
+    // Authorization PDA has proper keys, scope, validity and delegates
+    let authorization_state = get_authorization(&mut endpoint, &authorization)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(authorization_state.grantor, grantor.pubkey());
+    assert_eq!(authorization_state.grantee, grantee.pubkey());
+    assert_eq!(authorization_state.scope, scope);
+    assert_eq!(authorization_state.active, false);
+    assert_eq!(authorization_state.delegates, delegates[3..5]);
+
+    // Check the function is_valid_for returns the expected values
+    assert_eq!(
+        authorization_state.is_valid_for(
+            &grantor.pubkey(),
+            &grantee.pubkey(),
+            &scope
+        ),
+        false,
+    );
+    assert_eq!(
+        authorization_state.is_valid_for(
+            &grantor.pubkey(),
+            &delegates[3],
+            &scope
+        ),
+        false,
+    );
+    assert_eq!(
+        authorization_state.is_valid_for(
+            &grantor.pubkey(),
+            &delegates[75],
+            &scope
+        ),
+        false,
+    );
 
     // The grantor can only close the authorization once all the delegate has been cleared
     process_authorizer_authorization_close(
         &mut endpoint,
         &payer,
         &grantor,
-        &grantee.pubkey(),
-        &scope,
+        &authorization,
         &payer.pubkey(),
     )
     .await
@@ -182,9 +311,8 @@ pub async fn run() {
     process_authorizer_authorization_grantee_update(
         &mut endpoint,
         &payer,
-        &grantor.pubkey(),
         &grantee,
-        &scope,
+        &authorization,
         &[],
     )
     .await
@@ -195,8 +323,7 @@ pub async fn run() {
         &mut endpoint,
         &payer,
         &grantor,
-        &grantee.pubkey(),
-        &scope,
+        &authorization,
         &payer.pubkey(),
     )
     .await

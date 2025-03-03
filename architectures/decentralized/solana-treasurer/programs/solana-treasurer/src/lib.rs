@@ -61,6 +61,13 @@ pub mod psyche_solana_treasurer {
         run_update_processor(context, params)
     }
 
+    pub fn run_authorize(
+        context: Context<RunAuthorizeAccounts>,
+        params: RunAuthorizeParams,
+    ) -> Result<()> {
+        run_authorize_processor(context, params)
+    }
+
     pub fn participant_create(
         context: Context<ParticipantCreateAccounts>,
         params: ParticipantCreateParams,

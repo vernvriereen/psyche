@@ -11,6 +11,8 @@ pub struct Authorization {
 
     pub active: bool,
     pub delegates: Vec<Pubkey>,
+
+    pub grantor_update_unix_timestamp: i64,
 }
 
 impl Authorization {
@@ -26,5 +28,26 @@ impl Authorization {
             + (4 + scope_len * std::mem::size_of::<u8>())
             + std::mem::size_of::<bool>()
             + (4 + delegates_len * std::mem::size_of::<Pubkey>())
+            + std::mem::size_of::<i64>()
+    }
+
+    pub fn is_valid_for(
+        &self,
+        grantor: &Pubkey,
+        grantee: &Pubkey,
+        scope: &[u8],
+    ) -> bool {
+        if !self.active {
+            return false;
+        }
+        if !self.grantor.eq(grantor) {
+            return false;
+        }
+        if !self.scope.eq(scope) {
+            return false;
+        }
+        self.grantee == Pubkey::default()
+            || self.grantee.eq(grantee)
+            || self.delegates.contains(grantee)
     }
 }

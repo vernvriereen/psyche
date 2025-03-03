@@ -67,25 +67,25 @@ tasks:
     dir: "{{ .TASKFILE_DIR }}/solana-tooling"
     cmds:
       - task fmt
-  tooling_test:
-    dir: "{{ .TASKFILE_DIR }}/solana-tooling"
-    cmds:
-      - task test
   tooling_lint:
     dir: "{{ .TASKFILE_DIR }}/solana-tooling"
     cmds:
       - task lint
+  tooling_test:
+    dir: "{{ .TASKFILE_DIR }}/solana-tooling"
+    cmds:
+      - task test
 
   # Mining-Pool
   mining_pool_fmt:
     dir: "{{ .TASKFILE_DIR }}/solana-mining-pool"
     cmds:
       - task fmt
-  mining_pool_test:
-    dir: "{{ .TASKFILE_DIR }}/solana-mining-pool"
-    cmds:
-      - task test
   mining_pool_lint:
     dir: "{{ .TASKFILE_DIR }}/solana-mining-pool"
     cmds:
       - task lint
+  mining_pool_test:
+    dir: "{{ .TASKFILE_DIR }}/solana-mining-pool"
+    cmds:
+      - task test

@@ -6823,10 +6823,8 @@ dependencies = [
  "bytemuck",
  "psyche-coordinator",
  "psyche-core",
+ "psyche-solana-authorizer",
  "serde",
- "solana-sdk",
- "solana_toolbox_endpoint",
- "tokio",
 ]
 
 [[package]]
@@ -6855,6 +6853,7 @@ dependencies = [
  "bytemuck",
  "psyche-coordinator",
  "psyche-core",
+ "psyche-solana-authorizer",
  "psyche-solana-coordinator",
  "serde",
 ]

@@ -15,12 +15,6 @@ pub enum ProgramError {
     #[msg("Coordinator account invalid discriminator")]
     CoordinatorAccountInvalidDiscriminator,
 
-    #[msg("Could not set whitelist")]
-    CouldNotSetWhitelist,
-
-    #[msg("Not in whitelist")]
-    NotInWhitelist,
-
     #[msg("Client id mismatch")]
     ClientIdMismatch,
 

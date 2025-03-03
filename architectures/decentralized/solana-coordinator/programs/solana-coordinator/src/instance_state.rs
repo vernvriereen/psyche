@@ -139,15 +139,6 @@ impl CoordinatorInstanceState {
         self.tick()
     }
 
-    pub fn set_whitelist(&mut self, clients: Vec<Pubkey>) -> Result<()> {
-        self.clients_state.whitelist.clear();
-        self.clients_state
-            .whitelist
-            .extend(clients.into_iter())
-            .map_err(|_| ProgramError::CouldNotSetWhitelist)?;
-        Ok(())
-    }
-
     pub fn set_future_epoch_rates(
         &mut self,
         epoch_earning_rate: Option<u64>,
@@ -195,12 +186,6 @@ impl CoordinatorInstanceState {
     }
 
     pub fn join_run(&mut self, id: ClientId) -> Result<()> {
-        if !self.clients_state.whitelist.is_empty()
-            && !self.clients_state.whitelist.iter().any(|x| x == &id.signer)
-        {
-            return err!(ProgramError::NotInWhitelist);
-        }
-
         let exisiting = match self
             .clients_state
             .clients
