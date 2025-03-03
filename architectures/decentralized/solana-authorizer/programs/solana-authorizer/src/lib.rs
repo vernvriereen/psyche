@@ -6,6 +6,23 @@ use logic::*;
 
 declare_id!("AJ911Ut5zBuWmaeMpCfcnV9jnBnMRnHwaHf6DqUZzE4L");
 
+pub fn find_authorization(
+    grantor: &Pubkey,
+    grantee: &Pubkey,
+    scope: &[u8],
+) -> Pubkey {
+    Pubkey::find_program_address(
+        &[
+            state::Authorization::SEEDS_PREFIX,
+            grantor.as_ref(),
+            grantee.as_ref(),
+            scope,
+        ],
+        &crate::ID,
+    )
+    .0
+}
+
 #[program]
 pub mod psyche_solana_authorizer {
     use super::*;
@@ -37,21 +54,4 @@ pub mod psyche_solana_authorizer {
     ) -> Result<()> {
         authorization_close_processor(context, params)
     }
-}
-
-pub fn find_authorization(
-    grantor: &Pubkey,
-    grantee: &Pubkey,
-    scope: &[u8],
-) -> Pubkey {
-    Pubkey::find_program_address(
-        &[
-            state::Authorization::SEEDS_PREFIX,
-            grantor.as_ref(),
-            grantee.as_ref(),
-            scope,
-        ],
-        &crate::ID,
-    )
-    .0
 }

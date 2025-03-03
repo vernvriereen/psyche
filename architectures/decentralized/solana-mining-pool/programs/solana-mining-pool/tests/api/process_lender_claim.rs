@@ -1,6 +1,8 @@
 use anchor_spl::associated_token;
 use anchor_spl::token;
 use psyche_solana_mining_pool::accounts::LenderClaimAccounts;
+use psyche_solana_mining_pool::find_lender;
+use psyche_solana_mining_pool::find_pool;
 use psyche_solana_mining_pool::instruction::LenderClaim;
 use psyche_solana_mining_pool::logic::LenderClaimParams;
 use solana_sdk::pubkey::Pubkey;
@@ -9,9 +11,6 @@ use solana_sdk::signer::Signer;
 use solana_toolbox_anchor::ToolboxAnchor;
 use solana_toolbox_anchor::ToolboxAnchorError;
 use solana_toolbox_endpoint::ToolboxEndpoint;
-
-use crate::api::find_pda_lender::find_pda_lender;
-use crate::api::find_pda_pool::find_pda_pool;
 
 pub async fn process_lender_claim(
     endpoint: &mut ToolboxEndpoint,
@@ -22,11 +21,11 @@ pub async fn process_lender_claim(
     redeemable_mint: &Pubkey,
     redeemable_amount: u64,
 ) -> Result<(), ToolboxAnchorError> {
-    let pool = find_pda_pool(pool_index);
+    let pool = find_pool(pool_index);
     let pool_redeemable =
         associated_token::get_associated_token_address(&pool, redeemable_mint);
 
-    let lender = find_pda_lender(&pool, &user.pubkey());
+    let lender = find_lender(&pool, &user.pubkey());
 
     ToolboxAnchor::process_instruction_with_signers(
         endpoint,

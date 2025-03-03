@@ -6,6 +6,22 @@ use logic::*;
 
 declare_id!("CQy5JKR2Lrm16pqSY5nkMaMYSazRk2aYx99pJDNGupR7");
 
+pub fn find_pool(pool_index: u64) -> Pubkey {
+    Pubkey::find_program_address(
+        &[state::Pool::SEEDS_PREFIX, &pool_index.to_le_bytes()],
+        &crate::ID,
+    )
+    .0
+}
+
+pub fn find_lender(pool: &Pubkey, user: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[state::Lender::SEEDS_PREFIX, pool.as_ref(), user.as_ref()],
+        &crate::ID,
+    )
+    .0
+}
+
 #[program]
 pub mod psyche_solana_mining_pool {
     use super::*;
