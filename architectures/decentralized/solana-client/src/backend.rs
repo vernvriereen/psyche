@@ -18,7 +18,6 @@ use psyche_coordinator::{
     model::{self, Model},
     CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks, Witness,
 };
-use psyche_solana_coordinator::logic::FreeCoordinatorParams;
 use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
 use std::sync::Arc;

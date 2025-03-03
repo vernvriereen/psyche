@@ -7,7 +7,6 @@ use anchor_client::{
     solana_sdk::{
         commitment_config::CommitmentConfig,
         native_token::lamports_to_sol,
-        pubkey::Pubkey,
         signature::{EncodableKey, Keypair},
         signer::Signer,
     },
