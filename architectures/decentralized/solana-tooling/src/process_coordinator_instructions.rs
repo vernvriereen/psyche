@@ -15,6 +15,7 @@ use psyche_solana_coordinator::instruction::SetPaused;
 use psyche_solana_coordinator::instruction::Tick;
 use psyche_solana_coordinator::instruction::UpdateCoordinatorConfigModel;
 use psyche_solana_coordinator::instruction::Witness;
+use psyche_solana_coordinator::logic::FreeCoordinatorParams;
 use psyche_solana_coordinator::logic::JoinRunParams;
 use psyche_solana_coordinator::ClientId;
 use solana_sdk::instruction::Instruction;
@@ -66,12 +67,15 @@ pub async fn process_coordinator_free(
     let accounts = FreeCoordinatorAccounts {
         authority: authority.pubkey(),
         spill: *spill,
-        instance: *coordinator_instance,
-        account: *coordinator_account,
+        coordinator_instance: *coordinator_instance,
+        coordinator_account: *coordinator_account,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: FreeCoordinator {}.data(),
+        data: FreeCoordinator {
+            params: FreeCoordinatorParams {},
+        }
+        .data(),
         program_id: psyche_solana_coordinator::ID,
     };
     endpoint

@@ -1,0 +1,58 @@
+use anchor_lang::prelude::*;
+
+use crate::bytes_from_string;
+use crate::program_error::ProgramError;
+use crate::CoordinatorAccount;
+use crate::CoordinatorInstance;
+
+#[derive(Accounts)]
+#[instruction(params: FreeCoordinatorParams)]
+pub struct FreeCoordinatorAccounts<'info> {
+    #[account()]
+    pub authority: Signer<'info>,
+
+    #[account(mut)]
+    pub spill: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [
+            CoordinatorInstance::SEEDS_PREFIX,
+            bytes_from_string(&coordinator_instance.run_id)
+        ],
+        bump = coordinator_instance.bump,
+        constraint = coordinator_instance.authority == *authority.key,
+        close = spill
+    )]
+    pub coordinator_instance: Account<'info, CoordinatorInstance>,
+
+    #[account(
+        mut,
+        owner = crate::ID,
+        constraint = coordinator_instance.account == coordinator_account.key()
+    )]
+    pub coordinator_account: AccountLoader<'info, CoordinatorAccount>,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct FreeCoordinatorParams {}
+
+pub fn free_coordinator_processor(
+    context: Context<FreeCoordinatorAccounts>,
+    _params: FreeCoordinatorParams,
+) -> Result<()> {
+    if !&context
+        .accounts
+        .coordinator_account
+        .load()?
+        .state
+        .coordinator
+        .halted()
+    {
+        return err!(ProgramError::CloseCoordinatorNotHalted);
+    }
+    context
+        .accounts
+        .coordinator_account
+        .close(context.accounts.spill.to_account_info())
+}

@@ -122,14 +122,10 @@ pub mod psyche_solana_coordinator {
     }
 
     pub fn free_coordinator(
-        ctx: Context<FreeCoordinatorAccounts>,
+        context: Context<FreeCoordinatorAccounts>,
+        params: FreeCoordinatorParams,
     ) -> Result<()> {
-        if !&ctx.accounts.account.load()?.state.coordinator.halted() {
-            return err!(ProgramError::CloseCoordinatorNotHalted);
-        }
-        ctx.accounts
-            .account
-            .close(ctx.accounts.spill.to_account_info())
+        free_coordinator_processor(context, params)
     }
 
     pub fn update_coordinator_config_model(
@@ -262,31 +258,6 @@ pub struct PermissionlessCoordinatorAccounts<'info> {
             bytes_from_string(&instance.run_id)
         ],
         bump = instance.bump
-    )]
-    pub instance: Account<'info, CoordinatorInstance>,
-    #[account(
-        mut,
-        owner = crate::ID,
-        constraint = instance.account == account.key()
-    )]
-    pub account: AccountLoader<'info, CoordinatorAccount>,
-}
-
-#[derive(Accounts)]
-pub struct FreeCoordinatorAccounts<'info> {
-    #[account()]
-    pub authority: Signer<'info>,
-    #[account(mut)]
-    pub spill: UncheckedAccount<'info>,
-    #[account(
-        mut,
-        seeds = [
-            CoordinatorInstance::SEEDS_PREFIX,
-            bytes_from_string(&instance.run_id)
-        ],
-        bump = instance.bump,
-        constraint = instance.authority == *authority.key,
-        close = spill
     )]
     pub instance: Account<'info, CoordinatorInstance>,
     #[account(
