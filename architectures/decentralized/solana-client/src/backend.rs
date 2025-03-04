@@ -142,8 +142,8 @@ impl SolanaBackend {
                         psyche_solana_coordinator::accounts::InitCoordinatorAccounts {
                             payer: self.program.payer(),
                             authority: self.program.payer(),
-                            instance: instance_pda,
-                            account: coordinator_keypair.pubkey(),
+                            coordinator_instance: instance_pda,
+                            coordinator_account: coordinator_keypair.pubkey(),
                             system_program: system_program::ID,
                         },
                     )
