@@ -138,6 +138,13 @@ enum Commands {
         #[clap(long, env)]
         ticker: bool,
     },
+
+    // Prints the help, optionally as markdown. Used for docs generation.
+    #[clap(hide = true)]
+    PrintAllHelp {
+        #[arg(long, required = true)]
+        markdown: bool,
+    },
 }
 
 impl From<ClusterArgs> for Cluster {
@@ -379,6 +386,15 @@ async fn async_main() -> Result<()> {
             .unwrap();
 
             app.run(allowlist, p2p, state_options).await
+        }
+
+        Commands::PrintAllHelp { markdown } => {
+            // This is a required argument for the time being.
+            assert!(markdown);
+
+            let () = clap_markdown::print_help_markdown::<CliArgs>();
+
+            Ok(())
         }
     }
 }

@@ -6835,6 +6835,7 @@ dependencies = [
  "async-trait",
  "bytemuck",
  "clap",
+ "clap-markdown",
  "futures-util",
  "home",
  "psyche-client",
