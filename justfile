@@ -1,9 +1,18 @@
 default:
   just --list
 
-# build & test & check format
-check:
-	nix flake check
+# build & test & check format - what runs in CI
+check: build-all-flake-outputs
+	# run checks
+	nix flake check |& nom
+
+# build all flake outputs in one command (no checks)
+build-all-flake-outputs:
+	nix flake show --json | jq -r '\
+		(.packages."x86_64-linux" | keys[] | ".#" + .),\
+		(.devShells."x86_64-linux" | keys[] | ".#devShells.\"x86_64-linux\"." + .),\
+		(.nixosConfigurations | keys[] | ".#nixosConfigurations." + . + ".config.system.build.toplevel")\
+	' | xargs nom build
 
 # format & lint-fix code
 fmt:
@@ -13,7 +22,7 @@ fmt:
 
 # build the centralized client Docker image
 docker-build-centralized-client:
-	nix build .#stream-docker-psyche-centralized-client --out-link nix-results/stream-docker-psyche-centralized-client
+	nom build .#stream-docker-psyche-centralized-client --out-link nix-results/stream-docker-psyche-centralized-client
 	nix-results/stream-docker-psyche-centralized-client | docker load
 
 # build & push the centralized client Docker image
@@ -23,7 +32,7 @@ docker-push-centralized-client: docker-build-centralized-client
 
 # build the solana client Docker image
 docker-build-solana-client:
-	nix build .#stream-docker-psyche-solana-client --out-link nix-results/stream-docker-psyche-solana-client
+	nom build .#stream-docker-psyche-solana-client --out-link nix-results/stream-docker-psyche-solana-client
 	nix-results/stream-docker-psyche-solana-client | docker load
 # spin up a local testnet
 local-testnet *args='':

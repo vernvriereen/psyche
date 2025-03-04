@@ -10,7 +10,7 @@
       inherit (pkgs.psycheLib) craneLib rustWorkspaceArgs cargoArtifacts;
     in
     {
-      checks = self.packages.${system} // {
+      checks = {
         workspace-format = craneLib.cargoFmt {
           inherit (pkgs.psycheLib) src;
         };

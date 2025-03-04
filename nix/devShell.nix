@@ -27,6 +27,11 @@
           # task runner
           just
 
+          # for some build scripts
+          jq
+          # it pretty :3
+          nix-output-monitor
+
           # for running pkgs on non-nix
           pkgs.nix-gl-host
 
