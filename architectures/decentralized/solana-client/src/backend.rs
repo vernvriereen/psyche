@@ -139,7 +139,7 @@ impl SolanaBackend {
                 self.program
                     .request()
                     .accounts(
-                        psyche_solana_coordinator::accounts::InitializeCoordinatorAccounts {
+                        psyche_solana_coordinator::accounts::InitCoordinatorAccounts {
                             payer: self.program.payer(),
                             authority: self.program.payer(),
                             instance: instance_pda,
@@ -147,7 +147,7 @@ impl SolanaBackend {
                             system_program: system_program::ID,
                         },
                     )
-                    .args(psyche_solana_coordinator::instruction::InitializeCoordinator { run_id })
+                    .args(psyche_solana_coordinator::instruction::InitCoordinator { run_id })
                     .instructions()
                     .unwrap()[0]
                     .clone(),

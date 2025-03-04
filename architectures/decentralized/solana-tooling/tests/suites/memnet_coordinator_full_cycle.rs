@@ -20,7 +20,7 @@ use psyche_solana_tooling::create_memnet_endpoint::create_memnet_endpoint;
 use psyche_solana_tooling::get_accounts::get_coordinator_account_state;
 use psyche_solana_tooling::process_authorizer_instructions::process_authorizer_authorization_create;
 use psyche_solana_tooling::process_authorizer_instructions::process_authorizer_authorization_grantor_update;
-use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_initialize;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_init;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_join_run;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_set_paused;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_tick;
@@ -56,7 +56,7 @@ pub async fn run() {
         .unwrap();
 
     // initialize the coordinator
-    let coordinator_instance = process_coordinator_initialize(
+    let coordinator_instance = process_coordinator_init(
         &mut endpoint,
         &payer,
         &authority,

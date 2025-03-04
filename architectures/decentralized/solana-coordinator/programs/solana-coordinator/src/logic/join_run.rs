@@ -18,7 +18,7 @@ pub struct JoinRunAccounts<'info> {
     #[account(
         constraint = authorization.is_valid_for(
             &coordinator_instance.authority,
-            &user.key(),
+            user.key,
             JOIN_RUN_AUTHORIZATION_SCOPE,
         ),
     )]

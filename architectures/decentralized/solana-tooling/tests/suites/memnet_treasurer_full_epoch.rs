@@ -28,6 +28,7 @@ use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_run
 use psyche_solana_treasurer::logic::RunAuthorizeAction;
 use psyche_solana_treasurer::logic::RunAuthorizeParams;
 use psyche_solana_treasurer::logic::RunUpdateParams;
+use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 
@@ -239,8 +240,8 @@ pub async fn run() {
         &authority,
         &run,
         RunAuthorizeParams {
-            user: participant.pubkey(),
             action: RunAuthorizeAction::Create,
+            user: participant.pubkey(),
         },
     )
     .await
@@ -251,8 +252,8 @@ pub async fn run() {
         &authority,
         &run,
         RunAuthorizeParams {
-            user: participant.pubkey(),
             action: RunAuthorizeAction::Update { active: true },
+            user: participant.pubkey(),
         },
     )
     .await
@@ -264,7 +265,7 @@ pub async fn run() {
         &payer,
         &participant,
         &authorization,
-        &[client.pubkey()],
+        &[Pubkey::new_unique(), client.pubkey()],
     )
     .await
     .unwrap();

@@ -1,7 +1,7 @@
 use psyche_solana_coordinator::CoordinatorAccount;
 use psyche_solana_tooling::create_memnet_endpoint::create_memnet_endpoint;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_free;
-use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_initialize;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_init;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
@@ -43,7 +43,7 @@ pub async fn run() {
         .unwrap();
 
     // Initialize coordinator
-    let coordinator_instance = process_coordinator_initialize(
+    let coordinator_instance = process_coordinator_init(
         &mut endpoint,
         &payer,
         &authority,

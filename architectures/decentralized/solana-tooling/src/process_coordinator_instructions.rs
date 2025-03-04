@@ -3,13 +3,13 @@ use anchor_lang::ToAccountMetas;
 use psyche_coordinator::model::Model;
 use psyche_coordinator::CoordinatorConfig;
 use psyche_solana_coordinator::accounts::FreeCoordinatorAccounts;
-use psyche_solana_coordinator::accounts::InitializeCoordinatorAccounts;
+use psyche_solana_coordinator::accounts::InitCoordinatorAccounts;
 use psyche_solana_coordinator::accounts::JoinRunAccounts;
 use psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts;
 use psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts;
 use psyche_solana_coordinator::find_coordinator_instance;
 use psyche_solana_coordinator::instruction::FreeCoordinator;
-use psyche_solana_coordinator::instruction::InitializeCoordinator;
+use psyche_solana_coordinator::instruction::InitCoordinator;
 use psyche_solana_coordinator::instruction::JoinRun;
 use psyche_solana_coordinator::instruction::SetPaused;
 use psyche_solana_coordinator::instruction::Tick;
@@ -27,7 +27,7 @@ use solana_sdk::system_program;
 use solana_toolbox_endpoint::ToolboxEndpoint;
 use solana_toolbox_endpoint::ToolboxEndpointError;
 
-pub async fn process_coordinator_initialize(
+pub async fn process_coordinator_init(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     authority: &Keypair,
@@ -35,16 +35,16 @@ pub async fn process_coordinator_initialize(
     run_id: &str,
 ) -> Result<Pubkey, ToolboxEndpointError> {
     let coordinator_instance = find_coordinator_instance(run_id);
-    let accounts = InitializeCoordinatorAccounts {
+    let accounts = InitCoordinatorAccounts {
         payer: payer.pubkey(),
         authority: authority.pubkey(),
-        instance: coordinator_instance,
-        account: *coordinator_account,
+        coordinator_instance,
+        coordinator_account: *coordinator_account,
         system_program: system_program::ID,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: InitializeCoordinator {
+        data: InitCoordinator {
             run_id: run_id.to_string(),
         }
         .data(),
@@ -153,7 +153,6 @@ pub async fn process_coordinator_set_paused(
         data: SetPaused { paused }.data(),
         program_id: psyche_solana_coordinator::ID,
     };
-
     endpoint
         .process_instruction_with_signers(instruction, payer, &[authority])
         .await
