@@ -44,7 +44,7 @@ pub async fn execute_chaos_action(
     };
 
     pull_image(docker_client.clone()).await;
-    create_chaos_action_with_comand(docker_client, targets.clone(), &mut command).await;
+    create_chaos_action_with_command(docker_client, targets.clone(), &mut command).await;
     println!("Chaos correctly applied for containers: {:?}", targets);
 }
 
@@ -83,7 +83,7 @@ async fn pull_image(docker_client: Arc<Docker>) {
     }
 }
 
-async fn create_chaos_action_with_comand(
+async fn create_chaos_action_with_command(
     docker_client: Arc<Docker>,
     targets: Vec<String>,
     command: &mut Vec<String>,
