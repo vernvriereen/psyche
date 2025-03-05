@@ -12,7 +12,8 @@ DP=${DP:-"8"}
 TP=${TP:-"1"}
 BATCH_SIZE=${BATCH_SIZE:-"1"}
 
-solana airdrop 10 "$(solana-keygen pubkey ${WALLET_FILE})" --url "${RPC}"
+# fine if this fails
+solana airdrop 10 "$(solana-keygen pubkey ${WALLET_FILE})" --url "${RPC}" || true
 
 export RUST_LOG="info,psyche=debug"
 
