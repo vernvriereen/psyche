@@ -118,7 +118,7 @@ pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWa
         platform: None,
     });
     let config = Config {
-        image: Some("psyche-client"),
+        image: Some("psyche-test-client"),
         env: Some(envs.iter().map(|s| s.as_str()).collect()),
         host_config: Some(host_config),
         ..Default::default()
