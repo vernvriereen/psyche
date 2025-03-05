@@ -522,8 +522,8 @@ mod test {
     use model::LLM;
     use psyche_coordinator::{
         model::{
-            Checkpoint, ConstantLR, LLMArchitecture, LLMTrainingDataLocation, LLMTrainingDataType,
-            LearningRateSchedule, Optimizer,
+            Checkpoint, ConstantLR, HubRepo, LLMArchitecture, LLMTrainingDataLocation,
+            LLMTrainingDataType, LearningRateSchedule, Optimizer,
         },
         CoordinatorConfig, RunState,
     };
@@ -573,7 +573,7 @@ mod test {
                 }),
                 Some(Model::LLM(LLM {
                     architecture: LLMArchitecture::HfLlama,
-                    checkpoint: Checkpoint::Ephemeral,
+                    checkpoint: Checkpoint::Dummy(HubRepo::dummy()),
                     max_seq_len: 4096,
                     data_type: LLMTrainingDataType::Pretraining,
                     data_location: LLMTrainingDataLocation::Local(Zeroable::zeroed()),

@@ -1,5 +1,6 @@
 use bytemuck::Zeroable;
 use psyche_coordinator::model::Checkpoint;
+use psyche_coordinator::model::HubRepo;
 use psyche_coordinator::model::LLMArchitecture;
 use psyche_coordinator::model::LLMTrainingDataLocation;
 use psyche_coordinator::model::LLMTrainingDataType;
@@ -105,7 +106,7 @@ pub async fn run() {
         }),
         Some(Model::LLM(LLM {
             architecture: LLMArchitecture::HfLlama,
-            checkpoint: Checkpoint::Ephemeral,
+            checkpoint: Checkpoint::Dummy(HubRepo::dummy()),
             max_seq_len: 4096,
             data_type: LLMTrainingDataType::Pretraining,
             data_location: LLMTrainingDataLocation::Local(Zeroable::zeroed()),
