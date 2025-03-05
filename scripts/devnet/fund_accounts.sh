@@ -83,8 +83,16 @@ if [[ ! -f "$RECIPIENTS_FILE" ]]; then
   exit 1
 fi
 
-num_accounts=$(grep -cve '^$' "$RECIPIENTS_FILE")
-total_solana_cost=$((num_accounts*AMOUNT))
+accounts_in_file=$(grep -cve '^$' "$RECIPIENTS_FILE")
+
+# Ensure the sender keypair file exists
+if [[ "$accounts_in_file" -lt "$NUM_ACCOUNTS" ]]; then
+    echo "Error: Not enough accounts in accounts file"
+    exit 1
+fi
+
+total_solana_cost=$(($NUM_ACCOUNTS*$AMOUNT))
+
 echo -e "\nWe will be using a total of ${total_solana_cost} SOL for funding accounts"
 _continue?
 

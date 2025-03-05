@@ -134,3 +134,44 @@ To stop the docker compose network, run
 ```bash
 just stop_test_infra
 ```
+
+---
+
+## Running dockerized Psyche client in Solana Devnet/Mainnet
+
+First, make sure that the Coordinator is deployed in the Solana devnet and that you have its address.
+It will be useful to know that things are going correctly.
+
+Start building the dockerized psyche client with
+
+```bash
+just build_docker_psyche_client
+```
+
+You will be prompted with the Coordinator address that will be used to build the client binary. Make sure it
+correct and if it is not, go to `architectures/decentralized/solana-coordinator/programs/solana-coordinator/src/lib.rs` and
+replace the address in the `declare_id!` macro, and try building again with the same command.
+
+Once the docker image is built, the next step is to create a training run. If the run was already created,
+go directly to the `training` step.
+
+### Creating a run in Devnet
+
+To create a run, you will need to specify the model configuration file and the wallet that will be used
+to pay for the creation of the run, as well as the devnet/mainnet RPC and websocket endpoint.
+Create an environment file in `config/client/.env`. There variables that should be present are:
+
+* `RPC` and `WS_RPC`: The url to the Solana RPC and websocket endpoints
+* `WALLET_FILE`: The path to your keypair
+* `CONFIG_PATH`: The path to the config of the model to be trained
+* `RUN_ID`: A string representing the ID of the run
+
+Once everything is set, to create the run using the dockerized Psyche client, you should run
+
+```bash
+./docker/psyche_client_create_run.sh
+```
+
+watch the logs to know that everything worked as expected.
+
+### Join training run with the dockerized Psyche client
