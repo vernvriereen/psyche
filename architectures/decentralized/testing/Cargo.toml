@@ -16,3 +16,4 @@ bollard = "0.18.1"
 [dev-dependencies]
 test-log.workspace = true
 serial_test.workspace = true
+rstest.workspace = true
