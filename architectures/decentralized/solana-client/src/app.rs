@@ -198,6 +198,10 @@ impl App {
             .state
             .coordinator;
 
+        let y = backend
+            .get_coordinator_account(&instance.account)
+            .await?
+            .state;
         let mut updates = backend_runner.updates();
         let mut tick_tx: Option<JoinHandle<Result<Signature>>> = None;
         let mut client = Client::new(backend_runner, allowlist, p2p, state_options);
@@ -218,8 +222,23 @@ impl App {
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
                         .as_secs();
-                    println!("FIRST TICK");
-                    match ticked.tick(Some([].iter()), timestamp, rand::thread_rng().next_u64()) {
+
+                    // let x = y.get_active_clients();
+                    println!(" state: {}" , ticked.run_state );
+                    let clients = if ticked.run_state == RunState::WaitingForMembers{
+
+                        let c = y.get_active_clients();
+                        println!("Clients: {:?}", &c.len());
+                        Some(c)
+                    } else {
+                        // Some([].iter())
+                        // Some([].iter())
+                        None
+                        };
+
+                    // println!("Clients: {:?} , state: {}", &clients.into_iter().len() , ticked.run_state );
+
+                    match ticked.tick(clients, timestamp, rand::thread_rng().next_u64()) {
                         Ok(_) => {
                             if ticked.run_state != latest_update.run_state {
                                 let backend = backend.clone();

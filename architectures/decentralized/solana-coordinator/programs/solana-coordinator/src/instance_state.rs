@@ -6,7 +6,7 @@ use psyche_coordinator::{
     model::Model, ClientState, Coordinator, CoordinatorConfig, HealthChecks, RunState, TickResult,
     Witness,
 };
-use psyche_core::{sha256v, SmallBoolean};
+use psyche_core::{sha256v, SmallBoolean, SizedIterator};
 
 #[derive(Clone, Copy, Zeroable)]
 #[repr(C)]
@@ -18,6 +18,9 @@ pub struct CoordinatorInstanceState {
 unsafe impl Pod for CoordinatorInstanceState {}
 
 impl CoordinatorInstanceState {
+    pub fn get_active_clients(&self) -> SizedIterator<impl Iterator<Item = &ClientId>> {
+        self.clients_state.active_clients()
+    }
     pub fn tick(&mut self) -> Result<()> {
         let clock: Clock = Clock::get()?;
         let random_seed_bytes = sha256v(&[

@@ -743,13 +743,10 @@ impl<T: NodeIdentity> Coordinator<T> {
             return Ok(TickResult::Ticked);
         };
 
-        println!("STATE START AT: {}", self.run_state_start_unix_timestamp);
-        println!("TIMESTAMP: {}", unix_timestamp);
-        println!("PENDING CLIENTS LEN: {}", pending_clients.len());
+
         if pending_clients.len() as u16 >= self.config.min_clients
-        // && self.check_timeout(unix_timestamp, 5)
+            && self.check_timeout(unix_timestamp, 5)
         {
-            msg!("CHANGED TO WARMUP");
             let height = self.current_round_unchecked().height;
             self.move_clients_to_exited(height);
 
