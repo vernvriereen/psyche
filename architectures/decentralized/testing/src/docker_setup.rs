@@ -45,23 +45,6 @@ pub async fn e2e_testing_setup(
     DockerTestCleanup {}
 }
 
-pub async fn is_client_healthy(
-    docker_client: Arc<Docker>,
-    client_number: u8,
-) -> Result<bool, DockerWatcherError> {
-    let container_name = format!("{CLIENT_CONTAINER_PREFIX}-{}", client_number);
-    let container = docker_client
-        .inspect_container(&container_name, None)
-        .await
-        .unwrap();
-    let state = container.state.unwrap();
-    match state.status {
-        Some(bollard::secret::ContainerStateStatusEnum::DEAD)
-        | Some(bollard::secret::ContainerStateStatusEnum::EXITED) => Ok(false),
-        _ => Ok(true),
-    }
-}
-
 pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWatcherError> {
     // Set the container name based on the ones that are already running.
     let new_container_name = get_name_of_new_client_container(docker_client.clone()).await;

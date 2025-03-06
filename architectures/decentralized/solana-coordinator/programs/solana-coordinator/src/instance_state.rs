@@ -10,6 +10,7 @@ use psyche_coordinator::RunState;
 use psyche_coordinator::TickResult;
 use psyche_coordinator::Witness;
 use psyche_core::sha256v;
+use psyche_core::SizedIterator;
 use psyche_core::SmallBoolean;
 
 use crate::client::Client;
@@ -27,6 +28,12 @@ pub struct CoordinatorInstanceState {
 unsafe impl Pod for CoordinatorInstanceState {}
 
 impl CoordinatorInstanceState {
+    pub fn get_active_clients(
+        &self,
+    ) -> SizedIterator<impl Iterator<Item = &ClientId>> {
+        self.clients_state.active_clients()
+    }
+
     pub fn tick(&mut self) -> Result<()> {
         let clock: Clock = Clock::get()?;
         let random_seed_bytes = sha256v(&[
@@ -58,13 +65,14 @@ impl CoordinatorInstanceState {
                     msg!("New epoch just starting, save epoch rewards rate");
                     self.clients_state.current_epoch_rates =
                         self.clients_state.future_epoch_rates;
-                    msg!("New epoch just starting, save epoch active clients");
-                    self.coordinator.epoch_state.warmup_just_starting = SmallBoolean(0);
+                    self.coordinator.epoch_state.warmup_just_starting =
+                        SmallBoolean(0);
                 }
                 if self.coordinator.is_training_just_starting() {
-                    msg!("Training just starting");
+                    msg!("New epoch just starting, save epoch active clients");
                     self.clients_state.next_active += 1;
-                    self.coordinator.epoch_state.training_just_starting = SmallBoolean(0);
+                    self.coordinator.epoch_state.training_just_starting =
+                        SmallBoolean(0);
                 }
             },
             Ok(TickResult::EpochEnd(success)) => {
