@@ -58,7 +58,7 @@ impl AllowDynamic {
 }
 
 impl Allowlist for AllowDynamic {
-    fn allowed(&self, _addr: NodeId) -> bool {
+    fn allowed(&self, addr: NodeId) -> bool {
         self.allowed_nodes
             .read()
             .expect("RwLock poisoned")
