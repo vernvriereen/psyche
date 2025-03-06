@@ -47,10 +47,6 @@ if [[ ! -f "$CONFIG_PATH" ]]; then
     exit 1
 fi
 
-# [!] NOTE: To try it in localnet, add the following docker argument to
-#     every command:
-#     --add-host=host.docker.internal:host-gateway \
-
 echo -e "\n[+] Creating training run with run ID '${RUN_ID}'"
 docker run --rm -v "$WALLET_FILE":/keys/id.json \
     --add-host=host.docker.internal:host-gateway \
