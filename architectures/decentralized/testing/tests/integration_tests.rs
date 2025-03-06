@@ -542,13 +542,13 @@ async fn test_delay_new_client() {
                            client, epoch, step, loss
                        );
 
-                       if step == 20 && !chaos_already_executed {
+                       if step == 10 && !chaos_already_executed {
                            println!("Delaying client in step: {}", step);
                            // Pause validator for 60 seconds
                                // Add delay to the client of 1 second for 2 minutes.
                                execute_chaos_action(
                                    docker.clone(),
-                                   ChaosAction::Delay(30, 5000),
+                                   ChaosAction::Delay(30, 3000),
                                    vec![format!("{CLIENT_CONTAINER_PREFIX}-{}", 1)],
                                )
                                .await;

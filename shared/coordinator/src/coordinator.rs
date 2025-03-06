@@ -5,7 +5,10 @@ use crate::{
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
 
-use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
+use anchor_lang::{
+    prelude::{borsh, msg},
+    AnchorDeserialize, AnchorSerialize, InitSpace,
+};
 use bytemuck::{Pod, Zeroable};
 use psyche_core::{
     serde_deserialize_string, serde_serialize_string, sha256, BatchId, Bloom, FixedVec,
@@ -740,7 +743,13 @@ impl<T: NodeIdentity> Coordinator<T> {
             return Ok(TickResult::Ticked);
         };
 
-        if pending_clients.len() as u16 >= self.config.min_clients {
+        println!("STATE START AT: {}", self.run_state_start_unix_timestamp);
+        println!("TIMESTAMP: {}", unix_timestamp);
+        println!("PENDING CLIENTS LEN: {}", pending_clients.len());
+        if pending_clients.len() as u16 >= self.config.min_clients
+        // && self.check_timeout(unix_timestamp, 5)
+        {
+            msg!("CHANGED TO WARMUP");
             let height = self.current_round_unchecked().height;
             self.move_clients_to_exited(height);
 
@@ -774,6 +783,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                         .map(|x| Client::new(*x)),
                 )
                 .unwrap();
+
             self.start_warmup(unix_timestamp);
         }
 
@@ -884,8 +894,14 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     fn check_timeout(&self, unix_timestamp: u64, duration: u64) -> bool {
-        self.run_state_start_unix_timestamp != unix_timestamp
-            && unix_timestamp >= duration + self.run_state_start_unix_timestamp
+        println!(
+            "EXPECTED TIMEOUT: {}",
+            duration + self.run_state_start_unix_timestamp
+        );
+        let result = self.run_state_start_unix_timestamp != unix_timestamp
+            && unix_timestamp >= duration + self.run_state_start_unix_timestamp;
+        println!("Result: {}", result);
+        result
     }
 
     fn start_cooldown(&mut self, unix_timestamp: u64) {
@@ -979,11 +995,15 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     pub fn is_warmup_just_starting(&self) -> bool {
-        self.epoch_state.first_round.is_true() && self.run_state == RunState::Warmup && self.epoch_state.warmup_just_starting.is_true()
+        self.epoch_state.first_round.is_true()
+            && self.run_state == RunState::Warmup
+            && self.epoch_state.warmup_just_starting.is_true()
     }
 
     pub fn is_training_just_starting(&self) -> bool {
-        self.epoch_state.first_round.is_true() && self.run_state == RunState::RoundTrain && self.epoch_state.training_just_starting.is_true()
+        self.epoch_state.first_round.is_true()
+            && self.run_state == RunState::RoundTrain
+            && self.epoch_state.training_just_starting.is_true()
     }
 }
 
