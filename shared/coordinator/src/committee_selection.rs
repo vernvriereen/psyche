@@ -187,15 +187,11 @@ impl CommitteeSelection {
         Self::verify_client(client_id, proof.index, clients) && self.verify_witness(proof)
     }
 
-    pub fn verify_client<T: NodeIdentity>(
-        client_id: &T,
-        index: u64,
-        clients: &[Client<T>],
-    ) -> bool {
+    fn verify_client<T: NodeIdentity>(client_id: &T, index: u64, clients: &[Client<T>]) -> bool {
         clients.get(index as usize).map(|c| &c.id) == Some(client_id)
     }
 
-    pub fn verify_committee(&self, proof: &CommitteeProof) -> bool {
+    fn verify_committee(&self, proof: &CommitteeProof) -> bool {
         let position = self.compute_shuffled_index(proof.index, COMMITTEE_SALT);
         proof.position == position && proof.committee == self.get_committee_from_position(position)
     }
