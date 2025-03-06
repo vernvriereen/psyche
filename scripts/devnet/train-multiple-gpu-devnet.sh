@@ -8,7 +8,6 @@ set -o errexit
 set -o pipefail
 
 funded_accounts_folder="./devnet_funded_accounts"
-# funded_accounts_folder=".scripts/devnet/devnet_funded_accounts"
 
 num_clients=$1
 
@@ -66,9 +65,7 @@ for i in $(seq 1 "$num_clients"); do
         docker rm -f psyche-client-"${i}"
     fi
 
-    # [!] To try it in localnet, add the following docker argument:
-    #   --add-host=host.docker.internal:host-gateway \
-    docker run -d -v "$funded_accounts_folder"/keypair_"${i}.json":/keys/id.json \
+    docker run --rm -d -v "$funded_accounts_folder"/keypair_"${i}.json":/keys/id.json \
         --name psyche-client-"${i}" \
         --gpus "device=$gpu_id" \
         -e NVIDIA_DRIVER_CAPABILITIES=all \

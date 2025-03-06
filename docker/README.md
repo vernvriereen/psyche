@@ -153,25 +153,85 @@ correct and if it is not, go to `architectures/decentralized/solana-coordinator/
 replace the address in the `declare_id!` macro, and try building again with the same command.
 
 Once the docker image is built, the next step is to create a training run. If the run was already created,
-go directly to the `training` step.
+go directly to the `Join training run with the dockerized Psyche client` step.
 
 ### Creating a run in Devnet
 
 To create a run, you will need to specify the model configuration file and the wallet that will be used
-to pay for the creation of the run, as well as the devnet/mainnet RPC and websocket endpoint.
-Create an environment file in `config/client/.env`. There variables that should be present are:
+to pay for the creation of the run, as well as the devnet/mainnet RPC and websocket endpoint, and the **run ID**
+of the training run.
+Create an environment file in `config/client/.env`, if you don't already have one. There variables that should be present are:
 
-* `RPC` and `WS_RPC`: The url to the Solana RPC and websocket endpoints
-* `WALLET_FILE`: The path to your keypair
-* `CONFIG_PATH`: The path to the config of the model to be trained
+* `RPC`: The url to the Solana RPC endpoint
+* `WS_RPC`: The url to the Solana websocket endpoint
+* `WALLET_FILE`: The path to your Solana keypair
 * `RUN_ID`: A string representing the ID of the run
+* `CONFIG_PATH`: The path to the configuration of the model to be trained
 
+You can make a copy of the `config/client/.env.example` and set your variables accordingly.
 Once everything is set, to create the run using the dockerized Psyche client, you should run
 
 ```bash
 ./docker/psyche_client_create_run.sh
 ```
 
-watch the logs to know that everything worked as expected.
+watch the logs to know that everything worked correctly.
 
 ### Join training run with the dockerized Psyche client
+
+With the Coordiantor deployed and the training run created in Devnet/Mainnet, now you can join the run to start training.
+You will need your environment file set in `config/client/.env` if you haven't already done it.
+The environment variables that should be set are
+
+* `RPC`: The url to the Solana RPC endpoint
+* `WS_RPC`: The url to the Solana websocket endpoint
+* `WALLET_FILE`: The path to your Solana keypair, used to pay for all transactions in the training process.
+* `RUN_ID`: A string representing the ID of the run to join
+
+You can make a copy of the `config/client/.env.example` and set your variables accordingly.
+Once everything is set, to join the run and start training you should run
+
+```bash
+./docker/psyche_client_train.sh
+```
+
+### Starting N dockerized clients with one GPU each
+
+#### Funding of accounts
+
+For running N instances of the Psyche client, you will need to fund N accounts. There is a convenience script you can use to
+do that. For using it, you will need some account with necessary funds for all of them.
+
+```bash
+./scripts/fund_accounts.sh <PATH_TO_SOLANA_WALLET> <NUMBER_OF_ACCOUNTS> [OPTIONAL]<PATH_TO_KEYS_FILE>
+```
+
+The script receives 2 required arguments and 1 optional argument:
+* `<PATH_TO_SOLANA_WALLET>`: The path to your Solana keypair, which will be used to fund all the other accounts
+* `<NUMBER_OF_ACCOUNTS>`: How many accounts you will want to be funded
+* `[OPTIONAL]<PATH_TO_KEYS_FILE>`: If you already have a file with all the account pubkeys, you can provide it for funding those
+
+This script will create the accounts if you don't provide them in a file.
+When the script ends, all the accounts will be funded with 1 SOL. The folder with the information about the accounts
+will be created in `./devnet_funded_accounts`.
+
+#### Running Psyche clients
+
+Similar to previous sections in this document, you will need your environment file in `config/client/.env`.
+The variables that should be set are:
+
+* `RPC`: The url to the Solana RPC endpoint
+* `WS_RPC`: The url to the Solana websocket endpoint
+* `RUN_ID`: A string representing the ID of the run to join
+
+Once set, you can execute the following script for starting all the clients,
+
+```bash
+./scripts/devnet/train-multiple-gpu-devnet.sh <NUM_CLIENTS>
+```
+
+where `<NUM_CLIENTS>` is the number of clients you want to run and each one will use one GPU.
+The script will automatically use the Solana accounts in the `devnet_funded_accounts` folder for starting the clients.
+
+You can then check the clients logs using the `docker logs` command, each client will be spawned with the
+`psyche-client-i` name, where `i` goes from 1 to `N`.
