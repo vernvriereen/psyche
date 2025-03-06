@@ -28,11 +28,11 @@ pub enum ChaosAction {
 
 pub struct ChaosScheduler {
     docker_client: Arc<Docker>,
-    solana_client: SolanaTestClient,
+    solana_client: Arc<SolanaTestClient>,
 }
 
 impl ChaosScheduler {
-    pub fn new(docker_client: Arc<Docker>, solana_client: SolanaTestClient) -> Self {
+    pub fn new(docker_client: Arc<Docker>, solana_client: Arc<SolanaTestClient>) -> Self {
         Self {
             docker_client,
             solana_client,

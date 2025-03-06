@@ -19,6 +19,7 @@ pub const SOLANA_MAX_NUM_WITNESSES: usize = 32;
 pub const SOLANA_MAX_NUM_CHECKPOINTERS: usize = 4;
 
 pub const BLOOM_FALSE_RATE: f64 = 0.01f64;
+pub const WAITING_FOR_MEMBERS_EXTRA_SECONDS: u64 = 3;
 
 // bloom filter with 1024 bits (16 u64)
 pub type WitnessBloom = Bloom<16, 8>;
@@ -709,7 +710,10 @@ impl<T: NodeIdentity> Coordinator<T> {
             return Ok(TickResult::Ticked);
         };
 
-        if pending_clients.len() as u16 >= self.config.min_clients {
+        if pending_clients.len() as u16 >= self.config.min_clients
+            && self.check_timeout(unix_timestamp, WAITING_FOR_MEMBERS_EXTRA_SECONDS)
+        // This extra time allows for more clients to join even if the minimum number of clients is reached
+        {
             let height = self.current_round_unchecked().height;
             self.move_clients_to_exited(height);
 
@@ -743,6 +747,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                         .map(|x| Client::new(*x)),
                 )
                 .unwrap();
+
             self.start_warmup(unix_timestamp);
         }
 
@@ -933,11 +938,15 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     pub fn is_warmup_just_starting(&self) -> bool {
-        self.epoch_state.first_round.is_true() && self.run_state == RunState::Warmup && self.epoch_state.warmup_just_starting.is_true()
+        self.epoch_state.first_round.is_true()
+            && self.run_state == RunState::Warmup
+            && self.epoch_state.warmup_just_starting.is_true()
     }
 
     pub fn is_training_just_starting(&self) -> bool {
-        self.epoch_state.first_round.is_true() && self.run_state == RunState::RoundTrain && self.epoch_state.training_just_starting.is_true()
+        self.epoch_state.first_round.is_true()
+            && self.run_state == RunState::RoundTrain
+            && self.epoch_state.training_just_starting.is_true()
     }
 }
 

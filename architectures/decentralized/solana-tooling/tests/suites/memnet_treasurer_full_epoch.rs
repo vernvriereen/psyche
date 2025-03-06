@@ -279,6 +279,20 @@ pub async fn run() {
     .await
     .unwrap();
 
+    // Pretend 5 second passed
+    endpoint.forward_clock_unix_timestamp(5).await.unwrap();
+
+    // Tick to transition from waiting for members to warmup
+    process_coordinator_tick(
+        &mut endpoint,
+        &payer,
+        &ticker,
+        &coordinator_instance,
+        &coordinator_account,
+    )
+    .await
+    .unwrap();
+
     // Tick to witness
     endpoint.forward_clock_unix_timestamp(10).await.unwrap();
     process_coordinator_tick(
