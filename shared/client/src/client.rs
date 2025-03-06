@@ -30,7 +30,7 @@ use tokio::{
     time::interval,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 pub type TUIStates = (ClientTUIState, NetworkTUIState);
 
@@ -515,42 +515,16 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             };
                             let router = p2p.router();
                             let me = NodeId::from_bytes(identity.get_p2p_public_key())?;
-                            let mut peer_ids: Vec<NodeId> = coordinator_state.epoch_state.clients.iter().map(|client| {
+                            let peer_ids: Vec<NodeId> = coordinator_state.epoch_state.clients.iter().map(|client| {
                                 let peer_id_bytes = client.id.get_p2p_public_key();
                                 NodeId::from_bytes(peer_id_bytes).unwrap()
                             })
                             .filter(|peer_id| peer_id != &me)
                             .collect();
 
-                            // while peer_ids.is_empty() {
-                            //     warn!("There are no peers to request model config from. Try joining the run again.");
-                            //     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                            //     peer_ids = coordinator_state.epoch_state.clients.iter().map(|client| {
-                            //         let peer_id_bytes = client.id.get_p2p_public_key();
-                            //         NodeId::from_bytes(peer_id_bytes).unwrap()
-                            //     })
-                            //     .filter(|peer_id| peer_id != &me)
-                            //     .collect();
-                            // }
-                            let mut attempts = 0;
-                            while peer_ids.is_empty() && attempts < 10 {
-                                warn!("No peers found. Retrying...");
-                                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                                peer_ids = coordinator_state.epoch_state.clients.iter()
-                                    .filter_map(|client| {
-                                        let peer_id_bytes = client.id.get_p2p_public_key();
-                                        NodeId::from_bytes(peer_id_bytes).ok()
-                                    })
-                                    .filter(|peer_id| peer_id != &me)
-                                    .collect();
-                                attempts += 1;
-                            }
-
                             if peer_ids.is_empty() {
-                                error!("Failed to find any peers after multiple attempts.");
-                                return Err(anyhow::anyhow!("No peers available"));  // Handle the failure case properly
+                                return Err(anyhow::anyhow!("No peers available to request the model"))
                             }
-
 
                             let peer_ids_iter = peer_ids.into_iter().cycle();
                             for peer_id in peer_ids_iter {
