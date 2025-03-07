@@ -80,7 +80,7 @@ solana-client-tests:
 
 # install deps for building mdbook
 book_deps:
-	cargo install mdbook mdbook-mermaid
+	cargo install mdbook mdbook-mermaid mdbook-linkcheck
 
 build_book output-dir="../book": generate_cli_docs
 	mdbook build psyche-book -d {{output-dir}}
