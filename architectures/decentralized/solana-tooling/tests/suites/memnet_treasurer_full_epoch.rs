@@ -299,8 +299,8 @@ pub async fn run() {
             &mut endpoint,
             &payer,
             &client,
+            &coordinator_instance,
             &coordinator_account,
-            run_id,
             &Witness {
                 proof: WitnessProof {
                     witness: true.into(),
@@ -320,8 +320,8 @@ pub async fn run() {
             &mut endpoint,
             &payer,
             &ticker,
+            &coordinator_instance,
             &coordinator_account,
-            run_id,
         )
         .await
         .unwrap();
