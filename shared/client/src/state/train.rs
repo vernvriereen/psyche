@@ -304,13 +304,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                             BatchData::CPU(items) => {
                                 let total_size = items.len();
                                 let num_trainers = available_trainers.len();
-                                let mut chunk_size = total_size / num_trainers;
+                                let chunk_size = total_size / num_trainers;
                                 let mut batches = items
                                     .chunks(chunk_size)
                                     .map(|x| x.to_owned())
                                     .collect::<Vec<_>>();
                                 if batches.len() == num_trainers + 1 {
-                                    let last = batches.pop();
+                                    let last = batches.pop().unwrap();
                                     for (i, sample) in last.into_iter().enumerate() {
                                         batches[i].push(sample);
                                     }
