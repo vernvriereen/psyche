@@ -192,16 +192,11 @@ impl App {
         }
 
         // Update the latest update after joining the run to advance the state.
-        let mut latest_update = backend
-            .get_coordinator_account(&instance.account)
-            .await?
-            .state
-            .coordinator;
-
-        let y = backend
+        let coordinator_state = backend
             .get_coordinator_account(&instance.account)
             .await?
             .state;
+        let mut latest_update = coordinator_state.coordinator;
         let mut updates = backend_runner.updates();
         let mut tick_tx: Option<JoinHandle<Result<Signature>>> = None;
         let mut client = Client::new(backend_runner, allowlist, p2p, state_options);
@@ -216,39 +211,22 @@ impl App {
                     self.update_tui(client_tui_state, &latest_update, network_tui_state).await?;
                 }
                 _ = async { self.tick_check_interval.as_mut().unwrap().tick().await }, if self.tick_check_interval.is_some() && tick_tx.is_none() => {
-                    println!("STARTING TICKING");
                     let mut ticked = latest_update;
                     let timestamp = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
                         .as_secs();
 
-                    // let x = y.get_active_clients();
-                    println!(" state: {}" , ticked.run_state );
-                    let clients = if ticked.run_state == RunState::WaitingForMembers{
+                    let pending_clients = (ticked.run_state == RunState::WaitingForMembers).then(|| coordinator_state.get_active_clients());
 
-                        let c = y.get_active_clients();
-                        println!("Clients: {:?}", &c.len());
-                        Some(c)
-                    } else {
-                        // Some([].iter())
-                        // Some([].iter())
-                        None
-                        };
-
-                    // println!("Clients: {:?} , state: {}", &clients.into_iter().len() , ticked.run_state );
-
-                    match ticked.tick(clients, timestamp, rand::thread_rng().next_u64()) {
+                    match ticked.tick(pending_clients, timestamp, rand::thread_rng().next_u64()) {
                         Ok(_) => {
                             if ticked.run_state != latest_update.run_state {
                                 let backend = backend.clone();
                                 let backend_clone = backend.clone();
-                                println!("TICK TX CREATED");
                                 tick_tx = Some(tokio::spawn(async move { backend.tick(instance_pda, instance.account).await }));
-                                println!("RUN STATE: {}", ticked.run_state);
-                                println!("LATEST UPDATE STATE: {}", latest_update.run_state);
                                 // This means the epoch finished so we're rejoining the run to participate in the next one.
-                                if ticked.run_state == RunState::WaitingForMembers && latest_update.run_state == RunState::Cooldown {
+                                if ticked.run_state == RunState::WaitingForMembers && latest_update.run_state == RunState::Cooldown && !already_joined_next_run {
                                     let joined = backend_clone
                                         .join_run(
                                             instance_pda,
@@ -273,7 +251,6 @@ impl App {
                     };
                 }
                 update = async { updates.recv().await } => {
-                    println!("NEW UPDATE");
                     let update = match update?.value.data.decode() {
                         Some(data) => psyche_solana_coordinator::coordinator_account_from_bytes(&data)
                             .map_err(|_| anyhow!("Unable to decode coordinator account data"))
@@ -283,7 +260,6 @@ impl App {
                     latest_update = update;
                 }
                 tx = async { tick_tx.as_mut().unwrap().await }, if tick_tx.is_some() => {
-                    println!("TICK RESOLVED");
                     tick_tx = None;
                     match tx? {
                         Ok(signature) => info!("Tick transaction {}", signature),

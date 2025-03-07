@@ -6,7 +6,7 @@ use crate::{
 };
 
 use anchor_lang::{
-    prelude::{borsh, msg},
+    prelude::borsh,
     AnchorDeserialize, AnchorSerialize, InitSpace,
 };
 use bytemuck::{Pod, Zeroable};
@@ -743,7 +743,6 @@ impl<T: NodeIdentity> Coordinator<T> {
             return Ok(TickResult::Ticked);
         };
 
-
         if pending_clients.len() as u16 >= self.config.min_clients
             && self.check_timeout(unix_timestamp, 5)
         {
@@ -891,14 +890,8 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     fn check_timeout(&self, unix_timestamp: u64, duration: u64) -> bool {
-        println!(
-            "EXPECTED TIMEOUT: {}",
-            duration + self.run_state_start_unix_timestamp
-        );
-        let result = self.run_state_start_unix_timestamp != unix_timestamp
-            && unix_timestamp >= duration + self.run_state_start_unix_timestamp;
-        println!("Result: {}", result);
-        result
+        self.run_state_start_unix_timestamp != unix_timestamp
+            && unix_timestamp >= duration + self.run_state_start_unix_timestamp
     }
 
     fn start_cooldown(&mut self, unix_timestamp: u64) {

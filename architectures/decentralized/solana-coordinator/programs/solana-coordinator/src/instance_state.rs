@@ -6,7 +6,7 @@ use psyche_coordinator::{
     model::Model, ClientState, Coordinator, CoordinatorConfig, HealthChecks, RunState, TickResult,
     Witness,
 };
-use psyche_core::{sha256v, SmallBoolean, SizedIterator};
+use psyche_core::{sha256v, SizedIterator, SmallBoolean};
 
 #[derive(Clone, Copy, Zeroable)]
 #[repr(C)]

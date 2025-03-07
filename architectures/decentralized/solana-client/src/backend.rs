@@ -279,7 +279,6 @@ impl SolanaBackend {
     }
 
     pub async fn tick(&self, instance: Pubkey, account: Pubkey) -> Result<Signature> {
-        println!("SECOND TICK");
         let signature = self
             .program
             .request()
