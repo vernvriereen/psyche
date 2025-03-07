@@ -302,11 +302,23 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
 
                         let batches = match &data.data {
                             BatchData::CPU(items) => {
-                                if items.len() % available_trainers.len() != 0 {
-                                    error!("Batch size not divisible by DP world size");
-                                    return Err(TrainError::TrainCrashed);
+                                let total_size = items.len();
+                                let num_trainers = available_trainers.len();
+                                let chunk_size = total_size / num_trainers;
+                                let mut batches = items
+                                    .chunks(chunk_size)
+                                    .map(|x| x.to_owned())
+                                    .collect::<Vec<_>>();
+                                if batches.len() == num_trainers + 1 {
+                                    let last = batches.pop().unwrap();
+                                    for (i, sample) in last.into_iter().enumerate() {
+                                        batches[i].push(sample);
+                                    }
                                 }
-                                items.chunks(items.len() / available_trainers.len())
+                                if batches.len() != num_trainers {
+                                    error!("Batches does not match DP world size");
+                                }
+                                batches
                             }
                             BatchData::GPU(_) => {
                                 error!("Got data on GPU before distribution to trainers");
