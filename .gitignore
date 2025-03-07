@@ -44,7 +44,7 @@ checkpoints/
 logs/
 txt/
 config/testing/dolma/
-scripts/keys/
+**/devnet_funded_accounts
 
 ### Solana ###
 test-ledger
@@ -53,4 +53,4 @@ test-ledger
 book
 
 ### Env files ###
-config/client/.env
+**/.env

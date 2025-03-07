@@ -75,7 +75,7 @@ impl psyche_watcher::Backend<ClientId> for ChannelCoordinatorBackend {
         bail!("Server does not send witnesses");
     }
 
-    async fn send_health_check(&mut self, _health_checks: HealthChecks) -> Result<()> {
+    async fn send_health_check(&mut self, _health_checks: HealthChecks<ClientId>) -> Result<()> {
         bail!("Server does not send health checks");
     }
 
@@ -166,6 +166,10 @@ impl App {
         init_min_clients: Option<u16>,
         withdraw_on_disconnect: bool,
     ) -> Result<Self> {
+        if !coordinator.config.check() {
+            bail!("Coordinator sanity check failed");
+        }
+
         async {
             Self::reset_ephemeral(&mut coordinator);
 

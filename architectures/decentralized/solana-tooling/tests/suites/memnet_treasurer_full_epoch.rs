@@ -190,14 +190,12 @@ pub async fn run() {
                 max_round_train_time: 3,
                 round_witness_time: 1,
                 min_clients: 1,
-                batches_per_round: 1,
-                data_indicies_per_batch: 1,
+                global_batch_size: 1,
                 verification_percent: 0,
                 witness_nodes: 0,
                 witness_quorum: 0,
-                rounds_per_epoch: 1,
+                rounds_per_epoch: 4,
                 total_steps: 100,
-                overlapped: false.into(),
                 checkpointers: FixedVec::zeroed(),
             }),
             model: Some(Model::LLM(LLM {
@@ -295,37 +293,39 @@ pub async fn run() {
     .await
     .unwrap();
 
-    // Witness
-    process_coordinator_witness(
-        &mut endpoint,
-        &payer,
-        &client,
-        &coordinator_instance,
-        &coordinator_account,
-        &Witness {
-            proof: WitnessProof {
-                witness: true,
-                position: 0,
-                index: 0,
+    for _ in 0..4 {
+        // Witness
+        process_coordinator_witness(
+            &mut endpoint,
+            &payer,
+            &client,
+            &coordinator_account,
+            run_id,
+            &Witness {
+                proof: WitnessProof {
+                    witness: true.into(),
+                    position: 0,
+                    index: 0,
+                },
+                participant_bloom: Default::default(),
+                batch_bloom: Default::default(),
             },
-            participant_bloom: Default::default(),
-            order_bloom: Default::default(),
-        },
-    )
-    .await
-    .unwrap();
+        )
+        .await
+        .unwrap();
 
-    // Tick from witness to cooldown
-    endpoint.forward_clock_unix_timestamp(10).await.unwrap();
-    process_coordinator_tick(
-        &mut endpoint,
-        &payer,
-        &ticker,
-        &coordinator_instance,
-        &coordinator_account,
-    )
-    .await
-    .unwrap();
+        // Tick from witness to train (or cooldown on the last one)
+        endpoint.forward_clock_unix_timestamp(2).await.unwrap();
+        process_coordinator_tick(
+            &mut endpoint,
+            &payer,
+            &ticker,
+            &coordinator_account,
+            run_id,
+        )
+        .await
+        .unwrap();
+    }
 
     // Not yet earned the credit, claiming anything should fail
     process_treasurer_participant_claim(

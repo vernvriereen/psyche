@@ -104,7 +104,7 @@ build_docker_test_client:
 # Setup the infrastructure for testing locally using Docker.
 setup_test_infra num_clients="1":
     cd architectures/decentralized/solana-coordinator && anchor keys sync && anchor build --no-idl
-    cd docker/test && COMPOSE_BAKE=true docker compose build
+    cd docker/test && docker compose build
     cd docker/test && NUM_REPLICAS={{num_clients}} docker compose up -d --force-recreate
 
 stop_test_infra:
@@ -113,19 +113,13 @@ stop_test_infra:
 # Setup clients assigning one available GPU to each of them.
 # There's no way to do this using the replicas from docker-compose file, so we have to do it manually.
 setup_clients num_clients="1": build_docker_test_client
-    ./scripts/train-multiple-gpu.sh {{num_clients}}
+    ./scripts/train-multiple-gpu-localnet.sh {{num_clients}}
 
-# Run a client to start training inside a Docker container.
-run_docker_client:
+# Build the docker psyche client
+build_docker_psyche_client:
+    ./scripts/coordinator-address-check.sh
     docker build -t psyche-base -f docker/psyche_base.Dockerfile .
-    docker build -t psyche-client -f docker/test/psyche_test_client.Dockerfile .
-    docker run --rm \
-      --gpus all \
-      -e NVIDIA_DRIVER_CAPABILITIES=all \
-      --add-host host.docker.internal:host-gateway \
-      -v ~/.config/solana/id.json:/usr/local/id.json \
-      --env-file config/client/.env \
-      psyche-client
+    docker build -t psyche-client -f docker/psyche_client.Dockerfile .
 
 clean_stale_images:
     docker rmi $(docker images -f dangling=true -q)

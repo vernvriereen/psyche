@@ -90,14 +90,12 @@ pub async fn run() {
             max_round_train_time: 3,
             round_witness_time: 1,
             min_clients: 1,
-            batches_per_round: 1,
-            data_indicies_per_batch: 1,
+            global_batch_size: 1,
             verification_percent: 0,
             witness_nodes: 0,
             witness_quorum: 0,
             rounds_per_epoch: 10,
             total_steps: 100,
-            overlapped: false.into(),
             checkpointers: FixedVec::zeroed(),
         }),
         Some(Model::LLM(LLM {
@@ -255,12 +253,12 @@ pub async fn run() {
     // Check that only the right user can successfully send a witness
     let witness = Witness {
         proof: WitnessProof {
-            witness: true,
+            witness: true.into(),
             position: 0,
             index: 0,
         },
         participant_bloom: Default::default(),
-        order_bloom: Default::default(),
+        batch_bloom: Default::default(),
     };
     assert!(process_coordinator_witness(
         &mut endpoint,

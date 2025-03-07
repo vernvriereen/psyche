@@ -44,6 +44,7 @@ unsafe impl ZeroableInOption for Model {}
 #[repr(C)]
 pub enum LLMArchitecture {
     HfLlama,
+    HfDeepseek,
 }
 
 #[derive(

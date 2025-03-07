@@ -15,9 +15,7 @@ use anchor_client::{
 use anyhow::{bail, Context, Result};
 use bytemuck::Zeroable;
 use clap::{Args, Parser, Subcommand};
-use psyche_client::{
-    exercise_sdpa_if_needed, print_identity_keys, read_identity_secret_key, TrainArgs,
-};
+use psyche_client::{print_identity_keys, read_identity_secret_key, TrainArgs};
 use psyche_coordinator::{model::Model, CoordinatorConfig};
 use psyche_network::SecretKey;
 use psyche_solana_coordinator::ClientId;
@@ -278,7 +276,7 @@ async fn async_main() -> Result<()> {
             args,
             ticker,
         } => {
-            exercise_sdpa_if_needed();
+            psyche_client::prepare_environment();
 
             let hub_read_token = std::env::var("HF_TOKEN").ok();
             let checkpoint_upload_info = args.checkpoint_config()?;

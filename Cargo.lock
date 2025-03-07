@@ -6733,6 +6733,7 @@ dependencies = [
  "memmap2 0.9.5",
  "psyche-core",
  "psyche-data-provider",
+ "psyche-tui",
  "rand 0.8.5",
  "safetensors",
  "serde",

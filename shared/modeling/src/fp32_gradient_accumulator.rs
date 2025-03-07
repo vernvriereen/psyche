@@ -1,3 +1,6 @@
+use crate::{AllReduce, Communicator, ReduceType};
+
+use std::sync::Arc;
 use tch::{Device, Kind, Tensor};
 
 pub struct Fp32GradientAccumulator {
@@ -59,5 +62,9 @@ impl Fp32GradientAccumulator {
 
     pub fn get_full_grad_buffer(&self) -> &Tensor {
         &self.fp32_grads
+    }
+
+    pub fn reduce_gradients(&mut self, comm: Arc<Communicator>) {
+        self.fp32_grads.all_reduce_(&Some(comm), ReduceType::Avg);
     }
 }

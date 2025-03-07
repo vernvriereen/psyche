@@ -11,7 +11,6 @@ use p2p_model_sharing::{
 use router::Router;
 use state::State;
 use std::{
-    collections::HashSet,
     fmt::Debug,
     marker::PhantomData,
     net::{Ipv4Addr, SocketAddrV4},
@@ -28,7 +27,7 @@ use tokio::{
     time::{interval, Interval},
 };
 use tokio_util::time::FutureExt;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 use util::{fmt_relay_mode, gossip_topic};
 
 pub use ed25519::Signature;
@@ -259,13 +258,15 @@ where
         self.gossip_tx.broadcast(encoded_message).await
     }
 
-    pub async fn start_download(&mut self, ticket: BlobTicket) -> Result<()> {
+    pub async fn start_download(&mut self, ticket: BlobTicket, tag: u32) -> Result<()> {
         let mut progress = self
             .blobs
             .client()
             .download(ticket.hash(), ticket.node_addr().clone())
             .await?;
-        self.state.currently_sharing_blobs.insert(ticket.hash());
+        let hash = ticket.hash();
+        self.state.currently_sharing_blobs.insert(hash);
+        self.state.blob_tags.insert((tag, hash));
 
         let (tx, rx) = mpsc::unbounded_channel();
 
@@ -282,12 +283,12 @@ where
             }
         });
 
-        self.download_manager.add(ticket, rx);
+        self.download_manager.add(ticket, tag, rx);
 
         Ok(())
     }
 
-    pub async fn add_downloadable(&mut self, data: Download) -> Result<BlobTicket> {
+    pub async fn add_downloadable(&mut self, data: Download, tag: u32) -> Result<BlobTicket> {
         let bytes = postcard::to_allocvec(&data)?;
         let blob_res = self.blobs.client().add_bytes(bytes).await?;
         let addr = self.router.endpoint().node_addr().await?;
@@ -299,21 +300,43 @@ where
             blob_res.size
         );
 
-        self.state
-            .currently_sharing_blobs
-            .insert(blob_ticket.hash());
+        let hash = blob_ticket.hash();
+        self.state.currently_sharing_blobs.insert(hash);
+        self.state.blob_tags.insert((tag, hash));
 
         Ok(blob_ticket)
     }
 
-    pub async fn remove_downloadable(&mut self, hash: iroh_blobs::Hash) -> Result<()> {
-        self.blobs.client().delete_blob(hash).await?;
-        self.state.currently_sharing_blobs.remove(&hash);
-        Ok(())
+    // TODO: there must be some clever way to do this using Iroh-blobs' built-in tagging system & GC.
+    pub fn remove_blobs_with_tag_less_than(&mut self, tag: u32) {
+        self.state.blob_tags.retain(|(t, _)| *t >= tag);
+        self.cleanup_untagged_blogs();
+    }
+    pub fn cleanup_untagged_blogs(&mut self) {
+        let expired_blobs: Vec<_> = self
+            .state
+            .currently_sharing_blobs
+            .iter()
+            .filter(|a| !self.state.blob_tags.iter().any(|(_, b)| *a == b))
+            .copied()
+            .collect();
+        for hash in expired_blobs.iter() {
+            self.state.currently_sharing_blobs.remove(hash);
+        }
+        let client = self.blobs.client().clone();
+        tokio::task::spawn(async move {
+            for hash in expired_blobs {
+                if let Err(err) = client.delete_blob(hash).await {
+                    warn!("error deleting blob {hash}: {err}")
+                }
+            }
+        });
     }
 
-    pub fn currently_sharing_blobs(&self) -> &HashSet<iroh_blobs::Hash> {
-        &self.state.currently_sharing_blobs
+    // TODO: there must be some clever way to do this using Iroh-blobs' built-in tagging system & GC.
+    pub fn remove_blobs_with_tag_equal_to(&mut self, tag: u32) {
+        self.state.blob_tags.retain(|(t, _)| *t != tag);
+        self.cleanup_untagged_blogs();
     }
 
     pub async fn node_addr(&self) -> Result<NodeAddr> {
@@ -410,7 +433,8 @@ where
                 }
             };
 
-            self.download_manager.read(update.blob_ticket, download);
+            self.download_manager
+                .read(update.blob_ticket, update.tag, download);
         } else {
             self.state.download_progesses.insert(hash, update);
         }

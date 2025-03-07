@@ -144,31 +144,35 @@ pub mod psyche_solana_coordinator {
         ctx: Context<PermissionlessCoordinatorAccounts>,
         proof: WitnessProof,
         participant_bloom: WitnessBloom,
-        order_bloom: WitnessBloom,
+        batch_bloom: WitnessBloom,
     ) -> Result<()> {
         ctx.accounts.account.load_mut()?.state.witness(
             ctx.accounts.user.key,
             Witness {
                 proof,
                 participant_bloom,
-                order_bloom,
+                batch_bloom,
             },
         )
     }
 
     pub fn health_check(
         ctx: Context<PermissionlessCoordinatorAccounts>,
+        id: ClientId,
         committee: Committee,
         position: u64,
         index: u64,
     ) -> Result<()> {
         ctx.accounts.account.load_mut()?.state.health_check(
             ctx.accounts.user.key,
-            vec![CommitteeProof {
-                committee,
-                position,
-                index,
-            }],
+            vec![(
+                id,
+                CommitteeProof {
+                    committee,
+                    position,
+                    index,
+                },
+            )],
         )
     }
 }

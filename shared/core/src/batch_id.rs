@@ -1,24 +1,10 @@
-use std::fmt;
+use crate::ClosedInterval;
 
-use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use serde::{Deserialize, Serialize};
+use std::{fmt, ops::RangeInclusive};
 
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    Hash,
-    Clone,
-    Copy,
-    PartialOrd,
-    Ord,
-    AnchorDeserialize,
-    AnchorSerialize,
-    Serialize,
-    Deserialize,
-    InitSpace,
-)]
-pub struct BatchId(u64);
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct BatchId(pub ClosedInterval<u64>);
 
 impl fmt::Display for BatchId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -26,14 +12,13 @@ impl fmt::Display for BatchId {
     }
 }
 
-impl From<BatchId> for u64 {
-    fn from(batch_id: BatchId) -> Self {
-        batch_id.0
-    }
-}
-
 impl BatchId {
-    pub fn from_u64(b: u64) -> Self {
-        Self(b)
+    pub fn iter(&self) -> RangeInclusive<u64> {
+        self.0.start..=self.0.end
+    }
+
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        (self.0.end - self.0.start + 1) as usize
     }
 }

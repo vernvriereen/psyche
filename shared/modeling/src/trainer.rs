@@ -1,6 +1,6 @@
 use crate::{
-    unsharded_cpu_variables, CausalLM, Communicator, DistroResult, EosToks,
-    Fp32GradientAccumulator, Optimizer,
+    unsharded_cpu_variables, AllReduce, CausalLM, Communicator, CommunicatorId, CudaSynchronize,
+    Distro, DistroResult, EosToks, Fp32GradientAccumulator, Optimizer, ReduceType,
 };
 use anyhow::{Error, Result};
 use psyche_core::{
@@ -12,10 +12,13 @@ use std::{
     sync::{mpsc, Arc},
     time::Instant,
 };
-use tch::{Device, Tensor};
+use tch::{Device, Kind, Tensor};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
+
+#[cfg(feature = "parallelism")]
+use tch::CNCCL;
 
 pub type ParallelModels = Vec<Box<dyn CausalLM>>;
 pub type DistroResults = Vec<DistroResult>;
@@ -69,7 +72,6 @@ impl Batch {
     }
 }
 
-#[derive(Debug)]
 pub struct TrainOutput {
     pub batch_id: BatchId,
     pub trainer: Trainer,
@@ -79,12 +81,22 @@ pub struct TrainOutput {
     pub cancelled: bool,
 }
 
+#[derive(Clone, Debug)]
+pub struct DataParallel {
+    pub id: Arc<CommunicatorId>,
+    pub barrier: Arc<CancellableBarrier>,
+    pub rank: usize,
+    pub world_size: usize,
+}
+
 enum ParallelAssignment {
     Train {
         batch: Batch,
         step: u32,
+        #[allow(unused)]
         rollback: Vec<(u32, Vec<DistroResults>)>,
         cancel_training: CancellationToken,
+        prev_self_distro_results: Option<Vec<DistroResults>>,
     },
     Optimize {
         distro_results: Option<Vec<DistroResults>>,
@@ -122,6 +134,7 @@ pub struct Trainer {
     )>,
     first_model_device: Device,
     barrier: Arc<CancellableBarrier>,
+    data_parallel: Option<Vec<DataParallel>>,
 }
 
 #[derive(Debug, Error)]
@@ -137,6 +150,7 @@ pub enum TrainerThreadCommunicationError {
 }
 
 impl Trainer {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         models: ParallelModels,
         lr_scheduler: LearningRateSchedule,
@@ -145,6 +159,7 @@ impl Trainer {
         stats: Option<u32>,
         grad_accum_in_fp32: bool,
         warmup_starting_at_step: Option<u32>,
+        data_parallel: Option<Vec<DataParallel>>,
     ) -> Self {
         assert!(!models.is_empty());
         let first_model_device = models[0].device();
@@ -153,7 +168,18 @@ impl Trainer {
 
         let barrier = CancellableBarrier::new(models.len());
 
-        for (index, model) in models.into_iter().enumerate() {
+        let data_parallels = match &data_parallel {
+            Some(data_parallel) => {
+                assert_eq!(data_parallel.len(), models.len());
+                data_parallel
+                    .iter()
+                    .map(|x| Some(x.clone()))
+                    .collect::<Vec<_>>()
+            }
+            None => std::iter::repeat_n(None, models.len()).collect(),
+        };
+
+        for (index, (model, data_parallel)) in models.into_iter().zip(data_parallels).enumerate() {
             let (assignment_tx, assignment_rx) = mpsc::channel();
             let (result_tx, result_rx) = mpsc::channel();
             ret.push((assignment_tx, result_rx));
@@ -171,6 +197,7 @@ impl Trainer {
                     step,
                 )
             });
+            let data_parallel = data_parallel.clone();
 
             std::thread::spawn(move || {
                 Self::model_thread(
@@ -185,6 +212,7 @@ impl Trainer {
                     stats,
                     grad_accum_in_fp32,
                     lr_warmup,
+                    data_parallel,
                 )
             });
         }
@@ -193,6 +221,7 @@ impl Trainer {
             models: ret,
             first_model_device,
             barrier,
+            data_parallel,
         }
     }
 
@@ -201,10 +230,14 @@ impl Trainer {
         inputs: Tensor,
         barrier: &Arc<CancellableBarrier>,
         loss_scale: Option<f64>,
-    ) -> Result<Option<f32>> {
+    ) -> Result<Option<Tensor>> {
         let targets = inputs.copy();
         if barrier.wait().is_err() {
             return Ok(None);
+        }
+        let device = inputs.device();
+        if device.is_cuda() {
+            device.cuda_synchronize();
         }
         let (_, loss) = model.forward(&inputs, Some(&targets), None);
         let mut loss = loss.ok_or(Error::msg("No loss"))?;
@@ -218,7 +251,7 @@ impl Trainer {
         if barrier.wait().is_err() {
             return Ok(None);
         }
-        Ok(Some(loss.detach().try_into()?))
+        Ok(Some(loss.detach()))
     }
 
     fn forward(
@@ -235,6 +268,10 @@ impl Trainer {
         if barrier.wait().is_err() {
             return None;
         }
+        let device = inputs.device();
+        if device.is_cuda() {
+            device.cuda_synchronize();
+        }
         let (logits, loss) = model.forward(&inputs, labels.as_ref(), num_logits_to_keeep);
         if barrier.wait().is_err() {
             return None;
@@ -247,6 +284,7 @@ impl Trainer {
         step: u32,
         data: Batch,
         rollback: Vec<(u32, Vec<DistroResults>)>,
+        prev_self_distro_results: Option<Vec<DistroResults>>,
         cancel_training: CancellationToken,
     ) -> Result<TrainOutput, TrainerThreadCommunicationError> {
         if !rollback.is_empty() {
@@ -260,6 +298,7 @@ impl Trainer {
                 batch: data.clone(),
                 step,
                 rollback: rollback.clone(),
+                prev_self_distro_results: prev_self_distro_results.clone(),
                 cancel_training: cancel_training.clone(),
             })
             .map_err(|_| TrainerThreadCommunicationError::SendCommand)?;
@@ -362,6 +401,19 @@ impl Trainer {
         Ok(extracted)
     }
 
+    pub fn quantize_results(results: &DistroResults) -> DistroResults {
+        results
+            .iter()
+            .map(|x| DistroResult {
+                sparse_idx: x.sparse_idx.copy(),
+                sparse_val: Distro::quantize_nozeros_tensor_to_boolean_sign(&x.sparse_val),
+                xshape: x.xshape.clone(),
+                totalk: x.totalk,
+                stats: x.stats.clone(),
+            })
+            .collect()
+    }
+
     // todo: refactor args into a struct
     #[allow(clippy::too_many_arguments)]
     fn model_thread(
@@ -376,39 +428,68 @@ impl Trainer {
         optim_stats_every_n_steps: Option<u32>,
         grad_accum_in_fp32: bool,
         lr_warmup: Option<(psyche_core::ConstantLR, u32)>,
+        data_parallel_def: Option<DataParallel>,
     ) {
+        #[allow(unused_mut)]
+        let mut data_parallel: Option<(Arc<Communicator>, Arc<CancellableBarrier>)> = None;
+
+        #[cfg(feature = "parallelism")]
+        if let Some(data_parallel_def) = data_parallel_def {
+            let comm = match CNCCL::new(
+                data_parallel_def.id,
+                data_parallel_def.rank as i64,
+                data_parallel_def.world_size as i64,
+                model.device(),
+            ) {
+                Ok(comm) => comm,
+                Err(err) => {
+                    error!("Error creating DP mesh: {}", err);
+                    return;
+                }
+            };
+            data_parallel = Some((Arc::new(comm), data_parallel_def.barrier))
+        };
+
+        #[cfg(not(feature = "parallelism"))]
+        if data_parallel_def.is_some() {
+            error!("DP with parallelism feature off");
+            return;
+        }
+
         if barrier.wait().is_err() {
             error!("Incorrect model_thread boot");
             return;
         }
         model.prepare_for_training();
+
         let mut grad_accum: Option<Fp32GradientAccumulator> = None;
         loop {
             match assignment.recv() {
                 Ok(ParallelAssignment::Train {
                     batch,
                     step,
-                    rollback,
+                    rollback: _,
+                    prev_self_distro_results,
                     cancel_training,
                 }) => {
-                    for (step, result) in rollback.iter().rev() {
-                        // TODO freeze the optimizer and prevent this from modifying its internal state, methinks, right? or maybe save it and restore it later?
-                        // we just want to have the same optimizer state wyhen we exit, save for the main operation (if not frozen. hmm)
-                        let lr = lr_scheduler.get_lr(*step);
-                        if optimize_step(&mut model, lr, &mut optimizer, Some(result), &barrier)
-                            .is_break()
-                        {
-                            panic!("Failed to roll back.")
-                        };
-                    }
+                    // this needs even more work for overlapped
+                    // for (step, result) in rollback.iter().rev() {
+                    //     // TODO freeze the optimizer and prevent this from modifying its internal state, methinks, right? or maybe save it and restore it later?
+                    //     // we just want to have the same optimizer state wyhen we exit, save for the main operation (if not frozen. hmm)
+                    //     let lr = lr_scheduler.get_lr(*step);
+                    //     if optimize_step(&mut model, lr, &mut optimizer, Some(result), &barrier)
+                    //         .is_break()
+                    //     {
+                    //         panic!("Failed to roll back.")
+                    //     };
+                    // }
 
                     let batch_size = batch.data.size();
-                    if micro_batch_size > 0 && batch_size % micro_batch_size != 0 {
-                        error!("Micro batch size {micro_batch_size} doesn't evenly divide batch size {batch_size}");
-                        return;
-                    }
 
-                    let grad_accum_steps = batch_size / micro_batch_size;
+                    let mut grad_accum_steps = batch_size / micro_batch_size;
+                    if batch_size % micro_batch_size != 0 {
+                        grad_accum_steps += 1;
+                    }
                     if grad_accum_in_fp32 && grad_accum_steps != 1 && grad_accum.is_none() {
                         debug!("Allocating FP32 gradient accumulator");
                         grad_accum = Some(Fp32GradientAccumulator::new(
@@ -420,7 +501,7 @@ impl Trainer {
 
                     let micro_batches = match batch.data {
                         BatchData::CPU(data) => data
-                            .chunks_exact(micro_batch_size)
+                            .chunks(micro_batch_size)
                             .map(|chunk| Tensor::from_slice2(chunk).to(model.device()))
                             .collect::<Vec<_>>(),
                         BatchData::GPU(tensor) => tensor.chunk(grad_accum_steps as i64, 0),
@@ -430,13 +511,37 @@ impl Trainer {
                     if let Some(grad_accum) = &mut grad_accum {
                         grad_accum.zero_grad();
                     }
-                    match &mut optimizer {
-                        Optimizer::Torch { optimizer, .. } => optimizer.zero_grad().unwrap(),
-                        Optimizer::Distro { optimizer, .. } => optimizer.zero_grad(),
-                        _ => (),
+
+                    let lr = match &lr_warmup {
+                        Some((warmup_scheduler, warmup_start_step)) => {
+                            match step - warmup_start_step <= warmup_scheduler.get_warmup_steps() {
+                                true => warmup_scheduler.get_lr(step - warmup_start_step),
+                                false => lr_scheduler.get_lr(step),
+                            }
+                        }
+                        None => lr_scheduler.get_lr(step),
                     };
 
-                    let mut loss = 0f32;
+                    match &mut optimizer {
+                        Optimizer::Torch { optimizer, .. } => optimizer.zero_grad().unwrap(),
+                        Optimizer::Distro { optimizer, .. } => {
+                            optimizer.zero_grad();
+                            match prev_self_distro_results {
+                                Some(prev_self_distro_results) => {
+                                    optimizer.error_correction(&prev_self_distro_results, lr)
+                                }
+                                None => {
+                                    error!(
+                                        "Got DisTrO train assignment, but null previous results"
+                                    );
+                                    return;
+                                }
+                            };
+                        }
+                        Optimizer::Null => {}
+                    };
+
+                    let mut loss = None;
                     let mut cancelled = false;
                     for micro_batch in micro_batches {
                         if cancel_training.is_cancelled() {
@@ -451,7 +556,12 @@ impl Trainer {
                             &barrier,
                             Some(grad_accum_divisor),
                         ) {
-                            Ok(Some(batch_loss)) => loss += batch_loss,
+                            Ok(Some(batch_loss)) => match loss.as_mut() {
+                                Some(loss) => *loss += batch_loss,
+                                None => {
+                                    loss = Some(batch_loss);
+                                }
+                            },
                             Ok(None) => {
                                 // cancelled barrier catching race to on run_state
                                 cancelled = true;
@@ -471,15 +581,29 @@ impl Trainer {
                         grad_accum.apply_accumulation();
                     }
 
-                    let lr = match &lr_warmup {
-                        Some((warmup_scheduler, warmup_start_step)) => {
-                            match step - warmup_start_step <= warmup_scheduler.get_warmup_steps() {
-                                true => warmup_scheduler.get_lr(step - warmup_start_step),
-                                false => lr_scheduler.get_lr(step),
+                    // reduce grads across DP ranks
+                    if let Some((dp_comm, dp_barrier)) = &data_parallel {
+                        dp_barrier.wait().unwrap(); // cannot cancel dp
+                        match &mut grad_accum {
+                            Some(grad_accum) => grad_accum.reduce_gradients(dp_comm.clone()),
+                            None => {
+                                for variable in model.variables().trainable_variables() {
+                                    let mut grad = variable.grad();
+                                    if grad.defined() {
+                                        // reduce grads in fp32
+                                        let mut fp32_grad = grad.to_kind(Kind::Float);
+                                        fp32_grad
+                                            .all_reduce_(&Some(dp_comm.clone()), ReduceType::Avg);
+                                        grad.copy_(&fp32_grad.to_kind(grad.kind()));
+                                    }
+                                }
                             }
                         }
-                        None => lr_scheduler.get_lr(step),
-                    };
+                        if let Some(loss) = loss.as_mut() {
+                            loss.all_reduce_(&Some(dp_comm.clone()), ReduceType::Avg);
+                        }
+                        dp_barrier.wait().unwrap(); // cannot cancel dp
+                    }
 
                     let distro_results = match cancelled {
                         false => match &mut optimizer {
@@ -494,7 +618,7 @@ impl Trainer {
                                 compression_topk,
                                 compression_topk_startup,
                                 compression_topk_startup_steps,
-                                quantize_1bit,
+                                quantize_1bit: _,
                             } => {
                                 let clipped = match clip_grad_norm {
                                     Some(clip_grad_norm) => match barrier.wait() {
@@ -519,7 +643,6 @@ impl Trainer {
                                             true => *compression_topk_startup,
                                             false => *compression_topk,
                                         },
-                                        *quantize_1bit,
                                         optim_stats_every_n_steps
                                             .map(|stats| step % stats == 0)
                                             .unwrap_or(false),
@@ -540,7 +663,10 @@ impl Trainer {
                     };
                     if submission
                         .send(ParallelResult::Train {
-                            loss,
+                            loss: match loss {
+                                Some(loss) => loss.try_into().unwrap_or(0.),
+                                None => 0.,
+                            },
                             distro_results,
                             cancelled,
                         })
@@ -549,15 +675,15 @@ impl Trainer {
                         return;
                     }
 
-                    for (_, result) in rollback.iter() {
-                        // TODO freeze the optimizer and prevent this from modifying its internal state, methinks, right? or maybe save it and restore it later?
-                        // we just want to have the same optimizer state wyhen we exit, save for the main operation (if not frozen. hmm)
-                        if optimize_step(&mut model, lr, &mut optimizer, Some(result), &barrier)
-                            .is_break()
-                        {
-                            panic!("Failed to roll forwards.")
-                        };
-                    }
+                    // for (_, result) in rollback.iter() {
+                    //     // TODO freeze the optimizer and prevent this from modifying its internal state, methinks, right? or maybe save it and restore it later?
+                    //     // we just want to have the same optimizer state wyhen we exit, save for the main operation (if not frozen. hmm)
+                    //     if optimize_step(&mut model, lr, &mut optimizer, Some(result), &barrier)
+                    //         .is_break()
+                    //     {
+                    //         panic!("Failed to roll forwards.")
+                    //     };
+                    // }
                 }
                 Ok(ParallelAssignment::Optimize {
                     distro_results,
@@ -631,6 +757,21 @@ impl Trainer {
 
     pub fn device(&self) -> &Device {
         &self.first_model_device
+    }
+
+    pub fn data_parallel_barrier(&self) {
+        if let Some(data_parallel) = &self.data_parallel {
+            for dp in data_parallel {
+                dp.barrier.reset();
+            }
+        }
+    }
+
+    pub fn data_parallel_world_size(&self) -> usize {
+        self.data_parallel
+            .as_ref()
+            .and_then(|x| x.first().map(|y| y.world_size))
+            .unwrap_or(1)
     }
 }
 

@@ -8,13 +8,11 @@ rounds_per_epoch = 20
 max_round_train_time = 5
 round_witness_time = 2
 min_clients = 2
-batches_per_round = 4
-data_indicies_per_batch = 1
+global_batch_size = 4
 verification_percent = 0
 witness_nodes = 1
 witness_quorum = 1
 total_steps = 10
-overlapped = 0
 
 [model.LLM]
 architecture = "HfLlama"

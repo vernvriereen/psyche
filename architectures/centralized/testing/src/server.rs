@@ -64,25 +64,22 @@ impl CoordinatorServer {
     pub async fn new(
         query_chan_receiver: Receiver<TestingQueryMsg>,
         init_min_clients: u16,
-        batches_per_round: u16,
-        data_indicies_per_batch: u16,
+        global_batch_size: u16,
         witness_nodes: u16,
         witness_quorum: u16,
     ) -> Self {
         let coordinator_config = CoordinatorConfig {
             warmup_time: WARMUP_TIME,
             cooldown_time: COOLDOWN_TIME,
-            rounds_per_epoch: 2,
+            rounds_per_epoch: 4,
             max_round_train_time: MAX_ROUND_TRAIN_TIME,
             round_witness_time: ROUND_WITNESS_TIME,
             min_clients: init_min_clients,
-            batches_per_round,
-            data_indicies_per_batch,
+            global_batch_size,
             verification_percent: 0,
             witness_nodes,
             witness_quorum,
             total_steps: 10,
-            overlapped: false.into(),
             ..CoordinatorConfig::<ClientId>::zeroed()
         };
 
@@ -194,8 +191,7 @@ pub struct CoordinatorServerHandle {
 impl CoordinatorServerHandle {
     pub async fn new(
         init_min_clients: u16,
-        batches_per_round: u16,
-        data_indicies_per_batch: u16,
+        global_batch_size: u16,
         witness_nodes: u16,
         witness_quorum: u16,
     ) -> Self {
@@ -204,8 +200,7 @@ impl CoordinatorServerHandle {
         let mut server = CoordinatorServer::new(
             query_chan_receiver,
             init_min_clients,
-            batches_per_round,
-            data_indicies_per_batch,
+            global_batch_size,
             witness_nodes,
             witness_quorum,
         )

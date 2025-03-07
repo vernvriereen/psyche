@@ -76,7 +76,7 @@ async fn test_http_data_provider() -> Result<()> {
     println!("first sequence..");
     let samples = timeout(
         Duration::from_secs(2),
-        provider.get_samples(&[BatchId::from_u64(0)]),
+        provider.get_samples(BatchId((0, 0).into())),
     )
     .await??;
 
@@ -96,7 +96,7 @@ async fn test_http_data_provider() -> Result<()> {
     println!("second sequence..");
     let last_sequence_first_file = timeout(
         Duration::from_secs(5),
-        provider.get_samples(&[BatchId::from_u64(1)]),
+        provider.get_samples(BatchId((1, 1).into())),
     )
     .await??;
 
@@ -136,12 +136,10 @@ async fn test_http_data_provider_shuffled() -> Result<()> {
         Shuffle::Seeded(seed),
     )?;
 
+    let batch_id = BatchId((0, 0).into());
+
     // Test first sequence with first provider
-    let samples = timeout(
-        Duration::from_secs(2),
-        provider.get_samples(&[BatchId::from_u64(0)]),
-    )
-    .await??;
+    let samples = timeout(Duration::from_secs(2), provider.get_samples(batch_id)).await??;
 
     // Create second provider with same seed
     let mut provider2 = HttpDataProvider::new(
@@ -156,11 +154,7 @@ async fn test_http_data_provider_shuffled() -> Result<()> {
     )?;
 
     // Test first sequence with second provider
-    let samples2 = timeout(
-        Duration::from_secs(2),
-        provider2.get_samples(&[BatchId::from_u64(0)]),
-    )
-    .await??;
+    let samples2 = timeout(Duration::from_secs(2), provider2.get_samples(batch_id)).await??;
 
     // Sequences should be equal when using same seed
     assert_eq!(samples, samples2);
@@ -178,11 +172,7 @@ async fn test_http_data_provider_shuffled() -> Result<()> {
     )?;
 
     // Test first sequence with third provider
-    let samples3 = timeout(
-        Duration::from_secs(2),
-        provider3.get_samples(&[BatchId::from_u64(0)]),
-    )
-    .await??;
+    let samples3 = timeout(Duration::from_secs(2), provider3.get_samples(batch_id)).await??;
 
     // Sequences should be different between shuffled and non-shuffled
     assert_ne!(samples, samples3);

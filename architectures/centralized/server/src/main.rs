@@ -76,7 +76,7 @@ struct RunArgs {
     #[clap(long)]
     init_min_clients: Option<u16>,
 
-    /// Allows clients to withdraw if they need to disconnect from the run (this option has no effect in the centralized version).
+    /// Automatically withdraw clients that disconenct from the server
     #[clap(
         long,
         action = ArgAction::Set,
