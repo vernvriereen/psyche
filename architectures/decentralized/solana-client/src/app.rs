@@ -185,11 +185,6 @@ impl App {
                 "Joined run {} from {} with transaction {}",
                 self.run_id, signer, joined
             );
-            info!(
-                join_run = "join_run",
-                run_id = %self.run_id,
-                client_id = %signer,
-            );
             already_joined_next_run = true;
         } else {
             info!("Waiting for the current epoch to end before joining.");
