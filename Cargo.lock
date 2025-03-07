@@ -2277,17 +2277,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d6ef0072f8a535281e4876be788938b528e9a1d43900b82c2569af7da799125"
 
 [[package]]
-name = "e2e_testing"
-version = "0.0.1"
-dependencies = [
- "bollard",
- "futures-util",
- "serde_json",
- "thiserror 2.0.11",
- "tokio",
-]
-
-[[package]]
 name = "eager"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6693,13 +6682,15 @@ version = "0.0.1"
 dependencies = [
  "anchor-client",
  "bollard",
- "e2e_testing",
+ "futures-util",
  "psyche-coordinator",
  "psyche-core",
  "psyche-solana-coordinator",
  "rstest",
+ "serde_json",
  "serial_test",
  "test-log",
+ "thiserror 2.0.11",
  "tokio",
  "tokio-util 0.7.13",
 ]
