@@ -5,6 +5,7 @@ use tokio::{
     sync::mpsc::{self},
     task::JoinHandle,
 };
+use tracing::{debug, info};
 
 use super::{
     evals::{EvalError, EvalRunner, MaybeRunningEvals, RunningEvals},
@@ -44,7 +45,7 @@ impl<T: NodeIdentity> WitnessStepMetadata<T> {
         _client_index: u64,
         _state: &Coordinator<T>,
         trainers: MaybeRunningEvals,
-        _previous_round: &mut RoundState<T>,
+        previous_round: &mut RoundState<T>,
         current_round: &mut RoundState<T>,
     ) -> Result<WitnessStep, WitnessingError> {
         if trainers.is_empty() {
@@ -53,8 +54,9 @@ impl<T: NodeIdentity> WitnessStepMetadata<T> {
 
         let evals = self.eval_runner.start_if_not_running(trainers);
 
-        let round_to_witness = current_round;
-        let sending_witness = if let Some(witness) = round_to_witness.get_witness_to_send() {
+        let sending_witness = if let Some(witness) =
+            WitnessStep::get_witness_to_send(previous_round, current_round)
+        {
             let tx_witness = self.tx_witness.clone();
             Some(tokio::task::spawn(async move {
                 tx_witness.send(witness).map_err(|_| WitnessingError::Send)
@@ -77,5 +79,34 @@ impl WitnessStep {
                 .map_err(|_| WitnessingError::SendThreadCrashed)??;
         }
         Ok(self.evals)
+    }
+
+    pub fn get_witness_to_send<T: NodeIdentity>(
+        previous_round: &mut RoundState<T>,
+        current_round: &mut RoundState<T>,
+    ) -> Option<Witness> {
+        if previous_round.sent_witness {
+            return None;
+        }
+
+        let (_, proof, _) = current_round.committee_info.as_ref()?;
+        if proof.witness.is_false() {
+            return None;
+        }
+
+        let blooms = previous_round.blooms;
+        let (participant_bloom, batch_bloom) = blooms.unwrap_or_default();
+
+        info!("Submitting witness blooms");
+        previous_round.sent_witness = true;
+
+        debug!("Participant bloom: {:?}", participant_bloom);
+        debug!("Batch bloom: {:?}", batch_bloom);
+
+        Some(Witness {
+            proof: *proof,
+            participant_bloom,
+            batch_bloom,
+        })
     }
 }

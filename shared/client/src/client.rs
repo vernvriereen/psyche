@@ -98,6 +98,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                 let mut retried_downloads: HashMap<psyche_network::Hash, usize> = HashMap::new();
                 let mut sharable_model = SharableModel::empty();
+                debug!("Starting client loop");
                 loop {
                     select! {
                         _ = cancel.cancelled() => {
@@ -116,7 +117,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 .map(|s| s.run_state.to_string())
                                 .unwrap_or_else(|| String::from(" - "));
 
-                            info!(
+                            trace!(
                                 client_id = %identity,
                                 old_state = old_run_state,
                                 new_state = new_state.run_state.to_string(),
@@ -137,9 +138,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             }
 
                             if old_state.map(|s| s.run_state) != Some(new_state.run_state) && new_state.run_state == RunState::RoundTrain {
-                                for blob in p2p.currently_sharing_blobs().clone() {
-                                    p2p.remove_downloadable(blob).await?;
-                                }
+                                let last_needed_step_blobs = new_state.progress.step.saturating_sub(2);
+                                p2p.remove_blobs_with_tag_less_than(last_needed_step_blobs);
                                 let p2p_info = get_p2p_info(&p2p).await?;
                                 run.set_node_info(p2p_info);
                             }
@@ -163,7 +163,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         match download_data {
                                             TransmittableDownload::DistroResult(distro_result) => {
                                                 trace!("Download complete: step {} batch id {}", distro_result.step, distro_result.batch_id);
-                                                run.apply_distro_result(hash, distro_result).await;
+                                                run.apply_distro_result(hash, distro_result, None).await;
                                             },
                                             TransmittableDownload::ModelParameter(parameter) => {
                                                 sharable_model.add_parameter(parameter)?;
@@ -184,7 +184,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         } else {
                                             info!("Download failed (retrying): {}", dl.error);
                                             retried_downloads.insert(dl.blob_ticket.hash(), retries + 1);
-                                            p2p.start_download(dl.blob_ticket).await?;
+                                            p2p.start_download(dl.blob_ticket, dl.tag).await?;
                                         }
                                     }
                                     NetworkEvent::ParameterRequest(parameter_name, protocol_req_tx) => {
@@ -199,7 +199,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                             },
                                             Ok(transmittable_parameter) => {
                                                  let transmittable_download = TransmittableDownload::ModelParameter(transmittable_parameter);
-                                            let ticket = p2p.add_downloadable(transmittable_download).await?;
+                                            // tag 0 means when we enter a train step, it'll get wiped.
+                                            let ticket = p2p.add_downloadable(transmittable_download, 0).await?;
 
                                             // TODO: Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
                                             // to the client
@@ -220,7 +221,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                             },
                                             Ok(sharable_config) => {
                                                 let transmittable_config = TransmittableDownload::ModelConfig(sharable_config);
-                                                let config_ticket = p2p.add_downloadable(transmittable_config).await?;
+                                                // tag 0 means when we enter a train step, it'll get wiped.
+                                                let config_ticket = p2p.add_downloadable(transmittable_config, 0).await?;
 
                                                 info!("Sending requested model config blob ticket");
                                                 if let Err(e) = protocol_req_tx.send(Ok(config_ticket)) {
@@ -237,9 +239,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             run.try_send_opportunistic_witness().await?;
                         }
 
-                        Some(DistroBroadcastAndPayload{ step, batch_id, commitment, proof, distro_result }) = rx_distro_result.recv() => {
+                        Some(DistroBroadcastAndPayload{ step, batch_id, commitment, proof, distro_result, original_distro_result }) = rx_distro_result.recv() => {
                             let transmittable_distro_result = TransmittableDownload::DistroResult(distro_result.clone());
-                            let ticket = p2p.add_downloadable(transmittable_distro_result).await?;
+                            let ticket = p2p.add_downloadable(transmittable_distro_result, step).await?;
                             let hash = ticket.hash();
                             debug!(
                                 "Broadcasting payload step {step} batch id {batch_id} hash 0x{}",
@@ -256,12 +258,15 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     identity, training_result
                                 ).await?;
 
-                                run.apply_distro_result(hash, distro_result).await;
+                                // VERY IMPORTANT -- we pass the "original" distro result, which is unquantized
+                                // even if quantization is turned on (distro_result is quantized).
+                                // this is because distro needs the unquantized version for lookahead
+                                run.apply_distro_result(hash, distro_result, Some(original_distro_result)).await;
                             }
                         }
 
-                        Some(download_ticket) = rx_request_download.recv() => {
-                            p2p.start_download(download_ticket).await?;
+                        Some((download_ticket, tag)) = rx_request_download.recv() => {
+                            p2p.start_download(download_ticket, tag).await?;
                         }
                         Some(witness) = rx_witness.recv() => {
                             watcher.backend_mut().send_witness(witness).await?;
@@ -393,7 +398,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             for peer_id in peer_ids_iter {
                                 match request_model(router.clone(), peer_id, ModelRequestType::Config).await {
                                     Ok(ticket) => {
-                                        p2p.start_download(ticket).await?;
+                                        // tag 0 means when we enter a train step, it'll get wiped.
+                                        p2p.start_download(ticket, 0).await?;
                                         break;
                                     }
                                     Err(err) => warn!("Error obtaining blob ticket for model config: {}", err),
@@ -402,7 +408,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         }
                         Some(param_blob_tickets) = rx_params_download.recv() => {
                             for ticket in param_blob_tickets {
-                                p2p.start_download(ticket).await?;
+                                // tag 0 means when we enter a train step, it'll get wiped.
+                                p2p.start_download(ticket, 0).await?;
                             }
                         }
                         else => break

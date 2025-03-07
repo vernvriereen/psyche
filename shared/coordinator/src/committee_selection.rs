@@ -2,7 +2,7 @@ use crate::{Client, Coordinator, CoordinatorError};
 
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::Zeroable;
-use psyche_core::{compute_shuffled_index, sha256, sha256v, NodeIdentity};
+use psyche_core::{compute_shuffled_index, sha256, sha256v, NodeIdentity, SmallBoolean};
 use serde::{Deserialize, Serialize};
 
 pub const COMMITTEE_SALT: &str = "committee";
@@ -68,12 +68,12 @@ pub struct CommitteeProof {
 )]
 #[repr(C)]
 pub struct WitnessProof {
-    // assertion of witness membership or non-membership
-    pub witness: bool,
     // position in virtual shuffle, as determined by seed
     pub position: u64,
     // index into epoch_state.clients of sender
     pub index: u64,
+    // assertion of witness membership or non-membership
+    pub witness: SmallBoolean,
 }
 
 impl CommitteeSelection {
@@ -116,11 +116,15 @@ impl CommitteeSelection {
 
     pub fn from_coordinator<T: NodeIdentity>(
         coordinator: &Coordinator<T>,
-        previous_round: bool,
-    ) -> std::result::Result<Self, CoordinatorError> {
-        let round = match previous_round {
-            true => coordinator.previous_round(),
-            false => coordinator.current_round(),
+        offset: isize,
+    ) -> Result<Self, CoordinatorError> {
+        let round = match offset {
+            -2 => coordinator.previous_previous_round(),
+            -1 => coordinator.previous_round(),
+            0 => coordinator.current_round(),
+            _ => {
+                return Err(CoordinatorError::NoActiveRound);
+            }
         }
         .ok_or(CoordinatorError::NoActiveRound)?;
         Self::new(
@@ -136,7 +140,7 @@ impl CommitteeSelection {
         let position = self.compute_shuffled_index(index, WITNESS_SALT);
         let witness = self.get_witness_from_position(position);
         WitnessProof {
-            witness,
+            witness: witness.into(),
             position,
             index,
         }
@@ -198,7 +202,8 @@ impl CommitteeSelection {
 
     fn verify_witness(&self, proof: &WitnessProof) -> bool {
         let position = self.compute_shuffled_index(proof.index, WITNESS_SALT);
-        proof.position == position && proof.witness == self.get_witness_from_position(position)
+        proof.position == position
+            && proof.witness == self.get_witness_from_position(position).into()
     }
 
     fn compute_shuffled_index(&self, index: u64, salt: &str) -> u64 {
@@ -276,7 +281,7 @@ mod tests {
             assert!(proof.position < 100);
 
             // Verify that the witness status matches the position
-            if proof.witness {
+            if proof.witness.is_true() {
                 assert!(proof.position < 20);
             } else {
                 assert!(proof.position >= 20);
@@ -346,7 +351,7 @@ mod tests {
         let mut witness_count = 0;
 
         for i in 0..100 {
-            if cs.get_witness(i).witness {
+            if cs.get_witness(i).witness.is_true() {
                 witness_count += 1;
             }
         }

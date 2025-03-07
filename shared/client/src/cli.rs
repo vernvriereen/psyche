@@ -205,7 +205,9 @@ impl TrainArgs {
     }
 }
 
-pub fn exercise_sdpa_if_needed() {
+pub fn prepare_environment() {
+    psyche_modeling::set_suggested_env_vars();
+
     #[cfg(target_os = "windows")]
     {
         // this is a gigantic hack to cover that called sdpa prints out

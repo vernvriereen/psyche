@@ -226,7 +226,7 @@ impl CoordinatorInstanceState {
         }
     }
 
-    pub fn health_check(&mut self, payer: &Pubkey, checks: HealthChecks) -> Result<()> {
+    pub fn health_check(&mut self, payer: &Pubkey, checks: HealthChecks<ClientId>) -> Result<()> {
         let id = self.clients_state.find_signer(payer)?;
 
         self.coordinator

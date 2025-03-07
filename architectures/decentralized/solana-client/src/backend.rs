@@ -18,6 +18,7 @@ use psyche_coordinator::{
     model::{self, Model},
     CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks, Witness,
 };
+use psyche_solana_coordinator::ClientId;
 use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
 use std::sync::Arc;
@@ -315,7 +316,7 @@ impl SolanaBackend {
             .args(psyche_solana_coordinator::instruction::Witness {
                 proof: witness.proof,
                 participant_bloom: witness.participant_bloom,
-                order_bloom: witness.order_bloom,
+                batch_bloom: witness.batch_bloom,
             })
             .send()
             .await?;
@@ -327,6 +328,7 @@ impl SolanaBackend {
         &self,
         instance: Pubkey,
         account: Pubkey,
+        id: ClientId,
         check: CommitteeProof,
     ) -> Result<Signature> {
         let signature = self
@@ -340,6 +342,7 @@ impl SolanaBackend {
                 },
             )
             .args(psyche_solana_coordinator::instruction::HealthCheck {
+                id,
                 committee: check.committee,
                 position: check.position,
                 index: check.index,
@@ -420,10 +423,13 @@ impl WatcherBackend<psyche_solana_coordinator::ClientId> for SolanaBackendRunner
         Ok(())
     }
 
-    async fn send_health_check(&mut self, checks: HealthChecks) -> Result<()> {
-        for check in checks {
+    async fn send_health_check(
+        &mut self,
+        checks: HealthChecks<psyche_solana_coordinator::ClientId>,
+    ) -> Result<()> {
+        for (id, proof) in checks {
             self.backend
-                .health_check(self.instance, self.account, check)
+                .health_check(self.instance, self.account, id, proof)
                 .await?;
         }
         Ok(())
@@ -493,14 +499,12 @@ mod test {
                     max_round_train_time: 10,
                     round_witness_time: 1,
                     min_clients: 1,
-                    batches_per_round: 1,
-                    data_indicies_per_batch: 1,
+                    global_batch_size: 1,
                     verification_percent: 0,
                     witness_nodes: 0,
                     witness_quorum: 0,
                     rounds_per_epoch: 10,
                     total_steps: 100,
-                    overlapped: false.into(),
                     checkpointers: FixedVec::zeroed(),
                 }),
                 Some(Model::LLM(LLM {

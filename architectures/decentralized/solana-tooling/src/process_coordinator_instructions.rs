@@ -226,7 +226,7 @@ pub async fn process_coordinator_witness(
         data: Witness {
             proof: witness.proof,
             participant_bloom: witness.participant_bloom,
-            order_bloom: witness.order_bloom,
+            batch_bloom: witness.batch_bloom,
         }
         .data(),
         program_id: psyche_solana_coordinator::ID,

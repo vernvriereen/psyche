@@ -17,6 +17,7 @@ pub struct State {
     pub download_progesses: HashMap<iroh_blobs::Hash, DownloadUpdate>,
 
     pub currently_sharing_blobs: HashSet<iroh_blobs::Hash>,
+    pub blob_tags: HashSet<(u32, iroh_blobs::Hash)>,
 }
 
 impl State {
@@ -28,6 +29,7 @@ impl State {
             bandwidth_history: Default::default(),
             download_progesses: Default::default(),
             currently_sharing_blobs: Default::default(),
+            blob_tags: Default::default(),
         }
     }
 }

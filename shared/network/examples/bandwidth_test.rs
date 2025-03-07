@@ -59,7 +59,7 @@ type NC = NetworkConnection<Message, DistroResultBlob>;
 #[derive(Default, Debug)]
 struct TUIState {
     network: NetworkTUIState,
-    current_step: u64,
+    current_step: u32,
 }
 
 #[derive(Default)]
@@ -103,7 +103,7 @@ impl CustomWidget for Tui {
 #[derive(Debug)]
 struct App {
     cancel: CancellationToken,
-    current_step: u64,
+    current_step: u32,
     network: NC,
     tx_tui_state: Option<Sender<TUIState>>,
     send_data_interval: Interval,
@@ -148,7 +148,10 @@ impl App {
             }
             NetworkEvent::MessageReceived((from, Message::DistroResult { step, blob_ticket })) => {
                 info!("[{from}]: step {step} blob ticket {blob_ticket}");
-                self.network.start_download(blob_ticket).await.unwrap();
+                self.network
+                    .start_download(blob_ticket, step)
+                    .await
+                    .unwrap();
             }
             NetworkEvent::DownloadComplete(result) => {
                 let hash = result.hash;
@@ -173,7 +176,7 @@ impl App {
         let unix_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time went forwads :)");
-        let step = (unix_time.as_secs() + 2) / 15;
+        let step = ((unix_time.as_secs() + 2) / 15) as u32;
         info!("new step {step}");
         if step != self.current_step + 1 {
             warn!(
@@ -190,7 +193,7 @@ impl App {
 
         let blob_ticket = match self
             .network
-            .add_downloadable(DistroResultBlob { step, data })
+            .add_downloadable(DistroResultBlob { step, data }, step)
             .await
         {
             Ok(v) => v,
@@ -293,11 +296,11 @@ async fn main() -> Result<()> {
 #[derive(Debug, Serialize, Deserialize)]
 enum Message {
     Message { text: String },
-    DistroResult { blob_ticket: BlobTicket, step: u64 },
+    DistroResult { blob_ticket: BlobTicket, step: u32 },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct DistroResultBlob {
-    step: u64,
+    step: u32,
     data: Vec<u8>,
 }

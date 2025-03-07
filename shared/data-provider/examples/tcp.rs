@@ -31,7 +31,7 @@ impl<T: NodeIdentity> WatcherBackend<T> for DummyBackend<T> {
         bail!("Data provider does not send witnesses");
     }
 
-    async fn send_health_check(&mut self, _health_checks: HealthChecks) -> anyhow::Result<()> {
+    async fn send_health_check(&mut self, _health_checks: HealthChecks<T>) -> anyhow::Result<()> {
         bail!("Data provider does not send health check");
     }
 
@@ -104,7 +104,7 @@ impl anchor_lang::Space for DummyNodeIdentity {
 
 struct DummyDataProvider;
 impl TokenizedDataProvider for DummyDataProvider {
-    async fn get_samples(&mut self, _data_ids: &[BatchId]) -> anyhow::Result<Vec<Vec<i32>>> {
+    async fn get_samples(&mut self, _data_ids: BatchId) -> anyhow::Result<Vec<Vec<i32>>> {
         let mut data: [i32; 1024] = [0; 1024];
         rand::thread_rng().fill(&mut data);
         Ok(vec![data.to_vec()])
@@ -147,7 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("clients initialized successfully");
     loop {
         for (i, c) in clients.iter_mut().enumerate() {
-            c.get_samples(&[BatchId::from_u64(0)]).await?;
+            c.get_samples(BatchId((0, 0).into())).await?;
             info!("client {} got data! ", i);
         }
     }

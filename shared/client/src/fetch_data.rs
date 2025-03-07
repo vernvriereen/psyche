@@ -1,9 +1,14 @@
-use psyche_coordinator::{get_batch_ids_for_round, Coordinator};
-use psyche_core::{BatchId, IntervalTree, NodeIdentity};
+use psyche_coordinator::{get_batch_ids_for_node, Coordinator};
+use psyche_core::{BatchId, NodeIdentity};
 use psyche_data_provider::{DataProvider, TokenizedDataProvider};
 use psyche_modeling::{Batch, BatchData};
 use psyche_network::AuthenticatableIdentity;
-use std::{collections::HashSet, marker::PhantomData, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, HashSet},
+    marker::PhantomData,
+    sync::Arc,
+    time::Duration,
+};
 use tokio::{
     sync::{mpsc, Mutex},
     task::JoinHandle,
@@ -37,37 +42,16 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> DataFetcher<T, A> {
     pub fn fetch_data(
         &mut self,
         state: &Coordinator<T>,
-        data_assignments: &IntervalTree<BatchId, T>,
+        data_assignments: &BTreeMap<BatchId, T>,
         identity: &T,
     ) -> TrainingDataForStep {
         let step = state.progress.step;
-        let data_indicies_per_batch = state.config.data_indicies_per_batch;
 
-        let mut assigned_batch_ids: Vec<BatchId> = data_assignments
-            .iter()
-            .filter_map(|(key, value)| match value == identity {
-                true => {
-                    let batch_interval = (u64::from(key.start)
-                        / state.config.data_indicies_per_batch as u64)
-                        ..=(u64::from(key.end) / state.config.data_indicies_per_batch as u64);
-                    Some(batch_interval)
-                }
-                false => None,
-            })
-            .flatten()
-            .map(BatchId::from_u64)
-            .collect();
-
-        // TODO: replace `get_batch_ids_for_state` with a version that's aware of training/verify/tiebreak (or use assigned_batch_ids).
-        let all_batch_ids = get_batch_ids_for_round(state.current_round().unwrap(), state);
-        let num_all_batch_ids = all_batch_ids.len();
-        debug!("Got new batch IDs for step {step} - there are {num_all_batch_ids}");
+        let mut assigned_batch_ids = get_batch_ids_for_node(data_assignments, identity);
         debug!(
-            "all assignments: {}, my assignments: {:?}, my id: {}",
-            data_assignments, assigned_batch_ids, identity
+            "My assignments: {:?}, my id: {}",
+            assigned_batch_ids, identity
         );
-        let batch_ids_not_yet_trained_on: std::sync::Arc<Mutex<BatchIdSet>> =
-            Arc::new(Mutex::new(all_batch_ids.into_iter().collect()));
 
         let (tx_next_sample, next_sample) = mpsc::channel(self.buffer_size);
 
@@ -81,8 +65,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> DataFetcher<T, A> {
             tokio::spawn({
                 debug!("New fetch task for step {step} has been spawned");
                 let data_provider = self.data_provider.clone(); // only one of these tasks will acquire the lock at once. once one dies, the lock is released for sure.
-                let batch_ids_not_yet_trained_on: Arc<Mutex<BatchIdSet>> =
-                    batch_ids_not_yet_trained_on.clone();
+
                 async move {
                     loop {
                         let batch_id = {
@@ -94,26 +77,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> DataFetcher<T, A> {
                                 }
                             }
                         };
-                        // if it's already done, skip it
-                        if !batch_ids_not_yet_trained_on
-                            .lock()
-                            .await
-                            .contains(&batch_id)
-                        {
-                            continue;
-                        }
-                        debug!("Fetching data for batch: step: {step} id: {batch_id}");
-                        let data_indicies_per_batch = data_indicies_per_batch as u64;
-                        let start_data_id =
-                            (u64::from(batch_id) * data_indicies_per_batch) as usize;
-                        let data_ids = (start_data_id
-                            ..(start_data_id + data_indicies_per_batch as usize))
-                            .map(|d| BatchId::from_u64(d as u64))
-                            .collect::<Vec<_>>();
 
                         let mut retry_count = 0;
                         let batch = loop {
-                            match data_provider.lock().await.get_samples(&data_ids).await {
+                            match data_provider.lock().await.get_samples(batch_id).await {
                                 Ok(batch) => break batch,
                                 Err(err) if retry_count < MAX_RETRIES => {
                                     retry_count += 1;
@@ -132,15 +99,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> DataFetcher<T, A> {
                             }
                         };
 
-                        if !batch_ids_not_yet_trained_on
-                            .lock()
-                            .await
-                            .contains(&batch_id)
-                        {
-                            // in the time between picking the sample and fetching it, someone else trained on it.
-                            // go pick another one.
-                            continue;
-                        }
                         if tx_next_sample
                             .send(Batch {
                                 id: batch_id,
@@ -158,18 +116,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> DataFetcher<T, A> {
             }),
         ));
 
-        TrainingDataForStep {
-            step,
-            next_sample,
-            num_all_batch_ids,
-            batch_ids_not_yet_trained_on,
-        }
+        TrainingDataForStep { step, next_sample }
     }
 }
 
 pub struct TrainingDataForStep {
     pub step: u32,
-    pub num_all_batch_ids: usize,
     pub next_sample: mpsc::Receiver<Batch>,
-    pub batch_ids_not_yet_trained_on: Arc<Mutex<BatchIdSet>>,
 }

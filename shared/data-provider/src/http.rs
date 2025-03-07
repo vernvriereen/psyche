@@ -278,7 +278,7 @@ impl HttpDataProvider {
         Ok(tokens)
     }
 
-    async fn internal_get_samples(&self, data_ids: &[BatchId]) -> Result<Vec<Vec<i32>>> {
+    async fn internal_get_samples(&self, data_ids: BatchId) -> Result<Vec<Vec<i32>>> {
         trace!("get samples for {data_ids:?}");
         let mut futures = Vec::new();
 
@@ -286,7 +286,7 @@ impl HttpDataProvider {
             .iter()
             .map(|data_id| {
                 self.sequences
-                    .get(u64::from(*data_id) as usize)
+                    .get(data_id as usize)
                     .cloned()
                     .ok_or_else(|| {
                         anyhow!(
@@ -332,7 +332,7 @@ impl HttpDataProvider {
 }
 
 impl TokenizedDataProvider for HttpDataProvider {
-    async fn get_samples(&mut self, data_ids: &[BatchId]) -> Result<Vec<Vec<i32>>> {
+    async fn get_samples(&mut self, data_ids: BatchId) -> Result<Vec<Vec<i32>>> {
         self.internal_get_samples(data_ids).await
     }
 }
