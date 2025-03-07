@@ -1,7 +1,6 @@
 use std::time::SystemTime;
 use std::{sync::Arc, time::Duration};
 
-use bollard::container::KillContainerOptions;
 use bollard::{container::LogsOptions, Docker};
 use futures_util::StreamExt;
 use serde_json::Value;
@@ -188,9 +187,9 @@ impl DockerWatcher {
         Ok(monitor_handle)
     }
 
-    pub async fn kill_container(&self, name: &str) -> Result<(), DockerWatcherError> {
+    pub async fn stop_container(&self, name: &str) -> Result<(), DockerWatcherError> {
         self.client
-            .kill_container(name, Some(KillContainerOptions { signal: "SIGKILL" }))
+            .stop_container(name, None)
             .await
             .map_err(|err| DockerWatcherError::LogsError { inner: err })
     }

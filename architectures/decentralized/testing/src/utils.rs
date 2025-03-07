@@ -9,7 +9,7 @@ use psyche_coordinator::{
     Round, RunState, NUM_STORED_ROUNDS,
 };
 use psyche_core::FixedVec;
-use psyche_solana_coordinator::SOLANA_MAX_NUM_PENDING_CLIENTS;
+use psyche_solana_coordinator::{ClientId, SOLANA_MAX_NUM_PENDING_CLIENTS};
 
 pub struct SolanaTestClient {
     program: Program<Arc<Keypair>>,
@@ -64,15 +64,11 @@ impl SolanaTestClient {
         coordinator.state.clients_state.clients
     }
 
-    pub async fn get_active_clients(
+    pub async fn get_current_epoch_clients(
         &self,
-    ) -> FixedVec<psyche_solana_coordinator::ClientId, SOLANA_MAX_NUM_PENDING_CLIENTS> {
+    ) -> FixedVec<psyche_coordinator::Client<ClientId>, SOLANA_MAX_NUM_PENDING_CLIENTS> {
         let coordinator = self.get_coordinator_account().await;
-        coordinator
-            .state
-            .get_active_clients()
-            .cloned()
-            .collect::<FixedVec<_, SOLANA_MAX_NUM_PENDING_CLIENTS>>()
+        coordinator.state.coordinator.epoch_state.clients
     }
 
     pub async fn get_clients_len(&self) -> usize {
