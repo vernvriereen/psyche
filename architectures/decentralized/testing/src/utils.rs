@@ -64,6 +64,17 @@ impl SolanaTestClient {
         coordinator.state.clients_state.clients
     }
 
+    pub async fn get_active_clients(
+        &self,
+    ) -> FixedVec<psyche_solana_coordinator::ClientId, SOLANA_MAX_NUM_PENDING_CLIENTS> {
+        let coordinator = self.get_coordinator_account().await;
+        coordinator
+            .state
+            .get_active_clients()
+            .cloned()
+            .collect::<FixedVec<_, SOLANA_MAX_NUM_PENDING_CLIENTS>>()
+    }
+
     pub async fn get_clients_len(&self) -> usize {
         let clients = self.get_clients().await;
         clients.len()
