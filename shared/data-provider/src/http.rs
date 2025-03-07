@@ -10,7 +10,7 @@ use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use reqwest::IntoUrl;
 use tokio::task::JoinHandle;
-use tracing::{info, trace};
+use tracing::{debug, info, trace};
 
 use crate::{
     file_extensions::DATA_FILE_EXTENSIONS,
@@ -280,7 +280,6 @@ impl HttpDataProvider {
 
     async fn internal_get_samples(&self, data_ids: BatchId) -> Result<Vec<Vec<i32>>> {
         trace!("get samples for {data_ids:?}");
-        let mut futures = Vec::new();
 
         let sequences: Result<Vec<SequencePointer>> = data_ids
             .iter()
@@ -298,36 +297,77 @@ impl HttpDataProvider {
             .collect();
         let sequences = sequences?;
 
-        // check if this is fully sequential
-        // TODO: deal with stepping by seq_len but reading seq_len + 1 -- can we change this? datatrove steps by seq_len + 1
-        // let first_file_index = sequences[0].file_index;
-        // let offset_len  = usize::from(self.token_size_in_bytes) * (self.seq_len as usize);
-        // let sequential = sequences.iter().all(|x| x.file_index == first_file_index)
-        //     && sequences
-        //         .windows(2)
-        //         .all(|x| x[1].byte_offset - x[0].byte_offset == data_len);
+        // check if this is fully sequential (all in the same file and with contiguous offsets)
+        let first_file_index = sequences[0].file_index;
+        let token_size = usize::from(self.token_size_in_bytes);
+        let single_seq_len = self.seq_len as usize + 1; // each sequence has seq_len + 1 tokens
+        let single_seq_bytes = token_size * (self.seq_len as usize); // bytes for seq_len tokens (not including overlap)
 
-        let data_len = usize::from(self.token_size_in_bytes) * (self.seq_len as usize + 1);
-        for sequence in sequences {
-            let future: JoinHandle<Result<Vec<i32>>> =
-                tokio::spawn(Self::fetch_tokenized_data_range(
-                    self.client.clone(),
-                    self.file_urls[sequence.file_index].clone(),
-                    sequence.byte_offset,
-                    data_len,
-                    self.token_size_in_bytes,
-                ));
+        let is_sequential = sequences.iter().all(|x| x.file_index == first_file_index)
+            && sequences
+                .windows(2)
+                .all(|x| x[1].byte_offset - x[0].byte_offset == single_seq_bytes);
 
-            futures.push(future);
+        if is_sequential && sequences.len() > 1 {
+            // for sequential access, read the entire range at once
+            let start_offset = sequences[0].byte_offset;
+            // total length is all sequences plus one extra token at the end
+            let total_length = single_seq_bytes * sequences.len() + token_size;
+
+            debug!(
+                length = total_length,
+                offset = start_offset,
+                url = %self.file_urls[first_file_index],
+                "Sequential data access",
+            );
+
+            let all_data = Self::fetch_tokenized_data_range(
+                self.client.clone(),
+                self.file_urls[first_file_index].clone(),
+                start_offset,
+                total_length,
+                self.token_size_in_bytes,
+            )
+            .await?;
+
+            // split the data into individual sequences with one token of overlap
+            let mut result = Vec::with_capacity(sequences.len());
+            for i in 0..sequences.len() {
+                let start_idx = i * self.seq_len as usize;
+                let end_idx = start_idx + single_seq_len;
+                result.push(all_data[start_idx..end_idx].to_vec());
+            }
+
+            Ok(result)
+        } else {
+            debug!(
+                num_sequences = sequences.len(),
+                "Non-sequential data access",
+            );
+
+            let mut futures = Vec::new();
+            let data_len = usize::from(self.token_size_in_bytes) * (self.seq_len as usize + 1);
+            for sequence in sequences {
+                let future: JoinHandle<Result<Vec<i32>>> =
+                    tokio::spawn(Self::fetch_tokenized_data_range(
+                        self.client.clone(),
+                        self.file_urls[sequence.file_index].clone(),
+                        sequence.byte_offset,
+                        data_len,
+                        self.token_size_in_bytes,
+                    ));
+
+                futures.push(future);
+            }
+            let finished = join_all(futures.into_iter()).await;
+
+            let mut ret = Vec::with_capacity(finished.len());
+            for finish in finished {
+                ret.push(finish??);
+            }
+
+            Ok(ret)
         }
-        let finished = join_all(futures.into_iter()).await;
-
-        let mut ret = Vec::with_capacity(finished.len());
-        for finish in finished {
-            ret.push(finish??);
-        }
-
-        Ok(ret)
     }
 }
 
