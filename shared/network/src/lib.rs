@@ -1,5 +1,5 @@
 use allowlist::Allowlist;
-use anyhow::{Context, Error, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
 use futures_util::StreamExt;
 use iroh::{endpoint::RemoteInfo, NodeAddr};
@@ -13,7 +13,7 @@ use state::State;
 use std::{
     fmt::Debug,
     marker::PhantomData,
-    net::{Ipv4Addr, SocketAddrV4},
+    net::{IpAddr, Ipv4Addr, SocketAddrV4},
     ops::Sub,
     sync::Arc,
     time::{Duration, Instant},
@@ -123,6 +123,7 @@ where
     pub async fn init<A: Allowlist + 'static + Send>(
         run_id: &str,
         port: Option<u16>,
+        interface: Option<String>,
         relay_mode: RelayMode,
         discovery_mode: DiscoveryMode,
         bootstrap_peers: Vec<NodeAddr>,
@@ -138,14 +139,29 @@ where
 
         debug!("Using relay servers: {}", fmt_relay_mode(&relay_mode));
 
+        let ipv4 = if let Some(if_name) = interface {
+            let iface_ip = get_if_addrs::get_if_addrs()
+                .unwrap()
+                .iter()
+                .find_map(|interface| {
+                    (interface.name == if_name && interface.ip().is_ipv4())
+                        .then_some(interface.ip())
+                });
+            let IpAddr::V4(v4) =
+                iface_ip.ok_or(anyhow!("no interface with name \"{if_name}\" found."))?
+            else {
+                unreachable!("checked in earlier if. should not be possible.")
+            };
+            v4
+        } else {
+            Ipv4Addr::new(0, 0, 0, 0)
+        };
+
         let endpoint = {
             let endpoint = Endpoint::builder()
                 .secret_key(secret_key)
                 .relay_mode(relay_mode)
-                .bind_addr_v4(SocketAddrV4::new(
-                    Ipv4Addr::new(0, 0, 0, 0),
-                    port.unwrap_or(0),
-                ));
+                .bind_addr_v4(SocketAddrV4::new(ipv4, port.unwrap_or(0)));
 
             let e = match discovery_mode {
                 DiscoveryMode::Local => endpoint.discovery(Box::new(

@@ -41,6 +41,9 @@ struct Args {
     #[clap(short, long)]
     bind_port: Option<u16>,
 
+    #[clap(long)]
+    bind_interface: Option<String>,
+
     #[clap(
         long,
         action = ArgAction::Set,
@@ -259,6 +262,7 @@ async fn main() -> Result<()> {
     let network = NC::init(
         "123",
         args.bind_port,
+        args.bind_interface,
         relay_mode,
         DiscoveryMode::N0,
         peers,
