@@ -140,15 +140,15 @@ impl SolanaBackend {
                 self.program
                     .request()
                     .accounts(
-                        psyche_solana_coordinator::accounts::InitializeCoordinatorAccounts {
+                        psyche_solana_coordinator::accounts::InitCoordinatorAccounts {
                             payer: self.program.payer(),
                             authority: self.program.payer(),
-                            instance: instance_pda,
-                            account: coordinator_keypair.pubkey(),
+                            coordinator_instance: instance_pda,
+                            coordinator_account: coordinator_keypair.pubkey(),
                             system_program: system_program::ID,
                         },
                     )
-                    .args(psyche_solana_coordinator::instruction::InitializeCoordinator { run_id })
+                    .args(psyche_solana_coordinator::instruction::InitCoordinator { run_id })
                     .instructions()
                     .unwrap()[0]
                     .clone(),
@@ -171,35 +171,14 @@ impl SolanaBackend {
             .accounts(
                 psyche_solana_coordinator::accounts::FreeCoordinatorAccounts {
                     authority: self.program.payer(),
-                    reimbursed: self.program.payer(),
-                    instance,
-                    account,
+                    spill: self.program.payer(),
+                    coordinator_instance: instance,
+                    coordinator_account: account,
                 },
             )
-            .args(psyche_solana_coordinator::instruction::FreeCoordinator {})
-            .send()
-            .await?;
-
-        Ok(signature)
-    }
-
-    pub async fn set_whitelist(
-        &self,
-        instance: Pubkey,
-        account: Pubkey,
-        clients: Vec<Pubkey>,
-    ) -> Result<Signature> {
-        let signature = self
-            .program
-            .request()
-            .accounts(
-                psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
-                    authority: self.program.payer(),
-                    instance,
-                    account,
-                },
-            )
-            .args(psyche_solana_coordinator::instruction::SetWhitelist { clients })
+            .args(psyche_solana_coordinator::instruction::FreeCoordinator {
+                params: psyche_solana_coordinator::logic::FreeCoordinatorParams {},
+            })
             .send()
             .await?;
 
@@ -222,7 +201,9 @@ impl SolanaBackend {
                     account,
                 },
             )
-            .args(psyche_solana_coordinator::instruction::JoinRun { id })
+            .args(psyche_solana_coordinator::instruction::JoinRun {
+                params: psyche_solana_coordinator::logic::JoinRunParams { client_id: id },
+            })
             .send()
             .await?;
         Ok(signature)
@@ -538,28 +519,5 @@ mod test {
             client_keypair.pubkey(),
             *client_p2p.public().as_bytes(),
         );
-
-        // add a dummy whitelist entry so the run is permissioned
-        runner
-            .backend
-            .set_whitelist(
-                created.instance,
-                created.account,
-                vec![psyche_solana_coordinator::ClientId::zeroed()],
-            )
-            .await
-            .unwrap();
-
-        assert!(runner
-            .backend
-            .join_run(created.instance, created.account, client_id)
-            .await
-            .is_err());
-
-        runner
-            .backend
-            .set_whitelist(created.instance, created.account, vec![client_id])
-            .await
-            .unwrap();
     }
 }

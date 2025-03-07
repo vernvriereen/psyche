@@ -1,9 +1,9 @@
+use psyche_solana_mining_pool::find_pool;
 use psyche_solana_mining_pool::state::PoolMetadata;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 
 use crate::api::create_memnet_endpoint::create_memnet_endpoint;
-use crate::api::find_pda_pool::find_pda_pool;
 use crate::api::process_lender_claim::process_lender_claim;
 use crate::api::process_lender_create::process_lender_create;
 use crate::api::process_lender_deposit::process_lender_deposit;
@@ -34,7 +34,10 @@ pub async fn run() {
     let user_collateral_amount = 99999;
 
     // Prepare the payer
-    endpoint.process_airdrop(&payer.pubkey(), payer_lamports).await.unwrap();
+    endpoint
+        .process_airdrop(&payer.pubkey(), payer_lamports)
+        .await
+        .unwrap();
 
     // Create the global collateral mint
     let collateral_mint = endpoint
@@ -124,7 +127,10 @@ pub async fn run() {
         &payer,
         pool_index,
         &pool_authority,
-        PoolMetadata { length: 0, bytes: [0u8; PoolMetadata::BYTES] },
+        PoolMetadata {
+            length: 0,
+            bytes: [0u8; PoolMetadata::BYTES],
+        },
         &collateral_mint,
     )
     .await
@@ -155,7 +161,7 @@ pub async fn run() {
     .unwrap();
 
     // Find the pool's ATA
-    let pool = find_pda_pool(pool_index);
+    let pool = find_pool(pool_index);
     let pool_redeemable = endpoint
         .process_spl_associated_token_account_get_or_init(
             &payer,

@@ -2,18 +2,26 @@ use anchor_lang::InstructionData;
 use anchor_lang::ToAccountMetas;
 use anchor_spl::associated_token;
 use anchor_spl::token;
+use psyche_solana_authorizer::find_authorization;
+use psyche_solana_coordinator::find_coordinator_instance;
+use psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE;
 use psyche_solana_treasurer::accounts::ParticipantClaimAccounts;
 use psyche_solana_treasurer::accounts::ParticipantCreateAccounts;
+use psyche_solana_treasurer::accounts::RunAuthorizeAccounts;
 use psyche_solana_treasurer::accounts::RunCreateAccounts;
 use psyche_solana_treasurer::accounts::RunTopUpAccounts;
 use psyche_solana_treasurer::accounts::RunUpdateAccounts;
+use psyche_solana_treasurer::find_participant;
+use psyche_solana_treasurer::find_run;
 use psyche_solana_treasurer::instruction::ParticipantClaim;
 use psyche_solana_treasurer::instruction::ParticipantCreate;
+use psyche_solana_treasurer::instruction::RunAuthorize;
 use psyche_solana_treasurer::instruction::RunCreate;
 use psyche_solana_treasurer::instruction::RunTopUp;
 use psyche_solana_treasurer::instruction::RunUpdate;
 use psyche_solana_treasurer::logic::ParticipantClaimParams;
 use psyche_solana_treasurer::logic::ParticipantCreateParams;
+use psyche_solana_treasurer::logic::RunAuthorizeParams;
 use psyche_solana_treasurer::logic::RunCreateParams;
 use psyche_solana_treasurer::logic::RunTopUpParams;
 use psyche_solana_treasurer::logic::RunUpdateParams;
@@ -26,10 +34,6 @@ use solana_sdk::system_program;
 use solana_toolbox_endpoint::ToolboxEndpoint;
 use solana_toolbox_endpoint::ToolboxEndpointError;
 
-use crate::find_pdas::find_coordinator_instance;
-use crate::find_pdas::find_participant;
-use crate::find_pdas::find_run;
-
 pub async fn process_treasurer_run_create(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
@@ -38,7 +42,7 @@ pub async fn process_treasurer_run_create(
     coordinator_account: &Pubkey,
     run_id: &str,
     collateral_amount_per_earned_point: u64,
-) -> Result<Signature, ToolboxEndpointError> {
+) -> Result<(Pubkey, Pubkey), ToolboxEndpointError> {
     let run = find_run(run_id);
     let run_collateral = ToolboxEndpoint::find_spl_associated_token_account(
         &run,
@@ -73,7 +77,9 @@ pub async fn process_treasurer_run_create(
 
     endpoint
         .process_instruction_with_signers(instruction, payer, &[authority])
-        .await
+        .await?;
+
+    Ok((run, coordinator_instance))
 }
 
 pub async fn process_treasurer_run_top_up(
@@ -82,30 +88,30 @@ pub async fn process_treasurer_run_top_up(
     authority: &Keypair,
     authority_collateral: &Pubkey,
     collateral_mint: &Pubkey,
-    run_id: &str,
+    run: &Pubkey,
     collateral_amount: u64,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let run = find_run(run_id);
     let run_collateral = ToolboxEndpoint::find_spl_associated_token_account(
-        &run,
+        run,
         collateral_mint,
     );
-
     let accounts = RunTopUpAccounts {
         payer: payer.pubkey(),
         authority: authority.pubkey(),
         authority_collateral: *authority_collateral,
         collateral_mint: *collateral_mint,
-        run,
+        run: *run,
         run_collateral,
         token_program: token::ID,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: RunTopUp { params: RunTopUpParams { collateral_amount } }.data(),
+        data: RunTopUp {
+            params: RunTopUpParams { collateral_amount },
+        }
+        .data(),
         program_id: psyche_solana_treasurer::ID,
     };
-
     endpoint
         .process_instruction_with_signers(instruction, payer, &[authority])
         .await
@@ -115,17 +121,15 @@ pub async fn process_treasurer_run_update(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     authority: &Keypair,
+    run: &Pubkey,
+    coordinator_instance: &Pubkey,
     coordinator_account: &Pubkey,
-    run_id: &str,
     params: RunUpdateParams,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let run = find_run(run_id);
-    let coordinator_instance = find_coordinator_instance(run_id);
-
     let accounts = RunUpdateAccounts {
         authority: authority.pubkey(),
-        run,
-        coordinator_instance,
+        run: *run,
+        coordinator_instance: *coordinator_instance,
         coordinator_account: *coordinator_account,
         coordinator_program: psyche_solana_coordinator::ID,
     };
@@ -134,35 +138,64 @@ pub async fn process_treasurer_run_update(
         data: RunUpdate { params }.data(),
         program_id: psyche_solana_treasurer::ID,
     };
-
     endpoint
         .process_instruction_with_signers(instruction, payer, &[authority])
         .await
+}
+
+pub async fn process_treasurer_run_authorize(
+    endpoint: &mut ToolboxEndpoint,
+    payer: &Keypair,
+    authority: &Keypair,
+    run: &Pubkey,
+    params: RunAuthorizeParams,
+) -> Result<Pubkey, ToolboxEndpointError> {
+    let authorization =
+        find_authorization(run, &params.user, JOIN_RUN_AUTHORIZATION_SCOPE);
+    let accounts = RunAuthorizeAccounts {
+        payer: payer.pubkey(),
+        authority: authority.pubkey(),
+        run: *run,
+        authorization,
+        authorizer_program: psyche_solana_authorizer::ID,
+        system_program: system_program::ID,
+    };
+    let instruction = Instruction {
+        accounts: accounts.to_account_metas(None),
+        data: RunAuthorize { params }.data(),
+        program_id: psyche_solana_treasurer::ID,
+    };
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[authority])
+        .await?;
+    Ok(authorization)
 }
 
 pub async fn process_treasurer_participant_create(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     user: &Keypair,
-    run_id: &str,
+    run: &Pubkey,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let run = find_run(run_id);
-    let participant = find_participant(&run, &user.pubkey());
-
+    let participant = find_participant(run, &user.pubkey());
     let accounts = ParticipantCreateAccounts {
         payer: payer.pubkey(),
         user: user.pubkey(),
-        run,
+        run: *run,
         participant,
         system_program: system_program::ID,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: ParticipantCreate { params: ParticipantCreateParams {} }.data(),
+        data: ParticipantCreate {
+            params: ParticipantCreateParams {},
+        }
+        .data(),
         program_id: psyche_solana_treasurer::ID,
     };
-
-    endpoint.process_instruction_with_signers(instruction, payer, &[user]).await
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[user])
+        .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -172,22 +205,20 @@ pub async fn process_treasurer_participant_claim(
     user: &Keypair,
     user_collateral: &Pubkey,
     collateral_mint: &Pubkey,
+    run: &Pubkey,
     coordinator_account: &Pubkey,
-    run_id: &str,
     claim_earned_points: u64,
 ) -> Result<Signature, ToolboxEndpointError> {
-    let run = find_run(run_id);
     let run_collateral = ToolboxEndpoint::find_spl_associated_token_account(
-        &run,
+        run,
         collateral_mint,
     );
-    let participant = find_participant(&run, &user.pubkey());
-
+    let participant = find_participant(run, &user.pubkey());
     let accounts = ParticipantClaimAccounts {
         payer: payer.pubkey(),
         user: user.pubkey(),
         user_collateral: *user_collateral,
-        run,
+        run: *run,
         run_collateral,
         coordinator_account: *coordinator_account,
         participant,
@@ -196,11 +227,14 @@ pub async fn process_treasurer_participant_claim(
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
         data: ParticipantClaim {
-            params: ParticipantClaimParams { claim_earned_points },
+            params: ParticipantClaimParams {
+                claim_earned_points,
+            },
         }
         .data(),
         program_id: psyche_solana_treasurer::ID,
     };
-
-    endpoint.process_instruction_with_signers(instruction, payer, &[user]).await
+    endpoint
+        .process_instruction_with_signers(instruction, payer, &[user])
+        .await
 }

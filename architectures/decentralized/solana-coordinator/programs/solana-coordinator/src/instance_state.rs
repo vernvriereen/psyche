@@ -1,12 +1,20 @@
-use crate::{client::Client, clients_state::ClientsState, ClientId, ProgramError};
-
 use anchor_lang::prelude::*;
-use bytemuck::{Pod, Zeroable};
-use psyche_coordinator::{
-    model::Model, ClientState, Coordinator, CoordinatorConfig, HealthChecks, RunState, TickResult,
-    Witness,
-};
+use bytemuck::Pod;
+use bytemuck::Zeroable;
+use psyche_coordinator::model::Model;
+use psyche_coordinator::ClientState;
+use psyche_coordinator::Coordinator;
+use psyche_coordinator::CoordinatorConfig;
+use psyche_coordinator::HealthChecks;
+use psyche_coordinator::RunState;
+use psyche_coordinator::TickResult;
+use psyche_coordinator::Witness;
 use psyche_core::sha256v;
+
+use crate::client::Client;
+use crate::clients_state::ClientsState;
+use crate::ClientId;
+use crate::ProgramError;
 
 #[derive(Clone, Copy, Zeroable)]
 #[repr(C)]
@@ -33,7 +41,7 @@ impl CoordinatorInstanceState {
                 let active_clients = self.clients_state.active_clients();
                 msg!("Pending active clients: {}", active_clients.len());
                 Some(active_clients)
-            }
+            },
             _ => None,
         };
 
@@ -47,35 +55,47 @@ impl CoordinatorInstanceState {
             Ok(TickResult::Ticked) => {
                 if self.coordinator.is_epoch_just_starting() {
                     msg!("New epoch just starting, save epoch rewards rate");
-                    self.clients_state.current_epoch_rates = self.clients_state.future_epoch_rates;
+                    self.clients_state.current_epoch_rates =
+                        self.clients_state.future_epoch_rates;
                     msg!("New epoch just starting, save epoch active clients");
                     self.clients_state.next_active += 1;
                 }
-            }
+            },
             Ok(TickResult::EpochEnd(success)) => {
                 msg!("Epoch end, sucecsss: {}", success);
 
                 let mut i = 0;
                 let mut j = 0;
                 let finished_clients = &self.coordinator.epoch_state.clients;
-                let exited_clients = &self.coordinator.epoch_state.exited_clients;
+                let exited_clients =
+                    &self.coordinator.epoch_state.exited_clients;
 
                 for client in self.clients_state.clients.iter_mut() {
-                    if i < finished_clients.len() && client.id == finished_clients[i].id {
+                    if i < finished_clients.len()
+                        && client.id == finished_clients[i].id
+                    {
                         if finished_clients[i].state == ClientState::Healthy {
-                            client.earned += self.clients_state.current_epoch_rates.earning_rate;
+                            client.earned += self
+                                .clients_state
+                                .current_epoch_rates
+                                .earning_rate;
                         }
                         i += 1;
                     }
 
-                    if j < exited_clients.len() && client.id == exited_clients[j].id {
+                    if j < exited_clients.len()
+                        && client.id == exited_clients[j].id
+                    {
                         if exited_clients[j].state == ClientState::Ejected {
-                            client.slashed += self.clients_state.current_epoch_rates.slashing_rate;
+                            client.slashed += self
+                                .clients_state
+                                .current_epoch_rates
+                                .slashing_rate;
                         }
                         j += 1;
                     }
                 }
-            }
+            },
             Err(err) => return err!(ProgramError::from(err)),
         };
 
@@ -103,7 +123,7 @@ impl CoordinatorInstanceState {
                     self.coordinator.progress.step = 1;
                 }
                 self.coordinator.resume(Clock::get()?.unix_timestamp as u64)
-            }
+            },
         } {
             return err!(ProgramError::from(err));
         }
@@ -119,25 +139,18 @@ impl CoordinatorInstanceState {
         self.tick()
     }
 
-    pub fn set_whitelist(&mut self, clients: Vec<Pubkey>) -> Result<()> {
-        self.clients_state.whitelist.clear();
-        self.clients_state
-            .whitelist
-            .extend(clients.into_iter())
-            .map_err(|_| ProgramError::CouldNotSetWhitelist)?;
-        Ok(())
-    }
-
     pub fn set_future_epoch_rates(
         &mut self,
         epoch_earning_rate: Option<u64>,
         epoch_slashing_rate: Option<u64>,
     ) -> Result<()> {
         if let Some(epoch_earning_rate) = epoch_earning_rate {
-            self.clients_state.future_epoch_rates.earning_rate = epoch_earning_rate;
+            self.clients_state.future_epoch_rates.earning_rate =
+                epoch_earning_rate;
         }
         if let Some(epoch_slashing_rate) = epoch_slashing_rate {
-            self.clients_state.future_epoch_rates.slashing_rate = epoch_slashing_rate;
+            self.clients_state.future_epoch_rates.slashing_rate =
+                epoch_slashing_rate;
         }
         Ok(())
     }
@@ -173,12 +186,6 @@ impl CoordinatorInstanceState {
     }
 
     pub fn join_run(&mut self, id: ClientId) -> Result<()> {
-        if !self.clients_state.whitelist.is_empty()
-            && !self.clients_state.whitelist.iter().any(|x| x == &id.signer)
-        {
-            return err!(ProgramError::NotInWhitelist);
-        }
-
         let exisiting = match self
             .clients_state
             .clients
@@ -193,7 +200,7 @@ impl CoordinatorInstanceState {
                 client.active = self.clients_state.next_active;
                 msg!("Exisiting client {} re-joined", id.signer);
                 true
-            }
+            },
             None => false,
         };
 
@@ -226,7 +233,11 @@ impl CoordinatorInstanceState {
         }
     }
 
-    pub fn health_check(&mut self, payer: &Pubkey, checks: HealthChecks<ClientId>) -> Result<()> {
+    pub fn health_check(
+        &mut self,
+        payer: &Pubkey,
+        checks: HealthChecks<ClientId>,
+    ) -> Result<()> {
         let id = self.clients_state.find_signer(payer)?;
 
         self.coordinator

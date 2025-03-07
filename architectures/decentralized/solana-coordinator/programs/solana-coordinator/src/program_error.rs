@@ -15,12 +15,6 @@ pub enum ProgramError {
     #[msg("Coordinator account invalid discriminator")]
     CoordinatorAccountInvalidDiscriminator,
 
-    #[msg("Could not set whitelist")]
-    CouldNotSetWhitelist,
-
-    #[msg("Not in whitelist")]
-    NotInWhitelist,
-
     #[msg("Client id mismatch")]
     ClientIdMismatch,
 
@@ -82,24 +76,42 @@ pub enum ProgramError {
 impl From<CoordinatorError> for ProgramError {
     fn from(value: CoordinatorError) -> Self {
         match value {
-            CoordinatorError::NoActiveRound => ProgramError::CoordinatorErrorNoActiveRound,
-            CoordinatorError::InvalidWitness => ProgramError::CoordinatorErrorInvalidWitness,
-            CoordinatorError::InvalidRunState => ProgramError::CoordinatorErrorInvalidRunState,
-            CoordinatorError::DuplicateWitness => ProgramError::CoordinatorErrorDuplicateWitness,
+            CoordinatorError::NoActiveRound => {
+                ProgramError::CoordinatorErrorNoActiveRound
+            },
+            CoordinatorError::InvalidWitness => {
+                ProgramError::CoordinatorErrorInvalidWitness
+            },
+            CoordinatorError::InvalidRunState => {
+                ProgramError::CoordinatorErrorInvalidRunState
+            },
+            CoordinatorError::DuplicateWitness => {
+                ProgramError::CoordinatorErrorDuplicateWitness
+            },
             CoordinatorError::InvalidHealthCheck => {
                 ProgramError::CoordinatorErrorInvalidHealthCheck
-            }
-            CoordinatorError::Halted => ProgramError::CoordinatorErrorNoActiveRound,
-            CoordinatorError::InvalidCheckpoint => ProgramError::CoordinatorErrorInvalidCheckpoint,
-            CoordinatorError::WitnessesFull => ProgramError::CoordinatorErrorWitnessesFull,
-            CoordinatorError::CannotResume => ProgramError::CoordinatorErrorCannotResume,
-            CoordinatorError::InvalidWithdraw => ProgramError::CoordinatorErrorInvalidWithdraw,
+            },
+            CoordinatorError::Halted => {
+                ProgramError::CoordinatorErrorNoActiveRound
+            },
+            CoordinatorError::InvalidCheckpoint => {
+                ProgramError::CoordinatorErrorInvalidCheckpoint
+            },
+            CoordinatorError::WitnessesFull => {
+                ProgramError::CoordinatorErrorWitnessesFull
+            },
+            CoordinatorError::CannotResume => {
+                ProgramError::CoordinatorErrorCannotResume
+            },
+            CoordinatorError::InvalidWithdraw => {
+                ProgramError::CoordinatorErrorInvalidWithdraw
+            },
             CoordinatorError::InvalidCommitteeSelection => {
                 ProgramError::CoordinatorErrorInvalidCommitteeSelection
-            }
+            },
             CoordinatorError::InvalidCommitteeProof => {
                 ProgramError::CoordinatorErrorInvalidCommitteeProof
-            }
+            },
         }
     }
 }

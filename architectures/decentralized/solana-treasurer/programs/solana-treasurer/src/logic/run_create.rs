@@ -3,8 +3,8 @@ use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::Mint;
 use anchor_spl::token::Token;
 use anchor_spl::token::TokenAccount;
-use psyche_solana_coordinator::cpi::accounts::InitializeCoordinatorAccounts;
-use psyche_solana_coordinator::cpi::initialize_coordinator;
+use psyche_solana_coordinator::cpi::accounts::InitCoordinatorAccounts;
+use psyche_solana_coordinator::cpi::init_coordinator;
 use psyche_solana_coordinator::program::PsycheSolanaCoordinator;
 
 use crate::run_identity_from_string;
@@ -92,17 +92,20 @@ pub fn run_create_processor(
 
     let run_signer_seeds: &[&[&[u8]]] =
         &[&[Run::SEEDS_PREFIX, &run.identity.to_bytes(), &[run.bump]]];
-    initialize_coordinator(
+    init_coordinator(
         CpiContext::new(
             context.accounts.coordinator_program.to_account_info(),
-            InitializeCoordinatorAccounts {
+            InitCoordinatorAccounts {
                 payer: context.accounts.payer.to_account_info(),
                 authority: context.accounts.run.to_account_info(),
-                instance: context
+                coordinator_instance: context
                     .accounts
                     .coordinator_instance
                     .to_account_info(),
-                account: context.accounts.coordinator_account.to_account_info(),
+                coordinator_account: context
+                    .accounts
+                    .coordinator_account
+                    .to_account_info(),
                 system_program: context
                     .accounts
                     .system_program
