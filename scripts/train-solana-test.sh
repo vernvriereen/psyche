@@ -10,7 +10,7 @@ RUN_ID=${RUN_ID:-"test"}
 # presets for a DGX or an HGX
 DP=${DP:-"8"}
 TP=${TP:-"1"}
-BATCH_SIZE=${BATCH_SIZE:-"8"}
+BATCH_SIZE=${BATCH_SIZE:-"1"}
 
 solana airdrop 10 "$(solana-keygen pubkey ${WALLET_FILE})"
 
@@ -25,4 +25,5 @@ cargo run --release --bin psyche-solana-client -- \
         --data-parallelism ${DP} \
         --tensor-parallelism ${TP} \
         --micro-batch-size ${BATCH_SIZE} \
+        --logs "console" \
         --ticker
