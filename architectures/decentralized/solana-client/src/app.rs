@@ -169,6 +169,7 @@ impl App {
             .state
             .coordinator;
 
+        let mut already_joined_next_run: bool;
         if current_coordinator_state.run_state == RunState::WaitingForMembers {
             let joined = backend
                 .join_run(
@@ -189,17 +190,18 @@ impl App {
                 run_id = %self.run_id,
                 client_id = %signer,
             );
+            already_joined_next_run = true;
         } else {
             info!("Waiting for the current epoch to end before joining.");
+            already_joined_next_run = false;
         }
 
         // Update the latest update after joining the run to advance the state.
-        let mut latest_update = backend
+        let coordinator_state = backend
             .get_coordinator_account(&instance.account)
             .await?
-            .state
-            .coordinator;
-
+            .state;
+        let mut latest_update = coordinator_state.coordinator;
         let mut updates = backend_runner.updates();
         let mut tick_tx: Option<JoinHandle<Result<Signature>>> = None;
         let mut client = Client::new(backend_runner, allowlist, p2p, state_options);
@@ -219,14 +221,17 @@ impl App {
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
                         .as_secs();
-                    match ticked.tick(Some([].iter()), timestamp, rand::thread_rng().next_u64()) {
+
+                    let pending_clients = (ticked.run_state == RunState::WaitingForMembers).then(|| coordinator_state.get_active_clients());
+
+                    match ticked.tick(pending_clients, timestamp, rand::thread_rng().next_u64()) {
                         Ok(_) => {
                             if ticked.run_state != latest_update.run_state {
                                 let backend = backend.clone();
                                 let backend_clone = backend.clone();
                                 tick_tx = Some(tokio::spawn(async move { backend.tick(instance_pda, instance.account).await }));
                                 // This means the epoch finished so we're rejoining the run to participate in the next one.
-                                if ticked.run_state == RunState::WaitingForMembers && latest_update.run_state == RunState::Cooldown {
+                                if ticked.run_state == RunState::WaitingForMembers && latest_update.run_state == RunState::Cooldown && !already_joined_next_run {
                                     let joined = backend_clone
                                         .join_run(
                                             instance_pda,
@@ -241,6 +246,9 @@ impl App {
                                         "Joined run for next epoch {} from {} with transaction {}",
                                         self.run_id, signer, joined
                                     );
+                                    already_joined_next_run = true;
+                                } else if ticked.run_state == RunState::RoundTrain && latest_update.run_state == RunState::Warmup {
+                                    already_joined_next_run = false;
                                 }
                             }
                         }

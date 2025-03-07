@@ -191,6 +191,8 @@ pub struct CoordinatorEpochState<T> {
     pub rounds_head: u32,
     pub first_round: SmallBoolean,
     pub checkpointed: SmallBoolean,
+    pub warmup_just_starting: SmallBoolean,
+    pub training_just_starting: SmallBoolean,
 }
 
 #[derive(Clone, Debug, Zeroable, Copy, Serialize, Deserialize)]
@@ -328,6 +330,8 @@ impl<T: NodeIdentity> Default for CoordinatorEpochState<T> {
             checkpointed: Default::default(),
             clients: Default::default(),
             exited_clients: Default::default(),
+            warmup_just_starting: Default::default(),
+            training_just_starting: Default::default(),
         }
     }
 }
@@ -736,7 +740,9 @@ impl<T: NodeIdentity> Coordinator<T> {
             return Ok(TickResult::Ticked);
         };
 
-        if pending_clients.len() as u16 >= self.config.min_clients {
+        if pending_clients.len() as u16 >= self.config.min_clients
+            && self.check_timeout(unix_timestamp, 5)
+        {
             let height = self.current_round_unchecked().height;
             self.move_clients_to_exited(height);
 
@@ -760,6 +766,8 @@ impl<T: NodeIdentity> Coordinator<T> {
 
             bytemuck::write_zeroes(&mut self.epoch_state);
             self.epoch_state.first_round = true.into();
+            self.epoch_state.warmup_just_starting = true.into();
+            self.epoch_state.training_just_starting = true.into();
             self.epoch_state
                 .clients
                 .extend(
@@ -768,6 +776,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                         .map(|x| Client::new(*x)),
                 )
                 .unwrap();
+
             self.start_warmup(unix_timestamp);
         }
 
@@ -972,8 +981,16 @@ impl<T: NodeIdentity> Coordinator<T> {
             }
     }
 
-    pub fn is_epoch_just_starting(&self) -> bool {
-        self.epoch_state.first_round.is_true() && self.run_state == RunState::Warmup
+    pub fn is_warmup_just_starting(&self) -> bool {
+        self.epoch_state.first_round.is_true()
+            && self.run_state == RunState::Warmup
+            && self.epoch_state.warmup_just_starting.is_true()
+    }
+
+    pub fn is_training_just_starting(&self) -> bool {
+        self.epoch_state.first_round.is_true()
+            && self.run_state == RunState::RoundTrain
+            && self.epoch_state.training_just_starting.is_true()
     }
 }
 

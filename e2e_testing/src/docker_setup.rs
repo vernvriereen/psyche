@@ -5,6 +5,7 @@ use bollard::{
     container::{Config, CreateContainerOptions},
     secret::HostConfig,
 };
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use tokio::signal;
@@ -12,6 +13,7 @@ use tokio::signal;
 use crate::docker_watcher::DockerWatcherError;
 
 pub const CLIENT_CONTAINER_PREFIX: &str = "test-psyche-test-client";
+pub const VALIDATOR_CONTAINER_PREFIX: &str = "test-psyche-solana-test-validator";
 
 pub struct DockerTestCleanup;
 impl Drop for DockerTestCleanup {
@@ -30,11 +32,29 @@ impl Drop for DockerTestCleanup {
     }
 }
 
-pub fn e2e_testing_setup(init_num_clients: usize) -> DockerTestCleanup {
-    spawn_psyche_network(init_num_clients).unwrap();
+/// FIXME: The config path must be relative to the compose file for now.
+pub fn e2e_testing_setup(init_num_clients: usize, config: Option<PathBuf>) -> DockerTestCleanup {
+    spawn_psyche_network(init_num_clients, config).unwrap();
     spawn_ctrl_c_task();
 
     DockerTestCleanup {}
+}
+
+pub async fn is_client_healthy(
+    docker_client: Arc<Docker>,
+    client_number: u8,
+) -> Result<bool, DockerWatcherError> {
+    let container_name = format!("{CLIENT_CONTAINER_PREFIX}-{}", client_number);
+    let container = docker_client
+        .inspect_container(&container_name, None)
+        .await
+        .unwrap();
+    let state = container.state.unwrap();
+    match state.status {
+        Some(bollard::secret::ContainerStateStatusEnum::DEAD)
+        | Some(bollard::secret::ContainerStateStatusEnum::EXITED) => Ok(false),
+        _ => Ok(true),
+    }
 }
 
 pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWatcherError> {
@@ -118,7 +138,7 @@ pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWa
         platform: None,
     });
     let config = Config {
-        image: Some("psyche-client"),
+        image: Some("psyche-test-client"),
         env: Some(envs.iter().map(|s| s.as_str()).collect()),
         host_config: Some(host_config),
         ..Default::default()
@@ -135,14 +155,23 @@ pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWa
     Ok(())
 }
 
-pub fn spawn_psyche_network(init_num_clients: usize) -> Result<(), DockerWatcherError> {
-    let output = Command::new("just")
+pub fn spawn_psyche_network(
+    init_num_clients: usize,
+    config: Option<PathBuf>,
+) -> Result<(), DockerWatcherError> {
+    let mut command = Command::new("just");
+    let command = command
         .args(["setup_test_infra", &format!("{}", init_num_clients)])
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .output()
-        .expect("Failed spawn docker compose command");
+        .stderr(Stdio::inherit());
 
+    if let Some(config) = config {
+        command.env("CONFIG_PATH", config);
+    }
+
+    let output = command
+        .output()
+        .expect("Failed to spawn docker compose instances");
     if !output.status.success() {
         panic!("Error: {}", String::from_utf8_lossy(&output.stderr));
     }

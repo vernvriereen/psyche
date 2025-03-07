@@ -137,7 +137,9 @@ impl DockerWatcher {
                                     step,
                                 );
 
-                                log_sender.send(response).await.unwrap()
+                                if log_sender.send(response).await.is_err() {
+                                    println!("Probably the test ended so we drop the log sender");
+                                }
                             }
                         }
                         JsonFilter::Loss => {
@@ -152,7 +154,9 @@ impl DockerWatcher {
                             let epoch = parsed_log.get("epoch").and_then(|v| v.as_u64()).unwrap();
                             let step = parsed_log.get("step").and_then(|v| v.as_u64()).unwrap();
                             let response = Response::Loss(client_id, epoch, step, loss);
-                            log_sender.send(response).await.unwrap()
+                            if log_sender.send(response).await.is_err() {
+                                println!("Probably the test ended so we drop the log sender");
+                            }
                         }
                         JsonFilter::HealthCheck => {
                             let Some(_) = parsed_log.get("unhealthy_warn") else {
@@ -191,7 +195,9 @@ impl DockerWatcher {
                             };
                             let checkpoint = serde_json::from_value(checkpoint.clone()).unwrap();
                             let response = Response::LoadedModel(checkpoint);
-                            log_sender.send(response).await.unwrap()
+                            if log_sender.send(response).await.is_err() {
+                                println!("Probably the test ended so we drop the log sender");
+                            }
                         }
                     }
                 }

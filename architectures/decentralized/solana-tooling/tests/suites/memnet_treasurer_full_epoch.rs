@@ -1,31 +1,31 @@
 use bytemuck::Zeroable;
-use psyche_coordinator::{
-    model::{
-        Checkpoint, LLMArchitecture, LLMTrainingDataLocation,
-        LLMTrainingDataType, Model, LLM,
-    },
-    CoordinatorConfig, WitnessProof,
-};
-use psyche_core::{
-    ConstantLR, FixedVec, LearningRateSchedule, OptimizerDefinition,
-};
-use psyche_solana_coordinator::{
-    instruction::Witness, ClientId, CoordinatorAccount,
-};
-use psyche_solana_tooling::{
-    create_memnet_endpoint::create_memnet_endpoint,
-    process_coordinator_instructions::{
-        process_coordinator_join_run, process_coordinator_tick,
-        process_coordinator_witness,
-    },
-    process_treasurer_instructions::{
-        process_treasurer_participant_claim,
-        process_treasurer_participant_create, process_treasurer_run_create,
-        process_treasurer_run_top_up, process_treasurer_run_update,
-    },
-};
+use psyche_coordinator::model::Checkpoint;
+use psyche_coordinator::model::LLMArchitecture;
+use psyche_coordinator::model::LLMTrainingDataLocation;
+use psyche_coordinator::model::LLMTrainingDataType;
+use psyche_coordinator::model::Model;
+use psyche_coordinator::model::LLM;
+use psyche_coordinator::CoordinatorConfig;
+use psyche_coordinator::WitnessProof;
+use psyche_core::ConstantLR;
+use psyche_core::FixedVec;
+use psyche_core::LearningRateSchedule;
+use psyche_core::OptimizerDefinition;
+use psyche_solana_coordinator::instruction::Witness;
+use psyche_solana_coordinator::ClientId;
+use psyche_solana_coordinator::CoordinatorAccount;
+use psyche_solana_tooling::create_memnet_endpoint::create_memnet_endpoint;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_join_run;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_tick;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_witness;
+use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_participant_claim;
+use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_participant_create;
+use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_run_create;
+use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_run_top_up;
+use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_run_update;
 use psyche_solana_treasurer::logic::RunUpdateParams;
-use solana_sdk::{signature::Keypair, signer::Signer};
+use solana_sdk::signature::Keypair;
+use solana_sdk::signer::Signer;
 
 #[tokio::test]
 pub async fn run() {
