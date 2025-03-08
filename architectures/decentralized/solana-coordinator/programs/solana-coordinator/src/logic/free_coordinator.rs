@@ -21,14 +21,14 @@ pub struct FreeCoordinatorAccounts<'info> {
             bytes_from_string(&coordinator_instance.run_id)
         ],
         bump = coordinator_instance.bump,
-        constraint = coordinator_instance.authority == authority.key(),
+        constraint = coordinator_instance.main_authority == authority.key(),
         close = spill,
     )]
     pub coordinator_instance: Account<'info, CoordinatorInstance>,
 
     #[account(
         mut,
-        constraint = coordinator_instance.account == coordinator_account.key(),
+        constraint = coordinator_instance.coordinator_account == coordinator_account.key(),
         close = spill,
     )]
     pub coordinator_account: AccountLoader<'info, CoordinatorAccount>,

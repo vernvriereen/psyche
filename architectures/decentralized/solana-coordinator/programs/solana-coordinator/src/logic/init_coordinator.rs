@@ -12,9 +12,6 @@ pub struct InitCoordinatorAccounts<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
 
-    #[account()]
-    pub authority: Signer<'info>,
-
     #[account(
         init,
         payer = payer,
@@ -37,16 +34,25 @@ pub struct InitCoordinatorAccounts<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct InitCoordinatorParams {
+    pub main_authority: Pubkey,
+    pub join_authority: Pubkey,
+    pub run_id: String,
+}
+
 pub fn init_coordinator_processor(
     context: Context<InitCoordinatorAccounts>,
-    run_id: String,
+    params: InitCoordinatorParams,
 ) -> Result<()> {
     // Initialize the coordinator instance
     let coordinator_instance = &mut context.accounts.coordinator_instance;
     coordinator_instance.bump = context.bumps.coordinator_instance;
-    coordinator_instance.authority = context.accounts.authority.key();
-    coordinator_instance.account = context.accounts.coordinator_account.key();
-    coordinator_instance.run_id = run_id.clone();
+    coordinator_instance.main_authority = params.main_authority;
+    coordinator_instance.join_authority = params.join_authority;
+    coordinator_instance.coordinator_account =
+        context.accounts.coordinator_account.key();
+    coordinator_instance.run_id = params.run_id.clone();
     // Initialize the coordinator account
     let mut data =
         context.accounts.coordinator_account.try_borrow_mut_data()?;
@@ -66,7 +72,7 @@ pub fn init_coordinator_processor(
     );
     // Setup the run_id const
     let mut array = [0u8; SOLANA_MAX_STRING_LEN];
-    let run_id = bytes_from_string(&run_id);
+    let run_id = bytes_from_string(&params.run_id);
     array[..run_id.len()].copy_from_slice(run_id);
     account.state.coordinator.run_id = array;
     // Done

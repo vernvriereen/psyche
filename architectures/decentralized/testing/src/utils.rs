@@ -36,7 +36,7 @@ impl SolanaTestClient {
             program.account(account).await.unwrap();
         Self {
             program,
-            account: instance.account,
+            account: instance.coordinator_account,
         }
     }
 

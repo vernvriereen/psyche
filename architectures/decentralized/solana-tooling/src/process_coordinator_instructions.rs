@@ -16,6 +16,7 @@ use psyche_solana_coordinator::instruction::Tick;
 use psyche_solana_coordinator::instruction::UpdateCoordinatorConfigModel;
 use psyche_solana_coordinator::instruction::Witness;
 use psyche_solana_coordinator::logic::FreeCoordinatorParams;
+use psyche_solana_coordinator::logic::InitCoordinatorParams;
 use psyche_solana_coordinator::logic::JoinRunParams;
 use psyche_solana_coordinator::ClientId;
 use solana_sdk::instruction::Instruction;
@@ -30,29 +31,22 @@ use solana_toolbox_endpoint::ToolboxEndpointError;
 pub async fn process_coordinator_init(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
-    authority: &Keypair,
     coordinator_account: &Pubkey,
-    run_id: &str,
+    params: InitCoordinatorParams,
 ) -> Result<Pubkey, ToolboxEndpointError> {
-    let coordinator_instance = find_coordinator_instance(run_id);
+    let coordinator_instance = find_coordinator_instance(&params.run_id);
     let accounts = InitCoordinatorAccounts {
         payer: payer.pubkey(),
-        authority: authority.pubkey(),
         coordinator_instance,
         coordinator_account: *coordinator_account,
         system_program: system_program::ID,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: InitCoordinator {
-            run_id: run_id.to_string(),
-        }
-        .data(),
+        data: InitCoordinator { params }.data(),
         program_id: psyche_solana_coordinator::ID,
     };
-    endpoint
-        .process_instruction_with_signers(instruction, payer, &[authority])
-        .await?;
+    endpoint.process_instruction(instruction, payer).await?;
     Ok(coordinator_instance)
 }
 
@@ -94,8 +88,8 @@ pub async fn process_coordinator_update_config_model(
 ) -> Result<Signature, ToolboxEndpointError> {
     let accounts = OwnerCoordinatorAccounts {
         authority: authority.pubkey(),
-        instance: *coordinator_instance,
-        account: *coordinator_account,
+        coordinator_instance: *coordinator_instance,
+        coordinator_account: *coordinator_account,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
@@ -145,8 +139,8 @@ pub async fn process_coordinator_set_paused(
 ) -> Result<Signature, ToolboxEndpointError> {
     let accounts = OwnerCoordinatorAccounts {
         authority: authority.pubkey(),
-        instance: *coordinator_instance,
-        account: *coordinator_account,
+        coordinator_instance: *coordinator_instance,
+        coordinator_account: *coordinator_account,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
@@ -167,8 +161,8 @@ pub async fn process_coordinator_tick(
 ) -> Result<Signature, ToolboxEndpointError> {
     let accounts = PermissionlessCoordinatorAccounts {
         user: user.pubkey(),
-        instance: *coordinator_instance,
-        account: *coordinator_account,
+        coordinator_instance: *coordinator_instance,
+        coordinator_account: *coordinator_account,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
@@ -190,8 +184,8 @@ pub async fn process_coordinator_witness(
 ) -> Result<Signature, ToolboxEndpointError> {
     let accounts = PermissionlessCoordinatorAccounts {
         user: user.pubkey(),
-        instance: *coordinator_instance,
-        account: *coordinator_account,
+        coordinator_instance: *coordinator_instance,
+        coordinator_account: *coordinator_account,
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
