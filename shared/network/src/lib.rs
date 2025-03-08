@@ -120,6 +120,7 @@ where
     BroadcastMessage: Networkable,
     Download: Networkable,
 {
+    #[allow(clippy::too_many_arguments)]
     pub async fn init<A: Allowlist + 'static + Send>(
         run_id: &str,
         port: Option<u16>,
@@ -140,12 +141,21 @@ where
         debug!("Using relay servers: {}", fmt_relay_mode(&relay_mode));
 
         let ipv4 = if let Some(if_name) = interface {
+            let (wildcard, if_name) = if if_name.ends_with("*") {
+                (true, if_name[..if_name.len() - 1].to_string())
+            } else {
+                (false, if_name)
+            };
             let iface_ip = get_if_addrs::get_if_addrs()
                 .unwrap()
                 .iter()
                 .find_map(|interface| {
-                    (interface.name == if_name && interface.ip().is_ipv4())
-                        .then_some(interface.ip())
+                    (if wildcard {
+                        interface.name.starts_with(&if_name)
+                    } else {
+                        interface.name == if_name
+                    } && interface.ip().is_ipv4())
+                    .then_some(interface.ip())
                 });
             let IpAddr::V4(v4) =
                 iface_ip.ok_or(anyhow!("no interface with name \"{if_name}\" found."))?
