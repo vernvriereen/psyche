@@ -7,7 +7,7 @@ use crate::CoordinatorInstance;
 use crate::ProgramError;
 
 #[derive(Accounts)]
-#[instruction(run_id: String)]
+#[instruction(params: InitCoordinatorParams)]
 pub struct InitCoordinatorAccounts<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -18,7 +18,7 @@ pub struct InitCoordinatorAccounts<'info> {
         space = 8 + CoordinatorInstance::INIT_SPACE,
         seeds = [
             CoordinatorInstance::SEEDS_PREFIX,
-            bytes_from_string(&run_id)
+            bytes_from_string(&params.run_id)
         ],
         bump
     )]
