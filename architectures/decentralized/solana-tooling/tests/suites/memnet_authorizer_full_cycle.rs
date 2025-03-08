@@ -59,26 +59,20 @@ pub async fn run() {
     assert_eq!(authorization_state.grantor, grantor.pubkey());
     assert_eq!(authorization_state.grantee, grantee.pubkey());
     assert_eq!(authorization_state.scope, scope);
-    assert_eq!(authorization_state.active, false);
+    assert!(!authorization_state.active);
     assert_eq!(authorization_state.delegates, vec![]);
 
     // Check the function is_valid_for returns the expected values
-    assert_eq!(
-        authorization_state.is_valid_for(
-            &grantor.pubkey(),
-            &grantee.pubkey(),
-            &scope
-        ),
-        false,
-    );
-    assert_eq!(
-        authorization_state.is_valid_for(
-            &grantor.pubkey(),
-            &delegates[1],
-            &scope
-        ),
-        false,
-    );
+    assert!(!authorization_state.is_valid_for(
+        &grantor.pubkey(),
+        &grantee.pubkey(),
+        &scope
+    ),);
+    assert!(!authorization_state.is_valid_for(
+        &grantor.pubkey(),
+        &delegates[1],
+        &scope
+    ),);
 
     // The grantee can now set the delegates
     process_authorizer_authorization_grantee_update(
@@ -99,26 +93,20 @@ pub async fn run() {
     assert_eq!(authorization_state.grantor, grantor.pubkey());
     assert_eq!(authorization_state.grantee, grantee.pubkey());
     assert_eq!(authorization_state.scope, scope);
-    assert_eq!(authorization_state.active, false);
+    assert!(!authorization_state.active);
     assert_eq!(authorization_state.delegates, delegates[..5]);
 
     // Check the function is_valid_for returns the expected values
-    assert_eq!(
-        authorization_state.is_valid_for(
-            &grantor.pubkey(),
-            &grantee.pubkey(),
-            &scope
-        ),
-        false,
-    );
-    assert_eq!(
-        authorization_state.is_valid_for(
-            &grantor.pubkey(),
-            &delegates[1],
-            &scope
-        ),
-        false,
-    );
+    assert!(!authorization_state.is_valid_for(
+        &grantor.pubkey(),
+        &grantee.pubkey(),
+        &scope
+    ),);
+    assert!(!authorization_state.is_valid_for(
+        &grantor.pubkey(),
+        &delegates[1],
+        &scope
+    ),);
 
     // The grantee can increase the set the delegates
     process_authorizer_authorization_grantee_update(
@@ -139,18 +127,15 @@ pub async fn run() {
     assert_eq!(authorization_state.grantor, grantor.pubkey());
     assert_eq!(authorization_state.grantee, grantee.pubkey());
     assert_eq!(authorization_state.scope, scope);
-    assert_eq!(authorization_state.active, false);
+    assert!(!authorization_state.active);
     assert_eq!(authorization_state.delegates, delegates[10..90]);
 
     // Check the function is_valid_for returns the expected values
-    assert_eq!(
-        authorization_state.is_valid_for(
-            &grantor.pubkey(),
-            &delegates[80],
-            &scope
-        ),
-        false,
-    );
+    assert!(!authorization_state.is_valid_for(
+        &grantor.pubkey(),
+        &delegates[80],
+        &scope
+    ),);
 
     // The grantor can enable the authorization at any time
     process_authorizer_authorization_grantor_update(
@@ -171,34 +156,25 @@ pub async fn run() {
     assert_eq!(authorization_state.grantor, grantor.pubkey());
     assert_eq!(authorization_state.grantee, grantee.pubkey());
     assert_eq!(authorization_state.scope, scope);
-    assert_eq!(authorization_state.active, true);
+    assert!(authorization_state.active);
     assert_eq!(authorization_state.delegates, delegates[10..90]);
 
     // Check the function is_valid_for returns the expected values
-    assert_eq!(
-        authorization_state.is_valid_for(
-            &grantor.pubkey(),
-            &grantee.pubkey(),
-            &scope
-        ),
-        true,
-    );
-    assert_eq!(
-        authorization_state.is_valid_for(
-            &grantor.pubkey(),
-            &delegates[3],
-            &scope
-        ),
-        false,
-    );
-    assert_eq!(
-        authorization_state.is_valid_for(
-            &grantor.pubkey(),
-            &delegates[75],
-            &scope
-        ),
-        true,
-    );
+    assert!(authorization_state.is_valid_for(
+        &grantor.pubkey(),
+        &grantee.pubkey(),
+        &scope
+    ),);
+    assert!(!authorization_state.is_valid_for(
+        &grantor.pubkey(),
+        &delegates[3],
+        &scope
+    ),);
+    assert!(authorization_state.is_valid_for(
+        &grantor.pubkey(),
+        &delegates[75],
+        &scope
+    ),);
 
     // The grantee can decrease the set the delegates
     process_authorizer_authorization_grantee_update(
@@ -219,34 +195,25 @@ pub async fn run() {
     assert_eq!(authorization_state.grantor, grantor.pubkey());
     assert_eq!(authorization_state.grantee, grantee.pubkey());
     assert_eq!(authorization_state.scope, scope);
-    assert_eq!(authorization_state.active, true);
+    assert!(authorization_state.active);
     assert_eq!(authorization_state.delegates, delegates[3..5]);
 
     // Check the function is_valid_for returns the expected values
-    assert_eq!(
-        authorization_state.is_valid_for(
-            &grantor.pubkey(),
-            &grantee.pubkey(),
-            &scope
-        ),
-        true,
-    );
-    assert_eq!(
-        authorization_state.is_valid_for(
-            &grantor.pubkey(),
-            &delegates[3],
-            &scope
-        ),
-        true,
-    );
-    assert_eq!(
-        authorization_state.is_valid_for(
-            &grantor.pubkey(),
-            &delegates[75],
-            &scope
-        ),
-        false,
-    );
+    assert!(authorization_state.is_valid_for(
+        &grantor.pubkey(),
+        &grantee.pubkey(),
+        &scope
+    ),);
+    assert!(authorization_state.is_valid_for(
+        &grantor.pubkey(),
+        &delegates[3],
+        &scope
+    ),);
+    assert!(!authorization_state.is_valid_for(
+        &grantor.pubkey(),
+        &delegates[75],
+        &scope
+    ),);
 
     // The grantor can disable the authorization at any time
     process_authorizer_authorization_grantor_update(
@@ -267,34 +234,25 @@ pub async fn run() {
     assert_eq!(authorization_state.grantor, grantor.pubkey());
     assert_eq!(authorization_state.grantee, grantee.pubkey());
     assert_eq!(authorization_state.scope, scope);
-    assert_eq!(authorization_state.active, false);
+    assert!(!authorization_state.active);
     assert_eq!(authorization_state.delegates, delegates[3..5]);
 
     // Check the function is_valid_for returns the expected values
-    assert_eq!(
-        authorization_state.is_valid_for(
-            &grantor.pubkey(),
-            &grantee.pubkey(),
-            &scope
-        ),
-        false,
-    );
-    assert_eq!(
-        authorization_state.is_valid_for(
-            &grantor.pubkey(),
-            &delegates[3],
-            &scope
-        ),
-        false,
-    );
-    assert_eq!(
-        authorization_state.is_valid_for(
-            &grantor.pubkey(),
-            &delegates[75],
-            &scope
-        ),
-        false,
-    );
+    assert!(!authorization_state.is_valid_for(
+        &grantor.pubkey(),
+        &grantee.pubkey(),
+        &scope
+    ),);
+    assert!(!authorization_state.is_valid_for(
+        &grantor.pubkey(),
+        &delegates[3],
+        &scope
+    ),);
+    assert!(!authorization_state.is_valid_for(
+        &grantor.pubkey(),
+        &delegates[75],
+        &scope
+    ),);
 
     // The grantor can only close the authorization once all the delegate has been cleared
     process_authorizer_authorization_close(

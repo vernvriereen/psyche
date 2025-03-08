@@ -311,6 +311,7 @@ async fn async_main() -> Result<()> {
                 ticker,
                 run_id,
                 p2p_port: args.bind_p2p_port,
+                p2p_interface: args.bind_p2p_interface,
                 data_parallelism: args.data_parallelism,
                 tensor_parallelism: args.tensor_parallelism,
                 micro_batch_size: args.micro_batch_size,

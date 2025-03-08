@@ -92,6 +92,7 @@ pub struct AppParams {
     pub micro_batch_size: Option<usize>,
     pub write_gradients_dir: Option<PathBuf>,
     pub p2p_port: Option<u16>,
+    pub p2p_interface: Option<String>,
     pub eval_tasks: Vec<psyche_eval::Task>,
     pub eval_task_max_docs: Option<usize>,
     pub checkpoint_upload_info: Option<CheckpointConfig>,
@@ -132,6 +133,7 @@ impl AppBuilder {
         let p2p = NC::init(
             &p.run_id,
             p.p2p_port,
+            p.p2p_interface,
             RelayMode::Default,
             p.discovery_mode,
             vec![],
