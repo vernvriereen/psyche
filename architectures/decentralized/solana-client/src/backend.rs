@@ -163,7 +163,7 @@ impl SolanaBackend {
             .await?;
 
         Ok(CreatedRun {
-            instance: instance_pda,
+            instance: coordinator_instance,
             account: coordinator_account.pubkey(),
             transaction: signature,
         })

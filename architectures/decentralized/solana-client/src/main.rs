@@ -208,7 +208,9 @@ async fn async_main() -> Result<()> {
             .unwrap();
             let balance = backend.get_balance(&key_pair.pubkey()).await?;
             let (instance_pda, instance) = backend.get_coordinator_instance(&run_id).await?;
-            let closed = backend.close_run(instance_pda, instance.coordinator_account).await?;
+            let closed = backend
+                .close_run(instance_pda, instance.coordinator_account)
+                .await?;
             println!("Closed run {} with transaction {}", run_id, closed);
             let recovered = backend.get_balance(&key_pair.pubkey()).await? - balance;
             println!("Recovered {:.9} SOL", lamports_to_sol(recovered));
