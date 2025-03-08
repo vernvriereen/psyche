@@ -158,7 +158,7 @@ impl SolanaBackend {
                     .unwrap()[0]
                     .clone(),
             )
-            .signer(coordinator_account)
+            .signer(&coordinator_account)
             .send()
             .await?;
 
