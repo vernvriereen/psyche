@@ -18,7 +18,7 @@ use psyche_coordinator::{
     model::{self, Model},
     CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks, Witness,
 };
-use psyche_solana_coordinator::{logic::InitCoordinatorParams, ClientId};
+
 use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
 use std::sync::Arc;
@@ -26,7 +26,8 @@ use tokio::sync::broadcast;
 use tracing::{debug, info};
 
 pub struct SolanaBackend {
-    program: Program<Arc<Keypair>>,
+    program_authorizer: Program<Arc<Keypair>>,
+    program_coordinator: Program<Arc<Keypair>>,
     cluster: Cluster,
 }
 
@@ -53,8 +54,13 @@ impl SolanaBackend {
         committment: CommitmentConfig,
     ) -> Result<Self> {
         let client = Client::new_with_options(cluster.clone(), payer.clone(), committment);
-        let program = client.program(psyche_solana_coordinator::ID)?;
-        Ok(Self { program, cluster })
+        let program_authorizer = client.program(psyche_solana_authorizer::ID)?;
+        let program_coordinator = client.program(psyche_solana_coordinator::ID)?;
+        Ok(Self {
+            program_authorizer,
+            program_coordinator,
+            cluster,
+        })
     }
 
     pub async fn start(self, run_id: String, coordinator: Pubkey) -> Result<SolanaBackendRunner> {
@@ -67,9 +73,13 @@ impl SolanaBackend {
             "Coordinator instance address for run \"{}\": {}",
             run_id, instance_pda
         );
-        let commitment = self.program.rpc().commitment();
+        let commitment = self.program_coordinator.rpc().commitment();
 
-        let init = self.program.rpc().get_account_data(&coordinator).await?;
+        let init = self
+            .program_coordinator
+            .rpc()
+            .get_account_data(&coordinator)
+            .await?;
 
         tokio::spawn(async move {
             let mut notifications = match sub_client
@@ -108,7 +118,7 @@ impl SolanaBackend {
     pub async fn create_run(&self, run_id: String) -> Result<CreatedRun> {
         let space = psyche_solana_coordinator::CoordinatorAccount::space_with_discriminator();
         let rent = self
-            .program
+            .program_coordinator
             .rpc()
             .get_minimum_balance_for_rent_exemption(space)
             .await?;
@@ -117,45 +127,93 @@ impl SolanaBackend {
             psyche_solana_coordinator::bytes_from_string(&run_id),
         ];
 
-        let coordinator_instance = Pubkey::find_program_address(seeds, &self.program.id()).0;
+        let payer = self.program_coordinator.payer();
+        let main_authority = self.program_coordinator.payer();
+        let join_authority = self.program_coordinator.payer();
+
+        let coordinator_instance =
+            Pubkey::find_program_address(seeds, &self.program_coordinator.id()).0;
 
         let coordinator_account_signer = Keypair::new();
         let coordinator_account = coordinator_account_signer.pubkey();
 
+        let authorization_global = psyche_solana_authorizer::find_authorization(
+            &join_authority,
+            &system_program::ID,
+            psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE,
+        );
+
         let signature = self
-            .program
+            .program_coordinator
             .request()
-            .instruction(system_instruction::transfer(
-                &self.program.payer(),
+            .instruction(system_instruction::create_account(
+                &self.program_coordinator.payer(),
                 &coordinator_account,
                 rent,
-            ))
-            .instruction(system_instruction::allocate(
-                &coordinator_account,
                 space as u64,
-            ))
-            .instruction(system_instruction::assign(
-                &coordinator_account,
-                &self.program.id(),
+                &self.program_coordinator.id(),
             ))
             .instruction(
-                self.program
+                self.program_coordinator
                     .request()
                     .accounts(
                         psyche_solana_coordinator::accounts::InitCoordinatorAccounts {
-                            payer: self.program.payer(),
+                            payer,
                             coordinator_instance,
                             coordinator_account,
                             system_program: system_program::ID,
                         },
                     )
                     .args(psyche_solana_coordinator::instruction::InitCoordinator {
-                        params: InitCoordinatorParams {
-                            main_authority: self.program.payer(),
-                            join_authority: self.program.payer(),
+                        params: psyche_solana_coordinator::logic::InitCoordinatorParams {
+                            main_authority,
+                            join_authority,
                             run_id,
                         },
                     })
+                    .instructions()
+                    .unwrap()[0]
+                    .clone(),
+            )
+            .instruction(
+                self.program_authorizer
+                    .request()
+                    .accounts(
+                        psyche_solana_authorizer::accounts::AuthorizationCreateAccounts {
+                            payer,
+                            grantor: join_authority,
+                            authorization: authorization_global,
+                            system_program: system_program::ID,
+                        },
+                    )
+                    .args(psyche_solana_authorizer::instruction::AuthorizationCreate {
+                        params: psyche_solana_authorizer::logic::AuthorizationCreateParams {
+                            grantee: system_program::ID,
+                            scope: psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE
+                                .to_vec(),
+                        },
+                    })
+                    .instructions()
+                    .unwrap()[0]
+                    .clone(),
+            )
+            .instruction(
+                self.program_authorizer
+                    .request()
+                    .accounts(
+                        psyche_solana_authorizer::accounts::AuthorizationGrantorUpdateAccounts {
+                            grantor: join_authority,
+                            authorization: authorization_global,
+                        },
+                    )
+                    .args(
+                        psyche_solana_authorizer::instruction::AuthorizationGrantorUpdate {
+                            params:
+                                psyche_solana_authorizer::logic::AuthorizationGrantorUpdateParams {
+                                    active: true,
+                                },
+                        },
+                    )
                     .instructions()
                     .unwrap()[0]
                     .clone(),
@@ -177,12 +235,12 @@ impl SolanaBackend {
         coordinator_account: Pubkey,
     ) -> Result<Signature> {
         let signature = self
-            .program
+            .program_coordinator
             .request()
             .accounts(
                 psyche_solana_coordinator::accounts::FreeCoordinatorAccounts {
-                    authority: self.program.payer(),
-                    spill: self.program.payer(),
+                    authority: self.program_coordinator.payer(),
+                    spill: self.program_coordinator.payer(),
                     coordinator_instance,
                     coordinator_account,
                 },
@@ -202,16 +260,20 @@ impl SolanaBackend {
         coordinator_account: Pubkey,
         id: psyche_solana_coordinator::ClientId,
     ) -> Result<Signature> {
+        let authorization_global = psyche_solana_authorizer::find_authorization(
+            &self.program_coordinator.payer(),
+            &system_program::ID,
+            psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE,
+        );
         let signature = self
-            .program
+            .program_coordinator
             .request()
-            .accounts(
-                psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
-                    user: self.program.payer(),
-                    coordinator_instance,
-                    coordinator_account,
-                },
-            )
+            .accounts(psyche_solana_coordinator::accounts::JoinRunAccounts {
+                user: self.program_coordinator.payer(),
+                authorization: authorization_global,
+                coordinator_instance,
+                coordinator_account,
+            })
             .args(psyche_solana_coordinator::instruction::JoinRun {
                 params: psyche_solana_coordinator::logic::JoinRunParams { client_id: id },
             })
@@ -227,11 +289,11 @@ impl SolanaBackend {
         model: Option<Model>,
     ) -> Result<Signature> {
         let signature = self
-            .program
+            .program_coordinator
             .request()
             .accounts(
                 psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
-                    authority: self.program.payer(),
+                    authority: self.program_coordinator.payer(),
                     coordinator_instance,
                     coordinator_account,
                 },
@@ -255,11 +317,11 @@ impl SolanaBackend {
         paused: bool,
     ) -> Result<Signature> {
         let signature = self
-            .program
+            .program_coordinator
             .request()
             .accounts(
                 psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
-                    authority: self.program.payer(),
+                    authority: self.program_coordinator.payer(),
                     coordinator_instance,
                     coordinator_account,
                 },
@@ -277,11 +339,11 @@ impl SolanaBackend {
         coordinator_account: Pubkey,
     ) -> Result<Signature> {
         let signature = self
-            .program
+            .program_coordinator
             .request()
             .accounts(
                 psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
-                    user: self.program.payer(),
+                    user: self.program_coordinator.payer(),
                     coordinator_instance,
                     coordinator_account,
                 },
@@ -300,11 +362,11 @@ impl SolanaBackend {
         witness: Witness,
     ) -> Result<Signature> {
         let signature = self
-            .program
+            .program_coordinator
             .request()
             .accounts(
                 psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
-                    user: self.program.payer(),
+                    user: self.program_coordinator.payer(),
                     coordinator_instance,
                     coordinator_account,
                 },
@@ -324,15 +386,15 @@ impl SolanaBackend {
         &self,
         coordinator_instance: Pubkey,
         coordinator_account: Pubkey,
-        id: ClientId,
+        id: psyche_solana_coordinator::ClientId,
         check: CommitteeProof,
     ) -> Result<Signature> {
         let signature = self
-            .program
+            .program_coordinator
             .request()
             .accounts(
                 psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
-                    user: self.program.payer(),
+                    user: self.program_coordinator.payer(),
                     coordinator_instance,
                     coordinator_account,
                 },
@@ -355,13 +417,13 @@ impl SolanaBackend {
     ) -> Result<(Pubkey, psyche_solana_coordinator::CoordinatorInstance)> {
         let coordinator_instance = psyche_solana_coordinator::find_coordinator_instance(run_id);
         let coordinator_instance_value: psyche_solana_coordinator::CoordinatorInstance = self
-            .program
+            .program_coordinator
             .account(coordinator_instance)
             .await
             .context(format!(
                 "Finding coordinator instance for run {} on coordinator {}",
                 run_id,
-                self.program.id()
+                self.program_coordinator.id()
             ))?;
         Ok((coordinator_instance, coordinator_instance_value))
     }
@@ -371,7 +433,7 @@ impl SolanaBackend {
         coordinator_account: &Pubkey,
     ) -> Result<psyche_solana_coordinator::CoordinatorAccount> {
         let data = self
-            .program
+            .program_coordinator
             .rpc()
             .get_account_data(coordinator_account)
             .await?;
@@ -381,7 +443,7 @@ impl SolanaBackend {
     }
 
     pub async fn get_balance(&self, account: &Pubkey) -> Result<u64> {
-        Ok(self.program.rpc().get_balance(account).await?)
+        Ok(self.program_coordinator.rpc().get_balance(account).await?)
     }
 }
 

@@ -6837,6 +6837,7 @@ dependencies = [
  "psyche-core",
  "psyche-eval",
  "psyche-network",
+ "psyche-solana-authorizer",
  "psyche-solana-coordinator",
  "psyche-tui",
  "psyche-watcher",
