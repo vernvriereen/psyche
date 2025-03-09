@@ -118,22 +118,24 @@ impl SolanaBackend {
         ];
 
         let coordinator_instance = Pubkey::find_program_address(seeds, &self.program.id()).0;
-        let coordinator_account = Keypair::new();
+
+        let coordinator_account_signer = Keypair::new();
+        let coordinator_account = coordinator_account_signer.pubkey();
 
         let signature = self
             .program
             .request()
             .instruction(system_instruction::transfer(
                 &self.program.payer(),
-                &coordinator_account.pubkey(),
+                &coordinator_account,
                 rent,
             ))
             .instruction(system_instruction::allocate(
-                &coordinator_account.pubkey(),
+                &coordinator_account,
                 space as u64,
             ))
             .instruction(system_instruction::assign(
-                &coordinator_account.pubkey(),
+                &coordinator_account,
                 &self.program.id(),
             ))
             .instruction(
@@ -143,7 +145,7 @@ impl SolanaBackend {
                         psyche_solana_coordinator::accounts::InitCoordinatorAccounts {
                             payer: self.program.payer(),
                             coordinator_instance,
-                            coordinator_account: coordinator_account.pubkey(),
+                            coordinator_account,
                             system_program: system_program::ID,
                         },
                     )
@@ -158,13 +160,13 @@ impl SolanaBackend {
                     .unwrap()[0]
                     .clone(),
             )
-            .signer(&coordinator_account)
+            .signer(coordinator_account_signer)
             .send()
             .await?;
 
         Ok(CreatedRun {
             instance: coordinator_instance,
-            account: coordinator_account.pubkey(),
+            account: coordinator_account,
             transaction: signature,
         })
     }
