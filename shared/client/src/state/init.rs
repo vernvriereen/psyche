@@ -261,6 +261,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                                             || file.ends_with("tokenizer_config.json")
                                             || file.ends_with("special_tokens_map.json")
                                             || file.ends_with("generation_config.json")
+                                            || file.ends_with(".py")
                                     })
                                     .cloned()
                                     .collect();
