@@ -20,7 +20,7 @@ use psyche_coordinator::WitnessProof;
 use psyche_coordinator::SOLANA_MAX_NUM_CLIENTS;
 use psyche_coordinator::SOLANA_MAX_STRING_LEN;
 
-declare_id!("EqoKSxNdRmX1zSRKSppNCKBpGcciqCwYAjZWUkHoa2ox");
+declare_id!("9yNWJ3BUSgWwkHXxbJV4iBi2qnYfYw8ppHjqbBvUfMfv");
 
 pub const SOLANA_MAX_NUM_PENDING_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 

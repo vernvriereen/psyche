@@ -12,7 +12,7 @@ pub struct FreeCoordinatorAccounts<'info> {
     pub authority: Signer<'info>,
 
     #[account(mut)]
-    pub spill: UncheckedAccount<'info>,
+    pub spill: SystemAccount<'info>,
 
     #[account(
         mut,
