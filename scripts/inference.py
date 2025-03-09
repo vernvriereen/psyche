@@ -56,7 +56,8 @@ Upon my target three fair-shining suns.
 
 def main(args):
     model = AutoModelForCausalLM.from_pretrained(
-        args.model, device_map=args.device, torch_dtype=torch.bfloat16
+        args.model, device_map=args.device, torch_dtype=torch.bfloat16,
+        trust_remote_code=args.trust_remote_code,
     )
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     streamer = TextStreamer(tokenizer, skip_prompt=True)
@@ -78,4 +79,5 @@ if __name__ == "__main__":
     parser.add_argument("--temperature", default=0.6, type=float)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--max-tokens", default=1024)
+    parser.add_argument("--trust-remote-code", action="store_true")
     main(parser.parse_args())
