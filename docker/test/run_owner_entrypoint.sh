@@ -2,11 +2,6 @@
 
 set -o errexit
 
-WALLET_FILE=${KEY_FILE:-"$HOME/.config/solana/id.json"}
-RPC=${RPC:-"http://127.0.0.1:8899"}
-WS_RPC=${WS_RPC:-"ws://127.0.0.1:8900"}
-RUN_ID=${RUN_ID:-"test"}
-
 solana airdrop 10 "$(solana-keygen pubkey)" --url "${RPC}"
 
 psyche-solana-client create-run \
