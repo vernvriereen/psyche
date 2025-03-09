@@ -122,7 +122,7 @@ impl TokenizedDataProvider for DummyDataProvider {
 }
 
 impl LengthKnownDataProvider for DummyDataProvider {
-    fn len(&self) -> usize {
+    fn num_sequences(&self) -> usize {
         usize::MAX
     }
 }

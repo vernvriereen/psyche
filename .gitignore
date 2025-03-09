@@ -40,6 +40,7 @@ libtorch*
 slurm*
 *.key
 node_modules/
+bindings/*.ts
 
 ### Data folders ###
 /data

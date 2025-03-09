@@ -1,5 +1,6 @@
 use crate::{
     http::HttpDataProvider, DataProviderTcpClient, DummyDataProvider, TokenizedDataProvider,
+    WeightedDataProvider,
 };
 
 use psyche_core::BatchId;
@@ -9,20 +10,16 @@ pub enum DataProvider<T: AuthenticatableIdentity> {
     Http(HttpDataProvider),
     Server(DataProviderTcpClient<T>),
     Dummy(DummyDataProvider),
+    WeightedHttp(WeightedDataProvider<HttpDataProvider>),
 }
 
 impl<T: AuthenticatableIdentity> TokenizedDataProvider for DataProvider<T> {
     async fn get_samples(&mut self, data_ids: BatchId) -> anyhow::Result<Vec<Vec<i32>>> {
         match self {
-            DataProvider::Http(data_provider_http_client) => {
-                data_provider_http_client.get_samples(data_ids).await
-            }
-            DataProvider::Server(data_provider_tcp_client) => {
-                data_provider_tcp_client.get_samples(data_ids).await
-            }
-            DataProvider::Dummy(dummy_data_provider) => {
-                dummy_data_provider.get_samples(data_ids).await
-            }
+            DataProvider::Http(provider) => provider.get_samples(data_ids).await,
+            DataProvider::Server(provider) => provider.get_samples(data_ids).await,
+            DataProvider::Dummy(provider) => provider.get_samples(data_ids).await,
+            DataProvider::WeightedHttp(provider) => provider.get_samples(data_ids).await,
         }
     }
 }
