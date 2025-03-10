@@ -4,9 +4,10 @@ use anchor_lang::prelude::*;
 #[derive(Debug)]
 pub struct Run {
     pub bump: u8,
-
     pub identity: Pubkey,
-    pub authority: Pubkey,
+
+    pub main_authority: Pubkey,
+    pub join_authority: Pubkey,
 
     pub coordinator_account: Pubkey,
     pub coordinator_instance: Pubkey,

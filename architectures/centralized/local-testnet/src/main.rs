@@ -251,12 +251,12 @@ fn main() -> Result<()> {
 
             // Start server
             let mut server_cmd = format!(
-        "RUST_LOG={} cargo run -p psyche-centralized-server run --state {} --server-port {} --tui {}",
-        start_args.log,
-        state_path.display(),
-        start_args.server_port,
-        start_args.tui
-    );
+                "RUST_LOG={} cargo run -p psyche-centralized-server run --state {} --server-port {} --tui {}",
+                start_args.log,
+                state_path.display(),
+                start_args.server_port,
+                start_args.tui
+            );
             if data_path.exists() {
                 server_cmd.push_str(&format!(" --data-config {}", data_path.display()));
             }

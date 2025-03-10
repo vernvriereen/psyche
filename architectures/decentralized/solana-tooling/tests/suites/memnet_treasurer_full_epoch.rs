@@ -12,21 +12,22 @@ use psyche_core::FixedVec;
 use psyche_core::LearningRateSchedule;
 use psyche_core::OptimizerDefinition;
 use psyche_solana_coordinator::instruction::Witness;
+use psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE;
 use psyche_solana_coordinator::ClientId;
 use psyche_solana_coordinator::CoordinatorAccount;
 use psyche_solana_tooling::create_memnet_endpoint::create_memnet_endpoint;
+use psyche_solana_tooling::process_authorizer_instructions::process_authorizer_authorization_create;
 use psyche_solana_tooling::process_authorizer_instructions::process_authorizer_authorization_grantee_update;
+use psyche_solana_tooling::process_authorizer_instructions::process_authorizer_authorization_grantor_update;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_join_run;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_tick;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_witness;
 use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_participant_claim;
 use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_participant_create;
-use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_run_authorize;
 use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_run_create;
 use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_run_top_up;
 use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_run_update;
-use psyche_solana_treasurer::logic::RunAuthorizeAction;
-use psyche_solana_treasurer::logic::RunAuthorizeParams;
+use psyche_solana_treasurer::logic::RunCreateParams;
 use psyche_solana_treasurer::logic::RunUpdateParams;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
@@ -44,7 +45,8 @@ pub async fn run() {
         .unwrap();
 
     // Constants
-    let authority = Keypair::new();
+    let main_authority = Keypair::new();
+    let join_authority = Keypair::new();
     let participant = Keypair::new();
     let client = Keypair::new();
     let ticker = Keypair::new();
@@ -77,20 +79,23 @@ pub async fn run() {
     let (run, coordinator_instance) = process_treasurer_run_create(
         &mut endpoint,
         &payer,
-        &authority,
         &collateral_mint,
         &coordinator_account,
-        "This is my run's dummy run_id",
-        collateral_amount_per_earned_point,
+        RunCreateParams {
+            run_id: "This is my run's dummy run_id".to_string(),
+            main_authority: main_authority.pubkey(),
+            join_authority: join_authority.pubkey(),
+            collateral_amount_per_earned_point,
+        },
     )
     .await
     .unwrap();
 
     // Give the authority some collateral
-    let authority_collateral = endpoint
+    let main_authority_collateral = endpoint
         .process_spl_associated_token_account_get_or_init(
             &payer,
-            &authority.pubkey(),
+            &main_authority.pubkey(),
             &collateral_mint,
         )
         .await
@@ -100,7 +105,7 @@ pub async fn run() {
             &payer,
             &collateral_mint,
             &collateral_mint_authority,
-            &authority_collateral,
+            &main_authority_collateral,
             10_000_000,
         )
         .await
@@ -110,8 +115,8 @@ pub async fn run() {
     process_treasurer_run_top_up(
         &mut endpoint,
         &payer,
-        &authority,
-        &authority_collateral,
+        &main_authority,
+        &main_authority_collateral,
         &collateral_mint,
         &run,
         5_000_000,
@@ -166,8 +171,8 @@ pub async fn run() {
     process_treasurer_run_top_up(
         &mut endpoint,
         &payer,
-        &authority,
-        &authority_collateral,
+        &main_authority,
+        &main_authority_collateral,
         &collateral_mint,
         &run,
         5_000_000,
@@ -179,7 +184,7 @@ pub async fn run() {
     process_treasurer_run_update(
         &mut endpoint,
         &payer,
-        &authority,
+        &main_authority,
         &run,
         &coordinator_instance,
         &coordinator_account,
@@ -232,27 +237,21 @@ pub async fn run() {
     let client_id = ClientId::new(client.pubkey(), Default::default());
 
     // Add a participant key to whitelist
-    let authorization = process_treasurer_run_authorize(
+    let authorization = process_authorizer_authorization_create(
         &mut endpoint,
         &payer,
-        &authority,
-        &run,
-        RunAuthorizeParams {
-            action: RunAuthorizeAction::Create,
-            user: participant.pubkey(),
-        },
+        &join_authority,
+        &participant.pubkey(),
+        JOIN_RUN_AUTHORIZATION_SCOPE,
     )
     .await
     .unwrap();
-    process_treasurer_run_authorize(
+    process_authorizer_authorization_grantor_update(
         &mut endpoint,
         &payer,
-        &authority,
-        &run,
-        RunAuthorizeParams {
-            action: RunAuthorizeAction::Update { active: true },
-            user: participant.pubkey(),
-        },
+        &join_authority,
+        &authorization,
+        true,
     )
     .await
     .unwrap();

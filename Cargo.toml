@@ -26,6 +26,7 @@ psyche-tui = { path = "./shared/tui" }
 psyche-watcher = { path = "./shared/watcher" }
 
 psyche-solana-client = { path = "./architectures/decentralized/solana-client" }
+psyche-solana-authorizer = { path = "./architectures/decentralized/solana-authorizer/programs/solana-authorizer" }
 psyche-solana-coordinator = { path = "./architectures/decentralized/solana-coordinator/programs/solana-coordinator" }
 psyche-solana-treasurer = { path = "./architectures/decentralized/solana-treasurer/programs/solana-treasurer" }
 psyche-solana-tooling = { path = "./architectures/decentralized/solana-tooling" }

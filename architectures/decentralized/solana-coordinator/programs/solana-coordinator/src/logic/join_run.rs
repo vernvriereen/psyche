@@ -17,7 +17,7 @@ pub struct JoinRunAccounts<'info> {
 
     #[account(
         constraint = authorization.is_valid_for(
-            &coordinator_instance.authority,
+            &coordinator_instance.join_authority,
             user.key,
             JOIN_RUN_AUTHORIZATION_SCOPE,
         ),
@@ -29,13 +29,13 @@ pub struct JoinRunAccounts<'info> {
             CoordinatorInstance::SEEDS_PREFIX,
             bytes_from_string(&coordinator_instance.run_id)
         ],
-        bump = coordinator_instance.bump
+        bump = coordinator_instance.bump,
     )]
     pub coordinator_instance: Account<'info, CoordinatorInstance>,
 
     #[account(
         mut,
-        constraint = coordinator_instance.account == coordinator_account.key()
+        constraint = coordinator_instance.coordinator_account == coordinator_account.key(),
     )]
     pub coordinator_account: AccountLoader<'info, CoordinatorAccount>,
 }

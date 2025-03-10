@@ -17,7 +17,7 @@ use wandb::DataValue;
 
 use rand::{seq::SliceRandom, thread_rng};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     marker::PhantomData,
     sync::Arc,
 };
@@ -124,6 +124,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 "apply_state"
                             );
 
+                            let peer_node_ids = p2p.get_all_peers().await.0.into_iter().map(|x| x.node_id).collect::<BTreeSet<_>>();
                             {
                                 let node_ids: Vec<NodeId> = new_state
                                     .epoch_state
@@ -132,12 +133,17 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     .map(|c| NodeId::from_bytes(c.id.get_p2p_public_key()).unwrap()).collect();
                                 if node_ids.contains(&p2p.node_id()) {
                                     // only connect to peers after we become part of the set of current clients
-                                    p2p.add_peers(node_ids.clone()).await?;
+                                    let to_connect = node_ids.iter().filter(|x| !peer_node_ids.contains(*x)).collect::<Vec<_>>();
+                                    if !to_connect.is_empty() {
+                                        info!(num_new_peers = to_connect.len(), "Connecting to new peers");
+                                        p2p.add_peers(node_ids.clone()).await?;
+                                    }
                                 }
                                 allowlist.set(node_ids);
                             }
 
                             if old_state.map(|s| s.run_state) != Some(new_state.run_state) && new_state.run_state == RunState::RoundTrain {
+                                debug!(num_peers = peer_node_ids.len(), "Updating p2p");
                                 let last_needed_step_blobs = new_state.progress.step.saturating_sub(2);
                                 p2p.remove_blobs_with_tag_less_than(last_needed_step_blobs);
                                 let p2p_info = get_p2p_info(&p2p).await?;

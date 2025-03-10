@@ -26,7 +26,7 @@ pub struct RunTopUpAccounts<'info> {
 
     #[account(
         mut,
-        constraint = run.authority == authority.key(),
+        constraint = run.main_authority == authority.key(),
     )]
     pub run: Box<Account<'info, Run>>,
 

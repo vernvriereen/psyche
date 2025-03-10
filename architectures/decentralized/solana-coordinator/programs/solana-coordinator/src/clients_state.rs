@@ -8,12 +8,10 @@ use crate::client::Client;
 use crate::program_error::ProgramError;
 use crate::ClientId;
 use crate::SOLANA_MAX_NUM_PENDING_CLIENTS;
-use crate::SOLANA_MAX_NUM_WHITELISTED_CLIENTS;
 
 #[derive(Debug, Clone, Copy, Zeroable)]
 #[repr(C)]
 pub struct ClientsState {
-    pub whitelist: FixedVec<Pubkey, SOLANA_MAX_NUM_WHITELISTED_CLIENTS>,
     pub clients: FixedVec<Client, SOLANA_MAX_NUM_PENDING_CLIENTS>,
     pub next_active: u64,
     pub current_epoch_rates: ClientsEpochRates,

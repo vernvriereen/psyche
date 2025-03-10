@@ -20,10 +20,9 @@ use psyche_coordinator::WitnessProof;
 use psyche_coordinator::SOLANA_MAX_NUM_CLIENTS;
 use psyche_coordinator::SOLANA_MAX_STRING_LEN;
 
-declare_id!("EqoKSxNdRmX1zSRKSppNCKBpGcciqCwYAjZWUkHoa2ox");
+declare_id!("9yNWJ3BUSgWwkHXxbJV4iBi2qnYfYw8ppHjqbBvUfMfv");
 
 pub const SOLANA_MAX_NUM_PENDING_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
-pub const SOLANA_MAX_NUM_WHITELISTED_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 
 pub fn bytes_from_string(str: &str) -> &[u8] {
     &str.as_bytes()[..SOLANA_MAX_STRING_LEN.min(str.len())]
@@ -70,8 +69,9 @@ impl CoordinatorAccount {
 #[account]
 pub struct CoordinatorInstance {
     pub bump: u8,
-    pub authority: Pubkey,
-    pub account: Pubkey,
+    pub main_authority: Pubkey,
+    pub join_authority: Pubkey,
+    pub coordinator_account: Pubkey,
     #[max_len(SOLANA_MAX_STRING_LEN)]
     pub run_id: String,
 }
@@ -86,9 +86,9 @@ pub mod psyche_solana_coordinator {
 
     pub fn init_coordinator(
         context: Context<InitCoordinatorAccounts>,
-        run_id: String,
+        params: InitCoordinatorParams,
     ) -> Result<()> {
-        init_coordinator_processor(context, run_id)
+        init_coordinator_processor(context, params)
     }
 
     pub fn free_coordinator(
@@ -104,7 +104,7 @@ pub mod psyche_solana_coordinator {
         model: Option<Model>,
     ) -> Result<()> {
         ctx.accounts
-            .account
+            .coordinator_account
             .load_mut()?
             .state
             .update_coordinator_config_model(config, model)
@@ -116,7 +116,7 @@ pub mod psyche_solana_coordinator {
         epoch_slashing_rate: Option<u64>,
     ) -> Result<()> {
         ctx.accounts
-            .account
+            .coordinator_account
             .load_mut()?
             .state
             .set_future_epoch_rates(epoch_earning_rate, epoch_slashing_rate)
@@ -133,11 +133,15 @@ pub mod psyche_solana_coordinator {
         ctx: Context<OwnerCoordinatorAccounts>,
         paused: bool,
     ) -> Result<()> {
-        ctx.accounts.account.load_mut()?.state.set_paused(paused)
+        ctx.accounts
+            .coordinator_account
+            .load_mut()?
+            .state
+            .set_paused(paused)
     }
 
     pub fn tick(ctx: Context<PermissionlessCoordinatorAccounts>) -> Result<()> {
-        ctx.accounts.account.load_mut()?.state.tick()
+        ctx.accounts.coordinator_account.load_mut()?.state.tick()
     }
 
     pub fn witness(
@@ -146,7 +150,7 @@ pub mod psyche_solana_coordinator {
         participant_bloom: WitnessBloom,
         batch_bloom: WitnessBloom,
     ) -> Result<()> {
-        ctx.accounts.account.load_mut()?.state.witness(
+        ctx.accounts.coordinator_account.load_mut()?.state.witness(
             ctx.accounts.user.key,
             Witness {
                 proof,
@@ -163,17 +167,21 @@ pub mod psyche_solana_coordinator {
         position: u64,
         index: u64,
     ) -> Result<()> {
-        ctx.accounts.account.load_mut()?.state.health_check(
-            ctx.accounts.user.key,
-            vec![(
-                id,
-                CommitteeProof {
-                    committee,
-                    position,
-                    index,
-                },
-            )],
-        )
+        ctx.accounts
+            .coordinator_account
+            .load_mut()?
+            .state
+            .health_check(
+                ctx.accounts.user.key,
+                vec![(
+                    id,
+                    CommitteeProof {
+                        committee,
+                        position,
+                        index,
+                    },
+                )],
+            )
     }
 }
 
@@ -181,39 +189,41 @@ pub mod psyche_solana_coordinator {
 pub struct OwnerCoordinatorAccounts<'info> {
     #[account()]
     pub authority: Signer<'info>,
+
     #[account(
         seeds = [
             CoordinatorInstance::SEEDS_PREFIX,
-            bytes_from_string(&instance.run_id)
+            bytes_from_string(&coordinator_instance.run_id)
         ],
-        bump = instance.bump,
-        constraint = instance.authority == *authority.key
+        bump = coordinator_instance.bump,
+        constraint = coordinator_instance.main_authority == authority.key()
     )]
-    pub instance: Account<'info, CoordinatorInstance>,
+    pub coordinator_instance: Account<'info, CoordinatorInstance>,
+
     #[account(
         mut,
-        owner = crate::ID,
-        constraint = instance.account == account.key()
+        constraint = coordinator_instance.coordinator_account == coordinator_account.key()
     )]
-    pub account: AccountLoader<'info, CoordinatorAccount>,
+    pub coordinator_account: AccountLoader<'info, CoordinatorAccount>,
 }
 
 #[derive(Accounts)]
 pub struct PermissionlessCoordinatorAccounts<'info> {
     #[account()]
     pub user: Signer<'info>,
+
     #[account(
         seeds = [
             CoordinatorInstance::SEEDS_PREFIX,
-            bytes_from_string(&instance.run_id)
+            bytes_from_string(&coordinator_instance.run_id)
         ],
-        bump = instance.bump
+        bump = coordinator_instance.bump
     )]
-    pub instance: Account<'info, CoordinatorInstance>,
+    pub coordinator_instance: Account<'info, CoordinatorInstance>,
+
     #[account(
         mut,
-        owner = crate::ID,
-        constraint = instance.account == account.key()
+        constraint = coordinator_instance.coordinator_account == coordinator_account.key()
     )]
-    pub account: AccountLoader<'info, CoordinatorAccount>,
+    pub coordinator_account: AccountLoader<'info, CoordinatorAccount>,
 }

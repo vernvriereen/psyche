@@ -10,7 +10,7 @@ pub struct AuthorizationCloseAccounts<'info> {
     pub grantor: Signer<'info>,
 
     #[account(mut)]
-    pub spill: UncheckedAccount<'info>,
+    pub spill: SystemAccount<'info>,
 
     #[account(
         mut,
