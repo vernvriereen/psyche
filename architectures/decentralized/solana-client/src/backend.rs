@@ -12,7 +12,8 @@ use anchor_client::{
     },
     Client, Cluster, Program,
 };
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::Context;
+use anyhow::{anyhow, bail, Result};
 use futures_util::StreamExt;
 use psyche_coordinator::{
     model::{self, Model},
@@ -63,28 +64,34 @@ impl SolanaBackend {
         })
     }
 
-    pub async fn start(self, run_id: String, coordinator: Pubkey) -> Result<SolanaBackendRunner> {
+    pub async fn start(
+        self,
+        run_id: String,
+        coordinator_account: Pubkey,
+    ) -> Result<SolanaBackendRunner> {
         let sub_client = PubsubClient::new(self.cluster.ws_url()).await?;
         let (tx, rx) = broadcast::channel(32);
 
-        info!("Coordinator address: {}", coordinator);
-        let (instance_pda, instance) = self.get_coordinator_instance(&run_id).await?;
+        let coordinator_instance = psyche_solana_coordinator::find_coordinator_instance(&run_id);
+
+        info!("Coordinator account address: {}", coordinator_account);
         info!(
             "Coordinator instance address for run \"{}\": {}",
-            run_id, instance_pda
+            run_id, coordinator_instance
         );
+
         let commitment = self.program_coordinator.rpc().commitment();
 
         let init = self
             .program_coordinator
             .rpc()
-            .get_account_data(&coordinator)
+            .get_account_data(&coordinator_account)
             .await?;
 
         tokio::spawn(async move {
             let mut notifications = match sub_client
                 .account_subscribe(
-                    &coordinator,
+                    &coordinator_account,
                     Some(RpcAccountInfoConfig {
                         encoding: Some(UiAccountEncoding::Base64Zstd),
                         commitment: Some(commitment),
@@ -109,8 +116,8 @@ impl SolanaBackend {
         Ok(SolanaBackendRunner {
             backend: self,
             updates: rx,
-            instance: instance_pda,
-            account: instance.coordinator_account,
+            instance: coordinator_instance,
+            account: coordinator_account,
             init: Some(init),
         })
     }
@@ -122,17 +129,12 @@ impl SolanaBackend {
             .rpc()
             .get_minimum_balance_for_rent_exemption(space)
             .await?;
-        let seeds = &[
-            psyche_solana_coordinator::CoordinatorInstance::SEEDS_PREFIX,
-            psyche_solana_coordinator::bytes_from_string(&run_id),
-        ];
 
         let payer = self.program_coordinator.payer();
         let main_authority = self.program_coordinator.payer();
         let join_authority = self.program_coordinator.payer();
 
-        let coordinator_instance =
-            Pubkey::find_program_address(seeds, &self.program_coordinator.id()).0;
+        let coordinator_instance = psyche_solana_coordinator::find_coordinator_instance(&run_id);
 
         let coordinator_account_signer = Keypair::new();
         let coordinator_account = coordinator_account_signer.pubkey();
@@ -260,8 +262,10 @@ impl SolanaBackend {
         coordinator_account: Pubkey,
         id: psyche_solana_coordinator::ClientId,
     ) -> Result<Signature> {
+        let coordinator_instance_state =
+            self.get_coordinator_instance(&coordinator_instance).await?;
         let authorization_global = psyche_solana_authorizer::find_authorization(
-            &self.program_coordinator.payer(),
+            &coordinator_instance_state.join_authority,
             &system_program::ID,
             psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE,
         );
@@ -413,19 +417,17 @@ impl SolanaBackend {
 
     pub async fn get_coordinator_instance(
         &self,
-        run_id: &str,
-    ) -> Result<(Pubkey, psyche_solana_coordinator::CoordinatorInstance)> {
-        let coordinator_instance = psyche_solana_coordinator::find_coordinator_instance(run_id);
-        let coordinator_instance_value: psyche_solana_coordinator::CoordinatorInstance = self
+        coordinator_instance: &Pubkey,
+    ) -> Result<psyche_solana_coordinator::CoordinatorInstance> {
+        let coordinator_instance_state = self
             .program_coordinator
-            .account(coordinator_instance)
+            .account::<psyche_solana_coordinator::CoordinatorInstance>(*coordinator_instance)
             .await
             .context(format!(
-                "Finding coordinator instance for run {} on coordinator {}",
-                run_id,
-                self.program_coordinator.id()
+                "Unable to get the coordinator_instance: {:?}",
+                coordinator_instance
             ))?;
-        Ok((coordinator_instance, coordinator_instance_value))
+        Ok(coordinator_instance_state)
     }
 
     pub async fn get_coordinator_account(
