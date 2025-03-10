@@ -88,6 +88,12 @@ Install Anchor
 cargo install --git https://github.com/coral-xyz/anchor --rev a7a23eea308440a9fa9cb79cee7bddd30ab163d5 anchor-cli
 ```
 
+This may require
+
+```bash
+sudo apt install pkg-config libudev-dev libssl-dev
+```
+
 ### Nix
 
 #### Direnv
