@@ -137,9 +137,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     .clients
                                     .iter()
                                     .map(|c| NodeId::from_bytes(c.id.get_p2p_public_key()).unwrap()).collect();
-                                if node_ids.contains(&p2p.node_id()) {
+                                let my_node_id = p2p.node_id();
+                                if node_ids.contains(&my_node_id) {
                                     // only connect to peers after we become part of the set of current clients
-                                    let to_connect = node_ids.iter().filter(|x| !peer_node_ids.contains(*x)).collect::<Vec<_>>();
+                                    let to_connect = node_ids.iter().filter(|x| !peer_node_ids.contains(*x) && *x != &my_node_id).collect::<Vec<_>>();
                                     if !to_connect.is_empty() {
                                         info!(num_new_peers = to_connect.len(), "Connecting to new peers");
                                         p2p.add_peers(node_ids.clone()).await?;
