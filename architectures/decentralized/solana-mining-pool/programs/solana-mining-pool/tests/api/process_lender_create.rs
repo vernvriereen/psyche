@@ -1,4 +1,6 @@
 use psyche_solana_mining_pool::accounts::LenderCreateAccounts;
+use psyche_solana_mining_pool::find_lender;
+use psyche_solana_mining_pool::find_pool;
 use psyche_solana_mining_pool::instruction::LenderCreate;
 use psyche_solana_mining_pool::logic::LenderCreateParams;
 use solana_sdk::signature::Keypair;
@@ -8,17 +10,14 @@ use solana_toolbox_anchor::ToolboxAnchor;
 use solana_toolbox_anchor::ToolboxAnchorError;
 use solana_toolbox_endpoint::ToolboxEndpoint;
 
-use crate::api::find_pda_lender::find_pda_lender;
-use crate::api::find_pda_pool::find_pda_pool;
-
 pub async fn process_lender_create(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     user: &Keypair,
     pool_index: u64,
 ) -> Result<(), ToolboxAnchorError> {
-    let pool = find_pda_pool(pool_index);
-    let lender = find_pda_lender(&pool, &user.pubkey());
+    let pool = find_pool(pool_index);
+    let lender = find_lender(&pool, &user.pubkey());
 
     ToolboxAnchor::process_instruction_with_signers(
         endpoint,
@@ -30,7 +29,9 @@ pub async fn process_lender_create(
             lender,
             system_program: system_program::ID,
         },
-        LenderCreate { params: LenderCreateParams {} },
+        LenderCreate {
+            params: LenderCreateParams {},
+        },
         payer,
         &[user],
     )

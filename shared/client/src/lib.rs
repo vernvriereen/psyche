@@ -5,7 +5,7 @@ mod protocol;
 mod state;
 mod tui;
 
-pub use cli::{exercise_sdpa_if_needed, print_identity_keys, read_identity_secret_key, TrainArgs};
+pub use cli::{prepare_environment, print_identity_keys, read_identity_secret_key, TrainArgs};
 pub use client::Client;
 pub use protocol::{TrainingResult, NC};
 pub use state::{CheckpointConfig, HubUploadInfo, InitRunError, RunInitConfig, RunInitConfigAndIO};

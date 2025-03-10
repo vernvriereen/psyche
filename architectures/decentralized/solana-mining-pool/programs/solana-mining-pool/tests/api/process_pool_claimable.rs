@@ -1,4 +1,5 @@
 use psyche_solana_mining_pool::accounts::PoolClaimableAccounts;
+use psyche_solana_mining_pool::find_pool;
 use psyche_solana_mining_pool::instruction::PoolClaimable;
 use psyche_solana_mining_pool::logic::PoolClaimableParams;
 use solana_sdk::pubkey::Pubkey;
@@ -8,8 +9,6 @@ use solana_toolbox_anchor::ToolboxAnchor;
 use solana_toolbox_anchor::ToolboxAnchorError;
 use solana_toolbox_endpoint::ToolboxEndpoint;
 
-use crate::api::find_pda_pool::find_pda_pool;
-
 pub async fn process_pool_claimable(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
@@ -17,7 +16,7 @@ pub async fn process_pool_claimable(
     pool_authority: &Keypair,
     redeemable_mint: &Pubkey,
 ) -> Result<(), ToolboxAnchorError> {
-    let pool = find_pda_pool(pool_index);
+    let pool = find_pool(pool_index);
 
     ToolboxAnchor::process_instruction_with_signers(
         endpoint,
@@ -27,7 +26,9 @@ pub async fn process_pool_claimable(
             redeemable_mint: *redeemable_mint,
             pool,
         },
-        PoolClaimable { params: PoolClaimableParams {} },
+        PoolClaimable {
+            params: PoolClaimableParams {},
+        },
         payer,
         &[pool_authority],
     )

@@ -57,7 +57,7 @@ pub struct ParticipantClaimAccounts<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct ParticipantClaimParams {
     pub claim_earned_points: u64,
 }

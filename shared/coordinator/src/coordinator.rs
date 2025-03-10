@@ -1,6 +1,4 @@
 use crate::{
-    assign_data_for_state,
-    data_selection::get_batch_ids_for_node,
     model::{self, Checkpoint, HubRepo, Model},
     Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
@@ -8,7 +6,7 @@ use crate::{
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Pod, Zeroable};
 use psyche_core::{
-    serde_deserialize_string, serde_serialize_string, sha256, BatchId, Bloom, FixedVec,
+    serde_deserialize_string, serde_serialize_string, sha256, sha256v, BatchId, Bloom, FixedVec,
     NodeIdentity, SmallBoolean,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -123,7 +121,7 @@ pub struct Round {
 pub struct Witness {
     pub proof: WitnessProof,
     pub participant_bloom: WitnessBloom,
-    pub order_bloom: WitnessBloom,
+    pub batch_bloom: WitnessBloom,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -139,6 +137,7 @@ pub enum CoordinatorError {
     CannotResume,
     InvalidWithdraw,
     InvalidCommitteeSelection,
+    InvalidCommitteeProof,
 }
 
 pub enum TickResult {
@@ -147,7 +146,7 @@ pub enum TickResult {
 }
 
 pub type Commitment = [u8; 32];
-pub type HealthChecks = Vec<CommitteeProof>;
+pub type HealthChecks<T> = Vec<(T, CommitteeProof)>;
 
 pub const NUM_STORED_ROUNDS: usize = 4;
 
@@ -165,8 +164,7 @@ pub struct CoordinatorConfig<I> {
 
     pub min_clients: u16,
 
-    pub batches_per_round: u16,
-    pub data_indicies_per_batch: u16,
+    pub global_batch_size: u16,
 
     pub verification_percent: u8,
     pub witness_nodes: u16,
@@ -174,8 +172,6 @@ pub struct CoordinatorConfig<I> {
 
     pub rounds_per_epoch: u32,
     pub total_steps: u32,
-
-    pub overlapped: SmallBoolean,
 
     #[serde(default)]
     pub checkpointers: FixedVec<I, SOLANA_MAX_NUM_CHECKPOINTERS>,
@@ -300,6 +296,7 @@ impl std::fmt::Display for CoordinatorError {
             CoordinatorError::CannotResume => write!(f, "Cannot resume"),
             CoordinatorError::InvalidWithdraw => write!(f, "Invalid withdraw"),
             CoordinatorError::InvalidCommitteeSelection => write!(f, "Invalid committee selection"),
+            CoordinatorError::InvalidCommitteeProof => write!(f, "Invalid committee proof"),
         }
     }
 }
@@ -398,11 +395,11 @@ impl<T: NodeIdentity> Coordinator<T> {
         if self.halted() {
             return Err(CoordinatorError::Halted);
         }
-        if !CommitteeSelection::from_coordinator(self, false)?.verify_witness_for_client::<T>(
+        if !CommitteeSelection::from_coordinator(self, 0)?.verify_witness_for_client::<T>(
             from,
             &witness.proof,
             &self.epoch_state.clients,
-        ) || !witness.proof.witness
+        ) || witness.proof.witness.is_false()
         {
             return Err(CoordinatorError::InvalidWitness);
         }
@@ -441,18 +438,27 @@ impl<T: NodeIdentity> Coordinator<T> {
     pub fn health_check(
         &mut self,
         _from: &T,
-        checks: HealthChecks,
+        checks: HealthChecks<T>,
     ) -> std::result::Result<u32, CoordinatorError> {
         if self.halted() {
             return Err(CoordinatorError::Halted);
         }
-        for proof in &checks {
-            if self.healthy(proof) {
+        // only health check after pipeline has been filled
+        if self
+            .current_round()
+            .ok_or(CoordinatorError::NoActiveRound)?
+            .height
+            < 2
+        {
+            return Err(CoordinatorError::InvalidHealthCheck);
+        }
+        for (id, proof) in &checks {
+            if self.healthy(id, proof)? {
                 return Err(CoordinatorError::InvalidHealthCheck);
             }
         }
         let mut dropped = 0;
-        for proof in &checks {
+        for (_id, proof) in &checks {
             let index = proof.index as usize;
             let client = &mut self.epoch_state.clients[index];
             if client.state == ClientState::Healthy {
@@ -517,7 +523,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         Ok(())
     }
 
-    pub fn resume(&mut self, unix_timestamp: u64) -> std::result::Result<(), CoordinatorError> {
+    pub fn resume(&mut self, unix_timestamp: u64) -> Result<(), CoordinatorError> {
         if self.run_state != RunState::Paused {
             return Err(CoordinatorError::CannotResume);
         }
@@ -525,100 +531,69 @@ impl<T: NodeIdentity> Coordinator<T> {
         Ok(())
     }
 
-    pub fn healthy(&self, proof: &CommitteeProof) -> bool {
-        let round = match self.previous_round() {
-            Some(round) => round,
-            None => {
-                return true;
-            }
-        };
+    pub fn healthy(&self, id: &T, proof: &CommitteeProof) -> Result<bool, CoordinatorError> {
+        let round = self
+            .previous_round()
+            .ok_or(CoordinatorError::NoActiveRound)?;
         let index = proof.index;
         if index < round.clients_len as u64 {
-            let client =
-                match self.get_client_at_historical_index(index as usize, round.clients_len) {
-                    Some(client) => client,
-                    None => {
-                        return false;
-                    }
-                };
-            let selection = match CommitteeSelection::from_coordinator(self, false) {
-                Ok(selection) => selection,
-                Err(_) => {
-                    return false;
-                }
-            };
-            if !selection.verify_committee_for_client(&client.id, proof, &self.epoch_state.clients)
+            let client = self
+                .get_client_at_historical_index(index as usize, round.clients_len)
+                .ok_or(CoordinatorError::InvalidCommitteeProof)?;
+            let selection = CommitteeSelection::from_coordinator(self, -1)?;
+            if client.id != *id
+                || !selection.verify_committee_for_client(
+                    &client.id,
+                    proof,
+                    &self.epoch_state.clients,
+                )
             {
-                return false;
+                return Err(CoordinatorError::InvalidCommitteeProof);
             }
             match proof.committee {
                 Committee::TieBreaker => todo!(),
                 Committee::Verifier => todo!(),
-                Committee::Trainer => Self::trainer_healthy_by_witnesses(
-                    self,
-                    &client.id,
-                    &round.witnesses,
-                    self.config.witness_quorum,
-                ),
+                Committee::Trainer => self.trainer_healthy(&client.id),
             }
         } else {
-            false
+            Err(CoordinatorError::InvalidCommitteeProof)
         }
     }
 
-    pub fn trainer_healthy_by_witnesses(
-        coordinator: &Self,
-        id: &T,
-        witnesses: &[Witness],
-        witness_quorum: u16,
-    ) -> bool {
-        let prev_round_committee_selection =
-            CommitteeSelection::from_coordinator(coordinator, true).unwrap();
-        let prev_round_data_assignments =
-            assign_data_for_state(coordinator, true, &prev_round_committee_selection);
+    pub fn trainer_healthy(&self, id: &T) -> Result<bool, CoordinatorError> {
+        let prev_round_witnesses = &self
+            .previous_round()
+            .ok_or(CoordinatorError::NoActiveRound)?
+            .witnesses;
 
-        let batch_ids = get_batch_ids_for_node(
-            &prev_round_data_assignments,
-            id,
-            coordinator.config.data_indicies_per_batch,
-        );
-
-        let score = Self::trainer_healthy_score_by_witnesses(&batch_ids, id, witnesses);
-        match witness_quorum {
-            0 => score as usize == witnesses.len() * batch_ids.len(),
-            witness_quorum => score >= witness_quorum * batch_ids.len() as u16,
-        }
+        let score = Self::trainer_healthy_score_by_witnesses(id, prev_round_witnesses);
+        Ok(match self.config.witness_quorum {
+            0 => score as usize == prev_round_witnesses.len(),
+            witness_quorum => score >= witness_quorum,
+        })
     }
 
-    /// Calculates a trainer's health score based on witness confirmations.
-    /// Counts how many witnesses confirmed each of the trainer's batches.
-    /// Final score = 1 point per witness confirmation per batch)
-    pub fn trainer_healthy_score_by_witnesses(
-        batch_ids: &[BatchId],
-        id: &T,
-        witnesses: &[Witness],
-    ) -> u16 {
-        let mut commitments = Vec::new();
-        for batch_id in batch_ids {
-            let mut committment = Vec::with_capacity(40);
-            committment.extend_from_slice(id.as_ref());
-            committment.extend_from_slice(&u64::from(*batch_id).to_be_bytes());
-            let committment_hash = sha256(&committment);
-
-            commitments.push(committment_hash);
-        }
+    /// Computes the health score of a client based on witness confirmations.
+    /// The score increases for each witness whose participant bloom filter contains the client's hashed ID.
+    pub fn trainer_healthy_score_by_witnesses(id: &T, witnesses: &[Witness]) -> u16 {
+        let hash = sha256(id.as_ref());
 
         let mut score = 0u16;
         for witness in witnesses {
-            for commitment in &commitments {
-                let commitment_hash = sha256(commitment.as_ref());
-                if witness.order_bloom.contains(&commitment_hash) {
-                    score += 1;
-                }
+            if witness.participant_bloom.contains(&hash) {
+                score += 1;
             }
         }
 
         score
+    }
+
+    pub fn make_committment(batch_id: &BatchId, id: &T) -> [u8; 32] {
+        sha256v(&[
+            id.as_ref(),
+            &batch_id.0.start.to_be_bytes(),
+            &batch_id.0.end.to_be_bytes(),
+        ])
     }
 
     pub fn select_consensus_commitment_by_witnesses(
@@ -629,7 +604,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         let mut scores = vec![0; commitments.len()];
         for witness in witnesses {
             for (index, commitment) in commitments.iter().enumerate() {
-                if witness.order_bloom.contains(&sha256(commitment)) {
+                if witness.batch_bloom.contains(&sha256(commitment)) {
                     scores[index] += 1;
                     break;
                 }
@@ -863,11 +838,8 @@ impl<T: NodeIdentity> Coordinator<T> {
             || (self.config.cooldown_time > 0
                 && self.check_timeout(unix_timestamp, self.config.cooldown_time))
         {
-            self.progress.epoch_start_data_index = Self::get_next_round_data_index(
-                self.current_round_unchecked().data_index,
-                self.config.batches_per_round,
-                self.config.data_indicies_per_batch,
-            );
+            self.progress.epoch_start_data_index =
+                self.current_round_unchecked().data_index + self.config.global_batch_size as u64;
             self.progress.epoch += 1;
 
             let current_round = self.current_round_unchecked();
@@ -905,11 +877,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 (
                     (self.epoch_state.rounds_head + 1) as usize % self.epoch_state.rounds.len(),
                     current_round.height + 1,
-                    Self::get_next_round_data_index(
-                        current_round.data_index,
-                        self.config.batches_per_round,
-                        self.config.data_indicies_per_batch,
-                    ),
+                    current_round.data_index + self.config.global_batch_size as u64,
                 )
             };
         let round = &mut self.epoch_state.rounds[next_rounds_head];
@@ -942,14 +910,6 @@ impl<T: NodeIdentity> Coordinator<T> {
         assert!(self.run_state != new_state);
         self.run_state_start_unix_timestamp = unix_timestamp;
         self.run_state = new_state;
-    }
-
-    fn get_next_round_data_index(
-        data_index: u64,
-        batches_per_round: u16,
-        data_indicies_per_batch: u16,
-    ) -> u64 {
-        data_index + (batches_per_round as u64 * data_indicies_per_batch as u64)
     }
 
     fn move_clients_to_exited(&mut self, height: u32) {
@@ -999,11 +959,10 @@ impl<I> CoordinatorConfig<I> {
         self.max_round_train_time != 0
             && self.round_witness_time != 0
             && self.min_clients != 0
-            && self.batches_per_round != 0
-            && self.data_indicies_per_batch != 0
-            && self.rounds_per_epoch != 0
+            && self.global_batch_size != 0
+            && self.rounds_per_epoch >= 4 // need at least 4 rounds per epoch for overlapped pipeling
             && self.total_steps != 0
             && self.witness_nodes <= self.min_clients
-            && self.witness_quorum <= self.witness_nodes
+            && (self.witness_nodes == 0 || (self.witness_quorum <= self.witness_nodes))
     }
 }

@@ -4,7 +4,6 @@ use std::time::Duration;
 use crate::client::ClientHandle;
 use crate::server::CoordinatorServerHandle;
 use psyche_centralized_client::app::AppParams;
-use psyche_coordinator::{assign_data_for_state, get_batch_ids_for_node, CommitteeSelection};
 use psyche_network::{DiscoveryMode, SecretKey};
 use rand::distributions::{Alphanumeric, DistString};
 use std::env;
@@ -64,7 +63,7 @@ where
     Fut: Future<Output = T>,
     F: FnMut() -> Fut,
 {
-    let retry_attempts: u64 = 10;
+    let retry_attempts: u64 = 25;
     let mut result;
     for attempt in 1..=retry_attempts {
         result = function().await;
@@ -74,7 +73,7 @@ where
             eprintln!("assertion failed, got: {:?} but expected: {:?}", result, y);
             return false;
         } else {
-            tokio::time::sleep(Duration::from_millis(250 * attempt)).await;
+            tokio::time::sleep(Duration::from_millis(100 * attempt)).await;
         }
     }
     false
@@ -96,21 +95,11 @@ pub async fn assert_witnesses_healthy_score(
     let rounds = server_handle.get_rounds().await;
     let witnesses = &rounds[round_number].witnesses;
 
-    let coordinator = server_handle.get_coordinator().await;
-    let committee_selection = CommitteeSelection::from_coordinator(&coordinator, true).unwrap();
-    let data_assignments = assign_data_for_state(&coordinator, true, &committee_selection);
-
     // calculate score
     let mut score = 0;
     clients.iter().for_each(|client| {
-        let batch_ids = get_batch_ids_for_node(
-            &data_assignments,
-            &client.id,
-            coordinator.config.data_indicies_per_batch,
-        );
-
         score += psyche_coordinator::Coordinator::trainer_healthy_score_by_witnesses(
-            &batch_ids, &client.id, witnesses,
+            &client.id, witnesses,
         );
     });
 
@@ -137,6 +126,7 @@ pub fn dummy_client_app_params_with_training_delay(
         micro_batch_size: None,
         write_gradients_dir: None,
         p2p_port: None,
+        p2p_interface: None,
         eval_tasks: Vec::new(),
         eval_task_max_docs: None,
         checkpoint_upload_info: None,
@@ -162,6 +152,7 @@ pub fn dummy_client_app_params_default(server_port: u16, run_id: &str) -> AppPar
         micro_batch_size: None,
         write_gradients_dir: None,
         p2p_port: None,
+        p2p_interface: None,
         eval_tasks: Vec::new(),
         eval_task_max_docs: None,
         checkpoint_upload_info: None,

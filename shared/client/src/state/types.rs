@@ -41,4 +41,5 @@ pub struct DistroBroadcastAndPayload {
     pub commitment: Commitment,
     pub proof: CommitteeProof,
     pub distro_result: TransmittableDistroResult,
+    pub original_distro_result: Vec<DistroResult>,
 }

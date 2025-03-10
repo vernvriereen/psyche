@@ -5,16 +5,12 @@ group_imports = "StdExternalCrate"
 reorder_impl_items = true
 
 hex_literal_case = "Upper"
-use_small_heuristics = "Max"
 match_block_trailing_comma = true
 use_field_init_shorthand = true
 use_try_shorthand = true
-combine_control_expr = false
 condense_wildcard_suffixes = true
 show_parse_errors = true
 format_macro_matchers = true
-fn_params_layout = "Vertical"
-empty_item_single_line = false
 
 normalize_comments = true
 normalize_doc_attributes = true

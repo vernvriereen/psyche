@@ -12,7 +12,7 @@ use std::fmt::Display;
 pub enum ClientToServerMessage {
     Join { run_id: String },
     Witness(Box<Witness>),
-    HealthCheck(HealthChecks),
+    HealthCheck(HealthChecks<ClientId>),
     Checkpoint(model::HubRepo),
 }
 

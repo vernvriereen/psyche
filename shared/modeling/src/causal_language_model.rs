@@ -23,7 +23,7 @@ pub enum EosToks {
 /// and thus can have backprop run on it.
 /// Its internal implementation is completely hidden, so this can be impl'd
 /// for a wrapper struct that does something like data parallelism.
-pub trait CausalLM: Send + std::fmt::Debug {
+pub trait CausalLM: Send {
     fn forward(
         &mut self,
         x: &Tensor,

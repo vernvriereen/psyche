@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, Result};
-use psyche_core::{BatchId, Shuffle, TokenSize};
+use psyche_core::{BatchId, ClosedInterval, Shuffle, TokenSize};
 use rand::seq::SliceRandom;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -110,21 +110,18 @@ impl LocalDataProvider {
         })
     }
 
-    fn internal_get_samples(&self, data_ids: &[BatchId]) -> Result<Vec<Vec<i32>>> {
+    fn internal_get_samples(&self, data_ids: BatchId) -> Result<Vec<Vec<i32>>> {
         let mut ret: Vec<_> = Vec::new();
-        for data_id in data_ids {
+        for data_id in data_ids.iter() {
             let SequencePointer {
                 byte_offset,
                 file_index,
-            } = self
-                .sequences
-                .get(u64::from(*data_id) as usize)
-                .ok_or_else(|| {
-                    anyhow!(
-                        "index {data_id} is out of bounds, we only have {} samples.",
-                        self.sequences.len()
-                    )
-                })?;
+            } = self.sequences.get(data_id as usize).ok_or_else(|| {
+                anyhow!(
+                    "index {data_id} is out of bounds, we only have {} samples.",
+                    self.sequences.len()
+                )
+            })?;
 
             let file = &self.data_files[*file_index];
             let data_len = usize::from(self.token_size_in_bytes) * (self.seq_len + 1);
@@ -147,24 +144,27 @@ impl LocalDataProvider {
 }
 
 impl TokenizedDataProvider for LocalDataProvider {
-    async fn get_samples(&mut self, data_ids: &[BatchId]) -> Result<Vec<Vec<i32>>> {
+    async fn get_samples(&mut self, data_ids: BatchId) -> Result<Vec<Vec<i32>>> {
         self.internal_get_samples(data_ids)
     }
 }
 
 pub struct LocalDataProviderIter {
     provider: LocalDataProvider,
-    current_index: usize,
+    current_index: u64,
 }
 
 impl Iterator for LocalDataProviderIter {
     type Item = Vec<i32>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current_index < self.provider.len() {
+        if self.current_index < self.provider.len() as u64 {
             let result = self
                 .provider
-                .internal_get_samples(&[BatchId::from_u64(self.current_index as u64)])
+                .internal_get_samples(BatchId(ClosedInterval::new(
+                    self.current_index,
+                    self.current_index,
+                )))
                 .unwrap()
                 .pop()
                 .unwrap();

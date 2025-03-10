@@ -13,6 +13,9 @@ anchor-spl = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea3
 psyche-core = { path = "../../../shared/core" }
 psyche-coordinator = { path = "../../../shared/coordinator" }
 
+psyche-solana-authorizer = { path = "../solana-authorizer/programs/solana-authorizer", features = [
+  "cpi",
+] }
 psyche-solana-coordinator = { path = "../solana-coordinator/programs/solana-coordinator", features = [
   "cpi",
 ] }

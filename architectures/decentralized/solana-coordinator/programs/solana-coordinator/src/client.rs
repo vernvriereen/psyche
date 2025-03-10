@@ -1,7 +1,9 @@
 use anchor_lang::prelude::*;
-use bytemuck::{Pod, Zeroable};
+use bytemuck::Pod;
+use bytemuck::Zeroable;
 use psyche_core::NodeIdentity;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, Default, Zeroable, InitSpace, Pod)]
 #[repr(C)]

@@ -26,11 +26,9 @@ impl<T: AuthenticatableIdentity> DataProviderTcpClient<T> {
         })
     }
 
-    async fn receive_training_data(&mut self, data_ids: &[BatchId]) -> Result<Vec<Vec<i32>>> {
+    async fn receive_training_data(&mut self, data_ids: BatchId) -> Result<Vec<Vec<i32>>> {
         self.tcp_client
-            .send(ClientToServerMessage::RequestTrainingData {
-                data_ids: data_ids.into(),
-            })
+            .send(ClientToServerMessage::RequestTrainingData { data_ids })
             .await?;
 
         let message = self.tcp_client.receive().await?;
@@ -55,7 +53,7 @@ impl<T: AuthenticatableIdentity> DataProviderTcpClient<T> {
 }
 
 impl<T: AuthenticatableIdentity> TokenizedDataProvider for DataProviderTcpClient<T> {
-    async fn get_samples(&mut self, data_ids: &[BatchId]) -> Result<Vec<Vec<i32>>> {
+    async fn get_samples(&mut self, data_ids: BatchId) -> Result<Vec<Vec<i32>>> {
         debug!("[{:?}] get samples..", self.tcp_client.get_identity());
         self.receive_training_data(data_ids).await
     }

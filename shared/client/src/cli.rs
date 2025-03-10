@@ -52,6 +52,10 @@ pub struct TrainArgs {
     #[clap(short, long, env)]
     pub bind_p2p_port: Option<u16>,
 
+    /// Sets the network interface for the client's P2P network participation. If not provided, will bind to all interfaces.
+    #[clap(short, long, env)]
+    pub bind_p2p_interface: Option<String>,
+
     /// Sets clients logs interface
     /// tui: Enables a terminal-based graphical interface for monitoring analytics.
     /// console: standard logs
@@ -205,7 +209,9 @@ impl TrainArgs {
     }
 }
 
-pub fn exercise_sdpa_if_needed() {
+pub fn prepare_environment() {
+    psyche_modeling::set_suggested_env_vars();
+
     #[cfg(target_os = "windows")]
     {
         // this is a gigantic hack to cover that called sdpa prints out

@@ -23,8 +23,8 @@ pub trait LearningRateScheduler: Send + Sync {
 #[repr(C)]
 pub struct ConstantLR {
     base_lr: f64,
-    warmup_steps: u32,
     warmup_init_lr: f64,
+    warmup_steps: u32,
 }
 
 impl ConstantLR {
@@ -71,10 +71,10 @@ impl LearningRateScheduler for ConstantLR {
 #[repr(C)]
 pub struct LinearLR {
     base_lr: f64,
-    warmup_steps: u32,
     warmup_init_lr: f64,
-    total_steps: u32,
     final_lr: f64,
+    warmup_steps: u32,
+    total_steps: u32,
 }
 
 impl LinearLR {
@@ -134,10 +134,10 @@ impl LearningRateScheduler for LinearLR {
 #[repr(C)]
 pub struct CosineLR {
     base_lr: f64,
-    warmup_steps: u32,
     warmup_init_lr: f64,
-    total_steps: u32,
     final_lr: f64,
+    warmup_steps: u32,
+    total_steps: u32,
 }
 
 impl CosineLR {
@@ -194,29 +194,36 @@ impl LearningRateScheduler for CosineLR {
 #[repr(C)]
 pub struct WarmupStableDecayLR {
     base_lr: f64,
-    warmup_steps: u32,
     warmup_init_lr: f64,
+    cosine_decay_final_lr: f64,
+    linear_decay_final_lr: f64,
+    warmup_steps: u32,
     stable_steps: u32,
-    total_steps: u32,
-    final_lr: f64,
+    cosine_decay_steps: u32,
+    linear_decay_steps: u32,
 }
 
 impl WarmupStableDecayLR {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         base_lr: f64,
         warmup_steps: u32,
         warmup_init_lr: f64,
         stable_steps: u32,
-        total_steps: u32,
-        final_lr: f64,
+        cosine_decay_steps: u32,
+        cosine_decay_final_lr: f64,
+        linear_decay_steps: u32,
+        linear_decay_final_lr: f64,
     ) -> Self {
         WarmupStableDecayLR {
             base_lr,
             warmup_steps,
             warmup_init_lr,
             stable_steps,
-            total_steps,
-            final_lr,
+            cosine_decay_steps,
+            cosine_decay_final_lr,
+            linear_decay_steps,
+            linear_decay_final_lr,
         }
     }
 
@@ -231,23 +238,31 @@ impl WarmupStableDecayLR {
 
 impl LearningRateScheduler for WarmupStableDecayLR {
     fn get_lr(&self, step: u32) -> f64 {
-        assert!(self.final_lr <= self.base_lr);
-        assert!(self.stable_steps + self.warmup_steps <= self.total_steps);
+        assert!(self.cosine_decay_final_lr <= self.base_lr);
+        assert!(self.linear_decay_final_lr <= self.cosine_decay_final_lr);
         if step < self.warmup_steps {
             self.warmup_init_lr
                 + (self.base_lr - self.warmup_init_lr) * (step as f64 / self.warmup_steps as f64)
         } else if step < self.stable_steps + self.warmup_steps {
             self.base_lr
+        } else if step < self.stable_steps + self.warmup_steps + self.cosine_decay_steps {
+            let steps_into_decay = step - self.stable_steps - self.warmup_steps;
+            let progress = steps_into_decay as f64 / self.cosine_decay_steps as f64;
+            let cosine_decay = 0.5 * (1.0 + (PI * progress).cos());
+            self.cosine_decay_final_lr + (self.base_lr - self.cosine_decay_final_lr) * cosine_decay
+        } else if step
+            < self.stable_steps
+                + self.warmup_steps
+                + self.cosine_decay_steps
+                + self.linear_decay_steps
+        {
+            let steps_into_decay =
+                step - self.stable_steps - self.warmup_steps - self.cosine_decay_steps;
+            self.cosine_decay_final_lr
+                - (self.cosine_decay_final_lr - self.linear_decay_final_lr)
+                    * (steps_into_decay as f64 / self.linear_decay_steps as f64)
         } else {
-            let decay_duration = self.total_steps - self.stable_steps - self.warmup_steps;
-            if decay_duration > 0 {
-                let steps_into_decay = step - self.stable_steps - self.warmup_steps;
-                let progress = steps_into_decay as f64 / decay_duration as f64;
-                let cosine_decay = 0.5 * (1.0 + (PI * progress).cos());
-                self.final_lr + (self.base_lr - self.final_lr) * cosine_decay
-            } else {
-                self.final_lr
-            }
+            self.linear_decay_final_lr
         }
     }
 }
@@ -403,7 +418,15 @@ mod tests {
 
     #[test]
     fn test_warmup_stable_decay_lr() {
-        let scheduler = WarmupStableDecayLR::new(0.01, 10, 0.001, 60, 110, 0.0);
+        let scheduler = WarmupStableDecayLR::new(
+            0.01, 10,    // warmup_steps
+            0.001, //warmup_init_lr
+            60,    // stable_steps
+            110,   // cosine_decay_steps
+            0.001, // cosine_decay_final_lr
+            20,    // linear_decay_steps
+            0.0,   // linear_decay_final_lr
+        );
 
         // warmup phase
         assert_relative_eq!(scheduler.get_lr(0), 0.001);
@@ -412,12 +435,23 @@ mod tests {
         // stable phase
         assert_relative_eq!(scheduler.get_lr(10), 0.01);
         assert_relative_eq!(scheduler.get_lr(30), 0.01);
-        assert_relative_eq!(scheduler.get_lr(60), 0.01);
+        assert_relative_eq!(scheduler.get_lr(69), 0.01);
 
-        // cosine decay phase (after stable phase)
-        let midpoint = (110 + 70) / 2; // progress from step 70 to 110
-        assert_relative_eq!(scheduler.get_lr(midpoint), 0.005);
-        assert_relative_eq!(scheduler.get_lr(110), 0.0);
+        // cosine decay phase
+        assert_relative_eq!(scheduler.get_lr(70), 0.01);
+        assert_relative_eq!(scheduler.get_lr(125), 0.0055, epsilon = 1e-4); // midpoint (step 125 = 70 + 110/2)
+        assert_relative_eq!(scheduler.get_lr(179), 0.001, epsilon = 1e-4);
+
+        // linear decay phase
+        assert_relative_eq!(scheduler.get_lr(180), 0.001); // Start of linear decay
+        assert_relative_eq!(scheduler.get_lr(190), 0.0005); // midpoint (step 190 = 180 + 20/2)
+        assert_relative_eq!(scheduler.get_lr(199), 0.0001, epsilon = 1e-4);
+
+        // final
+        assert_relative_eq!(scheduler.get_lr(200), 0.0);
+
+        // check past the end
+        assert_relative_eq!(scheduler.get_lr(250), 0.0);
     }
 
     #[test]
@@ -435,7 +469,7 @@ mod tests {
         assert_relative_eq!(scheduler.get_lr(50), 0.01);
 
         // zero-step schedule (edge case)
-        let scheduler = WarmupStableDecayLR::new(0.01, 0, 0.001, 0, 0, 0.001);
+        let scheduler = WarmupStableDecayLR::new(0.01, 0, 0.001, 0, 0, 0.001, 0, 0.001);
         assert_relative_eq!(scheduler.get_lr(0), 0.001);
     }
 }

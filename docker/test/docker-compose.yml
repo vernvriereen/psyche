@@ -22,7 +22,7 @@ services:
         volumes:
           - ${CONFIG_PATH:-../../config/solana-test/light-config.toml}:/usr/local/config.toml
         entrypoint:
-            ["/bin/sh", "-c", "sleep 10 && /usr/local/run_owner_entrypoint.sh"]
+            ["/bin/sh", "-c", "sleep 15 && /usr/local/run_owner_entrypoint.sh"]
         networks:
             - psyche-test-network
 

@@ -1,9 +1,11 @@
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap},
     fmt,
+    hash::{Hash, Hasher},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct ClosedInterval<T> {
     pub start: T,
     pub end: T,
@@ -31,6 +33,25 @@ impl<T: fmt::Display + PartialEq> fmt::Display for ClosedInterval<T> {
         } else {
             write!(f, "[{}, {}]", self.start, self.end)
         }
+    }
+}
+
+impl<T: Hash> Hash for ClosedInterval<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.start.hash(state);
+        self.end.hash(state);
+    }
+}
+
+impl<T: Ord> From<(T, T)> for ClosedInterval<T> {
+    fn from(value: (T, T)) -> Self {
+        Self::new(value.0, value.1)
+    }
+}
+
+impl<T: Ord + Copy> From<&(T, T)> for ClosedInterval<T> {
+    fn from(value: &(T, T)) -> Self {
+        Self::new(value.0, value.1)
     }
 }
 

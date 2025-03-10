@@ -183,6 +183,7 @@ fn inference(
 }
 
 fn main() -> Result<()> {
+    psyche_modeling::set_suggested_env_vars();
     let _no_grad = tch::no_grad_guard();
     let args = Args::parse();
     let repo_files = if std::fs::exists(args.model.clone()).unwrap_or_default() {
