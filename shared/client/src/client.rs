@@ -20,11 +20,13 @@ use std::{
     collections::{BTreeSet, HashMap, HashSet},
     marker::PhantomData,
     sync::Arc,
+    time::Duration,
 };
 use tokio::{
     select,
     sync::{mpsc, watch, Mutex, Notify},
     task::JoinHandle,
+    time::interval,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace, warn};
@@ -40,6 +42,7 @@ pub struct Client<T: NodeIdentity, A: AuthenticatableIdentity, B: Backend<T> + '
 }
 
 const MAX_DOWNLOAD_RETRIES: usize = 3;
+const REBROADCAST_SHAREABLE: Duration = Duration::from_secs(2);
 
 impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'static>
     Client<T, A, B>
@@ -98,6 +101,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                 let mut retried_downloads: HashMap<psyche_network::Hash, usize> = HashMap::new();
                 let mut sharable_model = SharableModel::empty();
+                let mut sharing_downloadables = vec![];
+                let mut sharing_downloadables_rebroadcast_index = 0;
+                let mut sharing_downloadable_interval = interval(REBROADCAST_SHAREABLE);
                 debug!("Starting client loop");
                 loop {
                     select! {
@@ -148,6 +154,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 p2p.remove_blobs_with_tag_less_than(last_needed_step_blobs);
                                 let p2p_info = get_p2p_info(&p2p).await?;
                                 run.set_node_info(p2p_info);
+                                sharing_downloadables.retain(|(_, step)| *step >= last_needed_step_blobs);
                             }
                             run.apply_state(*new_state).await?;
                         }
@@ -254,9 +261,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 hex::encode(hash),
                             );
 
-                            let training_result = TrainingResult { step, batch_id, commitment, ticket, proof };
+                            let training_result = TrainingResult { step, batch_id, commitment, ticket, proof, nonce: 0 };
 
                             p2p.broadcast(&training_result).await?;
+                            sharing_downloadables.push((training_result.clone(), step));
 
                             // simulate us recving it & apply like anyone else's
                             {
@@ -269,6 +277,23 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 // this is because distro needs the unquantized version for lookahead
                                 run.apply_distro_result(hash, distro_result, Some(original_distro_result)).await;
                             }
+                        }
+
+                        _ = sharing_downloadable_interval.tick() => {
+                            match sharing_downloadables.len() {
+                                0 => {},
+                                len => {
+                                    // it's possible we've disconnected from a gossip peer, but we don't know until we try and send to them.
+                                    // in general, iroh-gossip doesn't guarantee delivery. so, we rebroadcast our live results (-2 rounds)
+                                    // periodically
+                                    sharing_downloadables_rebroadcast_index = (sharing_downloadables_rebroadcast_index + 1) % len;
+                                    let (training_result, step) = &mut sharing_downloadables[sharing_downloadables_rebroadcast_index];
+                                    training_result.nonce += 1;
+                                    trace!("Rebroadcasting payload step {} batch id {} hash 0x{}", step, training_result.batch_id, hex::encode(training_result.ticket.hash()));
+                                    p2p.broadcast(training_result).await?;
+                                }
+                            }
+
                         }
 
                         Some((download_ticket, tag)) = rx_request_download.recv() => {
