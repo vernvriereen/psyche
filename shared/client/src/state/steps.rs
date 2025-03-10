@@ -241,6 +241,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         let hash = ticket.hash();
 
         if round_state.downloads.contains_key(&hash) {
+            trace!("Already have downloaded batch id {batch_id}, ignoring duplicated gossip");
             return Ok(());
         }
 
