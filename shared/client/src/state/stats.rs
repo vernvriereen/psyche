@@ -130,9 +130,7 @@ impl StatsLogger {
             false => match &state.model {
                 model::Model::LLM(llm) => match llm.data_type {
                     model::LLMTrainingDataType::Pretraining => {
-                        let tokens = state.config.batches_per_round as u32
-                            * state.config.data_indicies_per_batch as u32
-                            * llm.max_seq_len;
+                        let tokens = state.config.global_batch_size as u32 * llm.max_seq_len;
                         let seconds = self
                             .round_durations
                             .iter()

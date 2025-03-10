@@ -1,24 +1,39 @@
 mod client;
 mod clients_state;
 mod instance_state;
+pub mod logic;
 mod program_error;
 
-use anchor_lang::{prelude::*, system_program};
+use anchor_lang::prelude::*;
+pub use client::Client;
+pub use client::ClientId;
 pub use instance_state::CoordinatorInstanceState;
+use logic::*;
 pub use program_error::ProgramError;
-use psyche_coordinator::{
-    model::Model, Committee, CommitteeProof, CoordinatorConfig, Witness, WitnessBloom,
-    WitnessProof, SOLANA_MAX_NUM_CLIENTS, SOLANA_MAX_STRING_LEN,
-};
-pub use {client::Client, client::ClientId};
+use psyche_coordinator::model::Model;
+use psyche_coordinator::Committee;
+use psyche_coordinator::CommitteeProof;
+use psyche_coordinator::CoordinatorConfig;
+use psyche_coordinator::Witness;
+use psyche_coordinator::WitnessBloom;
+use psyche_coordinator::WitnessProof;
+use psyche_coordinator::SOLANA_MAX_NUM_CLIENTS;
+use psyche_coordinator::SOLANA_MAX_STRING_LEN;
 
-declare_id!("EqoKSxNdRmX1zSRKSppNCKBpGcciqCwYAjZWUkHoa2ox");
+declare_id!("9yNWJ3BUSgWwkHXxbJV4iBi2qnYfYw8ppHjqbBvUfMfv");
 
 pub const SOLANA_MAX_NUM_PENDING_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
-pub const SOLANA_MAX_NUM_WHITELISTED_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 
 pub fn bytes_from_string(str: &str) -> &[u8] {
     &str.as_bytes()[..SOLANA_MAX_STRING_LEN.min(str.len())]
+}
+
+pub fn find_coordinator_instance(run_id: &str) -> Pubkey {
+    Pubkey::find_program_address(
+        &[CoordinatorInstance::SEEDS_PREFIX, bytes_from_string(run_id)],
+        &crate::ID,
+    )
+    .0
 }
 
 pub fn coordinator_account_from_bytes(
@@ -27,7 +42,9 @@ pub fn coordinator_account_from_bytes(
     if bytes.len() != CoordinatorAccount::space_with_discriminator() {
         return Err(ProgramError::CoordinatorAccountIncorrectSize);
     }
-    if &bytes[..CoordinatorAccount::DISCRIMINATOR.len()] != CoordinatorAccount::DISCRIMINATOR {
+    if &bytes[..CoordinatorAccount::DISCRIMINATOR.len()]
+        != CoordinatorAccount::DISCRIMINATOR
+    {
         return Err(ProgramError::CoordinatorAccountInvalidDiscriminator);
     }
     Ok(bytemuck::from_bytes(
@@ -43,7 +60,8 @@ pub struct CoordinatorAccount {
 }
 impl CoordinatorAccount {
     pub fn space_with_discriminator() -> usize {
-        CoordinatorAccount::DISCRIMINATOR.len() + std::mem::size_of::<CoordinatorAccount>()
+        CoordinatorAccount::DISCRIMINATOR.len()
+            + std::mem::size_of::<CoordinatorAccount>()
     }
 }
 
@@ -51,8 +69,9 @@ impl CoordinatorAccount {
 #[account]
 pub struct CoordinatorInstance {
     pub bump: u8,
-    pub authority: Pubkey,
-    pub account: Pubkey,
+    pub main_authority: Pubkey,
+    pub join_authority: Pubkey,
+    pub coordinator_account: Pubkey,
     #[max_len(SOLANA_MAX_STRING_LEN)]
     pub run_id: String,
 }
@@ -65,48 +84,18 @@ impl CoordinatorInstance {
 pub mod psyche_solana_coordinator {
     use super::*;
 
-    pub fn initialize_coordinator(
-        ctx: Context<InitializeCoordinatorAccounts>,
-        run_id: String,
+    pub fn init_coordinator(
+        context: Context<InitCoordinatorAccounts>,
+        params: InitCoordinatorParams,
     ) -> Result<()> {
-        // Initialize the coordinator instance
-        let instance = &mut ctx.accounts.instance;
-        instance.bump = ctx.bumps.instance;
-        instance.authority = ctx.accounts.authority.key();
-        instance.account = ctx.accounts.account.key();
-        instance.run_id = run_id.clone();
-        // Initialize the coordinator account
-        let mut data = ctx.accounts.account.try_borrow_mut_data()?;
-        if data.len() != CoordinatorAccount::space_with_discriminator() {
-            return err!(ProgramError::CoordinatorAccountIncorrectSize);
-        }
-        // Install the correct coordinator account's discriminator, verify that it was zero before init
-        let disc = CoordinatorAccount::DISCRIMINATOR;
-        let data_disc = &mut data[..disc.len()];
-        if data_disc.iter().any(|b| *b != 0) {
-            return err!(ErrorCode::AccountDiscriminatorAlreadySet);
-        }
-        data_disc.copy_from_slice(disc);
-        // Ready to prepare the coordinator content
-        let account = bytemuck::from_bytes_mut::<CoordinatorAccount>(
-            &mut data[disc.len()..CoordinatorAccount::space_with_discriminator()],
-        );
-        // Setup the run_id const
-        let mut array = [0u8; SOLANA_MAX_STRING_LEN];
-        let run_id = bytes_from_string(&run_id);
-        array[..run_id.len()].copy_from_slice(run_id);
-        account.state.coordinator.run_id = array;
-        // Done
-        Ok(())
+        init_coordinator_processor(context, params)
     }
 
-    pub fn free_coordinator(ctx: Context<FreeCoordinatorAccounts>) -> Result<()> {
-        if !&ctx.accounts.account.load()?.state.coordinator.halted() {
-            return err!(ProgramError::CloseCoordinatorNotHalted);
-        }
-        ctx.accounts
-            .account
-            .close(ctx.accounts.reimbursed.to_account_info())
+    pub fn free_coordinator(
+        context: Context<FreeCoordinatorAccounts>,
+        params: FreeCoordinatorParams,
+    ) -> Result<()> {
+        free_coordinator_processor(context, params)
     }
 
     pub fn update_coordinator_config_model(
@@ -115,21 +104,10 @@ pub mod psyche_solana_coordinator {
         model: Option<Model>,
     ) -> Result<()> {
         ctx.accounts
-            .account
+            .coordinator_account
             .load_mut()?
             .state
             .update_coordinator_config_model(config, model)
-    }
-
-    pub fn set_whitelist(
-        ctx: Context<OwnerCoordinatorAccounts>,
-        clients: Vec<Pubkey>,
-    ) -> Result<()> {
-        ctx.accounts
-            .account
-            .load_mut()?
-            .state
-            .set_whitelist(clients)
     }
 
     pub fn set_future_epoch_rates(
@@ -138,146 +116,114 @@ pub mod psyche_solana_coordinator {
         epoch_slashing_rate: Option<u64>,
     ) -> Result<()> {
         ctx.accounts
-            .account
+            .coordinator_account
             .load_mut()?
             .state
             .set_future_epoch_rates(epoch_earning_rate, epoch_slashing_rate)
     }
 
-    pub fn join_run(ctx: Context<PermissionlessCoordinatorAccounts>, id: ClientId) -> Result<()> {
-        if &id.signer != ctx.accounts.user.key {
-            return err!(ProgramError::SignerMismatch);
-        }
-        ctx.accounts.account.load_mut()?.state.join_run(id)
+    pub fn join_run(
+        context: Context<JoinRunAccounts>,
+        params: JoinRunParams,
+    ) -> Result<()> {
+        join_run_processor(context, params)
     }
 
-    pub fn set_paused(ctx: Context<OwnerCoordinatorAccounts>, paused: bool) -> Result<()> {
-        ctx.accounts.account.load_mut()?.state.set_paused(paused)
+    pub fn set_paused(
+        ctx: Context<OwnerCoordinatorAccounts>,
+        paused: bool,
+    ) -> Result<()> {
+        ctx.accounts
+            .coordinator_account
+            .load_mut()?
+            .state
+            .set_paused(paused)
     }
 
     pub fn tick(ctx: Context<PermissionlessCoordinatorAccounts>) -> Result<()> {
-        ctx.accounts.account.load_mut()?.state.tick()
+        ctx.accounts.coordinator_account.load_mut()?.state.tick()
     }
 
     pub fn witness(
         ctx: Context<PermissionlessCoordinatorAccounts>,
         proof: WitnessProof,
         participant_bloom: WitnessBloom,
-        order_bloom: WitnessBloom,
+        batch_bloom: WitnessBloom,
     ) -> Result<()> {
-        ctx.accounts.account.load_mut()?.state.witness(
+        ctx.accounts.coordinator_account.load_mut()?.state.witness(
             ctx.accounts.user.key,
             Witness {
                 proof,
                 participant_bloom,
-                order_bloom,
+                batch_bloom,
             },
         )
     }
 
     pub fn health_check(
         ctx: Context<PermissionlessCoordinatorAccounts>,
+        id: ClientId,
         committee: Committee,
         position: u64,
         index: u64,
     ) -> Result<()> {
-        ctx.accounts.account.load_mut()?.state.health_check(
-            ctx.accounts.user.key,
-            vec![CommitteeProof {
-                committee,
-                position,
-                index,
-            }],
-        )
+        ctx.accounts
+            .coordinator_account
+            .load_mut()?
+            .state
+            .health_check(
+                ctx.accounts.user.key,
+                vec![(
+                    id,
+                    CommitteeProof {
+                        committee,
+                        position,
+                        index,
+                    },
+                )],
+            )
     }
-}
-
-#[derive(Accounts)]
-#[instruction(run_id: String)]
-pub struct InitializeCoordinatorAccounts<'info> {
-    #[account(mut)]
-    pub payer: Signer<'info>,
-    #[account()]
-    pub authority: Signer<'info>,
-    #[account(
-        init,
-        payer = payer,
-        space = 8 + CoordinatorInstance::INIT_SPACE,
-        seeds = [
-            CoordinatorInstance::SEEDS_PREFIX,
-            bytes_from_string(&run_id)
-        ],
-        bump
-    )]
-    pub instance: Account<'info, CoordinatorInstance>,
-    #[account(mut)]
-    pub account: UncheckedAccount<'info>,
-    #[account(address = system_program::ID)]
-    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct OwnerCoordinatorAccounts<'info> {
     #[account()]
     pub authority: Signer<'info>,
+
     #[account(
         seeds = [
             CoordinatorInstance::SEEDS_PREFIX,
-            bytes_from_string(&instance.run_id)
+            bytes_from_string(&coordinator_instance.run_id)
         ],
-        bump = instance.bump,
-        constraint = instance.authority == *authority.key
+        bump = coordinator_instance.bump,
+        constraint = coordinator_instance.main_authority == authority.key()
     )]
-    pub instance: Account<'info, CoordinatorInstance>,
+    pub coordinator_instance: Account<'info, CoordinatorInstance>,
+
     #[account(
         mut,
-        owner = crate::ID,
-        constraint = instance.account == account.key()
+        constraint = coordinator_instance.coordinator_account == coordinator_account.key()
     )]
-    pub account: AccountLoader<'info, CoordinatorAccount>,
+    pub coordinator_account: AccountLoader<'info, CoordinatorAccount>,
 }
 
 #[derive(Accounts)]
 pub struct PermissionlessCoordinatorAccounts<'info> {
     #[account()]
     pub user: Signer<'info>,
-    #[account(
-        seeds = [
-            CoordinatorInstance::SEEDS_PREFIX,
-            bytes_from_string(&instance.run_id)
-        ],
-        bump = instance.bump
-    )]
-    pub instance: Account<'info, CoordinatorInstance>,
-    #[account(
-        mut,
-        owner = crate::ID,
-        constraint = instance.account == account.key()
-    )]
-    pub account: AccountLoader<'info, CoordinatorAccount>,
-}
 
-#[derive(Accounts)]
-pub struct FreeCoordinatorAccounts<'info> {
-    #[account()]
-    pub authority: Signer<'info>,
-    #[account(mut)]
-    pub reimbursed: UncheckedAccount<'info>,
     #[account(
-        mut,
         seeds = [
             CoordinatorInstance::SEEDS_PREFIX,
-            bytes_from_string(&instance.run_id)
+            bytes_from_string(&coordinator_instance.run_id)
         ],
-        bump = instance.bump,
-        constraint = instance.authority == *authority.key,
-        close = reimbursed
+        bump = coordinator_instance.bump
     )]
-    pub instance: Account<'info, CoordinatorInstance>,
+    pub coordinator_instance: Account<'info, CoordinatorInstance>,
+
     #[account(
         mut,
-        owner = crate::ID,
-        constraint = instance.account == account.key()
+        constraint = coordinator_instance.coordinator_account == coordinator_account.key()
     )]
-    pub account: AccountLoader<'info, CoordinatorAccount>,
+    pub coordinator_account: AccountLoader<'info, CoordinatorAccount>,
 }

@@ -3,16 +3,16 @@ use psyche_coordinator::{
     model::{self, LLMTrainingDataLocation},
     Coordinator, HealthChecks, Witness,
 };
-use psyche_core::{u8_to_string, NodeIdentity, TokenSize};
+use psyche_core::{u8_to_string, CancellableBarrier, NodeIdentity, TokenSize};
 use psyche_data_provider::{
     download_model_repo_async,
     http::{FileURLs, HttpDataProvider},
     DataProvider, DataProviderTcpClient, DummyDataProvider,
 };
 use psyche_modeling::{
-    auto_tokenizer, AutoConfig, AutoTokenizerError, CausalLM, CommunicatorId, DummyModel,
-    LlamaConfig, LlamaForCausalLM, ModelConfig, ModelLoadError, ParallelModels, PretrainedSource,
-    Trainer,
+    auto_tokenizer, AutoConfig, AutoTokenizerError, CausalLM, CommunicatorId, DataParallel,
+    DeepseekForCausalLM, DummyModel, LlamaConfig, LlamaForCausalLM, ModelConfig, ModelLoadError,
+    ParallelModels, PretrainedSource, Trainer,
 };
 use psyche_network::{AuthenticatableIdentity, BlobTicket};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
@@ -117,13 +117,13 @@ pub struct RunInitConfigAndIO<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub init_config: RunInitConfig<T, A>,
 
     pub tx_witness: UnboundedSender<Witness>,
-    pub tx_health_check: UnboundedSender<HealthChecks>,
+    pub tx_health_check: UnboundedSender<HealthChecks<T>>,
     pub tx_checkpoint: UnboundedSender<model::HubRepo>,
     pub tx_model: UnboundedSender<HashMap<String, Tensor>>,
     pub tx_parameters_req: UnboundedSender<(Vec<String>, OneshotModelParameterSender)>,
     pub tx_config: UnboundedSender<(String, String)>,
     pub tx_distro_result: UnboundedSender<DistroBroadcastAndPayload>,
-    pub tx_request_download: UnboundedSender<BlobTicket>,
+    pub tx_request_download: UnboundedSender<(BlobTicket, u32)>,
     pub tx_request_model_config: UnboundedSender<OneShotModelConfigSender>,
 }
 
@@ -181,7 +181,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
 
         let model_future: JoinHandle<Result<RawLoadedModel, InitRunError>> = match &llm.architecture
         {
-            model::LLMArchitecture::HfLlama => match &llm.checkpoint {
+            model::LLMArchitecture::HfLlama | model::LLMArchitecture::HfDeepseek => match &llm
+                .checkpoint
+            {
                 model::Checkpoint::Dummy(_) => tokio::spawn(async move {
                     let tokenizer = Arc::new(Tokenizer::new(ModelWrapper::WordLevel(
                         WordLevel::builder().build().unwrap(),
@@ -310,7 +312,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                         };
 
                         info!("Loading model...");
-                        let mut futures = Vec::with_capacity(
+                        let mut futures: Vec<
+                            JoinHandle<Result<Box<dyn CausalLM>, ModelLoadError>>,
+                        > = Vec::with_capacity(
                             init_config.data_parallelism * init_config.tensor_parallelism,
                         );
                         for dp in 0..init_config.data_parallelism {
@@ -349,6 +353,18 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                                                 tensor_parallelism_world,
                                                 Some(llm.max_seq_len as usize),
                                             )
+                                            .map(|x| Box::new(x) as Box<dyn CausalLM>)
+                                        }
+                                        model::LLMArchitecture::HfDeepseek => {
+                                            DeepseekForCausalLM::from_pretrained(
+                                                &source.try_into()?,
+                                                Some(Kind::BFloat16),
+                                                None,
+                                                Some(device),
+                                                tensor_parallelism_world,
+                                                Some(llm.max_seq_len as usize),
+                                            )
+                                            .map(|x| Box::new(x) as Box<dyn CausalLM>)
                                         }
                                     }
                                 }));
@@ -370,7 +386,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             debug!("Config uploaded: {}", config);
                             let tokenizer = tokenizer.to_string(false).unwrap();
                             tx_config.send((config, tokenizer)).unwrap();
-                            models.push(Box::new(model));
+                            models.push(model);
                         }
                         info!(
                             checkpoint = %llm.checkpoint,
@@ -402,11 +418,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                         let mut run_info = wandb::RunInfo::new(wandb_info.project)
                             .name(wandb_info.run)
                             .config((
-                                (
-                                    "data_indicies_per_batch",
-                                    state.config.data_indicies_per_batch,
-                                ),
-                                ("batches_per_round", state.config.batches_per_round),
+                                ("global_batch_size", state.config.global_batch_size),
                                 ("total_steps", state.config.total_steps),
                                 ("rounds_per_epoch", state.config.rounds_per_epoch),
                                 ("run_id", run_id),
@@ -450,19 +462,48 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
         let data_fetcher =
             DataFetcher::<T, A>::new(data_provider, init_config.data_parallelism * 2);
 
+        let data_parallel: Option<Vec<(Arc<CommunicatorId>, Arc<CancellableBarrier>)>> =
+            if init_config.data_parallelism > 1 {
+                Some(
+                    (0..init_config.tensor_parallelism)
+                        .map(|_| {
+                            (
+                                CommunicatorId::new().into(),
+                                CancellableBarrier::new(init_config.tensor_parallelism),
+                            )
+                        })
+                        .collect(),
+                )
+            } else {
+                None
+            };
+
         let trainers = tp_models
             .into_iter()
-            .map(|models| {
+            .enumerate()
+            .map(|(dp, models)| {
+                let data_parallel = data_parallel.as_ref().map(|data_parallel| {
+                    data_parallel
+                        .iter()
+                        .map(|(id, barrier)| DataParallel {
+                            id: id.clone(),
+                            barrier: barrier.clone(),
+                            rank: dp,
+                            world_size: init_config.data_parallelism,
+                        })
+                        .collect()
+                });
                 Trainer::new(
                     models,
                     llm.lr_schedule,
                     llm.optimizer,
                     init_config
                         .micro_batch_size
-                        .unwrap_or(state.config.data_indicies_per_batch as usize),
+                        .unwrap_or(state.config.global_batch_size as usize),
                     init_config.optim_stats_every_n_steps,
                     init_config.grad_accum_in_fp32,
                     Some(state.progress.step),
+                    data_parallel,
                 )
             })
             .collect();

@@ -23,6 +23,7 @@ psyche-core.workspace = true
 [dev-dependencies]
 clap.workspace = true
 psyche-data-provider.workspace = true
+psyche-tui.workspace = true
 itertools = "0.14"
 
 [features]

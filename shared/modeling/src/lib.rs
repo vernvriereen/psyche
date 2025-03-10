@@ -42,11 +42,11 @@ pub use safetensor_utils::{
 pub use sampling::{LogitsProcessor, Sampling};
 pub use tensor_parallelism::{
     unsharded_cpu_variables, AllReduce, ColumnParallelLinear, Communicator, CommunicatorId,
-    CudaSynchronize, RMSNormParallelInput, RowParallelLinear,
+    CudaSynchronize, RMSNormParallelInput, ReduceType, RowParallelLinear,
 };
 pub use token_output_stream::TokenOutputStream;
 pub use trainer::{
-    ApplyDistroResultError, Batch, BatchData, ParallelModels, TrainOutput, Trainer,
+    ApplyDistroResultError, Batch, BatchData, DataParallel, ParallelModels, TrainOutput, Trainer,
     TrainerThreadCommunicationError,
 };
 
@@ -57,4 +57,10 @@ pub fn set_torch_rng_seed() {
     let seed: i64 = rand::thread_rng().gen();
     tch::manual_seed(seed);
     println!("torch seed set to: {}", seed);
+}
+
+pub fn set_suggested_env_vars() {
+    std::env::set_var("TORCH_NCCL_AVOID_RECORD_STREAMS", "1");
+    std::env::set_var("NCCL_P2P_DIRECT_DISABLE", "1");
+    std::env::set_var("NCCL_LAUNCH_MODE", "GROUP");
 }

@@ -1,6 +1,4 @@
 pub mod create_memnet_endpoint;
-pub mod find_pda_lender;
-pub mod find_pda_pool;
 pub mod process_lender_claim;
 pub mod process_lender_create;
 pub mod process_lender_deposit;

@@ -70,7 +70,7 @@ where
     pub async fn handle_client_message(&mut self, from: A, message: ClientToServerMessage) {
         match message {
             ClientToServerMessage::RequestTrainingData { data_ids } => {
-                let result = self.try_send_data(from.clone(), data_ids.clone()).await;
+                let result = self.try_send_data(from.clone(), data_ids).await;
                 match result {
                     Ok(data) => {
                         let old_count = *self.provided_sequences.get(&from).unwrap_or(&0);
@@ -120,7 +120,7 @@ where
     async fn try_send_data(
         &mut self,
         to: A,
-        data_ids: Vec<BatchId>,
+        data_ids: BatchId,
     ) -> Result<Vec<Vec<i32>>, RejectionReason> {
         if !self.in_round.contains(to.get_p2p_public_key()) {
             return Err(RejectionReason::NotInThisRound);
@@ -137,7 +137,7 @@ where
         // }
         let data = self
             .local_data_provider
-            .get_samples(&data_ids)
+            .get_samples(data_ids)
             .await
             .expect("data failed to fetch...");
         Ok(data)
@@ -152,18 +152,5 @@ where
             .iter()
             .map(|x| *x.id.get_p2p_public_key())
             .collect();
-        // self.selected_data = match self.state.current_round() {
-        //     Ok(round) => {
-        //         let committee = CommitteeSelection::new(
-        //             round.tie_breaker_tasks as usize,
-        //             self.state.witness_nodes as usize,
-        //             self.state.verification_percent,
-        //             self.state.clients.len(),
-        //             round.random_seed,
-        //         );
-        //         assign_data_for_state(&self.state, &committee)
-        //     }
-        //     Err(_) => IntervalTree::new(),
-        // };
     }
 }

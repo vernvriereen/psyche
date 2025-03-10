@@ -29,7 +29,7 @@ async fn loads_dolma_subset() {
     )
     .unwrap();
     let samples = data_loader
-        .get_samples(&[BatchId::from_u64(0), BatchId::from_u64(1)])
+        .get_samples(BatchId((0, 1).into()))
         .await
         .unwrap();
 
@@ -67,7 +67,7 @@ async fn loads_fineweb_subset() {
     )
     .unwrap();
     let samples = data_loader
-        .get_samples(&[BatchId::from_u64(0), BatchId::from_u64(1)])
+        .get_samples(BatchId((0, 1).into()))
         .await
         .unwrap();
 

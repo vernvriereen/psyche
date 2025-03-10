@@ -5,7 +5,7 @@ use iroh_blobs::{net_protocol::Blobs, store::mem::Store};
 use iroh_gossip::net::Gossip;
 use tokio::{sync::Mutex, task::JoinSet};
 use tokio_util::{sync::CancellationToken, task::AbortOnDropHandle};
-use tracing::{debug, error, info_span, trace, warn, Instrument};
+use tracing::{error, info_span, trace, warn, Instrument};
 
 use iroh::{endpoint::get_remote_node_id, protocol::ProtocolHandler, Endpoint};
 
@@ -209,7 +209,7 @@ async fn handle_connection<A: Allowlist + 'static + Send>(
     if !allowlist.allowed(node_id) {
         // kill connection completely!
         connection.close(0u8.into(), b"not in allowlist");
-        debug!(
+        warn!(
             "Killing attemption connection: Node ID {node_id} is not in allowlist {allowlist:#?}."
         );
         return;

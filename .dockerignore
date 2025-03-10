@@ -48,3 +48,5 @@ book
 config/client/.env
 
 **/README.md
+
+scripts/devnet/devnet_funded_accounts

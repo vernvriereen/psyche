@@ -1,4 +1,4 @@
-use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize};
+use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
 
@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
     AnchorSerialize,
     Serialize,
     Deserialize,
+    InitSpace,
 )]
 pub struct SmallBoolean(pub u8);
 

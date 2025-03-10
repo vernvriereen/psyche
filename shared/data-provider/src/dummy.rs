@@ -41,7 +41,7 @@ impl DummyDataProvider {
 }
 
 impl TokenizedDataProvider for DummyDataProvider {
-    async fn get_samples(&mut self, data_ids: &[BatchId]) -> Result<Vec<Vec<i32>>> {
+    async fn get_samples(&mut self, data_ids: BatchId) -> Result<Vec<Vec<i32>>> {
         self.internal_get_samples(data_ids.len())
     }
 }

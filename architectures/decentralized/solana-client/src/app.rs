@@ -58,6 +58,7 @@ pub struct AppParams {
     pub micro_batch_size: Option<usize>,
     pub write_gradients_dir: Option<PathBuf>,
     pub p2p_port: Option<u16>,
+    pub p2p_interface: Option<String>,
     pub eval_tasks: Vec<psyche_eval::Task>,
     pub eval_task_max_docs: Option<usize>,
     pub checkpoint_upload_info: Option<CheckpointConfig>,
@@ -89,6 +90,7 @@ impl AppBuilder {
         let p2p = NC::init(
             &p.run_id,
             p.p2p_port,
+            p.p2p_interface,
             RelayMode::Default,
             DiscoveryMode::N0,
             vec![],
@@ -152,8 +154,17 @@ impl App {
             state_options.private_key.0.clone(),
             CommitmentConfig::confirmed(),
         )?;
-        let (instance_pda, instance) = backend.get_coordinator_instance(&self.run_id).await?;
-        let backend_runner = backend.start(self.run_id.clone(), instance.account).await?;
+        let coordinator_instance =
+            psyche_solana_coordinator::find_coordinator_instance(&self.run_id);
+        let coordinator_instance_state = backend
+            .get_coordinator_instance(&coordinator_instance)
+            .await?;
+
+        let coordinator_account = coordinator_instance_state.coordinator_account;
+
+        let backend_runner = backend
+            .start(self.run_id.clone(), coordinator_account)
+            .await?;
 
         let backend = Arc::new(SolanaBackend::new(
             self.cluster.clone(),
@@ -164,7 +175,7 @@ impl App {
         let p2p_identity = state_options.private_key.1.public();
 
         let current_coordinator_state = backend
-            .get_coordinator_account(&instance.account)
+            .get_coordinator_account(&coordinator_account)
             .await?
             .state
             .coordinator;
@@ -173,8 +184,8 @@ impl App {
         if current_coordinator_state.run_state == RunState::WaitingForMembers {
             let joined = backend
                 .join_run(
-                    instance_pda,
-                    instance.account,
+                    coordinator_instance,
+                    coordinator_account,
                     psyche_solana_coordinator::ClientId {
                         signer,
                         p2p_identity: *p2p_identity.as_bytes(),
@@ -193,7 +204,7 @@ impl App {
 
         // Update the latest update after joining the run to advance the state.
         let coordinator_state = backend
-            .get_coordinator_account(&instance.account)
+            .get_coordinator_account(&coordinator_account)
             .await?
             .state;
         let mut latest_update = coordinator_state.coordinator;
@@ -224,13 +235,13 @@ impl App {
                             if ticked.run_state != latest_update.run_state {
                                 let backend = backend.clone();
                                 let backend_clone = backend.clone();
-                                tick_tx = Some(tokio::spawn(async move { backend.tick(instance_pda, instance.account).await }));
+                                tick_tx = Some(tokio::spawn(async move { backend.tick(coordinator_instance, coordinator_account).await }));
                                 // This means the epoch finished so we're rejoining the run to participate in the next one.
                                 if ticked.run_state == RunState::WaitingForMembers && latest_update.run_state == RunState::Cooldown && !already_joined_next_run {
                                     let joined = backend_clone
                                         .join_run(
-                                            instance_pda,
-                                            instance.account,
+                                            coordinator_instance,
+                                            coordinator_account,
                                             psyche_solana_coordinator::ClientId {
                                                 signer,
                                                 p2p_identity: *p2p_identity.as_bytes(),

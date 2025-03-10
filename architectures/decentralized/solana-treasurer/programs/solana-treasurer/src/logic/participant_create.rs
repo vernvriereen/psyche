@@ -32,7 +32,7 @@ pub struct ParticipantCreateAccounts<'info> {
     pub system_program: Program<'info, System>,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct ParticipantCreateParams {}
 
 pub fn participant_create_processor(

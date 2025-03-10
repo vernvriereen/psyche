@@ -3,8 +3,9 @@ use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::Mint;
 use anchor_spl::token::Token;
 use anchor_spl::token::TokenAccount;
-use psyche_solana_coordinator::cpi::accounts::InitializeCoordinatorAccounts;
-use psyche_solana_coordinator::cpi::initialize_coordinator;
+use psyche_solana_coordinator::cpi::accounts::InitCoordinatorAccounts;
+use psyche_solana_coordinator::cpi::init_coordinator;
+use psyche_solana_coordinator::logic::InitCoordinatorParams;
 use psyche_solana_coordinator::program::PsycheSolanaCoordinator;
 
 use crate::run_identity_from_string;
@@ -15,9 +16,6 @@ use crate::state::Run;
 pub struct RunCreateAccounts<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
-
-    #[account()]
-    pub authority: Signer<'info>,
 
     #[account(
         init,
@@ -64,6 +62,8 @@ pub struct RunCreateAccounts<'info> {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct RunCreateParams {
     pub run_id: String,
+    pub main_authority: Pubkey,
+    pub join_authority: Pubkey,
     pub collateral_amount_per_earned_point: u64,
 }
 
@@ -75,9 +75,10 @@ pub fn run_create_processor(
 
     let run = &mut context.accounts.run;
     run.bump = context.bumps.run;
-
     run.identity = run_identity;
-    run.authority = context.accounts.authority.key();
+
+    run.main_authority = params.main_authority;
+    run.join_authority = params.join_authority;
 
     run.coordinator_instance = context.accounts.coordinator_instance.key();
     run.coordinator_account = context.accounts.coordinator_account.key();
@@ -92,17 +93,19 @@ pub fn run_create_processor(
 
     let run_signer_seeds: &[&[&[u8]]] =
         &[&[Run::SEEDS_PREFIX, &run.identity.to_bytes(), &[run.bump]]];
-    initialize_coordinator(
+    init_coordinator(
         CpiContext::new(
             context.accounts.coordinator_program.to_account_info(),
-            InitializeCoordinatorAccounts {
+            InitCoordinatorAccounts {
                 payer: context.accounts.payer.to_account_info(),
-                authority: context.accounts.run.to_account_info(),
-                instance: context
+                coordinator_instance: context
                     .accounts
                     .coordinator_instance
                     .to_account_info(),
-                account: context.accounts.coordinator_account.to_account_info(),
+                coordinator_account: context
+                    .accounts
+                    .coordinator_account
+                    .to_account_info(),
                 system_program: context
                     .accounts
                     .system_program
@@ -110,7 +113,11 @@ pub fn run_create_processor(
             },
         )
         .with_signer(run_signer_seeds),
-        params.run_id.clone(),
+        InitCoordinatorParams {
+            main_authority: context.accounts.run.key(),
+            join_authority: params.join_authority,
+            run_id: params.run_id.clone(),
+        },
     )?;
 
     Ok(())

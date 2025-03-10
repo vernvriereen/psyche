@@ -13,18 +13,20 @@ use psyche_core::FixedVec;
 use psyche_core::LearningRateSchedule;
 use psyche_core::OptimizerDefinition;
 use psyche_solana_coordinator::instruction::Witness;
+use psyche_solana_coordinator::logic::InitCoordinatorParams;
+use psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE;
 use psyche_solana_coordinator::ClientId;
 use psyche_solana_coordinator::CoordinatorAccount;
 use psyche_solana_tooling::create_memnet_endpoint::create_memnet_endpoint;
 use psyche_solana_tooling::get_accounts::get_coordinator_account_state;
-use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_initialize;
+use psyche_solana_tooling::process_authorizer_instructions::process_authorizer_authorization_create;
+use psyche_solana_tooling::process_authorizer_instructions::process_authorizer_authorization_grantor_update;
+use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_init;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_join_run;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_set_paused;
-use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_set_whitelist;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_tick;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_update_config_model;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_witness;
-use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 
@@ -34,11 +36,14 @@ pub async fn run() {
 
     // Create payer key and fund it
     let payer = Keypair::new();
-    endpoint.process_airdrop(&payer.pubkey(), 10_000_000_000).await.unwrap();
+    endpoint
+        .process_airdrop(&payer.pubkey(), 10_000_000_000)
+        .await
+        .unwrap();
 
     // Run constants
-    let run_id = "Hello world!";
-    let authority = Keypair::new();
+    let main_authority = Keypair::new();
+    let join_authority = Keypair::new();
     let client = Keypair::new();
     let ticker = Keypair::new();
 
@@ -53,12 +58,15 @@ pub async fn run() {
         .unwrap();
 
     // initialize the coordinator
-    process_coordinator_initialize(
+    let coordinator_instance = process_coordinator_init(
         &mut endpoint,
         &payer,
-        &authority,
         &coordinator_account,
-        run_id,
+        InitCoordinatorParams {
+            run_id: "This is a random run id!".to_string(),
+            main_authority: main_authority.pubkey(),
+            join_authority: join_authority.pubkey(),
+        },
     )
     .await
     .unwrap();
@@ -67,6 +75,7 @@ pub async fn run() {
     assert_eq!(
         get_coordinator_account_state(&mut endpoint, &coordinator_account)
             .await
+            .unwrap()
             .unwrap()
             .coordinator
             .run_state,
@@ -77,23 +86,21 @@ pub async fn run() {
     process_coordinator_update_config_model(
         &mut endpoint,
         &payer,
-        &authority,
+        &main_authority,
+        &coordinator_instance,
         &coordinator_account,
-        run_id,
         Some(CoordinatorConfig::<ClientId> {
             warmup_time: 1,
             cooldown_time: 1,
             max_round_train_time: 3,
             round_witness_time: 1,
             min_clients: 1,
-            batches_per_round: 1,
-            data_indicies_per_batch: 1,
+            global_batch_size: 1,
             verification_percent: 0,
             witness_nodes: 0,
             witness_quorum: 0,
             rounds_per_epoch: 10,
             total_steps: 100,
-            overlapped: false.into(),
             checkpointers: FixedVec::zeroed(),
         }),
         Some(Model::LLM(LLM {
@@ -123,57 +130,56 @@ pub async fn run() {
         get_coordinator_account_state(&mut endpoint, &coordinator_account)
             .await
             .unwrap()
+            .unwrap()
             .coordinator
             .run_state,
         RunState::Uninitialized
     );
 
-    // add a dummy whitelist entry so the run is permissioned but no client whitelisted
-    process_coordinator_set_whitelist(
+    // Generate the client key
+    let client_id = ClientId::new(client.pubkey(), Default::default());
+
+    // Add client to whitelist
+    let authorization = process_authorizer_authorization_create(
         &mut endpoint,
         &payer,
-        &authority,
-        &coordinator_account,
-        run_id,
-        vec![Pubkey::zeroed()],
+        &join_authority,
+        &client.pubkey(),
+        JOIN_RUN_AUTHORIZATION_SCOPE,
+    )
+    .await
+    .unwrap();
+    process_authorizer_authorization_grantor_update(
+        &mut endpoint,
+        &payer,
+        &join_authority,
+        &authorization,
+        true,
     )
     .await
     .unwrap();
 
-    // Generate the client key
-    let client_id = ClientId::new(client.pubkey(), Default::default());
-
-    // not whitelisted, can't join
+    // Whitelisted with the wrong account, can't join
     assert!(process_coordinator_join_run(
         &mut endpoint,
         &payer,
         &payer,
+        &authorization,
+        &coordinator_instance,
         &coordinator_account,
-        run_id,
         client_id
     )
     .await
     .is_err());
 
-    // Add client to whitelist
-    process_coordinator_set_whitelist(
-        &mut endpoint,
-        &payer,
-        &authority,
-        &coordinator_account,
-        run_id,
-        vec![client_id.signer],
-    )
-    .await
-    .unwrap();
-
-    // Now whitelisted, can join
+    // Whitelisted, can join
     process_coordinator_join_run(
         &mut endpoint,
         &payer,
         &client,
+        &authorization,
+        &coordinator_instance,
         &coordinator_account,
-        run_id,
         client_id,
     )
     .await
@@ -183,6 +189,7 @@ pub async fn run() {
     assert_eq!(
         get_coordinator_account_state(&mut endpoint, &coordinator_account)
             .await
+            .unwrap()
             .unwrap()
             .coordinator
             .run_state,
@@ -194,8 +201,8 @@ pub async fn run() {
         &mut endpoint,
         &payer,
         &ticker,
+        &coordinator_instance,
         &coordinator_account,
-        run_id
     )
     .await
     .is_err());
@@ -204,9 +211,9 @@ pub async fn run() {
     process_coordinator_set_paused(
         &mut endpoint,
         &payer,
-        &authority,
+        &main_authority,
+        &coordinator_instance,
         &coordinator_account,
-        run_id,
         false,
     )
     .await
@@ -216,6 +223,7 @@ pub async fn run() {
     assert_eq!(
         get_coordinator_account_state(&mut endpoint, &coordinator_account)
             .await
+            .unwrap()
             .unwrap()
             .coordinator
             .run_state,
@@ -230,8 +238,8 @@ pub async fn run() {
         &mut endpoint,
         &payer,
         &ticker,
+        &coordinator_instance,
         &coordinator_account,
-        run_id,
     )
     .await
     .unwrap();
@@ -241,6 +249,7 @@ pub async fn run() {
         get_coordinator_account_state(&mut endpoint, &coordinator_account)
             .await
             .unwrap()
+            .unwrap()
             .coordinator;
     assert_eq!(coordinator.run_state, RunState::RoundTrain);
     assert_eq!(coordinator.current_round().unwrap().height, 0);
@@ -248,16 +257,20 @@ pub async fn run() {
 
     // Check that only the right user can successfully send a witness
     let witness = Witness {
-        proof: WitnessProof { witness: true, position: 0, index: 0 },
+        proof: WitnessProof {
+            witness: true.into(),
+            position: 0,
+            index: 0,
+        },
         participant_bloom: Default::default(),
-        order_bloom: Default::default(),
+        batch_bloom: Default::default(),
     };
     assert!(process_coordinator_witness(
         &mut endpoint,
         &payer,
         &ticker,
+        &coordinator_instance,
         &coordinator_account,
-        run_id,
         &witness,
     )
     .await
@@ -266,8 +279,8 @@ pub async fn run() {
         &mut endpoint,
         &payer,
         &client,
+        &coordinator_instance,
         &coordinator_account,
-        run_id,
         &witness,
     )
     .await
@@ -277,6 +290,7 @@ pub async fn run() {
     assert_eq!(
         get_coordinator_account_state(&mut endpoint, &coordinator_account)
             .await
+            .unwrap()
             .unwrap()
             .coordinator
             .run_state,

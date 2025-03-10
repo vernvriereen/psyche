@@ -115,7 +115,7 @@ impl EvalRunner {
                     LoadingStateInner::Failed(e)
                 }
             };
-            tasks_clone.loaded_notify.notify_waiters();
+            tasks_clone.loaded_notify.notify_one();
         });
 
         Self {

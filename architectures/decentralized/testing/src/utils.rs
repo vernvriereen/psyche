@@ -36,7 +36,7 @@ impl SolanaTestClient {
             program.account(account).await.unwrap();
         Self {
             program,
-            account: instance.account,
+            account: instance.coordinator_account,
         }
     }
 
@@ -87,5 +87,10 @@ impl SolanaTestClient {
     pub async fn get_current_epoch(&self) -> u16 {
         let coordinator = self.get_coordinator_account().await;
         coordinator.state.coordinator.progress.epoch
+    }
+
+    pub async fn get_last_step(&self) -> u32 {
+        let coordinator = self.get_coordinator_account().await;
+        coordinator.state.coordinator.progress.step
     }
 }

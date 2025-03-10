@@ -1,5 +1,5 @@
 [config]
-warmup_time = 15
+warmup_time = 30
 cooldown_time = 30
 rounds_per_epoch = 20
 max_round_train_time = 30
@@ -8,9 +8,7 @@ min_clients = 1
 verification_percent = 0
 witness_nodes = 0
 witness_quorum = 0
-batches_per_round = 8
-data_indicies_per_batch = 1
-overlapped = 0
+global_batch_size = 8
 total_steps = 25000
 checkpointers = []
 

@@ -1,6 +1,7 @@
 use std::time::SystemTime;
 use std::{sync::Arc, time::Duration};
 
+use crate::CLIENT_CONTAINER_PREFIX;
 use bollard::{container::LogsOptions, Docker};
 use futures_util::StreamExt;
 use serde_json::Value;
@@ -31,6 +32,9 @@ pub enum DockerWatcherError {
 
     #[error("logging error: {inner}")]
     LogsError { inner: bollard::errors::Error },
+
+    #[error("Client {0} has crashed")]
+    ClientCrashedError(u8),
 }
 
 pub struct DockerWatcher {
@@ -165,5 +169,25 @@ impl DockerWatcher {
         });
 
         Ok(monitor_handle)
+    }
+
+    pub async fn monitor_clients_health(&self, num_clients: u8) -> Result<(), DockerWatcherError> {
+        for i in 1..=num_clients {
+            let container_name = format!("{CLIENT_CONTAINER_PREFIX}-{}", i);
+            let container = self
+                .client
+                .inspect_container(&container_name, None)
+                .await
+                .unwrap();
+            let state = container.state.unwrap();
+            match state.status {
+                Some(bollard::secret::ContainerStateStatusEnum::DEAD)
+                | Some(bollard::secret::ContainerStateStatusEnum::EXITED) => {
+                    return Err(DockerWatcherError::ClientCrashedError(i))
+                }
+                _ => continue,
+            }
+        }
+        Ok(())
     }
 }

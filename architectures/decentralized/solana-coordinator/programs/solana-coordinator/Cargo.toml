@@ -22,8 +22,6 @@ bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
 psyche-core = { path = "../../../../../shared/core" }
 psyche-coordinator = { path = "../../../../../shared/coordinator" }
 serde = { version = "1.0.209", features = ["derive"] }
-
-[dev-dependencies]
-solana-sdk = "=2.1.4"
-solana_toolbox_endpoint = "=0.1.38-solana-2.1.4"
-tokio = "1.42.0"
+psyche-solana-authorizer = { path = "../../../solana-authorizer/programs/solana-authorizer", features = [
+  "cpi",
+] }

@@ -2,9 +2,7 @@ use crate::app::{AppBuilder, AppParams, Tabs, TAB_NAMES};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use psyche_client::{
-    exercise_sdpa_if_needed, print_identity_keys, read_identity_secret_key, TrainArgs,
-};
+use psyche_client::{print_identity_keys, read_identity_secret_key, TrainArgs};
 use psyche_network::{DiscoveryMode, SecretKey};
 use psyche_tui::{maybe_start_render_loop, LogOutput};
 use std::path::PathBuf;
@@ -53,7 +51,7 @@ async fn async_main() -> Result<()> {
             identity_secret_key_path,
         } => print_identity_keys(identity_secret_key_path.as_ref()),
         Commands::Train { args, server_addr } => {
-            exercise_sdpa_if_needed();
+            psyche_client::prepare_environment();
 
             let hub_read_token = std::env::var("HF_TOKEN").ok();
             let checkpoint_upload_info = args.checkpoint_config()?;
@@ -87,6 +85,7 @@ async fn async_main() -> Result<()> {
                 tx_tui_state,
                 run_id: args.run_id,
                 p2p_port: args.bind_p2p_port,
+                p2p_interface: args.bind_p2p_interface,
                 data_parallelism: args.data_parallelism,
                 tensor_parallelism: args.tensor_parallelism,
                 micro_batch_size: args.micro_batch_size,

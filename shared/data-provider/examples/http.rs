@@ -68,7 +68,11 @@ async fn main() -> Result<()> {
 
     let token_size: TokenSize = cli.token_size.try_into()?;
 
-    let batch_ids: Vec<BatchId> = cli.batch_ids.into_iter().map(BatchId::from_u64).collect();
+    let batch_ids: Vec<BatchId> = cli
+        .batch_ids
+        .into_iter()
+        .map(|x| BatchId((x, x).into()))
+        .collect();
     if batch_ids.is_empty() {
         anyhow::bail!("At least one batch ID must be specified");
     }
@@ -93,24 +97,29 @@ async fn main() -> Result<()> {
     };
     let mut provider =
         HttpDataProvider::new(urls, token_size, cli.sequence_length, Shuffle::DontShuffle)?;
-    let samples = provider.get_samples(&batch_ids).await?;
 
-    // Output handling
-    if let Some(tokenizer_path) = cli.tokenizer {
-        let tokenizer = Tokenizer::from_file(tokenizer_path).expect("tokenizer exists");
-        for (i, sample) in samples.iter().enumerate() {
-            println!("=== Batch {} ===", batch_ids[i]);
-            let decoded = tokenizer
-                .decode(&sample.iter().map(|&x| x as u32).collect::<Vec<_>>(), true)
-                .expect("tokenizer decode worked");
-            println!("{}", decoded);
-            println!();
-        }
-    } else {
-        for (i, sample) in samples.iter().enumerate() {
-            println!("=== Batch {} ===", batch_ids[i]);
-            println!("{:?}", sample);
-            println!();
+    let tokenizer = cli.tokenizer.map(|tokenizer_path: PathBuf| {
+        Tokenizer::from_file(tokenizer_path).expect("tokenizer exists")
+    });
+    for batch in batch_ids {
+        let samples = provider.get_samples(batch).await?;
+
+        // Output handling
+        if let Some(tokenizer) = &tokenizer {
+            for (i, sample) in samples.iter().enumerate() {
+                println!("=== Batch {} Sample {} ===", batch.0.start, i);
+                let decoded = tokenizer
+                    .decode(&sample.iter().map(|&x| x as u32).collect::<Vec<_>>(), true)
+                    .expect("tokenizer decode worked");
+                println!("{}", decoded);
+                println!();
+            }
+        } else {
+            for (i, sample) in samples.iter().enumerate() {
+                println!("=== Batch {} Sample {} ===", batch.0.start, i);
+                println!("{:?}", sample);
+                println!();
+            }
         }
     }
 

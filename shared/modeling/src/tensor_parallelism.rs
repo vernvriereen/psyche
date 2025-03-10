@@ -50,6 +50,7 @@ impl CommunicatorId {
 pub enum ReduceType {
     Sum,
     Max,
+    Avg,
 }
 
 #[cfg(feature = "parallelism")]
@@ -58,6 +59,7 @@ impl From<ReduceType> for ReduceOpType {
         match value {
             ReduceType::Sum => ReduceOpType::Sum,
             ReduceType::Max => ReduceOpType::Max,
+            ReduceType::Avg => ReduceOpType::Avg,
         }
     }
 }

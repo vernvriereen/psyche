@@ -28,6 +28,7 @@ pub enum TransmittableDownload {
 #[derive(Debug)]
 struct Download {
     blob_ticket: BlobTicket,
+    tag: u32,
     download: mpsc::UnboundedReceiver<Result<DownloadProgress>>,
     last_offset: u64,
     total_size: u64,
@@ -35,6 +36,7 @@ struct Download {
 
 struct ReadingFinishedDownload {
     blob_ticket: BlobTicket,
+    tag: u32,
     download: Result<oneshot::Receiver<Bytes>>,
 }
 
@@ -50,10 +52,12 @@ impl Debug for ReadingFinishedDownload {
 impl Download {
     fn new(
         blob_ticket: BlobTicket,
+        tag: u32,
         download: mpsc::UnboundedReceiver<Result<DownloadProgress>>,
     ) -> Self {
         Self {
             blob_ticket,
+            tag,
             download,
             last_offset: 0,
             total_size: 0,
@@ -64,6 +68,7 @@ impl Download {
 #[derive(Clone, Debug)]
 pub struct DownloadUpdate {
     pub blob_ticket: BlobTicket,
+    pub tag: u32,
     pub downloaded_size_delta: u64,
     pub downloaded_size: u64,
     pub total_size: u64,
@@ -80,6 +85,7 @@ pub struct DownloadComplete<D: Networkable> {
 #[derive(Debug)]
 pub struct DownloadFailed {
     pub blob_ticket: BlobTicket,
+    pub tag: u32,
     pub error: anyhow::Error,
 }
 
@@ -181,6 +187,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
     pub fn add(
         &mut self,
         blob_ticket: BlobTicket,
+        tag: u32,
         progress: mpsc::UnboundedReceiver<Result<DownloadProgress>>,
     ) {
         let downloads = self.downloads.clone();
@@ -190,7 +197,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
             downloads
                 .lock()
                 .await
-                .push(Download::new(blob_ticket, progress));
+                .push(Download::new(blob_ticket, tag, progress));
 
             if let Err(e) = sender.send(()) {
                 error!("{}", e);
@@ -198,12 +205,18 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
         });
     }
 
-    pub fn read(&mut self, blob_ticket: BlobTicket, download: Result<oneshot::Receiver<Bytes>>) {
+    pub fn read(
+        &mut self,
+        blob_ticket: BlobTicket,
+        tag: u32,
+        download: Result<oneshot::Receiver<Bytes>>,
+    ) {
         let reading = self.reading.clone();
         let sender = self.tx_new_item.clone();
         tokio::spawn(async move {
             reading.lock().await.push(ReadingFinishedDownload {
                 blob_ticket,
+                tag,
                 download,
             });
             if let Err(e) = sender.send(()) {
@@ -284,6 +297,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                     DownloadProgress::InitialState(_) => None,
                     DownloadProgress::FoundLocal { size, .. } => Some(DownloadUpdate {
                         blob_ticket: download.blob_ticket.clone(),
+                        tag: download.tag,
                         downloaded_size_delta: 0,
                         downloaded_size: size.value(),
                         total_size: size.value(),
@@ -295,6 +309,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                         download.total_size = size;
                         Some(DownloadUpdate {
                             blob_ticket: download.blob_ticket.clone(),
+                            tag: download.tag,
                             downloaded_size_delta: 0,
                             downloaded_size: 0,
                             total_size: size,
@@ -308,6 +323,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                         download.last_offset = offset;
                         Some(DownloadUpdate {
                             blob_ticket: download.blob_ticket.clone(),
+                            tag: download.tag,
                             downloaded_size_delta: delta,
                             downloaded_size: offset,
                             total_size: download.total_size,
@@ -324,6 +340,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                         );
                         Some(DownloadUpdate {
                             blob_ticket: download.blob_ticket.clone(),
+                            tag: download.tag,
                             downloaded_size_delta: 0,
                             downloaded_size: download.total_size,
                             total_size: download.total_size,
@@ -335,7 +352,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                         warn!("Download aborted: {:?}", err);
                         Some(DownloadUpdate {
                             blob_ticket: download.blob_ticket.clone(),
-
+                            tag: download.tag,
                             downloaded_size_delta: 0,
                             downloaded_size: 0,
                             total_size: 0,
@@ -379,6 +396,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
             }
             Err(e) => Ok(Some(DownloadManagerEvent::Failed(DownloadFailed {
                 blob_ticket: downloader.blob_ticket,
+                tag: downloader.tag,
                 error: e,
             }))),
         }

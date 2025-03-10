@@ -1,16 +1,17 @@
-use crate::{
-    client::Client, program_error::ProgramError, ClientId, SOLANA_MAX_NUM_PENDING_CLIENTS,
-    SOLANA_MAX_NUM_WHITELISTED_CLIENTS,
-};
-
 use anchor_lang::prelude::*;
-use bytemuck::{Pod, Zeroable};
-use psyche_core::{FixedVec, SizedIterator};
+use bytemuck::Pod;
+use bytemuck::Zeroable;
+use psyche_core::FixedVec;
+use psyche_core::SizedIterator;
+
+use crate::client::Client;
+use crate::program_error::ProgramError;
+use crate::ClientId;
+use crate::SOLANA_MAX_NUM_PENDING_CLIENTS;
 
 #[derive(Debug, Clone, Copy, Zeroable)]
 #[repr(C)]
 pub struct ClientsState {
-    pub whitelist: FixedVec<Pubkey, SOLANA_MAX_NUM_WHITELISTED_CLIENTS>,
     pub clients: FixedVec<Client, SOLANA_MAX_NUM_PENDING_CLIENTS>,
     pub next_active: u64,
     pub current_epoch_rates: ClientsEpochRates,
@@ -27,7 +28,9 @@ pub struct ClientsEpochRates {
 unsafe impl Pod for ClientsState {}
 
 impl ClientsState {
-    pub fn active_clients(&self) -> SizedIterator<impl Iterator<Item = &ClientId>> {
+    pub fn active_clients(
+        &self,
+    ) -> SizedIterator<impl Iterator<Item = &ClientId>> {
         let mut size = 0;
         for x in self.clients.iter() {
             if x.active == self.next_active {
@@ -35,13 +38,12 @@ impl ClientsState {
             }
         }
 
-        let iter = self
-            .clients
-            .iter()
-            .filter_map(move |x| match x.active == self.next_active {
+        let iter = self.clients.iter().filter_map(move |x| {
+            match x.active == self.next_active {
                 true => Some(&x.id),
                 false => None,
-            });
+            }
+        });
 
         SizedIterator::new(iter, size)
     }
