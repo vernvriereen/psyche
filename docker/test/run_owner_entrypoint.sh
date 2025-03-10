@@ -2,7 +2,10 @@
 
 set -o errexit
 
-solana airdrop 10 "$(solana-keygen pubkey)" --url "${RPC}"
+solana config set --url "${RPC}"
+solana-keygen new --no-bip39-passphrase --force
+
+solana airdrop 10 "$(solana-keygen pubkey)"
 
 psyche-solana-client create-run \
     --wallet-private-key-path "/root/.config/solana/id.json" \
