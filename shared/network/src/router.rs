@@ -197,6 +197,7 @@ async fn handle_connection<A: Allowlist + 'static + Send>(
             return;
         }
     };
+
     let alpn = match connecting.alpn().await {
         Ok(alpn) => alpn,
         Err(err) => {
@@ -204,8 +205,23 @@ async fn handle_connection<A: Allowlist + 'static + Send>(
             return;
         }
     };
-    let connection = connecting.await.unwrap();
-    let node_id = get_remote_node_id(&connection).unwrap();
+
+    let connection = match connecting.await {
+        Ok(connection) => connection,
+        Err(err) => {
+            warn!("Failed to establish connection: {err:#}");
+            return;
+        }
+    };
+
+    let node_id = match get_remote_node_id(&connection) {
+        Ok(node_id) => node_id,
+        Err(err) => {
+            connection.close(0u8.into(), b"no node id given");
+            warn!("Failed to get node id while connecting: {err:#}");
+            return;
+        }
+    };
     if !allowlist.allowed(node_id) {
         // kill connection completely!
         connection.close(0u8.into(), b"not in allowlist");
