@@ -408,7 +408,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
 
         let witness_nodes = if self.config.witness_nodes == 0 {
-            self.epoch_state.clients.len()
+            self.epoch_state.clients.len().min(SOLANA_MAX_NUM_WITNESSES)
         } else {
             self.config.witness_nodes as usize
         };
@@ -946,6 +946,7 @@ impl<I> CoordinatorConfig<I> {
             && self.rounds_per_epoch >= 4 // need at least 4 rounds per epoch for overlapped pipeling
             && self.total_steps != 0
             && self.witness_nodes <= self.min_clients
+            && self.witness_nodes as usize <= SOLANA_MAX_NUM_WITNESSES
             && (self.witness_nodes == 0 || (self.witness_quorum <= self.witness_nodes))
     }
 }
