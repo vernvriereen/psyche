@@ -19,7 +19,7 @@ pub struct RunUpdateAccounts<'info> {
     pub authority: Signer<'info>,
 
     #[account(
-        constraint = run.authority == authority.key(),
+        constraint = run.main_authority == authority.key(),
         constraint = run.coordinator_instance == coordinator_instance.key(),
         constraint = run.coordinator_account == coordinator_account.key(),
     )]
@@ -58,11 +58,11 @@ pub fn run_update_processor(
                 context.accounts.coordinator_program.to_account_info(),
                 OwnerCoordinatorAccounts {
                     authority: context.accounts.run.to_account_info(),
-                    instance: context
+                    coordinator_instance: context
                         .accounts
                         .coordinator_instance
                         .to_account_info(),
-                    account: context
+                    coordinator_account: context
                         .accounts
                         .coordinator_account
                         .to_account_info(),
@@ -82,11 +82,11 @@ pub fn run_update_processor(
                 context.accounts.coordinator_program.to_account_info(),
                 OwnerCoordinatorAccounts {
                     authority: context.accounts.run.to_account_info(),
-                    instance: context
+                    coordinator_instance: context
                         .accounts
                         .coordinator_instance
                         .to_account_info(),
-                    account: context
+                    coordinator_account: context
                         .accounts
                         .coordinator_account
                         .to_account_info(),
@@ -104,11 +104,11 @@ pub fn run_update_processor(
                 context.accounts.coordinator_program.to_account_info(),
                 OwnerCoordinatorAccounts {
                     authority: context.accounts.run.to_account_info(),
-                    instance: context
+                    coordinator_instance: context
                         .accounts
                         .coordinator_instance
                         .to_account_info(),
-                    account: context
+                    coordinator_account: context
                         .accounts
                         .coordinator_account
                         .to_account_info(),

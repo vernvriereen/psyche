@@ -2,12 +2,9 @@ use anchor_lang::InstructionData;
 use anchor_lang::ToAccountMetas;
 use anchor_spl::associated_token;
 use anchor_spl::token;
-use psyche_solana_authorizer::find_authorization;
 use psyche_solana_coordinator::find_coordinator_instance;
-use psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE;
 use psyche_solana_treasurer::accounts::ParticipantClaimAccounts;
 use psyche_solana_treasurer::accounts::ParticipantCreateAccounts;
-use psyche_solana_treasurer::accounts::RunAuthorizeAccounts;
 use psyche_solana_treasurer::accounts::RunCreateAccounts;
 use psyche_solana_treasurer::accounts::RunTopUpAccounts;
 use psyche_solana_treasurer::accounts::RunUpdateAccounts;
@@ -15,13 +12,11 @@ use psyche_solana_treasurer::find_participant;
 use psyche_solana_treasurer::find_run;
 use psyche_solana_treasurer::instruction::ParticipantClaim;
 use psyche_solana_treasurer::instruction::ParticipantCreate;
-use psyche_solana_treasurer::instruction::RunAuthorize;
 use psyche_solana_treasurer::instruction::RunCreate;
 use psyche_solana_treasurer::instruction::RunTopUp;
 use psyche_solana_treasurer::instruction::RunUpdate;
 use psyche_solana_treasurer::logic::ParticipantClaimParams;
 use psyche_solana_treasurer::logic::ParticipantCreateParams;
-use psyche_solana_treasurer::logic::RunAuthorizeParams;
 use psyche_solana_treasurer::logic::RunCreateParams;
 use psyche_solana_treasurer::logic::RunTopUpParams;
 use psyche_solana_treasurer::logic::RunUpdateParams;
@@ -37,22 +32,18 @@ use solana_toolbox_endpoint::ToolboxEndpointError;
 pub async fn process_treasurer_run_create(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
-    authority: &Keypair,
     collateral_mint: &Pubkey,
     coordinator_account: &Pubkey,
-    run_id: &str,
-    collateral_amount_per_earned_point: u64,
+    params: RunCreateParams,
 ) -> Result<(Pubkey, Pubkey), ToolboxEndpointError> {
-    let run = find_run(run_id);
+    let run = find_run(&params.run_id);
     let run_collateral = ToolboxEndpoint::find_spl_associated_token_account(
         &run,
         collateral_mint,
     );
-    let coordinator_instance = find_coordinator_instance(run_id);
-
+    let coordinator_instance = find_coordinator_instance(&params.run_id);
     let accounts = RunCreateAccounts {
         payer: payer.pubkey(),
-        authority: authority.pubkey(),
         collateral_mint: *collateral_mint,
         run,
         run_collateral,
@@ -65,20 +56,10 @@ pub async fn process_treasurer_run_create(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: RunCreate {
-            params: RunCreateParams {
-                run_id: run_id.to_string(),
-                collateral_amount_per_earned_point,
-            },
-        }
-        .data(),
+        data: RunCreate { params }.data(),
         program_id: psyche_solana_treasurer::ID,
     };
-
-    endpoint
-        .process_instruction_with_signers(instruction, payer, &[authority])
-        .await?;
-
+    endpoint.process_instruction(instruction, payer).await?;
     Ok((run, coordinator_instance))
 }
 
@@ -141,34 +122,6 @@ pub async fn process_treasurer_run_update(
     endpoint
         .process_instruction_with_signers(instruction, payer, &[authority])
         .await
-}
-
-pub async fn process_treasurer_run_authorize(
-    endpoint: &mut ToolboxEndpoint,
-    payer: &Keypair,
-    authority: &Keypair,
-    run: &Pubkey,
-    params: RunAuthorizeParams,
-) -> Result<Pubkey, ToolboxEndpointError> {
-    let authorization =
-        find_authorization(run, &params.user, JOIN_RUN_AUTHORIZATION_SCOPE);
-    let accounts = RunAuthorizeAccounts {
-        payer: payer.pubkey(),
-        authority: authority.pubkey(),
-        run: *run,
-        authorization,
-        authorizer_program: psyche_solana_authorizer::ID,
-        system_program: system_program::ID,
-    };
-    let instruction = Instruction {
-        accounts: accounts.to_account_metas(None),
-        data: RunAuthorize { params }.data(),
-        program_id: psyche_solana_treasurer::ID,
-    };
-    endpoint
-        .process_instruction_with_signers(instruction, payer, &[authority])
-        .await?;
-    Ok(authorization)
 }
 
 pub async fn process_treasurer_participant_create(

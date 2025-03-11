@@ -13,6 +13,7 @@ use psyche_core::FixedVec;
 use psyche_core::LearningRateSchedule;
 use psyche_core::OptimizerDefinition;
 use psyche_solana_coordinator::instruction::Witness;
+use psyche_solana_coordinator::logic::InitCoordinatorParams;
 use psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE;
 use psyche_solana_coordinator::ClientId;
 use psyche_solana_coordinator::CoordinatorAccount;
@@ -41,7 +42,8 @@ pub async fn run() {
         .unwrap();
 
     // Run constants
-    let authority = Keypair::new();
+    let main_authority = Keypair::new();
+    let join_authority = Keypair::new();
     let client = Keypair::new();
     let ticker = Keypair::new();
 
@@ -59,9 +61,12 @@ pub async fn run() {
     let coordinator_instance = process_coordinator_init(
         &mut endpoint,
         &payer,
-        &authority,
         &coordinator_account,
-        "This is a random run id!",
+        InitCoordinatorParams {
+            run_id: "This is a random run id!".to_string(),
+            main_authority: main_authority.pubkey(),
+            join_authority: join_authority.pubkey(),
+        },
     )
     .await
     .unwrap();
@@ -81,7 +86,7 @@ pub async fn run() {
     process_coordinator_update_config_model(
         &mut endpoint,
         &payer,
-        &authority,
+        &main_authority,
         &coordinator_instance,
         &coordinator_account,
         Some(CoordinatorConfig::<ClientId> {
@@ -138,7 +143,7 @@ pub async fn run() {
     let authorization = process_authorizer_authorization_create(
         &mut endpoint,
         &payer,
-        &authority,
+        &join_authority,
         &client.pubkey(),
         JOIN_RUN_AUTHORIZATION_SCOPE,
     )
@@ -147,7 +152,7 @@ pub async fn run() {
     process_authorizer_authorization_grantor_update(
         &mut endpoint,
         &payer,
-        &authority,
+        &join_authority,
         &authorization,
         true,
     )
@@ -206,7 +211,7 @@ pub async fn run() {
     process_coordinator_set_paused(
         &mut endpoint,
         &payer,
-        &authority,
+        &main_authority,
         &coordinator_instance,
         &coordinator_account,
         false,

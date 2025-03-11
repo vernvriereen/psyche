@@ -18,7 +18,7 @@ use clap::{Args, Parser, Subcommand};
 use psyche_client::{print_identity_keys, read_identity_secret_key, TrainArgs};
 use psyche_coordinator::{model::Model, CoordinatorConfig};
 use psyche_network::SecretKey;
-use psyche_solana_coordinator::ClientId;
+use psyche_solana_coordinator::{find_coordinator_instance, ClientId};
 use psyche_tui::{maybe_start_render_loop, LogOutput};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -207,8 +207,14 @@ async fn async_main() -> Result<()> {
             )
             .unwrap();
             let balance = backend.get_balance(&key_pair.pubkey()).await?;
-            let (instance_pda, instance) = backend.get_coordinator_instance(&run_id).await?;
-            let closed = backend.close_run(instance_pda, instance.account).await?;
+            let coordinator_instance = find_coordinator_instance(&run_id);
+            let coordinator_instance_state = backend
+                .get_coordinator_instance(&coordinator_instance)
+                .await?;
+            let coordinator_account = coordinator_instance_state.coordinator_account;
+            let closed = backend
+                .close_run(coordinator_instance, coordinator_account)
+                .await?;
             println!("Closed run {} with transaction {}", run_id, closed);
             let recovered = backend.get_balance(&key_pair.pubkey()).await? - balance;
             println!("Recovered {:.9} SOL", lamports_to_sol(recovered));
@@ -233,11 +239,15 @@ async fn async_main() -> Result<()> {
                     .with_context(|| format!("failed to read config toml file {config_path:?}"))?,
             )?)
             .with_context(|| format!("failed to parse config toml file {config_path:?}"))?;
-            let (instance_pda, instance) = backend.get_coordinator_instance(&run_id).await?;
+            let coordinator_instance = find_coordinator_instance(&run_id);
+            let coordinator_instance_state = backend
+                .get_coordinator_instance(&coordinator_instance)
+                .await?;
+            let coordinator_account = coordinator_instance_state.coordinator_account;
             let set = backend
                 .update_config_and_model(
-                    instance_pda,
-                    instance.account,
+                    coordinator_instance,
+                    coordinator_account,
                     Some(state.config),
                     Some(state.model),
                 )
@@ -260,9 +270,13 @@ async fn async_main() -> Result<()> {
                 CommitmentConfig::confirmed(),
             )
             .unwrap();
-            let (instance_pda, instance) = backend.get_coordinator_instance(&run_id).await?;
+            let coordinator_instance = find_coordinator_instance(&run_id);
+            let coordinator_instance_state = backend
+                .get_coordinator_instance(&coordinator_instance)
+                .await?;
+            let coordinator_account = coordinator_instance_state.coordinator_account;
             let set = backend
-                .set_paused(instance_pda, instance.account, paused)
+                .set_paused(coordinator_instance, coordinator_account, paused)
                 .await?;
             println!(
                 "Set pause state to {} on run {} with transaction {}",
