@@ -142,7 +142,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 let my_node_id = p2p.node_id();
 
                                 // only connect to peers after we become part of the set of current clients
-                                let our_index = run_participating_node_ids.iter().position(|node_id| *node_id != my_node_id);
+                                let our_index = run_participating_node_ids.iter().position(|node_id| *node_id == my_node_id);
                                 if let Some(our_index) = our_index {
                                     const MAX_NUM_BOOTSTRAP_PEERS: usize = 3;
                                     // we only want to bootstrap gossip;
