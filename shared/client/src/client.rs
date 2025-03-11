@@ -142,18 +142,23 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 let my_node_id = p2p.node_id();
 
                                 // only connect to peers after we become part of the set of current clients
-                                if run_participating_node_ids.contains(&my_node_id) {
+                                let our_index = run_participating_node_ids.iter().position(|node_id| *node_id != my_node_id);
+                                if let Some(our_index) = our_index {
                                     const MAX_NUM_BOOTSTRAP_PEERS: usize = 3;
                                     // we only want to bootstrap gossip;
                                     // only connect to enough peers to bring our total peer count to at MOST MAX_NUM_BOOTSTRAP_PEERS.
                                     // if we already have that many or more, don't send any gossip joins
                                     // because gossip joins this way can force-disconnect other peers.
                                     let num_peers_to_add = MAX_NUM_BOOTSTRAP_PEERS.saturating_sub(connected_p2p_nodes.len());
+
                                     let to_connect = run_participating_node_ids
                                         .iter()
+                                        .cycle() // turn into an infinite list of nodes
+                                        .skip(our_index) // starting at our index
                                         .filter(|node_id| *node_id != &my_node_id)
                                         .filter(|node_id| !connected_p2p_nodes.contains(*node_id))
-                                        .take(num_peers_to_add)
+                                        .step_by(3) // take every third peer
+                                        .take(num_peers_to_add) // up to N
                                         .collect::<Vec<_>>();
                                     if !to_connect.is_empty() {
                                         info!(num_new_peers = to_connect.len(), "Connecting to new peers");
