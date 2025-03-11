@@ -142,8 +142,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 let my_node_id = p2p.node_id();
 
                                 // only connect to peers after we become part of the set of current clients
-                                let our_index = run_participating_node_ids.iter().position(|node_id| *node_id == my_node_id);
-                                if let Some(our_index) = our_index {
+                                if run_participating_node_ids.contains(&my_node_id) {
                                     const MAX_NUM_BOOTSTRAP_PEERS: usize = 3;
                                     // we only want to bootstrap gossip;
                                     // only connect to enough peers to bring our total peer count to at MOST MAX_NUM_BOOTSTRAP_PEERS.
@@ -151,18 +150,17 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     // because gossip joins this way can force-disconnect other peers.
                                     let num_peers_to_add = MAX_NUM_BOOTSTRAP_PEERS.saturating_sub(connected_p2p_nodes.len());
 
-                                    let to_connect = run_participating_node_ids
+                                    let mut to_connect = run_participating_node_ids
                                         .iter()
-                                        .cycle() // turn into an infinite list of nodes
-                                        .skip(our_index) // starting at our index
                                         .filter(|node_id| *node_id != &my_node_id)
                                         .filter(|node_id| !connected_p2p_nodes.contains(*node_id))
-                                        .step_by(3) // take every third peer
-                                        .take(num_peers_to_add) // up to N
                                         .collect::<Vec<_>>();
+                                    to_connect.shuffle(&mut thread_rng());
+                                    let to_connect = to_connect.into_iter().take(num_peers_to_add).cloned().collect::<Vec<_>>();
+
                                     if !to_connect.is_empty() {
                                         info!(num_new_peers = to_connect.len(), "Connecting to new peers");
-                                        p2p.add_peers(to_connect.into_iter().cloned().collect()).await?;
+                                        p2p.add_peers(to_connect).await?;
                                     }
                                 }
                             }
