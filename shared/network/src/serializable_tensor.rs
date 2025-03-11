@@ -50,18 +50,18 @@ impl TryFrom<&Tensor> for SerializableTensor {
             // [0, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1]
             // and transforming it into [0b01101110, 0b01101111]
             let n_bits = tensor.numel() as i64;
+            let n_bytes = (n_bits + 7) / 8;
 
             // first we pad lengths to multiple of 8, since final array should be &[u8]
             let pad_size = (8 - (n_bits % 8)) % 8;
             let padded = if pad_size > 0 {
-                Tensor::f_pad(&tensor, [0, pad_size], "constant", Some(0.0))?
+                Tensor::f_pad(&tensor.flatten(0, -1), [0, pad_size], "constant", Some(0.0))?
             } else {
-                tensor.shallow_clone()
+                tensor.flatten(0, -1)
             };
 
             // then we reshape to (..., N/8, 8)
-            let new_shape: Vec<i64> = vec![(n_bits + pad_size) / 8, 8];
-            let reshaped = padded.flatten(0, -1).reshape(&new_shape);
+            let reshaped = padded.reshape([n_bytes, 8]);
 
             // make a tensor of bit weights (LSB first)
             // which we will multiply with each value consecutively
@@ -107,24 +107,19 @@ impl TryFrom<&SerializableTensor> for Tensor {
                 let bit_weights =
                     Tensor::from_slice(&[1u8, 2, 4, 8, 16, 32, 64, 128]).to_kind(Kind::Uint8);
 
-                // calculate total number of elements in the final shape
-                let total_elements: i64 = value.dims.iter().product();
+                // reshape packed to [..., 1] for broadcasting
+                let reshaped_packed = packed.reshape([-1, 1]);
 
-                // reshape packed tensor to [..., 1] for broadcasting back to the original shape
-                let mut packed_shape = packed.size();
-                packed_shape.push(1);
-                let reshaped_packed = packed.reshape(&packed_shape);
-
-                // unpack bits by ANDing with the bit weights and convert to boolean
+                // unpack bits
                 let bits = reshaped_packed
                     .bitwise_and_tensor(&bit_weights)
                     .to_kind(Kind::Bool);
 
-                // flatten and select only the needed bits
+                // flatten, select needed bits, and reshape
                 let flat_bits = bits.flatten(0, -1);
+                let total_elements: i64 = value.dims.iter().product();
                 let needed_bits = flat_bits.slice(0, 0, total_elements, 1);
 
-                // reshape back to original dimensions
                 needed_bits.reshape(&value.dims)
             }
         };
@@ -233,6 +228,42 @@ mod tests {
         let result = Tensor::try_from(&serializable).unwrap();
 
         // roundtripped bools === original bools
+        assert!(result.equal(&truth));
+    }
+
+    #[test]
+    fn test_roundtrip_bool_tensor_non_divisible_by_8() {
+        // Test with 5 elements (not divisible by 8)
+        let truth = Tensor::from_slice(&[1, 0, 1, 0, 1])
+            .to_kind(Kind::Bool)
+            .to(Device::Cpu);
+
+        let serializable = SerializableTensor::try_from(&truth).unwrap();
+        let result = Tensor::try_from(&serializable).unwrap();
+
+        assert!(result.equal(&truth));
+    }
+
+    #[test]
+    fn test_roundtrip_bool_tensor_single_element() {
+        let truth = Tensor::from_slice(&[1]).to_kind(Kind::Bool).to(Device::Cpu);
+
+        let serializable = SerializableTensor::try_from(&truth).unwrap();
+        let result = Tensor::try_from(&serializable).unwrap();
+
+        assert!(result.equal(&truth));
+    }
+
+    #[test]
+    fn test_roundtrip_bool_tensor_unusual_shape() {
+        let truth = Tensor::from_slice(&[1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1])
+            .to_kind(Kind::Bool)
+            .to(Device::Cpu)
+            .reshape([1, 3, 5]);
+
+        let serializable = SerializableTensor::try_from(&truth).unwrap();
+        let result = Tensor::try_from(&serializable).unwrap();
+
         assert!(result.equal(&truth));
     }
 }
