@@ -2,7 +2,7 @@ FROM psyche-base AS base
 
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y libssl-dev libgomp1 curl wget build-essential && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y libssl-dev libgomp1 curl wget build-essential iproute2 && rm -rf /var/lib/apt/lists/*
 
 # Install Rust to install Anchor
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y

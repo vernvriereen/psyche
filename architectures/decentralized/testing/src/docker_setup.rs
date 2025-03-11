@@ -1,10 +1,11 @@
-use bollard::container::{ListContainersOptions, RemoveContainerOptions};
-use bollard::models::DeviceRequest;
-use bollard::Docker;
 use bollard::{
     container::{Config, CreateContainerOptions},
-    secret::HostConfig,
+    container::{ListContainersOptions, RemoveContainerOptions},
+    models::DeviceRequest,
+    secret::{ContainerSummary, HostConfig},
+    Docker,
 };
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use tokio::signal;
@@ -12,6 +13,7 @@ use tokio::signal;
 use crate::docker_watcher::DockerWatcherError;
 
 pub const CLIENT_CONTAINER_PREFIX: &str = "test-psyche-test-client";
+pub const VALIDATOR_CONTAINER_PREFIX: &str = "test-psyche-solana-test-validator";
 
 pub struct DockerTestCleanup;
 impl Drop for DockerTestCleanup {
@@ -30,63 +32,22 @@ impl Drop for DockerTestCleanup {
     }
 }
 
-pub fn e2e_testing_setup(init_num_clients: usize) -> DockerTestCleanup {
-    spawn_psyche_network(init_num_clients).unwrap();
+/// FIXME: The config path must be relative to the compose file for now.
+pub async fn e2e_testing_setup(
+    docker_client: Arc<Docker>,
+    init_num_clients: usize,
+    config: Option<PathBuf>,
+) -> DockerTestCleanup {
+    remove_old_client_containers(docker_client).await;
+    spawn_psyche_network(init_num_clients, config).unwrap();
     spawn_ctrl_c_task();
 
     DockerTestCleanup {}
 }
 
 pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWatcherError> {
-    let all_containers = docker_client
-        .list_containers::<String>(Some(ListContainersOptions {
-            all: true, // Include stopped containers as well
-            ..Default::default()
-        }))
-        .await
-        .unwrap();
-
-    let mut running_containers = Vec::new();
-    let mut all_container_names = Vec::new();
-
-    for cont in all_containers {
-        if let Some(names) = &cont.names {
-            if let Some(name) = names.first() {
-                let trimmed_name = name.trim_start_matches('/').to_string();
-
-                if trimmed_name.starts_with(CLIENT_CONTAINER_PREFIX) {
-                    all_container_names.push(trimmed_name.clone());
-
-                    if cont
-                        .state
-                        .as_deref()
-                        .is_some_and(|state| state.eq_ignore_ascii_case("running"))
-                    {
-                        running_containers.push(trimmed_name);
-                    }
-                }
-            }
-        }
-    }
-
     // Set the container name based on the ones that are already running.
-    let new_container_name = format!("{CLIENT_CONTAINER_PREFIX}-{}", running_containers.len() + 1);
-    // Check if container was already created.
-    let container_exists = all_container_names.contains(&new_container_name);
-
-    if container_exists {
-        println!("Removing existing container: {}", new_container_name);
-        docker_client
-            .remove_container(
-                &new_container_name,
-                Some(RemoveContainerOptions {
-                    force: true, // Ensure it's removed even if running
-                    ..Default::default()
-                }),
-            )
-            .await
-            .unwrap();
-    }
+    let new_container_name = get_name_of_new_client_container(docker_client.clone()).await;
 
     // Setting nvidia usage parameters
     let device_request = DeviceRequest {
@@ -135,14 +96,23 @@ pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWa
     Ok(())
 }
 
-pub fn spawn_psyche_network(init_num_clients: usize) -> Result<(), DockerWatcherError> {
-    let output = Command::new("just")
+pub fn spawn_psyche_network(
+    init_num_clients: usize,
+    config: Option<PathBuf>,
+) -> Result<(), DockerWatcherError> {
+    let mut command = Command::new("just");
+    let command = command
         .args(["setup_test_infra", &format!("{}", init_num_clients)])
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .output()
-        .expect("Failed spawn docker compose command");
+        .stderr(Stdio::inherit());
 
+    if let Some(config) = config {
+        command.env("CONFIG_PATH", config);
+    }
+
+    let output = command
+        .output()
+        .expect("Failed to spawn docker compose instances");
     if !output.status.success() {
         panic!("Error: {}", String::from_utf8_lossy(&output.stderr));
     }
@@ -169,4 +139,54 @@ pub fn spawn_ctrl_c_task() {
         }
         std::process::exit(0);
     });
+}
+
+async fn get_client_containers(docker_client: Arc<Docker>) -> Vec<ContainerSummary> {
+    let mut client_containers = Vec::new();
+    let all_containers = docker_client
+        .list_containers::<String>(Some(ListContainersOptions {
+            all: true, // Include stopped containers as well
+            ..Default::default()
+        }))
+        .await
+        .unwrap();
+
+    for cont in all_containers {
+        if let Some(names) = &cont.names {
+            if let Some(name) = names.first() {
+                let trimmed_name = name.trim_start_matches('/').to_string();
+                if trimmed_name.starts_with(CLIENT_CONTAINER_PREFIX) {
+                    client_containers.push(cont);
+                }
+            }
+        }
+    }
+    client_containers
+}
+
+async fn remove_old_client_containers(docker_client: Arc<Docker>) {
+    let client_containers = get_client_containers(docker_client.clone()).await;
+
+    for cont in client_containers.iter() {
+        docker_client
+            .remove_container(
+                cont.names
+                    .as_ref()
+                    .unwrap()
+                    .first()
+                    .unwrap()
+                    .trim_start_matches('/'),
+                Some(RemoveContainerOptions {
+                    force: true, // Ensure it's removed even if running
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap();
+    }
+}
+
+async fn get_name_of_new_client_container(docker_client: Arc<Docker>) -> String {
+    let client_containers = get_client_containers(docker_client.clone()).await;
+    format!("{CLIENT_CONTAINER_PREFIX}-{}", client_containers.len() + 1)
 }

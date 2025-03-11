@@ -2,9 +2,7 @@
 members = [
     "architectures/centralized/*",
     "architectures/decentralized/solana-client",
-    "architectures/decentralized/testing",
-    "architectures/decentralized/solana-tooling",
-    "e2e_testing",
+    "architectures/decentralized/testing", "architectures/decentralized/solana-tooling",
     "shared/*",
     "tools/rust-tools/*",
 ]
@@ -26,7 +24,6 @@ psyche-network = { path = "./shared/network" }
 psyche-modeling = { path = "./shared/modeling" }
 psyche-tui = { path = "./shared/tui" }
 psyche-watcher = { path = "./shared/watcher" }
-e2e_testing = { path = "./e2e_testing" }
 
 psyche-solana-client = { path = "./architectures/decentralized/solana-client" }
 psyche-solana-authorizer = { path = "./architectures/decentralized/solana-authorizer/programs/solana-authorizer" }
@@ -89,6 +86,7 @@ anchor-client = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23e
 test-log = { version = "0.2.16", features = ["trace"] }
 pretty_assertions = "1.4.1"
 serial_test = "3.2.0"
+rstest = "0.25.0"
 
 [profile.dev]
 opt-level = 1

@@ -88,4 +88,9 @@ impl SolanaTestClient {
         let coordinator = self.get_coordinator_account().await;
         coordinator.state.coordinator.progress.epoch
     }
+
+    pub async fn get_last_step(&self) -> u32 {
+        let coordinator = self.get_coordinator_account().await;
+        coordinator.state.coordinator.progress.step
+    }
 }
