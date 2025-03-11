@@ -7,9 +7,9 @@ use futures::future::join_all;
 use psyche_coordinator::RunState;
 use psyche_core::NodeIdentity;
 use psyche_network::{
-    allowlist, request_model, AuthenticatableIdentity, BlobTicket, DownloadComplete,
-    ModelRequestType, NetworkConnection, NetworkEvent, NetworkTUIState, Networkable, NodeId,
-    SharableModel, TransmittableDownload,
+    allowlist, request_model, AuthenticatableIdentity, BlobTicket, ConnectionType,
+    DownloadComplete, ModelRequestType, NetworkConnection, NetworkEvent, NetworkTUIState,
+    Networkable, NodeId, SharableModel, TransmittableDownload,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use tokenizers::Tokenizer;
@@ -130,27 +130,40 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 "apply_state"
                             );
 
-                            let peer_node_ids = p2p.get_all_peers().await.0.into_iter().map(|x| x.node_id).collect::<BTreeSet<_>>();
+                            let connected_p2p_nodes = p2p.get_all_peers().await.into_iter().filter(|(_, connection)| *connection != ConnectionType::None).map(|(addr, _)| addr.node_id).collect::<BTreeSet<_>>();
                             {
-                                let node_ids: Vec<NodeId> = new_state
+                                let run_participating_node_ids: Vec<NodeId> = new_state
                                     .epoch_state
                                     .clients
                                     .iter()
                                     .map(|c| NodeId::from_bytes(c.id.get_p2p_public_key()).unwrap()).collect();
+                                allowlist.set(run_participating_node_ids.iter().copied());
+
                                 let my_node_id = p2p.node_id();
-                                if node_ids.contains(&my_node_id) {
-                                    // only connect to peers after we become part of the set of current clients
-                                    let to_connect = node_ids.iter().filter(|x| !peer_node_ids.contains(*x) && *x != &my_node_id).collect::<Vec<_>>();
+
+                                // only connect to peers after we become part of the set of current clients
+                                if run_participating_node_ids.contains(&my_node_id) {
+                                    const MAX_NUM_BOOTSTRAP_PEERS: usize = 3;
+                                    // we only want to bootstrap gossip;
+                                    // only connect to enough peers to bring our total peer count to at MOST MAX_NUM_BOOTSTRAP_PEERS.
+                                    // if we already have that many or more, don't send any gossip joins
+                                    // because gossip joins this way can force-disconnect other peers.
+                                    let num_peers_to_add = MAX_NUM_BOOTSTRAP_PEERS.saturating_sub(connected_p2p_nodes.len());
+                                    let to_connect = run_participating_node_ids
+                                        .iter()
+                                        .filter(|node_id| *node_id != &my_node_id)
+                                        .filter(|node_id| !connected_p2p_nodes.contains(*node_id))
+                                        .take(num_peers_to_add)
+                                        .collect::<Vec<_>>();
                                     if !to_connect.is_empty() {
                                         info!(num_new_peers = to_connect.len(), "Connecting to new peers");
-                                        p2p.add_peers(node_ids.clone()).await?;
+                                        p2p.add_peers(to_connect.into_iter().cloned().collect()).await?;
                                     }
                                 }
-                                allowlist.set(node_ids);
                             }
 
                             if old_state.map(|s| s.run_state) != Some(new_state.run_state) && new_state.run_state == RunState::RoundTrain {
-                                debug!(num_peers = peer_node_ids.len(), "Updating p2p");
+                                debug!(num_peers = connected_p2p_nodes.len(), "Updating p2p");
                                 let last_needed_step_blobs = new_state.progress.step.saturating_sub(2);
                                 p2p.remove_blobs_with_tag_less_than(last_needed_step_blobs);
                                 let p2p_info = get_p2p_info(&p2p).await?;
