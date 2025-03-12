@@ -28,9 +28,6 @@ pub struct CoordinatorInstanceState {
 unsafe impl Pod for CoordinatorInstanceState {}
 
 impl CoordinatorInstanceState {
-    pub fn get_active_clients(&self) -> SizedIterator<impl Iterator<Item = &ClientId>> {
-        self.clients_state.active_clients()
-    }
     pub fn tick(&mut self) -> Result<()> {
         let clock: Clock = Clock::get()?;
         let random_seed_bytes = sha256v(&[
@@ -62,13 +59,18 @@ impl CoordinatorInstanceState {
                     msg!("New epoch just starting, save epoch rewards rate");
                     self.clients_state.current_epoch_rates =
                         self.clients_state.future_epoch_rates;
+                    self.coordinator.epoch_state.warmup_just_starting =
+                        SmallBoolean(0);
+                }
+                if self.coordinator.is_training_just_starting() {
                     msg!("New epoch just starting, save epoch active clients");
                     self.coordinator.epoch_state.warmup_just_starting = SmallBoolean(0);
                 }
                 if self.coordinator.is_training_just_starting() {
                     msg!("Training just starting");
                     self.clients_state.next_active += 1;
-                    self.coordinator.epoch_state.training_just_starting = SmallBoolean(0);
+                    self.coordinator.epoch_state.training_just_starting =
+                        SmallBoolean(0);
                 }
             },
             Ok(TickResult::EpochEnd(success)) => {
@@ -193,6 +195,12 @@ impl CoordinatorInstanceState {
         }
 
         Ok(())
+    }
+
+    pub fn get_active_clients(
+        &self,
+    ) -> SizedIterator<impl Iterator<Item = &ClientId>> {
+        self.clients_state.active_clients()
     }
 
     pub fn join_run(&mut self, id: ClientId) -> Result<()> {

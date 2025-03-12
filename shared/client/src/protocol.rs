@@ -12,4 +12,5 @@ pub struct TrainingResult {
     pub commitment: Commitment,
     pub ticket: BlobTicket,
     pub proof: CommitteeProof,
+    pub nonce: u32,
 }

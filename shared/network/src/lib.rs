@@ -31,7 +31,7 @@ use tracing::{debug, error, info, trace, warn};
 use util::{fmt_relay_mode, gossip_topic};
 
 pub use ed25519::Signature;
-pub use iroh::{NodeId, RelayMode};
+pub use iroh::{endpoint::ConnectionType, NodeId, RelayMode};
 pub use iroh_blobs::{ticket::BlobTicket, Hash};
 
 pub mod allowlist;
@@ -266,6 +266,8 @@ where
         self.router.endpoint().node_id()
     }
 
+    /// Don't call this often / with many peers!
+    /// It can force disconnection of other gossip peers if we have too many.
     pub async fn add_peers(&mut self, peers: Vec<NodeId>) -> Result<()> {
         self.gossip_tx
             .join_peers(
@@ -467,23 +469,20 @@ where
         Ok(())
     }
 
-    pub async fn get_all_peers(&self) -> PeerList {
-        PeerList(
-            std::iter::once(
-                self.router
-                    .endpoint()
-                    .node_addr()
-                    .await
-                    .expect("node addr exists"),
-            )
-            .chain(
-                self.router
-                    .endpoint()
-                    .remote_info_iter()
-                    .map(NodeAddr::from),
-            )
-            .collect(),
-        )
+    pub async fn get_all_peers(&self) -> Vec<(NodeAddr, ConnectionType)> {
+        std::iter::once((
+            self.router
+                .endpoint()
+                .node_addr()
+                .await
+                .expect("node addr exists"),
+            ConnectionType::None,
+        ))
+        .chain(self.router.endpoint().remote_info_iter().map(|i| {
+            let c = i.conn_type.clone();
+            (i.into(), c)
+        }))
+        .collect()
     }
 
     pub fn router(&self) -> Arc<Router> {

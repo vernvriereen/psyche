@@ -426,7 +426,7 @@ async fn test_delay_solana_client(#[values(1, 2)] n_clients: u8, #[values(0, 10)
 
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
-async fn test_delay_new_client() {
+async fn test_rejoining_client_delay() {
     // epochs the test will run
     let num_of_epochs_to_run = 2;
     let mut current_epoch = -1;
@@ -448,8 +448,7 @@ async fn test_delay_new_client() {
 
     let solana_client = SolanaTestClient::new("test".to_string()).await;
 
-    // This sleep is to avoid delaying clients while deploying the coordinator and starting the run.
-    tokio::time::sleep(Duration::from_secs(20)).await;
+    tokio::time::sleep(Duration::from_secs(30)).await;
 
     // Spawn client
     spawn_new_client(docker.clone()).await.unwrap();
@@ -467,7 +466,7 @@ async fn test_delay_new_client() {
             ChaosAction::Delay {
                 duration_secs: 30,
                 latency_ms: 3000,
-                targets: vec![format!("{CLIENT_CONTAINER_PREFIX}-{}", 2)],
+                targets: vec![format!("{CLIENT_CONTAINER_PREFIX}-{}", 1)],
             },
             20,
         )

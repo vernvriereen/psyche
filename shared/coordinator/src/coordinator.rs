@@ -19,6 +19,7 @@ pub const SOLANA_MAX_NUM_WITNESSES: usize = 16;
 pub const SOLANA_MAX_NUM_CHECKPOINTERS: usize = 4;
 
 pub const BLOOM_FALSE_RATE: f64 = 0.01f64;
+pub const WAITING_FOR_MEMBERS_EXTRA_SECONDS: u64 = 3;
 
 // bloom filter with 1024 bits (16 u64)
 pub type WitnessBloom = Bloom<16, 8>;
@@ -412,7 +413,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
 
         let witness_nodes = if self.config.witness_nodes == 0 {
-            self.epoch_state.clients.len()
+            self.epoch_state.clients.len().min(SOLANA_MAX_NUM_WITNESSES)
         } else {
             self.config.witness_nodes as usize
         };
@@ -716,7 +717,8 @@ impl<T: NodeIdentity> Coordinator<T> {
         };
 
         if pending_clients.len() as u16 >= self.config.min_clients
-            && self.check_timeout(unix_timestamp, 20)
+            && self.check_timeout(unix_timestamp, WAITING_FOR_MEMBERS_EXTRA_SECONDS)
+        // This extra time allows for more clients to join even if the minimum number of clients is reached
         {
             let height = self.current_round_unchecked().height;
             self.move_clients_to_exited(height);
@@ -963,6 +965,7 @@ impl<I> CoordinatorConfig<I> {
             && self.rounds_per_epoch >= 4 // need at least 4 rounds per epoch for overlapped pipeling
             && self.total_steps != 0
             && self.witness_nodes <= self.min_clients
+            && self.witness_nodes as usize <= SOLANA_MAX_NUM_WITNESSES
             && (self.witness_nodes == 0 || (self.witness_quorum <= self.witness_nodes))
     }
 }

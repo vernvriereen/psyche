@@ -49,6 +49,7 @@ export LIBTORCH=<path_to_libtorch>
 export LIBTORCH_INCLUDE=<path_to_libtorch>
 export LIBTORCH_LIB=<path_to_libtorch>
 export LD_LIBRARY_PATH=<path_to_libtorch>/lib:$LD_LIBRARY_PATH
+export CUDA_ROOT=/usr/local/cuda-12.4
 ```
 
 This can also be acheived by making a `.cargo/config.toml` file in the checkout path
@@ -86,6 +87,12 @@ Install Anchor
 
 ```bash
 cargo install --git https://github.com/coral-xyz/anchor --rev a7a23eea308440a9fa9cb79cee7bddd30ab163d5 anchor-cli
+```
+
+This may require
+
+```bash
+sudo apt install pkg-config libudev-dev libssl-dev
 ```
 
 ### Nix
