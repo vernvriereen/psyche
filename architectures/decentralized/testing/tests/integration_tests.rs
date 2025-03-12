@@ -1,5 +1,6 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
+use anchor_client::solana_client;
 use bollard::Docker;
 use psyche_coordinator::{model::Checkpoint, RunState};
 use psyche_decentralized_testing::{
@@ -516,7 +517,7 @@ async fn disconnect_client() {
     // set test variables
     let run_id = "test".to_string();
     // epochs the test will run
-    let num_of_epochs_to_run = 3;
+    let num_of_epochs_to_run = 1;
 
     // initialize a Solana run with 1 client
 
@@ -534,6 +535,15 @@ async fn disconnect_client() {
     // initialize solana client to query the coordinator state
     let solana_client = SolanaTestClient::new(run_id).await;
 
+    let clients_ids: Vec<String> = solana_client
+        .get_clients()
+        .await
+        .iter()
+        .map(|client| client.id.to_string())
+        .collect();
+
+    let mut health_check_step: Option<u64> = None;
+
     while let Some(response) = watcher.log_rx.recv().await {
         match response {
             Response::StateChange(timestamp, _client_1, old_state, new_state, epoch, step) => {
@@ -549,20 +559,28 @@ async fn disconnect_client() {
                     println!("Client {}: {:?}", i, epoch_clients[i]);
                 }
 
-                // kill client 2 in step 3
-                if step == 2 && new_state == RunState::RoundTrain.to_string() {
-                    // assert_eq!(active_clients.len(), 2);
+                // kill client when we finished step 2
+                // since the max_round_train_time = 30 we asume the node
+                // made a opportunistic witness, so in RoundWitness the node should be iddle
+                if step == 2 && new_state == RunState::RoundWitness.to_string() {
+                    assert_eq!(epoch_clients.len(), 2);
 
+                    // Kill the node
+                    // take into account that it can take some time to the conteiner to shutdown
+                    // so the client can continue training for some extra steps
                     watcher
-                        .stop_container(&format!("{CLIENT_CONTAINER_PREFIX}-2"))
+                        .kill_container(&format!("{CLIENT_CONTAINER_PREFIX}-2"))
                         .await
                         .unwrap();
                     println!("STOP NODE: {}-2", CLIENT_CONTAINER_PREFIX);
                 }
 
-                // Assert idle client was kicked
-                if step == 7 && new_state == RunState::RoundWitness.to_string() {
-                    // assert_eq!(epoch_clients.len(), 1);
+                if health_check_step.is_some()
+                    && health_check_step.unwrap() + 1 == step
+                    && new_state == RunState::RoundTrain.to_string()
+                {
+                    // Assert idle client was kicked
+                    assert_eq!(epoch_clients.len(), 1);
                 }
 
                 if epoch == num_of_epochs_to_run {
@@ -570,8 +588,10 @@ async fn disconnect_client() {
                 }
             }
 
-            Response::HealthCheck(unhealthy_client_id, _index) => {
+            Response::HealthCheck(unhealthy_client_id, _index, current_step) => {
                 println!("found unhealthy client: {:?}", unhealthy_client_id);
+                health_check_step = Some(current_step);
+                assert!(clients_ids.contains(&unhealthy_client_id))
             }
             _ => {}
         }

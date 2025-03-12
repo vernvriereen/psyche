@@ -28,7 +28,7 @@ pub enum Response {
     StateChange(String, String, String, String, u64, u64),
     Loss(String, u64, u64, f64),
     LoadedModel(String),
-    HealthCheck(String, u64),
+    HealthCheck(String, u64, u64),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -169,7 +169,11 @@ impl DockerWatcher {
                                 .unwrap()
                                 .to_string();
                             let index = parsed_log.get("index").and_then(|v| v.as_u64()).unwrap();
-                            let response = Response::HealthCheck(client_id, index);
+                            let current_step = parsed_log
+                                .get("current_step")
+                                .and_then(|v| v.as_u64())
+                                .unwrap();
+                            let response = Response::HealthCheck(client_id, index, current_step);
                             log_sender.send(response).await.unwrap()
                         }
                         JsonFilter::LoadedModel => {
@@ -191,13 +195,14 @@ impl DockerWatcher {
         Ok(monitor_handle)
     }
 
-    pub async fn stop_container(&self, name: &str) -> Result<(), DockerWatcherError> {
+    pub async fn kill_container(&self, name: &str) -> Result<(), DockerWatcherError> {
+        use bollard::container::KillContainerOptions;
         self.client
-            .stop_container(name, None)
+            .kill_container(name, Some(KillContainerOptions { signal: "SIGKILL" }))
             .await
             .map_err(|err| DockerWatcherError::LogsError { inner: err })
     }
-    
+
     pub async fn monitor_clients_health(&self, num_clients: u8) -> Result<(), DockerWatcherError> {
         for i in 1..=num_clients {
             let container_name = format!("{CLIENT_CONTAINER_PREFIX}-{}", i);

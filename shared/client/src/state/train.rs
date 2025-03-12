@@ -622,6 +622,7 @@ fn start_sending_health_checks<T: NodeIdentity>(
                             unhealthy_warn = "Found unhealthy trainer at",
                             index = index,
                             client_id = %&client.id,
+                            current_step = state.epoch_state.rounds_head
                         );
                         checks.push((client.id, proof));
                     }
