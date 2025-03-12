@@ -51,7 +51,6 @@
         rustPackages
         // nixglhostRustPackages
         // rec {
-          cargo-artifacts = cargoArtifacts;
           stream-docker-psyche-centralized-client = pkgs.dockerTools.streamLayeredImage {
             name = "docker.io/nousresearch/psyche-centralized-client";
             tag = "latest";
