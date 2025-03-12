@@ -148,9 +148,10 @@ Start building the dockerized psyche client with
 just build_docker_psyche_client
 ```
 
-You will be prompted with the Coordinator address that will be used to build the client binary. Make sure it
-correct and if it is not, go to `architectures/decentralized/solana-coordinator/programs/solana-coordinator/src/lib.rs` and
-replace the address in the `declare_id!` macro, and try building again with the same command.
+You will be prompted with the Coordinator and Authorizer addresses that will be used to build the client binary. Make sure they
+are correct and if it is not, go to `architectures/decentralized/solana-coordinator/programs/solana-coordinator/src/lib.rs` and/or
+to `architectures/decentralized/solana-authorizer/programs/solana-authorizer/src/lib.rs` and replace the incorrect address in the `declare_id!` macro.
+Then try building again with the same command.
 
 Once the docker image is built, the next step is to create a training run. If the run was already created,
 go directly to the `Join training run with the dockerized Psyche client` step.
