@@ -66,7 +66,6 @@ impl CoordinatorServer {
         init_min_clients: u16,
         global_batch_size: u16,
         witness_nodes: u16,
-        witness_quorum: u16,
     ) -> Self {
         let coordinator_config = CoordinatorConfig {
             warmup_time: WARMUP_TIME,
@@ -78,7 +77,6 @@ impl CoordinatorServer {
             global_batch_size,
             verification_percent: 0,
             witness_nodes,
-            witness_quorum,
             total_steps: 10,
             ..CoordinatorConfig::<ClientId>::zeroed()
         };
@@ -193,7 +191,6 @@ impl CoordinatorServerHandle {
         init_min_clients: u16,
         global_batch_size: u16,
         witness_nodes: u16,
-        witness_quorum: u16,
     ) -> Self {
         debug!("creating coordinator server...");
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
@@ -202,7 +199,6 @@ impl CoordinatorServerHandle {
             init_min_clients,
             global_batch_size,
             witness_nodes,
-            witness_quorum,
         )
         .await;
         let server_port = server.port;

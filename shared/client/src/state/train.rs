@@ -480,7 +480,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
 
         let apply_start = Instant::now();
         let step = state.progress.step;
-        let witness_quorum = state.config.witness_quorum;
+        let witness_quorum = state.witness_quorum();
 
         // coordinator has already advanced to the next round (unless we're in cooldown) but we haven't started ours yet.
         // so our current_round corresponds to the coordinator's previous_round
