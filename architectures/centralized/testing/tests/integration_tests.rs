@@ -20,12 +20,8 @@ async fn connect_single_node() {
     let init_min_clients = 2;
     let global_batch_size = 4;
     let witness_nodes = 1;
-    let server_handle = CoordinatorServerHandle::new(
-        init_min_clients,
-        global_batch_size,
-        witness_nodes,
-    )
-    .await;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, global_batch_size, witness_nodes).await;
 
     let server_port = server_handle.server_port;
     let run_id = &server_handle.run_id;
@@ -41,12 +37,8 @@ async fn connect_multiple_nodes() {
     let init_min_clients = 15;
     let global_batch_size = 4;
     let witness_nodes = 1;
-    let server_handle = CoordinatorServerHandle::new(
-        init_min_clients,
-        global_batch_size,
-        witness_nodes,
-    )
-    .await;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, global_batch_size, witness_nodes).await;
 
     let server_port = server_handle.server_port;
     let run_id = &server_handle.run_id;
@@ -65,12 +57,8 @@ async fn state_change_waiting_for_members_to_warmup() {
     let init_min_clients = 2;
     let global_batch_size = 4;
     let witness_nodes = 1;
-    let server_handle = CoordinatorServerHandle::new(
-        init_min_clients,
-        global_batch_size,
-        witness_nodes,
-    )
-    .await;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, global_batch_size, witness_nodes).await;
 
     let run_state = || server_handle.get_run_state();
     let connected_clients = || server_handle.get_clients_len();
@@ -99,12 +87,8 @@ async fn state_change_shutdown_node_in_warmup() {
     let init_min_clients = 2;
     let global_batch_size = 4;
     let witness_nodes = 1;
-    let server_handle = CoordinatorServerHandle::new(
-        init_min_clients,
-        global_batch_size,
-        witness_nodes,
-    )
-    .await;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, global_batch_size, witness_nodes).await;
 
     // No clients are connected yet, so run state should be `WaitingForMembers`
 
@@ -145,12 +129,8 @@ async fn state_change_waiting_for_members_to_round_train() {
     let init_min_clients = 2;
     let global_batch_size = 4;
     let witness_nodes = 1;
-    let server_handle = CoordinatorServerHandle::new(
-        init_min_clients,
-        global_batch_size,
-        witness_nodes,
-    )
-    .await;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, global_batch_size, witness_nodes).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -178,12 +158,8 @@ async fn state_change_waiting_for_members_to_round_witness() {
     let init_min_clients = 2;
     let global_batch_size = 4;
     let witness_nodes = 1;
-    let server_handle = CoordinatorServerHandle::new(
-        init_min_clients,
-        global_batch_size,
-        witness_nodes,
-    )
-    .await;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, global_batch_size, witness_nodes).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -221,12 +197,8 @@ async fn validate_all_clients_participate_in_witness_bloom() {
     let init_min_clients = 5;
     let global_batch_size = init_min_clients;
     let witness_nodes = 1;
-    let server_handle = CoordinatorServerHandle::new(
-        init_min_clients,
-        global_batch_size,
-        witness_nodes,
-    )
-    .await;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, global_batch_size, witness_nodes).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -273,12 +245,8 @@ async fn replace_node_and_complete_round() {
     let global_batch_size = 2;
     let witness_nodes = 1;
     let training_delay = 2;
-    let server_handle = CoordinatorServerHandle::new(
-        init_min_clients,
-        global_batch_size,
-        witness_nodes,
-    )
-    .await;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, global_batch_size, witness_nodes).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -343,12 +311,8 @@ async fn finish_epoch() {
     let init_min_clients = 2;
     let global_batch_size = 2;
     let witness_nodes = 1;
-    let server_handle = CoordinatorServerHandle::new(
-        init_min_clients,
-        global_batch_size,
-        witness_nodes,
-    )
-    .await;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, global_batch_size, witness_nodes).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -407,12 +371,8 @@ async fn client_join_in_training() {
     let global_batch_size = 2;
     let witness_nodes = 1;
 
-    let server_handle = CoordinatorServerHandle::new(
-        init_min_clients,
-        global_batch_size,
-        witness_nodes,
-    )
-    .await;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, global_batch_size, witness_nodes).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -497,12 +457,8 @@ async fn shutdown_node_in_training_and_complete_round() {
     let global_batch_size = 3;
     let witness_nodes = 2;
     let training_delay = 2;
-    let server_handle = CoordinatorServerHandle::new(
-        init_min_clients,
-        global_batch_size,
-        witness_nodes,
-    )
-    .await;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, global_batch_size, witness_nodes).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -633,12 +589,8 @@ async fn client_join_in_training_and_get_model_using_p2p() {
     let global_batch_size = 3;
     let witness_nodes = 1;
 
-    let server_handle = CoordinatorServerHandle::new(
-        init_min_clients,
-        global_batch_size,
-        witness_nodes,
-    )
-    .await;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, global_batch_size, witness_nodes).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(
@@ -733,12 +685,8 @@ async fn two_clients_join_in_training_and_get_model_using_p2p() {
     let global_batch_size = 4;
     let witness_nodes = 1;
 
-    let server_handle = CoordinatorServerHandle::new(
-        init_min_clients,
-        global_batch_size,
-        witness_nodes,
-    )
-    .await;
+    let server_handle =
+        CoordinatorServerHandle::new(init_min_clients, global_batch_size, witness_nodes).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 0).await;
     assert_with_retries(

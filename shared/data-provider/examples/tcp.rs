@@ -58,7 +58,10 @@ impl NodeIdentity for DummyNodeIdentity {
 impl AuthenticatableIdentity for DummyNodeIdentity {
     type PrivateKey = ();
 
-    fn from_signed_bytes(bytes: &[u8], challenge: [u8; 32]) -> Result<Self, FromSignedBytesError> {
+    fn from_signed_challenge_bytes(
+        bytes: &[u8],
+        challenge: [u8; 32],
+    ) -> Result<Self, FromSignedBytesError> {
         let (serialized_challenge, bytes) = bytes.split_at(32);
         if challenge != serialized_challenge {
             return Err(FromSignedBytesError::MismatchedChallenge(
@@ -69,13 +72,17 @@ impl AuthenticatableIdentity for DummyNodeIdentity {
         Self::from_bytes(bytes).map_err(|_| FromSignedBytesError::Deserialize)
     }
 
-    fn to_signed_bytes(&self, _private_key: &(), challenge: [u8; 32]) -> Vec<u8> {
+    fn to_signed_challenge_bytes(&self, _private_key: &(), challenge: [u8; 32]) -> Vec<u8> {
         let mut b = challenge.to_vec();
         b.extend(self.to_bytes());
         b
     }
 
     fn get_p2p_public_key(&self) -> &[u8; 32] {
+        todo!()
+    }
+
+    fn raw_p2p_sign(&self, _private_key: &Self::PrivateKey, _bytes: &[u8]) -> [u8; 64] {
         todo!()
     }
 }

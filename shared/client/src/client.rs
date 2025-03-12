@@ -1,13 +1,14 @@
 use crate::{
     state::{DistroBroadcastAndPayload, RunManager},
-    ClientTUIState, RunInitConfig, RunInitConfigAndIO, TrainingResult, NC,
+    Broadcast, BroadcastType, ClientTUIState, RunInitConfig, RunInitConfigAndIO, TrainingResult,
+    NC,
 };
 use anyhow::{bail, Error, Result};
 use futures::future::join_all;
-use psyche_coordinator::RunState;
+use psyche_coordinator::{Commitment, RunState};
 use psyche_core::NodeIdentity;
 use psyche_network::{
-    allowlist, request_model, AuthenticatableIdentity, BlobTicket, ConnectionType,
+    allowlist, raw_p2p_verify, request_model, AuthenticatableIdentity, BlobTicket, ConnectionType,
     DownloadComplete, ModelRequestType, NetworkConnection, NetworkEvent, NetworkTUIState,
     Networkable, NodeId, SharableModel, TransmittableDownload,
 };
@@ -59,6 +60,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
         let req_tui_state = Arc::new(Notify::new());
 
         let identity = init_config.identity;
+        let network_identity = init_config.network_identity.clone();
+        let private_key = init_config.private_key.clone();
         let join = tokio::spawn({
             let cancel = cancel.clone();
             let req_tui_state = req_tui_state.clone();
@@ -101,8 +104,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                 let mut retried_downloads: HashMap<psyche_network::Hash, usize> = HashMap::new();
                 let mut sharable_model = SharableModel::empty();
-                let mut sharing_downloadables = vec![];
-                let mut sharing_downloadables_rebroadcast_index = 0;
+                let mut broadcasts = vec![];
+                let mut broadcasts_rebroadcast_index = 0;
                 let mut sharing_downloadable_interval = interval(REBROADCAST_SHAREABLE);
                 debug!("Starting client loop");
                 loop {
@@ -171,7 +174,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 p2p.remove_blobs_with_tag_less_than(last_needed_step_blobs);
                                 let p2p_info = get_p2p_info(&p2p).await?;
                                 run.set_node_info(p2p_info);
-                                sharing_downloadables.retain(|(_, step)| *step >= last_needed_step_blobs);
+                                broadcasts.retain(|(_, step)| *step >= last_needed_step_blobs);
                             }
                             run.apply_state(*new_state).await?;
                         }
@@ -179,10 +182,21 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         res = p2p.poll_next() => {
                             if let Some(message) = res? {
                                 match message {
-                                    NetworkEvent::MessageReceived((from, training_result)) => {
-                                        trace!("Got gossip message from {from}: step {} batch id {}", training_result.step, training_result.batch_id);
+                                    NetworkEvent::MessageReceived((from, broadcast)) => {
                                         if let Some(client) = watcher.get_client_for_p2p_public_key(from.as_bytes()) {
-                                            run.apply_message(client.id, training_result).await?;
+                                            if raw_p2p_verify(from.as_bytes(), &broadcast.commitment.data_hash, &broadcast.commitment.signature) {
+                                                match &broadcast.data {
+                                                    BroadcastType::TrainingResult(training_result) => {
+                                                        trace!("Got training result gossip message from {from}: step {} batch id {}", broadcast.step, training_result.batch_id);
+                                                    }
+                                                    BroadcastType::Finished => {
+                                                        trace!("Got finished gossip message from {from}: step {}", broadcast.step);
+                                                    }
+                                                }
+                                                run.apply_message(client.id, broadcast).await?;
+                                            } else {
+                                                debug!("Invalid signature on commitment from {from}");
+                                            }
                                         } else {
                                             warn!("Got broadcast from unknown client {}", from);
                                         }
@@ -269,7 +283,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             run.try_send_opportunistic_witness().await?;
                         }
 
-                        Some(DistroBroadcastAndPayload{ step, batch_id, commitment, proof, distro_result, original_distro_result }) = rx_distro_result.recv() => {
+                        Some(DistroBroadcastAndPayload{ step, batch_id, commitment_data_hash, proof, distro_result, original_distro_result }) = rx_distro_result.recv() => {
+
                             let transmittable_distro_result = TransmittableDownload::DistroResult(distro_result.clone());
                             let ticket = p2p.add_downloadable(transmittable_distro_result, step).await?;
                             let hash = ticket.hash();
@@ -278,16 +293,16 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 hex::encode(hash),
                             );
 
-                            let training_result = TrainingResult { step, batch_id, commitment, ticket, proof, nonce: 0 };
+                            let signature = network_identity.raw_p2p_sign(&private_key, &commitment_data_hash);
+                            let commitment = Commitment { data_hash: commitment_data_hash, signature};
+                            let training_result = Broadcast { step, proof, nonce: 0, commitment, data: BroadcastType::TrainingResult(TrainingResult { batch_id, ticket })};
 
                             p2p.broadcast(&training_result).await?;
-                            sharing_downloadables.push((training_result.clone(), step));
+                            broadcasts.push((training_result.clone(), step));
 
                             // simulate us recving it & apply like anyone else's
                             {
-                                run.apply_message(
-                                    identity, training_result
-                                ).await?;
+                                run.apply_message(identity,  training_result).await?;
 
                                 // VERY IMPORTANT -- we pass the "original" distro result, which is unquantized
                                 // even if quantization is turned on (distro_result is quantized).
@@ -297,20 +312,18 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         }
 
                         _ = sharing_downloadable_interval.tick() => {
-                            match sharing_downloadables.len() {
+                            match broadcasts.len() {
                                 0 => {},
                                 len => {
                                     // it's possible we've disconnected from a gossip peer, but we don't know until we try and send to them.
                                     // in general, iroh-gossip doesn't guarantee delivery. so, we rebroadcast our live results (-2 rounds)
                                     // periodically
-                                    sharing_downloadables_rebroadcast_index = (sharing_downloadables_rebroadcast_index + 1) % len;
-                                    let (training_result, step) = &mut sharing_downloadables[sharing_downloadables_rebroadcast_index];
-                                    training_result.nonce += 1;
-                                    trace!("Rebroadcasting payload step {} batch id {} hash 0x{}", step, training_result.batch_id, hex::encode(training_result.ticket.hash()));
-                                    p2p.broadcast(training_result).await?;
+                                    broadcasts_rebroadcast_index = (broadcasts_rebroadcast_index + 1) % len;
+                                    let (broadcast, _step) = &mut broadcasts[broadcasts_rebroadcast_index];
+                                    broadcast.nonce += 1;
+                                    p2p.broadcast(broadcast).await?;
                                 }
                             }
-
                         }
 
                         Some((download_ticket, tag)) = rx_request_download.recv() => {

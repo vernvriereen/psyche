@@ -1,6 +1,8 @@
 use crate::{fetch_data::BatchIdSet, TrainingResult};
 
-use psyche_coordinator::{CommitteeProof, CommitteeSelection, WitnessBloom, WitnessProof};
+use psyche_coordinator::{
+    Commitment, CommitteeProof, CommitteeSelection, WitnessBloom, WitnessProof,
+};
 use psyche_core::{BatchId, NodeIdentity};
 use psyche_modeling::DistroResult;
 use std::{
@@ -16,7 +18,7 @@ pub struct RoundState<T: NodeIdentity> {
     pub step: u32,
     pub sent_witness: bool,
     pub downloads: HashMap<psyche_network::Hash, PayloadState<T>>,
-    pub results: HashMap<BatchId, Vec<(T, TrainingResult)>>,
+    pub results: HashMap<BatchId, Vec<(T, (Commitment, TrainingResult))>>,
     pub commitments_per_client: HashMap<T, u32>,
     pub data_assignments: BTreeMap<BatchId, T>,
     pub blooms: Option<(WitnessBloom, WitnessBloom)>,

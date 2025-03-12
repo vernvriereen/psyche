@@ -1,6 +1,6 @@
 use crate::{
     fetch_data::{BatchIdSet, DataFetcher, TrainingDataForStep},
-    state::types::PayloadState,
+    state::types::{DeserializeError, PayloadState},
 };
 
 use futures::{future::try_join_all, stream::FuturesUnordered, StreamExt};
@@ -70,6 +70,9 @@ pub enum TrainError {
 
     #[error("Training thread crashed")]
     TrainCrashed,
+
+    #[error("Transmit thread crashed")]
+    TransmitCrashed,
 
     #[error("Failed to train on batch: {0}")]
     TrainOnBatch(#[from] TrainerThreadCommunicationError),
@@ -361,16 +364,30 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                             available_trainers.push(trainer);
 
                             if !sent_results {
-                                let res: Result<(), TrainError> = async {
+                                let distro_results = distro_results.unwrap_or_default();
+
+                                for result in &distro_results {
+                                    if let Some(stats) = &result.stats {
+                                        for (name, value) in stats {
+                                            // a rolling average for this step :)
+                                            optim_stats
+                                                .entry(name.clone())
+                                                .and_modify(|e| *e = (*e + value) / 2.0)
+                                                .or_insert(*value);
+                                        }
+                                    }
+                                }
+                                let write_gradients_dir = write_gradients_dir.clone();
+                                let tx_distro_result = tx_distro_result.clone();
+                                let res: Result<(), TrainError> = tokio::task::spawn_blocking(move || {
                                     if cancelled {
                                         trace!("However, we were cancelled, so we're throwing away this result.");
                                         // we're throwing away this result.
                                         return Ok(());
                                     }
 
-                                    let distro_results = distro_results.unwrap_or_default();
-
                                     let to_transmit = if quantize { Trainer::quantize_results(&distro_results) } else { distro_results.clone()};
+
                                     let transmittable_distro_result = TransmittableDistroResult {
                                         step,
                                         batch_id,
@@ -381,7 +398,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                                             .map_err(TrainError::SerializeDistroResult)?,
                                     };
 
-                                    if let Some(dir) = &write_gradients_dir {
+                                    if let Some(dir) = write_gradients_dir {
                                         let transmittable_distro_result = transmittable_distro_result.clone();
                                         let dir = dir.clone();
                                         tokio::spawn(async move {
@@ -393,28 +410,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                                         });
                                     }
 
-                                    for result in &distro_results {
-                                        if let Some(stats) = &result.stats {
-                                            for (name, value) in stats {
-                                                // a rolling average for this step :)
-                                                optim_stats
-                                                    .entry(name.clone())
-                                                    .and_modify(|e| *e = (*e + value) / 2.0)
-                                                    .or_insert(*value);
-                                            }
-                                        }
-                                    }
-
-                                    round_losses.push(loss);
-
-                                    let commitment = Coordinator::make_committment(&batch_id, &identity);
+                                    let commitment_data_hash = transmittable_distro_result.comptue_hash();
 
                                     trace!("trying to queue tx distro result...");
                                     tx_distro_result
                                         .send(DistroBroadcastAndPayload {
                                             step,
                                             batch_id,
-                                            commitment,
+                                            commitment_data_hash,
                                             proof: committee_proof,
                                             distro_result: transmittable_distro_result,
                                             original_distro_result: distro_results,
@@ -422,13 +425,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                                         .map_err(|_| TrainError::SendDistroResult)?;
                                     trace!("successfully queued tx distro result");
                                     Ok(())
-                                }.instrument(
-                                    tracing::debug_span!(
-                                        "train_done",
-                                        batch_id = format!("{batch_id}")
-                                    )
-                                ).await;
+                                }).await.map_err(|_| TrainError::TransmitCrashed)?;
                                 res?;
+
+                                round_losses.push(loss);
                                 sent_results = true;
                             }
                         }
@@ -523,7 +523,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     let consensus = match Coordinator::<T>::select_consensus_commitment_by_witnesses(
                         &batch_commitments
                             .iter()
-                            .map(|x| x.1.commitment)
+                            .map(|x| x.1.0)
                             .collect::<Vec<_>>(),
                         &witnesses,
                         witness_quorum,
@@ -536,26 +536,26 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     };
                     debug!("Consensus commitment for batch {batch_id}: {consensus:?}");
 
-                    let consensus = &batch_commitments[consensus].1;
-                    let maybe_results = match payloads.remove(&consensus.ticket.hash()) {
+                    let (commitment, result) = &batch_commitments[consensus].1;
+                    let maybe_results: Result<Vec<DistroResult>, DeserializeError> = match payloads.remove(&result.ticket.hash()) {
                         Some(PayloadState::Deserializing(x)) => match x.is_finished() {
                             true => x.await.unwrap(),
                             false => {
                                 return Err(ApplyError::DidNotFinishDeserializingCommitment(
-                                    consensus.commitment,
+                                    commitment.clone(),
                                     batch_id,
                                 ));
                             }
                         },
                         Some(PayloadState::Downloading(_)) => {
                             return Err(ApplyError::DidNotBeginDownloadingCommitment(
-                                consensus.commitment,
+                                commitment.clone(),
                                 batch_id,
                             ));
                         }
                         None => {
                             return Err(ApplyError::UnknownCommitment(
-                                consensus.commitment,
+                                commitment.clone(),
                                 batch_id,
                             ))
                         }
@@ -565,7 +565,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                         Ok(results) => {
                             distro_results.push(results);
                         }
-                        Err(err) => warn!("DESYNC: Got the following error when deserializing results for commitment 0x{}: {}", hex::encode(consensus.commitment), err),
+                        Err(err) => warn!("DESYNC: Got the following error when deserializing results for commitment 0x{}: {}", hex::encode(commitment.data_hash), err),
                     }
                 }
 
@@ -649,13 +649,13 @@ pub enum ApplyError {
     #[error("failed to apply distro result: {0}")]
     BadResult(#[from] ApplyDistroResultError),
 
-    #[error("DESYNC: Did not finish deserializing payload for consensus commitment 0x{commitment} for batch {1}", commitment=hex::encode(.0))]
+    #[error("DESYNC: Did not finish deserializing payload for consensus commitment 0x{commitment} for batch {1}", commitment=hex::encode(.0.data_hash))]
     DidNotFinishDeserializingCommitment(Commitment, BatchId),
 
-    #[error("DESYNC: Did not begin downloading payload for consensus commitment 0x{commitment} for batch {1}", commitment=hex::encode(.0))]
+    #[error("DESYNC: Did not begin downloading payload for consensus commitment 0x{commitment} for batch {1}", commitment=hex::encode(.0.data_hash))]
     DidNotBeginDownloadingCommitment(Commitment, BatchId),
 
-    #[error("DESYNC: Unknown consensus commitment 0x{commitment} for batch {1}", commitment=hex::encode(.0))]
+    #[error("DESYNC: Unknown consensus commitment 0x{commitment} for batch {1}", commitment=hex::encode(.0.data_hash))]
     UnknownCommitment(Commitment, BatchId),
 }
 

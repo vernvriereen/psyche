@@ -1,13 +1,13 @@
 use crate::{
     model::{self, Checkpoint, HubRepo, Model},
-    Committee, CommitteeProof, CommitteeSelection, WitnessProof,
+    Commitment, Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
 
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Pod, Zeroable};
 use psyche_core::{
-    serde_deserialize_string, serde_serialize_string, sha256, sha256v, BatchId, Bloom, FixedVec,
-    NodeIdentity, SmallBoolean,
+    serde_deserialize_string, serde_serialize_string, sha256, Bloom, FixedVec, NodeIdentity,
+    SmallBoolean,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::hash::Hash;
@@ -145,7 +145,6 @@ pub enum TickResult {
     EpochEnd(bool), // if successfully finished
 }
 
-pub type Commitment = [u8; 32];
 pub type HealthChecks<T> = Vec<(T, CommitteeProof)>;
 
 pub const NUM_STORED_ROUNDS: usize = 4;
@@ -589,13 +588,14 @@ impl<T: NodeIdentity> Coordinator<T> {
         score
     }
 
-    pub fn make_committment(batch_id: &BatchId, id: &T) -> [u8; 32] {
-        sha256v(&[
-            id.as_ref(),
-            &batch_id.0.start.to_be_bytes(),
-            &batch_id.0.end.to_be_bytes(),
-        ])
-    }
+    // pub fn make_batch_committment_hash(&self, batch_id: &BatchId, id: &T) -> [u8; 32] {
+    //     sha256v(&[
+    //         &self.run_id,
+    //         id.as_ref(),
+    //         &batch_id.0.start.to_be_bytes(),
+    //         &batch_id.0.end.to_be_bytes(),
+    //     ])
+    // }
 
     pub fn select_consensus_commitment_by_witnesses(
         commitments: &[Commitment],
@@ -605,7 +605,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         let mut scores = vec![0; commitments.len()];
         for witness in witnesses {
             for (index, commitment) in commitments.iter().enumerate() {
-                if witness.batch_bloom.contains(&sha256(commitment)) {
+                if witness.batch_bloom.contains(&commitment.data_hash) {
                     scores[index] += 1;
                     break;
                 }

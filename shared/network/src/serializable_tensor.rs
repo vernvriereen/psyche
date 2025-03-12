@@ -18,6 +18,15 @@ pub struct SerializableTensor {
     data: SerializableTensorData,
 }
 
+impl SerializableTensor {
+    pub fn raw_tensor_data(&self) -> &[u8] {
+        match &self.data {
+            SerializableTensorData::Full(items) => &items,
+            SerializableTensorData::OneBit(items) => &items,
+        }
+    }
+}
+
 impl TryFrom<&Tensor> for SerializableTensor {
     type Error = TchError;
 

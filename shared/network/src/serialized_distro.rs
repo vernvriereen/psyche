@@ -1,6 +1,7 @@
 use psyche_core::BatchId;
 use psyche_modeling::DistroResult;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     error::Error,
     fmt,
@@ -25,6 +26,20 @@ pub struct TransmittableDistroResult {
     pub step: u32,
     pub batch_id: BatchId,
     pub distro_results: Vec<SerializedDistroResult>,
+}
+
+impl TransmittableDistroResult {
+    pub fn comptue_hash(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(self.step.to_be_bytes());
+        hasher.update(self.batch_id.0.start.to_be_bytes());
+        hasher.update(self.batch_id.0.end.to_be_bytes());
+        for result in &self.distro_results {
+            hasher.update(result.sparse_idx.raw_tensor_data());
+            hasher.update(result.sparse_val.raw_tensor_data());
+        }
+        hasher.finalize().into()
+    }
 }
 
 #[derive(Debug, Error)]

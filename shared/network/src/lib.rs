@@ -51,7 +51,7 @@ mod tcp;
 mod tui;
 mod util;
 
-pub use authenticable_identity::{AuthenticatableIdentity, FromSignedBytesError};
+pub use authenticable_identity::{raw_p2p_verify, AuthenticatableIdentity, FromSignedBytesError};
 pub use download_manager::{DownloadComplete, DownloadFailed, TransmittableDownload};
 pub use iroh::{Endpoint, PublicKey, SecretKey};
 pub use p2p_model_sharing::{
