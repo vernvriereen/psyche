@@ -64,10 +64,6 @@ impl CoordinatorInstanceState {
                 }
                 if self.coordinator.is_training_just_starting() {
                     msg!("New epoch just starting, save epoch active clients");
-                    self.coordinator.epoch_state.warmup_just_starting = SmallBoolean(0);
-                }
-                if self.coordinator.is_training_just_starting() {
-                    msg!("Training just starting");
                     self.clients_state.next_active += 1;
                     self.coordinator.epoch_state.training_just_starting =
                         SmallBoolean(0);

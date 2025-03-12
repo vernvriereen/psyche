@@ -123,7 +123,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 .map(|s| s.run_state.to_string())
                                 .unwrap_or_else(|| String::from(" - "));
 
-                            info!(
+                            trace!(
                                 client_id = %identity,
                                 old_state = old_run_state,
                                 new_state = new_state.run_state.to_string(),
