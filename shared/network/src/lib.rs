@@ -3,7 +3,7 @@ use anyhow::{anyhow, Context, Error, Result};
 use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
 use futures_util::StreamExt;
 use iroh::{endpoint::RemoteInfo, NodeAddr};
-use iroh_blobs::{net_protocol::Blobs, store::mem::Store};
+use iroh_blobs::{downloader::ConcurrencyLimits, net_protocol::Blobs, store::mem::Store};
 use iroh_gossip::net::{Gossip, GossipEvent, GossipReceiver, GossipSender};
 use p2p_model_sharing::{
     ModelConfigSharingMessage, ParameterSharingMessage, MODEL_REQUEST_TIMEOUT_SECS,
@@ -186,7 +186,12 @@ where
         info!("Our node addr: {}", node_addr.node_id);
 
         trace!("creating blobs...");
-        let blobs = Blobs::memory().build(&endpoint);
+        let blobs = Blobs::memory()
+            .concurrency_limits(ConcurrencyLimits {
+                max_concurrent_requests_per_node: 1,
+                ..Default::default()
+            })
+            .build(&endpoint);
         trace!("blobs created!");
 
         trace!("creating gossip...");

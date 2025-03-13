@@ -60,7 +60,10 @@ chrono = "0.4.38"
 fast-math = "0.1"
 async-trait = "0.1.82"
 iroh = "0.33.0"
-iroh-blobs = { version = "0.33.1", features = ["rpc", "downloader"] }
+iroh-blobs = { git = "https://github.com/NousResearch/iroh-blobs", rev = "3ee4c56e545611fe2985c873cc6b443b5dabc516", features = [
+    "rpc",
+    "downloader",
+] }
 iroh-gossip = "0.33.0"
 memmap2 = { version = "0.9.3", features = ["stable_deref_trait"] }
 indicatif = "0.17.5"
