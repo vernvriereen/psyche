@@ -197,8 +197,7 @@ pub async fn run() {
                 min_clients: 1,
                 global_batch_size: 1,
                 verification_percent: 0,
-                witness_nodes: 0,
-                witness_quorum: 0,
+                witness_nodes: 1,
                 rounds_per_epoch: 4,
                 total_steps: 100,
                 checkpointers: FixedVec::zeroed(),
@@ -307,7 +306,8 @@ pub async fn run() {
                     index: 0,
                 },
                 participant_bloom: Default::default(),
-                batch_bloom: Default::default(),
+                broadcast_bloom: Default::default(),
+                broadcast_merkle: Default::default(),
             },
         )
         .await

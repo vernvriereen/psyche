@@ -378,7 +378,8 @@ impl SolanaBackend {
             .args(psyche_solana_coordinator::instruction::Witness {
                 proof: witness.proof,
                 participant_bloom: witness.participant_bloom,
-                batch_bloom: witness.batch_bloom,
+                broadcast_bloom: witness.broadcast_bloom,
+                broadcast_merkle: witness.broadcast_merkle,
             })
             .send()
             .await?;
@@ -559,8 +560,7 @@ mod test {
                     min_clients: 1,
                     global_batch_size: 1,
                     verification_percent: 0,
-                    witness_nodes: 0,
-                    witness_quorum: 0,
+                    witness_nodes: 1,
                     rounds_per_epoch: 10,
                     total_steps: 100,
                     checkpointers: FixedVec::zeroed(),

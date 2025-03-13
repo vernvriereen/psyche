@@ -36,7 +36,7 @@ pub use deterministic_shuffle::deterministic_shuffle;
 pub use fixed_vec::FixedVec;
 pub use interval_tree::{ClosedInterval, IntervalTree};
 pub use lcg::LCG;
-pub use merkle_tree::{HashWrapper as RootType, MerkleTree, OwnedProof, Proof};
+pub use merkle_tree::{HashWrapper as MerkleRoot, MerkleTree, OwnedProof, Proof};
 pub use node_identity::NodeIdentity;
 pub use running_average::RunningAverage;
 pub use serde_utils::{

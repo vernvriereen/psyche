@@ -1,7 +1,9 @@
 use crate::{fetch_data::BatchIdSet, TrainingResult};
 
-use psyche_coordinator::{CommitteeProof, CommitteeSelection, WitnessBloom, WitnessProof};
-use psyche_core::{BatchId, NodeIdentity};
+use psyche_coordinator::{
+    Commitment, CommitteeProof, CommitteeSelection, WitnessBloom, WitnessProof,
+};
+use psyche_core::{BatchId, MerkleRoot, NodeIdentity};
 use psyche_modeling::DistroResult;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -15,11 +17,14 @@ pub struct RoundState<T: NodeIdentity> {
     pub height: u32,
     pub step: u32,
     pub sent_witness: bool,
+    pub sent_finished: bool,
     pub downloads: HashMap<psyche_network::Hash, PayloadState<T>>,
-    pub results: HashMap<BatchId, Vec<(T, TrainingResult)>>,
-    pub commitments_per_client: HashMap<T, u32>,
+    #[allow(clippy::type_complexity)]
+    pub results: HashMap<BatchId, Vec<(T, (Commitment, TrainingResult))>>,
+    pub clients_finished: HashMap<T, MerkleRoot>,
     pub data_assignments: BTreeMap<BatchId, T>,
     pub blooms: Option<(WitnessBloom, WitnessBloom)>,
+    pub broadcasts: Vec<[u8; 32]>,
     pub committee_info: Option<(CommitteeProof, WitnessProof, CommitteeSelection)>,
     pub batch_ids_not_yet_trained_on: Option<(usize, Arc<Mutex<BatchIdSet>>)>,
     pub self_distro_results: Vec<Vec<DistroResult>>,
@@ -31,9 +36,11 @@ impl<T: NodeIdentity> RoundState<T> {
             height: 0,
             step: 0,
             sent_witness: false,
+            sent_finished: false,
             downloads: HashMap::new(),
             results: HashMap::new(),
-            commitments_per_client: HashMap::new(),
+            broadcasts: Vec::new(),
+            clients_finished: HashMap::new(),
             data_assignments: BTreeMap::new(),
             blooms: None,
             committee_info: None,

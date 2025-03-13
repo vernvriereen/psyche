@@ -1,6 +1,7 @@
 use crate::sha256::sha256v;
 
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
+use bytemuck::Zeroable;
 use serde::{Deserialize, Serialize};
 
 // from https://github.com/solana-labs/solana/blob/27eff8408b7223bb3c4ab70523f8a8dca3ca6645/merkle-tree/src/merkle_tree.rs
@@ -28,7 +29,17 @@ macro_rules! hash_intermediate {
 
 /// This wrapper is used to implement the `Space` trait for the actual hash.
 #[derive(
-    AnchorSerialize, AnchorDeserialize, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Default,
+    Zeroable,
+    Copy,
 )]
 pub struct HashWrapper {
     pub inner: [u8; 32],
@@ -94,7 +105,7 @@ impl<'a> ProofEntry<'a> {
 impl<'a> From<ProofEntry<'a>> for OwnedProofEntry {
     fn from(value: ProofEntry<'a>) -> Self {
         Self {
-            target: value.0.clone(),
+            target: *value.0,
             left_sibling: value.1.cloned(),
             right_sibling: value.2.cloned(),
         }
@@ -132,8 +143,8 @@ impl<'a> From<Proof<'a>> for OwnedProof {
 impl OwnedProof {
     pub fn verify(&self, candidate: HashWrapper) -> bool {
         let result = self.entries.iter().try_fold(candidate, |candidate, pe| {
-            let lsib = pe.right_sibling.clone().unwrap_or(candidate.clone());
-            let rsib = pe.left_sibling.clone().unwrap_or(candidate);
+            let lsib = pe.right_sibling.unwrap_or(candidate);
+            let rsib = pe.left_sibling.unwrap_or(candidate);
             let hash = HashWrapper::new(hash_intermediate!(lsib, rsib));
 
             if hash == pe.target {

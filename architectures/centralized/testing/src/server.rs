@@ -66,7 +66,6 @@ impl CoordinatorServer {
         init_min_clients: u16,
         global_batch_size: u16,
         witness_nodes: u16,
-        witness_quorum: u16,
     ) -> Self {
         let coordinator_config = CoordinatorConfig {
             warmup_time: WARMUP_TIME,
@@ -78,7 +77,6 @@ impl CoordinatorServer {
             global_batch_size,
             verification_percent: 0,
             witness_nodes,
-            witness_quorum,
             total_steps: 10,
             ..CoordinatorConfig::<ClientId>::zeroed()
         };
@@ -189,12 +187,7 @@ pub struct CoordinatorServerHandle {
 }
 
 impl CoordinatorServerHandle {
-    pub async fn new(
-        init_min_clients: u16,
-        global_batch_size: u16,
-        witness_nodes: u16,
-        witness_quorum: u16,
-    ) -> Self {
+    pub async fn new(init_min_clients: u16, global_batch_size: u16, witness_nodes: u16) -> Self {
         debug!("creating coordinator server...");
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
         let mut server = CoordinatorServer::new(
@@ -202,12 +195,24 @@ impl CoordinatorServerHandle {
             init_min_clients,
             global_batch_size,
             witness_nodes,
-            witness_quorum,
         )
         .await;
         let server_port = server.port;
         let run_id = server.run_id.clone();
-        tokio::spawn(async move { server.run().await });
+        // tokio::spawn(async move { server.run().await });
+        // the above line will stack overflow, for reasons best left to contemplative reflection.
+        // as a substitute to maddness, we suggest the reader trust us on this point.
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .thread_stack_size(8 * 1024 * 1024)
+                .max_blocking_threads(8192)
+                .build()
+                .unwrap();
+
+            rt.block_on(async {
+                server.run().await;
+            });
+        });
         debug!("coordinator server created on port {server_port}");
 
         Self {

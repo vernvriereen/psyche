@@ -1,10 +1,10 @@
 use crate::{
     state::{train::FinishedTrainers, types::DeserializeError},
-    ClientTUIState, TrainingResult,
+    Broadcast, BroadcastType, ClientTUIState,
 };
 
 use psyche_coordinator::{Committee, Coordinator, RunState, Witness};
-use psyche_core::{sha256, NodeIdentity};
+use psyche_core::{sha256, MerkleRoot, MerkleTree, NodeIdentity};
 use psyche_modeling::{DistroResult, Trainer};
 use psyche_network::{AuthenticatableIdentity, BlobTicket, Hash, TransmittableDistroResult};
 use std::{collections::HashMap, fmt, sync::Arc};
@@ -30,10 +30,10 @@ use super::{
     types::PayloadState,
     warmup::{WarmupStep, WarmupStepMetadata},
     witness::{WitnessStep, WitnessStepMetadata, WitnessingError},
-    RunInitConfigAndIO,
+    FinishedBroadcast, RunInitConfigAndIO,
 };
 
-pub struct StepStateMachine<T: NodeIdentity, A: AuthenticatableIdentity> {
+pub struct StepStateMachine<T: NodeIdentity, A: AuthenticatableIdentity + 'static> {
     identity: T,
 
     stats_logger: StatsLogger,
@@ -47,6 +47,7 @@ pub struct StepStateMachine<T: NodeIdentity, A: AuthenticatableIdentity> {
 
     tx_request_download: mpsc::UnboundedSender<(BlobTicket, u32)>,
     tx_witness: mpsc::UnboundedSender<Witness>,
+    tx_broadcast_finished: mpsc::UnboundedSender<FinishedBroadcast>,
 
     notify_try_opportunistic_witness: Arc<Notify>,
 
@@ -89,6 +90,9 @@ pub enum ApplyMessageError {
 pub enum OpportunisticWitnessError {
     #[error("Failed to send opportunistic witness, channel must be closed")]
     Send,
+
+    #[error("Failed to send broadcast finished, channel must be closed")]
+    Finished,
 }
 
 impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, A> {
@@ -103,6 +107,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         coordinator_state: Coordinator<T>,
         tx_request_download: mpsc::UnboundedSender<(BlobTicket, u32)>,
         tx_witness: mpsc::UnboundedSender<Witness>,
+        tx_broadcast_finished: mpsc::UnboundedSender<FinishedBroadcast>,
         stats_logger: StatsLogger,
     ) -> Self {
         let mut previous_round = RoundState::default();
@@ -127,6 +132,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
 
             tx_request_download,
             tx_witness,
+            tx_broadcast_finished,
+
             notify_try_opportunistic_witness,
 
             coordinator_state,
@@ -139,39 +146,67 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         &mut self,
     ) -> Result<(), OpportunisticWitnessError> {
         if let Some(committee_info) = &self.current_round.committee_info {
-            // are we a witness this round?
-            if committee_info.1.witness.is_true() {
-                if let ActiveStep::Training(step) = &self.active_step {
-                    if step.finished() && self.previous_round.batch_ids_not_yet_trained_on.is_none()
-                    {
-                        // Finished training and finished downloading the previous round's results
-                        // (or we're on the first or last which has nothing to download)
+            if let ActiveStep::Training(step) = &self.active_step {
+                if step.finished() && self.previous_round.batch_ids_not_yet_trained_on.is_none() {
+                    // Finished training and finished downloading the previous round's results
+                    // (or we're on the first or last which has nothing to download)
 
-                        // check that all batches from the previous round are done deserializing
-                        for batch in &self.previous_round.downloads {
-                            match batch.1 {
-                                PayloadState::Deserializing(thread) if thread.is_finished() => {
-                                    // this batch is done deserializing, we can witness on it now.
-                                }
+                    // check that all batches from the previous round are done deserializing
+                    for batch in &self.previous_round.downloads {
+                        match batch.1 {
+                            PayloadState::Deserializing(thread) if thread.is_finished() => {
+                                // this batch is done deserializing, we can witness on it now.
+                            }
 
-                                // we're still downloading or deserializing this batch, so we're not ready to send an opportunistic witness.
-                                // this function will get called again when a deserialize finishes.
-                                _ => {
-                                    return Ok(());
-                                }
+                            // we're still downloading or deserializing this batch, so we're not ready to send an opportunistic witness.
+                            // this function will get called again when a deserialize finishes.
+                            _ => {
+                                return Ok(());
                             }
                         }
+                    }
 
-                        if let Some(witness) = WitnessStep::get_witness_to_send(
-                            &mut self.previous_round,
-                            &mut self.current_round,
-                        ) {
-                            debug!("Sending opportunistic witness");
+                    if !self.current_round.sent_finished {
+                        // okay, we're all done. we've trained and downloaded everything.
+                        // send our early "finished message"
 
-                            self.tx_witness
-                                .send(witness)
-                                .map_err(|_| OpportunisticWitnessError::Send)?;
-                        }
+                        let merkle = MerkleTree::new(&self.previous_round.broadcasts)
+                            .get_root()
+                            .cloned()
+                            .unwrap_or(MerkleRoot::default());
+
+                        self.tx_broadcast_finished
+                            .send(FinishedBroadcast {
+                                step: self.current_round.step,
+                                commitment_data_hash: sha256(&merkle.inner),
+                                merkle,
+                                proof: committee_info.0,
+                            })
+                            .map_err(|_| OpportunisticWitnessError::Finished)?;
+
+                        self.current_round.sent_finished = true;
+
+                        return Ok(());
+                    }
+
+                    // if we get here we've sent our own finished message.
+                    // now we just need to wait until we've received everyone else's finished
+                    if self.current_round.height > 0
+                        && self.current_round.clients_finished.len()
+                            != self.coordinator_state.epoch_state.clients.len()
+                    {
+                        return Ok(());
+                    }
+
+                    if let Some(witness) = WitnessStep::get_witness_to_send(
+                        &mut self.previous_round,
+                        &mut self.current_round,
+                    ) {
+                        debug!("Sending opportunistic witness");
+
+                        self.tx_witness
+                            .send(witness)
+                            .map_err(|_| OpportunisticWitnessError::Send)?;
                     }
                 }
             }
@@ -182,30 +217,20 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
     pub async fn apply_message(
         &mut self,
         from_client_id: T,
-        training_result: TrainingResult,
+        broadcast: Broadcast,
     ) -> Result<(), ApplyMessageError> {
-        let result_step = training_result.step;
-        let batch_id = training_result.batch_id;
-        let round_state = {
-            if self.current_round.data_assignments.contains_key(&batch_id) {
-                debug!(
-                    "Got result gossip for current step {} batch {batch_id}",
-                    result_step
-                );
-                &mut self.current_round
-            } else if self.previous_round.data_assignments.contains_key(&batch_id) {
-                debug!(
-                    "Got result gossip for previous step {} batch {batch_id}",
-                    result_step - 1
-                );
-                &mut self.previous_round
-            } else {
-                debug!(
-                    "Unknown round for gossiped batch id {}, says its for step {} but not in data assignments for our current round (step {}) or previous round (step {})",
-                    batch_id, result_step, self.current_round.step, self.previous_round.step,
-                );
-                return Ok(());
-            }
+        let result_step = broadcast.step;
+
+        let round_state = if self.current_round.step == broadcast.step {
+            &mut self.current_round
+        } else if self.previous_round.step == broadcast.step {
+            &mut self.previous_round
+        } else {
+            debug!(
+                "Unknown round for gossiped, says it's for step {} but our current round is step {} and previous round is step {}",
+                result_step, self.current_round.step, self.previous_round.step,
+            );
+            return Ok(());
         };
 
         let check_committee = from_client_id != self.identity;
@@ -214,12 +239,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                 Some((_, _, committee_info)) => {
                     if !committee_info.verify_committee_for_client(
                         &from_client_id,
-                        &training_result.proof,
+                        &broadcast.proof,
                         &self.coordinator_state.epoch_state.clients,
                     ) {
-                        debug!("Committee verification failed for commitment 0x{} (step={},batch_id={}) received from {}", hex::encode(training_result.commitment),
-                            training_result.step,
-                            training_result.batch_id,
+                        debug!("Committee verification failed for commitment 0x{} (step={}) received from {}", hex::encode(broadcast.commitment.data_hash),
+                            broadcast.step,
                             from_client_id);
                         return Ok(());
                     }
@@ -230,81 +254,95 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             };
         }
 
-        if training_result.proof.committee != Committee::Trainer {
+        if broadcast.proof.committee != Committee::Trainer {
             todo!(
-                "broadcast not implemented for committee member {}",
-                training_result.proof.committee
+                "Broadcast not implemented for committee member {}",
+                broadcast.proof.committee
             );
         }
 
-        let ticket = training_result.ticket.clone();
-        let hash = ticket.hash();
+        match broadcast.data {
+            BroadcastType::TrainingResult(training_result) => {
+                if !round_state
+                    .data_assignments
+                    .contains_key(&training_result.batch_id)
+                {
+                    debug!(
+                        "Training result for step {} batch id {} is not in our data assignments",
+                        broadcast.step, training_result.batch_id
+                    );
+                    return Ok(());
+                }
+                let ticket = training_result.ticket.clone();
+                let hash = ticket.hash();
 
-        if round_state.downloads.contains_key(&hash) {
-            trace!("Already have downloaded batch id {batch_id}, ignoring duplicated gossip");
-            return Ok(());
+                if round_state.downloads.contains_key(&hash) {
+                    trace!(
+                        "Already have downloaded batch id {}, ignoring duplicated gossip",
+                        training_result.batch_id
+                    );
+                    return Ok(());
+                }
+
+                let correct_assignee =
+                    match round_state.data_assignments.get(&training_result.batch_id) {
+                        Some(assignee) => from_client_id == *assignee,
+                        None => false,
+                    };
+                if !correct_assignee {
+                    warn!(
+                            "Got batch {} from {} but they were not assigneed to that data, dropping message 0x{}",
+                            training_result.batch_id,
+                            from_client_id,
+                            hex::encode(broadcast.commitment.data_hash)
+                        );
+                    return Ok(());
+                }
+
+                round_state
+                    .results
+                    .entry(training_result.batch_id)
+                    .or_default();
+                let batch_id = training_result.batch_id;
+                round_state
+                    .results
+                    .get_mut(&training_result.batch_id)
+                    .unwrap()
+                    .push((from_client_id, (broadcast.commitment, training_result)));
+                let download_state =
+                    PayloadState::Downloading((from_client_id, batch_id, ticket.clone()));
+                round_state.downloads.insert(hash, download_state);
+
+                // start downloading the payload unless this is a self-message
+                // (assuming the caller will put our payload in the proper place)
+                if from_client_id != self.identity {
+                    debug!(
+                        "Requesting download of round {} batch {}: {}",
+                        round_state.height,
+                        batch_id,
+                        ticket.hash()
+                    );
+
+                    self.tx_request_download
+                        .send((ticket, result_step))
+                        .map_err(|_| ApplyMessageError::StartDownloadBlob)?;
+                }
+            }
+            BroadcastType::Finished(merkle) => {
+                if round_state.clients_finished.contains_key(&from_client_id) {
+                    trace!(
+                        "Already got finished broadcast from {}, ignorning",
+                        from_client_id
+                    );
+                    return Ok(());
+                }
+
+                round_state.clients_finished.insert(from_client_id, merkle);
+                self.notify_try_opportunistic_witness.notify_one();
+            }
         }
 
-        let client_commitments = *round_state
-            .commitments_per_client
-            .get(&from_client_id)
-            .unwrap_or(&0);
-
-        let correct_assignee = match round_state.data_assignments.get(&training_result.batch_id) {
-            Some(assignee) => from_client_id == *assignee,
-            None => false,
-        };
-        if !correct_assignee {
-            warn!(
-                    "Got batch {} from {} but they were not assigneed to that data, dropping message 0x{}",
-                    training_result.batch_id,
-                    from_client_id,
-                    hex::encode(training_result.commitment)
-                );
-            return Ok(());
-        }
-
-        round_state
-            .commitments_per_client
-            .insert(from_client_id, client_commitments + 1);
-
-        let total_commitments = round_state
-            .commitments_per_client
-            .values()
-            .fold(0, |acc, ele| acc + *ele);
-
-        debug!(
-            "Total commitments for round {}: {}",
-            round_state.height, total_commitments
-        );
-
-        round_state
-            .results
-            .entry(training_result.batch_id)
-            .or_default();
-        let batch_id = training_result.batch_id;
-        round_state
-            .results
-            .get_mut(&training_result.batch_id)
-            .unwrap()
-            .push((from_client_id, training_result));
-        let download_state = PayloadState::Downloading((from_client_id, batch_id, ticket.clone()));
-        round_state.downloads.insert(hash, download_state);
-
-        // start downloading the payload unless this is a self-message
-        // (assuming the caller will put our payload in the proper place)
-        if from_client_id != self.identity {
-            debug!(
-                "Requesting download of round {} batch {}: {}",
-                round_state.height,
-                batch_id,
-                ticket.hash()
-            );
-
-            self.tx_request_download
-                .send((ticket, result_step))
-                .map_err(|_| ApplyMessageError::StartDownloadBlob)?;
-        }
+        round_state.broadcasts.push(broadcast.commitment.data_hash);
 
         Ok(())
     }
@@ -347,7 +385,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         }
 
         let (from, batch_id, _) = match round_state.downloads.get(&hash) {
-            Some(PayloadState::Downloading(x)) => x,
+            Some(PayloadState::Downloading(x)) => x.clone(),
             Some(PayloadState::Deserializing(_)) => {
                 debug!("Duplicate download of {}", hash);
                 return;
@@ -358,7 +396,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             }
         };
 
-        let commitments = match round_state.results.get(batch_id) {
+        let commitments = match round_state.results.get(&batch_id) {
             Some(commitments) => commitments,
             None => {
                 info!(
@@ -370,16 +408,31 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         };
         let commitment = match commitments
             .iter()
-            .find(|x| x.0 == *from && x.1.ticket.hash() == hash)
+            .find(|x| x.0 == from && x.1 .1.ticket.hash() == hash)
         {
-            Some(commitment) => &commitment.1,
+            Some(commitment) => &commitment.1 .0,
             None => {
                 info!("No commitment for payload from {}", from);
                 return;
             }
         };
 
-        // TODO: verify payload matches commitment
+        // verify that the result matches the commitment
+
+        let (distro_hash, distro_result) =
+            tokio::task::spawn_blocking(move || (distro_result.comptue_hash(), distro_result))
+                .await
+                .unwrap();
+
+        if distro_hash != commitment.data_hash {
+            debug!(
+                from = %from,
+                batch_id = %batch_id,
+                "Distro result failed commitment hash verification",
+            );
+            return;
+        }
+
         // TODO: verify shape of distro_results
 
         // we only care to add this to consensus & track it in batch IDs if we have any batch IDs that haven't yet been voted for.
@@ -391,12 +444,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             let mut remaining_batch_ids = batch_ids_not_yet_trained_on.lock().await;
 
             match round_state.blooms.as_mut() {
-                Some((participant_bloom, batch_bloom)) => {
+                Some((participant_bloom, broadcast_bloom)) => {
                     participant_bloom.add(&sha256(from.as_ref()));
-                    if remaining_batch_ids.contains(batch_id) {
+                    if remaining_batch_ids.contains(&batch_id) {
                         // first received payload for this batch id, vote for it in consensus
-                        batch_bloom.add(&sha256(&commitment.commitment));
-                        debug!("Adding batch {batch_id} to participant bloom");
+                        broadcast_bloom.add(&commitment.data_hash);
+                        debug!("Adding batch {batch_id} t broadcast bloom");
                     } else {
                         debug!(
                             "Don't have {} in our remaining batch IDs {:?}, discarding",
@@ -412,7 +465,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                 }
             }
 
-            remaining_batch_ids.remove(batch_id);
+            remaining_batch_ids.remove(&batch_id);
 
             debug!(
                 "Remaining batches to download for step {}: {:?}",
@@ -435,7 +488,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         // we unconditionally store every seen payload, since we're not yet sure what consensus will be on whether it's included.
         let deserializing = tokio::task::spawn({
             let notify_try_opportunistic_witness = self.notify_try_opportunistic_witness.clone();
-            let batch_id = *batch_id;
+            //let batch_id = *batch_id;
             async move {
                 let maybe_results = tokio::task::spawn_blocking(move || {
                     let r = distro_result
@@ -650,14 +703,14 @@ impl fmt::Display for ActiveStep {
     }
 }
 
-pub enum InitStage<T: NodeIdentity, A: AuthenticatableIdentity> {
+pub enum InitStage<T: NodeIdentity, A: AuthenticatableIdentity + 'static> {
     NotYetInitialized(Option<RunInitConfigAndIO<T, A>>),
     #[allow(clippy::type_complexity)]
     Initializing(JoinHandle<Result<StepStateMachine<T, A>, InitRunError>>),
     Running(StepStateMachine<T, A>),
 }
 
-pub struct RunManager<T: NodeIdentity, A: AuthenticatableIdentity>(InitStage<T, A>);
+pub struct RunManager<T: NodeIdentity, A: AuthenticatableIdentity + 'static>(InitStage<T, A>);
 
 #[derive(Error, Debug)]
 pub enum ApplyStateError {
@@ -707,7 +760,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunManager<T, A> {
     pub async fn apply_message(
         &mut self,
         from_client_id: T,
-        training_result: TrainingResult,
+        training_result: Broadcast,
     ) -> Result<(), ApplyMessageError> {
         match &mut self.0 {
             InitStage::Running(state_machine) => {
