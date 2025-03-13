@@ -208,7 +208,7 @@ impl CoordinatorServerHandle {
                 .max_blocking_threads(8192)
                 .build()
                 .unwrap();
-            
+
             rt.block_on(async {
                 server.run().await;
             });
