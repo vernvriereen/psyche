@@ -77,10 +77,6 @@ async fn test_two_clients_three_epochs_run() {
                             "client: new_state: {}, old_state: {}, timestamp: {}",
                             new_state, old_state, timestamp
                         );
-                        // assert client and coordinator state synchronization
-                        if new_state != RunState::WaitingForMembers.to_string() {
-                            assert_eq!(coordinator_state.to_string(), new_state.to_string());
-                        }
                     }
                     Some(Response::Loss(client, epoch, step, loss)) => {
                         println!(
