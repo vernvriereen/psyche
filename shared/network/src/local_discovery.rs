@@ -1,5 +1,6 @@
 use futures_util::{stream, Stream};
-use iroh::{NodeAddr, NodeId};
+use iroh::node_info::{NodeData, NodeInfo};
+use iroh::NodeId;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fs;
@@ -32,15 +33,15 @@ impl LocalTestDiscovery {
 }
 
 impl iroh::discovery::Discovery for LocalTestDiscovery {
-    fn publish(&self, url: Option<&iroh::RelayUrl>, addrs: &BTreeSet<SocketAddr>) {
+    fn publish(&self, data: &NodeData) {
         // Create discovery directory if it doesn't exist
         let discovery_dir = Self::get_discovery_dir();
         fs::create_dir_all(&discovery_dir).expect("Failed to create discovery directory");
 
         // Prepare node info for storage
         let node_info = StoredNodeInfo {
-            relay_url: url.map(|u| u.to_string()),
-            direct_addresses: addrs.iter().cloned().collect(),
+            relay_url: data.relay_url().map(|u| u.to_string()),
+            direct_addresses: data.direct_addresses().iter().cloned().collect(),
         };
 
         // Serialize and write to file
@@ -78,22 +79,19 @@ impl iroh::discovery::Discovery for LocalTestDiscovery {
 
         let direct_addresses: BTreeSet<_> = node_info.direct_addresses.into_iter().collect();
 
-        let node_addr = NodeAddr {
-            node_id,
-            relay_url,
-            direct_addresses,
-        };
-
-        let discovery_item = iroh::discovery::DiscoveryItem {
-            node_addr,
-            provenance: "local_test_discovery",
-            last_updated: Some(
+        let discovery_item = iroh::discovery::DiscoveryItem::new(
+            NodeInfo {
+                node_id,
+                data: NodeData::new(relay_url, direct_addresses),
+            },
+            "local_test_discovery",
+            Some(
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_micros() as u64,
             ),
-        };
+        );
 
         // Return a single-item stream
         Some(Box::pin(stream::once(async move { Ok(discovery_item) })))
