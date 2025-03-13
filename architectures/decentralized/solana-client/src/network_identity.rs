@@ -39,7 +39,10 @@ impl std::fmt::Display for NetworkIdentity {
 impl AuthenticatableIdentity for NetworkIdentity {
     type PrivateKey = (Arc<Keypair>, SecretKey);
 
-    fn from_signed_bytes(bytes: &[u8], challenge: [u8; 32]) -> Result<Self, FromSignedBytesError> {
+    fn from_signed_challenge_bytes(
+        bytes: &[u8],
+        challenge: [u8; 32],
+    ) -> Result<Self, FromSignedBytesError> {
         let (p2p_identity, decoded_challenge) = SignedMessage::<Vec<u8>>::verify_and_decode(bytes)
             .map_err(|_| FromSignedBytesError::Deserialize)?;
         if decoded_challenge.len() != SIGNATURE_BYTES + 32 {
@@ -61,7 +64,11 @@ impl AuthenticatableIdentity for NetworkIdentity {
         }))
     }
 
-    fn to_signed_bytes(&self, private_key: &Self::PrivateKey, challenge: [u8; 32]) -> Vec<u8> {
+    fn to_signed_challenge_bytes(
+        &self,
+        private_key: &Self::PrivateKey,
+        challenge: [u8; 32],
+    ) -> Vec<u8> {
         assert_eq!(private_key.0.pubkey(), self.0.signer);
         assert_eq!(private_key.1.public().as_bytes(), &self.0.p2p_identity);
         let challenge = private_key.0.sign_message(&challenge);
@@ -75,6 +82,13 @@ impl AuthenticatableIdentity for NetworkIdentity {
 
     fn get_p2p_public_key(&self) -> &[u8; 32] {
         self.0.get_p2p_public_key()
+    }
+
+    fn raw_p2p_sign(&self, private_key: &Self::PrivateKey, bytes: &[u8]) -> [u8; 64] {
+        assert_eq!(private_key.0.pubkey(), self.0.signer);
+        assert_eq!(private_key.1.public().as_bytes(), &self.0.p2p_identity);
+        let signature = private_key.1.sign(bytes);
+        signature.to_bytes()
     }
 }
 
@@ -111,9 +125,10 @@ mod tests {
 
         let challenge = generate_random_challenge();
 
-        let signed_bytes = network_identity.to_signed_bytes(&private_key, challenge);
-        let decoded_identity = NetworkIdentity::from_signed_bytes(&signed_bytes, challenge)
-            .expect("Failed to decode signed bytes");
+        let signed_bytes = network_identity.to_signed_challenge_bytes(&private_key, challenge);
+        let decoded_identity =
+            NetworkIdentity::from_signed_challenge_bytes(&signed_bytes, challenge)
+                .expect("Failed to decode signed bytes");
 
         assert_eq!(network_identity, decoded_identity);
         assert_eq!(network_identity.0.signer, decoded_identity.0.signer);
@@ -139,8 +154,8 @@ mod tests {
         let challenge2 = generate_random_challenge();
 
         // sign with challenge1 but verify with challenge2
-        let signed_bytes = network_identity.to_signed_bytes(&private_key, challenge1);
-        let result = NetworkIdentity::from_signed_bytes(&signed_bytes, challenge2);
+        let signed_bytes = network_identity.to_signed_challenge_bytes(&private_key, challenge1);
+        let result = NetworkIdentity::from_signed_challenge_bytes(&signed_bytes, challenge2);
 
         assert!(result.is_err());
         match result {

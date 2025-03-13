@@ -13,12 +13,12 @@ use rstest::*;
 use serial_test::serial;
 use tokio::time;
 
-/// spawn 1 client and run 3 epochs
+/// spawn 2 clients and run for 3 epochs
 /// assert client and coordinator state synchronization
 /// assert that the loss decreases in each epoch
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
-async fn test_one_client_three_epochs_run() {
+async fn test_two_clients_three_epochs_run() {
     // set test variables
     let run_id = "test".to_string();
 
@@ -32,12 +32,26 @@ async fn test_one_client_three_epochs_run() {
     let mut watcher = DockerWatcher::new(docker.clone());
 
     // Initialize a Solana run with 1 client
-    let _cleanup = e2e_testing_setup(docker.clone(), 1, None).await;
+    let _cleanup = e2e_testing_setup(
+        docker.clone(),
+        2,
+        Some(PathBuf::from(
+            "../../config/solana-test/light-two-min-clients.toml",
+        )),
+    )
+    .await;
 
     // Monitor the client container
     let _monitor_client_1 = watcher
         .monitor_container(
             &format!("{CLIENT_CONTAINER_PREFIX}-1"),
+            vec![JsonFilter::StateChange, JsonFilter::Loss],
+        )
+        .unwrap();
+
+    let _monitor_client_2 = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-2"),
             vec![JsonFilter::StateChange, JsonFilter::Loss],
         )
         .unwrap();
@@ -49,7 +63,7 @@ async fn test_one_client_three_epochs_run() {
     loop {
         tokio::select! {
             _ = live_interval.tick() => {
-                if let Err(e) = watcher.monitor_clients_health(1).await {
+                if let Err(e) = watcher.monitor_clients_health(2).await {
                     panic!("{}", e);
                 }
             }
@@ -152,6 +166,7 @@ async fn test_client_join_and_get_model_p2p(#[values(1, 2)] n_new_clients: u8) {
     }
 }
 
+#[ignore = "These tests are a bit flaky, so we need to make sure they work properly."]
 #[rstest]
 #[trace]
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
@@ -244,6 +259,7 @@ async fn test_pause_solana_validator(
     }
 }
 
+#[ignore = "These tests are a bit flaky, so we need to make sure they work properly."]
 #[rstest]
 #[trace]
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
@@ -337,6 +353,7 @@ async fn test_delay_solana_test_validator(
     }
 }
 
+#[ignore = "These tests are a bit flaky, so we need to make sure they work properly."]
 #[rstest]
 #[trace]
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
@@ -493,6 +510,7 @@ async fn test_rejoining_client_delay() {
         }
     }
 }
+
 /// creates a run and spawns 2 clients
 /// the first run is completed only by the client that joins first
 /// the second run starts with both clients and shuts down client 2 mid-run

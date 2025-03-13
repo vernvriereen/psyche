@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use psyche_coordinator::{Commitment, CommitteeProof};
-use psyche_core::{BatchId, NodeIdentity};
+use psyche_coordinator::CommitteeProof;
+use psyche_core::{BatchId, MerkleRoot, NodeIdentity};
 use psyche_modeling::DistroResult;
 use psyche_network::{BlobTicket, TransmittableDistroResult};
 use tch::TchError;
@@ -38,8 +38,15 @@ pub enum DeserializeError {
 pub struct DistroBroadcastAndPayload {
     pub step: u32,
     pub batch_id: BatchId,
-    pub commitment: Commitment,
+    pub commitment_data_hash: [u8; 32],
     pub proof: CommitteeProof,
     pub distro_result: TransmittableDistroResult,
     pub original_distro_result: Vec<DistroResult>,
+}
+
+pub struct FinishedBroadcast {
+    pub step: u32,
+    pub merkle: MerkleRoot,
+    pub commitment_data_hash: [u8; 32],
+    pub proof: CommitteeProof,
 }

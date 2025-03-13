@@ -51,7 +51,10 @@ unsafe impl Zeroable for ClientId {
 
 impl AuthenticatableIdentity for ClientId {
     type PrivateKey = SecretKey;
-    fn from_signed_bytes(bytes: &[u8], challenge: [u8; 32]) -> Result<Self, FromSignedBytesError> {
+    fn from_signed_challenge_bytes(
+        bytes: &[u8],
+        challenge: [u8; 32],
+    ) -> Result<Self, FromSignedBytesError> {
         let (key, decoded_challenge) = SignedMessage::<[u8; 32]>::verify_and_decode(bytes)
             .map_err(|_| FromSignedBytesError::Deserialize)?;
         if decoded_challenge != challenge {
@@ -63,7 +66,11 @@ impl AuthenticatableIdentity for ClientId {
         Ok(Self(key))
     }
 
-    fn to_signed_bytes(&self, private_key: &Self::PrivateKey, challenge: [u8; 32]) -> Vec<u8> {
+    fn to_signed_challenge_bytes(
+        &self,
+        private_key: &Self::PrivateKey,
+        challenge: [u8; 32],
+    ) -> Vec<u8> {
         assert_eq!(private_key.public(), self.0);
         SignedMessage::sign_and_encode(private_key, &challenge)
             .expect("alloc error")
@@ -72,6 +79,10 @@ impl AuthenticatableIdentity for ClientId {
 
     fn get_p2p_public_key(&self) -> &[u8; 32] {
         self.0.as_bytes()
+    }
+
+    fn raw_p2p_sign(&self, private_key: &Self::PrivateKey, bytes: &[u8]) -> [u8; 64] {
+        private_key.sign(bytes).to_bytes()
     }
 }
 

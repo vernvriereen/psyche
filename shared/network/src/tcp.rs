@@ -158,7 +158,7 @@ where
             );
         };
         debug!("Got response for challenge {:?}", challenge);
-        let identity = I::from_signed_bytes(&challenge_response, challenge)?;
+        let identity = I::from_signed_challenge_bytes(&challenge_response, challenge)?;
         debug!("Challenge response accepted! welcome, {:?}!", identity);
         let (client_tx, mut client_rx) = mpsc::unbounded_channel();
         clients.lock().await.insert(identity.clone(), client_tx);
@@ -266,7 +266,7 @@ where
         };
 
         // Sign and send challenge response
-        let response = identity.to_signed_bytes(&private_key, challenge);
+        let response = identity.to_signed_challenge_bytes(&private_key, challenge);
         framed
             .send(
                 ClientToServerMessage::<ToServer>::ChallengeResponse(response)

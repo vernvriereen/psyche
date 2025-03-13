@@ -1,12 +1,12 @@
 use crate::{
     model::{self, Checkpoint, HubRepo, Model},
-    Committee, CommitteeProof, CommitteeSelection, WitnessProof,
+    Commitment, Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
 
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Pod, Zeroable};
 use psyche_core::{
-    serde_deserialize_string, serde_serialize_string, sha256, sha256v, BatchId, Bloom, FixedVec,
+    serde_deserialize_string, serde_serialize_string, sha256, Bloom, FixedVec, MerkleRoot,
     NodeIdentity, SmallBoolean,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -15,7 +15,7 @@ use std::hash::Hash;
 pub const SOLANA_MAX_STRING_LEN: usize = 64;
 pub const SOLANA_MAX_URL_STRING_LEN: usize = 192;
 pub const SOLANA_MAX_NUM_CLIENTS: usize = 64;
-pub const SOLANA_MAX_NUM_WITNESSES: usize = 16;
+pub const SOLANA_MAX_NUM_WITNESSES: usize = 32;
 pub const SOLANA_MAX_NUM_CHECKPOINTERS: usize = 4;
 
 pub const BLOOM_FALSE_RATE: f64 = 0.01f64;
@@ -122,7 +122,8 @@ pub struct Round {
 pub struct Witness {
     pub proof: WitnessProof,
     pub participant_bloom: WitnessBloom,
-    pub batch_bloom: WitnessBloom,
+    pub broadcast_bloom: WitnessBloom,
+    pub broadcast_merkle: MerkleRoot,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -146,7 +147,6 @@ pub enum TickResult {
     EpochEnd(bool), // if successfully finished
 }
 
-pub type Commitment = [u8; 32];
 pub type HealthChecks<T> = Vec<(T, CommitteeProof)>;
 
 pub const NUM_STORED_ROUNDS: usize = 4;
@@ -169,7 +169,6 @@ pub struct CoordinatorConfig<I> {
 
     pub verification_percent: u8,
     pub witness_nodes: u16,
-    pub witness_quorum: u16,
 
     pub rounds_per_epoch: u32,
     pub total_steps: u32,
@@ -561,6 +560,15 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
     }
 
+    pub fn witness_quorum(&self) -> u16 {
+        match self.config.witness_nodes {
+            0 => unreachable!(),
+            1 => 1,
+            2 => 2,
+            x => x / 2 + 1,
+        }
+    }
+
     pub fn trainer_healthy(&self, id: &T) -> Result<bool, CoordinatorError> {
         let prev_round_witnesses = &self
             .previous_round()
@@ -568,10 +576,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             .witnesses;
 
         let score = Self::trainer_healthy_score_by_witnesses(id, prev_round_witnesses);
-        Ok(match self.config.witness_quorum {
-            0 => score as usize == prev_round_witnesses.len(),
-            witness_quorum => score >= witness_quorum,
-        })
+        Ok(score >= self.witness_quorum())
     }
 
     /// Computes the health score of a client based on witness confirmations.
@@ -589,14 +594,6 @@ impl<T: NodeIdentity> Coordinator<T> {
         score
     }
 
-    pub fn make_committment(batch_id: &BatchId, id: &T) -> [u8; 32] {
-        sha256v(&[
-            id.as_ref(),
-            &batch_id.0.start.to_be_bytes(),
-            &batch_id.0.end.to_be_bytes(),
-        ])
-    }
-
     pub fn select_consensus_commitment_by_witnesses(
         commitments: &[Commitment],
         witnesses: &[Witness],
@@ -605,7 +602,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         let mut scores = vec![0; commitments.len()];
         for witness in witnesses {
             for (index, commitment) in commitments.iter().enumerate() {
-                if witness.batch_bloom.contains(&sha256(commitment)) {
+                if witness.broadcast_bloom.contains(&commitment.data_hash) {
                     scores[index] += 1;
                     break;
                 }
@@ -614,10 +611,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         scores
             .into_iter()
             .enumerate()
-            .filter(|(_, score)| match witness_quorum {
-                0 => *score as usize == witnesses.len(),
-                witness_quorum => *score >= witness_quorum,
-            })
+            .filter(|(_, score)| *score >= witness_quorum)
             .max_by_key(|(_, score)| *score)
             .map(|(index, _)| index)
     }
@@ -817,7 +811,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             // clients or registered witnesses for the current round, we change to Cooldown
             if height == self.config.rounds_per_epoch - 1
                 || self.epoch_state.clients.len() < self.config.min_clients as usize
-                || (num_witnesses < self.config.witness_quorum)
+                || num_witnesses < self.witness_quorum()
                 || self.pending_pause.is_true()
             {
                 self.start_cooldown(unix_timestamp);
@@ -964,8 +958,8 @@ impl<I> CoordinatorConfig<I> {
             && self.global_batch_size != 0
             && self.rounds_per_epoch >= 4 // need at least 4 rounds per epoch for overlapped pipeling
             && self.total_steps != 0
+            && self.witness_nodes != 0
             && self.witness_nodes <= self.min_clients
             && self.witness_nodes as usize <= SOLANA_MAX_NUM_WITNESSES
-            && (self.witness_nodes == 0 || (self.witness_quorum <= self.witness_nodes))
     }
 }

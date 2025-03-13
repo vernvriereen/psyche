@@ -3,7 +3,7 @@ use anyhow::{anyhow, Context, Error, Result};
 use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
 use futures_util::StreamExt;
 use iroh::{endpoint::RemoteInfo, NodeAddr};
-use iroh_blobs::{net_protocol::Blobs, store::mem::Store, util::local_pool::LocalPool};
+use iroh_blobs::{downloader::ConcurrencyLimits, net_protocol::Blobs, store::mem::Store};
 use iroh_gossip::net::{Gossip, GossipEvent, GossipReceiver, GossipSender};
 use p2p_model_sharing::{
     ModelConfigSharingMessage, ParameterSharingMessage, MODEL_REQUEST_TIMEOUT_SECS,
@@ -51,7 +51,7 @@ mod tcp;
 mod tui;
 mod util;
 
-pub use authenticable_identity::{AuthenticatableIdentity, FromSignedBytesError};
+pub use authenticable_identity::{raw_p2p_verify, AuthenticatableIdentity, FromSignedBytesError};
 pub use download_manager::{DownloadComplete, DownloadFailed, TransmittableDownload};
 pub use iroh::{Endpoint, PublicKey, SecretKey};
 pub use p2p_model_sharing::{
@@ -83,7 +83,6 @@ where
     Download: Networkable,
 {
     router: Arc<Router>,
-    blobs_local_pool: LocalPool,
     blobs: Blobs<Store>,
     state: State,
     gossip_tx: GossipSender,
@@ -104,7 +103,6 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NetworkConnection")
             .field("router", &self.router)
-            .field("blobs_local_pool", &self.blobs_local_pool)
             .field("blobs", &self.blobs)
             .field("gossip_tx", &self.gossip_tx)
             .field("gossip_rx", &self.gossip_rx)
@@ -188,8 +186,12 @@ where
         info!("Our node addr: {}", node_addr.node_id);
 
         trace!("creating blobs...");
-        let blobs_local_pool = LocalPool::default();
-        let blobs = Blobs::memory().build(blobs_local_pool.handle(), &endpoint);
+        let blobs = Blobs::memory()
+            .concurrency_limits(ConcurrencyLimits {
+                max_concurrent_requests_per_node: 1,
+                ..Default::default()
+            })
+            .build(&endpoint);
         trace!("blobs created!");
 
         trace!("creating gossip...");
@@ -241,7 +243,6 @@ where
         let update_stats_interval = interval(Duration::from_secs(1));
 
         Ok(Self {
-            blobs_local_pool,
             blobs,
             gossip_rx,
             gossip_tx,
@@ -283,7 +284,7 @@ where
     pub async fn broadcast(&mut self, message: &BroadcastMessage) -> Result<()> {
         let encoded_message =
             SignedMessage::sign_and_encode(self.router.endpoint().secret_key(), message)?;
-        self.gossip_tx.broadcast(encoded_message).await
+        Ok(self.gossip_tx.broadcast(encoded_message).await?)
     }
 
     pub async fn start_download(&mut self, ticket: BlobTicket, tag: u32) -> Result<()> {
@@ -396,7 +397,7 @@ where
         // these are factored out to separate fns so rustfmt works on their contents :)
         select! {
             Some(event) = self.gossip_rx.next() => {
-                if let Some(result) = parse_gossip_event(event) {
+                if let Some(result) = parse_gossip_event(event.map_err(|ee| ee.into())) {
                     return Ok(Some(NetworkEvent::MessageReceived(result)));
                 }
             }

@@ -11,7 +11,6 @@ min_clients = 2
 global_batch_size = 4
 verification_percent = 0
 witness_nodes = 1
-witness_quorum = 1
 total_steps = 10
 
 [model.LLM]

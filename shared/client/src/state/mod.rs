@@ -13,4 +13,4 @@ mod witness;
 
 pub use init::{InitRunError, RunInitConfig, RunInitConfigAndIO};
 pub use steps::RunManager;
-pub use types::{CheckpointConfig, DistroBroadcastAndPayload, HubUploadInfo};
+pub use types::{CheckpointConfig, DistroBroadcastAndPayload, FinishedBroadcast, HubUploadInfo};

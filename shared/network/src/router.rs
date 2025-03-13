@@ -7,7 +7,7 @@ use tokio::{sync::Mutex, task::JoinSet};
 use tokio_util::{sync::CancellationToken, task::AbortOnDropHandle};
 use tracing::{error, info_span, trace, warn, Instrument};
 
-use iroh::{endpoint::get_remote_node_id, protocol::ProtocolHandler, Endpoint};
+use iroh::{protocol::ProtocolHandler, Endpoint};
 
 use crate::{p2p_model_sharing, Allowlist, ModelSharing};
 
@@ -214,7 +214,7 @@ async fn handle_connection<A: Allowlist + 'static + Send>(
         }
     };
 
-    let node_id = match get_remote_node_id(&connection) {
+    let node_id = match connection.remote_node_id() {
         Ok(node_id) => node_id,
         Err(err) => {
             connection.close(0u8.into(), b"no node id given");
@@ -256,7 +256,6 @@ mod tests {
 
     use futures_util::future::join_all;
     use iroh::SecretKey;
-    use iroh_blobs::util::local_pool::LocalPool;
     use iroh_gossip::{
         net::{Event, GossipEvent, Message},
         proto::TopicId,
@@ -273,8 +272,7 @@ mod tests {
     #[tokio::test]
     async fn test_shutdown() -> Result<()> {
         let endpoint = Endpoint::builder().bind().await?;
-        let blobs_local_pool = LocalPool::default();
-        let blobs = Blobs::memory().build(blobs_local_pool.handle(), &endpoint);
+        let blobs = Blobs::memory().build(&endpoint);
         let gossip = Gossip::builder().spawn(endpoint.clone()).await?;
         let (tx_model_parameter_req, _rx_model_parameter_req) =
             tokio::sync::mpsc::unbounded_channel();
@@ -340,8 +338,7 @@ mod tests {
                 .map(|k| async {
                     let allowlist = AllowDynamic::with_nodes(pubkeys.clone());
                     let endpoint = Endpoint::builder().secret_key(k).bind().await?;
-                    let blobs_local_pool = LocalPool::default();
-                    let blobs = Blobs::memory().build(blobs_local_pool.handle(), &endpoint);
+                    let blobs = Blobs::memory().build(&endpoint);
                     let gossip = Gossip::builder().spawn(endpoint.clone()).await?;
                     let (tx_model_parameter_req, _rx_model_parameter_req) =
                         tokio::sync::mpsc::unbounded_channel();

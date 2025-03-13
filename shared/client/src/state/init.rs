@@ -29,7 +29,7 @@ use tracing::{debug, info};
 use super::{
     cooldown::CooldownStepMetadata, evals::EvalRunner, stats::StatsLogger, steps::StepStateMachine,
     train::TrainingStepMetadata, types::DistroBroadcastAndPayload, warmup::WarmupStepMetadata,
-    witness::WitnessStepMetadata, CheckpointConfig,
+    witness::WitnessStepMetadata, CheckpointConfig, FinishedBroadcast,
 };
 
 pub struct RunInitConfig<T: NodeIdentity, A: AuthenticatableIdentity> {
@@ -125,6 +125,7 @@ pub struct RunInitConfigAndIO<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub tx_distro_result: UnboundedSender<DistroBroadcastAndPayload>,
     pub tx_request_download: UnboundedSender<(BlobTicket, u32)>,
     pub tx_request_model_config: UnboundedSender<OneShotModelConfigSender>,
+    pub tx_broadcast_finished: UnboundedSender<FinishedBroadcast>,
 }
 
 impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T, A> {
@@ -144,6 +145,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
             tx_distro_result,
             tx_request_download,
             tx_request_model_config,
+            tx_broadcast_finished,
         } = self;
 
         let model::Model::LLM(llm) = state.model;
@@ -552,6 +554,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
             state,
             tx_request_download,
             tx_witness,
+            tx_broadcast_finished,
             stats_logger,
         ))
     }
