@@ -199,7 +199,20 @@ impl CoordinatorServerHandle {
         .await;
         let server_port = server.port;
         let run_id = server.run_id.clone();
-        tokio::spawn(async move { server.run().await });
+        // tokio::spawn(async move { server.run().await });
+        // the above line will stack overflow, for reasons best left to contemplative reflection.
+        // as a substitute to maddness, we suggest the reader trust us on this point.
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .thread_stack_size(8 * 1024 * 1024)
+                .max_blocking_threads(8192)
+                .build()
+                .unwrap();
+            
+            rt.block_on(async {
+                server.run().await;
+            });
+        });
         debug!("coordinator server created on port {server_port}");
 
         Self {
