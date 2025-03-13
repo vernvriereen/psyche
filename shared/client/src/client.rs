@@ -1,5 +1,5 @@
 use crate::{
-    state::{DistroBroadcastAndPayload, RunManager},
+    state::{DistroBroadcastAndPayload, FinishedBroadcast, RunManager},
     Broadcast, BroadcastType, ClientTUIState, RunInitConfig, RunInitConfigAndIO, TrainingResult,
     NC,
 };
@@ -85,6 +85,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                 let (tx_params_download, mut rx_params_download) = mpsc::unbounded_channel();
                 let (tx_request_model_config, mut rx_request_model_config) =
                     mpsc::unbounded_channel();
+                let (tx_broadcast_finished, mut rx_broadcast_finished) = mpsc::unbounded_channel();
 
                 let max_concurrent_downloads = init_config.max_concurrent_parameter_requests;
 
@@ -100,6 +101,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                     tx_distro_result,
                     tx_request_download,
                     tx_request_model_config,
+                    tx_broadcast_finished,
                 });
 
                 let mut retried_downloads: HashMap<psyche_network::Hash, usize> = HashMap::new();
@@ -189,7 +191,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                                     BroadcastType::TrainingResult(training_result) => {
                                                         trace!("Got training result gossip message from {from}: step {} batch id {}", broadcast.step, training_result.batch_id);
                                                     }
-                                                    BroadcastType::Finished => {
+                                                    BroadcastType::Finished(_) => {
                                                         trace!("Got finished gossip message from {from}: step {}", broadcast.step);
                                                     }
                                                 }
@@ -281,6 +283,22 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                         () = run.opportunistic_witness_wait_notified() => {
                             run.try_send_opportunistic_witness().await?;
+                        }
+
+                        Some(FinishedBroadcast { step, merkle, commitment_data_hash, proof }) = rx_broadcast_finished.recv() => {
+                            debug!(
+                                "Broadcasting finished step {step} merkle 0x{}",
+                                hex::encode(merkle.inner),
+                            );
+
+                            let signature = network_identity.raw_p2p_sign(&private_key, &commitment_data_hash);
+                            let commitment = Commitment { data_hash: commitment_data_hash, signature};
+                            let training_result = Broadcast { step, proof, nonce: 0, commitment, data: BroadcastType::Finished(merkle)};
+
+                            p2p.broadcast(&training_result).await?;
+
+                            // simulate us recving it & apply like anyone else's
+                            run.apply_message(identity,  training_result).await?;
                         }
 
                         Some(DistroBroadcastAndPayload{ step, batch_id, commitment_data_hash, proof, distro_result, original_distro_result }) = rx_distro_result.recv() => {

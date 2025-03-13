@@ -105,7 +105,7 @@ impl<'a> ProofEntry<'a> {
 impl<'a> From<ProofEntry<'a>> for OwnedProofEntry {
     fn from(value: ProofEntry<'a>) -> Self {
         Self {
-            target: value.0.clone(),
+            target: *value.0,
             left_sibling: value.1.cloned(),
             right_sibling: value.2.cloned(),
         }
@@ -143,8 +143,8 @@ impl<'a> From<Proof<'a>> for OwnedProof {
 impl OwnedProof {
     pub fn verify(&self, candidate: HashWrapper) -> bool {
         let result = self.entries.iter().try_fold(candidate, |candidate, pe| {
-            let lsib = pe.right_sibling.clone().unwrap_or(candidate.clone());
-            let rsib = pe.left_sibling.clone().unwrap_or(candidate);
+            let lsib = pe.right_sibling.unwrap_or(candidate);
+            let rsib = pe.left_sibling.unwrap_or(candidate);
             let hash = HashWrapper::new(hash_intermediate!(lsib, rsib));
 
             if hash == pe.target {

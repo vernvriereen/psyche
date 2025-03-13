@@ -193,6 +193,7 @@ pub async fn process_coordinator_witness(
             proof: witness.proof,
             participant_bloom: witness.participant_bloom,
             broadcast_bloom: witness.broadcast_bloom,
+            broadcast_merkle: witness.broadcast_merkle,
         }
         .data(),
         program_id: psyche_solana_coordinator::ID,

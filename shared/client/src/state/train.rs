@@ -221,10 +221,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
             height: round.height,
             step: state.progress.step,
             sent_witness: false,
+            sent_finished: false,
             downloads: Default::default(),
             results: Default::default(),
             broadcasts: Default::default(),
-            commitments_per_client: Default::default(),
+            clients_finished: Default::default(),
             data_assignments: data_assignments.clone(),
             blooms,
             committee_info: Some((committee_proof, witness_proof, committee_selection)),
@@ -543,20 +544,20 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                             true => x.await.unwrap(),
                             false => {
                                 return Err(ApplyError::DidNotFinishDeserializingCommitment(
-                                    commitment.clone(),
+                                    *commitment,
                                     batch_id,
                                 ));
                             }
                         },
                         Some(PayloadState::Downloading(_)) => {
                             return Err(ApplyError::DidNotBeginDownloadingCommitment(
-                                commitment.clone(),
+                                *commitment,
                                 batch_id,
                             ));
                         }
                         None => {
                             return Err(ApplyError::UnknownCommitment(
-                                commitment.clone(),
+                                *commitment,
                                 batch_id,
                             ))
                         }

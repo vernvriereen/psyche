@@ -4,7 +4,7 @@ use crate::{
 };
 
 use psyche_coordinator::{Committee, Coordinator, RunState, Witness};
-use psyche_core::{sha256, NodeIdentity};
+use psyche_core::{sha256, MerkleRoot, MerkleTree, NodeIdentity};
 use psyche_modeling::{DistroResult, Trainer};
 use psyche_network::{AuthenticatableIdentity, BlobTicket, Hash, TransmittableDistroResult};
 use std::{collections::HashMap, fmt, sync::Arc};
@@ -30,7 +30,7 @@ use super::{
     types::PayloadState,
     warmup::{WarmupStep, WarmupStepMetadata},
     witness::{WitnessStep, WitnessStepMetadata, WitnessingError},
-    RunInitConfigAndIO,
+    FinishedBroadcast, RunInitConfigAndIO,
 };
 
 pub struct StepStateMachine<T: NodeIdentity, A: AuthenticatableIdentity + 'static> {
@@ -47,6 +47,7 @@ pub struct StepStateMachine<T: NodeIdentity, A: AuthenticatableIdentity + 'stati
 
     tx_request_download: mpsc::UnboundedSender<(BlobTicket, u32)>,
     tx_witness: mpsc::UnboundedSender<Witness>,
+    tx_broadcast_finished: mpsc::UnboundedSender<FinishedBroadcast>,
 
     notify_try_opportunistic_witness: Arc<Notify>,
 
@@ -89,6 +90,9 @@ pub enum ApplyMessageError {
 pub enum OpportunisticWitnessError {
     #[error("Failed to send opportunistic witness, channel must be closed")]
     Send,
+
+    #[error("Failed to send broadcast finished, channel must be closed")]
+    Finished,
 }
 
 impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, A> {
@@ -103,6 +107,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         coordinator_state: Coordinator<T>,
         tx_request_download: mpsc::UnboundedSender<(BlobTicket, u32)>,
         tx_witness: mpsc::UnboundedSender<Witness>,
+        tx_broadcast_finished: mpsc::UnboundedSender<FinishedBroadcast>,
         stats_logger: StatsLogger,
     ) -> Self {
         let mut previous_round = RoundState::default();
@@ -127,6 +132,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
 
             tx_request_download,
             tx_witness,
+            tx_broadcast_finished,
+
             notify_try_opportunistic_witness,
 
             coordinator_state,
@@ -139,39 +146,67 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         &mut self,
     ) -> Result<(), OpportunisticWitnessError> {
         if let Some(committee_info) = &self.current_round.committee_info {
-            // are we a witness this round?
-            if committee_info.1.witness.is_true() {
-                if let ActiveStep::Training(step) = &self.active_step {
-                    if step.finished() && self.previous_round.batch_ids_not_yet_trained_on.is_none()
-                    {
-                        // Finished training and finished downloading the previous round's results
-                        // (or we're on the first or last which has nothing to download)
+            if let ActiveStep::Training(step) = &self.active_step {
+                if step.finished() && self.previous_round.batch_ids_not_yet_trained_on.is_none() {
+                    // Finished training and finished downloading the previous round's results
+                    // (or we're on the first or last which has nothing to download)
 
-                        // check that all batches from the previous round are done deserializing
-                        for batch in &self.previous_round.downloads {
-                            match batch.1 {
-                                PayloadState::Deserializing(thread) if thread.is_finished() => {
-                                    // this batch is done deserializing, we can witness on it now.
-                                }
+                    // check that all batches from the previous round are done deserializing
+                    for batch in &self.previous_round.downloads {
+                        match batch.1 {
+                            PayloadState::Deserializing(thread) if thread.is_finished() => {
+                                // this batch is done deserializing, we can witness on it now.
+                            }
 
-                                // we're still downloading or deserializing this batch, so we're not ready to send an opportunistic witness.
-                                // this function will get called again when a deserialize finishes.
-                                _ => {
-                                    return Ok(());
-                                }
+                            // we're still downloading or deserializing this batch, so we're not ready to send an opportunistic witness.
+                            // this function will get called again when a deserialize finishes.
+                            _ => {
+                                return Ok(());
                             }
                         }
+                    }
 
-                        if let Some(witness) = WitnessStep::get_witness_to_send(
-                            &mut self.previous_round,
-                            &mut self.current_round,
-                        ) {
-                            debug!("Sending opportunistic witness");
+                    if !self.current_round.sent_finished {
+                        // okay, we're all done. we've trained and downloaded everything.
+                        // send our early "finished message"
 
-                            self.tx_witness
-                                .send(witness)
-                                .map_err(|_| OpportunisticWitnessError::Send)?;
-                        }
+                        let merkle = MerkleTree::new(&self.previous_round.broadcasts)
+                            .get_root()
+                            .cloned()
+                            .unwrap_or(MerkleRoot::default());
+
+                        self.tx_broadcast_finished
+                            .send(FinishedBroadcast {
+                                step: self.current_round.step,
+                                commitment_data_hash: sha256(&merkle.inner),
+                                merkle,
+                                proof: committee_info.0,
+                            })
+                            .map_err(|_| OpportunisticWitnessError::Finished)?;
+
+                        self.current_round.sent_finished = true;
+
+                        return Ok(());
+                    }
+
+                    // if we get here we've sent our own finished message.
+                    // now we just need to wait until we've received everyone else's finished
+                    if self.current_round.height > 0
+                        && self.current_round.clients_finished.len()
+                            != self.coordinator_state.epoch_state.clients.len()
+                    {
+                        return Ok(());
+                    }
+
+                    if let Some(witness) = WitnessStep::get_witness_to_send(
+                        &mut self.previous_round,
+                        &mut self.current_round,
+                    ) {
+                        debug!("Sending opportunistic witness");
+
+                        self.tx_witness
+                            .send(witness)
+                            .map_err(|_| OpportunisticWitnessError::Send)?;
                     }
                 }
             }
@@ -249,11 +284,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     return Ok(());
                 }
 
-                let client_commitments = *round_state
-                    .commitments_per_client
-                    .get(&from_client_id)
-                    .unwrap_or(&0);
-
                 let correct_assignee =
                     match round_state.data_assignments.get(&training_result.batch_id) {
                         Some(assignee) => from_client_id == *assignee,
@@ -268,20 +298,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                         );
                     return Ok(());
                 }
-
-                round_state
-                    .commitments_per_client
-                    .insert(from_client_id, client_commitments + 1);
-
-                let total_commitments = round_state
-                    .commitments_per_client
-                    .values()
-                    .fold(0, |acc, ele| acc + *ele);
-
-                debug!(
-                    "Total commitments for round {}: {}",
-                    round_state.height, total_commitments
-                );
 
                 round_state
                     .results
@@ -312,7 +328,18 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                         .map_err(|_| ApplyMessageError::StartDownloadBlob)?;
                 }
             }
-            BroadcastType::Finished => todo!(),
+            BroadcastType::Finished(merkle) => {
+                if round_state.clients_finished.contains_key(&from_client_id) {
+                    trace!(
+                        "Already got finished broadcast from {}, ignorning",
+                        from_client_id
+                    );
+                    return Ok(());
+                }
+
+                round_state.clients_finished.insert(from_client_id, merkle);
+                self.notify_try_opportunistic_witness.notify_one();
+            }
         }
 
         round_state.broadcasts.push(broadcast.commitment.data_hash);

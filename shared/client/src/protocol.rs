@@ -1,5 +1,5 @@
 use psyche_coordinator::{Commitment, CommitteeProof};
-use psyche_core::BatchId;
+use psyche_core::{BatchId, MerkleRoot};
 use psyche_network::{BlobTicket, NetworkConnection, TransmittableDownload};
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +14,7 @@ pub struct TrainingResult {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum BroadcastType {
     TrainingResult(TrainingResult),
-    Finished,
+    Finished(MerkleRoot),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

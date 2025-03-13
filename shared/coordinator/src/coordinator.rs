@@ -589,15 +589,6 @@ impl<T: NodeIdentity> Coordinator<T> {
         score
     }
 
-    // pub fn make_batch_committment_hash(&self, batch_id: &BatchId, id: &T) -> [u8; 32] {
-    //     sha256v(&[
-    //         &self.run_id,
-    //         id.as_ref(),
-    //         &batch_id.0.start.to_be_bytes(),
-    //         &batch_id.0.end.to_be_bytes(),
-    //     ])
-    // }
-
     pub fn select_consensus_commitment_by_witnesses(
         commitments: &[Commitment],
         witnesses: &[Witness],

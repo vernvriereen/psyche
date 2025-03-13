@@ -19,6 +19,7 @@ use psyche_coordinator::WitnessBloom;
 use psyche_coordinator::WitnessProof;
 use psyche_coordinator::SOLANA_MAX_NUM_CLIENTS;
 use psyche_coordinator::SOLANA_MAX_STRING_LEN;
+use psyche_core::MerkleRoot;
 
 declare_id!("3RL7dHgZnuDCqT1FuKg9doJV6W7JYAxCGf2Tgq4rLfU3");
 
@@ -82,6 +83,8 @@ impl CoordinatorInstance {
 
 #[program]
 pub mod psyche_solana_coordinator {
+    use psyche_core::MerkleRoot;
+
     use super::*;
 
     pub fn init_coordinator(
@@ -149,6 +152,7 @@ pub mod psyche_solana_coordinator {
         proof: WitnessProof,
         participant_bloom: WitnessBloom,
         broadcast_bloom: WitnessBloom,
+        broadcast_merkle: MerkleRoot,
     ) -> Result<()> {
         ctx.accounts.coordinator_account.load_mut()?.state.witness(
             ctx.accounts.user.key,
@@ -156,6 +160,7 @@ pub mod psyche_solana_coordinator {
                 proof,
                 participant_bloom,
                 broadcast_bloom,
+                broadcast_merkle,
             },
         )
     }
