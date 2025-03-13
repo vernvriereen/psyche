@@ -13,9 +13,12 @@ use rstest::*;
 use serial_test::serial;
 use tokio::time;
 
+/// spawn 2 clients and run for 3 epochs
+/// assert client and coordinator state synchronization
+/// assert that the loss decreases in each epoch
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
-async fn test_two_client_three_epochs_run() {
+async fn test_two_clients_three_epochs_run() {
     // set test variables
     let run_id = "test".to_string();
 
