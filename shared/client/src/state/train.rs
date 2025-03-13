@@ -203,18 +203,18 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
         let blooms = {
             let participant_bloom =
                 Bloom::random(state.epoch_state.clients.len(), BLOOM_FALSE_RATE);
-            let batch_bloom = Bloom::random(num_all_batch_ids, BLOOM_FALSE_RATE);
+            let broadcast_bloom = Bloom::random(num_all_batch_ids, BLOOM_FALSE_RATE);
             debug!(
                 "Participant bloom size: {} bits, {} keys",
                 participant_bloom.bits.0.len(),
                 participant_bloom.keys.len()
             );
             debug!(
-                "Batch bloom size: {} bits, {} keys",
-                batch_bloom.bits.0.len(),
-                batch_bloom.keys.len()
+                "Broadcast bloom size: {} bits, {} keys",
+                broadcast_bloom.bits.0.len(),
+                broadcast_bloom.keys.len()
             );
-            Some((participant_bloom, batch_bloom))
+            Some((participant_bloom, broadcast_bloom))
         };
 
         *current_round = RoundState {
@@ -223,6 +223,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
             sent_witness: false,
             downloads: Default::default(),
             results: Default::default(),
+            broadcasts: Default::default(),
             commitments_per_client: Default::default(),
             data_assignments: data_assignments.clone(),
             blooms,

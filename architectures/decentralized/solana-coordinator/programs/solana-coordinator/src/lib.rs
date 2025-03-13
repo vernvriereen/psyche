@@ -148,14 +148,14 @@ pub mod psyche_solana_coordinator {
         ctx: Context<PermissionlessCoordinatorAccounts>,
         proof: WitnessProof,
         participant_bloom: WitnessBloom,
-        batch_bloom: WitnessBloom,
+        broadcast_bloom: WitnessBloom,
     ) -> Result<()> {
         ctx.accounts.coordinator_account.load_mut()?.state.witness(
             ctx.accounts.user.key,
             Witness {
                 proof,
                 participant_bloom,
-                batch_bloom,
+                broadcast_bloom,
             },
         )
     }

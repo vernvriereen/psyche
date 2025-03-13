@@ -1,6 +1,7 @@
 use crate::sha256::sha256v;
 
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
+use bytemuck::Zeroable;
 use serde::{Deserialize, Serialize};
 
 // from https://github.com/solana-labs/solana/blob/27eff8408b7223bb3c4ab70523f8a8dca3ca6645/merkle-tree/src/merkle_tree.rs
@@ -28,7 +29,17 @@ macro_rules! hash_intermediate {
 
 /// This wrapper is used to implement the `Space` trait for the actual hash.
 #[derive(
-    AnchorSerialize, AnchorDeserialize, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Default,
+    Zeroable,
+    Copy,
 )]
 pub struct HashWrapper {
     pub inner: [u8; 32],

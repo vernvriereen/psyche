@@ -185,28 +185,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         broadcast: Broadcast,
     ) -> Result<(), ApplyMessageError> {
         let result_step = broadcast.step;
-        // let batch_id = broadcast.batch_id;
-        // let round_state = {
-        //     if self.current_round.data_assignments.contains_key(&batch_id) {
-        //         debug!(
-        //             "Got result gossip for current step {} batch {batch_id}",
-        //             result_step
-        //         );
-        //         &mut self.current_round
-        //     } else if self.previous_round.data_assignments.contains_key(&batch_id) {
-        //         debug!(
-        //             "Got result gossip for previous step {} batch {batch_id}",
-        //             result_step - 1
-        //         );
-        //         &mut self.previous_round
-        //     } else {
-        //         debug!(
-        //             "Unknown round for gossiped batch id {}, says its for step {} but not in data assignments for our current round (step {}) or previous round (step {})",
-        //             batch_id, result_step, self.current_round.step, self.previous_round.step,
-        //         );
-        //         return Ok(());
-        //     }
-        // };
 
         let round_state = if self.current_round.step == broadcast.step {
             &mut self.current_round
@@ -337,6 +315,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             BroadcastType::Finished => todo!(),
         }
 
+        round_state.broadcasts.push(broadcast.commitment.data_hash);
+
         Ok(())
     }
 
@@ -437,12 +417,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             let mut remaining_batch_ids = batch_ids_not_yet_trained_on.lock().await;
 
             match round_state.blooms.as_mut() {
-                Some((participant_bloom, batch_bloom)) => {
+                Some((participant_bloom, broadcast_bloom)) => {
                     participant_bloom.add(&sha256(from.as_ref()));
                     if remaining_batch_ids.contains(&batch_id) {
                         // first received payload for this batch id, vote for it in consensus
-                        batch_bloom.add(&commitment.data_hash);
-                        debug!("Adding batch {batch_id} to batch bloom");
+                        broadcast_bloom.add(&commitment.data_hash);
+                        debug!("Adding batch {batch_id} t broadcast bloom");
                     } else {
                         debug!(
                             "Don't have {} in our remaining batch IDs {:?}, discarding",

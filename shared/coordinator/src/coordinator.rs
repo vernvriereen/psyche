@@ -6,8 +6,8 @@ use crate::{
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Pod, Zeroable};
 use psyche_core::{
-    serde_deserialize_string, serde_serialize_string, sha256, Bloom, FixedVec, NodeIdentity,
-    SmallBoolean,
+    serde_deserialize_string, serde_serialize_string, sha256, Bloom, FixedVec, MerkleRoot,
+    NodeIdentity, SmallBoolean,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::hash::Hash;
@@ -121,7 +121,8 @@ pub struct Round {
 pub struct Witness {
     pub proof: WitnessProof,
     pub participant_bloom: WitnessBloom,
-    pub batch_bloom: WitnessBloom,
+    pub broadcast_bloom: WitnessBloom,
+    pub broadcast_merkle: MerkleRoot,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -605,7 +606,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         let mut scores = vec![0; commitments.len()];
         for witness in witnesses {
             for (index, commitment) in commitments.iter().enumerate() {
-                if witness.batch_bloom.contains(&commitment.data_hash) {
+                if witness.broadcast_bloom.contains(&commitment.data_hash) {
                     scores[index] += 1;
                     break;
                 }

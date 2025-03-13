@@ -262,7 +262,7 @@ pub async fn run() {
             index: 0,
         },
         participant_bloom: Default::default(),
-        batch_bloom: Default::default(),
+        broadcast_bloom: Default::default(),
     };
     assert!(process_coordinator_witness(
         &mut endpoint,

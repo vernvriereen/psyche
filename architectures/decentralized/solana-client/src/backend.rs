@@ -378,7 +378,7 @@ impl SolanaBackend {
             .args(psyche_solana_coordinator::instruction::Witness {
                 proof: witness.proof,
                 participant_bloom: witness.participant_bloom,
-                batch_bloom: witness.batch_bloom,
+                broadcast_bloom: witness.broadcast_bloom,
             })
             .send()
             .await?;
