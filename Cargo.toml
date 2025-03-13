@@ -2,7 +2,8 @@
 members = [
     "architectures/centralized/*",
     "architectures/decentralized/solana-client",
-    "architectures/decentralized/testing", "architectures/decentralized/solana-tooling",
+    "architectures/decentralized/testing",
+    "architectures/decentralized/solana-tooling",
     "shared/*",
     "tools/rust-tools/*",
 ]
@@ -58,9 +59,12 @@ futures-util = "0.3.30"
 chrono = "0.4.38"
 fast-math = "0.1"
 async-trait = "0.1.82"
-iroh = "0.31.0"
-iroh-blobs = { version = "0.31.0", features = ["rpc"] }
-iroh-gossip = "0.31.0"
+iroh = "0.33.0"
+iroh-blobs = { git = "https://github.com/NousResearch/iroh-blobs", rev = "3ee4c56e545611fe2985c873cc6b443b5dabc516", features = [
+    "rpc",
+    "downloader",
+] }
+iroh-gossip = "0.33.0"
 memmap2 = { version = "0.9.3", features = ["stable_deref_trait"] }
 indicatif = "0.17.5"
 tokenizers = { version = "0.20.0", default-features = false, features = [
