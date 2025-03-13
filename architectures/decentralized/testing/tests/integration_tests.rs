@@ -1,10 +1,12 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use bollard::Docker;
+use bollard::{container::KillContainerOptions, Docker};
 use psyche_coordinator::{model::Checkpoint, RunState};
 use psyche_decentralized_testing::{
     chaos::{ChaosAction, ChaosScheduler},
-    docker_setup::{e2e_testing_setup, spawn_new_client},
+    docker_setup::{
+        e2e_testing_setup, kill_all_clients, spawn_new_client, spawn_new_client_with_monitoring,
+    },
     docker_watcher::{DockerWatcher, JsonFilter, Response},
     utils::SolanaTestClient,
     CLIENT_CONTAINER_PREFIX, VALIDATOR_CONTAINER_PREFIX,
@@ -419,6 +421,207 @@ async fn test_delay_solana_client(#[values(1, 2)] n_clients: u8, #[values(0, 10)
                    }
                }
            }
+        }
+    }
+}
+
+/// Drop a client below the minimum required, go to WaitingForMembers
+/// Reconnect a client and then go back to warmup
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+async fn drop_a_client_waitingformembers_then_reconnect() {
+    let n_clients = 2;
+    let num_of_epochs_to_run = 3;
+    let mut current_epoch = -1;
+    let mut last_epoch_loss = f64::MAX;
+    let run_id = "test".to_string();
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+
+    let _cleanup = e2e_testing_setup(
+        docker.clone(),
+        2,
+        Some(PathBuf::from(
+            "../../config/solana-test/light-two-min-clients.toml",
+        )),
+    )
+    .await;
+    let solana_client = SolanaTestClient::new(run_id).await;
+    // Monitor clients
+    for i in 1..=n_clients {
+        let _monitor_client = watcher
+            .monitor_container(
+                &format!("{CLIENT_CONTAINER_PREFIX}-{}", i),
+                vec![
+                    JsonFilter::Loss,
+                    JsonFilter::StateChange,
+                    JsonFilter::LoadedModel,
+                ],
+            )
+            .unwrap();
+    }
+
+    let mut warmup_reached = false;
+    while let Some(response) = watcher.log_rx.recv().await {
+        match response {
+            Response::StateChange(timestamp, client, old_state, new_state) => {
+                let coordinator_state = solana_client.get_run_state().await;
+                println!(
+                    "state change client {} - {}=>{}",
+                    client, new_state, old_state
+                );
+
+                // Once warmup starts, kill client 2's container
+                if new_state == RunState::Warmup.to_string() && !warmup_reached {
+                    println!(
+                        "Warmup started, killing container {}...",
+                        &format!("{CLIENT_CONTAINER_PREFIX}-2")
+                    );
+
+                    let options = Some(KillContainerOptions { signal: "SIGKILL" });
+                    docker
+                        .kill_container(&format!("{CLIENT_CONTAINER_PREFIX}-2"), options)
+                        .await
+                        .unwrap();
+
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    warmup_reached = true;
+                }
+
+                // After killing client, verify we get stuck in WaitingForMembers
+                if warmup_reached && coordinator_state == RunState::WaitingForMembers {
+                    println!("WaitingForMembers seen");
+                    break;
+                }
+            }
+            Response::Loss(client, epoch, step, loss) => {
+                println!(
+                    "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                    client, epoch, step, loss
+                );
+
+                if epoch as i64 > current_epoch {
+                    current_epoch = epoch as i64;
+                    //assert!(loss < last_epoch_loss);
+                    last_epoch_loss = loss;
+                    if epoch == num_of_epochs_to_run {
+                        println!("Epoch {} reached. Stopping", epoch);
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    println!("Waiting 5s to see if we are still in WaitingForMembers...");
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    let coordinator_state = solana_client.get_run_state().await;
+    assert_eq!(coordinator_state, RunState::WaitingForMembers);
+    println!("Still in WaitingForMembers after 5 seconds. Success");
+
+    // Test reconnection
+    println!("Starting new client...");
+    spawn_new_client(docker.clone()).await.unwrap();
+
+    // Wait for state to change back to Warmup
+    assert!(
+        solana_client.wait_for_run_state(RunState::Warmup, 30).await,
+        "System should have returned to Warmup state after client reconnection"
+    );
+    println!("Successfully returned to Warmup state after client reconnection");
+}
+
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
+async fn test_when_all_clients_disconnect_checkpoint_is_hub() {
+    let num_of_epochs_to_run = 3;
+    let mut current_epoch = -1;
+    let mut last_epoch_loss = f64::MAX;
+    let run_id = "test".to_string();
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+
+    let _cleanup = e2e_testing_setup(
+        docker.clone(),
+        1,
+        Some(PathBuf::from("../../config/solana-test/light-config.toml")),
+    )
+    .await;
+
+    let _monitor_client = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-{}", 1),
+            vec![
+                JsonFilter::Loss,
+                JsonFilter::StateChange,
+                JsonFilter::LoadedModel,
+            ],
+        )
+        .unwrap();
+
+    let solana_client = SolanaTestClient::new(run_id).await;
+
+    let mut has_killed_container_yet = false;
+    let mut has_spawned_new_client_yet = false;
+    while let Some(response) = watcher.log_rx.recv().await {
+        match response {
+            Response::Loss(client, epoch, step, loss) => {
+                println!(
+                    "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                    client, epoch, step, loss
+                );
+                if current_epoch == 1 && !has_killed_container_yet {
+                    if !has_spawned_new_client_yet {
+                        // Spawn a new client, that should get the model with P2P
+                        spawn_new_client_with_monitoring(docker.clone(), &watcher)
+                            .await
+                            .unwrap();
+                        has_spawned_new_client_yet = true;
+
+                        // Checkpoint should be P2P here
+                        assert!(
+                            matches!(solana_client.get_checkpoint().await, Checkpoint::P2P(_)),
+                            "The coordinator must be on P2P checkpoint"
+                        );
+                        println!("Checkpoint was P2P");
+                        continue;
+                    }
+                    println!("Killing all clients to test checkpoint change to Hub");
+                    kill_all_clients(&docker, "SIGKILL").await;
+                    has_killed_container_yet = true;
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    // Spawn a new client, that should get the model with Hub
+                    spawn_new_client_with_monitoring(docker.clone(), &watcher)
+                        .await
+                        .unwrap();
+                    println!("Spawned new client to test checkpoint change to Hub");
+                }
+                if epoch as i64 > current_epoch {
+                    current_epoch = epoch as i64;
+                    assert!(loss < last_epoch_loss);
+                    last_epoch_loss = loss;
+                    if epoch == num_of_epochs_to_run {
+                        println!("Epoch {} reached. Stopping", epoch);
+                        break;
+                    }
+                }
+            }
+            Response::LoadedModel(checkpoint) => {
+                if !has_killed_container_yet {
+                    continue;
+                }
+                assert!(
+                    matches!(solana_client.get_checkpoint().await, Checkpoint::Hub(_)),
+                    "The coordinator must be on Hub checkpoint"
+                );
+                println!("Client got the model from Hub");
+                assert_eq!(
+                    checkpoint, "emozilla/llama2-20m-init",
+                    "The model should be obtained from Hub"
+                );
+                return;
+            }
+            _ => {}
         }
     }
 }
