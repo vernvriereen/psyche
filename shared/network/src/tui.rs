@@ -94,11 +94,11 @@ impl psyche_tui::CustomWidget for NetworkTui {
                     List::new(state.downloads.iter().map(|(hash, download)| {
                         let percent = 100.0 * (download.downloaded as f64 / download.total as f64);
                         ListItem::new(format!(
-                            "[{:02}%]{}: {}/{}",
+                            "[{:02.1}%] {}/{}: {}",
                             percent,
-                            hash,
                             convert_bytes(download.downloaded as f64),
-                            convert_bytes(download.total as f64)
+                            convert_bytes(download.total as f64),
+                            hash,
                         ))
                     }))
                     .block(
@@ -164,13 +164,13 @@ impl psyche_tui::CustomWidget for NetworkTui {
                         )
                         .split(network_chunks[0]);
 
-                    let uploads = List::new(state.upload_hashes.iter().map(|hash| {
+                    let uploads = List::new(state.blob_hashes.iter().map(|hash| {
                         let item = ListItem::new(hash.as_str());
                         item
                     }))
                     .block(
                         Block::default()
-                            .title(format!("Uploads ({})", state.upload_hashes.len()))
+                            .title(format!("Blobs ({})", state.blob_hashes.len()))
                             .borders(Borders::ALL),
                     );
 
@@ -206,7 +206,7 @@ pub struct NetworkTUIStateInner {
 
     pub downloads: HashMap<String, UIDownloadProgress>,
 
-    pub upload_hashes: Vec<String>,
+    pub blob_hashes: Vec<String>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -240,7 +240,7 @@ where
                         )
                     })
                     .collect(),
-                upload_hashes: s
+                blob_hashes: s
                     .currently_sharing_blobs
                     .iter()
                     .map(|blob| blob.to_string())
