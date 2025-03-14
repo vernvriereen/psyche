@@ -13,5 +13,7 @@ rec {
     ariLunaKey
   ];
 
-  allKeys = [ repoKey ] ++ ariKeys;
+  allDevKeys = ariKeys;
+
+  allKeys = [ repoKey ] ++ allDevKeys;
 }

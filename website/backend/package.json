@@ -10,9 +10,9 @@
 		"prep": "pnpm i && pnpm -C ../shared build-idl && pnpm build-wasm",
 		"dev": "pnpm prep && GITCOMMIT=$(pnpm --silent run get-commit) nodemon",
 		"dev-local": "COORDINATOR_RPC=http://localhost:8899 COORDINATOR_PROGRAM_ID=$(pnpm --silent -C ../shared get-coordinator-local-address) MINING_POOL_RPC=http://localhost:8899 MINING_POOL_PROGRAM_ID=$(pnpm --silent -C ../shared get-mining-pool-local-address) pnpm dev",
-		"dev-local-and-devnet": "COORDINATOR_RPC=http://localhost:8899 COORDINATOR_PROGRAM_ID=$(pnpm --silent -C ../shared get-coordinator-local-address) MINING_POOL_PROGRAM_ID=2L312MgC26ep3TWg2HSR3n8CPn776xUAoy6qJpddFQTQ pnpm dev",
-		"dev-devnet": "COORDINATOR_PROGRAM_ID=CXSChDHELm7tJYvnveBiXuJtN457GabkrK8YFHhpRS81 MINING_POOL_PROGRAM_ID=2L312MgC26ep3TWg2HSR3n8CPn776xUAoy6qJpddFQTQ pnpm dev",
-		"dev-devnet-and-mainnet": "COORDINATOR_PROGRAM_ID=CXSChDHELm7tJYvnveBiXuJtN457GabkrK8YFHhpRS81 MINING_POOL_PROGRAM_ID=PsyMP8fXEEMo2C6C84s8eXuRUrvzQnZyquyjipDRohf pnpm dev",
+		"dev-local-and-devnet": "COORDINATOR_RPC=http://localhost:8899 COORDINATOR_PROGRAM_ID=$(pnpm --silent -C ../shared get-coordinator-local-address) MINING_POOL_PROGRAM_ID=3b1Sqhh2zEc2U7aSfnR3btroP9EfdRCtd8XZYQYT1UU1 pnpm dev",
+		"dev-devnet": "COORDINATOR_PROGRAM_ID=E4m6LEUHMS7sHDDS5QFUTLKneu2xs2NYTB6Tb7wCTkja MINING_POOL_PROGRAM_ID=3b1Sqhh2zEc2U7aSfnR3btroP9EfdRCtd8XZYQYT1UU1 pnpm dev",
+		"dev-devnet-and-mainnet": "COORDINATOR_PROGRAM_ID=E4m6LEUHMS7sHDDS5QFUTLKneu2xs2NYTB6Tb7wCTkja MINING_POOL_PROGRAM_ID=PsyMP8fXEEMo2C6C84s8eXuRUrvzQnZyquyjipDRohf pnpm dev",
 		"build": "rm -rf dist/ && node esbuild.js"
 	},
 	"keywords": [],

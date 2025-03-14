@@ -129,7 +129,7 @@
                   name = configName;
                 };
                 age.secrets.caddyBasicAuth = {
-                  file = ./secrets/docs-http-basic.age;
+                  file = ../secrets/docs-http-basic.age;
                   owner = "caddy";
                   group = "caddy";
                 };
@@ -181,13 +181,13 @@
       nixosConfigurations."psyche-http-devnet-authed" = persistentDocsAndWebsite {
         configName = "psyche-http-devnet-authed";
         hostnames = [ "devnet-preview.psyche.network" ];
-        backendSecret = ./secrets/backend-devnet.age;
+        backendSecret = ../secrets/devnet/backend.age;
         miningPoolRpc = "https://api.devnet.solana.com";
       };
       nixosConfigurations."psyche-http-mainnet-authed" = persistentDocsAndWebsite {
         configName = "psyche-http-mainnet-authed";
         hostnames = [ "mainnet-preview.psyche.network" ];
-        backendSecret = ./secrets/backend-mainnet.age;
+        backendSecret = ../secrets/backend-mainnet.age;
         miningPoolRpc = "https://api.mainnet-beta.solana.com/";
       };
 

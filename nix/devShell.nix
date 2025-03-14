@@ -5,7 +5,13 @@
 }:
 {
   perSystem =
-    { system, pkgs, ... }:
+    {
+      system,
+      config,
+      pkgs,
+      lib,
+      ...
+    }:
     let
       inherit (pkgs.psycheLib)
         buildWholeWorkspace
@@ -46,6 +52,9 @@
           pnpm
           wasm-pack
         ];
+        shellHook = ''
+          source ${lib.getExe config.agenix-shell.installationScript}
+        '';
       };
     };
 }

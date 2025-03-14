@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 pub use {client::Client, client::ClientId};
 
-declare_id!("3RL7dHgZnuDCqT1FuKg9doJV6W7JYAxCGf2Tgq4rLfU3");
+declare_id!("HFBf73tRLrhZa7Ae1AQUvyhbrzEAD1xBkU6uBwH7QoVa");
 
 pub const SOLANA_MAX_NUM_PENDING_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 

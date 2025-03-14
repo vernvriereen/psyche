@@ -22,6 +22,7 @@
     };
     garnix-lib.url = "github:garnix-io/garnix-lib";
     solana-pkgs.url = "github:arilotter/solana-flake";
+    agenix-shell.url = "github:aciceri/agenix-shell";
   };
 
   outputs =
@@ -34,6 +35,13 @@
       systems = [
         "x86_64-linux"
       ];
+
+      agenix-shell = {
+        secrets = {
+          devnet-keypair-wallet.file = ./secrets/devnet/keypair/wallet.age;
+        };
+      };
+
       perSystem =
         { system, ... }:
         {
@@ -50,6 +58,7 @@
           );
         };
       imports = [
+        inputs.agenix-shell.flakeModules.default
         ./nix/packages.nix
         ./nix/devShell.nix
         ./nix/checks.nix

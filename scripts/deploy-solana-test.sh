@@ -4,19 +4,37 @@ set -o errexit
 set -e
 set -m
 
-WALLET_FILE=${KEY_FILE:-"$HOME/.config/solana/id.json"}
+# use the agenix provided wallet if you have it
+DEFAULT_WALLET=${devnet__keypair__wallet_PATH:-"$HOME/.config/solana/id.json"}
+WALLET_FILE=${KEY_FILE:-"$DEFAULT_WALLET"}
 RPC=${RPC:-"http://127.0.0.1:8899"}
 WS_RPC=${WS_RPC:-"ws://127.0.0.1:8900"}
 RUN_ID=${RUN_ID:-"test"}
 CONFIG_FILE=${CONFIG_FILE:-"./config/solana-test/config.toml"}
 
+echo -e "\n[+] starting authorizor deploy"
 pushd architectures/decentralized/solana-authorizer
-anchor keys sync && anchor build --no-idl && anchor deploy --provider.cluster ${RPC} -- --max-len 500000
+    echo -e "\n[+] syncing keys..."
+    anchor keys sync --provider.cluster ${RPC} --provider.wallet $WALLET_FILE
+
+    echo -e "\n[+] building..."
+    anchor build --no-idl
+
+    echo -e "\n[+] deploying..."
+    anchor deploy --provider.cluster ${RPC} --provider.wallet $WALLET_FILE -- --max-len 500000
 popd
 echo -e "\n[+] Authorizer program deployed successfully!"
 
+echo -e "\n[+] starting coordinator deploy"
 pushd architectures/decentralized/solana-coordinator
-anchor keys sync && anchor build --no-idl && anchor deploy --provider.cluster ${RPC} -- --max-len 500000
+    echo -e "\n[+] syncing keys..."
+    anchor keys sync --provider.cluster ${RPC} --provider.wallet $WALLET_FILE
+
+    echo -e "\n[+] building..."
+    anchor build --no-idl
+
+    echo -e "\n[+] deploying..."
+    anchor deploy --provider.cluster ${RPC} --provider.wallet $WALLET_FILE -- --max-len 500000
 popd
 echo -e "\n[+] Coordinator program deployed successfully!"
 
