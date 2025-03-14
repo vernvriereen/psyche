@@ -1,8 +1,8 @@
 use anchor_client::{
     anchor_lang::system_program,
     solana_client::{
-        nonblocking::pubsub_client::PubsubClient, rpc_config::RpcAccountInfoConfig,
-        rpc_response::Response as RpcResponse,
+        client_error::reqwest::Response, nonblocking::pubsub_client::PubsubClient,
+        rpc_config::RpcAccountInfoConfig, rpc_response::Response as RpcResponse,
     },
     solana_sdk::{
         commitment_config::CommitmentConfig,
@@ -21,8 +21,8 @@ use psyche_coordinator::{
 };
 
 use psyche_watcher::Backend as WatcherBackend;
-use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
-use std::sync::Arc;
+use solana_account_decoder_client_types::{UiAccount, UiAccountData, UiAccountEncoding};
+use std::{hash::Hash, sync::Arc};
 use tokio::sync::broadcast;
 use tracing::{debug, info};
 
@@ -70,7 +70,10 @@ impl SolanaBackend {
         coordinator_account: Pubkey,
     ) -> Result<SolanaBackendRunner> {
         let sub_client = PubsubClient::new(self.cluster.ws_url()).await?;
+        let sub_client_2 = PubsubClient::new(self.cluster.ws_url()).await?;
         let (tx, rx) = broadcast::channel(32);
+        let tx2 = tx.clone();
+        let tx3 = tx.clone();
 
         let coordinator_instance = psyche_solana_coordinator::find_coordinator_instance(&run_id);
 
@@ -106,9 +109,51 @@ impl SolanaBackend {
                     return;
                 }
             };
-            while let Some(update) = notifications.next().await {
-                if tx.send(update).is_err() {
-                    break;
+
+            let mut notifications_2 = match sub_client_2
+                .account_subscribe(
+                    &coordinator_account,
+                    Some(RpcAccountInfoConfig {
+                        encoding: Some(UiAccountEncoding::Base64Zstd),
+                        commitment: Some(commitment),
+                        ..Default::default()
+                    }),
+                )
+                .await
+            {
+                Ok((notifications_2, _)) => notifications_2,
+                Err(err) => {
+                    tracing::error!("{}", err);
+                    return;
+                }
+            };
+            let mut last_data: UiAccountData = UiAccountData::LegacyBinary("".to_string());
+            let mut last_slot = 0;
+            loop {
+                tokio::select! {
+                    Some(update) = notifications.next() =>
+                        {
+                        let data = &update.value.data;
+                        if update.context.slot > last_slot && &last_data != data  {
+
+                        println!("Update_1: {:?}", &update);
+                        if tx.send(update.clone()).is_err() { break; }
+                        last_data = data.clone();
+                        last_slot = update.context.slot;
+
+                        }
+                    },
+                    Some(update) = notifications_2.next() =>{
+                        if  update.context.slot > last_slot && &last_data != &update.value.data  {
+
+                        println!("Update_2: {:?}", &update);
+                        if tx.send(update.clone()).is_err() { break; }
+                        last_data = update.value.data.clone();
+                        last_slot = update.context.slot;
+
+                        }
+                    },
+                    else => break,
                 }
             }
         });
