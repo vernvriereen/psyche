@@ -1,8 +1,8 @@
 use anchor_client::{
     anchor_lang::system_program,
     solana_client::{
-        client_error::reqwest::Response, nonblocking::pubsub_client::PubsubClient,
-        rpc_config::RpcAccountInfoConfig, rpc_response::Response as RpcResponse,
+        nonblocking::pubsub_client::PubsubClient, rpc_config::RpcAccountInfoConfig,
+        rpc_response::Response as RpcResponse,
     },
     solana_sdk::{
         commitment_config::CommitmentConfig,
@@ -22,7 +22,7 @@ use psyche_coordinator::{
 
 use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountData, UiAccountEncoding};
-use std::{hash::Hash, sync::Arc};
+use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, info};
 
@@ -69,11 +69,9 @@ impl SolanaBackend {
         run_id: String,
         coordinator_account: Pubkey,
     ) -> Result<SolanaBackendRunner> {
-        let sub_client = PubsubClient::new(self.cluster.ws_url()).await?;
+        let sub_client_1 = PubsubClient::new(self.cluster.ws_url()).await?;
         let sub_client_2 = PubsubClient::new(self.cluster.ws_url()).await?;
         let (tx, rx) = broadcast::channel(32);
-        let tx2 = tx.clone();
-        let tx3 = tx.clone();
 
         let coordinator_instance = psyche_solana_coordinator::find_coordinator_instance(&run_id);
 
@@ -92,7 +90,7 @@ impl SolanaBackend {
             .await?;
 
         tokio::spawn(async move {
-            let mut notifications = match sub_client
+            let mut notifications_1 = match sub_client_1
                 .account_subscribe(
                     &coordinator_account,
                     Some(RpcAccountInfoConfig {
@@ -103,7 +101,7 @@ impl SolanaBackend {
                 )
                 .await
             {
-                Ok((notifications, _)) => notifications,
+                Ok((notifications_1, _)) => notifications_1,
                 Err(err) => {
                     tracing::error!("{}", err);
                     return;
@@ -130,30 +128,27 @@ impl SolanaBackend {
             let mut last_data: UiAccountData = UiAccountData::LegacyBinary("".to_string());
             let mut last_slot = 0;
             loop {
-                tokio::select! {
-                    Some(update) = notifications.next() =>
-                        {
-                        let data = &update.value.data;
-                        if update.context.slot > last_slot && &last_data != data  {
-
-                        println!("Update_1: {:?}", &update);
-                        if tx.send(update.clone()).is_err() { break; }
-                        last_data = data.clone();
-                        last_slot = update.context.slot;
-
-                        }
+                let update = tokio::select! {
+                    Some(update) = notifications_1.next() => {
+                        println!("Notifications 1");
+                        update
                     },
                     Some(update) = notifications_2.next() =>{
-                        if  update.context.slot > last_slot && &last_data != &update.value.data  {
+                        println!("Notifications 2");
 
-                        println!("Update_2: {:?}", &update);
-                        if tx.send(update.clone()).is_err() { break; }
-                        last_data = update.value.data.clone();
-                        last_slot = update.context.slot;
-
-                        }
+                        update
                     },
                     else => break,
+                };
+
+                let data = &update.value.data;
+                if update.context.slot >= last_slot && &last_data != data {
+                    println!("Update: {:?}", &update);
+                    if tx.send(update.clone()).is_err() {
+                        break;
+                    }
+                    last_data = data.clone();
+                    last_slot = update.context.slot;
                 }
             }
         });
