@@ -7,7 +7,7 @@ use psyche_coordinator::{Committee, Coordinator, RunState, Witness};
 use psyche_core::{sha256, MerkleRoot, MerkleTree, NodeIdentity};
 use psyche_modeling::{DistroResult, Trainer};
 use psyche_network::{AuthenticatableIdentity, BlobTicket, Hash, TransmittableDistroResult};
-use std::{collections::HashMap, fmt, sync::Arc};
+use std::{collections::HashMap, fmt, sync::Arc, time::Instant};
 use tch::TchError;
 use thiserror::Error;
 use tokio::{
@@ -53,6 +53,7 @@ pub struct StepStateMachine<T: NodeIdentity, A: AuthenticatableIdentity + 'stati
 
     current_round: RoundState<T>,
     previous_round: RoundState<T>,
+    step_finish_time: Option<Instant>,
 
     coordinator_state: Coordinator<T>,
 
@@ -139,6 +140,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             coordinator_state,
 
             node_info: HashMap::new(),
+
+            step_finish_time: None,
         }
     }
 
@@ -574,6 +577,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             (ActiveStep::Warmup(warmup), RunState::RoundTrain) => {
                 let trainers = warmup.finish().stop_evals().await?;
                 self.stats_logger.push_eval_results();
+                self.step_finish_time = None;
                 ActiveStep::Training(self.training.start(
                     client_index,
                     &state,
@@ -592,9 +596,16 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     optim_stats,
                     round_duration,
                 } = training.finish().await?;
-                let loss =
-                    self.stats_logger
-                        .push_round_stats(&round_losses, round_duration, optim_stats);
+                let step_duration = self
+                    .step_finish_time
+                    .map(|step_finish_time| Instant::now() - step_finish_time);
+                self.step_finish_time = Some(Instant::now());
+                let loss = self.stats_logger.push_round_stats(
+                    &round_losses,
+                    round_duration,
+                    step_duration,
+                    optim_stats,
+                );
                 info!(
                     client_id = %self.identity,
                     epoch = state.progress.epoch,
@@ -892,6 +903,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> From<&RunManager<T, 
                     global_tokens_per_second: stats
                         .map(|s| s.global_tokens_per_second(coordinator))
                         .unwrap_or_default(),
+                    efficency: stats.map(|x| x.efficency()).unwrap_or_default(),
                     total_tokens: coordinator.total_tokens(),
                     evals: stats.map(|s| s.eval_history().clone()).unwrap_or_default(),
                 }

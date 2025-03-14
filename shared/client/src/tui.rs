@@ -136,8 +136,20 @@ impl psyche_tui::CustomWidget for ClientTUI {
 
             let hsplit =
                 Layout::horizontal(Constraint::from_fills([1, 1, 1, 1])).split(plot_split[0]);
-            Paragraph::new(format!("State: {}", state.run_state)).render(hsplit[0], buf);
-            Paragraph::new(format!("Batches Left: {}", state.batches_left)).render(hsplit[1], buf);
+            Paragraph::new(format!(
+                "State: {}",
+                match state.run_state {
+                    TuiRunState::RoundTrain =>
+                        format!("{} ({})", state.run_state, state.batches_left),
+                    _ => format!("{}", state.run_state),
+                }
+            ))
+            .render(hsplit[0], buf);
+            Paragraph::new(format!(
+                "Efficency: {}%",
+                (state.efficency * 100.0) as usize
+            ))
+            .render(hsplit[1], buf);
             Paragraph::new(format!(
                 "Global Speed: {}",
                 convert_tokens_per_sec(state.global_tokens_per_second)
@@ -220,6 +232,7 @@ pub struct ClientTUIState {
     pub committee: Option<Committee>,
     pub run_state: TuiRunState,
     pub batches_left: usize,
+    pub efficency: f32,
     pub loss: Vec<f32>,
     pub evals: HashMap<String, Vec<f64>>,
     pub global_tokens_per_second: f32,
