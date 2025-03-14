@@ -21,7 +21,7 @@ use std::{
     collections::{BTreeSet, HashMap, HashSet},
     marker::PhantomData,
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::{
     select,
@@ -42,8 +42,17 @@ pub struct Client<T: NodeIdentity, A: AuthenticatableIdentity, B: Backend<T> + '
     _t: PhantomData<(T, A, B)>,
 }
 
+struct DownloadRetryInfo {
+    retries: usize,
+    retry_time: Option<Instant>,
+    ticket: BlobTicket,
+    tag: u32,
+}
+
 const MAX_DOWNLOAD_RETRIES: usize = 3;
 const REBROADCAST_SHAREABLE: Duration = Duration::from_secs(2);
+const DOWNLOAD_RETRY_BACKOFF_BASE: Duration = Duration::from_secs(2);
+const DOWNLOAD_RETRY_CHECK_INTERVAL: Duration = Duration::from_secs(1);
 
 impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'static>
     Client<T, A, B>
@@ -104,11 +113,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                     tx_broadcast_finished,
                 });
 
-                let mut retried_downloads: HashMap<psyche_network::Hash, usize> = HashMap::new();
+                let mut retried_downloads: HashMap<psyche_network::Hash, DownloadRetryInfo> =
+                    HashMap::new();
                 let mut sharable_model = SharableModel::empty();
                 let mut broadcasts = vec![];
                 let mut broadcasts_rebroadcast_index = 0;
                 let mut sharing_downloadable_interval = interval(REBROADCAST_SHAREABLE);
+                let mut retry_check_interval = interval(DOWNLOAD_RETRY_CHECK_INTERVAL);
                 debug!("Starting client loop");
                 loop {
                     select! {
@@ -206,6 +217,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     NetworkEvent::DownloadComplete(DownloadComplete {
                                         data: download_data, hash, ..
                                     }) => {
+                                        if retried_downloads.remove(&hash).is_some() {
+                                            debug!("Successfully downloaded previously failed blob {}", hex::encode(hash));
+                                        }
                                         match download_data {
                                             TransmittableDownload::DistroResult(distro_result) => {
                                                 trace!("Download complete: step {} batch id {}", distro_result.step, distro_result.batch_id);
@@ -224,13 +238,29 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         }
                                     }
                                     NetworkEvent::DownloadFailed(dl) => {
-                                        let retries = *retried_downloads.get(&dl.blob_ticket.hash()).unwrap_or(&0);
+                                        let hash = dl.blob_ticket.hash();
+                                        let info = retried_downloads.get(&hash);
+                                        let retries = info.map(|i| i.retries).unwrap_or(0);
+
                                         if retries >= MAX_DOWNLOAD_RETRIES {
                                             warn!("Download failed (not retrying): {}", dl.error);
+                                            retried_downloads.remove(&hash);
                                         } else {
-                                            info!("Download failed (retrying): {}", dl.error);
-                                            retried_downloads.insert(dl.blob_ticket.hash(), retries + 1);
-                                            p2p.start_download(dl.blob_ticket, dl.tag).await?;
+                                            let backoff_duration = DOWNLOAD_RETRY_BACKOFF_BASE.mul_f32(2_f32.powi(retries as i32));
+                                            let retry_time = Some(std::time::Instant::now() + backoff_duration);
+
+                                            info!(
+                                                "Download failed (will retry in {:?}): {}",
+                                                backoff_duration,
+                                                dl.error
+                                            );
+
+                                            retried_downloads.insert(hash, DownloadRetryInfo {
+                                                retries: retries + 1,
+                                                retry_time,
+                                                ticket: dl.blob_ticket,
+                                                tag: dl.tag,
+                                            });
                                         }
                                     }
                                     NetworkEvent::ParameterRequest(parameter_name, protocol_req_tx) => {
@@ -340,6 +370,24 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     let (broadcast, _step) = &mut broadcasts[broadcasts_rebroadcast_index];
                                     broadcast.nonce += 1;
                                     p2p.broadcast(broadcast).await?;
+                                }
+                            }
+                        }
+
+                        _ = retry_check_interval.tick() => {
+                            let now = Instant::now();
+                            let pending_retries: Vec<(psyche_network::Hash, BlobTicket, u32)> = retried_downloads.iter()
+                                .filter(|(_, info)| info.retry_time.map(|retry_time| now >= retry_time).unwrap_or(false) && info.retries <= MAX_DOWNLOAD_RETRIES)
+                                .map(|(hash, info)| (*hash, info.ticket.clone(), info.tag))
+                                .collect();
+
+                            for (hash, ticket, tag) in pending_retries {
+                                if let Some(info) = retried_downloads.get_mut(&hash) {
+                                    info.retry_time = None;
+
+                                    debug!("Retrying download for blob {} (attempt {})",
+                                        hex::encode(hash), info.retries);
+                                    p2p.start_download(ticket, tag).await?;
                                 }
                             }
                         }
