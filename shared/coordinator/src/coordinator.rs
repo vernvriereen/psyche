@@ -388,24 +388,10 @@ impl<T: NodeIdentity> Coordinator<T> {
         from: &T,
         witness: Witness,
         unix_timestamp: u64,
+        random_seed: u64,
     ) -> std::result::Result<(), CoordinatorError> {
         if self.halted() {
             return Err(CoordinatorError::Halted);
-        }
-        if !CommitteeSelection::from_coordinator(self, 0)?.verify_witness_for_client::<T>(
-            from,
-            &witness.proof,
-            &self.epoch_state.clients,
-        ) || witness.proof.witness.is_false()
-        {
-            return Err(CoordinatorError::InvalidWitness);
-        }
-
-        if !matches!(
-            self.run_state,
-            RunState::RoundWitness | RunState::RoundTrain,
-        ) {
-            return Err(CoordinatorError::InvalidRunState);
         }
 
         let witness_nodes = if self.config.witness_nodes == 0 {
@@ -413,6 +399,25 @@ impl<T: NodeIdentity> Coordinator<T> {
         } else {
             self.config.witness_nodes as usize
         };
+
+        if !matches!(
+            self.run_state,
+            RunState::RoundWitness | RunState::RoundTrain | RunState::Warmup,
+        ) {
+            return Err(CoordinatorError::InvalidRunState);
+        }
+
+        if self.run_state != RunState::Warmup {
+            // anyone can be a witness during warmup
+            if !CommitteeSelection::from_coordinator(self, 0)?.verify_witness_for_client::<T>(
+                from,
+                &witness.proof,
+                &self.epoch_state.clients,
+            ) || witness.proof.witness.is_false()
+            {
+                return Err(CoordinatorError::InvalidWitness);
+            }
+        }
 
         let round = self.current_round().unwrap();
         for witness in round.witnesses.iter() {
@@ -427,7 +432,12 @@ impl<T: NodeIdentity> Coordinator<T> {
             .map_err(|_| CoordinatorError::WitnessesFull)?;
 
         if round.witnesses.len() == witness_nodes && !(self.run_state == RunState::RoundWitness) {
-            self.change_state(unix_timestamp, RunState::RoundWitness);
+            match self.run_state {
+                RunState::RoundTrain => self.change_state(unix_timestamp, RunState::RoundWitness),
+                RunState::Warmup => self.start_round_train(unix_timestamp, random_seed, 0),
+                RunState::RoundWitness => {}
+                _ => unreachable!(),
+            }
         }
         Ok(())
     }
@@ -856,6 +866,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     fn start_cooldown(&mut self, unix_timestamp: u64) {
+        self.current_round_mut_unchecked().witnesses.clear(); // clear witnesses for re-use in warmup
         self.change_state(unix_timestamp, RunState::Cooldown);
     }
 

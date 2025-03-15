@@ -7,7 +7,7 @@ use psyche_centralized_testing::{
         assert_with_retries, assert_witnesses_healthy_score, spawn_clients,
         spawn_clients_with_training_delay,
     },
-    COOLDOWN_TIME, MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME, WARMUP_TIME,
+    COOLDOWN_TIME, MAX_ROUND_TRAIN_TIME, ROUND_WITNESS_TIME,
 };
 use psyche_coordinator::{
     model::{Checkpoint, HubRepo},
@@ -146,9 +146,6 @@ async fn state_change_waiting_for_members_to_round_train() {
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
 
-    // warmup time
-    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
-
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
 }
@@ -174,9 +171,7 @@ async fn state_change_waiting_for_members_to_round_witness() {
 
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
 
-    // warmup time
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
-    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
 
     assert_with_retries(|| server_handle.get_clients_len(), 2).await;
 
@@ -220,7 +215,6 @@ async fn validate_all_clients_participate_in_witness_bloom() {
 
     // warmup
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
-    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
 
     // train
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
@@ -291,7 +285,6 @@ async fn replace_node_and_complete_round() {
     client_1_task.client_handle.abort();
 
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
-    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
 
     // The network advances normally
 
@@ -341,7 +334,6 @@ async fn finish_epoch() {
     // execute round 0
     // warmup
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
-    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
 
     // train
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
@@ -407,9 +399,6 @@ async fn client_join_in_training() {
     // warmup
     info!("waiting for warmup...");
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
-
-    info!("waiting for end of warmup...");
-    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
 
     // train
     info!("waiting for start of train...");
@@ -481,7 +470,6 @@ async fn shutdown_node_in_training_and_complete_round() {
 
     // warmup
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
-    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
 
     // train
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
@@ -626,9 +614,6 @@ async fn client_join_in_training_and_get_model_using_p2p() {
     info!("waiting for warmup...");
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
 
-    info!("waiting for end of warmup...");
-    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
-
     // train
     info!("waiting for start of train...");
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
@@ -660,7 +645,6 @@ async fn client_join_in_training_and_get_model_using_p2p() {
 
     // check that the run state evolves naturally to Warmup where the model gets shared
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
-    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
 
     info!("waiting for end of round!");
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;
@@ -722,9 +706,6 @@ async fn two_clients_join_in_training_and_get_model_using_p2p() {
     info!("waiting for warmup...");
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
 
-    info!("waiting for end of warmup...");
-    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
-
     // train
     info!("waiting for start of train...");
     assert_with_retries(|| server_handle.get_run_state(), RunState::RoundTrain).await;
@@ -747,7 +728,6 @@ async fn two_clients_join_in_training_and_get_model_using_p2p() {
 
     // check that the run state evolves naturally to Warmup where the model gets shared
     assert_with_retries(|| server_handle.get_run_state(), RunState::Warmup).await;
-    tokio::time::sleep(Duration::from_secs(WARMUP_TIME)).await;
 
     info!("waiting for end of round!");
     assert_with_retries(|| server_handle.get_rounds_head(), 1).await;

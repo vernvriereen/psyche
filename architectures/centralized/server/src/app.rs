@@ -378,10 +378,12 @@ impl App {
             }
             ClientToServerMessage::Witness(witness) => {
                 let state_before = self.coordinator.run_state;
-                if let Err(error) = self
-                    .coordinator
-                    .witness(&from, *witness, Self::get_timestamp())
-                {
+                if let Err(error) = self.coordinator.witness(
+                    &from,
+                    *witness,
+                    Self::get_timestamp(),
+                    rand::thread_rng().next_u64(),
+                ) {
                     warn!("Error when processing witness: {error}");
                 }
                 self.coordinator.run_state != state_before

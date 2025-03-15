@@ -1,7 +1,7 @@
 use crate::{
     state::{DistroBroadcastAndPayload, FinishedBroadcast, RunManager},
-    Broadcast, BroadcastType, ClientTUIState, RunInitConfig, RunInitConfigAndIO, TrainingResult,
-    NC,
+    Broadcast, BroadcastType, ClientTUIState, Finished, RunInitConfig, RunInitConfigAndIO,
+    TrainingResult, NC,
 };
 use anyhow::{bail, Error, Result};
 use futures::future::join_all;
@@ -314,10 +314,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         }
 
                         () = run.opportunistic_witness_wait_notified() => {
-                            run.try_send_opportunistic_witness().await?;
+                            run.try_send_opportunistic_witness()?;
                         }
 
-                        Some(FinishedBroadcast { step, merkle, commitment_data_hash, proof }) = rx_broadcast_finished.recv() => {
+                        Some(FinishedBroadcast { step, merkle, commitment_data_hash, proof, warmup }) = rx_broadcast_finished.recv() => {
                             debug!(
                                 "Broadcasting finished step {step} merkle 0x{}",
                                 hex::encode(merkle.inner),
@@ -325,7 +325,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                             let signature = network_identity.raw_p2p_sign(&private_key, &commitment_data_hash);
                             let commitment = Commitment { data_hash: commitment_data_hash, signature};
-                            let training_result = Broadcast { step, proof, nonce: 0, commitment, data: BroadcastType::Finished(merkle)};
+                            let training_result = Broadcast { step, proof, nonce: 0, commitment, data: BroadcastType::Finished(Finished {
+                                broadcast_merkle: merkle, warmup
+                            })};
 
                             p2p.broadcast(&training_result).await?;
 

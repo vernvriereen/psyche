@@ -30,8 +30,7 @@ pub struct CoordinatorInstanceState {
 unsafe impl Pod for CoordinatorInstanceState {}
 
 impl CoordinatorInstanceState {
-    pub fn tick(&mut self) -> Result<()> {
-        let clock: Clock = Clock::get()?;
+    fn get_random_seed(clock: &Clock) -> u64 {
         let random_seed_bytes = sha256v(&[
             &clock.unix_timestamp.to_ne_bytes(),
             &clock.slot.to_ne_bytes(),
@@ -39,7 +38,10 @@ impl CoordinatorInstanceState {
 
         let mut random_seed: [u8; 8] = [0; 8];
         random_seed.copy_from_slice(&random_seed_bytes[..8]);
+        u64::from_ne_bytes(random_seed)
+    }
 
+    pub fn tick(&mut self) -> Result<()> {
         let active_clients = match self.coordinator.run_state {
             RunState::WaitingForMembers => {
                 // Reset state flags
@@ -55,10 +57,11 @@ impl CoordinatorInstanceState {
 
         msg!("Pre-tick run state: {}", self.coordinator.run_state);
 
+        let clock: Clock = Clock::get()?;
         match self.coordinator.tick(
             active_clients,
             clock.unix_timestamp as u64,
-            u64::from_ne_bytes(random_seed),
+            Self::get_random_seed(&clock),
         ) {
             Ok(TickResult::Ticked) => {
                 if self.coordinator.is_warmup_just_starting()
@@ -148,9 +151,16 @@ impl CoordinatorInstanceState {
     pub fn witness(&mut self, payer: &Pubkey, witness: Witness) -> Result<()> {
         let id = self.clients_state.find_signer(payer)?;
 
+        let clock: Clock = Clock::get()?;
         self.coordinator
-            .witness(id, witness, Clock::get()?.unix_timestamp as u64)
+            .witness(
+                id,
+                witness,
+                clock.unix_timestamp as u64,
+                Self::get_random_seed(&clock),
+            )
             .map_err(|err| anchor_lang::error!(ProgramError::from(err)))?;
+
         self.tick()
     }
 
