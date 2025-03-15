@@ -228,6 +228,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     .cloned()
                     .unwrap_or(MerkleRoot::default());
 
+                debug!("Sending warmup broadcast");
                 self.tx_broadcast_finished
                     .send(FinishedBroadcast {
                         step: self.current_round.step,
@@ -292,8 +293,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         };
 
         let is_warmup_broadcast = match &broadcast.data {
-            BroadcastType::TrainingResult(_) => true,
-            BroadcastType::Finished(finished) => !finished.warmup,
+            BroadcastType::TrainingResult(_) => false,
+            BroadcastType::Finished(finished) => finished.warmup,
         };
 
         let check_committee = !is_warmup_broadcast && from_client_id != self.identity;

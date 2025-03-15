@@ -509,7 +509,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                 .get_num_trainer_nodes(),
         );
 
-        let b = batch_ids.clone();
         Ok(tokio::task::spawn(async move {
                 let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
 
@@ -521,7 +520,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                             continue;
                         }
                     };
-                    debug!("Commitments for batch {batch_id}: {batch_commitments:?}");
+                    trace!("Commitments for batch {batch_id}: {batch_commitments:?}");
                     let consensus = match Coordinator::<T>::select_consensus_commitment_by_witnesses(
                         &batch_commitments
                             .iter()
@@ -593,7 +592,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     trainers.len()
                 );
                 Ok(trainers)
-            }.instrument(debug_span!("Applying distro results", ?b))))
+            }.instrument(debug_span!("Applying distro results"))))
     }
 }
 
