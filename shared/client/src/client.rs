@@ -281,7 +281,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                             // TODO: Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
                                             // to the client
 
-                                            info!("Sending requested model parameter blob ticket");
+                                            info!(parameter = parameter_name, "Sending requested model parameter blob ticket");
                                             if let Err(e) = protocol_req_tx.send(Ok(ticket)) {
                                                 warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e:?}");
                                             };
@@ -461,7 +461,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                             if !busy_peers.lock().unwrap().insert(peer_id) {
                                                 continue;
                                             }
-                                            debug!("Requesting parameter {param_name} from peer {peer_id}");
+                                            debug!(parameter = param_name, peer = %peer_id, "Requesting parameter");
                                             match request_model(router.clone(), peer_id, ModelRequestType::Parameter(param_name.clone())).await {
                                                 Ok(parameter_blob_ticket) => {
                                                   parameter_blob_tickets_clone.lock().unwrap().push(parameter_blob_ticket);
@@ -470,7 +470,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                                   break;
                                                 },
                                                 Err(e) => {
-                                                  warn!("Failed to get parameter {param_name} from peer {peer_id}: {e}");
+                                                  warn!(parameter = param_name, peer = %peer_id, "Failed to get parameter: {e}");
                                                   busy_peers.lock().unwrap().remove(&peer_id);
                                                   // Continue to request this parameter to another peer
                                                   continue;

@@ -883,7 +883,7 @@ impl ModelConfig for DeepseekConfig {
         };
 
         let _lm_head = nn::linear(
-            &variables.root() / "embed_tokens",
+            &variables.root() / "lm_head",
             self.hidden_size as i64,
             self.vocab_size as i64,
             c,
