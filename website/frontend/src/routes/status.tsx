@@ -37,8 +37,8 @@ function RouteComponent() {
 				).map(([name, c]) => (
 					<div>
 						<h4>{name}</h4>
-						<div>contract addr:</div>
-						<pre>{coordinator.chain.contractAddr}</pre>
+						<div>program id:</div>
+						<pre>{coordinator.chain.programId}</pre>
 						<div>network genesis block:</div>
 						<pre>{coordinator.chain.networkGenesis}</pre>
 						<div

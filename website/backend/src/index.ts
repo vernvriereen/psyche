@@ -7,7 +7,9 @@ import {
 	ApiGetContributionInfo,
 	ApiGetRun,
 	ApiGetRuns,
+	coordinatorIdl,
 	IndexerStatus,
+	miningPoolIdl,
 	psycheJsonReplacer,
 } from 'shared'
 import {
@@ -18,17 +20,15 @@ import { Connection } from '@solana/web3.js'
 import { makeRateLimitedFetch } from './rateLimitedFetch.js'
 import { mkdir } from 'fs/promises'
 
-const envVars = [
+const requiredEnvVars = [
 	'COORDINATOR_RPC',
-	'COORDINATOR_PROGRAM_ID',
 	'MINING_POOL_RPC',
-	'MINING_POOL_PROGRAM_ID',
 ] as const
 
 async function main() {
 	const stateDirectory = process.env.STATE_DIRECTORY ?? process.cwd()
 
-	for (const v of envVars) {
+	for (const v of requiredEnvVars) {
 		if (!process.env[v]) {
 			throw new Error(`env var ${v} is not set.`)
 		}
@@ -58,12 +58,12 @@ async function main() {
 			{
 				dataStore: coordinatorDataStore,
 				connection: coordinatorRpc,
-				address: process.env.COORDINATOR_PROGRAM_ID!,
+				addressOverride: process.env.COORDINATOR_PROGRAM_ID,
 			},
 			{
 				dataStore: miningPoolDataStore,
 				connection: miningPoolRpc,
-				address: process.env.MINING_POOL_PROGRAM_ID!,
+				addressOverride: process.env.MINING_POOL_PROGRAM_ID,
 			}
 		)
 
@@ -153,7 +153,7 @@ async function main() {
 				chain: {
 					chainSlotHeight: await coordinatorRpc.getSlot('confirmed'),
 					indexedSlot: coordinatorDataStore.lastProcessedSlot(),
-					contractAddr: process.env.COORDINATOR_PROGRAM_ID!,
+					programId: process.env.COORDINATOR_PROGRAM_ID ?? coordinatorIdl.address,
 					networkGenesis: await coordinatorRpc.getGenesisHash(),
 				},
 			},
@@ -162,7 +162,7 @@ async function main() {
 				chain: {
 					chainSlotHeight: await miningPoolRpc.getSlot('confirmed'),
 					indexedSlot: miningPoolDataStore.lastProcessedSlot(),
-					contractAddr: process.env.MINING_POOL_PROGRAM_ID!,
+					programId: process.env.MINING_POOL_PROGRAM_ID ?? miningPoolIdl.address,
 					networkGenesis: await miningPoolRpc.getGenesisHash(),
 				},
 			},

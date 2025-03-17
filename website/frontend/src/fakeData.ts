@@ -8,7 +8,7 @@ export const fakeIndexerStatus: IndexerStatus = {
 		chain: {
 			chainSlotHeight: 123456,
 			indexedSlot: 123450,
-			contractAddr: '0x1234567890abcdef1234567890abcdef12345678',
+			programId: '0x1234567890abcdef1234567890abcdef12345678',
 			networkGenesis:
 				'0xdeadbeefcafebabe0123456789abcdef0123456789abcdef0123456789abcdef',
 		},
@@ -29,7 +29,7 @@ export const fakeIndexerStatus: IndexerStatus = {
 		chain: {
 			chainSlotHeight: 123456,
 			indexedSlot: 123450,
-			contractAddr: '0x9876543210fedcba9876543210fedcba98765432',
+			programId: '0x9876543210fedcba9876543210fedcba98765432',
 			networkGenesis:
 				'0xdeadbeefcafebabe0123456789abcdef0123456789abcdef0123456789abcdef',
 		},

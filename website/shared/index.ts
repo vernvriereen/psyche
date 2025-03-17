@@ -220,7 +220,7 @@ export function psycheJsonReviver(_key: string, value: any): any {
 interface ChainStatus {
 	chainSlotHeight: number
 	indexedSlot: number
-	contractAddr: string
+	programId: string
 	networkGenesis: string
 }
 

@@ -1,33 +1,25 @@
-import {
-	Program,
-} from '@coral-xyz/anchor'
-import {
-	Connection,
-} from '@solana/web3.js'
+import { Program } from '@coral-xyz/anchor'
+import { Connection } from '@solana/web3.js'
 import {
 	coordinatorIdl,
 	miningPoolIdl,
 	PsycheSolanaCoordinator,
 	PsycheSolanaMiningPool,
 } from 'shared'
-import {
-	CoordinatorDataStore,
-	MiningPoolDataStore,
-} from './dataStore.js'
+import { CoordinatorDataStore, MiningPoolDataStore } from './dataStore.js'
 import { startWatchCoordinatorChainLoop } from './coordinatorChainLoop.js'
 import { startWatchMiningPoolChainLoop } from './miningPoolChainLoop.js'
-
 
 export function startIndexingChainToDataStores(
 	coordinator: {
 		connection: Connection
 		dataStore: CoordinatorDataStore
-		address: string
+		addressOverride?: string
 	},
 	miningPool: {
 		connection: Connection
 		dataStore: MiningPoolDataStore
-		address: string
+		addressOverride?: string
 	}
 ): {
 	cancel: () => void
@@ -37,9 +29,9 @@ export function startIndexingChainToDataStores(
 	const cancelled = { cancelled: false }
 
 	console.log('Initializing watch chain loop for coordinator & mining pool:')
-	console.log(`Coordinator address: ${coordinator.address}`)
+	console.log(`Coordinator address: ${coordinator.addressOverride}`)
 	console.log(`Coordinator RPC: ${coordinator.connection.rpcEndpoint}`)
-	console.log(`MiningPool address: ${miningPool.address}`)
+	console.log(`MiningPool address: ${miningPool.addressOverride}`)
 	console.log(`MiningPool RPC: ${miningPool.connection.rpcEndpoint}`)
 
 	let coordinatorRes!: () => void
@@ -51,7 +43,9 @@ export function startIndexingChainToDataStores(
 
 	try {
 		const coordinatorProgram = new Program<PsycheSolanaCoordinator>(
-			{ ...coordinatorIdl, address: coordinator.address } as any,
+			coordinator.addressOverride
+				? { ...coordinatorIdl, address: coordinator.addressOverride }
+				: (coordinatorIdl as any),
 			coordinator
 		)
 		startWatchCoordinatorChainLoop(
@@ -73,7 +67,9 @@ export function startIndexingChainToDataStores(
 	})
 	try {
 		const miningPoolProgram = new Program<PsycheSolanaMiningPool>(
-			{ ...miningPoolIdl, address: miningPool.address } as any,
+			miningPool.addressOverride
+				? { ...miningPoolIdl, address: miningPool.addressOverride }
+				: (miningPoolIdl as any),
 			miningPool
 		)
 		startWatchMiningPoolChainLoop(
@@ -93,5 +89,3 @@ export function startIndexingChainToDataStores(
 
 	return { coordinatorStopped, miningPoolStopped, cancel }
 }
-
-
