@@ -28,7 +28,7 @@ use std::{
 };
 use thiserror::Error;
 use tokio::{
-    sync::{mpsc, Mutex, Notify},
+    sync::{mpsc, Mutex},
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
@@ -147,7 +147,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
         trainers: Vec<Trainer>,
         previous_round: &mut RoundState<T>,
         current_round: &mut RoundState<T>,
-        notify_try_opportunistic_witness: Arc<Notify>,
     ) -> Result<TrainingStep, TrainError> {
         if trainers.is_empty() {
             return Err(TrainError::NoTrainers);
@@ -252,7 +251,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     let round_duration = Instant::now() - round_start;
                     debug!("Training for round finished, duration {:?}", round_duration);
                     finished.store(true, Ordering::SeqCst);
-                    notify_try_opportunistic_witness.notify_one();
                     Ok(FinishedTrainers {
                         evals_or_trainers: MaybeRunningEvals::Running(
                             eval_runner
@@ -446,7 +444,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     let round_duration = Instant::now() - round_start;
                     debug!("Training for round finished, duration {:?}", round_duration);
                     finished.store(true, Ordering::SeqCst);
-                    notify_try_opportunistic_witness.notify_one();
                     Ok(FinishedTrainers {
                         evals_or_trainers: evals,
                         round_losses,

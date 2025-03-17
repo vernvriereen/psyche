@@ -7,14 +7,11 @@ use psyche_coordinator::{Committee, Coordinator, RunState, Witness};
 use psyche_core::{sha256, MerkleRoot, MerkleTree, NodeIdentity};
 use psyche_modeling::{DistroResult, Trainer};
 use psyche_network::{AuthenticatableIdentity, BlobTicket, Hash, TransmittableDistroResult};
-use std::{collections::HashMap, fmt, sync::Arc, time::Instant};
+use std::{collections::HashMap, fmt, time::Instant};
 use tch::TchError;
 use thiserror::Error;
 use tokio::{
-    sync::{
-        mpsc::{self},
-        Notify,
-    },
+    sync::mpsc::{self},
     task::JoinHandle,
 };
 use tracing::{debug, error, info, info_span, trace, warn, Instrument};
@@ -48,8 +45,6 @@ pub struct StepStateMachine<T: NodeIdentity, A: AuthenticatableIdentity + 'stati
     tx_request_download: mpsc::UnboundedSender<(BlobTicket, u32)>,
     tx_witness: mpsc::UnboundedSender<Witness>,
     tx_broadcast_finished: mpsc::UnboundedSender<FinishedBroadcast>,
-
-    notify_try_opportunistic_witness: Arc<Notify>,
 
     current_round: RoundState<T>,
     previous_round: RoundState<T>,
@@ -116,13 +111,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         let mut previous_round = RoundState::default();
         let mut current_round = RoundState::default();
 
-        let notify_try_opportunistic_witness = Arc::new(Notify::new());
-        let active_step = ActiveStep::Warmup(warmup.start(
-            trainers,
-            &mut previous_round,
-            &mut current_round,
-            notify_try_opportunistic_witness.clone(),
-        ));
+        let active_step =
+            ActiveStep::Warmup(warmup.start(trainers, &mut previous_round, &mut current_round));
 
         Self {
             identity,
@@ -142,8 +132,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             tx_witness,
             tx_broadcast_finished,
 
-            notify_try_opportunistic_witness,
-
             coordinator_state,
 
             node_info: HashMap::new(),
@@ -156,6 +144,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
 
     pub fn try_send_opportunistic_witness(&mut self) -> Result<(), OpportunisticWitnessError> {
         if let Some(committee_info) = &self.current_round.committee_info {
+            // trace!("Checking for opprotunistic witness with committee info");
             if let ActiveStep::Training(step) = &self.active_step {
                 if step.finished() && self.previous_round.batch_ids_not_yet_trained_on.is_none() {
                     // Finished training and finished downloading the previous round's results
@@ -221,7 +210,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     }
                 }
             }
-        } else if let ActiveStep::Warmup(_) = &self.active_step {
+        } else if self.coordinator_state.run_state == RunState::Warmup {
+            // trace!("Checking for opprotunistic witness in warmup");
             if !self.sent_warmup_finished {
                 let merkle = MerkleTree::new(&self.current_round.broadcasts)
                     .get_root()
@@ -231,7 +221,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                 debug!("Sending warmup broadcast");
                 self.tx_broadcast_finished
                     .send(FinishedBroadcast {
-                        step: self.current_round.step,
+                        step: 0,
                         commitment_data_hash: sha256(&merkle.inner),
                         merkle,
                         proof: Default::default(),
@@ -244,9 +234,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                 return Ok(());
             }
 
-            if self.current_round.clients_finished.len()
-                != self.coordinator_state.epoch_state.clients.len()
-            {
+            let waiting_for_finished = self.coordinator_state.epoch_state.clients.len()
+                - self.current_round.clients_finished.len();
+            if waiting_for_finished != 0 {
+                trace!("Still waiting on {waiting_for_finished} warmup finish broadcasts");
                 return Ok(());
             }
 
@@ -316,6 +307,20 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     return Ok(());
                 }
             };
+        } else if !self
+            .coordinator_state
+            .epoch_state
+            .clients
+            .iter()
+            .any(|x| x.id == from_client_id)
+        {
+            debug!(
+                "Client verification failed for commitment 0x{} (step={}) received from {}",
+                hex::encode(broadcast.commitment.data_hash),
+                broadcast.step,
+                from_client_id
+            );
+            return Ok(());
         }
 
         if !is_warmup_broadcast && broadcast.proof.committee != Committee::Trainer {
@@ -405,7 +410,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                 round_state
                     .clients_finished
                     .insert(from_client_id, finished);
-                self.notify_try_opportunistic_witness.notify_one();
             }
         }
 
@@ -549,12 +553,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
 
         if just_finished {
             round_state.batch_ids_not_yet_trained_on = None;
-            self.notify_try_opportunistic_witness.notify_one();
         }
 
         // we unconditionally store every seen payload, since we're not yet sure what consensus will be on whether it's included.
         let deserializing = tokio::task::spawn({
-            let notify_try_opportunistic_witness = self.notify_try_opportunistic_witness.clone();
             //let batch_id = *batch_id;
             async move {
                 let maybe_results = tokio::task::spawn_blocking(move || {
@@ -571,7 +573,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                 })
                 .await
                 .map_err(|_| DeserializeError::DeserializeThreadCrashed)??;
-                notify_try_opportunistic_witness.notify_one();
                 Ok(maybe_results)
             }
         });
@@ -611,7 +612,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                             cooldown.finish().await?,
                             &mut self.previous_round,
                             &mut self.current_round,
-                            self.notify_try_opportunistic_witness.clone(),
                         ))
                     }
                     ActiveStep::Training(training) => {
@@ -620,7 +620,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                             training.finish().await?.evals_or_trainers,
                             &mut self.previous_round,
                             &mut self.current_round,
-                            self.notify_try_opportunistic_witness.clone(),
                         ))
                     }
                     ActiveStep::Witness(witness) => {
@@ -629,7 +628,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                             witness.finish().await?,
                             &mut self.previous_round,
                             &mut self.current_round,
-                            self.notify_try_opportunistic_witness.clone(),
                         ))
                     }
                 };
@@ -646,14 +644,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                 self.stats_logger.push_eval_results();
                 self.step_finish_time = None;
                 self.sent_warmup_finished = false;
-                self.sent_warmup_finished = false;
+                self.sent_warmup_witness = false;
                 ActiveStep::Training(self.training.start(
                     client_index,
                     &state,
                     trainers,
                     &mut self.previous_round,
                     &mut self.current_round,
-                    self.notify_try_opportunistic_witness.clone(),
                 )?)
             }
 
@@ -679,7 +676,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     client_id = %self.identity,
                     epoch = state.progress.epoch,
                     step = state.progress.step,
-                    loss = loss,
+                    loss = loss.unwrap_or(f32::NAN),
                     "client_loss",
                 );
                 self.stats_logger
@@ -701,7 +698,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     trainers,
                     &mut self.previous_round,
                     &mut self.current_round,
-                    self.notify_try_opportunistic_witness.clone(),
                 )?)
             }
 
@@ -718,7 +714,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     trainers,
                     &mut self.previous_round,
                     &mut self.current_round,
-                    self.notify_try_opportunistic_witness.clone(),
                 ))
             }
             // stay in existing run state if there's no reason to change.
@@ -807,31 +802,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunManager<T, A> {
         Self(InitStage::NotYetInitialized(Some(config)))
     }
 
-    /// # async safety:
-    /// this will wait forever if not running - you must use this in a select! that can also apply a new state.
-    pub async fn opportunistic_witness_wait_notified(&mut self) {
-        match &mut self.0 {
-            InitStage::Running(state_machine) => {
-                state_machine
-                    .notify_try_opportunistic_witness
-                    .notified()
-                    .await;
-            }
-            _ => {
-                // wait forever - this will get pre-empted by a state change in select that moves us to a running stage.
-                std::future::pending().await
-            }
-        }
-    }
-
     pub fn try_send_opportunistic_witness(&mut self) -> Result<(), OpportunisticWitnessError> {
-        match &mut self.0 {
-            InitStage::Running(state_machine) => {
-                state_machine.try_send_opportunistic_witness()?;
-            }
-            _ => {
-                panic!("Implementation error: you should never call this until `opportunistic_witness_try_ready` resolves.")
-            }
+        if let InitStage::Running(state_machine) = &mut self.0 {
+            state_machine.try_send_opportunistic_witness()?;
         }
         Ok(())
     }
