@@ -12,6 +12,14 @@ WS_RPC=${WS_RPC:-"ws://127.0.0.1:8900"}
 RUN_ID=${RUN_ID:-"test"}
 CONFIG_FILE=${CONFIG_FILE:-"./config/solana-test/config.toml"}
 
+echo -e "\n[+] deploy info:"
+echo -e "[+] WALLET_FILE = $WALLET_FILE"
+echo -e "[+] RPC = $RPC"
+echo -e "[+] WS_RPC = $WS_RPC"
+echo -e "[+] RUN_ID = $RUN_ID"
+echo -e "[+] CONFIG_FILE = $CONFIG_FILE"
+echo -e "[+] -----------------------------------------------------------"
+
 echo -e "\n[+] starting authorizor deploy"
 pushd architectures/decentralized/solana-authorizer
     echo -e "\n[+] syncing keys..."
