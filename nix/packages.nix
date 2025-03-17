@@ -91,31 +91,7 @@
           #   };
           # };
 
-          psyche-book = pkgs.stdenv.mkDerivation {
-            name = "psyche-book";
-            src = ../psyche-book;
-            nativeBuildInputs = with pkgs; [
-              mdbook
-              mdbook-mermaid
-              mdbook-linkcheck
-            ];
-            postPatch = ''
-              mkdir -p generated/cli
-              ${builtins.concatStringsSep "\n" (
-                map (
-                  name:
-                  "${rustPackages.${name}}/bin/${name} print-all-help --markdown > generated/cli/${
-                    builtins.replaceStrings [ "-" ] [ "-" ] name
-                  }.md"
-                ) rustPackageNames
-              )}
-            '';
-            buildPhase = "mdbook build";
-            installPhase = ''
-              mkdir -p $out
-              cp -r book/html/* $out/
-            '';
-          };
+          psyche-book = pkgs.callPackage ../psyche-book { inherit rustPackages rustPackageNames; };
         };
     };
 }

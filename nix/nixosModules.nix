@@ -99,7 +99,7 @@
           };
         };
 
-      persistentDocsAndWebsite =
+      persistentPsycheWebsite =
         {
           configName,
           backendSecret,
@@ -149,11 +149,6 @@
                       basic_auth {
                         import ${config.age.secrets.caddyBasicAuth.path}
                       }
-
-                      handle_path /docs/* {
-                        root * ${self.packages.${pkgs.system}.psyche-book}
-                        file_server
-                      }
                     '';
                   in
                   {
@@ -177,14 +172,14 @@
         };
     in
     {
-      # server for hosting the docs & frontend/backend with http basic auth, for testing
-      nixosConfigurations."psyche-http-devnet-authed" = persistentDocsAndWebsite {
+      # server for hosting the frontend/backend with http basic auth, for testing
+      nixosConfigurations."psyche-http-devnet-authed" = persistentPsycheWebsite {
         configName = "psyche-http-devnet-authed";
         hostnames = [ "devnet-preview.psyche.network" ];
         backendSecret = ../secrets/devnet/backend.age;
         miningPoolRpc = "https://api.devnet.solana.com";
       };
-      nixosConfigurations."psyche-http-mainnet-authed" = persistentDocsAndWebsite {
+      nixosConfigurations."psyche-http-mainnet-authed" = persistentPsycheWebsite {
         configName = "psyche-http-mainnet-authed";
         hostnames = [ "mainnet-preview.psyche.network" ];
         backendSecret = ../secrets/backend-mainnet.age;
@@ -237,6 +232,26 @@
                     }
                   '';
                 };
+              };
+            }
+          )
+        ];
+      };
+
+      # server for hosting docs with auth, for test deploys
+      nixosConfigurations."psyche-http-docs-authed" = inputs.nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = base-system ++ [
+          (
+            { pkgs, ... }:
+            {
+              services.caddy = {
+                enable = true;
+                virtualHosts."http://psyche-http-docs-authed.test-deploy-docs.psyche.NousResearch.garnix.me".extraConfig =
+                  ''
+                    root * ${self.packages.${pkgs.system}.psyche-book}
+                    file_server
+                  '';
               };
             }
           )

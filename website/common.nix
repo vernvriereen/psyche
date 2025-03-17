@@ -34,6 +34,9 @@ pkgs.stdenv.mkDerivation {
 
   inherit preBuild installPhase;
 
+  # pnpm stuff is a lilllll broken
+  dontCheckForBrokenSymlinks = true;
+
   buildPhase = ''
     runHook preBuild
 

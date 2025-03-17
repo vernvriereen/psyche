@@ -77,7 +77,6 @@ DEVNET_WS_RPC:="wss://api.devnet.solana.com"
 setup-solana-devnet-test-run run_id="test" *args='':
     RUN_ID={{run_id}} RPC={{DEVNET_RPC}} WS_RPC={{DEVNET_WS_RPC}} ./scripts/deploy-solana-test.sh {{args}}
 
-
 # Deploy coordinator on Devnet and create a "test" run for 20m model.
 setup-solana-devnet-light-test-run run_id="test" *args='':
     RUN_ID={{run_id}} RPC={{DEVNET_RPC}} WS_RPC={{DEVNET_WS_RPC}} CONFIG_FILE=./config/solana-test/light-config.toml ./scripts/deploy-solana-test.sh  {{args}}
@@ -110,6 +109,7 @@ generate_cli_docs:
     cargo run -p psyche-centralized-client print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-client.md
     cargo run -p psyche-centralized-server print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-server.md
     cargo run -p psyche-centralized-local-testnet print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-local-testnet.md
+    
 
 build_docker_test_client:
     ./scripts/coordinator-address-check.sh

@@ -9,6 +9,11 @@ servers:
       type: on-branch
       branch: test-deploy-mainnet
 
+  - configuration: psyche-http-docs-authed
+    deployment:
+      type: on-branch
+      branch: test-deploy-docs
+
   - configuration: psyche-http-mainnet
     deployment:
       type: on-branch
@@ -27,7 +32,7 @@ builds:
       - devShell.x86_64-linux
       - nixosConfigurations.*
       - "checks.*.*"
-      
+
   # on main, might as well build everything, though
   - exclude: []
     include:

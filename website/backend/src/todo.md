@@ -22,7 +22,7 @@ TODO: ToS
 footer
 link to nous, blog post, legal.
 
-links in top: make work
+links in top: make work + tooltip on hover
 
 badges??
 

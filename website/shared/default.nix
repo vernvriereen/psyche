@@ -2,6 +2,7 @@
 let
   solana-coordinator-idl = pkgs.callPackage ../../architectures/decentralized/solana-coordinator { };
   solana-mining-pool-idl = pkgs.callPackage ../../architectures/decentralized/solana-mining-pool { };
+  psyche-website-wasm = pkgs.callPackage ../wasm { };
   mkWebsitePackage = pkgs.callPackage ../common.nix { };
 in
 mkWebsitePackage {
@@ -15,6 +16,9 @@ mkWebsitePackage {
       cp ${solana-mining-pool-idl}/idl.json ./mining-pool_idl.json
       cp ${solana-mining-pool-idl}/idlType.ts ./mining-pool_idlType.ts
     popd
+
+    mkdir -p wasm/dist
+    cp -r ${psyche-website-wasm}/* wasm/pkg
   '';
 
   installPhase = ''
