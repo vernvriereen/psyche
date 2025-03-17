@@ -118,6 +118,7 @@ pub async fn run() {
                 compression_topk_startup_steps: 0,
                 compression_chunk: 1,
                 quantize_1bit: false,
+                weight_decay: None,
             },
         })),
     )

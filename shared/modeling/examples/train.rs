@@ -147,6 +147,7 @@ fn main() -> Result<()> {
             compression_topk_startup_steps: 0,
             compression_chunk: args.compression_chunk,
             quantize_1bit: args.distro_quantization,
+            weight_decay: Some(args.weight_decay),
         },
         false => OptimizerDefinition::AdamW {
             betas: [args.beta1, args.beta2],

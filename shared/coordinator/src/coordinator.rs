@@ -19,6 +19,7 @@ pub const SOLANA_MAX_NUM_WITNESSES: usize = 32;
 pub const SOLANA_MAX_NUM_CHECKPOINTERS: usize = 4;
 
 pub const BLOOM_FALSE_RATE: f64 = 0.01f64;
+pub const WITNESS_QUORUM_RAIO: f64 = 2.0f64 / 3.0f64;
 pub const WAITING_FOR_MEMBERS_EXTRA_SECONDS: u64 = 3;
 
 // bloom filter with 1024 bits (16 u64)
@@ -565,7 +566,8 @@ impl<T: NodeIdentity> Coordinator<T> {
             0 => unreachable!(),
             1 => 1,
             2 => 2,
-            x => x / 2 + 1,
+            3 => 2,
+            witness_nodes => (witness_nodes as f64 * WITNESS_QUORUM_RAIO) as u16,
         }
     }
 
@@ -938,15 +940,11 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     pub fn is_warmup_just_starting(&self) -> bool {
-        self.epoch_state.first_round.is_true()
-            && self.run_state == RunState::Warmup
-            && self.epoch_state.warmup_just_starting.is_true()
+        self.epoch_state.first_round.is_true() && self.run_state == RunState::Warmup
     }
 
     pub fn is_training_just_starting(&self) -> bool {
-        self.epoch_state.first_round.is_true()
-            && self.run_state == RunState::RoundTrain
-            && self.epoch_state.training_just_starting.is_true()
+        self.epoch_state.first_round.is_true() && self.run_state == RunState::RoundTrain
     }
 }
 

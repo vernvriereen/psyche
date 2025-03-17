@@ -287,8 +287,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                                     rx_model_config_response.await.unwrap();
                                 debug!("Got p2p info, model_config: {}", model_config);
 
-                                let model_config =
-                                    AutoConfig::Llama(serde_json::from_str(&model_config)?);
+                                let model_config = match llm.architecture {
+                                    model::LLMArchitecture::HfLlama => {
+                                        AutoConfig::Llama(serde_json::from_str(&model_config)?)
+                                    }
+                                    model::LLMArchitecture::HfDeepseek => {
+                                        AutoConfig::Deepseek(serde_json::from_str(&model_config)?)
+                                    }
+                                };
                                 let parameter_names = model_config.get_parameter_names();
                                 info!(
                                     "Requesting {} parameters over p2p network",
