@@ -143,6 +143,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 client_id = %identity,
                                 old_state = old_run_state,
                                 new_state = new_state.run_state.to_string(),
+                                epoch = new_state.progress.epoch,
+                                step = new_state.progress.step,
                                 "apply_state"
                             );
 
@@ -521,6 +523,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             })
                             .filter(|peer_id| peer_id != &me)
                             .collect();
+
+                            if peer_ids.is_empty() {
+                                return Err(anyhow::anyhow!("No peers available to request the model"))
+                            }
+
                             let peer_ids_iter = peer_ids.into_iter().cycle();
                             for peer_id in peer_ids_iter {
                                 match request_model(router.clone(), peer_id, ModelRequestType::Config).await {

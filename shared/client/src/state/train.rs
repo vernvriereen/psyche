@@ -621,8 +621,10 @@ fn start_sending_health_checks<T: NodeIdentity>(
                     let proof = committee_selection.get_committee(index as u64);
                     if !state.healthy(&client.id, &proof).unwrap_or(false) {
                         warn!(
-                            "Found unhealthy client at index {index} , client: {:?}",
-                            &client.id
+                            unhealthy_warn = "Found unhealthy trainer at",
+                            index = index,
+                            client_id = %&client.id,
+                            current_step = state.epoch_state.rounds_head
                         );
                         checks.push((client.id, proof));
                     }

@@ -10,6 +10,8 @@ use psyche_coordinator::RunState;
 use psyche_coordinator::TickResult;
 use psyche_coordinator::Witness;
 use psyche_core::sha256v;
+use psyche_core::SizedIterator;
+use psyche_core::SmallBoolean;
 
 use crate::client::Client;
 use crate::clients_state::ClientsState;
@@ -21,6 +23,8 @@ use crate::ProgramError;
 pub struct CoordinatorInstanceState {
     pub coordinator: Coordinator<ClientId>,
     pub clients_state: ClientsState,
+    pub is_warmup_first_tick: SmallBoolean,
+    pub is_training_first_tick: SmallBoolean,
 }
 
 unsafe impl Pod for CoordinatorInstanceState {}
@@ -38,6 +42,10 @@ impl CoordinatorInstanceState {
 
         let active_clients = match self.coordinator.run_state {
             RunState::WaitingForMembers => {
+                // Reset state flags
+                self.is_warmup_first_tick = SmallBoolean::from(true);
+                self.is_training_first_tick = SmallBoolean::from(true);
+
                 let active_clients = self.clients_state.active_clients();
                 msg!("Pending active clients: {}", active_clients.len());
                 Some(active_clients)
@@ -53,12 +61,19 @@ impl CoordinatorInstanceState {
             u64::from_ne_bytes(random_seed),
         ) {
             Ok(TickResult::Ticked) => {
-                if self.coordinator.is_epoch_just_starting() {
+                if self.coordinator.is_warmup_just_starting()
+                    && self.is_warmup_first_tick.is_true()
+                {
                     msg!("New epoch just starting, save epoch rewards rate");
                     self.clients_state.current_epoch_rates =
                         self.clients_state.future_epoch_rates;
+                    self.is_warmup_first_tick = SmallBoolean::from(false);
+                } else if self.coordinator.is_training_just_starting()
+                    && self.is_training_first_tick.is_true()
+                {
                     msg!("New epoch just starting, save epoch active clients");
                     self.clients_state.next_active += 1;
+                    self.is_training_first_tick = SmallBoolean::from(false);
                 }
             },
             Ok(TickResult::EpochEnd(success)) => {
@@ -183,6 +198,12 @@ impl CoordinatorInstanceState {
         }
 
         Ok(())
+    }
+
+    pub fn get_active_clients(
+        &self,
+    ) -> SizedIterator<impl Iterator<Item = &ClientId>> {
+        self.clients_state.active_clients()
     }
 
     pub fn join_run(&mut self, id: ClientId) -> Result<()> {
