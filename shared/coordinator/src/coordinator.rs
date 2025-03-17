@@ -188,8 +188,6 @@ pub struct CoordinatorEpochState<T> {
     pub rounds_head: u32,
     pub first_round: SmallBoolean,
     pub checkpointed: SmallBoolean,
-    pub warmup_just_starting: SmallBoolean,
-    pub training_just_starting: SmallBoolean,
 }
 
 #[derive(Clone, Debug, Zeroable, Copy, Serialize, Deserialize)]
@@ -328,8 +326,6 @@ impl<T: NodeIdentity> Default for CoordinatorEpochState<T> {
             checkpointed: Default::default(),
             clients: Default::default(),
             exited_clients: Default::default(),
-            warmup_just_starting: Default::default(),
-            training_just_starting: Default::default(),
         }
     }
 }
@@ -739,8 +735,6 @@ impl<T: NodeIdentity> Coordinator<T> {
 
             bytemuck::write_zeroes(&mut self.epoch_state);
             self.epoch_state.first_round = true.into();
-            self.epoch_state.warmup_just_starting = true.into();
-            self.epoch_state.training_just_starting = true.into();
             self.epoch_state
                 .clients
                 .extend(
