@@ -140,8 +140,13 @@ async fn test_client_join_and_get_model_p2p(#[values(1, 2)] n_new_clients: u8) {
         tokio::select! {
            _ = liveness_check_interval.tick() => {
                println!("Waiting for epoch to end");
-                if let Err(e) = watcher.monitor_clients_health(n_new_clients).await {
+                if let Err(e) = watcher.monitor_clients_health(n_new_clients + 1).await {
                     panic!("{}", e);
+               }
+               let current_epoch = solana_client.get_current_epoch().await;
+               let current_step = solana_client.get_last_step().await;
+               if current_epoch >= 1 && current_step > 1 {
+                    panic!("Second epoch started and the clients did not get the model");
                }
            }
            response = watcher.log_rx.recv() => {
@@ -195,7 +200,7 @@ async fn test_pause_solana_validator(
     };
 
     // Solana client
-    let solana_client = SolanaTestClient::new(run_id).await;
+    let solana_client = Arc::new(SolanaTestClient::new(run_id).await);
 
     // Monitor clients
     for i in 1..=n_clients {
@@ -289,7 +294,7 @@ async fn test_delay_solana_test_validator(
     };
 
     // Solana client
-    let solana_client = SolanaTestClient::new(run_id).await;
+    let solana_client = Arc::new(SolanaTestClient::new(run_id).await);
 
     // Monitor clients
     for i in 1..=n_clients {
@@ -379,7 +384,7 @@ async fn test_delay_solana_client(#[values(1, 2)] n_clients: u8, #[values(0, 10)
     };
 
     // Solana client
-    let solana_client = SolanaTestClient::new(run_id).await;
+    let solana_client = Arc::new(SolanaTestClient::new(run_id).await);
 
     // Monitor clients
     for i in 1..=n_clients {
@@ -434,6 +439,72 @@ async fn test_delay_solana_client(#[values(1, 2)] n_clients: u8, #[values(0, 10)
                            break;
                        }
                    }
+               }
+           }
+        }
+    }
+}
+
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
+async fn test_rejoining_client_delay() {
+    // initialize DockerWatcher
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+
+    // initialize a Solana run with 1 client
+    let _cleanup = e2e_testing_setup(docker.clone(), 1, None).await;
+
+    let solana_client = Arc::new(SolanaTestClient::new("test".to_string()).await);
+
+    tokio::time::sleep(Duration::from_secs(30)).await;
+
+    // Spawn client
+    spawn_new_client(docker.clone()).await.unwrap();
+
+    let _monitor_client = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-{}", 2),
+            vec![JsonFilter::LoadedModel],
+        )
+        .unwrap();
+
+    let scheduler = ChaosScheduler::new(docker.clone(), solana_client.clone());
+    scheduler
+        .schedule_chaos(
+            ChaosAction::Delay {
+                duration_secs: 30,
+                latency_ms: 3000,
+                targets: vec![format!("{CLIENT_CONTAINER_PREFIX}-{}", 1)],
+            },
+            20,
+        )
+        .await;
+
+    let mut interval = time::interval(Duration::from_secs(10));
+    println!("Waiting for training to start");
+    loop {
+        tokio::select! {
+           _ = interval.tick() => {
+               println!("Waiting for first epoch to finish");
+               if let Err(e) = watcher.monitor_clients_health(2).await {
+                   panic!("{}", e);
+               }
+               let current_epoch = solana_client.get_current_epoch().await;
+               let current_step = solana_client.get_last_step().await;
+               if current_epoch >= 1 && current_step > 1 {
+                    panic!("Second epoch started and the clients did not get the model");
+               }
+           }
+           response = watcher.log_rx.recv() => {
+               match response {
+                   Some(Response::LoadedModel(checkpoint)) => {
+                       // assert client and coordinator state synchronization
+                       assert!(checkpoint.starts_with("P2P"), "The model should be obtained from P2P");
+                       println!("Client got the model with P2P");
+                       return;
+                   }
+                   _ => {}
                }
            }
         }

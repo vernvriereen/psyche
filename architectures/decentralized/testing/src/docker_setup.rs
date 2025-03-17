@@ -1,9 +1,9 @@
+use bollard::container::{ListContainersOptions, RemoveContainerOptions};
+use bollard::models::DeviceRequest;
+use bollard::Docker;
 use bollard::{
     container::{Config, CreateContainerOptions},
-    container::{ListContainersOptions, RemoveContainerOptions},
-    models::DeviceRequest,
     secret::{ContainerSummary, HostConfig},
-    Docker,
 };
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
