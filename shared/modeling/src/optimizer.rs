@@ -48,6 +48,7 @@ impl Optimizer {
             },
             OptimizerDefinition::Distro {
                 clip_grad_norm,
+                weight_decay,
                 compression_decay,
                 compression_decay_warmup_steps,
                 compression_topk,
@@ -61,7 +62,7 @@ impl Optimizer {
                     model.variables(),
                     compression_decay as f64,
                     compression_chunk as i64,
-                    0.0,
+                    weight_decay.unwrap_or(0.0) as f64,
                     model.communicator(),
                 )
                 .into(),

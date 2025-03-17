@@ -12,7 +12,9 @@ pub struct StatsLogger {
     wandb_run: Option<Arc<wandb::Run>>,
     eval_runner: EvalRunner,
 
-    round_durations: BoundedQueue<Duration, 16>,
+    step_durations: BoundedQueue<Duration, 16>,
+    training_round_durations: BoundedQueue<Duration, 16>,
+
     losses: Vec<f32>,
     last_optim_stats: HashMap<String, f64>,
     eval_history: HashMap<String, Vec<f64>>,
@@ -30,7 +32,8 @@ impl StatsLogger {
             tokenizer,
             wandb_run: wandb_run.map(Arc::new),
             losses: Vec::new(),
-            round_durations: Default::default(),
+            step_durations: Default::default(),
+            training_round_durations: Default::default(),
             eval_runner,
             lr_schedule,
             eval_history: HashMap::new(),
@@ -56,6 +59,7 @@ impl StatsLogger {
 
         round_log.insert("train/total_tokens", total_tokens(state));
         round_log.insert("train/tokens_per_sec", self.global_tokens_per_second(state));
+        round_log.insert("train/efficency", self.efficency());
 
         round_log.insert("coordinator/num_clients", state.epoch_state.clients.len());
         round_log.insert("coordinator/epoch", state.progress.epoch);
@@ -93,13 +97,17 @@ impl StatsLogger {
     pub fn push_round_stats(
         &mut self,
         round_losses: &[f32],
-        round_duration: Duration,
+        training_round_duration: Duration,
+        step_duration: Option<Duration>,
         optim_stats: HashMap<String, f64>,
     ) -> f32 {
         let loss = round_losses.iter().sum::<f32>() / round_losses.len() as f32;
         self.losses.push(loss);
 
-        self.round_durations.push(round_duration);
+        self.training_round_durations.push(training_round_duration);
+        if let Some(step_duration) = step_duration {
+            self.step_durations.push(step_duration);
+        }
 
         self.last_optim_stats = optim_stats;
         loss
@@ -125,22 +133,35 @@ impl StatsLogger {
     }
 
     pub fn global_tokens_per_second<T: NodeIdentity>(&self, state: &Coordinator<T>) -> f32 {
-        match self.round_durations.is_empty() {
+        match self.step_durations.is_empty() {
             true => 0.,
             false => match &state.model {
                 model::Model::LLM(llm) => match llm.data_type {
                     model::LLMTrainingDataType::Pretraining => {
                         let tokens = state.config.global_batch_size as u32 * llm.max_seq_len;
                         let seconds = self
-                            .round_durations
+                            .step_durations
                             .iter()
                             .fold(0f32, |acc, ele| acc + ele.as_secs_f32());
-                        tokens as f32 / (seconds / self.round_durations.len() as f32)
+                        tokens as f32 / (seconds / self.step_durations.len() as f32)
                     }
                     model::LLMTrainingDataType::Finetuning => todo!(),
                 },
             },
         }
+    }
+
+    pub fn efficency(&self) -> f32 {
+        let step_seconds = self
+            .step_durations
+            .iter()
+            .fold(0f32, |acc, ele| acc + ele.as_secs_f32());
+        let training_round_seconds = self
+            .training_round_durations
+            .iter()
+            .skip(self.training_round_durations.len() - self.step_durations.len())
+            .fold(0f32, |acc, ele| acc + ele.as_secs_f32());
+        training_round_seconds / step_seconds
     }
 
     pub fn current_eval_results(&self) -> HashMap<String, f64> {

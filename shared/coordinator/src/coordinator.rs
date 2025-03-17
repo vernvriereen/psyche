@@ -19,6 +19,7 @@ pub const SOLANA_MAX_NUM_WITNESSES: usize = 32;
 pub const SOLANA_MAX_NUM_CHECKPOINTERS: usize = 4;
 
 pub const BLOOM_FALSE_RATE: f64 = 0.01f64;
+pub const WITNESS_QUORUM_RAIO: f64 = 2.0f64 / 3.0f64;
 
 // bloom filter with 1024 bits (16 u64)
 pub type WitnessBloom = Bloom<16, 8>;
@@ -560,7 +561,8 @@ impl<T: NodeIdentity> Coordinator<T> {
             0 => unreachable!(),
             1 => 1,
             2 => 2,
-            x => x / 2 + 1,
+            3 => 2,
+            witness_nodes => (witness_nodes as f64 * WITNESS_QUORUM_RAIO) as u16,
         }
     }
 
