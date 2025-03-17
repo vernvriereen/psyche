@@ -226,8 +226,13 @@ async fn async_main() -> Result<()> {
                 .await?;
             let locked = backend.get_balance(&created.account).await?;
             println!(
-                "Created run {} with transaction {}",
-                run_id, created.transaction
+                "Created run {} with transactions: create {}, create auth? {}",
+                run_id,
+                created.tx_create_coordinator,
+                created
+                    .tx_create_auth
+                    .map(|t| t.to_string())
+                    .unwrap_or("None".to_string()),
             );
             println!("Instance account: {}", created.instance);
             println!("Coordinator account: {}", created.account);

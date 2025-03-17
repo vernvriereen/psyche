@@ -43,7 +43,8 @@ pub struct SolanaBackendRunner {
 pub struct CreatedRun {
     pub instance: Pubkey,
     pub account: Pubkey,
-    pub transaction: Signature,
+    pub tx_create_coordinator: Signature,
+    pub tx_create_auth: Option<Signature>,
 }
 
 impl SolanaBackend {
@@ -139,7 +140,7 @@ impl SolanaBackend {
 
         let coordinator_instance = psyche_solana_coordinator::find_coordinator_instance(&run_id);
 
-        let coordinator_account_signer = Keypair::new();
+        let coordinator_account_signer = Arc::new(Keypair::new());
         let coordinator_account = coordinator_account_signer.pubkey();
 
         let authorization_global = psyche_solana_authorizer::find_authorization(
@@ -148,7 +149,7 @@ impl SolanaBackend {
             psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE,
         );
 
-        let signature = self
+        let create_coordinator_signature = self
             .program_coordinator
             .request()
             .instruction(system_instruction::create_account(
@@ -181,28 +182,28 @@ impl SolanaBackend {
                     .unwrap()[0]
                     .clone(),
             )
-            .instruction(
-                self.program_authorizer
-                    .request()
-                    .accounts(
-                        psyche_solana_authorizer::accounts::AuthorizationCreateAccounts {
-                            payer,
-                            grantor: join_authority,
-                            authorization: authorization_global,
-                            system_program: system_program::ID,
-                        },
-                    )
-                    .args(psyche_solana_authorizer::instruction::AuthorizationCreate {
-                        params: psyche_solana_authorizer::logic::AuthorizationCreateParams {
-                            grantee: system_program::ID,
-                            scope: psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE
-                                .to_vec(),
-                        },
-                    })
-                    .instructions()
-                    .unwrap()[0]
-                    .clone(),
+            .signer(coordinator_account_signer.clone())
+            .send()
+            .await?;
+
+        // fine if it fails, means it's already there!
+        let auth_create_signature = self
+            .program_authorizer
+            .request()
+            .accounts(
+                psyche_solana_authorizer::accounts::AuthorizationCreateAccounts {
+                    payer,
+                    grantor: join_authority,
+                    authorization: authorization_global,
+                    system_program: system_program::ID,
+                },
             )
+            .args(psyche_solana_authorizer::instruction::AuthorizationCreate {
+                params: psyche_solana_authorizer::logic::AuthorizationCreateParams {
+                    grantee: system_program::ID,
+                    scope: psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE.to_vec(),
+                },
+            })
             .instruction(
                 self.program_authorizer
                     .request()
@@ -221,17 +222,18 @@ impl SolanaBackend {
                         },
                     )
                     .instructions()
-                    .unwrap()[0]
-                    .clone(),
+                    .unwrap()
+                    .remove(0),
             )
-            .signer(coordinator_account_signer)
             .send()
-            .await?;
+            .await
+            .ok();
 
         Ok(CreatedRun {
             instance: coordinator_instance,
             account: coordinator_account,
-            transaction: signature,
+            tx_create_coordinator: create_coordinator_signature,
+            tx_create_auth: auth_create_signature,
         })
     }
 
