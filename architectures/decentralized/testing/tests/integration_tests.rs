@@ -69,7 +69,7 @@ async fn test_two_clients_three_epochs_run() {
             }
             response = watcher.log_rx.recv() => {
                 match response {
-                    Some(Response::StateChange(timestamp, _client_1, old_state, new_state)) => {
+                    Some(Response::StateChange(timestamp, _client_1, old_state, new_state, _ , _)) => {
                         let coordinator_state = solana_client.get_run_state().await;
                         println!(
                             "client: new_state: {}, old_state: {}, timestamp: {}",
@@ -509,4 +509,115 @@ async fn test_rejoining_client_delay() {
            }
         }
     }
+}
+
+/// creates a run and spawns 2 clients
+/// the first run is completed only by the client that joins first
+/// the second run starts with both clients and shuts down client 2 mid-run
+/// verifies the Healthcheck is sent and the shutdown client is kicked from the run
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
+async fn disconnect_client() {
+    // set test variables
+    let run_id = "test".to_string();
+    // epochs the test will run
+    let num_of_epochs_to_run = 3;
+
+    // initialize a Solana run with 2 client
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+    let _cleanup = e2e_testing_setup(docker.clone(), 2, None).await;
+
+    let _monitor_client_1 = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-1"),
+            vec![
+                JsonFilter::StateChange,
+                JsonFilter::HealthCheck,
+                JsonFilter::UntrainedBatches,
+            ],
+        )
+        .unwrap();
+
+    // initialize solana client to query the coordinator state
+    let solana_client = SolanaTestClient::new(run_id).await;
+
+    // step where the healhcheck are send
+    let mut health_check_step: Vec<u64> = Vec::new();
+    // untrained batches
+    let mut untrained_batches: Vec<Vec<u64>> = Vec::new();
+
+    while let Some(response) = watcher.log_rx.recv().await {
+        match response {
+            Response::StateChange(_timestamp, _client_id, old_state, new_state, epoch, step) => {
+                let epoch_clients = solana_client.get_current_epoch_clients().await;
+
+                if old_state == RunState::WaitingForMembers.to_string() {
+                    println!(
+                        "Starting epoch: {} with {} clients",
+                        epoch,
+                        epoch_clients.len()
+                    );
+                }
+
+                // kill client during step 2 in the RoundWitness state
+                if epoch == 1 && step == 22 && new_state == RunState::RoundWitness.to_string() {
+                    assert_eq!(epoch_clients.len(), 2);
+
+                    // kill client container
+                    // take into account that it can take some time to the container to shutdown
+                    // so the client can continue training for some extra steps
+                    watcher
+                        .kill_container(&format!("{CLIENT_CONTAINER_PREFIX}-2"))
+                        .await
+                        .unwrap();
+                    println!("STOP NODE: {}-2", CLIENT_CONTAINER_PREFIX);
+                }
+
+                // one step after the healthcheck was send
+                // the unhealthy client should be removed
+                if !health_check_step.is_empty()
+                    && health_check_step[0] + 1 == step
+                    && new_state == RunState::RoundTrain.to_string()
+                {
+                    // assert idle client was kicked
+                    assert_eq!(epoch_clients.len(), 1);
+                }
+
+                // finish test
+                if epoch == num_of_epochs_to_run {
+                    break;
+                }
+            }
+
+            // track HealthChecks send
+            Response::HealthCheck(unhealthy_client_id, _index, current_step) => {
+                println!("found unhealthy client: {:?}", unhealthy_client_id);
+
+                let clients_ids: Vec<String> = solana_client
+                    .get_clients()
+                    .await
+                    .iter()
+                    .map(|client| client.id.to_string())
+                    .collect();
+                health_check_step.push(current_step);
+                assert!(clients_ids.contains(&unhealthy_client_id));
+            }
+
+            // track untrained batches
+            Response::UntrainedBatches(untrained_batch_ids) => {
+                println!("untrained_batch_ids: {:?}", untrained_batch_ids);
+                untrained_batches.push(untrained_batch_ids);
+            }
+            _ => {}
+        }
+    }
+
+    // assert that just one healthcheck was send
+    assert!(health_check_step.len() == 1);
+
+    // check how many batches where lost due to the client shutdown
+    // ideally, we should only lose 2 batches (The ones assigned in the step where it didn't train and the ones where it ran the Health Check and gets kicked)
+    // see issue: https://github.com/NousResearch/psyche/issues/269
+    assert!(untrained_batches.len() <= 3);
 }

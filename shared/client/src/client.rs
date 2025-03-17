@@ -143,6 +143,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 client_id = %identity,
                                 old_state = old_run_state,
                                 new_state = new_state.run_state.to_string(),
+                                epoch = new_state.progress.epoch,
+                                step = new_state.progress.step,
                                 "apply_state"
                             );
 
