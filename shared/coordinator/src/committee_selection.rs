@@ -12,6 +12,7 @@ pub const WITNESS_SALT: &str = "witness";
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Zeroable,
     AnchorDeserialize,
@@ -21,6 +22,7 @@ pub const WITNESS_SALT: &str = "witness";
 )]
 #[repr(C)]
 pub enum Committee {
+    #[default]
     TieBreaker,
     Verifier,
     Trainer,
@@ -39,6 +41,7 @@ pub struct CommitteeSelection {
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Zeroable,
     AnchorDeserialize,

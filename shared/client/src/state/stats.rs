@@ -100,9 +100,14 @@ impl StatsLogger {
         training_round_duration: Duration,
         step_duration: Option<Duration>,
         optim_stats: HashMap<String, f64>,
-    ) -> f32 {
-        let loss = round_losses.iter().sum::<f32>() / round_losses.len() as f32;
-        self.losses.push(loss);
+    ) -> Option<f32> {
+        let loss = if !round_losses.is_empty() {
+            let loss = round_losses.iter().sum::<f32>() / round_losses.len() as f32;
+            self.losses.push(loss);
+            Some(loss)
+        } else {
+            None
+        };
 
         self.training_round_durations.push(training_round_duration);
         if let Some(step_duration) = step_duration {

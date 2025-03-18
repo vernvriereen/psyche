@@ -12,9 +12,15 @@ pub struct TrainingResult {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Finished {
+    pub broadcast_merkle: MerkleRoot,
+    pub warmup: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum BroadcastType {
     TrainingResult(TrainingResult),
-    Finished(MerkleRoot),
+    Finished(Finished),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

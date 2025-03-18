@@ -49,4 +49,5 @@ pub struct FinishedBroadcast {
     pub merkle: MerkleRoot,
     pub commitment_data_hash: [u8; 32],
     pub proof: CommitteeProof,
+    pub warmup: bool,
 }

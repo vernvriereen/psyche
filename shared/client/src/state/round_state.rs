@@ -1,9 +1,9 @@
-use crate::{fetch_data::BatchIdSet, TrainingResult};
+use crate::{fetch_data::BatchIdSet, Finished, TrainingResult};
 
 use psyche_coordinator::{
     Commitment, CommitteeProof, CommitteeSelection, WitnessBloom, WitnessProof,
 };
-use psyche_core::{BatchId, MerkleRoot, NodeIdentity};
+use psyche_core::{BatchId, NodeIdentity};
 use psyche_modeling::DistroResult;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -21,7 +21,7 @@ pub struct RoundState<T: NodeIdentity> {
     pub downloads: HashMap<psyche_network::Hash, PayloadState<T>>,
     #[allow(clippy::type_complexity)]
     pub results: HashMap<BatchId, Vec<(T, (Commitment, TrainingResult))>>,
-    pub clients_finished: HashMap<T, MerkleRoot>,
+    pub clients_finished: HashMap<T, Finished>,
     pub data_assignments: BTreeMap<BatchId, T>,
     pub blooms: Option<(WitnessBloom, WitnessBloom)>,
     pub broadcasts: Vec<[u8; 32]>,
