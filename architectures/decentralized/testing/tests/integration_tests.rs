@@ -620,7 +620,6 @@ async fn disconnect_client() {
     assert!(untrained_batches.len() <= 3);
 }
 
-
 /// Drop a client below the minimum required, go to WaitingForMembers
 /// Reconnect a client and then go back to warmup
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
@@ -741,6 +740,7 @@ async fn test_when_all_clients_disconnect_checkpoint_is_hub() {
     )
     .await;
 
+    println!("Watching container {}", format!("{CLIENT_CONTAINER_PREFIX}-1"));
     let _monitor_client = watcher
         .monitor_container(
             &format!("{CLIENT_CONTAINER_PREFIX}-{}", 1),
@@ -756,76 +756,99 @@ async fn test_when_all_clients_disconnect_checkpoint_is_hub() {
 
     let mut has_killed_container_yet = false;
     let mut has_spawned_new_client_yet = false;
-    while let Some(response) = watcher.log_rx.recv().await {
-        match response {
-            Response::Loss(client, epoch, step, loss) => {
-                println!(
-                    "client: {:?}, epoch: {}, step: {}, Loss: {}",
-                    client, epoch, step, loss
-                );
-                if current_epoch == 1 && !has_killed_container_yet {
-                    if !has_spawned_new_client_yet {
-                        // Spawn a new client, that should get the model with P2P
-                        spawn_new_client_with_monitoring(docker.clone(), &watcher)
-                            .await
-                            .unwrap();
-                        has_spawned_new_client_yet = true;
+    let mut liveness_check_interval = time::interval(Duration::from_secs(10));
 
-                        // Checkpoint should be P2P here
-                        assert!(
-                            matches!(solana_client.get_checkpoint().await, Checkpoint::P2P(_)),
-                            "The coordinator must be on P2P checkpoint"
+    println!("starting loop");
+    loop {
+        tokio::select! {
+            _ = liveness_check_interval.tick() => {
+                println!("liveness check");
+                // Get current state of the coordinator
+                /*let coordinator_state = solana_client.get_run_state().await;
+                let current_clients = solana_client.get_current_epoch_clients().await.len();
+                println!("Coordinator state: {:?}. Current clients: {}", coordinator_state, current_clients);
+                // Get checkpoint status from coordinator
+                let checkpoint = solana_client.get_checkpoint().await;
+                println!("Checkpoint: {:?}", checkpoint);
+                if has_spawned_new_client_yet && matches!(checkpoint, Checkpoint::Hub(_)) {
+                    println!("Checkpoint is Hub. Stopping.");
+                    break;
+                }*/
+            }
+            response = watcher.log_rx.recv() => {
+                println!("response got");
+                match response {
+                    Some(Response::LoadedModel(checkpoint)) => {
+                        dbg!(&checkpoint);
+                        if !has_killed_container_yet {
+                            println!("not killed container yet, skipping");
+                            continue;
+                        }
+                        if has_killed_container_yet && has_spawned_new_client_yet {
+                            // Assert that the checkpoint is Hub
+                            assert!(
+                                matches!(solana_client.get_checkpoint().await, Checkpoint::Hub(_)),
+                                "The coordinator must be on Hub checkpoint"
+                            );
+                            println!("Client got the model from Hub");
+                            assert_eq!(
+                                checkpoint, "emozilla/llama2-20m-init",
+                                "The model should be obtained from Hub"
+                            );
+                            return;
+                        }
+                    },
+                    Some(Response::Loss(client, epoch, step, loss)) => {
+                        println!(
+                            "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                            client, epoch, step, loss
                         );
-                        println!("Checkpoint was P2P");
-                        continue;
+                        if current_epoch == 1 && !has_killed_container_yet {
+                            if !has_spawned_new_client_yet {
+                                // Spawn a new client, that should get the model with P2P
+                                spawn_new_client_with_monitoring(docker.clone(), &watcher)
+                                    .await
+                                    .unwrap();
+                                has_spawned_new_client_yet = true;
+
+                                // Checkpoint should be P2P here
+                                assert!(
+                                    matches!(solana_client.get_checkpoint().await, Checkpoint::P2P(_)),
+                                    "The coordinator must be on P2P checkpoint"
+                                );
+                                println!("Checkpoint was P2P");
+                                continue;
+                            }
+                            println!("Killing all clients to test checkpoint change to Hub");
+                            kill_all_clients(&docker, "SIGKILL").await;
+                            has_killed_container_yet = true;
+                            tokio::time::sleep(Duration::from_secs(30)).await; // Wait a while just in case
+                            // Spawn a new client, that should get the model with Hub
+                            //spawn_new_client_with_monitoring(docker.clone(), &watcher)
+                            //    .await
+                            //    .unwrap();
+                            let joined_container_id = spawn_new_client(docker.clone()).await.unwrap();
+                            println!("Spawned new client {} to test checkpoint change to Hub", joined_container_id);
+                            let _monitor_client = watcher
+                                .monitor_container(
+                                &joined_container_id,
+                                vec![JsonFilter::LoadedModel, JsonFilter::Loss, JsonFilter::StateChange],
+                            )
+                            .unwrap();
+                        }
+                        if epoch as i64 > current_epoch {
+                            current_epoch = epoch as i64;
+                            assert!(loss < last_epoch_loss);
+                            last_epoch_loss = loss;
+                            if epoch == num_of_epochs_to_run {
+                                println!("Epoch {} reached. Stopping", epoch);
+                                break;
+                            }
+                        }
                     }
-                    println!("Killing all clients to test checkpoint change to Hub");
-                    kill_all_clients(&docker, "SIGKILL").await;
-                    has_killed_container_yet = true;
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                    // Spawn a new client, that should get the model with Hub
-                    //spawn_new_client_with_monitoring(docker.clone(), &watcher)
-                    //    .await
-                    //    .unwrap();
-                    let joined_container_id = spawn_new_client(docker.clone()).await.unwrap();
-                    println!("Spawned new client {} to test checkpoint change to Hub", joined_container_id);
-                    let _monitor_client = watcher
-                        .monitor_container(
-                        &joined_container_id,
-                        vec![JsonFilter::LoadedModel, JsonFilter::Loss, JsonFilter::StateChange],
-                    )
-                    .unwrap();
-                }
-                if epoch as i64 > current_epoch {
-                    current_epoch = epoch as i64;
-                    assert!(loss < last_epoch_loss);
-                    last_epoch_loss = loss;
-                    if epoch == num_of_epochs_to_run {
-                        println!("Epoch {} reached. Stopping", epoch);
-                        break;
-                    }
+                    _ => {}
                 }
             }
-            Response::LoadedModel(checkpoint) => {
-                if !has_killed_container_yet {
-                    println!("not killed container yet, skipping");
-                    continue;
-                }
-                if has_killed_container_yet && has_spawned_new_client_yet {
-                    // Assert that the checkpoint is Hub
-                    assert!(
-                        matches!(solana_client.get_checkpoint().await, Checkpoint::Hub(_)),
-                        "The coordinator must be on Hub checkpoint"
-                    );
-                    println!("Client got the model from Hub");
-                    assert_eq!(
-                        checkpoint, "emozilla/llama2-20m-init",
-                        "The model should be obtained from Hub"
-                    );
-                    return;
-                }
-            }
-            _ => {}
         }
     }
 }
