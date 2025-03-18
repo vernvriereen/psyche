@@ -6,6 +6,7 @@ use std::{
 use anchor_lang::{AnchorDeserialize, AnchorSerialize, Space};
 use bytemuck::Zeroable;
 use serde::{de::DeserializeOwned, Serialize};
+use ts_rs::TS;
 
 pub trait NodeIdentity:
     Display
@@ -25,7 +26,14 @@ pub trait NodeIdentity:
     + AnchorDeserialize
     + AnchorSerialize
     + DeserializeOwned
+    + TS
     + 'static
 {
     fn get_p2p_public_key(&self) -> &[u8; 32];
+}
+
+impl NodeIdentity for ts_rs::Dummy {
+    fn get_p2p_public_key(&self) -> &[u8; 32] {
+        unimplemented!()
+    }
 }

@@ -1,8 +1,35 @@
 servers:
-  - configuration: psyche-book-http-authed
+  - configuration: psyche-http-devnet-authed
     deployment:
-      type: on-pull-request
-  - configuration: psyche-book-http
+      type: on-branch
+      branch: test-deploy-devnet
+
+  - configuration: psyche-http-mainnet-authed
+    deployment:
+      type: on-branch
+      branch: test-deploy-mainnet
+
+  - configuration: psyche-http-mainnet
     deployment:
       type: on-branch
       branch: main
+builds:
+  # only build the rust packages explicitly!
+  # all other packages like the book are built via deployments, etc
+  # and duplicating work in garnix causes big big compute overspend.
+  - exclude: []
+    include:
+      - "packages.x86_64-linux.psyche-solana-client"
+      - "packages.x86_64-linux.psyche-centralized-client"
+      - "packages.x86_64-linux.psyche-centralized-server"
+      - "packages.x86_64-linux.psyche-centralized-local-testnet"
+      - "packages.x86_64-linux.expand-distro"
+      - devShell.x86_64-linux
+      - nixosConfigurations.*
+      - "checks.*.*"
+      
+  # on main, might as well build everything, though
+  - exclude: []
+    include:
+      - "packages.x86_64-linux.*"
+    branch: main

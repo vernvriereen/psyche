@@ -1,35 +1,48 @@
-#! /bin/bash
+#!/usr/bin/env bash
 
 set -o errexit
 set -e
 set -m
 
-cleanup() {
-    echo -e "\nCleaning up background processes...\n"
-    kill $(jobs -p) 2>/dev/null
-    wait
-}
-
-trap cleanup INT EXIT
-
-WALLET_FILE=${KEY_FILE:-"$HOME/.config/solana/id.json"}
+# use the agenix provided wallet if you have it
+DEFAULT_WALLET=${devnet__keypair__wallet_PATH:-"$HOME/.config/solana/id.json"}
+WALLET_FILE=${KEY_FILE:-"$DEFAULT_WALLET"}
 RPC=${RPC:-"http://127.0.0.1:8899"}
 WS_RPC=${WS_RPC:-"ws://127.0.0.1:8900"}
 RUN_ID=${RUN_ID:-"test"}
 CONFIG_FILE=${CONFIG_FILE:-"./config/solana-test/config.toml"}
 
-solana-test-validator -r 1>/dev/null &
-echo -e "\n[+] Started test validator!"
+echo -e "\n[+] deploy info:"
+echo -e "[+] WALLET_FILE = $WALLET_FILE"
+echo -e "[+] RPC = $RPC"
+echo -e "[+] WS_RPC = $WS_RPC"
+echo -e "[+] RUN_ID = $RUN_ID"
+echo -e "[+] CONFIG_FILE = $CONFIG_FILE"
+echo -e "[+] -----------------------------------------------------------"
 
-sleep 3
-
+echo -e "\n[+] starting authorizor deploy"
 pushd architectures/decentralized/solana-authorizer
-anchor keys sync && anchor build --no-idl && anchor deploy --provider.cluster ${RPC} -- --max-len 500000
+    echo -e "\n[+] syncing keys..."
+    anchor keys sync --provider.cluster ${RPC} --provider.wallet $WALLET_FILE
+
+    echo -e "\n[+] building..."
+    anchor build --no-idl
+
+    echo -e "\n[+] deploying..."
+    anchor deploy --provider.cluster ${RPC} --provider.wallet $WALLET_FILE -- --max-len 500000
 popd
 echo -e "\n[+] Authorizer program deployed successfully!"
 
+echo -e "\n[+] starting coordinator deploy"
 pushd architectures/decentralized/solana-coordinator
-anchor keys sync && anchor build --no-idl && anchor deploy --provider.cluster ${RPC} -- --max-len 500000
+    echo -e "\n[+] syncing keys..."
+    anchor keys sync --provider.cluster ${RPC} --provider.wallet $WALLET_FILE
+
+    echo -e "\n[+] building..."
+    anchor build --no-idl
+
+    echo -e "\n[+] deploying..."
+    anchor deploy --provider.cluster ${RPC} --provider.wallet $WALLET_FILE -- --max-len 500000
 popd
 echo -e "\n[+] Coordinator program deployed successfully!"
 
@@ -41,7 +54,7 @@ cargo run --release --bin psyche-solana-client -- \
        --wallet-private-key-path ${WALLET_FILE} \
        --rpc ${RPC} \
        --ws-rpc ${WS_RPC} \
-       --run-id ${RUN_ID}
+       --run-id ${RUN_ID} "$@"
 
 echo -e "\n[+] Training run created successfully"
 
@@ -60,7 +73,3 @@ cargo run --release --bin psyche-solana-client -- \
         --ws-rpc ${WS_RPC} \
         --run-id ${RUN_ID} \
         --resume
-
-echo -e "\n[+] Testing Solana setup ready, starting Solana logs...\n"
-
-solana logs --url ${RPC}

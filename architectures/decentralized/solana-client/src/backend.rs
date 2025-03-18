@@ -17,9 +17,8 @@ use anyhow::{anyhow, bail, Result};
 use futures_util::StreamExt;
 use psyche_coordinator::{
     model::{self, Model},
-    CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks, Witness,
+    CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks, Witness, WitnessMetadata,
 };
-
 use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
 use std::sync::Arc;
@@ -44,7 +43,8 @@ pub struct SolanaBackendRunner {
 pub struct CreatedRun {
     pub instance: Pubkey,
     pub account: Pubkey,
-    pub transaction: Signature,
+    pub tx_create_coordinator: Signature,
+    pub tx_create_auth: Option<Signature>,
 }
 
 impl SolanaBackend {
@@ -122,7 +122,11 @@ impl SolanaBackend {
         })
     }
 
-    pub async fn create_run(&self, run_id: String) -> Result<CreatedRun> {
+    pub async fn create_run(
+        &self,
+        run_id: String,
+        metadata: psyche_solana_coordinator::RunMetadata,
+    ) -> Result<CreatedRun> {
         let space = psyche_solana_coordinator::CoordinatorAccount::space_with_discriminator();
         let rent = self
             .program_coordinator
@@ -136,7 +140,7 @@ impl SolanaBackend {
 
         let coordinator_instance = psyche_solana_coordinator::find_coordinator_instance(&run_id);
 
-        let coordinator_account_signer = Keypair::new();
+        let coordinator_account_signer = Arc::new(Keypair::new());
         let coordinator_account = coordinator_account_signer.pubkey();
 
         let authorization_global = psyche_solana_authorizer::find_authorization(
@@ -145,7 +149,7 @@ impl SolanaBackend {
             psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE,
         );
 
-        let signature = self
+        let create_coordinator_signature = self
             .program_coordinator
             .request()
             .instruction(system_instruction::create_account(
@@ -171,34 +175,35 @@ impl SolanaBackend {
                             main_authority,
                             join_authority,
                             run_id,
+                            metadata,
                         },
                     })
                     .instructions()
                     .unwrap()[0]
                     .clone(),
             )
-            .instruction(
-                self.program_authorizer
-                    .request()
-                    .accounts(
-                        psyche_solana_authorizer::accounts::AuthorizationCreateAccounts {
-                            payer,
-                            grantor: join_authority,
-                            authorization: authorization_global,
-                            system_program: system_program::ID,
-                        },
-                    )
-                    .args(psyche_solana_authorizer::instruction::AuthorizationCreate {
-                        params: psyche_solana_authorizer::logic::AuthorizationCreateParams {
-                            grantee: system_program::ID,
-                            scope: psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE
-                                .to_vec(),
-                        },
-                    })
-                    .instructions()
-                    .unwrap()[0]
-                    .clone(),
+            .signer(coordinator_account_signer.clone())
+            .send()
+            .await?;
+
+        // fine if it fails, means it's already there!
+        let auth_create_signature = self
+            .program_authorizer
+            .request()
+            .accounts(
+                psyche_solana_authorizer::accounts::AuthorizationCreateAccounts {
+                    payer,
+                    grantor: join_authority,
+                    authorization: authorization_global,
+                    system_program: system_program::ID,
+                },
             )
+            .args(psyche_solana_authorizer::instruction::AuthorizationCreate {
+                params: psyche_solana_authorizer::logic::AuthorizationCreateParams {
+                    grantee: system_program::ID,
+                    scope: psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE.to_vec(),
+                },
+            })
             .instruction(
                 self.program_authorizer
                     .request()
@@ -217,17 +222,18 @@ impl SolanaBackend {
                         },
                     )
                     .instructions()
-                    .unwrap()[0]
-                    .clone(),
+                    .unwrap()
+                    .remove(0),
             )
-            .signer(coordinator_account_signer)
             .send()
-            .await?;
+            .await
+            .ok();
 
         Ok(CreatedRun {
             instance: coordinator_instance,
             account: coordinator_account,
-            transaction: signature,
+            tx_create_coordinator: create_coordinator_signature,
+            tx_create_auth: auth_create_signature,
         })
     }
 
@@ -364,6 +370,7 @@ impl SolanaBackend {
         coordinator_instance: Pubkey,
         coordinator_account: Pubkey,
         witness: Witness,
+        metadata: WitnessMetadata,
     ) -> Result<Signature> {
         let signature = self
             .program_coordinator
@@ -380,6 +387,7 @@ impl SolanaBackend {
                 participant_bloom: witness.participant_bloom,
                 broadcast_bloom: witness.broadcast_bloom,
                 broadcast_merkle: witness.broadcast_merkle,
+                metadata,
             })
             .send()
             .await?;
@@ -475,9 +483,9 @@ impl WatcherBackend<psyche_solana_coordinator::ClientId> for SolanaBackendRunner
             })
     }
 
-    async fn send_witness(&mut self, witness: Witness) -> Result<()> {
+    async fn send_witness(&mut self, witness: Witness, metadata: WitnessMetadata) -> Result<()> {
         self.backend
-            .witness(self.instance, self.account, witness)
+            .witness(self.instance, self.account, witness, metadata)
             .await?;
         Ok(())
     }
@@ -516,12 +524,12 @@ mod test {
     use model::LLM;
     use psyche_coordinator::{
         model::{
-            Checkpoint, ConstantLR, LLMArchitecture, LLMTrainingDataLocation, LLMTrainingDataType,
-            LearningRateSchedule, Optimizer,
+            Checkpoint, ConstantLR, HubRepo, LLMArchitecture, LLMTrainingDataLocation,
+            LLMTrainingDataType, LearningRateSchedule, Optimizer,
         },
         CoordinatorConfig, RunState,
     };
-    use psyche_core::FixedVec;
+    use psyche_core::{FixedVec, OptimizerDefinition};
     use psyche_network::SecretKey;
     use rand::Rng;
 
@@ -567,12 +575,12 @@ mod test {
                 }),
                 Some(Model::LLM(LLM {
                     architecture: LLMArchitecture::HfLlama,
-                    checkpoint: Checkpoint::Ephemeral,
+                    checkpoint: Checkpoint::Dummy(HubRepo::dummy()),
                     max_seq_len: 4096,
                     data_type: LLMTrainingDataType::Pretraining,
                     data_location: LLMTrainingDataLocation::Local(Zeroable::zeroed()),
                     lr_schedule: LearningRateSchedule::Constant(ConstantLR::default()),
-                    optimizer: Optimizer::Distro {
+                    optimizer: OptimizerDefinition::Distro {
                         clip_grad_norm: None,
                         compression_decay: 1.0,
                         compression_decay_warmup_steps: 0,
@@ -580,7 +588,7 @@ mod test {
                         compression_topk_startup: 0,
                         compression_topk_startup_steps: 0,
                         compression_chunk: 1,
-                        quantize: false.into(),
+                        quantize_1bit: false.into(),
                     },
                 })),
             )

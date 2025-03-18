@@ -1003,9 +1003,8 @@ dependencies = [
 
 [[package]]
 name = "bitvec"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1bc2832c24239b0141d5674bb9174f9d68a8b5b3f2753311927c172ca46f7e9c"
+version = "1.1.0"
+source = "git+https://github.com/arilotter/bitvec?rev=d33a2437f810ee4229457dfd1137d807914671f8#d33a2437f810ee4229457dfd1137d807914671f8"
 dependencies = [
  "funty",
  "radium",
@@ -6585,6 +6584,7 @@ dependencies = [
  "psyche-core",
  "psyche-network",
  "serde",
+ "ts-rs",
 ]
 
 [[package]]
@@ -6653,6 +6653,7 @@ dependencies = [
  "psyche-core",
  "serde",
  "serde_with",
+ "ts-rs",
 ]
 
 [[package]]
@@ -6660,6 +6661,7 @@ name = "psyche-core"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "anchor-lang-idl",
  "anyhow",
  "approx",
  "bitvec",
@@ -6671,6 +6673,7 @@ dependencies = [
  "serde",
  "serde_arrays",
  "sha2 0.10.8",
+ "ts-rs",
 ]
 
 [[package]]
@@ -6706,6 +6709,7 @@ dependencies = [
  "tokio",
  "tokio-util 0.7.13",
  "tracing",
+ "ts-rs",
 ]
 
 [[package]]
@@ -6725,6 +6729,17 @@ dependencies = [
  "thiserror 2.0.11",
  "tokio",
  "tokio-util 0.7.13",
+]
+
+[[package]]
+name = "psyche-deserialize-zerocopy-wasm"
+version = "0.0.1"
+dependencies = [
+ "psyche-solana-coordinator",
+ "serde",
+ "serde-wasm-bindgen",
+ "ts-rs",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -6820,6 +6835,7 @@ dependencies = [
  "async-trait",
  "bytemuck",
  "clap",
+ "clap-markdown",
  "futures-util",
  "home",
  "psyche-client",
@@ -6852,6 +6868,10 @@ dependencies = [
  "psyche-core",
  "psyche-solana-authorizer",
  "serde",
+ "solana-sdk",
+ "solana_toolbox_endpoint",
+ "tokio",
+ "ts-rs",
 ]
 
 [[package]]
@@ -8023,6 +8043,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "342110fb7a5d801060c885da03bf91bfa7c7ca936deafcc64bb6706375605d47"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -11861,6 +11892,30 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "ts-rs"
+version = "10.1.0"
+source = "git+https://github.com/arilotter/ts-rs.git?rev=92ce1752227fec9bb868ad8f25b26f110a795099#92ce1752227fec9bb868ad8f25b26f110a795099"
+dependencies = [
+ "anchor-lang",
+ "bytemuck",
+ "lazy_static",
+ "serde",
+ "thiserror 2.0.11",
+ "ts-rs-macros",
+]
+
+[[package]]
+name = "ts-rs-macros"
+version = "10.1.0"
+source = "git+https://github.com/arilotter/ts-rs.git?rev=92ce1752227fec9bb868ad8f25b26f110a795099#92ce1752227fec9bb868ad8f25b26f110a795099"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.96",
+ "termcolor",
+]
 
 [[package]]
 name = "tui-logger"

@@ -1,9 +1,11 @@
-use psyche_coordinator::{model, Coordinator};
-use psyche_core::{BoundedQueue, LearningRateSchedule, NodeIdentity};
+use psyche_coordinator::{model, Coordinator, WitnessEvalResult, WitnessMetadata};
+use psyche_core::{BoundedQueue, FixedVec, LearningRateSchedule, NodeIdentity};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokenizers::Tokenizer;
 use tracing::warn;
 use wandb::{DataValue, LogData};
+
+use crate::client::P2PNodeInfo;
 
 use super::evals::EvalRunner;
 
@@ -19,6 +21,8 @@ pub struct StatsLogger {
     last_optim_stats: HashMap<String, f64>,
     eval_history: HashMap<String, Vec<f64>>,
     lr_schedule: LearningRateSchedule,
+
+    pub node_info: HashMap<String, P2PNodeInfo>,
 }
 
 impl StatsLogger {
@@ -38,14 +42,11 @@ impl StatsLogger {
             lr_schedule,
             eval_history: HashMap::new(),
             last_optim_stats: HashMap::new(),
+            node_info: HashMap::new(),
         }
     }
 
-    pub fn publish_round_stats<T: NodeIdentity>(
-        &self,
-        state: &Coordinator<T>,
-        node_info: &HashMap<String, DataValue>,
-    ) {
+    pub fn publish_round_stats<T: NodeIdentity>(&self, state: &Coordinator<T>) {
         let mut round_log = LogData::new();
 
         round_log.insert("_step", state.progress.step);
@@ -85,12 +86,58 @@ impl StatsLogger {
             round_log.insert(format!("optim/{name}"), *value);
         }
 
-        round_log.insert("p2p/nodes", node_info.clone());
+        let p2p_nodes: HashMap<String, DataValue> = self
+            .node_info
+            .iter()
+            .map(|(node_id, P2PNodeInfo { ips, bandwidth })| {
+                (
+                    node_id.to_string(),
+                    HashMap::from([
+                        ("ips", DataValue::from(ips.join(","))),
+                        ("bandwidth", DataValue::from(*bandwidth)),
+                    ])
+                    .into(),
+                )
+            })
+            .collect();
+
+        round_log.insert("p2p/nodes", p2p_nodes);
 
         if let Some(run) = self.wandb_run.clone() {
             tokio::spawn(async move {
                 run.log(round_log).await;
             });
+        }
+    }
+
+    pub fn get_witness_metadata<T: NodeIdentity>(&self, state: &Coordinator<T>) -> WitnessMetadata {
+        let bandwidth_total: f64 = self.node_info.values().map(|v| v.bandwidth).sum();
+
+        let evals = {
+            let mut evals: FixedVec<WitnessEvalResult, 8> = Default::default();
+            for (key, val) in self.current_eval_results() {
+                let value = WitnessEvalResult::new_trunc_name(&key, val as f32);
+                if evals.push(value).is_err() {
+                    // fixedvec is full, that's ok! nothing we can do.
+                    break;
+                }
+            }
+            evals
+        };
+
+        // NOTE: no NaNs allowed in borsh serialized data.
+        let tokens_per_sec = self.global_tokens_per_second(state);
+        WitnessMetadata {
+            step: state.progress.step,
+            tokens_per_sec: if tokens_per_sec.is_nan() {
+                0.0
+            } else {
+                tokens_per_sec
+            },
+            bandwidth_per_sec: bandwidth_total as f32,
+            loss: self.losses().last().copied().unwrap_or(f32::INFINITY),
+            efficency: self.efficency(),
+            evals,
         }
     }
 

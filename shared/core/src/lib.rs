@@ -8,6 +8,7 @@ mod cancellable_barrier;
 mod data_shuffle;
 mod definitions;
 mod deterministic_shuffle;
+mod fixed_string;
 mod fixed_vec;
 mod interval_tree;
 mod lcg;
@@ -33,6 +34,7 @@ pub use definitions::{
     OptimizerDefinition,
 };
 pub use deterministic_shuffle::deterministic_shuffle;
+pub use fixed_string::FixedString;
 pub use fixed_vec::FixedVec;
 pub use interval_tree::{ClosedInterval, IntervalTree};
 pub use lcg::LCG;
@@ -51,20 +53,6 @@ pub use sized_iterator::SizedIterator;
 pub use small_boolean::SmallBoolean;
 pub use swap_or_not::compute_shuffled_index;
 pub use token_size::TokenSize;
-
-pub fn u8_to_string(slice: &[u8]) -> String {
-    String::from_utf8_lossy(slice)
-        .trim_matches(char::from(0))
-        .to_string()
-}
-
-pub fn to_fixed_size_array(s: &str) -> [u8; 64] {
-    let mut array = [0u8; 64];
-    let bytes = s.as_bytes();
-    let len = bytes.len().min(64);
-    array[..len].copy_from_slice(&bytes[..len]);
-    array
-}
 
 #[cfg(test)]
 mod tests {

@@ -12,9 +12,6 @@ pub enum ProgramError {
     #[msg("Coordinator account incorrect size")]
     CoordinatorAccountIncorrectSize,
 
-    #[msg("Coordinator account invalid discriminator")]
-    CoordinatorAccountInvalidDiscriminator,
-
     #[msg("Client id mismatch")]
     ClientIdMismatch,
 

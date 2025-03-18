@@ -6,6 +6,7 @@ members = [
     "architectures/decentralized/solana-tooling",
     "shared/*",
     "tools/rust-tools/*",
+    "website/wasm",
 ]
 resolver = "2"
 
@@ -84,6 +85,13 @@ clap-markdown = "0.1.4"
 anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea308440a9fa9cb79cee7bddd30ab163d5" }
 anchor-client = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea308440a9fa9cb79cee7bddd30ab163d5", features = [
     "async",
+] }
+anchor-lang-idl = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea308440a9fa9cb79cee7bddd30ab163d5", features = [
+    "build",
+] }
+
+ts-rs = { git = "https://github.com/arilotter/ts-rs.git", rev = "92ce1752227fec9bb868ad8f25b26f110a795099", features = [
+    "psyche-impl",
 ] }
 
 # dev only

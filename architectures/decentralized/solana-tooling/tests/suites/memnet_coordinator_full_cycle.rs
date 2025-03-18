@@ -1,5 +1,6 @@
 use bytemuck::Zeroable;
 use psyche_coordinator::model::Checkpoint;
+use psyche_coordinator::model::HubRepo;
 use psyche_coordinator::model::LLMArchitecture;
 use psyche_coordinator::model::LLMTrainingDataLocation;
 use psyche_coordinator::model::LLMTrainingDataType;
@@ -66,6 +67,7 @@ pub async fn run() {
             run_id: "This is a random run id!".to_string(),
             main_authority: main_authority.pubkey(),
             join_authority: join_authority.pubkey(),
+            metadata: Default::default(),
         },
     )
     .await
@@ -104,7 +106,7 @@ pub async fn run() {
         }),
         Some(Model::LLM(LLM {
             architecture: LLMArchitecture::HfLlama,
-            checkpoint: Checkpoint::Ephemeral,
+            checkpoint: Checkpoint::Dummy(HubRepo::dummy()),
             max_seq_len: 4096,
             data_type: LLMTrainingDataType::Pretraining,
             data_location: LLMTrainingDataLocation::Local(Zeroable::zeroed()),
@@ -279,6 +281,7 @@ pub async fn run() {
         participant_bloom: Default::default(),
         broadcast_bloom: Default::default(),
         broadcast_merkle: Default::default(),
+        metadata: Default::default(),
     };
     assert!(process_coordinator_witness(
         &mut endpoint,

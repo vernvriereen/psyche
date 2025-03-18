@@ -5,7 +5,7 @@ use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientM
 use psyche_client::{
     CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
 };
-use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
+use psyche_coordinator::{model, Coordinator, HealthChecks, Witness, WitnessMetadata};
 use psyche_network::{
     allowlist, AuthenticatableIdentity, DiscoveryMode, NetworkTUIState, NetworkTui, NodeId,
     RelayMode, SecretKey, TcpClient,
@@ -54,7 +54,7 @@ impl WatcherBackend<ClientId> for Backend {
         Ok(new_state)
     }
 
-    async fn send_witness(&mut self, witness: Witness) -> Result<()> {
+    async fn send_witness(&mut self, witness: Witness, _metadata: WitnessMetadata) -> Result<()> {
         self.tx.send(ToSend::Witness(Box::new(witness)))?;
         Ok(())
     }

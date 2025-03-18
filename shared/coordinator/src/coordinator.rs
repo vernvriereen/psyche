@@ -5,12 +5,10 @@ use crate::{
 
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Pod, Zeroable};
-use psyche_core::{
-    serde_deserialize_string, serde_serialize_string, sha256, Bloom, FixedVec, MerkleRoot,
-    NodeIdentity, SmallBoolean,
-};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use psyche_core::{sha256, Bloom, FixedString, FixedVec, MerkleRoot, NodeIdentity, SmallBoolean};
+use serde::{Deserialize, Serialize};
 use std::hash::Hash;
+use ts_rs::TS;
 
 pub const SOLANA_MAX_STRING_LEN: usize = 64;
 pub const SOLANA_MAX_URL_STRING_LEN: usize = 192;
@@ -38,6 +36,7 @@ pub type WitnessBloom = Bloom<16, 8>;
     Serialize,
     Deserialize,
     InitSpace,
+    TS,
 )]
 pub enum RunState {
     #[default]
@@ -64,6 +63,7 @@ pub enum RunState {
     Serialize,
     Deserialize,
     InitSpace,
+    TS,
 )]
 pub enum ClientState {
     #[default]
@@ -83,8 +83,9 @@ pub enum ClientState {
     Deserialize,
     AnchorDeserialize,
     AnchorSerialize,
+    TS,
 )]
-#[serde(bound = "I: Serialize + DeserializeOwned + NodeIdentity")]
+#[serde(bound = "I: NodeIdentity")]
 pub struct Client<I> {
     pub id: I,
     pub state: ClientState,
@@ -97,10 +98,22 @@ impl<I: NodeIdentity> Hash for Client<I> {
     }
 }
 
-#[derive(Clone, Default, Debug, Zeroable, Copy, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Default,
+    Debug,
+    Zeroable,
+    Copy,
+    Serialize,
+    Deserialize,
+    AnchorSerialize,
+    AnchorDeserialize,
+    TS,
+)]
 #[repr(C)]
 pub struct Round {
-    pub witnesses: FixedVec<Witness, SOLANA_MAX_NUM_WITNESSES>,
+    pub witnesses: FixedVec<Witness, { SOLANA_MAX_NUM_WITNESSES }>,
+
     pub data_index: u64,
     pub random_seed: u64,
     pub height: u32,
@@ -118,6 +131,7 @@ pub struct Round {
     AnchorSerialize,
     Serialize,
     Deserialize,
+    TS,
 )]
 #[repr(C)]
 pub struct Witness {
@@ -125,6 +139,55 @@ pub struct Witness {
     pub participant_bloom: WitnessBloom,
     pub broadcast_bloom: WitnessBloom,
     pub broadcast_merkle: MerkleRoot,
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Zeroable,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    TS,
+    Default,
+    Debug,
+)]
+#[repr(C)]
+pub struct WitnessMetadata {
+    pub step: u32,
+    pub tokens_per_sec: f32,
+    pub bandwidth_per_sec: f32,
+    pub loss: f32,
+    pub evals: FixedVec<WitnessEvalResult, 8>,
+    pub efficency: f32,
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Zeroable,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    TS,
+    Default,
+    Debug,
+)]
+#[repr(C)]
+pub struct WitnessEvalResult {
+    pub name: FixedString<32>,
+    pub value: f32,
+}
+
+impl WitnessEvalResult {
+    pub fn new_trunc_name(name: &str, value: f32) -> Self {
+        Self {
+            name: FixedString::from_str_truncated(name),
+            value,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -153,10 +216,10 @@ pub type HealthChecks<T> = Vec<(T, CommitteeProof)>;
 pub const NUM_STORED_ROUNDS: usize = 4;
 
 #[derive(
-    Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorDeserialize, AnchorSerialize,
+    Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorDeserialize, AnchorSerialize, TS,
 )]
 #[repr(C)]
-#[serde(bound = "I: DeserializeOwned + NodeIdentity")]
+#[serde(bound = "I: NodeIdentity")]
 pub struct CoordinatorConfig<I> {
     pub warmup_time: u64,
     pub cooldown_time: u64,
@@ -175,22 +238,26 @@ pub struct CoordinatorConfig<I> {
     pub total_steps: u32,
 
     #[serde(default)]
-    pub checkpointers: FixedVec<I, SOLANA_MAX_NUM_CHECKPOINTERS>,
+    pub checkpointers: FixedVec<I, { SOLANA_MAX_NUM_CHECKPOINTERS }>,
 }
 
-#[derive(Clone, Debug, Zeroable, Copy, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorSerialize, AnchorDeserialize, TS,
+)]
 #[repr(C)]
-#[serde(bound = "T: DeserializeOwned + NodeIdentity")]
+#[serde(bound = "T: NodeIdentity")]
 pub struct CoordinatorEpochState<T> {
     pub rounds: [Round; NUM_STORED_ROUNDS],
-    pub clients: FixedVec<Client<T>, SOLANA_MAX_NUM_CLIENTS>,
-    pub exited_clients: FixedVec<Client<T>, SOLANA_MAX_NUM_CLIENTS>,
+    pub clients: FixedVec<Client<T>, { SOLANA_MAX_NUM_CLIENTS }>,
+    pub exited_clients: FixedVec<Client<T>, { SOLANA_MAX_NUM_CLIENTS }>,
     pub rounds_head: u32,
     pub first_round: SmallBoolean,
     pub checkpointed: SmallBoolean,
 }
 
-#[derive(Clone, Debug, Zeroable, Copy, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorSerialize, AnchorDeserialize, TS,
+)]
 #[repr(C)]
 pub struct CoordinatorProgress {
     pub epoch: u16,
@@ -198,15 +265,13 @@ pub struct CoordinatorProgress {
     pub epoch_start_data_index: u64,
 }
 
-#[derive(Clone, Debug, Zeroable, Copy, Serialize, Deserialize)]
-#[serde(bound = "T: DeserializeOwned + NodeIdentity")]
+#[derive(
+    Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorSerialize, AnchorDeserialize, TS,
+)]
+#[serde(bound = "T: NodeIdentity")]
 #[repr(C)]
 pub struct Coordinator<T> {
-    #[serde(
-        serialize_with = "serde_serialize_string",
-        deserialize_with = "serde_deserialize_string"
-    )]
-    pub run_id: [u8; SOLANA_MAX_STRING_LEN],
+    pub run_id: FixedString<{ SOLANA_MAX_STRING_LEN }>,
 
     pub run_state: RunState,
 

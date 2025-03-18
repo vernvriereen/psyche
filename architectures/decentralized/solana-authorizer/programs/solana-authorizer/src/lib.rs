@@ -4,7 +4,7 @@ pub mod state;
 use anchor_lang::prelude::*;
 use logic::*;
 
-declare_id!("4zLgFdqERoxwkLCgqvC7DUVQaBjyCms4USymu1qwmw7U");
+declare_id!("chvSD99g3o3AHpzE8WBnRvFRubXsddzni77LXDZE7WT");
 
 pub fn find_authorization(
     grantor: &Pubkey,

@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow.workspace = true
 anchor-lang.workspace = true
+anchor-lang-idl.workspace = true
 bytemuck.workspace = true
 fast-math.workspace = true
 rand = { workspace = true, optional = true }
@@ -13,7 +14,11 @@ serde.workspace = true
 postcard.workspace = true
 fnv = "1.0.7"
 serde_arrays = "0.1.0"
-bitvec = { version = "1", features = ["serde", "std"] }
+bitvec = { git = "https://github.com/arilotter/bitvec", rev = "d33a2437f810ee4229457dfd1137d807914671f8", features = [
+    "serde",
+    "std",
+] }
+ts-rs.workspace = true
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
 sha2.workspace = true

@@ -1,6 +1,6 @@
-#! /bin/bash
+#!/usr/bin/env bash
 
-set -e
+set -euo pipefail
 
 WALLET_FILE=${WALLET_FILE:-"$HOME/.config/solana/id.json"}
 RPC=${RPC:-"http://127.0.0.1:8899"}
@@ -12,7 +12,8 @@ DP=${DP:-"8"}
 TP=${TP:-"1"}
 BATCH_SIZE=${BATCH_SIZE:-"1"}
 
-solana airdrop 10 "$(solana-keygen pubkey ${WALLET_FILE})" --url "${RPC}"
+# fine if this fails
+solana airdrop 10 "$(solana-keygen pubkey ${WALLET_FILE})" --url "${RPC}" || true
 
 export RUST_LOG="info,psyche=debug"
 
@@ -26,4 +27,4 @@ cargo run --release --bin psyche-solana-client -- \
         --tensor-parallelism ${TP} \
         --micro-batch-size ${BATCH_SIZE} \
         --logs "console" \
-        --ticker
+        --ticker "$@"

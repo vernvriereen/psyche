@@ -1,26 +1,52 @@
-use anchor_lang::prelude::*;
-use bytemuck::Pod;
-use bytemuck::Zeroable;
-use psyche_coordinator::model::Model;
-use psyche_coordinator::ClientState;
-use psyche_coordinator::Coordinator;
-use psyche_coordinator::CoordinatorConfig;
-use psyche_coordinator::HealthChecks;
-use psyche_coordinator::RunState;
-use psyche_coordinator::TickResult;
-use psyche_coordinator::Witness;
-use psyche_core::sha256v;
-use psyche_core::SizedIterator;
-use psyche_core::SmallBoolean;
-
 use crate::client::Client;
 use crate::clients_state::ClientsState;
 use crate::ClientId;
 use crate::ProgramError;
+use anchor_lang::prelude::*;
+use bytemuck::{Pod, Zeroable};
+use psyche_coordinator::{
+    model::Model, ClientState, Coordinator, CoordinatorConfig, HealthChecks,
+    RunState, TickResult, Witness, SOLANA_MAX_STRING_LEN,
+};
+use psyche_core::sha256v;
+use psyche_core::{FixedString, SizedIterator, SmallBoolean};
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Clone, Copy, Zeroable)]
+#[derive(
+    Clone,
+    Copy,
+    Zeroable,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    TS,
+    Default,
+)]
+#[repr(C)]
+pub struct RunMetadata {
+    pub name: FixedString<{ SOLANA_MAX_STRING_LEN }>,
+
+    pub description: FixedString<280>,
+
+    pub num_parameters: u64,
+    pub vocab_size: u64,
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Zeroable,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    TS,
+)]
 #[repr(C)]
 pub struct CoordinatorInstanceState {
+    pub metadata: RunMetadata,
     pub coordinator: Coordinator<ClientId>,
     pub clients_state: ClientsState,
     pub is_warmup_first_tick: SmallBoolean,

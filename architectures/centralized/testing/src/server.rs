@@ -88,7 +88,7 @@ impl CoordinatorServer {
 
         let run_id = sample_rand_run_id();
         let coordinator: Coordinator<ClientId> = Coordinator {
-            run_id: psyche_core::to_fixed_size_array(&run_id),
+            run_id: run_id.as_str().try_into().unwrap(),
             model: Model::LLM(LLM::dummy()),
             config: coordinator_config,
             epoch_state,

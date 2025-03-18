@@ -20,24 +20,49 @@
         rust-overlay.follows = "rust-overlay";
       };
     };
+    garnix-lib.url = "github:garnix-io/garnix-lib";
+    solana-pkgs.url = "github:arilotter/solana-flake";
+    agenix-shell.url = "github:aciceri/agenix-shell";
   };
 
-  outputs = inputs @ {
-    self,
-    nixpkgs,
-    flake-parts,
-    ...
-  }:
-    flake-parts.lib.mkFlake {inherit inputs;} {
+  outputs =
+    inputs@{
+      self,
+      flake-parts,
+      ...
+    }:
+    flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
         "x86_64-linux"
-        "aarch64-linux"
       ];
+
+      agenix-shell = {
+        secrets = {
+          devnet-keypair-wallet.file = ./secrets/devnet/keypair/wallet.age;
+        };
+      };
+
+      perSystem =
+        { system, ... }:
+        {
+          _module.args.pkgs = (
+            import inputs.nixpkgs (
+              {
+                inherit system;
+              }
+              // (import ./nix/pkgs.nix {
+                inherit inputs;
+                gitcommit = self.rev or self.dirtyRev;
+              })
+            )
+          );
+        };
       imports = [
-        (import ./nix/packages.nix {inherit self inputs;})
-        (import ./nix/devShell.nix {inherit self inputs;})
-        (import ./nix/checks.nix {inherit self inputs;})
-        (import ./nix/nixosModules.nix {inherit self inputs;})
+        inputs.agenix-shell.flakeModules.default
+        ./nix/packages.nix
+        ./nix/devShell.nix
+        ./nix/checks.nix
+        ./nix/nixosModules.nix
       ];
     };
 }

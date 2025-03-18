@@ -1,10 +1,11 @@
 use anchor_lang::prelude::*;
-use psyche_coordinator::SOLANA_MAX_STRING_LEN;
+use psyche_core::FixedString;
 
 use crate::bytes_from_string;
 use crate::CoordinatorAccount;
 use crate::CoordinatorInstance;
 use crate::ProgramError;
+use crate::RunMetadata;
 
 #[derive(Accounts)]
 #[instruction(params: InitCoordinatorParams)]
@@ -24,6 +25,7 @@ pub struct InitCoordinatorAccounts<'info> {
     )]
     pub coordinator_instance: Account<'info, CoordinatorInstance>,
 
+    /// CHECK: TODO TODO UNSAFE UNSAFE
     #[account(
         mut,
         owner = crate::ID,
@@ -39,6 +41,7 @@ pub struct InitCoordinatorParams {
     pub main_authority: Pubkey,
     pub join_authority: Pubkey,
     pub run_id: String,
+    pub metadata: RunMetadata,
 }
 
 pub fn init_coordinator_processor(
@@ -71,10 +74,9 @@ pub fn init_coordinator_processor(
         &mut data[disc.len()..CoordinatorAccount::space_with_discriminator()],
     );
     // Setup the run_id const
-    let mut array = [0u8; SOLANA_MAX_STRING_LEN];
-    let run_id = bytes_from_string(&params.run_id);
-    array[..run_id.len()].copy_from_slice(run_id);
-    account.state.coordinator.run_id = array;
+    account.state.coordinator.run_id =
+        FixedString::from_str_truncated(&params.run_id);
+    account.state.metadata = params.metadata;
     // Done
     Ok(())
 }

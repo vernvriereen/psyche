@@ -14,7 +14,6 @@ use psyche_network::{
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use tokenizers::Tokenizer;
-use wandb::DataValue;
 
 use rand::{seq::SliceRandom, thread_rng};
 use std::{
@@ -192,7 +191,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         let last_needed_step_blobs = new_state.progress.step.saturating_sub(2);
                                         p2p.remove_blobs_with_tag_less_than(last_needed_step_blobs);
                                         let p2p_info = get_p2p_info(&p2p).await?;
-                                        run.set_node_info(p2p_info);
+                                        if let Err(e) = run.set_node_info(p2p_info) {
+                                            warn!("failed to set p2p info: {e}");
+                                        }
                                         broadcasts.retain(|(_, step)| *step >= last_needed_step_blobs);
                                     }
                                     RunState::Cooldown => {
@@ -412,8 +413,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         Some((download_ticket, tag)) = rx_request_download.recv() => {
                             p2p.start_download(download_ticket, tag).await?;
                         }
-                        Some(witness) = rx_witness.recv() => {
-                            watcher.backend_mut().send_witness(witness).await?;
+                        Some((witness, metadata)) = rx_witness.recv() => {
+                            watcher.backend_mut().send_witness(witness, metadata).await?;
                         }
                         Some(health_check) = rx_health_check.recv() => {
                             watcher.backend_mut().send_health_check(health_check).await?;
@@ -591,9 +592,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
     }
 }
 
+pub struct P2PNodeInfo {
+    pub ips: Vec<String>,
+    pub bandwidth: f64,
+}
+
 async fn get_p2p_info<B, D>(
     p2p: &NetworkConnection<B, D>,
-) -> anyhow::Result<HashMap<String, DataValue>>
+) -> anyhow::Result<HashMap<String, P2PNodeInfo>>
 where
     B: Networkable,
     D: Networkable,
@@ -605,39 +611,26 @@ where
         .map(|(x, bandwidth)| {
             (
                 x.node_id.to_string(),
-                HashMap::from([
-                    (
-                        "ips",
-                        DataValue::from(
-                            x.addrs
-                                .into_iter()
-                                .map(|y| y.addr.to_string())
-                                .collect::<Vec<_>>()
-                                .join(","),
-                        ),
-                    ),
-                    ("bandwidth", DataValue::from(bandwidth)),
-                ])
-                .into(),
+                P2PNodeInfo {
+                    ips: x
+                        .addrs
+                        .into_iter()
+                        .map(|y| y.addr.to_string())
+                        .collect::<Vec<_>>(),
+                    bandwidth,
+                },
             )
         })
         .chain(std::iter::once((
             node_addr.node_id.to_string(),
-            HashMap::from([
-                (
-                    "ips",
-                    DataValue::from(
-                        node_addr
-                            .direct_addresses
-                            .iter()
-                            .map(|x| x.to_string())
-                            .collect::<Vec<_>>()
-                            .join(","),
-                    ),
-                ),
-                ("bandwidth", DataValue::from(0f32)),
-            ])
-            .into(),
+            P2PNodeInfo {
+                ips: node_addr
+                    .direct_addresses
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>(),
+                bandwidth: 0.0,
+            },
         )))
         .collect())
 }

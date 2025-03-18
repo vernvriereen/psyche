@@ -1,6 +1,7 @@
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 #[repr(transparent)]
 #[derive(
@@ -17,6 +18,7 @@ use serde::{Deserialize, Serialize};
     Serialize,
     Deserialize,
     InitSpace,
+    TS,
 )]
 pub struct SmallBoolean(pub u8);
 
