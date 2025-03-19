@@ -1,8 +1,8 @@
 use anchor_client::{
     anchor_lang::system_program,
     solana_client::{
-        nonblocking::pubsub_client::PubsubClient, rpc_config::RpcAccountInfoConfig,
-        rpc_response::Response as RpcResponse,
+        self, nonblocking::pubsub_client::PubsubClient, rpc_config::RpcAccountInfoConfig,
+        rpc_request::RpcError, rpc_response::Response as RpcResponse,
     },
     solana_sdk::{
         commitment_config::CommitmentConfig,
@@ -10,7 +10,7 @@ use anchor_client::{
         signature::{Keypair, Signature, Signer},
         system_instruction,
     },
-    Client, Cluster, Program,
+    Client, ClientError, Cluster, Program,
 };
 use anyhow::Context;
 use anyhow::{anyhow, bail, Result};
@@ -190,20 +190,28 @@ impl SolanaBackend {
         let auth_create_signature = self
             .program_authorizer
             .request()
-            .accounts(
-                psyche_solana_authorizer::accounts::AuthorizationCreateAccounts {
-                    payer,
-                    grantor: join_authority,
-                    authorization: authorization_global,
-                    system_program: system_program::ID,
-                },
+            .instruction(
+                self.program_authorizer
+                    .request()
+                    .accounts(
+                        psyche_solana_authorizer::accounts::AuthorizationCreateAccounts {
+                            payer,
+                            grantor: join_authority,
+                            authorization: authorization_global,
+                            system_program: system_program::ID,
+                        },
+                    )
+                    .args(psyche_solana_authorizer::instruction::AuthorizationCreate {
+                        params: psyche_solana_authorizer::logic::AuthorizationCreateParams {
+                            grantee: system_program::ID,
+                            scope: psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE
+                                .to_vec(),
+                        },
+                    })
+                    .instructions()
+                    .unwrap()
+                    .remove(0),
             )
-            .args(psyche_solana_authorizer::instruction::AuthorizationCreate {
-                params: psyche_solana_authorizer::logic::AuthorizationCreateParams {
-                    grantee: system_program::ID,
-                    scope: psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE.to_vec(),
-                },
-            })
             .instruction(
                 self.program_authorizer
                     .request()
@@ -226,8 +234,29 @@ impl SolanaBackend {
                     .remove(0),
             )
             .send()
-            .await
-            .ok();
+            .await;
+
+        let auth_create_signature = match auth_create_signature {
+            Ok(signature) => {
+                println!("Authorization created successfully: {:?}", signature);
+                Some(signature)
+            }
+            Err(ClientError::SolanaClientError(solana_client::client_error::ClientError {
+                kind:
+                    solana_client::client_error::ClientErrorKind::RpcError(RpcError::RpcResponseError {
+                        code: -32002,
+                        message: _message,
+                        data,
+                    }),
+                ..
+            })) if format!("{data:?}").contains("already in use") => {
+                println!("Authorization account already exists, proceeding.");
+                None
+            }
+            Err(e) => {
+                bail!("Failed to create authorization: {}", e);
+            }
+        };
 
         Ok(CreatedRun {
             instance: coordinator_instance,
