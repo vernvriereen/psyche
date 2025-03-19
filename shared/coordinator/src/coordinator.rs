@@ -294,6 +294,7 @@ pub struct Coordinator<T> {
     #[serde(default)]
     pub last_step_unix_timestamp: u64,
 
+    #[serde(default)]
     pub pending_pause: SmallBoolean,
 }
 

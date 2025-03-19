@@ -14,7 +14,7 @@ use psyche_modeling::{
     DeepseekForCausalLM, DummyModel, LlamaConfig, LlamaForCausalLM, ModelConfig, ModelLoadError,
     ParallelModels, PretrainedSource, Trainer,
 };
-use psyche_network::{AuthenticatableIdentity, BlobTicket};
+use psyche_network::{AuthenticatableIdentity, BlobTicket, Compression};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tch::{Device, Kind, Tensor};
 use thiserror::Error;
@@ -64,6 +64,13 @@ pub struct RunInitConfig<T: NodeIdentity, A: AuthenticatableIdentity> {
 
     // configurable dummy training time (in seconds) for this client - relevant just for testing
     pub dummy_training_delay_secs: Option<u64>,
+
+    // how hard to compress parameters and DisTrO results.
+    // if you have fast upload and a slow CPU, set this low.
+    // if you have slow upload and a fast CPU, set this high.
+    // reasonable values are from 2-7, higher or lower will either
+    // barely compress or take forever.
+    pub distro_compression: Compression,
 }
 
 #[derive(Debug, Error)]

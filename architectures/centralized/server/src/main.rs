@@ -99,13 +99,7 @@ fn load_config_state(
                 state_path
             )
         })?,
-    )?)
-    .with_context(|| {
-        format!(
-            "failed to parse coordinator state toml file {:?}",
-            state_path
-        )
-    })?;
+    )?)?;
 
     if coordinator.config.cooldown_time == 0 && coordinator.config.checkpointers.is_empty() {
         bail!("cooldown time of 0 and no checkpointers will run forever. invalid coordinator state toml.")
