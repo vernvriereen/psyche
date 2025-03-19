@@ -71,9 +71,9 @@ pub use tcp::{ClientNotification, TcpClient, TcpServer};
 pub use tui::{NetworkTUIState, NetworkTui};
 use url::Url;
 
-const USE_RELAY_HOSTNAME: &str = "use1-1.psyche.relay.iroh.network.";
-const USW_RELAY_HOSTNAME: &str = "usw-1.psyche.relay.iroh.network.";
-const EUC_RELAY_HOSTNAME: &str = "euc1-1.psyche.relay.iroh.network.";
+const USE_RELAY_HOSTNAME: &str = "use1-1.relay.psyche.iroh.link";
+const USW_RELAY_HOSTNAME: &str = "usw1-1.relay.psyche.iroh.link";
+const EUC_RELAY_HOSTNAME: &str = "euc1-1.relay.psyche.iroh.link";
 
 /// How should this node discover other nodes?
 ///
