@@ -6,7 +6,9 @@ set -m
 
 RPC=${RPC:-"http://127.0.0.1:8899"}
 CONFIG_FILE=${CONFIG_FILE:-"./config/solana-test/config.toml"}
-WALLET_FILE=${WALLET_FILE:-"$HOME/.config/solana/id.json"}
+# use the agenix provided wallet if you have it
+DEFAULT_WALLET=${devnet__keypair__wallet_PATH:-"$HOME/.config/solana/id.json"}
+WALLET_FILE=${KEY_FILE:-"$DEFAULT_WALLET"}
 
 cleanup() {
     echo -e "\nCleaning up background processes...\n"
