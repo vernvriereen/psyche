@@ -68,6 +68,7 @@ pub struct AppParams {
     pub grad_accum_in_fp32: bool,
     pub dummy_training_delay_secs: Option<u64>,
     pub max_concurrent_parameter_requests: usize,
+    pub max_concurrent_downloads: usize,
 }
 
 impl AppBuilder {
@@ -96,6 +97,7 @@ impl AppBuilder {
             vec![],
             Some(p.identity_secret_key.clone()),
             allowlist.clone(),
+            p.max_concurrent_downloads,
         )
         .await?;
 

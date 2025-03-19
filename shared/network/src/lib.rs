@@ -128,6 +128,7 @@ where
         bootstrap_peers: Vec<NodeAddr>,
         secret_key: Option<SecretKey>,
         allowlist: A,
+        max_concurrent_downloads: usize,
     ) -> Result<Self> {
         let secret_key = match secret_key {
             None => SecretKey::generate(&mut rand::rngs::OsRng),
@@ -189,6 +190,7 @@ where
         let blobs = Blobs::memory()
             .concurrency_limits(ConcurrencyLimits {
                 max_concurrent_requests_per_node: 1,
+                max_concurrent_requests: max_concurrent_downloads,
                 ..Default::default()
             })
             .build(&endpoint);
