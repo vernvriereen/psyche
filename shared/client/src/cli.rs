@@ -49,11 +49,11 @@ pub struct TrainArgs {
     pub identity_secret_key_path: Option<PathBuf>,
 
     /// Sets the port for the client's P2P network participation. If not provided, a random port will be chosen.
-    #[clap(short, long, env)]
+    #[clap(long, env)]
     pub bind_p2p_port: Option<u16>,
 
     /// Sets the network interface for the client's P2P network participation. If not provided, will bind to all interfaces.
-    #[clap(short, long, env)]
+    #[clap(long, env)]
     pub bind_p2p_interface: Option<String>,
 
     /// Sets clients logs interface
