@@ -72,9 +72,20 @@ services:
         container_name: nginx_proxy
         ports:
             - "8901:8901"
-            - "8902:8902"
         volumes:
             - ./nginx.conf:/etc/nginx/nginx.conf:ro
+        depends_on:
+            - psyche-solana-test-validator
+        networks:
+            - psyche-test-network
+
+    nginx_2:
+        image: nginx:latest
+        container_name: nginx_proxy_2
+        ports:
+            - "8902:8902"
+        volumes:
+            - ./nginx_copy.conf:/etc/nginx/nginx.conf:ro
         depends_on:
             - psyche-solana-test-validator
         networks:

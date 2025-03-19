@@ -145,11 +145,11 @@ impl SolanaBackend {
             loop {
                 let update = tokio::select! {
                     Some(update) = notifications_1.next() => {
-                        println!("Notifications 1");
+                        println!("Notifications 1 update: {update:?}");
                         update
                     },
                     Some(update) = notifications_2.next() =>{
-                        println!("Notifications 2");
+                        println!("Notifications 2 update: {update:?}");
 
                         update
                     },
@@ -158,7 +158,6 @@ impl SolanaBackend {
 
                 let data = &update.value.data;
                 if update.context.slot >= last_slot && &last_data != data {
-                    println!("Update: {:?}", &update);
                     if tx.send(update.clone()).is_err() {
                         break;
                     }
