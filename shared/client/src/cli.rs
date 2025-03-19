@@ -130,8 +130,11 @@ pub struct TrainArgs {
     #[clap(long, env)]
     pub dummy_training_delay_secs: Option<u64>,
 
-    #[clap(long, default_value_t = 10, env)]
+    #[clap(long, default_value_t = 2, env)]
     pub max_concurrent_parameter_requests: usize,
+
+    #[clap(long, default_value_t = 2, env)]
+    pub max_concurrent_downloads: usize,
 
     // how hard to compress parameters and DisTrO results.
     // if you have fast upload and a slow CPU, set this low.

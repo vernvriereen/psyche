@@ -12,7 +12,10 @@ use psyche_client::{
     CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
 };
 use psyche_coordinator::{Coordinator, RunState};
-use psyche_network::{allowlist, Compression, DiscoveryMode, NetworkTUIState, NetworkTui, RelayMode, SecretKey};
+use psyche_network::{
+    allowlist, psyche_relay_map, Compression, DiscoveryMode, NetworkTUIState, NetworkTui,
+    RelayMode, SecretKey,
+};
 use psyche_tui::{logging::LoggerWidget, CustomWidget, TabbedWidget};
 use psyche_watcher::CoordinatorTui;
 use rand::RngCore;
@@ -68,7 +71,8 @@ pub struct AppParams {
     pub grad_accum_in_fp32: bool,
     pub dummy_training_delay_secs: Option<u64>,
     pub max_concurrent_parameter_requests: usize,
-    pub compression: u32
+    pub max_concurrent_downloads: usize,
+    pub compression: u32,
 }
 
 impl AppBuilder {
@@ -92,11 +96,12 @@ impl AppBuilder {
             &p.run_id,
             p.p2p_port,
             p.p2p_interface,
-            RelayMode::Default,
+            RelayMode::Custom(psyche_relay_map()),
             DiscoveryMode::N0,
             vec![],
             Some(p.identity_secret_key.clone()),
             allowlist.clone(),
+            p.max_concurrent_downloads,
         )
         .await?;
 
@@ -137,7 +142,7 @@ impl AppBuilder {
                 grad_accum_in_fp32: p.grad_accum_in_fp32,
                 dummy_training_delay_secs: p.dummy_training_delay_secs,
                 max_concurrent_parameter_requests: p.max_concurrent_parameter_requests,
-                distro_compression: Compression::new(p.compression)
+                distro_compression: Compression::new(p.compression),
             };
 
         Ok((app, allowlist, p2p, state_options))

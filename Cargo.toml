@@ -61,6 +61,7 @@ chrono = "0.4.38"
 fast-math = "0.1"
 async-trait = "0.1.82"
 iroh = "0.33.0"
+iroh-relay = "0.33.0"
 iroh-blobs = { git = "https://github.com/NousResearch/iroh-blobs", rev = "3ee4c56e545611fe2985c873cc6b443b5dabc516", features = [
     "rpc",
     "downloader",

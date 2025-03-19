@@ -269,6 +269,7 @@ async fn main() -> Result<()> {
         peers,
         secret_key,
         allowlist::AllowAll,
+        4,
     )
     .await?;
 

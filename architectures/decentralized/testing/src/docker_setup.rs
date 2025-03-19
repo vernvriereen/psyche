@@ -1,16 +1,18 @@
-use bollard::container::{ListContainersOptions, RemoveContainerOptions};
-use bollard::models::DeviceRequest;
-use bollard::Docker;
 use bollard::{
-    container::{Config, CreateContainerOptions},
+    container::{
+        Config, CreateContainerOptions, KillContainerOptions, ListContainersOptions,
+        RemoveContainerOptions,
+    },
+    models::DeviceRequest,
     secret::{ContainerSummary, HostConfig},
+    Docker,
 };
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::{path::PathBuf, time::Duration};
 use tokio::signal;
 
-use crate::docker_watcher::DockerWatcherError;
+use crate::docker_watcher::{DockerWatcher, DockerWatcherError, JsonFilter};
 
 pub const CLIENT_CONTAINER_PREFIX: &str = "test-psyche-test-client";
 pub const VALIDATOR_CONTAINER_PREFIX: &str = "test-psyche-solana-test-validator";
@@ -45,7 +47,7 @@ pub async fn e2e_testing_setup(
     DockerTestCleanup {}
 }
 
-pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWatcherError> {
+pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<String, DockerWatcherError> {
     // Set the container name based on the ones that are already running.
     let new_container_name = get_name_of_new_client_container(docker_client.clone()).await;
 
@@ -93,7 +95,61 @@ pub async fn spawn_new_client(docker_client: Arc<Docker>) -> Result<(), DockerWa
         .start_container::<String>(&new_container_name, None)
         .await
         .unwrap();
-    Ok(())
+    Ok(new_container_name)
+}
+
+pub async fn get_container_names(docker_client: Arc<Docker>) -> (Vec<String>, Vec<String>) {
+    let all_containers = docker_client
+        .list_containers::<String>(Some(ListContainersOptions {
+            all: true, // Include stopped containers as well
+            ..Default::default()
+        }))
+        .await
+        .unwrap();
+
+    let mut running_containers = Vec::new();
+    let mut all_container_names = Vec::new();
+
+    for cont in all_containers {
+        if let Some(names) = &cont.names {
+            if let Some(name) = names.first() {
+                let trimmed_name = name.trim_start_matches('/').to_string();
+
+                if trimmed_name.starts_with(CLIENT_CONTAINER_PREFIX) {
+                    all_container_names.push(trimmed_name.clone());
+
+                    if cont
+                        .state
+                        .as_deref()
+                        .is_some_and(|state| state.eq_ignore_ascii_case("running"))
+                    {
+                        running_containers.push(trimmed_name);
+                    }
+                }
+            }
+        }
+    }
+
+    (all_container_names, running_containers)
+}
+
+pub async fn spawn_new_client_with_monitoring(
+    docker: Arc<Docker>,
+    watcher: &DockerWatcher,
+) -> Result<String, DockerWatcherError> {
+    let container_id = spawn_new_client(docker.clone()).await.unwrap();
+    let _monitor_client_2 = watcher
+        .monitor_container(
+            &container_id,
+            vec![
+                JsonFilter::LoadedModel,
+                JsonFilter::StateChange,
+                JsonFilter::Loss,
+            ],
+        )
+        .unwrap();
+    println!("Spawned client {container_id}");
+    Ok(container_id)
 }
 
 pub fn spawn_psyche_network(
@@ -189,4 +245,20 @@ async fn remove_old_client_containers(docker_client: Arc<Docker>) {
 async fn get_name_of_new_client_container(docker_client: Arc<Docker>) -> String {
     let client_containers = get_client_containers(docker_client.clone()).await;
     format!("{CLIENT_CONTAINER_PREFIX}-{}", client_containers.len() + 1)
+}
+
+pub async fn kill_all_clients(docker: &Docker, signal: &str) {
+    let options = Some(KillContainerOptions { signal });
+    let (_, running_containers) = get_container_names(docker.clone().into()).await;
+
+    for container in running_containers {
+        println!("Killing container {}", container);
+        docker
+            .kill_container(&container, options.clone())
+            .await
+            .unwrap();
+    }
+
+    // Small delay to ensure containers terminate
+    tokio::time::sleep(Duration::from_secs(2)).await;
 }

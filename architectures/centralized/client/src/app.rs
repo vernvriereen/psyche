@@ -7,8 +7,8 @@ use psyche_client::{
 };
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness, WitnessMetadata};
 use psyche_network::{
-    allowlist, AuthenticatableIdentity, Compression, DiscoveryMode, NetworkTUIState, NetworkTui,
-    NodeId, RelayMode, SecretKey, TcpClient,
+    allowlist, psyche_relay_map, AuthenticatableIdentity, Compression, DiscoveryMode,
+    NetworkTUIState, NetworkTui, NodeId, RelayMode, SecretKey, TcpClient,
 };
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
@@ -103,6 +103,7 @@ pub struct AppParams {
     pub dummy_training_delay_secs: Option<u64>,
     pub discovery_mode: DiscoveryMode,
     pub max_concurrent_parameter_requests: usize,
+    pub max_concurrent_downloads: usize,
     pub compression: u32,
 }
 
@@ -135,11 +136,12 @@ impl AppBuilder {
             &p.run_id,
             p.p2p_port,
             p.p2p_interface,
-            RelayMode::Default,
+            RelayMode::Custom(psyche_relay_map()),
             p.discovery_mode,
             vec![],
             Some(p.identity_secret_key.clone()),
             allowlist.clone(),
+            p.max_concurrent_downloads,
         )
         .await?;
 
