@@ -497,14 +497,11 @@ async fn test_rejoining_client_delay() {
                }
            }
            response = watcher.log_rx.recv() => {
-               match response {
-                   Some(Response::LoadedModel(checkpoint)) => {
-                       // assert client and coordinator state synchronization
-                       assert!(checkpoint.starts_with("P2P"), "The model should be obtained from P2P");
-                       println!("Client got the model with P2P");
-                       return;
-                   }
-                   _ => {}
+               if let Some(Response::LoadedModel(checkpoint)) = response {
+                   // assert client and coordinator state synchronization
+                   assert!(checkpoint.starts_with("P2P"), "The model should be obtained from P2P");
+                   println!("Client got the model with P2P");
+                   return;
                }
            }
         }
