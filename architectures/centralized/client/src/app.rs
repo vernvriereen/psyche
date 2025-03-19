@@ -7,8 +7,8 @@ use psyche_client::{
 };
 use psyche_coordinator::{model, Coordinator, HealthChecks, Witness, WitnessMetadata};
 use psyche_network::{
-    allowlist, AuthenticatableIdentity, DiscoveryMode, NetworkTUIState, NetworkTui, NodeId,
-    RelayMode, SecretKey, TcpClient,
+    allowlist, psyche_relay_map, AuthenticatableIdentity, DiscoveryMode, NetworkTUIState,
+    NetworkTui, NodeId, RelayMode, SecretKey, TcpClient,
 };
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
@@ -135,7 +135,7 @@ impl AppBuilder {
             &p.run_id,
             p.p2p_port,
             p.p2p_interface,
-            RelayMode::Default,
+            RelayMode::Custom(psyche_relay_map()),
             p.discovery_mode,
             vec![],
             Some(p.identity_secret_key.clone()),

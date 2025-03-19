@@ -6800,6 +6800,7 @@ dependencies = [
  "iroh",
  "iroh-blobs",
  "iroh-gossip",
+ "iroh-relay",
  "postcard",
  "psyche-core",
  "psyche-modeling",
@@ -6816,6 +6817,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util 0.7.13",
  "tracing",
+ "url",
 ]
 
 [[package]]

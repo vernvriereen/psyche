@@ -53,7 +53,9 @@ mod util;
 
 pub use authenticable_identity::{raw_p2p_verify, AuthenticatableIdentity, FromSignedBytesError};
 pub use download_manager::{DownloadComplete, DownloadFailed, TransmittableDownload};
+use iroh::defaults::DEFAULT_STUN_PORT;
 pub use iroh::{Endpoint, PublicKey, SecretKey};
+use iroh_relay::{RelayMap, RelayNode, RelayQuicConfig};
 pub use p2p_model_sharing::{
     ModelRequestType, ModelSharing, SharableModel, SharableModelError, TransmittableModelConfig,
     ALPN,
@@ -67,6 +69,11 @@ pub use serialized_distro::{
 pub use signed_message::SignedMessage;
 pub use tcp::{ClientNotification, TcpClient, TcpServer};
 pub use tui::{NetworkTUIState, NetworkTui};
+use url::Url;
+
+const USE_RELAY_HOSTNAME: &str = "use1-1.relay.psyche.iroh.link";
+const USW_RELAY_HOSTNAME: &str = "usw1-1.relay.psyche.iroh.link";
+const EUC_RELAY_HOSTNAME: &str = "euc1-1.relay.psyche.iroh.link";
 
 /// How should this node discover other nodes?
 ///
@@ -169,7 +176,7 @@ where
         let endpoint = {
             let endpoint = Endpoint::builder()
                 .secret_key(secret_key)
-                .relay_mode(relay_mode)
+                .relay_mode(RelayMode::Custom(psyche_relay_map()))
                 .bind_addr_v4(SocketAddrV4::new(ipv4, port.unwrap_or(0)));
 
             let e = match discovery_mode {
@@ -578,4 +585,53 @@ async fn on_update_stats(endpoint: &Endpoint, stats: &mut State) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Get the Psyche [`RelayMap`].
+pub fn psyche_relay_map() -> RelayMap {
+    RelayMap::from_nodes([
+        psyche_use_relay_node(),
+        psyche_usw_relay_node(),
+        psyche_euc_relay_node(),
+    ])
+    .expect("default nodes invalid")
+}
+
+/// Get the Psyche [`RelayNode`] for US East.
+pub fn psyche_use_relay_node() -> RelayNode {
+    let url: Url = format!("https://{USE_RELAY_HOSTNAME}")
+        .parse()
+        .expect("default url");
+    RelayNode {
+        url: url.into(),
+        stun_only: false,
+        stun_port: DEFAULT_STUN_PORT,
+        quic: Some(RelayQuicConfig::default()),
+    }
+}
+
+/// Get the Psyche [`RelayNode`] for US West.
+pub fn psyche_usw_relay_node() -> RelayNode {
+    let url: Url = format!("https://{USW_RELAY_HOSTNAME}")
+        .parse()
+        .expect("default_url");
+    RelayNode {
+        url: url.into(),
+        stun_only: false,
+        stun_port: DEFAULT_STUN_PORT,
+        quic: Some(RelayQuicConfig::default()),
+    }
+}
+
+/// Get the Psyche [`RelayNode`] for Europe
+pub fn psyche_euc_relay_node() -> RelayNode {
+    let url: Url = format!("https://{EUC_RELAY_HOSTNAME}")
+        .parse()
+        .expect("default_url");
+    RelayNode {
+        url: url.into(),
+        stun_only: false,
+        stun_port: DEFAULT_STUN_PORT,
+        quic: Some(RelayQuicConfig::default()),
+    }
 }
