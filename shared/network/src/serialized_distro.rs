@@ -13,7 +13,7 @@ use thiserror::Error;
 
 use crate::serializable_tensor::SerializableTensor;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct SerializedDistroResult {
     pub sparse_idx: SerializableTensor,
     pub sparse_val: SerializableTensor,

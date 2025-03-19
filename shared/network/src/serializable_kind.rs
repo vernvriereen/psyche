@@ -3,7 +3,7 @@ use tch::{Kind, TchError};
 
 /// This wrapper type only exists because tch doesn't expose the enum values directly.
 /// It simply provides a serde ser/de impl for Kind.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerializableKind(Kind);
 
 impl Serialize for SerializableKind {
