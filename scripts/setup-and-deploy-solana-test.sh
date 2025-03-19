@@ -5,6 +5,8 @@ set -e
 set -m
 
 RPC=${RPC:-"http://127.0.0.1:8899"}
+CONFIG_FILE=${CONFIG_FILE:-"./config/solana-test/config.toml"}
+WALLET_FILE=${WALLET_FILE:-"$HOME/.config/solana/id.json"}
 
 cleanup() {
     echo -e "\nCleaning up background processes...\n"
@@ -13,15 +15,13 @@ cleanup() {
 }
 
 trap cleanup INT EXIT
-
-solana-keygen new --no-bip39-passphrase
-solana config set --url localhost
 solana-test-validator -r 1>/dev/null &
 echo -e "\n[+] Started test validator!"
 
 sleep 3
 
-./deploy-solana-test.sh
+solana airdrop 10 --url ${RPC} --keypair ${WALLET_FILE}
+CONFIG_FILE=${CONFIG_FILE} WALLET_FILE=${WALLET_FILE} ./scripts/deploy-solana-test.sh
 
 
 echo -e "\n[+] Testing Solana setup ready, starting Solana logs...\n"

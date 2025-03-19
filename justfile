@@ -56,11 +56,11 @@ decentralized-integration-test test_name="":
 
 # Deploy coordinator on localnet and create a "test" run for 1.1b model.
 setup-solana-localnet-test-run run_id="test" *args='':
-    RUN_ID={{run_id}} ./scripts/deploy-solana-test.sh {{args}}
+    RUN_ID={{run_id}} ./scripts/setup-and-deploy-solana-test.sh {{args}}
 
 # Deploy coordinator on localnet and create a "test" run for 20m model.
 setup-solana-localnet-light-test-run run_id="test" *args='':
-    RUN_ID={{run_id}} CONFIG_FILE=./config/solana-test/light-config.toml ./scripts/deploy-solana-test.sh {{args}}
+    RUN_ID={{run_id}} CONFIG_FILE=./config/solana-test/light-config.toml ./scripts/setup-and-deploy-solana-test.sh {{args}}
 
 # Start client for training on localnet.
 start-training-localnet-client run_id="test" *args='':

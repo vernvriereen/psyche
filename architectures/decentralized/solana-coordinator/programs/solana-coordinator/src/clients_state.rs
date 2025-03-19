@@ -1,14 +1,16 @@
 use anchor_lang::prelude::*;
-
-use crate::{
-    client::Client, program_error::ProgramError, ClientId,
-    SOLANA_MAX_NUM_PENDING_CLIENTS,
-};
-
-use bytemuck::{Pod, Zeroable};
-use psyche_core::{FixedVec, SizedIterator};
-use serde::{Deserialize, Serialize};
+use bytemuck::Pod;
+use bytemuck::Zeroable;
+use psyche_core::FixedVec;
+use psyche_core::SizedIterator;
+use serde::Deserialize;
+use serde::Serialize;
 use ts_rs::TS;
+
+use crate::client::Client;
+use crate::program_error::ProgramError;
+use crate::ClientId;
+use crate::SOLANA_MAX_NUM_PENDING_CLIENTS;
 
 #[derive(
     Debug,
