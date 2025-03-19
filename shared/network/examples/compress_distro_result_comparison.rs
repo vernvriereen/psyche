@@ -1,9 +1,4 @@
-use std::{
-    fs::File,
-    io::Read,
-    path::PathBuf,
-    time::Instant,
-};
+use std::{fs::File, io::Read, path::PathBuf, time::Instant};
 
 use clap::Parser;
 use flate2::{
