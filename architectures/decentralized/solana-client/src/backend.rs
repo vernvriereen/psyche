@@ -24,7 +24,7 @@ use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountData, UiAccountEncoding};
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 pub struct SolanaBackend {
     program_authorizer: Program<Arc<Keypair>>,
@@ -70,7 +70,22 @@ impl SolanaBackend {
         coordinator_account: Pubkey,
     ) -> Result<SolanaBackendRunner> {
         let sub_client_1 = PubsubClient::new(self.cluster.ws_url()).await?;
-        let sub_client_2 = PubsubClient::new(self.cluster.ws_url()).await?;
+
+        let ws_rpc_2 = &std::env::var("ws_rpc_2")?;
+
+        println!("ws_rpc_2 {}", ws_rpc_2);
+
+        let sub_client_2 = if ws_rpc_2 == "" {
+            warn!("ws_rpc_2 not set, using default one");
+            PubsubClient::new(self.cluster.ws_url()).await?
+        } else {
+            PubsubClient::new(&std::env::var("ws_rpc_2")?).await?
+        };
+
+        // todo: move to trace
+        info!("subscription client 1: {:?}", self.cluster.ws_url());
+        info!("subscription client 2: {:?}", ws_rpc_2);
+
         let (tx, rx) = broadcast::channel(32);
 
         let coordinator_instance = psyche_solana_coordinator::find_coordinator_instance(&run_id);
