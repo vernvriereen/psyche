@@ -12,7 +12,9 @@ use psyche_client::{
     CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
 };
 use psyche_coordinator::{Coordinator, RunState};
-use psyche_network::{allowlist, DiscoveryMode, NetworkTUIState, NetworkTui, RelayMode, SecretKey};
+use psyche_network::{
+    allowlist, psyche_relay_map, DiscoveryMode, NetworkTUIState, NetworkTui, RelayMode, SecretKey,
+};
 use psyche_tui::{logging::LoggerWidget, CustomWidget, TabbedWidget};
 use psyche_watcher::CoordinatorTui;
 use rand::RngCore;
@@ -92,7 +94,7 @@ impl AppBuilder {
             &p.run_id,
             p.p2p_port,
             p.p2p_interface,
-            RelayMode::Default,
+            RelayMode::Custom(psyche_relay_map()),
             DiscoveryMode::N0,
             vec![],
             Some(p.identity_secret_key.clone()),
