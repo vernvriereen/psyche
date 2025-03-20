@@ -506,6 +506,10 @@ where
     pub fn router(&self) -> Arc<Router> {
         self.router.clone()
     }
+
+    pub fn neighbors(&self) -> impl Iterator<Item = NodeId> + '_ {
+        self.gossip_rx.neighbors()
+    }
 }
 
 pub async fn request_model(

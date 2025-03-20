@@ -8,7 +8,7 @@ use futures::future::join_all;
 use psyche_coordinator::{Commitment, RunState};
 use psyche_core::NodeIdentity;
 use psyche_network::{
-    allowlist, raw_p2p_verify, request_model, AuthenticatableIdentity, BlobTicket, ConnectionType,
+    allowlist, raw_p2p_verify, request_model, AuthenticatableIdentity, BlobTicket,
     DownloadComplete, ModelRequestType, NetworkConnection, NetworkEvent, NetworkTUIState,
     Networkable, NodeId, SharableModel, TransmittableDownload,
 };
@@ -150,7 +150,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 "apply_state"
                             );
 
-                            let connected_p2p_nodes = p2p.get_all_peers().await.into_iter().filter(|(_, connection)| *connection != ConnectionType::None).map(|(addr, _)| addr.node_id).collect::<BTreeSet<_>>();
+                            let connected_p2p_nodes: BTreeSet<_> = p2p.neighbors().collect();
                             {
                                 let run_participating_node_ids: Vec<NodeId> = new_state
                                     .epoch_state
