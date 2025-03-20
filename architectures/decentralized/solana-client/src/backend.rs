@@ -144,16 +144,47 @@ impl SolanaBackend {
             let mut last_slot = 0;
             loop {
                 let update = tokio::select! {
-                    Some(update) = notifications_1.next() => {
+                    update = notifications_1.next() => {
+                        let Some(update) = update else {
+                            notifications_1 = Box::pin(futures_util::stream::pending());
+
+                            println!("Subscription 1 ended, attempting to resubscribe");
+                            // Create a new subscription to replace the ended one
+            
+                            match sub_client_1
+                                .account_subscribe(
+                                    &coordinator_account,
+                                    Some(RpcAccountInfoConfig {
+                                        encoding: Some(UiAccountEncoding::Base64Zstd),
+                                        commitment: Some(commitment),
+                                        ..Default::default()
+                                    }),
+                                )
+                                .await 
+                            {
+                                Ok((new_notifications, _)) => {
+                                    notifications_1 = new_notifications;
+                                    continue;
+                                },
+                                Err(err) => {
+                                    tracing::error!("Failed to resubscribe: {}", err);
+                                    // Either continue with degraded service or break based on your requirements
+                                    continue;
+                                }
+                            }
+                        };
                         println!("Notifications 1 update: {update:?}");
                         update
                     },
                     Some(update) = notifications_2.next() =>{
                         println!("Notifications 2 update: {update:?}");
-
                         update
                     },
-                    else => break,
+                    else => {
+                        println!("\n BREAKKKKKKKKKKK \n");
+                        break
+
+                    },
                 };
 
                 let data = &update.value.data;
