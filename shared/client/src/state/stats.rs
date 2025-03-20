@@ -116,7 +116,7 @@ impl StatsLogger {
         let evals = {
             let mut evals: FixedVec<WitnessEvalResult, 8> = Default::default();
             for (key, val) in self.current_eval_results() {
-                let value = WitnessEvalResult::new_trunc_name(&key, val as f32);
+                let value = WitnessEvalResult::new_trunc_name(&key, no_nan(val as f32, 0.0));
                 if evals.push(value).is_err() {
                     // fixedvec is full, that's ok! nothing we can do.
                     break;
@@ -129,14 +129,13 @@ impl StatsLogger {
         let tokens_per_sec = self.global_tokens_per_second(state);
         WitnessMetadata {
             step: state.progress.step,
-            tokens_per_sec: if tokens_per_sec.is_nan() {
-                0.0
-            } else {
-                tokens_per_sec
-            },
-            bandwidth_per_sec: bandwidth_total as f32,
-            loss: self.losses().last().copied().unwrap_or(f32::INFINITY),
-            efficency: self.efficency(),
+            tokens_per_sec: no_nan(tokens_per_sec, 0.0),
+            bandwidth_per_sec: no_nan(bandwidth_total as f32, 0.0),
+            loss: no_nan(
+                self.losses().last().copied().unwrap_or(f32::INFINITY),
+                f32::INFINITY,
+            ),
+            efficency: no_nan(self.efficency(), 0.0),
             evals,
         }
     }
@@ -259,4 +258,12 @@ fn total_tokens<T: NodeIdentity>(state: &Coordinator<T>) -> u64 {
 
 fn perplexity(loss: f32) -> f32 {
     loss.exp()
+}
+
+fn no_nan(val: f32, replacement: f32) -> f32 {
+    if val.is_nan() {
+        replacement
+    } else {
+        val
+    }
 }
