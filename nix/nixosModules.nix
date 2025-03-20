@@ -219,12 +219,12 @@
               services.caddy = {
                 enable = true;
                 virtualHosts = {
-                  "http://docs.psyche.network".extraConfig = ''
+                  "https://docs.psyche.network".extraConfig = ''
                     root * ${self.packages.${pkgs.system}.psyche-book}
                     file_server
                   '';
 
-                  "http://mainnet.psyche.network".extraConfig = ''
+                  "https://mainnet.psyche.network".extraConfig = ''
                     handle {
                       root * ${psyche-website-frontend}
                       try_files {path} /index.html
