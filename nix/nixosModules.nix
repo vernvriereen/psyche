@@ -195,6 +195,7 @@
       nixosConfigurations."psyche-http-mainnet" = inputs.nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
         modules = base-system ++ [
+          debug-ssh
           (psyche-website-backend ../secrets/backend-mainnet.age)
           (
             {
