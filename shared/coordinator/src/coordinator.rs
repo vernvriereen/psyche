@@ -131,6 +131,7 @@ pub struct Round {
     AnchorSerialize,
     Serialize,
     Deserialize,
+    PartialEq,
     TS,
 )]
 #[repr(C)]
@@ -209,6 +210,13 @@ pub enum CoordinatorError {
 pub enum TickResult {
     Ticked,
     EpochEnd(bool), // if successfully finished
+}
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug)]
+pub enum OpportunisticData {
+    WitnessStep(Witness, WitnessMetadata),
+    WarmupStep(Witness),
 }
 
 pub type HealthChecks<T> = Vec<(T, CommitteeProof)>;
@@ -449,7 +457,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         Ok(ret)
     }
 
-    pub fn witness(
+    pub fn warmup_witness(
         &mut self,
         from: &T,
         witness: Witness,
@@ -466,23 +474,64 @@ impl<T: NodeIdentity> Coordinator<T> {
             self.config.witness_nodes as usize
         };
 
+        if !matches!(self.run_state, RunState::RoundTrain | RunState::Warmup,) {
+            return Err(CoordinatorError::InvalidRunState);
+        }
+
+        // Everyone can send a witness in the warmup phase so we don't need to check for the committee
+        let round = self.current_round().unwrap();
+        for witness in round.witnesses.iter() {
+            if self.epoch_state.clients[witness.proof.index as usize].id == *from {
+                return Err(CoordinatorError::DuplicateWitness);
+            }
+        }
+        let round = self.current_round_mut_unchecked();
+        round
+            .witnesses
+            .push(witness)
+            .map_err(|_| CoordinatorError::WitnessesFull)?;
+
+        if round.witnesses.len() == witness_nodes {
+            match self.run_state {
+                RunState::Warmup => self.start_round_train(unix_timestamp, random_seed, 0),
+                RunState::RoundTrain => {}
+                _ => unreachable!(),
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn witness(
+        &mut self,
+        from: &T,
+        witness: Witness,
+        unix_timestamp: u64,
+    ) -> std::result::Result<(), CoordinatorError> {
+        if self.halted() {
+            return Err(CoordinatorError::Halted);
+        }
+
+        let witness_nodes = if self.config.witness_nodes == 0 {
+            self.epoch_state.clients.len().min(SOLANA_MAX_NUM_WITNESSES)
+        } else {
+            self.config.witness_nodes as usize
+        };
+
         if !matches!(
             self.run_state,
-            RunState::RoundWitness | RunState::RoundTrain | RunState::Warmup,
+            RunState::RoundWitness | RunState::RoundTrain,
         ) {
             return Err(CoordinatorError::InvalidRunState);
         }
 
-        if self.run_state != RunState::Warmup {
-            // anyone can be a witness during warmup
-            if !CommitteeSelection::from_coordinator(self, 0)?.verify_witness_for_client::<T>(
-                from,
-                &witness.proof,
-                &self.epoch_state.clients,
-            ) || witness.proof.witness.is_false()
-            {
-                return Err(CoordinatorError::InvalidWitness);
-            }
+        if !CommitteeSelection::from_coordinator(self, 0)?.verify_witness_for_client::<T>(
+            from,
+            &witness.proof,
+            &self.epoch_state.clients,
+        ) || witness.proof.witness.is_false()
+        {
+            return Err(CoordinatorError::InvalidWitness);
         }
 
         let round = self.current_round().unwrap();
@@ -497,13 +546,8 @@ impl<T: NodeIdentity> Coordinator<T> {
             .push(witness)
             .map_err(|_| CoordinatorError::WitnessesFull)?;
 
-        if round.witnesses.len() == witness_nodes && !(self.run_state == RunState::RoundWitness) {
-            match self.run_state {
-                RunState::RoundTrain => self.change_state(unix_timestamp, RunState::RoundWitness),
-                RunState::Warmup => self.start_round_train(unix_timestamp, random_seed, 0),
-                RunState::RoundWitness => {}
-                _ => unreachable!(),
-            }
+        if round.witnesses.len() == witness_nodes {
+            self.change_state(unix_timestamp, RunState::RoundWitness);
         }
         Ok(())
     }

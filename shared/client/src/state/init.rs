@@ -1,7 +1,7 @@
 use crate::{fetch_data::DataFetcher, WandBInfo};
 use psyche_coordinator::{
     model::{self, LLMTrainingDataLocation},
-    Coordinator, HealthChecks, Witness, WitnessMetadata,
+    Coordinator, HealthChecks, OpportunisticData,
 };
 use psyche_core::{CancellableBarrier, NodeIdentity, TokenSize};
 use psyche_data_provider::{
@@ -117,7 +117,7 @@ pub struct RunInitConfigAndIO<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub init_config: RunInitConfig<T, A>,
 
     pub tx_health_check: UnboundedSender<HealthChecks<T>>,
-    pub tx_witness: UnboundedSender<(Witness, WitnessMetadata)>,
+    pub tx_witness: UnboundedSender<OpportunisticData>,
     pub tx_checkpoint: UnboundedSender<model::HubRepo>,
     pub tx_model: UnboundedSender<HashMap<String, Tensor>>,
     pub tx_parameters_req: UnboundedSender<(Vec<String>, OneshotModelParameterSender)>,
