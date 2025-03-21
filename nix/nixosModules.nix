@@ -173,7 +173,7 @@
       nixosConfigurations."psyche-http-mainnet" = persistentPsycheWebsite {
         configName = "psyche-http-mainnet";
         hostnames = [ "mainnet-preview.psyche.network" ];
-        backendSecret = ../secrets/backend-mainnet.age;
+        backendSecret = ../secrets/mainnet/backend.age;
         miningPoolRpc = "https://api.mainnet-beta.solana.com/";
       };
 
@@ -182,7 +182,7 @@
         system = "x86_64-linux";
         modules = base-system ++ [
           debug-ssh
-          (psyche-website-backend ../secrets/backend-mainnet.age)
+          (psyche-website-backend ../secrets/mainnet/backend.age)
           (
             {
               config,

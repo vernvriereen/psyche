@@ -4,12 +4,21 @@ let
   keys = import ./nix/keys.nix;
 in
 {
-  # RPC urls for our devnet indexer
+  ## Local Development
+  # a shared devnet wallet
+  "secrets/devnet/wallet.age".publicKeys = keys.allDevKeys;
+
+  # RPC url for devnet
+  "secrets/devnet/rpc.age".publicKeys = keys.allDevKeys;
+
+  # RPC url for mainnet
+  "secrets/mainnet/rpc.age".publicKeys = keys.allDevKeys;
+
+  ## Deployments
+
+  # all RPC urls for our devnet indexer
   "secrets/devnet/backend.age".publicKeys = keys.allKeys;
 
-  # RPC urls for our mainnet indexer
-  "secrets/backend-mainnet.age".publicKeys = keys.allKeys;
-
-  # a shared devnet wallet
-  "secrets/devnet/keypair/wallet.age".publicKeys = keys.allDevKeys;
+  # all RPC urls for our mainnet indexer
+  "secrets/mainnet/backend.age".publicKeys = keys.allKeys;
 }
