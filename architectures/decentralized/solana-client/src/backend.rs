@@ -22,8 +22,8 @@ use psyche_coordinator::{
 
 use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountData, UiAccountEncoding};
-use std::sync::Arc;
-use tokio::sync::broadcast;
+use std::{sync::Arc, time::Duration};
+use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, info, warn};
 
 pub struct SolanaBackend {
@@ -69,24 +69,108 @@ impl SolanaBackend {
         run_id: String,
         coordinator_account: Pubkey,
     ) -> Result<SolanaBackendRunner> {
-        let sub_client_1 = PubsubClient::new(self.cluster.ws_url()).await?;
-
-        let ws_rpc_2 = &std::env::var("ws_rpc_2")?;
-
-        println!("ws_rpc_2 {}", ws_rpc_2);
-
-        let sub_client_2 = if ws_rpc_2 == "" {
-            warn!("ws_rpc_2 not set, using default one");
-            PubsubClient::new(self.cluster.ws_url()).await?
-        } else {
-            PubsubClient::new(&std::env::var("ws_rpc_2")?).await?
-        };
-
-        // todo: move to trace
-        info!("subscription client 1: {:?}", self.cluster.ws_url());
-        info!("subscription client 2: {:?}", ws_rpc_2);
-
+        let (tx_a, mut rx_a) = mpsc::unbounded_channel();
         let (tx, rx) = broadcast::channel(32);
+        // Clone these values before moving them into the async block
+        let cluster = self.cluster.clone();
+        let url = cluster.ws_url().to_string();
+        let commitment = self.program_coordinator.rpc().commitment().clone();
+
+        let tx1 = tx_a.clone();
+        tokio::spawn(async move {
+            loop {
+                let Ok(sub_client_1) = PubsubClient::new(&url).await else {
+                    println!("Reconection error");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                };
+                let commitment = commitment;
+                let mut notifications_1 = match sub_client_1
+                    .account_subscribe(
+                        &coordinator_account,
+                        Some(RpcAccountInfoConfig {
+                            encoding: Some(UiAccountEncoding::Base64Zstd),
+                            commitment: Some(commitment),
+                            ..Default::default()
+                        }),
+                    )
+                    .await
+                {
+                    Ok((notifications_1, _)) => notifications_1,
+                    Err(err) => {
+                        tracing::error!("{}", err);
+                        return;
+                    }
+                };
+
+                println!("Subscription 1 DONE");
+                while let Some(update) = notifications_1.next().await {
+                    println!("Notifications 1 update: {update:?}");
+                    tx1.send(update).unwrap();
+                }
+            }
+        });
+
+        let tx2 = tx_a.clone();
+        let url = cluster.ws_url().to_string();
+
+        tokio::spawn(async move {
+            loop {
+                let ws_rpc_2 = &std::env::var("ws_rpc_2").unwrap();
+                let sub_client_2 = if ws_rpc_2 == "" {
+                    warn!("ws_rpc_2 not set, using default one");
+                    PubsubClient::new(&url).await.unwrap()
+                } else {
+                    PubsubClient::new(&std::env::var("ws_rpc_2").unwrap())
+                        .await
+                        .unwrap()
+                };
+                let commitment = commitment;
+                let mut notifications_2 = match sub_client_2
+                    .account_subscribe(
+                        &coordinator_account,
+                        Some(RpcAccountInfoConfig {
+                            encoding: Some(UiAccountEncoding::Base64Zstd),
+                            commitment: Some(commitment),
+                            ..Default::default()
+                        }),
+                    )
+                    .await
+                {
+                    Ok((notifications_2, _)) => notifications_2,
+                    Err(err) => {
+                        tracing::error!("{}", err);
+                        return;
+                    }
+                };
+                println!("Subscription 2 DONE");
+                while let Some(update) = notifications_2.next().await {
+                    println!("Notifications 2 update: {update:?}");
+
+                    tx2.send(update).unwrap();
+                }
+
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+        });
+
+        tokio::spawn(async move {
+            let mut last_data: UiAccountData = UiAccountData::LegacyBinary("".to_string());
+            let mut last_slot = 0;
+            while let Some(update) = rx_a.recv().await {
+                let data = &update.value.data;
+                if update.context.slot >= last_slot && &last_data != data {
+                    if tx.send(update.clone()).is_err() {
+                        break;
+                    }
+                    println!("TX send");
+                    last_data = data.clone();
+                    last_slot = update.context.slot;
+                }
+            }
+
+            panic!();
+        });
 
         let coordinator_instance = psyche_solana_coordinator::find_coordinator_instance(&run_id);
 
@@ -96,107 +180,11 @@ impl SolanaBackend {
             run_id, coordinator_instance
         );
 
-        let commitment = self.program_coordinator.rpc().commitment();
-
         let init = self
             .program_coordinator
             .rpc()
             .get_account_data(&coordinator_account)
             .await?;
-
-        tokio::spawn(async move {
-            let mut notifications_1 = match sub_client_1
-                .account_subscribe(
-                    &coordinator_account,
-                    Some(RpcAccountInfoConfig {
-                        encoding: Some(UiAccountEncoding::Base64Zstd),
-                        commitment: Some(commitment),
-                        ..Default::default()
-                    }),
-                )
-                .await
-            {
-                Ok((notifications_1, _)) => notifications_1,
-                Err(err) => {
-                    tracing::error!("{}", err);
-                    return;
-                }
-            };
-
-            let mut notifications_2 = match sub_client_2
-                .account_subscribe(
-                    &coordinator_account,
-                    Some(RpcAccountInfoConfig {
-                        encoding: Some(UiAccountEncoding::Base64Zstd),
-                        commitment: Some(commitment),
-                        ..Default::default()
-                    }),
-                )
-                .await
-            {
-                Ok((notifications_2, _)) => notifications_2,
-                Err(err) => {
-                    tracing::error!("{}", err);
-                    return;
-                }
-            };
-            let mut last_data: UiAccountData = UiAccountData::LegacyBinary("".to_string());
-            let mut last_slot = 0;
-            loop {
-                let update = tokio::select! {
-                    update = notifications_1.next() => {
-                        let Some(update) = update else {
-                            notifications_1 = Box::pin(futures_util::stream::pending());
-
-                            println!("Subscription 1 ended, attempting to resubscribe");
-                            // Create a new subscription to replace the ended one
-            
-                            match sub_client_1
-                                .account_subscribe(
-                                    &coordinator_account,
-                                    Some(RpcAccountInfoConfig {
-                                        encoding: Some(UiAccountEncoding::Base64Zstd),
-                                        commitment: Some(commitment),
-                                        ..Default::default()
-                                    }),
-                                )
-                                .await 
-                            {
-                                Ok((new_notifications, _)) => {
-                                    notifications_1 = new_notifications;
-                                    continue;
-                                },
-                                Err(err) => {
-                                    tracing::error!("Failed to resubscribe: {}", err);
-                                    // Either continue with degraded service or break based on your requirements
-                                    continue;
-                                }
-                            }
-                        };
-                        println!("Notifications 1 update: {update:?}");
-                        update
-                    },
-                    Some(update) = notifications_2.next() =>{
-                        println!("Notifications 2 update: {update:?}");
-                        update
-                    },
-                    else => {
-                        println!("\n BREAKKKKKKKKKKK \n");
-                        break
-
-                    },
-                };
-
-                let data = &update.value.data;
-                if update.context.slot >= last_slot && &last_data != data {
-                    if tx.send(update.clone()).is_err() {
-                        break;
-                    }
-                    last_data = data.clone();
-                    last_slot = update.context.slot;
-                }
-            }
-        });
 
         Ok(SolanaBackendRunner {
             backend: self,
