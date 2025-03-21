@@ -1,8 +1,5 @@
 use anyhow::Result;
-use iroh::{
-    endpoint::{Connecting, Connection},
-    protocol::ProtocolHandler,
-};
+use iroh::{endpoint::Connection, protocol::ProtocolHandler};
 use iroh_blobs::ticket::BlobTicket;
 use psyche_core::BoxedFuture;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
@@ -422,11 +419,10 @@ impl ModelSharing {
 }
 
 impl ProtocolHandler for ModelSharing {
-    fn accept(&self, connecting: Connecting) -> BoxedFuture<Result<()>> {
+    fn accept(&self, connection: Connection) -> BoxedFuture<Result<()>> {
         let tx_model_parameter_req = self.tx_model_parameter_req.clone();
         let tx_model_config_req = self.tx_model_config_req.clone();
         Box::pin(async move {
-            let connection = connecting.await?;
             Self::_accept_connection(connection, tx_model_parameter_req, tx_model_config_req).await
         })
     }
