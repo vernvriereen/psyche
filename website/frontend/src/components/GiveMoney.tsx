@@ -7,7 +7,6 @@ import { text } from '../fonts.js'
 import { Button } from './Button.js'
 import {
 	findLender,
-	fundingUnitsPerDollar,
 	getMiningPoolPDA,
 	miningPoolIdl,
 	PsycheSolanaMiningPool,
@@ -69,11 +68,13 @@ export function GiveMoney({
 	remainingMoney,
 	miningPoolProgramId,
 	collateralMintAddress,
+	collateralMintDecimals,
 }: {
 	onExit: () => void
 	remainingMoney: bigint
 	collateralMintAddress: string
 	miningPoolProgramId: string
+	collateralMintDecimals: number
 }) {
 	const { connection } = useConnection()
 	const { onDisconnect, publicKey } = useWalletMultiButton({
@@ -84,7 +85,6 @@ export function GiveMoney({
 	const [collateralInfo, setCollateralInfo] = useState<{
 		userCollateralAmount: bigint
 		associatedTokenAddress: PublicKey
-		decimals: number
 	} | null>(null)
 	const [txErr, setTxErr] = useState<any | null>(null)
 	const [sending, setSending] = useState(false)
@@ -136,10 +136,9 @@ export function GiveMoney({
 				account,
 			})
 
-			const mint = await getMint(connection, mintAddr)
+			// const mint = await getMint(connection, mintAddr)
 			setCollateralInfo({
 				associatedTokenAddress: myWalletCollateral,
-				decimals: mint.decimals,
 				userCollateralAmount: account.amount,
 			})
 		})()
@@ -158,13 +157,15 @@ export function GiveMoney({
 		return <></>
 	}
 
+	const fundingUnitsPerDollar = (10**collateralMintDecimals)
+
 	const walletBalance = collateralInfo?.userCollateralAmount ?? 0n
 	const walletAddress = publicKey?.toString()
 	const maxAmount =
 		walletBalance > remainingMoney ? remainingMoney : walletBalance
 	// have to div by 100 because we replace x.xx with xxx, so 100x too big.
 	const contributeAmount =
-		(BigInt(money.replace('.', '')) * fundingUnitsPerDollar) / 100n
+		(BigInt(money.replace('.', '')) * BigInt(fundingUnitsPerDollar)) / 100n
 	return (
 		<>
 			<div>

@@ -40,18 +40,27 @@ export interface CoordinatorDataStore extends ChainDataStore {
 }
 
 export interface MiningPoolDataStore extends ChainDataStore {
-	setMiningPoolAccountData(data: PsycheMiningPoolAccount): void
+	setFundingData(data: PsycheMiningPoolAccount): void
 	setUserAmount(address: string, amount: bigint): void
+	setCollateralInfo(mintAddress: string, decimals: number): void;
+	hasCollateralInfo(): boolean
 	getContributionInfo(): Omit<ContributionInfo, 'miningPoolProgramId'>
 }
 
 export class FlatFileMiningPoolDataStore implements MiningPoolDataStore {
 	#lastSlot: number = -1
 	#data: {
-		miningPool: PsycheMiningPoolAccount | null
+		totalDepositedCollateralAmount: bigint
+		maxDepositCollateralAmount: bigint
+		collateral: {
+			mintAddress: string
+			decimals: number
+		} | null
 		userDeposits: Map<string, bigint>
 	} = {
-		miningPool: null,
+		collateral: null,
+		maxDepositCollateralAmount: 0n,
+		totalDepositedCollateralAmount: 0n,
 		userDeposits: new Map(),
 	}
 	#db: string
@@ -72,9 +81,18 @@ export class FlatFileMiningPoolDataStore implements MiningPoolDataStore {
 			console.warn('failed to load previous DB from disk: ', err)
 		}
 	}
+	
 
-	setMiningPoolAccountData(data: PsycheMiningPoolAccount): void {
-		this.#data.miningPool = data
+	setFundingData(data: PsycheMiningPoolAccount): void {
+		this.#data.maxDepositCollateralAmount = BigInt(data.maxDepositCollateralAmount.toString())
+		this.#data.totalDepositedCollateralAmount = BigInt(data.totalDepositedCollateralAmount.toString())
+	}
+
+	setCollateralInfo(mintAddress: string, decimals: number) {
+		this.#data.collateral = {
+			mintAddress,
+			decimals,
+		}
 	}
 
 	setUserAmount(address: string, amount: bigint): void {
@@ -100,32 +118,24 @@ export class FlatFileMiningPoolDataStore implements MiningPoolDataStore {
 	}
 
 	getContributionInfo(): Omit<ContributionInfo, 'miningPoolProgramId'> {
-		const totalDepositedCollateralAmount = this.#data.miningPool
-			? BigInt(
-					this.#data.miningPool.totalDepositedCollateralAmount.toString()
-				)
-			: 0n
-
-		const maxDepositCollateralAmount = this.#data.miningPool
-			? BigInt(
-					this.#data.miningPool.maxDepositCollateralAmount.toString()
-				)
-			: 0n
-
 		const usersSortedByAmount = [...this.#data.userDeposits.entries()].sort(
 			(a, b) => (a[1] > b[1] ? -1 : a[1] < b[1] ? 1 : 0)
 		)
 		return {
-			totalDepositedCollateralAmount,
-			maxDepositCollateralAmount,
+			totalDepositedCollateralAmount: this.#data.totalDepositedCollateralAmount,
+			maxDepositCollateralAmount: this.#data.maxDepositCollateralAmount,
 			users: usersSortedByAmount.map(([address, funding], i) => ({
 				address,
 				funding,
 				rank: i + 1,
 			})),
+			collateralMintDecimals: this.#data.collateral?.decimals ?? 0,
 			collateralMintAddress:
-				this.#data.miningPool?.collateralMint.toString() ?? 'UNKNOWN',
+				this.#data.collateral?.mintAddress ?? 'UNKNOWN',
 		}
+	}
+	hasCollateralInfo(): boolean {
+		return this.#data.collateral !== null
 	}
 }
 
@@ -239,8 +249,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		const tokensPerSequence = c.model.LLM.max_seq_len
 		const batchesPerStep = c.config.global_batch_size_end
 
-		const tokensPerStep =
-			tokensPerSequence * batchesPerStep
+		const tokensPerStep = tokensPerSequence * batchesPerStep
 
 		const currentStep = c.progress.step
 		const completedTokens = Number(currentStep) * tokensPerStep

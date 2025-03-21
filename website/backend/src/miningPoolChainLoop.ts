@@ -3,6 +3,7 @@ import { getMiningPoolPDA, PsycheSolanaMiningPool } from 'shared'
 import { PsycheMiningPoolInstructionsUnion } from './idlTypes.js'
 import { MiningPoolDataStore } from './dataStore.js'
 import { startWatchChainLoop } from './chainLoop.js'
+import { getMint } from '@solana/spl-token'
 
 export async function startWatchMiningPoolChainLoop(
 	dataStore: MiningPoolDataStore,
@@ -41,7 +42,11 @@ export async function startWatchMiningPoolChainLoop(
 			async onDoneCatchup(store, state) {
 				if (state.mainAccountUpdated) {
 					const account = await miningPool.account.pool.fetch(ourPool)
-					store.setMiningPoolAccountData(account)
+					store.setFundingData(account)
+					if(!store.hasCollateralInfo()) {
+						const {decimals} = await getMint(miningPool.provider.connection, account.collateralMint)
+						store.setCollateralInfo(account.collateralMint.toString(), decimals)
+					}
 				}
 				const updatedAddresses = [
 					...state.userAccountsUpdated.values(),

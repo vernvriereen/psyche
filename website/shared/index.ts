@@ -20,14 +20,13 @@ export {
 	type PsycheSolanaMiningPool,
 }
 
-// TODO remove get from backend with mint technique
-export const fundingUnitsPerDollar = 10n ** 6n
-
 export interface ContributionInfo {
 	totalDepositedCollateralAmount: bigint
 	maxDepositCollateralAmount: bigint
 	users: Array<{ rank: number; address: string; funding: bigint }>
 	collateralMintAddress: string
+	// Number of base 10 digits to the right of the decimal place for formatting
+	collateralMintDecimals: number
 	miningPoolProgramId: string
 }
 

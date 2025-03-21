@@ -2,7 +2,7 @@ import { forest, lime, slate } from '../colors.js'
 import { text } from '../fonts.js'
 import { Button } from './Button.js'
 import { styled } from '@linaria/react'
-import { ContributionInfo, fundingUnitsPerDollar } from 'shared'
+import { ContributionInfo } from 'shared'
 import MedusaHead from '../assets/icons/medusa-head.svg?react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { GiveMoney } from './GiveMoney.js'
@@ -224,6 +224,7 @@ export function ContributeCompute({
 	users,
 	collateralMintAddress,
 	miningPoolProgramId,
+	collateralMintDecimals
 }: ContributionInfo) {
 	const [contributing, setContributing] = useState(false)
 	const { wallets, select } = useWallet()
@@ -283,6 +284,7 @@ export function ContributeCompute({
 						remainingMoney={maxDepositCollateralAmount - totalDepositedCollateralAmount}
 						collateralMintAddress={collateralMintAddress}
 						miningPoolProgramId={miningPoolProgramId}
+						collateralMintDecimals={collateralMintDecimals}
 					/>
 				) : (
 					<>
@@ -308,7 +310,7 @@ export function ContributeCompute({
 							<span className={text['body/base/medium']}>
 								CAPITAL:{' '}
 								{formatUSDollars(
-									Number(totalDepositedCollateralAmount) / Number(fundingUnitsPerDollar)
+									Number(totalDepositedCollateralAmount) / (10**collateralMintDecimals)
 								)}
 							</span>
 							<Button

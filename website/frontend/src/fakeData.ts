@@ -171,6 +171,7 @@ export const fakeRunData: Record<string, RunData> = {
 }
 
 export const fakeContributionInfo: ContributionInfo = {
+	collateralMintDecimals: 6,
 	totalDepositedCollateralAmount: 1250000000000n,
 	maxDepositCollateralAmount: 2500000000000n,
 	users: [
