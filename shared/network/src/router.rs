@@ -227,22 +227,13 @@ async fn handle_connection<A: Allowlist + 'static + Send>(
         }
     };
 
-    // NOTE: Due to some race condition between the `close connection` message and other peers requesting
-    // to join the gossip network, it is better to retry a few times before closing the connection.
-    // If *this* peer sends a join request before the `close connection` message is processed by the *other* peer,
-    // the connection between both is left in a corrupted state and they can't really communicate between each other
-    for i in 0..=3 {
-        if allowlist.allowed(node_id) {
-            break;
-        }
-        if i == 3 {
-            // kill connection completely!
-            connection.close(0u8.into(), b"not in allowlist");
-            warn!("Killing attemption connection: Node ID {node_id} is not in allowlist {allowlist:#?}.");
-            warn!("Connection killed after 3 attempts.");
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    if !allowlist.allowed(node_id) {
+        // kill connection completely!
+        connection.close(0u8.into(), b"not in allowlist");
+        warn!(
+            "Killing attemption connection: Node ID {node_id} is not in allowlist {allowlist:#?}."
+        );
+        return;
     }
 
     if alpn == iroh_gossip::ALPN {
