@@ -12,6 +12,7 @@
   - [Setup & Useful Commands](./development/setup.md)
   - [Running on-chain](./development/running-onchain.md)
   - [Running off-chain](./development/running-offchain.md)
+  - [Implementing Models](./development/models.md)
   - [Secrets](./development/agenix.md)
   - [Building these docs](./development/book.md)
   - [CI](./development/ci.md)
