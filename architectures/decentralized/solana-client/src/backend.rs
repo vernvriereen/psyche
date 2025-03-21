@@ -47,6 +47,45 @@ pub struct CreatedRun {
     pub transaction: Signature,
 }
 
+async fn subscribe_to_account(
+    url: String,
+    commitment: CommitmentConfig,
+    coordinator_account: &Pubkey,
+    tx: mpsc::UnboundedSender<RpcResponse<UiAccount>>,
+) {
+    loop {
+        let Ok(sub_client) = PubsubClient::new(&url).await else {
+            println!("Reconection error");
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            continue;
+        };
+        let commitment = commitment;
+        let mut notifications = match sub_client
+            .account_subscribe(
+                coordinator_account,
+                Some(RpcAccountInfoConfig {
+                    encoding: Some(UiAccountEncoding::Base64Zstd),
+                    commitment: Some(commitment),
+                    ..Default::default()
+                }),
+            )
+            .await
+        {
+            Ok((notifications, _)) => notifications,
+            Err(err) => {
+                tracing::error!("{}", err);
+                return;
+            }
+        };
+
+        println!("Subscription {url} DONE");
+        while let Some(update) = notifications.next().await {
+            println!("Notifications {url} update: {update:?}");
+            tx.send(update).unwrap();
+        }
+    }
+}
+
 impl SolanaBackend {
     #[allow(dead_code)]
     pub fn new(
@@ -78,80 +117,17 @@ impl SolanaBackend {
 
         let tx1 = tx_a.clone();
         tokio::spawn(async move {
-            loop {
-                let Ok(sub_client_1) = PubsubClient::new(&url).await else {
-                    println!("Reconection error");
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                    continue;
-                };
-                let commitment = commitment;
-                let mut notifications_1 = match sub_client_1
-                    .account_subscribe(
-                        &coordinator_account,
-                        Some(RpcAccountInfoConfig {
-                            encoding: Some(UiAccountEncoding::Base64Zstd),
-                            commitment: Some(commitment),
-                            ..Default::default()
-                        }),
-                    )
-                    .await
-                {
-                    Ok((notifications_1, _)) => notifications_1,
-                    Err(err) => {
-                        tracing::error!("{}", err);
-                        return;
-                    }
-                };
-
-                println!("Subscription 1 DONE");
-                while let Some(update) = notifications_1.next().await {
-                    println!("Notifications 1 update: {update:?}");
-                    tx1.send(update).unwrap();
-                }
-            }
+            subscribe_to_account(url, commitment, &coordinator_account, tx1).await
         });
 
         let tx2 = tx_a.clone();
-        let url = cluster.ws_url().to_string();
-
+        let url_2 = if &std::env::var("ws_rpc_2")? == "" {
+            cluster.ws_url().to_string()
+        } else {
+            std::env::var("ws_rpc_2")?
+        };
         tokio::spawn(async move {
-            loop {
-                let ws_rpc_2 = &std::env::var("ws_rpc_2").unwrap();
-                let sub_client_2 = if ws_rpc_2 == "" {
-                    warn!("ws_rpc_2 not set, using default one");
-                    PubsubClient::new(&url).await.unwrap()
-                } else {
-                    PubsubClient::new(&std::env::var("ws_rpc_2").unwrap())
-                        .await
-                        .unwrap()
-                };
-                let commitment = commitment;
-                let mut notifications_2 = match sub_client_2
-                    .account_subscribe(
-                        &coordinator_account,
-                        Some(RpcAccountInfoConfig {
-                            encoding: Some(UiAccountEncoding::Base64Zstd),
-                            commitment: Some(commitment),
-                            ..Default::default()
-                        }),
-                    )
-                    .await
-                {
-                    Ok((notifications_2, _)) => notifications_2,
-                    Err(err) => {
-                        tracing::error!("{}", err);
-                        return;
-                    }
-                };
-                println!("Subscription 2 DONE");
-                while let Some(update) = notifications_2.next().await {
-                    println!("Notifications 2 update: {update:?}");
-
-                    tx2.send(update).unwrap();
-                }
-
-                tokio::time::sleep(Duration::from_secs(5)).await;
-            }
+            subscribe_to_account(url_2, commitment, &coordinator_account, tx2).await
         });
 
         tokio::spawn(async move {
