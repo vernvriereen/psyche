@@ -2,7 +2,7 @@ import { text } from '../fonts.js'
 import { forest, slate } from '../colors.js'
 import Select from 'react-select'
 import { css } from '@linaria/core'
-import { c } from '../utils.js'
+import { c, svgFillCurrentColor } from '../utils.js'
 
 import DownChevron from '../assets/icons/chevron-down.svg?react'
 import { styled } from '@linaria/react'
@@ -123,6 +123,7 @@ const Dropdown = styled.div`
 	align-items: center;
 	justify-content: center;
 	transform: scaleY(${(props) => (props.flip ? '-1' : '1')});
+	color: var(--color-bg);
 `
 
 export function Sort<T extends OptionType>({
@@ -145,7 +146,7 @@ export function Sort<T extends OptionType>({
 			components={{
 				DropdownIndicator: () => (
 					<Dropdown flip={isOpen}>
-						<DownChevron />
+						<DownChevron className={svgFillCurrentColor}/>
 					</Dropdown>
 				),
 			}}
