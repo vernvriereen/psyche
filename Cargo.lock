@@ -4341,8 +4341,7 @@ dependencies = [
 [[package]]
 name = "iroh-gossip"
 version = "0.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46f02f4ab55d5f52a16253ad9d95fd6e89c1b1046a0f99a1afb14833f9b6e1a5"
+source = "git+https://github.com/n0-computer/iroh-gossip?rev=4f62c6c857841dd6a1f68c2bfa19702183117cb6#4f62c6c857841dd6a1f68c2bfa19702183117cb6"
 dependencies = [
  "anyhow",
  "async-channel 2.3.1",

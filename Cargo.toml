@@ -66,7 +66,7 @@ iroh-blobs = { git = "https://github.com/NousResearch/iroh-blobs", rev = "28f716
     "rpc",
     "downloader",
 ] }
-iroh-gossip = "0.34.0"
+iroh-gossip = { git = "https://github.com/n0-computer/iroh-gossip", rev = "4f62c6c857841dd6a1f68c2bfa19702183117cb6" }
 memmap2 = { version = "0.9.3", features = ["stable_deref_trait"] }
 indicatif = "0.17.5"
 tokenizers = { version = "0.20.0", default-features = false, features = [
