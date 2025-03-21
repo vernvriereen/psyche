@@ -12,7 +12,7 @@ export const svgFillCurrentColor = css`
 	}
 `
 
-export function c(classes: Array<string | null | undefined | false>) {
+export function c(...classes: Array<string | null | undefined | false>) {
 	return classes.filter(Boolean).join(' ').trim()
 }
 

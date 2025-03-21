@@ -30,7 +30,7 @@ export function SymbolSeparatedItems({ children }: PropsWithChildren) {
 				<React.Fragment key={i}>
 					{i !== 0 && (
 						<Symbol06
-							className={c([lineHeightSymbol, iconClass])}
+							className={c(lineHeightSymbol, iconClass)}
 						/>
 					)}
 					{link}

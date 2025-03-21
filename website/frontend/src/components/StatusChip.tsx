@@ -55,10 +55,10 @@ export function StatusChip({
 	return (
 		<StatusChipContainer
 			inverted={inverted}
-			className={c([
+			className={c(
 				text['body/sm/medium'],
 				style === 'bold' && (inverted ? BoldInverted : Bold),
-			])}
+			)}
 		>
 			<Dot color={colors[status]} />
 			{children}

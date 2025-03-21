@@ -106,12 +106,12 @@ export function Header() {
 			<NavMain>
 				<VerticalStack>
 					<span className={text['display/5xl']}>
-						<PsycheLogo className={c([psycheLogo, iconClass])} />
+						<PsycheLogo className={c(psycheLogo, iconClass)} />
 						<span>nous psyche</span>
 					</span>
 					<span className={text['body/sm/medium']}>
 						DISTRIBUTED INTELLIGENCE NETWORK
-						<Symbol02 className={c([symbol02, iconClass])} />
+						<Symbol02 className={c(symbol02, iconClass)} />
 					</span>
 					<Chip className={text['aux/xs/semibold']}>TESTNET</Chip>
 				</VerticalStack>

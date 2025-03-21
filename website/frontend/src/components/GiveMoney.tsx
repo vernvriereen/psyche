@@ -182,7 +182,7 @@ export function GiveMoney({
 			</div>
 			<Wrapper>
 				<CurrencyInput
-					className={c([currencyInput, text['display/5xl']])}
+					className={c(currencyInput, text['display/5xl'])}
 					onValueChange={(values) => {
 						if (values.value !== 'NaN') {
 							setMoney(values.value)
@@ -192,23 +192,23 @@ export function GiveMoney({
 					locale="en-US"
 				/>
 				<Balance
-					className={c([
+					className={c(
 						text['body/sm/medium'],
 						contributeAmount > walletBalance ? 'poor' : '',
-					])}
+					)}
 				>
 					{'wallet balance '}
 					{formatUSDollars(Number(maxAmount) / Number(fundingUnitsPerDollar))} {'USDC'}
 				</Balance>
 				{txErr && (
-					<Balance className={c([text['body/sm/medium'], 'poor'])}>
+					<Balance className={c(text['body/sm/medium'], 'poor')}>
 						{txErr.toString()}
 					</Balance>
 				)}
 
 				<SideAlign>
 					<span
-						className={c([text['body/sm/medium'], walletAddress])}
+						className={c(text['body/sm/medium'], walletAddress)}
 					>
 						<WalletAddress>{walletAddress}</WalletAddress>
 						<Button style="secondary" onClick={onDisconnect}>

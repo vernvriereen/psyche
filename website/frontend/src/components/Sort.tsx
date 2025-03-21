@@ -151,7 +151,7 @@ export function Sort<T extends OptionType>({
 				),
 			}}
 			classNames={{
-				container: () => c([containerStyle, text['button/sm']]),
+				container: () => c(containerStyle, text['button/sm']),
 				control: () => controlStyle,
 				placeholder: () => placeholderStyle,
 				indicatorsContainer: () => indicatorsStyle,
@@ -161,7 +161,7 @@ export function Sort<T extends OptionType>({
 				menu: () => menuContainerStyle,
 				menuList: () => menuListStyle,
 				option: ({ isFocused }) =>
-					c([optionStyle, isFocused && focusedOptionStyle]),
+					c(optionStyle, isFocused && focusedOptionStyle),
 			}}
 			isSearchable={false}
 			onMenuOpen={() => setIsOpen(true)}
