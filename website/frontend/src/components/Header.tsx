@@ -2,17 +2,16 @@ import { styled } from '@linaria/react'
 
 import PsycheLogo from '../assets/icons/psyche-box.svg?react'
 import Symbol02 from '../assets/icons/symbol-02.svg?react'
-import Symbol06 from '../assets/icons/symbol-06.svg?react'
 import CornerFleur from '../assets/icons/corner-fleur.svg?react'
 import Sun from '../assets/icons/sun.svg?react'
 import Moon from '../assets/icons/moon.svg?react'
 import { css } from '@linaria/core'
 import { text } from '../fonts.js'
-import React, { Children, PropsWithChildren } from 'react'
 import { Button } from './Button.js'
 import { c, svgFillCurrentColor } from '../utils.js'
 import { useDarkMode } from 'usehooks-ts'
 import { iconClass } from '../icon.js'
+import { SymbolSeparatedItems } from './SymbolSeparatedItems.js'
 
 const smallBreakpoint = '872px'
 
@@ -73,12 +72,6 @@ const symbol02 = css`
 	height: 1.5em;
 	width: 2em;
 `
-
-const lineHeightSymbol = css`
-	height: 1em;
-	width: 1em;
-`
-
 const Chip = styled.div`
 	background: var(--color-fg);
 	color: var(--color-bg);
@@ -86,33 +79,6 @@ const Chip = styled.div`
 	padding: 0 4px;
 `
 
-const Links = styled.div`
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-
-	& > a {
-		color: var(--color-fg);
-		text-transform: uppercase;
-	}
-`
-
-function SymbolSeparatedItems({ children }: PropsWithChildren) {
-	return (
-		<Links>
-			{Children.toArray(children).map((link, i) => (
-				<React.Fragment key={i}>
-					{i !== 0 && (
-						<Symbol06
-							className={c([lineHeightSymbol, iconClass])}
-						/>
-					)}
-					{link}
-				</React.Fragment>
-			))}
-		</Links>
-	)
-}
 const cornerFleur = css`
 	min-width: 128px;
 	height: 128px;
@@ -151,9 +117,11 @@ export function Header() {
 				</VerticalStack>
 				<div className={text['body/sm/medium']}>
 					<VerticalStack>
-						<div>Cooperative training over&#8209;the&#8209;internet</div>
+						<div>
+							Cooperative training over&#8209;the&#8209;internet
+						</div>
 						<SymbolSeparatedItems>
-						<a href="#">github</a>
+							<a href="#">github</a>
 							<a href="#">forum</a>
 							<a href="#">docs</a>
 							<a href="https://twitter.com/psycheoperation">
