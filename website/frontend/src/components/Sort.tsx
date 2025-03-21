@@ -31,6 +31,9 @@ const containerStyle = css`
 	& > option {
 		background: ${slate[200]};
 	}
+
+	min-width: calc(var(--longest-option-length) + 7ch);
+	text-align: center;
 `
 
 const controlStyle = css`
@@ -131,6 +134,9 @@ export function Sort<T extends OptionType>({
 	const [isOpen, setIsOpen] = useState(false)
 	return (
 		<Select
+		styles={{
+			container: (a) => ({...a, "--longest-option-length": `${Math.max(...options.map(o => o.label.length))}ch`})
+		}}
 			className={className}
 			options={options}
 			onChange={(v) => onChange(v!)}
