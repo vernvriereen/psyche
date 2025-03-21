@@ -85,7 +85,10 @@ function integerMarkers(
 	const idealSpacing = range / targetMarkers
 
 	// find the closest "nice" int step size
-	const potentialSteps = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000, 2000, 5000, 10_000, 20_000, 50_000]
+	const potentialSteps = [
+		1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000, 2000, 5000, 10_000,
+		20_000, 50_000,
+	]
 	const step = potentialSteps.reduce((prev, curr) => {
 		return Math.abs(curr - idealSpacing) < Math.abs(prev - idealSpacing)
 			? curr

@@ -7,7 +7,11 @@ import { routeTree } from './routeTree.gen.js'
 import './index.css'
 import { SiteBroken } from './components/SiteBroken.js'
 
-const router = createRouter({ routeTree, defaultErrorComponent: SiteBroken,basepath: import.meta.env.BASE_URL })
+const router = createRouter({
+	routeTree,
+	defaultErrorComponent: SiteBroken,
+	basepath: import.meta.env.BASE_URL,
+})
 
 declare module '@tanstack/react-router' {
 	interface Register {

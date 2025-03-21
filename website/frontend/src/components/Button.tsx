@@ -39,7 +39,7 @@ const buttonStyle = css`
 		align-items: center;
 		justify-content: center;
 	}
-		
+
 	& .icon svg {
 		margin: 0px 3px;
 		width: 0.9em;

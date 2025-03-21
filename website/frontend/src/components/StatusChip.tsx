@@ -46,7 +46,7 @@ export function StatusChip({
 	status,
 	style,
 	inverted,
-	children
+	children,
 }: PropsWithChildren<{
 	status: RunStatus['type']
 	style: Style
@@ -57,7 +57,7 @@ export function StatusChip({
 			inverted={inverted}
 			className={c(
 				text['body/sm/medium'],
-				style === 'bold' && (inverted ? BoldInverted : Bold),
+				style === 'bold' && (inverted ? BoldInverted : Bold)
 			)}
 		>
 			<Dot color={colors[status]} />

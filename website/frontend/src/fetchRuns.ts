@@ -57,6 +57,6 @@ export async function fetchRun(runId: string): Promise<ApiGetRun> {
 
 export async function fetchContributions(): Promise<ApiGetContributionInfo> {
 	return import.meta.env.VITE_FAKE_DATA
-		? fakeContributionInfo satisfies ApiGetContributionInfo
+		? (fakeContributionInfo satisfies ApiGetContributionInfo)
 		: psycheJsonFetch('contributionInfo')
 }

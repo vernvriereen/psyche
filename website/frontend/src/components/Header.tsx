@@ -29,6 +29,11 @@ const NavMain = styled.div`
 			1fr
 		);
 
+	& > .blurb {
+		justify-self: center;
+		text-transform: uppercase;
+	}
+
 	& > .buttons {
 		justify-self: end;
 	}
@@ -39,6 +44,10 @@ const NavMain = styled.div`
 		& > .buttons {
 			justify-self: start;
 			flex-direction: row;
+		}
+
+		& > .blurb {
+			justify-self: start;
 		}
 	}
 	@media (width < 722px) {
@@ -115,24 +124,18 @@ export function Header() {
 					</span>
 					<Chip className={text['aux/xs/semibold']}>TESTNET</Chip>
 				</VerticalStack>
-				<div className={text['body/sm/medium']}>
-					<VerticalStack>
-						<div>
-							Cooperative training over&#8209;the&#8209;internet
-						</div>
-						<SymbolSeparatedItems>
-							<a href="#">github</a>
-							<a href="#">forum</a>
-							<a href="#">docs</a>
-							<a href="https://twitter.com/psycheoperation">
-								Twitter
-							</a>
-							<a href="https://discord.gg/psychenetwork">
-								Discord
-							</a>
-						</SymbolSeparatedItems>
-					</VerticalStack>
-				</div>
+				<VerticalStack className={c(text['body/sm/medium'], 'blurb')}>
+					<div>
+						Cooperative training over&#8209;the&#8209;internet
+					</div>
+					<SymbolSeparatedItems>
+						<a href="https://github.com/PsycheFoundation/psyche">
+							github
+						</a>
+						<a href="https://forum.psyche.network/">forum</a>
+						<a href="https://docs.psyche.network/">docs</a>
+					</SymbolSeparatedItems>
+				</VerticalStack>
 				<VerticalStack className="buttons">
 					<Button
 						style="theme"

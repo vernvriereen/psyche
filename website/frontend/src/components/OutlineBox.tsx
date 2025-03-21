@@ -1,9 +1,6 @@
 import { css } from '@linaria/core'
 import { styled } from '@linaria/react'
-import {
-	type PropsWithChildren,
-	type ReactNode,
-} from 'react'
+import { type PropsWithChildren, type ReactNode } from 'react'
 import { text } from '../fonts.js'
 import { forest, slate } from '../colors.js'
 import { c } from '../utils.js'
@@ -16,7 +13,8 @@ const boxHeaderChild = css`
 	}
 	.theme-dark & {
 		color: ${forest[300]};
-	}`
+	}
+`
 
 const BoxHeader = styled.legend`
 	margin: 0 1ch;

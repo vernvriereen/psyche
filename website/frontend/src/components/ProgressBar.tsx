@@ -15,7 +15,8 @@ const Container = styled.div`
 		.theme-dark & {
 			background-image: linear-gradient(
 				to right,
-				${(props) => props.big ? lime[300] : forest[500]} ${(props) => props.chunkWidth}px,
+				${(props) => (props.big ? lime[300] : forest[500])}
+					${(props) => props.chunkWidth}px,
 				transparent 4px
 			);
 		}
@@ -32,7 +33,7 @@ export function ProgressBar({
 	ratio,
 	chunkWidth,
 	chunkHeight,
-	big = false
+	big = false,
 }: {
 	ratio: number
 	chunkWidth: number

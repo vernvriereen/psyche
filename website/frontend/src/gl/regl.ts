@@ -48,8 +48,8 @@ export function createSphereAnimation(
 	const regl = makeRegl({
 		canvas: canvas,
 		attributes: {
-			premultipliedAlpha: false
-		}
+			premultipliedAlpha: false,
+		},
 	})
 	const camera = regl<Uniforms, {}, Props, CustomContext>({
 		context: {

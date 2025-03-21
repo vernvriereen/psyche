@@ -4,6 +4,7 @@ import { styled } from '@linaria/react'
 import { OutlineBox } from '../../components/OutlineBox.js'
 import { ContributeCompute } from '../../components/ContributeCompute.js'
 import { fetchContributions } from '../../fetchRuns.js'
+import { Footer } from '../../components/Footer.js'
 
 export const Route = createFileRoute('/runs')({
 	loader: fetchContributions,
@@ -17,6 +18,8 @@ const Main = styled.div`
 	flex-direction: column;
 	container-type: inline-size;
 	align-items: space-around;
+	justify-content: space-between;
+	min-height: 100vh;
 `
 
 const MainContainer = styled.div`
@@ -54,6 +57,7 @@ function RouteComponent() {
 					</OutlineBox>
 				</MainContents>
 			</MainContainer>
+			<Footer />
 		</Main>
 	)
 }

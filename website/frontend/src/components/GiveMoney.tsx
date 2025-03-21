@@ -125,10 +125,13 @@ export function GiveMoney({
 				myWalletCollateral,
 				'confirmed'
 			).catch((err) => {
-				console.warn(`Failed to fetch collateral address ${myWalletCollateral}, assuming user has no USDC`, err)
-				return ({
+				console.warn(
+					`Failed to fetch collateral address ${myWalletCollateral}, assuming user has no USDC`,
+					err
+				)
+				return {
 					amount: 0n,
-				})
+				}
 			})
 
 			console.log('fetched myWalletCollateral account', {
@@ -157,7 +160,7 @@ export function GiveMoney({
 		return <></>
 	}
 
-	const fundingUnitsPerDollar = (10**collateralMintDecimals)
+	const fundingUnitsPerDollar = 10 ** collateralMintDecimals
 
 	const walletBalance = collateralInfo?.userCollateralAmount ?? 0n
 	const walletAddress = publicKey?.toString()
@@ -194,11 +197,14 @@ export function GiveMoney({
 				<Balance
 					className={c(
 						text['body/sm/medium'],
-						contributeAmount > walletBalance ? 'poor' : '',
+						contributeAmount > walletBalance ? 'poor' : ''
 					)}
 				>
 					{'wallet balance '}
-					{formatUSDollars(Number(maxAmount) / Number(fundingUnitsPerDollar))} {'USDC'}
+					{formatUSDollars(
+						Number(maxAmount) / Number(fundingUnitsPerDollar)
+					)}{' '}
+					{'USDC'}
 				</Balance>
 				{txErr && (
 					<Balance className={c(text['body/sm/medium'], 'poor')}>
@@ -207,9 +213,7 @@ export function GiveMoney({
 				)}
 
 				<SideAlign>
-					<span
-						className={c(text['body/sm/medium'], walletAddress)}
-					>
+					<span className={c(text['body/sm/medium'], walletAddress)}>
 						<WalletAddress>{walletAddress}</WalletAddress>
 						<Button style="secondary" onClick={onDisconnect}>
 							x

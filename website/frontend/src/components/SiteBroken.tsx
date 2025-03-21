@@ -12,9 +12,9 @@ const ErrorContainer = styled.pre`
 	text-align: left;
 	margin: 0 auto;
 	border: 4px solid var(--color-fg);
-    text-wrap: wrap;
-    padding: 8px;
-    margin-top: 8px;
+	text-wrap: wrap;
+	padding: 8px;
+	margin-top: 8px;
 `
 export function SiteBroken({ error }: ErrorComponentProps) {
 	return (
@@ -22,9 +22,7 @@ export function SiteBroken({ error }: ErrorComponentProps) {
 			<Header />
 
 			<Container>
-				<div className={text['display/6xl']}>
-					something went wrong
-				</div>
+				<div className={text['display/6xl']}>something went wrong</div>
 				<div className={text['aux/base/bold']}>
 					send this error to someone on the psyche team:
 				</div>

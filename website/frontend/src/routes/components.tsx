@@ -161,7 +161,9 @@ function RouteComponent() {
 												status={status}
 												style={style}
 												inverted={inverted}
-											>{status}</StatusChip>
+											>
+												{status}
+											</StatusChip>
 										</label>
 									))}
 								</Bingus>

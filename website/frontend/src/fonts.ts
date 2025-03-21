@@ -18,16 +18,15 @@ export const global = css`
 			font-style: normal;
 			font-display: swap;
 		}
-			
+
 		@font-face {
 			font-family: 'Geist Mono';
-			src:
-				url('${geistMonoWoff2}') format('woff2');
+			src: url('${geistMonoWoff2}') format('woff2');
 			font-weight: 1 999;
 			font-style: normal;
 			font-display: swap;
 		}
-			
+
 		@font-face {
 			font-family: 'Geist';
 			src: url('${geistWoff2}') format('woff2');

@@ -135,9 +135,12 @@ export function Sort<T extends OptionType>({
 	const [isOpen, setIsOpen] = useState(false)
 	return (
 		<Select
-		styles={{
-			container: (a) => ({...a, "--longest-option-length": `${Math.max(...options.map(o => o.label.length))}ch`})
-		}}
+			styles={{
+				container: (a) => ({
+					...a,
+					'--longest-option-length': `${Math.max(...options.map((o) => o.label.length))}ch`,
+				}),
+			}}
 			className={className}
 			options={options}
 			onChange={(v) => onChange(v!)}
@@ -146,7 +149,7 @@ export function Sort<T extends OptionType>({
 			components={{
 				DropdownIndicator: () => (
 					<Dropdown flip={isOpen}>
-						<DownChevron className={svgFillCurrentColor}/>
+						<DownChevron className={svgFillCurrentColor} />
 					</Dropdown>
 				),
 			}}

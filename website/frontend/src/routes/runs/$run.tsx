@@ -141,7 +141,7 @@ const InfoChits = styled.div`
 `
 
 function RouteComponent() {
-	const {run} = Route.useLoaderData()
+	const { run } = Route.useLoaderData()
 	const backButton = (
 		<Button
 			style="action"
@@ -246,7 +246,6 @@ function RouteComponent() {
 							</RadialContainer>
 						)}
 						<StatBoxes>
-							
 							{/* // TODO: calculate confidence and perplexity */}
 							<MiniCard
 								text="loss"
@@ -265,7 +264,7 @@ function RouteComponent() {
 					<HistoryContainer>
 						{graphData && (
 							<>
-							{/* // TODO: render confidence and perplexity */}
+								{/* // TODO: render confidence and perplexity */}
 								<LineGraphContainer>
 									<ResponsiveLineGraph
 										renderValue={(x) => `${x.toFixed(2)}`}

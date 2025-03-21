@@ -48,13 +48,19 @@ function RouteComponent() {
 								justify-content: space-between;
 							`}
 						>
-							<div>{(
-								(c.indexedSlot / c.chainSlotHeight) *
-								100
-							).toFixed(4)}
-							% indexed</div><div>slot {c.indexedSlot} /{' '}
-							{c.chainSlotHeight}</div><div>
-							{c.chainSlotHeight - c.indexedSlot} slots behind</div>
+							<div>
+								{(
+									(c.indexedSlot / c.chainSlotHeight) *
+									100
+								).toFixed(4)}
+								% indexed
+							</div>
+							<div>
+								slot {c.indexedSlot} / {c.chainSlotHeight}
+							</div>
+							<div>
+								{c.chainSlotHeight - c.indexedSlot} slots behind
+							</div>
 						</div>
 						<ProgressBar
 							ratio={c.indexedSlot / c.chainSlotHeight}

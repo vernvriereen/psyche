@@ -210,12 +210,11 @@ const Spacer = styled.div`
 	flex-shrink: 1;
 `
 
-
 const AddressBox = styled.td`
-width: 100%;
-max-width: 0;
-  overflow: hidden;
-white-space: nowrap;
+	width: 100%;
+	max-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
 `
 
 export function ContributeCompute({
@@ -224,7 +223,7 @@ export function ContributeCompute({
 	users,
 	collateralMintAddress,
 	miningPoolProgramId,
-	collateralMintDecimals
+	collateralMintDecimals,
 }: ContributionInfo) {
 	const [contributing, setContributing] = useState(false)
 	const { wallets, select } = useWallet()
@@ -281,7 +280,10 @@ export function ContributeCompute({
 				{contributing && buttonState === 'connected' ? (
 					<GiveMoney
 						onExit={() => setContributing(false)}
-						remainingMoney={maxDepositCollateralAmount - totalDepositedCollateralAmount}
+						remainingMoney={
+							maxDepositCollateralAmount -
+							totalDepositedCollateralAmount
+						}
 						collateralMintAddress={collateralMintAddress}
 						miningPoolProgramId={miningPoolProgramId}
 						collateralMintDecimals={collateralMintDecimals}
@@ -296,7 +298,8 @@ export function ContributeCompute({
 							</ContributeProgress>
 							<ContributeProgressBar
 								ratio={
-									Number(totalDepositedCollateralAmount) / Number(maxDepositCollateralAmount)
+									Number(totalDepositedCollateralAmount) /
+									Number(maxDepositCollateralAmount)
 								}
 								widthCh={18}
 							/>
@@ -310,7 +313,8 @@ export function ContributeCompute({
 							<span className={text['body/base/medium']}>
 								CAPITAL:{' '}
 								{formatUSDollars(
-									Number(totalDepositedCollateralAmount) / (10**collateralMintDecimals)
+									Number(totalDepositedCollateralAmount) /
+										10 ** collateralMintDecimals
 								)}
 							</span>
 							<Button
@@ -341,7 +345,8 @@ export function ContributeCompute({
 							const featured = i < 3
 							const fundingPercent =
 								Number(
-									(user.funding * 100_000n) / totalDepositedCollateralAmount
+									(user.funding * 100_000n) /
+										totalDepositedCollateralAmount
 								) / 1_000
 							return (
 								<tr
@@ -379,16 +384,50 @@ export function ContributeCompute({
 								</tr>
 							)
 						})}
-						{users.length === 0 && <>
-							<tr><td /><td>&nbsp;</td><td /></tr>
-							<tr><td /><td>&nbsp;</td><td /></tr>
-							<tr><td /><td>&nbsp;</td><td /></tr>
-							<tr><td /><td>&nbsp;</td><td /></tr>
-							<tr><td /><td>&nbsp;</td><td /></tr>
-							<tr><td /><td>&nbsp;</td><td /></tr>
-							<tr><td /><td>&nbsp;</td><td /></tr>
-							<tr><td /><td>&nbsp;</td><td /></tr>
-						</>}
+						{users.length === 0 && (
+							<>
+								<tr>
+									<td />
+									<td>&nbsp;</td>
+									<td />
+								</tr>
+								<tr>
+									<td />
+									<td>&nbsp;</td>
+									<td />
+								</tr>
+								<tr>
+									<td />
+									<td>&nbsp;</td>
+									<td />
+								</tr>
+								<tr>
+									<td />
+									<td>&nbsp;</td>
+									<td />
+								</tr>
+								<tr>
+									<td />
+									<td>&nbsp;</td>
+									<td />
+								</tr>
+								<tr>
+									<td />
+									<td>&nbsp;</td>
+									<td />
+								</tr>
+								<tr>
+									<td />
+									<td>&nbsp;</td>
+									<td />
+								</tr>
+								<tr>
+									<td />
+									<td>&nbsp;</td>
+									<td />
+								</tr>
+							</>
+						)}
 					</tbody>
 				</RankTable>
 			</TableContainer>
