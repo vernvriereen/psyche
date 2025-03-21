@@ -25,7 +25,7 @@ export const fundingUnitsPerDollar = 10n ** 6n
 
 export interface ContributionInfo {
 	totalDepositedCollateralAmount: bigint
-	maxFunding: bigint
+	maxDepositCollateralAmount: bigint
 	users: Array<{ rank: number; address: string; funding: bigint }>
 	collateralMintAddress: string
 	miningPoolProgramId: string

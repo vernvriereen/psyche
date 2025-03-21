@@ -172,7 +172,7 @@ export const fakeRunData: Record<string, RunData> = {
 
 export const fakeContributionInfo: ContributionInfo = {
 	totalDepositedCollateralAmount: 1250000000000n,
-	maxFunding: 2500000000000n,
+	maxDepositCollateralAmount: 2500000000000n,
 	users: [
 		{
 			rank: 1,

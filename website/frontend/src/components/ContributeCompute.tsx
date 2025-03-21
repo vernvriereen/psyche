@@ -220,7 +220,7 @@ white-space: nowrap;
 
 export function ContributeCompute({
 	totalDepositedCollateralAmount,
-	maxFunding,
+	maxDepositCollateralAmount,
 	users,
 	collateralMintAddress,
 	miningPoolProgramId,
@@ -280,7 +280,7 @@ export function ContributeCompute({
 				{contributing && buttonState === 'connected' ? (
 					<GiveMoney
 						onExit={() => setContributing(false)}
-						remainingMoney={maxFunding - totalDepositedCollateralAmount}
+						remainingMoney={maxDepositCollateralAmount - totalDepositedCollateralAmount}
 						collateralMintAddress={collateralMintAddress}
 						miningPoolProgramId={miningPoolProgramId}
 					/>
@@ -294,7 +294,7 @@ export function ContributeCompute({
 							</ContributeProgress>
 							<ContributeProgressBar
 								ratio={
-									Number(totalDepositedCollateralAmount) / Number(maxFunding)
+									Number(totalDepositedCollateralAmount) / Number(maxDepositCollateralAmount)
 								}
 								widthCh={18}
 							/>

@@ -106,7 +106,7 @@ export class FlatFileMiningPoolDataStore implements MiningPoolDataStore {
 				)
 			: 0n
 
-		const maxFunding = this.#data.miningPool
+		const maxDepositCollateralAmount = this.#data.miningPool
 			? BigInt(
 					this.#data.miningPool.maxDepositCollateralAmount.toString()
 				)
@@ -117,7 +117,7 @@ export class FlatFileMiningPoolDataStore implements MiningPoolDataStore {
 		)
 		return {
 			totalDepositedCollateralAmount,
-			maxFunding,
+			maxDepositCollateralAmount,
 			users: usersSortedByAmount.map(([address, funding], i) => ({
 				address,
 				funding,
