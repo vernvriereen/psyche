@@ -257,28 +257,33 @@ export function u64ToLeBytes(value: bigint) {
 	return new Uint8Array(buffer)
 }
 
-const encoder = new TextEncoder()
-
+const poolSeedPrefix = new Uint8Array(
+	miningPoolIdl.instructions
+		.find((acc) => acc.name === 'pool_create')!
+		.accounts.find((acc) => acc.name === 'pool')!.pda!.seeds[0].value!
+)
 export function getMiningPoolPDA(
 	miningPoolProgramId: PublicKey,
 	index: bigint
 ) {
 	return PublicKey.findProgramAddressSync(
-		[encoder.encode('Pool'), u64ToLeBytes(index)],
+		[poolSeedPrefix, u64ToLeBytes(index)],
 		miningPoolProgramId
 	)[0]
 }
+
+const lenderSeedPrefix = new Uint8Array(
+	miningPoolIdl.instructions
+		.find((acc) => acc.name === 'lender_create')!
+		.accounts.find((acc) => acc.name === 'lender')!.pda!.seeds[0].value!
+)
 export function findLender(
 	miningPoolProgramId: PublicKey,
 	psychePoolPda: PublicKey,
 	publicKey: PublicKey
 ) {
 	return PublicKey.findProgramAddressSync(
-		[
-			encoder.encode('Lender'),
-			psychePoolPda.toBytes(),
-			publicKey.toBytes(),
-		],
+		[lenderSeedPrefix, psychePoolPda.toBytes(), publicKey.toBytes()],
 		miningPoolProgramId
 	)[0]
 }
