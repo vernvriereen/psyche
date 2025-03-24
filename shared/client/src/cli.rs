@@ -133,7 +133,7 @@ pub struct TrainArgs {
     #[clap(long, default_value_t = 2, env)]
     pub max_concurrent_parameter_requests: usize,
 
-    #[clap(long, default_value_t = 2, env)]
+    #[clap(long, default_value_t = 8, env)]
     pub max_concurrent_downloads: usize,
 
     // how hard to compress parameters and DisTrO results.
