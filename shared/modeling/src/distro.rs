@@ -538,11 +538,7 @@ impl Distro {
         }
     }
 
-    pub fn generate(
-        &mut self,
-        lr: f64,
-        stats: bool,
-    ) -> Vec<DistroResult> {
+    pub fn generate(&mut self, lr: f64, stats: bool) -> Vec<DistroResult> {
         let _no_grad = tch::no_grad_guard();
         let variables = &mut self.sgd.trainable_variables_with_sharding();
         let mut ret = Vec::with_capacity(variables.len());

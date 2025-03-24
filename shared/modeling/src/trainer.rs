@@ -614,7 +614,7 @@ impl Trainer {
                             Optimizer::Distro {
                                 optimizer,
                                 clip_grad_norm,
-                                quantize_1bit: _
+                                quantize_1bit: _,
                             } => {
                                 let clipped = match clip_grad_norm {
                                     Some(clip_grad_norm) => match barrier.wait() {
