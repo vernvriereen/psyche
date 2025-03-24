@@ -250,7 +250,6 @@ fn main() -> Result<()> {
                 args.micro_batch,
                 None,
                 args.grad_accum_in_fp32,
-                None,
                 data_parallel,
             ))
         });
