@@ -4,7 +4,9 @@ use crate::{
     Broadcast, BroadcastType, ClientTUIState,
 };
 
-use psyche_coordinator::{Committee, Coordinator, RunState, Witness, WitnessMetadata};
+use psyche_coordinator::{
+    Committee, Coordinator, RunState, Witness, WitnessMetadata, WitnessProof,
+};
 use psyche_core::{sha256, MerkleRoot, MerkleTree, NodeIdentity};
 use psyche_modeling::{DistroResult, Trainer};
 use psyche_network::{AuthenticatableIdentity, BlobTicket, Hash, TransmittableDistroResult};
@@ -198,9 +200,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
 
                     // if we get here we've sent our own finished message.
                     // now we just need to wait until we've received everyone else's finished
-                    if self.current_round.height > 0
-                        && self.current_round.clients_finished.len()
-                            != self.coordinator_state.epoch_state.clients.len()
+                    if self.current_round.clients_finished.len()
+                        != self.coordinator_state.epoch_state.clients.len()
                     {
                         return Ok(());
                     }
@@ -261,20 +262,34 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     .cloned()
                     .unwrap_or(MerkleRoot::default());
 
-                self.tx_witness
-                    .send((
-                        Witness {
-                            proof: Default::default(),
-                            participant_bloom: Default::default(),
-                            broadcast_bloom: Default::default(),
-                            broadcast_merkle: merkle,
-                        },
-                        self.stats_logger
-                            .lock()
-                            .unwrap()
-                            .get_witness_metadata(&self.coordinator_state),
-                    ))
-                    .map_err(|_| OpportunisticWitnessError::Send)?;
+                if let Some(index) = self
+                    .coordinator_state
+                    .epoch_state
+                    .clients
+                    .iter()
+                    .position(|x| x.id == self.identity)
+                {
+                    // coordinator needs to check the index for duplicate detection
+                    let index = index as u64;
+                    self.tx_witness
+                        .send((
+                            Witness {
+                                proof: WitnessProof {
+                                    position: index,
+                                    index,
+                                    witness: Default::default(),
+                                },
+                                participant_bloom: Default::default(),
+                                broadcast_bloom: Default::default(),
+                                broadcast_merkle: merkle,
+                            },
+                            self.stats_logger
+                                .lock()
+                                .unwrap()
+                                .get_witness_metadata(&self.coordinator_state),
+                        ))
+                        .map_err(|_| OpportunisticWitnessError::Send)?;
+                };
 
                 self.sent_warmup_witness = true;
             }
@@ -428,6 +443,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                 round_state
                     .clients_finished
                     .insert(from_client_id, finished);
+
+                trace!(
+                    "Received {} finishes for round {}",
+                    round_state.clients_finished.len(),
+                    result_step
+                );
             }
         }
 
@@ -538,7 +559,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     if remaining_batch_ids.contains(&batch_id) {
                         // first received payload for this batch id, vote for it in consensus
                         broadcast_bloom.add(&commitment.data_hash);
-                        debug!("Adding batch {batch_id} t broadcast bloom");
+                        debug!("Adding batch {batch_id} to broadcast bloom");
                     } else {
                         debug!(
                             "Don't have {} in our remaining batch IDs {:?}, discarding",
