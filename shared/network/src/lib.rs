@@ -185,7 +185,7 @@ where
                 DiscoveryMode::Local => endpoint.discovery(Box::new(
                     local_discovery::LocalTestDiscovery::new(public_key),
                 )),
-                DiscoveryMode::N0 => endpoint.discovery_n0(),
+                DiscoveryMode::N0 => endpoint.discovery_n0().discovery_local_network(),
             };
 
             e.bind().await?

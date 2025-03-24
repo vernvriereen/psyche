@@ -60,7 +60,7 @@ futures-util = "0.3.30"
 chrono = "0.4.38"
 fast-math = "0.1"
 async-trait = "0.1.82"
-iroh = "0.34.0"
+iroh = { version = "0.34.0", features = ["discovery-local-network"] }
 iroh-relay = "0.34.0"
 iroh-blobs = { git = "https://github.com/NousResearch/iroh-blobs", rev = "28f716e9cf43fe7b8f986be3983823cc31af514c", features = [
     "rpc",

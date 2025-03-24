@@ -614,11 +614,7 @@ impl Trainer {
                             Optimizer::Distro {
                                 optimizer,
                                 clip_grad_norm,
-                                compression_decay_warmup_steps,
-                                compression_topk,
-                                compression_topk_startup,
-                                compression_topk_startup_steps,
-                                quantize_1bit: _,
+                                quantize_1bit: _
                             } => {
                                 let clipped = match clip_grad_norm {
                                     Some(clip_grad_norm) => match barrier.wait() {
@@ -633,16 +629,6 @@ impl Trainer {
                                 if clipped {
                                     let ret = optimizer.generate(
                                         lr,
-                                        match step > *compression_decay_warmup_steps {
-                                            true => 1.0,
-                                            false => {
-                                                step as f64 / *compression_decay_warmup_steps as f64
-                                            }
-                                        },
-                                        match step <= *compression_topk_startup_steps {
-                                            true => *compression_topk_startup,
-                                            false => *compression_topk,
-                                        },
                                         optim_stats_every_n_steps
                                             .map(|stats| step % stats == 0)
                                             .unwrap_or(false),
