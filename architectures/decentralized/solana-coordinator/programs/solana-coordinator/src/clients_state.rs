@@ -49,7 +49,17 @@ pub struct ClientsEpochRates {
 unsafe impl Pod for ClientsState {}
 
 impl ClientsState {
-    pub fn active_clients(
+    pub fn purge_inactive_clients(&mut self) {
+        let active_clients = self
+            .clients
+            .into_iter()
+            .filter(|client| client.active == self.next_active)
+            .collect::<Vec<_>>();
+        self.clients.clear();
+        self.clients.extend(active_clients).unwrap();
+    }
+
+    pub fn get_active_clients_ids(
         &self,
     ) -> SizedIterator<impl Iterator<Item = &ClientId>> {
         let mut size = 0;
@@ -58,14 +68,12 @@ impl ClientsState {
                 size += 1;
             }
         }
-
         let iter = self.clients.iter().filter_map(move |x| {
             match x.active == self.next_active {
                 true => Some(&x.id),
                 false => None,
             }
         });
-
         SizedIterator::new(iter, size)
     }
 

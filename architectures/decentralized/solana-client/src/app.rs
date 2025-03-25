@@ -235,7 +235,7 @@ impl App {
                         .unwrap()
                         .as_secs();
 
-                    let pending_clients = (ticked.run_state == RunState::WaitingForMembers).then(|| coordinator_state.get_active_clients());
+                    let pending_clients = (ticked.run_state == RunState::WaitingForMembers).then(|| coordinator_state.client_state.purge_inactives_and_get_active_clients());
 
                     match ticked.tick(pending_clients, timestamp, rand::thread_rng().next_u64()) {
                         Ok(_) => {

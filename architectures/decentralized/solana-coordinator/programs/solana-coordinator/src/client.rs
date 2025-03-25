@@ -23,7 +23,7 @@ use ts_rs::TS;
 #[ts(rename = "SolanaClient")]
 pub struct Client {
     pub id: ClientId,
-    pub staked: u64,
+    pub _unused: [u8; 8],
     pub earned: u64,
     pub slashed: u64,
     pub active: u64,
