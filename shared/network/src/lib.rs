@@ -335,8 +335,9 @@ where
         tag: u32,
         compression: Compression,
     ) -> Result<BlobTicket> {
-        let compressed_bytes: Vec<u8> =
-            postcard::to_io(&data, ZlibEncoder::new(Vec::new(), compression))?.finish()?;
+        let compressed_bytes = tokio::task::spawn_blocking(move || {
+                postcard::to_io(&data, ZlibEncoder::new(Vec::new(), compression)).unwrap().finish()
+        }).await.unwrap()?;
         let blob_res = self.blobs.client().add_bytes(compressed_bytes).await?;
         let addr = self.router.endpoint().node_addr().await?;
         let blob_ticket = BlobTicket::new(addr, blob_res.hash, blob_res.format)?;

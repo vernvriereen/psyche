@@ -282,7 +282,12 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
             FutureResult::Download(index, result) => {
                 Self::handle_download_progress(downloads, result, index)
             }
-            FutureResult::Read(index, result) => Self::handle_read_result(reading, result, index),
+            FutureResult::Read(index, result) => {
+                let downloader: ReadingFinishedDownload = reading.swap_remove(index);
+                tokio::task::spawn_blocking(move || Self::handle_read_result(downloader, result))
+                    .await
+                    .unwrap()
+            }
         }
     }
 
@@ -380,11 +385,9 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
     }
 
     fn handle_read_result(
-        reading: &mut Vec<ReadingFinishedDownload>,
+        downloader: ReadingFinishedDownload,
         result: Result<Bytes>,
-        index: usize,
     ) -> Result<Option<DownloadManagerEvent<D>>> {
-        let downloader: ReadingFinishedDownload = reading.swap_remove(index);
         match result {
             Ok(bytes) => {
                 let decompressed_bytes = {

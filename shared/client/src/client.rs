@@ -212,6 +212,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             if let Some(message) = res? {
                                 match message {
                                     NetworkEvent::MessageReceived((from, broadcast)) => {
+                                        trace!("NetworkEvent::MessageReceived");
                                         if let Some(client) = watcher.get_client_for_p2p_public_key(from.as_bytes()) {
                                             if raw_p2p_verify(from.as_bytes(), &broadcast.commitment.data_hash, &broadcast.commitment.signature) {
                                                 match &broadcast.data {
@@ -233,6 +234,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     NetworkEvent::DownloadComplete(DownloadComplete {
                                         data: download_data, hash, ..
                                     }) => {
+                                        trace!("NetworkEvent::DownloadComplete({})", hex::encode(hash));
                                         if retried_downloads.remove(&hash).is_some() {
                                             debug!("Successfully downloaded previously failed blob {}", hex::encode(hash));
                                         }
@@ -242,7 +244,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                                 run.apply_distro_result(hash, distro_result, None).await;
                                             },
                                             TransmittableDownload::ModelParameter(parameter) => {
-                                                sharable_model.add_parameter(parameter)?;
+                                                sharable_model.add_parameter(parameter).await?;
                                                 if sharable_model.is_download_complete() {
                                                     sharable_model.send_init_parameters()?;
                                                 }
@@ -254,6 +256,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         }
                                     }
                                     NetworkEvent::DownloadFailed(dl) => {
+                                        trace!("NetworkEvent::DownloadFailed({:?})", dl.error);
                                         let hash = dl.blob_ticket.hash();
                                         let info = retried_downloads.get(&hash);
                                         let retries = info.map(|i| i.retries).unwrap_or(0);
@@ -280,23 +283,15 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         }
                                     }
                                     NetworkEvent::ParameterRequest(parameter_name, protocol_req_tx) => {
-
                                         // TODO: We should validate that the parameter is requested while we are in RunState::Warmup.
-
-                                        match sharable_model.get_transmittable_parameter(&parameter_name) {
+                                        trace!("NetworkEvent::ParameterRequest({parameter_name})");
+                                        match sharable_model.get_transmittable_parameter(&parameter_name, &mut p2p, 0).await {
                                             Err(e) => {
                                                 if let Err(e) = protocol_req_tx.send(Err(e)) {
                                                     warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e:?}");
                                                 }
                                             },
-                                            Ok(transmittable_parameter) => {
-                                                let transmittable_download = TransmittableDownload::ModelParameter(transmittable_parameter);
-                                                // tag 0 means when we enter a train step, it'll get wiped.
-                                                let ticket = p2p.add_downloadable(transmittable_download, 0, distro_compression).await?;
-
-                                                // TODO: Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
-                                                // to the client
-
+                                            Ok(ticket) => {
                                                 info!(parameter = parameter_name, "Sending requested model parameter blob ticket");
                                                 if let Err(e) = protocol_req_tx.send(Ok(ticket)) {
                                                     warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e:?}");
@@ -305,17 +300,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         }
                                     },
                                     NetworkEvent::ModelConfigRequest(protocol_req_tx) => {
-                                        match sharable_model.get_transmittable_config() {
+                                        trace!("NetworkEvent::ModelConfigRequest");
+                                        match sharable_model.get_transmittable_config(&mut p2p, 0).await {
                                             Err(e) => {
                                                 if let Err(e) = protocol_req_tx.send(Err(e)) {
                                                     warn!("Could not send model config blob ticket. Error: {e:?}");
                                                 }
                                             },
-                                            Ok(sharable_config) => {
-                                                let transmittable_config = TransmittableDownload::ModelConfig(sharable_config);
-                                                // tag 0 means when we enter a train step, it'll get wiped.
-                                                let config_ticket = p2p.add_downloadable(transmittable_config, 0, distro_compression).await?;
-
+                                            Ok(config_ticket) => {
                                                 info!("Sending requested model config blob ticket");
                                                 if let Err(e) = protocol_req_tx.send(Ok(config_ticket)) {
                                                     warn!("Could not send model config blob ticket. Error: {e:?}");

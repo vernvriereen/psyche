@@ -103,10 +103,11 @@ impl CooldownStepMetadata {
 
         let checkpointing_and_evals = tokio::task::spawn(
             async move {
-                info!("Extracting full model");
+                info!("Extracting full model...");
                 let (variables, trainer) =
                     tokio::task::spawn_blocking::<_, Result<_, CheckpointError>>(|| {
                         let variables = trainer.extract()?;
+                        info!("Model extracted; {} parameters", variables.len());
                         Ok((variables, trainer))
                     })
                     .await
