@@ -218,10 +218,7 @@ pub async fn run() {
                 optimizer: OptimizerDefinition::Distro {
                     clip_grad_norm: None,
                     compression_decay: 1.0,
-                    compression_decay_warmup_steps: 0,
                     compression_topk: 1,
-                    compression_topk_startup: 0,
-                    compression_topk_startup_steps: 0,
                     compression_chunk: 1,
                     quantize_1bit: false,
                     weight_decay: None,

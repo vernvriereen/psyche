@@ -86,8 +86,5 @@ clip_grad_norm = 1.0
 compression_decay = 0.999
 compression_chunk = 64
 compression_topk = 8
-compression_topk_startup = 8
-compression_topk_startup_steps = 20
-compression_decay_warmup_steps = 0
 quantize_1bit = true
 ```

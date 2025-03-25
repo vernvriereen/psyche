@@ -516,7 +516,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                         .unwrap_or(state.config.global_batch_size as usize),
                     init_config.optim_stats_every_n_steps,
                     init_config.grad_accum_in_fp32,
-                    Some(state.progress.step),
                     data_parallel,
                 )
             })

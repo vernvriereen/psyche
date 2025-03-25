@@ -200,7 +200,8 @@ where
             .concurrency_limits(ConcurrencyLimits {
                 max_concurrent_requests_per_node: 1,
                 max_concurrent_requests: max_concurrent_downloads,
-                ..Default::default()
+                max_open_connections: 512,
+                max_concurrent_dials_per_hash: 2,
             })
             .build(&endpoint);
         trace!("blobs created!");

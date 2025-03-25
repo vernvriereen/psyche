@@ -141,10 +141,7 @@ fn main() -> Result<()> {
         true => OptimizerDefinition::Distro {
             clip_grad_norm,
             compression_decay: args.compression_decay,
-            compression_decay_warmup_steps: 0,
             compression_topk: args.compression_topk,
-            compression_topk_startup: 0,
-            compression_topk_startup_steps: 0,
             compression_chunk: args.compression_chunk,
             quantize_1bit: args.distro_quantization,
             weight_decay: Some(args.weight_decay),
@@ -253,7 +250,6 @@ fn main() -> Result<()> {
                 args.micro_batch,
                 None,
                 args.grad_accum_in_fp32,
-                None,
                 data_parallel,
             ))
         });
