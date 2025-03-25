@@ -533,7 +533,7 @@ pub async fn request_model(
 
     // Receive parameter value blob ticket
     let parameter_blob_ticket_bytes = recv
-        .read_to_end(500)
+        .read_to_end(16384)
         .timeout(Duration::from_secs(MODEL_REQUEST_TIMEOUT_SECS))
         .await??;
     let parameter_blob_ticket: Result<BlobTicket, SharableModelError> =

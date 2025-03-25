@@ -15,7 +15,7 @@ use tracing::{debug, trace};
 use crate::{NetworkConnection, Networkable, TransmittableDownload};
 
 pub const ALPN: &[u8] = b"model-sharing/0";
-pub const MODEL_REQUEST_TIMEOUT_SECS: u64 = 3;
+pub const MODEL_REQUEST_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Error, Debug, serde::Serialize, serde::Deserialize)]
 pub enum SharableModelError {
