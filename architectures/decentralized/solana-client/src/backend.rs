@@ -24,7 +24,7 @@ use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountData, UiAccountEncoding};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{broadcast, mpsc};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct SolanaBackend {
     program_authorizer: Program<Arc<Keypair>>,
@@ -55,7 +55,7 @@ async fn subscribe_to_account(
 ) {
     loop {
         let Ok(sub_client) = PubsubClient::new(&url).await else {
-            println!("Reconection error");
+            warn!("Solana subscription error, could not connect to url: {url}");
             tokio::time::sleep(Duration::from_secs(5)).await;
             continue;
         };
@@ -73,14 +73,13 @@ async fn subscribe_to_account(
         {
             Ok((notifications, _)) => notifications,
             Err(err) => {
-                tracing::error!("{}", err);
+                error!("{}", err);
                 return;
             }
         };
 
-        println!("Subscription {url} DONE");
+        info!("Correctly subscribe to Solana {url}");
         while let Some(update) = notifications.next().await {
-            println!("Notifications {url} update: {update:?}");
             tx.send(update).unwrap();
         }
     }
@@ -108,35 +107,35 @@ impl SolanaBackend {
         run_id: String,
         coordinator_account: Pubkey,
     ) -> Result<SolanaBackendRunner> {
-        let (tx_a, mut rx_a) = mpsc::unbounded_channel();
-        let (tx, rx) = broadcast::channel(32);
+        let (tx_update, rx_update) = broadcast::channel(32);
         // Clone these values before moving them into the async block
         let cluster = self.cluster.clone();
         let url = cluster.ws_url().to_string();
         let commitment = self.program_coordinator.rpc().commitment().clone();
 
-        let tx1 = tx_a.clone();
+        let (tx_subscribe, mut rx_subscribe) = mpsc::unbounded_channel();
+        let tx_subscribe_1 = tx_subscribe.clone();
         tokio::spawn(async move {
-            subscribe_to_account(url, commitment, &coordinator_account, tx1).await
+            subscribe_to_account(url, commitment, &coordinator_account, tx_subscribe_1).await
         });
 
-        let tx2 = tx_a.clone();
+        let tx_subscribe_2 = tx_subscribe.clone();
         let url_2 = if &std::env::var("ws_rpc_2")? == "" {
             cluster.ws_url().to_string()
         } else {
             std::env::var("ws_rpc_2")?
         };
         tokio::spawn(async move {
-            subscribe_to_account(url_2, commitment, &coordinator_account, tx2).await
+            subscribe_to_account(url_2, commitment, &coordinator_account, tx_subscribe_2).await
         });
 
         tokio::spawn(async move {
             let mut last_data: UiAccountData = UiAccountData::LegacyBinary("".to_string());
             let mut last_slot = 0;
-            while let Some(update) = rx_a.recv().await {
+            while let Some(update) = rx_subscribe.recv().await {
                 let data = &update.value.data;
                 if update.context.slot >= last_slot && &last_data != data {
-                    if tx.send(update.clone()).is_err() {
+                    if tx_update.send(update.clone()).is_err() {
                         break;
                     }
                     println!("TX send");
@@ -144,8 +143,9 @@ impl SolanaBackend {
                     last_slot = update.context.slot;
                 }
             }
-
-            panic!();
+            // TODO: should be add a retry here?
+            error!("No subscriptions available");
+            return;
         });
 
         let coordinator_instance = psyche_solana_coordinator::find_coordinator_instance(&run_id);
@@ -164,7 +164,7 @@ impl SolanaBackend {
 
         Ok(SolanaBackendRunner {
             backend: self,
-            updates: rx,
+            updates: rx_update,
             instance: coordinator_instance,
             account: coordinator_account,
             init: Some(init),
