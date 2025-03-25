@@ -50,13 +50,8 @@ unsafe impl Pod for ClientsState {}
 
 impl ClientsState {
     pub fn purge_inactive_clients(&mut self) {
-        let active_clients = self
-            .clients
-            .into_iter()
-            .filter(|client| client.active == self.next_active)
-            .collect::<Vec<_>>();
-        self.clients.clear();
-        self.clients.extend(active_clients).unwrap();
+        self.clients
+            .retain(|client| client.active == self.next_active);
     }
 
     pub fn get_active_clients_ids(
