@@ -7,6 +7,7 @@ use crate::{
 
 use anyhow::{bail, Error, Result};
 use bytes::Bytes;
+use flate2::read::ZlibDecoder;
 use futures_util::future::select_all;
 use iroh::PublicKey;
 use iroh_blobs::{get::db::DownloadProgress, ticket::BlobTicket};

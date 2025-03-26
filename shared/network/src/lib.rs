@@ -1,6 +1,7 @@
 use allowlist::Allowlist;
 use anyhow::{anyhow, Context, Error, Result};
 use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
+use flate2::write::ZlibEncoder;
 use futures_util::StreamExt;
 use iroh::{endpoint::RemoteInfo, NodeAddr};
 use iroh_blobs::{downloader::ConcurrencyLimits, net_protocol::Blobs, store::mem::Store};
@@ -337,8 +338,12 @@ where
         compression: Compression,
     ) -> Result<BlobTicket> {
         let compressed_bytes = tokio::task::spawn_blocking(move || {
-                postcard::to_io(&data, ZlibEncoder::new(Vec::new(), compression)).unwrap().finish()
-        }).await.unwrap()?;
+            postcard::to_io(&data, ZlibEncoder::new(Vec::new(), compression))
+                .unwrap()
+                .finish()
+        })
+        .await
+        .unwrap()?;
         let blob_res = self.blobs.client().add_bytes(compressed_bytes).await?;
         let addr = self.router.endpoint().node_addr().await?;
         let blob_ticket = BlobTicket::new(addr, blob_res.hash, blob_res.format)?;
@@ -442,6 +447,10 @@ where
             }
             Some(ModelConfigSharingMessage::Get(protocol_req_tx)) = self.rx_model_config_req.recv() => {
                 Ok(Some(NetworkEvent::ModelConfigRequest(protocol_req_tx)))
+            }
+            _ = self.update_stats_interval.tick() => {
+                on_update_stats(self.router.endpoint(), &mut self.state).await?;
+                Ok(None)
             }
             else => { Ok(None) }
         }
