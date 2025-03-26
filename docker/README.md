@@ -2,15 +2,17 @@
 
 This folder contains all the docker related files and scripts.
 The purpose of using docker is two-fold:
-  * compartmentalize psyche client to be deployed and used in testing and production environments easily.
-  * implementing end-to-end tests that are as close as possible to a production environment.
+
+- compartmentalize psyche client to be deployed and used in testing and production environments easily.
+- implementing end-to-end tests that are as close as possible to a production environment.
 
 There are three concrete use-cases for the docker containers that are generated with these Dockerfiles:
-  * spawning a whole dockerized network with all the components: Solana validator and various clients. These should
+
+- spawning a whole dockerized network with all the components: Solana validator and various clients. These should
   be done via `docker compose`.
-  * booting a testing client in a Solana localnet: basically to join and train in a run with some local or remote
+- booting a testing client in a Solana localnet: basically to join and train in a run with some local or remote
   `solana-test-validator`. In short, it solves some Solana chores such as generating a key pair and adding funds to it.
-  * booting a production client: these can be used either on the Solana devnet or mainnet. There is no automatic
+- booting a production client: these can be used either on the Solana devnet or mainnet. There is no automatic
   management of Solana keys or funds. This should be set manually by the user.
 
 ## Dockerfiles
@@ -47,7 +49,7 @@ Its main task is to spawn the `solana-test-validator` and deploy the coordinator
 
 ---
 
-## Running a localnet using Pysche dockerized test clients
+## Running a localnet using Psyche dockerized test clients
 
 ### Starting solana-test-validator and deploying Coordinator
 
@@ -78,15 +80,17 @@ it is useful to be sure that things are being set correctly.
 
 The first thing you should do now is to create an env file in `config/client/.env`. Here you should set
 the environment variables `RPC`, `WS_RPC` and `RUN_ID` accordingly:
-* `RPC`: The RPC endpoint of your Solana test validator.
-* `WS_RPC`: The websocket endpoint of your Solana test validator.
-* `RUN_ID`: The name of the training run created previously. Usually set to "test" as a default.
+
+- `RPC`: The RPC endpoint of your Solana test validator.
+- `WS_RPC`: The websocket endpoint of your Solana test validator.
+- `RUN_ID`: The name of the training run created previously. Usually set to "test" as a default.
 
 There is an example env file `config/client/.env.example` that you can use as a template.
 
 > [!NOTE]
 > If you want to run the network using a local Solana test validator, then you can just copy the `.env.example`
-file as it is:
+> file as it is:
+
 ```bash
 cp config/client/.env.example config/client/.env
 ```
@@ -163,11 +167,11 @@ to pay for the creation of the run, as well as the devnet/mainnet RPC and websoc
 of the training run.
 Create an environment file in `config/client/.env`, if you don't already have one. There variables that should be present are:
 
-* `RPC`: The url to the Solana RPC endpoint
-* `WS_RPC`: The url to the Solana websocket endpoint
-* `WALLET_FILE`: The path to your Solana keypair
-* `RUN_ID`: A string representing the ID of the run
-* `CONFIG_PATH`: The path to the configuration of the model to be trained
+- `RPC`: The url to the Solana RPC endpoint
+- `WS_RPC`: The url to the Solana websocket endpoint
+- `WALLET_FILE`: The path to your Solana keypair
+- `RUN_ID`: A string representing the ID of the run
+- `CONFIG_PATH`: The path to the configuration of the model to be trained
 
 You can make a copy of the `config/client/.env.example` and set your variables accordingly.
 Once everything is set, to create the run using the dockerized Psyche client, you should run
@@ -184,10 +188,10 @@ With the Coordiantor deployed and the training run created in Devnet/Mainnet, no
 You will need your environment file set in `config/client/.env` if you haven't already done it.
 The environment variables that should be set are
 
-* `RPC`: The url to the Solana RPC endpoint
-* `WS_RPC`: The url to the Solana websocket endpoint
-* `WALLET_FILE`: The path to your Solana keypair, used to pay for all transactions in the training process.
-* `RUN_ID`: A string representing the ID of the run to join
+- `RPC`: The url to the Solana RPC endpoint
+- `WS_RPC`: The url to the Solana websocket endpoint
+- `WALLET_FILE`: The path to your Solana keypair, used to pay for all transactions in the training process.
+- `RUN_ID`: A string representing the ID of the run to join
 
 You can make a copy of the `config/client/.env.example` and set your variables accordingly.
 Once everything is set, to join the run and start training you should run
@@ -208,9 +212,10 @@ do that. For using it, you will need some account with necessary funds for all o
 ```
 
 The script receives 2 required arguments and 1 optional argument:
-* `<PATH_TO_SOLANA_WALLET>`: The path to your Solana keypair, which will be used to fund all the other accounts
-* `<NUMBER_OF_ACCOUNTS>`: How many accounts you will want to be funded
-* `[OPTIONAL]<PATH_TO_KEYS_FILE>`: If you already have a file with all the account pubkeys, you can provide it for funding those
+
+- `<PATH_TO_SOLANA_WALLET>`: The path to your Solana keypair, which will be used to fund all the other accounts
+- `<NUMBER_OF_ACCOUNTS>`: How many accounts you will want to be funded
+- `[OPTIONAL]<PATH_TO_KEYS_FILE>`: If you already have a file with all the account pubkeys, you can provide it for funding those
 
 This script will create the accounts if you don't provide them in a file.
 When the script ends, all the accounts will be funded with 1 SOL. The folder with the information about the accounts
@@ -221,9 +226,9 @@ will be created in `./devnet_funded_accounts`.
 Similar to previous sections in this document, you will need your environment file in `config/client/.env`.
 The variables that should be set are:
 
-* `RPC`: The url to the Solana RPC endpoint
-* `WS_RPC`: The url to the Solana websocket endpoint
-* `RUN_ID`: A string representing the ID of the run to join
+- `RPC`: The url to the Solana RPC endpoint
+- `WS_RPC`: The url to the Solana websocket endpoint
+- `RUN_ID`: A string representing the ID of the run to join
 
 Once set, you can execute the following script for starting all the clients,
 

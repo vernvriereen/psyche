@@ -1,27 +1,41 @@
 default:
   just --list
 
-# build & test & check format
-check:
-	nix flake check
+# build & test & check format - what runs in CI
+check: build-all-flake-outputs
+	# run checks
+	nix flake check |& nom
+
+# build all flake outputs in one command (no checks)
+build-all-flake-outputs:
+	nix flake show --json | jq -r '\
+		(.packages."x86_64-linux" | keys[] | ".#" + .),\
+		(.devShells."x86_64-linux" | keys[] | ".#devShells.\"x86_64-linux\"." + .),\
+		(.nixosConfigurations | keys[] | ".#nixosConfigurations." + . + ".config.system.build.toplevel")\
+	' | xargs nom build
 
 # format & lint-fix code
 fmt:
 	cargo clippy --fix --allow-staged --all-targets
 	cargo fmt
-	alejandra .
+	nixfmt .
 
 # build the centralized client Docker image
 docker-build-centralized-client:
-	nix build .#stream-docker-psyche-centralized-client --out-link nix-results/stream-docker-psyche-centralized-client
+	nom build .#stream-docker-psyche-centralized-client --out-link nix-results/stream-docker-psyche-centralized-client
 	nix-results/stream-docker-psyche-centralized-client | docker load
 
 # build & push the centralized client Docker image
 docker-push-centralized-client: docker-build-centralized-client
 	docker push docker.io/nousresearch/psyche-centralized-client
 
+
+# build the solana client Docker image
+docker-build-solana-client:
+	nom build .#stream-docker-psyche-solana-client --out-link nix-results/stream-docker-psyche-solana-client
+	nix-results/stream-docker-psyche-solana-client | docker load
 # spin up a local testnet
-local-testnet +args:
+local-testnet *args='':
 	cargo run -p psyche-centralized-local-testnet -- start {{args}}
 
 # run integration tests
@@ -41,39 +55,39 @@ decentralized-integration-test test_name="":
     fi
 
 # Deploy coordinator on localnet and create a "test" run for 1.1b model.
-setup-solana-localnet-test-run run_id="test":
-    RUN_ID={{run_id}} ./scripts/deploy-solana-test.sh
+setup-solana-localnet-test-run run_id="test" *args='':
+    RUN_ID={{run_id}} ./scripts/setup-and-deploy-solana-test.sh {{args}}
 
 # Deploy coordinator on localnet and create a "test" run for 20m model.
-setup-solana-localnet-light-test-run run_id="test":
-    RUN_ID={{run_id}} CONFIG_FILE=./config/solana-test/light-config.toml ./scripts/deploy-solana-test.sh
+setup-solana-localnet-light-test-run run_id="test" *args='':
+    RUN_ID={{run_id}} CONFIG_FILE=./config/solana-test/light-config.toml ./scripts/setup-and-deploy-solana-test.sh {{args}}
 
 # Start client for training on localnet.
-start-training-localnet-client run_id="test":
-    RUN_ID={{run_id}} ./scripts/train-solana-test.sh
+start-training-localnet-client run_id="test" *args='':
+    RUN_ID={{run_id}} ./scripts/train-solana-test.sh {{args}}
 
 # Start client for training on localnet without data parallelism features and using light model.
-start-training-localnet-light-client run_id="test":
-    RUN_ID={{run_id}} DP=1 ./scripts/train-solana-test.sh
+start-training-localnet-light-client run_id="test" *args='':
+    RUN_ID={{run_id}} BATCH_SIZE=1 DP=1 ./scripts/train-solana-test.sh {{args}}
 
 DEVNET_RPC:="https://api.devnet.solana.com"
 DEVNET_WS_RPC:="wss://api.devnet.solana.com"
 
 # Deploy coordinator on Devnet and create a "test" run for 1.1b model.
-setup-solana-devnet-test-run run_id="test":
-    RUN_ID={{run_id}} RPC={{DEVNET_RPC}} WS_RPC={{DEVNET_WS_RPC}} ./scripts/deploy-solana-test.sh
+setup-solana-devnet-test-run run_id="test" *args='':
+    RUN_ID={{run_id}} RPC={{DEVNET_RPC}} WS_RPC={{DEVNET_WS_RPC}} ./scripts/deploy-solana-test.sh {{args}}
 
 # Deploy coordinator on Devnet and create a "test" run for 20m model.
-setup-solana-devnet-light-test-run run_id="test":
-    RUN_ID={{run_id}} RPC={{DEVNET_RPC}} WS_RPC={{DEVNET_WS_RPC}} CONFIG_FILE=./config/solana-test/light-config.toml ./scripts/deploy-solana-test.sh
+setup-solana-devnet-light-test-run run_id="test" *args='':
+    RUN_ID={{run_id}} RPC={{DEVNET_RPC}} WS_RPC={{DEVNET_WS_RPC}} CONFIG_FILE=./config/solana-test/light-config.toml ./scripts/deploy-solana-test.sh  {{args}}
 
 # Start client for training on Devnet.
-start-training-devnet-client run_id="test":
-    RUN_ID={{run_id}} RPC={{DEVNET_RPC}} WS_RPC={{DEVNET_WS_RPC}} ./scripts/train-solana-test.sh
+start-training-devnet-client run_id="test" *args='':
+    RUN_ID={{run_id}} RPC={{DEVNET_RPC}} WS_RPC={{DEVNET_WS_RPC}} ./scripts/train-solana-test.sh {{args}}
 
 # Start client for training on localnet without data parallelism features and using light model.
-start-training-devnet-light-client run_id="test":
-    RUN_ID={{run_id}} RPC={{DEVNET_RPC}} WS_RPC={{DEVNET_WS_RPC}} DP=1 ./scripts/train-solana-test.sh
+start-training-devnet-light-client run_id="test" *args='':
+    RUN_ID={{run_id}} RPC={{DEVNET_RPC}} WS_RPC={{DEVNET_WS_RPC}} BATCH_SIZE=1 DP=1 ./scripts/train-solana-test.sh {{args}}
 
 solana-client-tests:
 	cargo test --package psyche-solana-client --features solana-localnet-tests
@@ -95,6 +109,7 @@ generate_cli_docs:
     cargo run -p psyche-centralized-client print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-client.md
     cargo run -p psyche-centralized-server print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-server.md
     cargo run -p psyche-centralized-local-testnet print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-local-testnet.md
+    
 
 build_docker_test_client:
     ./scripts/coordinator-address-check.sh

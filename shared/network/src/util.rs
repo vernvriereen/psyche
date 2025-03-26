@@ -15,8 +15,8 @@ pub fn gossip_topic(run_id: &str) -> TopicId {
 pub fn fmt_relay_mode(relay_mode: &RelayMode) -> String {
     match relay_mode {
         RelayMode::Disabled => "None".to_string(),
-        RelayMode::Default => "Default Relay (production) servers".to_string(),
-        RelayMode::Staging => "Default Relay (staging) servers".to_string(),
+        RelayMode::Default => "Default iroh relay (production) servers".to_string(),
+        RelayMode::Staging => "Default iroh relay (staging) servers".to_string(),
         RelayMode::Custom(map) => map
             .urls()
             .map(|url| url.to_string())
@@ -25,7 +25,7 @@ pub fn fmt_relay_mode(relay_mode: &RelayMode) -> String {
     }
 }
 
-pub fn convert_bytes(bytes: f64) -> String {
+pub fn fmt_bytes(bytes: f64) -> String {
     const KB: f64 = 1024.0;
     const MB: f64 = KB * 1024.0;
     const GB: f64 = MB * 1024.0;

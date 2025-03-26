@@ -4,7 +4,7 @@ use anyhow::{anyhow, bail, Result};
 use futures::future::join_all;
 use google_cloud_storage::http::objects::list::ListObjectsRequest;
 use psyche_coordinator::model::HttpTrainingDataLocation;
-use psyche_core::{u8_to_string, BatchId, Shuffle, TokenSize};
+use psyche_core::{BatchId, Shuffle, TokenSize};
 use rand::seq::SliceRandom;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -135,21 +135,21 @@ impl FileURLs {
                 num_files,
             } => {
                 Self::from_template(
-                    &u8_to_string(url_template),
+                    &String::from(url_template),
                     *start_index,
                     *n_left_pad_zeros,
                     *num_files,
                 )
                 .await
             }
-            HttpTrainingDataLocation::SingleUrl(url) => Self::from_list(&[u8_to_string(url)]).await,
+            HttpTrainingDataLocation::SingleUrl(url) => Self::from_list(&[String::from(url)]).await,
             HttpTrainingDataLocation::Gcp {
                 bucket_name,
                 filter_directory,
             } => {
-                let filter_directory = u8_to_string(filter_directory);
+                let filter_directory = String::from(filter_directory);
                 Self::from_gcp_bucket(
-                    &u8_to_string(bucket_name),
+                    &String::from(bucket_name),
                     if filter_directory.is_empty() {
                         None
                     } else {

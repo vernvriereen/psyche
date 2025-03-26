@@ -9,7 +9,7 @@ use psyche_coordinator::{
     Round, RunState, NUM_STORED_ROUNDS,
 };
 use psyche_core::FixedVec;
-use psyche_solana_coordinator::SOLANA_MAX_NUM_PENDING_CLIENTS;
+use psyche_solana_coordinator::{ClientId, SOLANA_MAX_NUM_PENDING_CLIENTS};
 
 pub struct SolanaTestClient {
     program: Program<Arc<Keypair>>,
@@ -64,6 +64,13 @@ impl SolanaTestClient {
         coordinator.state.clients_state.clients
     }
 
+    pub async fn get_current_epoch_clients(
+        &self,
+    ) -> FixedVec<psyche_coordinator::Client<ClientId>, SOLANA_MAX_NUM_PENDING_CLIENTS> {
+        let coordinator = self.get_coordinator_account().await;
+        coordinator.state.coordinator.epoch_state.clients
+    }
+
     pub async fn get_clients_len(&self) -> usize {
         let clients = self.get_clients().await;
         clients.len()
@@ -92,5 +99,26 @@ impl SolanaTestClient {
     pub async fn get_last_step(&self) -> u32 {
         let coordinator = self.get_coordinator_account().await;
         coordinator.state.coordinator.progress.step
+    }
+
+    pub async fn wait_for_run_state(&self, target_state: RunState, timeout_secs: u32) -> bool {
+        let mut attempts = 0;
+        const MAX_ATTEMPTS_PER_SEC: u32 = 4;
+        let max_attempts = timeout_secs * MAX_ATTEMPTS_PER_SEC;
+
+        while attempts < max_attempts {
+            let coordinator_state = self.get_run_state().await;
+            println!("Current state is {}", coordinator_state);
+
+            if coordinator_state == target_state {
+                return true;
+            }
+
+            attempts += 1;
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+
+        println!("Timeout waiting for state: {:?}", target_state);
+        false
     }
 }

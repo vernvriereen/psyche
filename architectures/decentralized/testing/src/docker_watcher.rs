@@ -2,6 +2,7 @@ use std::time::SystemTime;
 use std::{sync::Arc, time::Duration};
 
 use crate::CLIENT_CONTAINER_PREFIX;
+use bollard::container::KillContainerOptions;
 use bollard::{container::LogsOptions, Docker};
 use futures_util::StreamExt;
 use serde_json::Value;
@@ -20,6 +21,17 @@ pub enum JsonFilter {
     StateChange,
     Loss,
     LoadedModel,
+    HealthCheck,
+    UntrainedBatches,
+}
+
+#[derive(Debug)]
+pub enum Response {
+    StateChange(String, String, String, String, u64, u64),
+    Loss(String, u64, u64, f64),
+    LoadedModel(String),
+    HealthCheck(String, u64, u64),
+    UntrainedBatches(Vec<u64>),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -41,13 +53,6 @@ pub struct DockerWatcher {
     client: Arc<Docker>,
     log_tx: mpsc::Sender<Response>,
     pub log_rx: mpsc::Receiver<Response>,
-}
-
-#[derive(Debug)]
-pub enum Response {
-    StateChange(String, String, String, String),
-    Loss(String, u64, u64, f64),
-    LoadedModel(String),
 }
 
 impl DockerWatcher {
@@ -123,12 +128,17 @@ impl DockerWatcher {
                                     .get("timestamp")
                                     .and_then(|v| v.as_str())
                                     .unwrap();
+                                let epoch =
+                                    parsed_log.get("epoch").and_then(|v| v.as_u64()).unwrap();
+                                let step = parsed_log.get("step").and_then(|v| v.as_u64()).unwrap();
 
                                 let response = Response::StateChange(
                                     timestamp.to_string(),
                                     client_id.to_string(),
                                     old_state.to_string(),
                                     new_state.to_string(),
+                                    epoch,
+                                    step,
                                 );
 
                                 if log_sender.send(response).await.is_err() {
@@ -152,12 +162,60 @@ impl DockerWatcher {
                                 println!("Probably the test ended so we drop the log sender");
                             }
                         }
+                        JsonFilter::HealthCheck => {
+                            let Some(_) = parsed_log.get("unhealthy_warn") else {
+                                continue;
+                            };
+                            let client_id = parsed_log
+                                .get("client_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap()
+                                .to_string();
+                            let index = parsed_log.get("index").and_then(|v| v.as_u64()).unwrap();
+                            let current_step = parsed_log
+                                .get("current_step")
+                                .and_then(|v| v.as_u64())
+                                .unwrap();
+                            let response = Response::HealthCheck(client_id, index, current_step);
+                            if log_sender.send(response).await.is_err() {
+                                println!("Probably the test ended so we drop the log sender");
+                            }
+                        }
                         JsonFilter::LoadedModel => {
                             let Some(checkpoint) = parsed_log.get("checkpoint") else {
                                 continue;
                             };
                             let checkpoint = serde_json::from_value(checkpoint.clone()).unwrap();
                             let response = Response::LoadedModel(checkpoint);
+                            if log_sender.send(response).await.is_err() {
+                                println!("Probably the test ended so we drop the log sender");
+                            }
+                        }
+                        JsonFilter::UntrainedBatches => {
+                            if !(parsed_log.get("level") == Some(&"WARN".into())) {
+                                continue;
+                            }
+
+                            let Some(serde_json::Value::String(message)) =
+                                parsed_log.get("message")
+                            else {
+                                continue;
+                            };
+
+                            if !message.starts_with("No commitments for batch B") {
+                                continue;
+                            }
+
+                            // extract batch Ids
+                            let start_idx = message.find('[').unwrap() + 1;
+                            let end_idx = message.find(']').unwrap();
+                            let batchs_str = &message[start_idx..end_idx];
+                            let batch_ids: Vec<u64> = batchs_str
+                                .split(',')
+                                .map(|s| s.trim().parse().unwrap())
+                                .collect();
+
+                            let response = Response::UntrainedBatches(batch_ids);
                             if log_sender.send(response).await.is_err() {
                                 println!("Probably the test ended so we drop the log sender");
                             }
@@ -169,6 +227,13 @@ impl DockerWatcher {
         });
 
         Ok(monitor_handle)
+    }
+
+    pub async fn kill_container(&self, name: &str) -> Result<(), DockerWatcherError> {
+        self.client
+            .kill_container(name, Some(KillContainerOptions { signal: "SIGKILL" }))
+            .await
+            .map_err(|err| DockerWatcherError::LogsError { inner: err })
     }
 
     pub async fn monitor_clients_health(&self, num_clients: u8) -> Result<(), DockerWatcherError> {

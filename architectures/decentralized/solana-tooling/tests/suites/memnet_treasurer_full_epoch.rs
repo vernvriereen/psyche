@@ -1,5 +1,6 @@
 use bytemuck::Zeroable;
 use psyche_coordinator::model::Checkpoint;
+use psyche_coordinator::model::HubRepo;
 use psyche_coordinator::model::LLMArchitecture;
 use psyche_coordinator::model::LLMTrainingDataLocation;
 use psyche_coordinator::model::LLMTrainingDataType;
@@ -86,6 +87,7 @@ pub async fn run() {
             main_authority: main_authority.pubkey(),
             join_authority: join_authority.pubkey(),
             collateral_amount_per_earned_point,
+            metadata: Default::default(),
         },
     )
     .await
@@ -204,7 +206,7 @@ pub async fn run() {
             }),
             model: Some(Model::LLM(LLM {
                 architecture: LLMArchitecture::HfLlama,
-                checkpoint: Checkpoint::Ephemeral,
+                checkpoint: Checkpoint::Dummy(HubRepo::dummy()),
                 max_seq_len: 4096,
                 data_type: LLMTrainingDataType::Pretraining,
                 data_location: LLMTrainingDataLocation::Local(
@@ -216,12 +218,10 @@ pub async fn run() {
                 optimizer: OptimizerDefinition::Distro {
                     clip_grad_norm: None,
                     compression_decay: 1.0,
-                    compression_decay_warmup_steps: 0,
                     compression_topk: 1,
-                    compression_topk_startup: 0,
-                    compression_topk_startup_steps: 0,
                     compression_chunk: 1,
                     quantize_1bit: false,
+                    weight_decay: None,
                 },
             })),
             epoch_earning_rate: Some(earned_point_per_epoch),
@@ -279,6 +279,20 @@ pub async fn run() {
     .await
     .unwrap();
 
+    // Pretend 5 second passed
+    endpoint.forward_clock_unix_timestamp(5).await.unwrap();
+
+    // Tick to transition from waiting for members to warmup
+    process_coordinator_tick(
+        &mut endpoint,
+        &payer,
+        &ticker,
+        &coordinator_instance,
+        &coordinator_account,
+    )
+    .await
+    .unwrap();
+
     // Tick to witness
     endpoint.forward_clock_unix_timestamp(10).await.unwrap();
     process_coordinator_tick(
@@ -308,6 +322,7 @@ pub async fn run() {
                 participant_bloom: Default::default(),
                 broadcast_bloom: Default::default(),
                 broadcast_merkle: Default::default(),
+                metadata: Default::default(),
             },
         )
         .await

@@ -52,14 +52,14 @@ struct StartArgs {
 
     /// Enables a terminal-based graphical interface for monitoring analytics.
     #[clap(
-                long,
-                action = ArgAction::Set,
-                default_value_t = true,
-                default_missing_value = "true",
-                num_args = 0..=1,
-                require_equals = false,
-                env
-            )]
+        long,
+        action = ArgAction::Set,
+        default_value_t = true,
+        default_missing_value = "true",
+        num_args = 0..=1,
+        require_equals = false,
+        env
+    )]
     tui: bool,
 
     /// Kill N clients randomly every <RANDOM_KILL_INTERVAL> seconds
@@ -405,12 +405,16 @@ fn start_client(
     };
 
     cmd.push(format!(
-        "RUST_LOG={} RUST_BACKTRACE=1 RAW_IDENTITY_SECRET_KEY={} cargo run -p psyche-centralized-client train --run-id {} --server-addr localhost:{} --tui {}",
+        "RUST_LOG={} RUST_BACKTRACE=1 RAW_IDENTITY_SECRET_KEY={} cargo run -p psyche-centralized-client train --run-id {} --server-addr localhost:{} --logs {}",
         args.log,
         raw_key,
         run_id,
         args.server_port,
-        args.tui
+        if args.tui {
+            "tui"
+        } else {
+            "console"
+        }
     ));
 
     if let Some(dir) = &args.write_distro_data {

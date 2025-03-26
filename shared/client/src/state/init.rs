@@ -1,9 +1,9 @@
 use crate::{fetch_data::DataFetcher, WandBInfo};
 use psyche_coordinator::{
     model::{self, LLMTrainingDataLocation},
-    Coordinator, HealthChecks, Witness,
+    Coordinator, HealthChecks, Witness, WitnessMetadata,
 };
-use psyche_core::{u8_to_string, CancellableBarrier, NodeIdentity, TokenSize};
+use psyche_core::{CancellableBarrier, NodeIdentity, TokenSize};
 use psyche_data_provider::{
     download_model_repo_async,
     http::{FileURLs, HttpDataProvider},
@@ -116,8 +116,8 @@ type OneShotModelConfigSender = oneshot::Sender<(String, Tokenizer)>;
 pub struct RunInitConfigAndIO<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub init_config: RunInitConfig<T, A>,
 
-    pub tx_witness: UnboundedSender<Witness>,
     pub tx_health_check: UnboundedSender<HealthChecks<T>>,
+    pub tx_witness: UnboundedSender<(Witness, WitnessMetadata)>,
     pub tx_checkpoint: UnboundedSender<model::HubRepo>,
     pub tx_model: UnboundedSender<HashMap<String, Tensor>>,
     pub tx_parameters_req: UnboundedSender<(Vec<String>, OneshotModelParameterSender)>,
@@ -151,10 +151,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
         let model::Model::LLM(llm) = state.model;
 
         let data_future = async {
+            debug!("Setting up data provider from {:?}", llm.data_location);
             let data_provider = match &llm.data_location {
                 LLMTrainingDataLocation::Server(data_server) => DataProvider::Server(
                     DataProviderTcpClient::connect(
-                        u8_to_string(data_server),
+                        data_server.into(),
                         init_config.network_identity,
                         init_config.private_key,
                     )
@@ -223,9 +224,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                     tokio::spawn(async move {
                         let (source, tokenizer, checkpoint_extra_files) = match checkpoint {
                             model::Checkpoint::Hub(hub_repo) => {
-                                let repo_id = u8_to_string(&hub_repo.repo_id);
+                                let repo_id: String = (&hub_repo.repo_id).into();
                                 let potential_local_path = PathBuf::from(repo_id.clone());
-                                let revision = hub_repo.revision.map(|bytes| u8_to_string(&bytes));
+                                let revision = hub_repo.revision.map(|bytes| (&bytes).into());
 
                                 let model_is_local = if revision.is_none()
                                     && tokio::fs::try_exists(potential_local_path.clone())
@@ -240,10 +241,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                                     }
                                     ret
                                 } else {
-                                    info!(
-                                        "Downloading {} (if needed)",
-                                        u8_to_string(&hub_repo.repo_id)
-                                    );
+                                    info!("Downloading {} (if needed)", hub_repo.repo_id);
                                     download_model_repo_async(
                                         &repo_id,
                                         revision,
@@ -287,8 +285,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                                     rx_model_config_response.await.unwrap();
                                 debug!("Got p2p info, model_config: {}", model_config);
 
-                                let model_config =
-                                    AutoConfig::Llama(serde_json::from_str(&model_config)?);
+                                let model_config = match llm.architecture {
+                                    model::LLMArchitecture::HfLlama => {
+                                        AutoConfig::Llama(serde_json::from_str(&model_config)?)
+                                    }
+                                    model::LLMArchitecture::HfDeepseek => {
+                                        AutoConfig::Deepseek(serde_json::from_str(&model_config)?)
+                                    }
+                                };
                                 let parameter_names = model_config.get_parameter_names();
                                 info!(
                                     "Requesting {} parameters over p2p network",
@@ -412,7 +416,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
         };
 
         let wandb_future: JoinHandle<Result<Option<wandb::Run>, wandb::ApiError>> = tokio::spawn({
-            let run_id = u8_to_string(&state.run_id);
+            let run_id = String::from(&state.run_id);
             async move {
                 match init_config.wandb_info {
                     Some(wandb_info) => {
@@ -505,7 +509,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                         .unwrap_or(state.config.global_batch_size as usize),
                     init_config.optim_stats_every_n_steps,
                     init_config.grad_accum_in_fp32,
-                    Some(state.progress.step),
                     data_parallel,
                 )
             })

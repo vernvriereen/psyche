@@ -4,24 +4,24 @@ mod instance_state;
 pub mod logic;
 mod program_error;
 
+pub use crate::instance_state::RunMetadata;
+
 use anchor_lang::prelude::*;
-pub use client::Client;
-pub use client::ClientId;
 pub use instance_state::CoordinatorInstanceState;
 use logic::*;
 pub use program_error::ProgramError;
-use psyche_coordinator::model::Model;
-use psyche_coordinator::Committee;
-use psyche_coordinator::CommitteeProof;
-use psyche_coordinator::CoordinatorConfig;
-use psyche_coordinator::Witness;
-use psyche_coordinator::WitnessBloom;
-use psyche_coordinator::WitnessProof;
-use psyche_coordinator::SOLANA_MAX_NUM_CLIENTS;
-use psyche_coordinator::SOLANA_MAX_STRING_LEN;
+use psyche_coordinator::{
+    model::Model, Committee, CommitteeProof, CoordinatorConfig, Witness,
+    WitnessBloom, WitnessMetadata, WitnessProof, SOLANA_MAX_NUM_CLIENTS,
+    SOLANA_MAX_STRING_LEN,
+};
 use psyche_core::MerkleRoot;
 
-declare_id!("3RL7dHgZnuDCqT1FuKg9doJV6W7JYAxCGf2Tgq4rLfU3");
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+pub use {client::Client, client::ClientId};
+
+declare_id!("C5qtZvpCLXCJFeVMSfqD3fpGLpbFq85HXS1YwhQcfq49");
 
 pub const SOLANA_MAX_NUM_PENDING_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 
@@ -37,25 +37,46 @@ pub fn find_coordinator_instance(run_id: &str) -> Pubkey {
     .0
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum DeserializeCoordinatorFromBytes {
+    #[error(
+        "Coordinator has an incorrect size. Expected {expected}, got {actual}."
+    )]
+    IncorrectSize { expected: usize, actual: usize },
+
+    #[error("Coordinator has an invalid discriminator. Expected {expected:?}, got {actual:?}.")]
+    InvalidDiscriminator { expected: Vec<u8>, actual: Vec<u8> },
+
+    #[error("Failed to cast bytes into CoordinatorAccount: {0}")]
+    CastError(#[from] bytemuck::PodCastError),
+}
+
 pub fn coordinator_account_from_bytes(
     bytes: &[u8],
-) -> std::result::Result<&CoordinatorAccount, ProgramError> {
+) -> std::result::Result<&CoordinatorAccount, DeserializeCoordinatorFromBytes> {
     if bytes.len() != CoordinatorAccount::space_with_discriminator() {
-        return Err(ProgramError::CoordinatorAccountIncorrectSize);
+        return Err(DeserializeCoordinatorFromBytes::IncorrectSize {
+            expected: CoordinatorAccount::space_with_discriminator(),
+            actual: bytes.len(),
+        });
     }
     if &bytes[..CoordinatorAccount::DISCRIMINATOR.len()]
         != CoordinatorAccount::DISCRIMINATOR
     {
-        return Err(ProgramError::CoordinatorAccountInvalidDiscriminator);
+        return Err(DeserializeCoordinatorFromBytes::InvalidDiscriminator {
+            expected: CoordinatorAccount::DISCRIMINATOR.to_vec(),
+            actual: bytes[..CoordinatorAccount::DISCRIMINATOR.len()].to_vec(),
+        });
     }
-    Ok(bytemuck::from_bytes(
+    Ok(bytemuck::try_from_bytes(
         &bytes[CoordinatorAccount::DISCRIMINATOR.len()
             ..CoordinatorAccount::space_with_discriminator()],
-    ))
+    )?)
 }
 
 #[account(zero_copy)]
 #[repr(C)]
+#[derive(Serialize, Deserialize, TS)]
 pub struct CoordinatorAccount {
     pub state: CoordinatorInstanceState,
 }
@@ -147,12 +168,14 @@ pub mod psyche_solana_coordinator {
         ctx.accounts.coordinator_account.load_mut()?.state.tick()
     }
 
+    #[allow(unused_variables)] // for the metadata field. adding a _ prefix results in anchor's IDL not matching the actual types. lol.
     pub fn witness(
         ctx: Context<PermissionlessCoordinatorAccounts>,
         proof: WitnessProof,
         participant_bloom: WitnessBloom,
         broadcast_bloom: WitnessBloom,
         broadcast_merkle: MerkleRoot,
+        metadata: WitnessMetadata,
     ) -> Result<()> {
         ctx.accounts.coordinator_account.load_mut()?.state.witness(
             ctx.accounts.user.key,

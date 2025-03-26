@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use bytemuck::Zeroable;
 use futures::future::try_join_all;
 use parquet::data_type::AsBytes;
-use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
+use psyche_coordinator::{model, Coordinator, HealthChecks, Witness, WitnessMetadata};
 use psyche_core::{BatchId, NodeIdentity};
 use psyche_data_provider::{
     DataProviderTcpClient, DataProviderTcpServer, LengthKnownDataProvider, TokenizedDataProvider,
@@ -16,6 +16,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use tracing::{info, Level};
+use ts_rs::TS;
 
 // Simulated backend for demonstration
 #[allow(dead_code)]
@@ -27,7 +28,11 @@ impl<T: NodeIdentity> WatcherBackend<T> for DummyBackend<T> {
         Ok(Coordinator::zeroed())
     }
 
-    async fn send_witness(&mut self, _witness: Witness) -> anyhow::Result<()> {
+    async fn send_witness(
+        &mut self,
+        _witness: Witness,
+        _metadata: WitnessMetadata,
+    ) -> anyhow::Result<()> {
         bail!("Data provider does not send witnesses");
     }
 
@@ -40,7 +45,9 @@ impl<T: NodeIdentity> WatcherBackend<T> for DummyBackend<T> {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq, Default, Copy, Zeroable)]
+#[derive(
+    Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq, Default, Copy, Zeroable, TS,
+)]
 struct DummyNodeIdentity(u64);
 
 impl Display for DummyNodeIdentity {

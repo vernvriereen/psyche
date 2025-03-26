@@ -5,12 +5,10 @@ use crate::{
 
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Pod, Zeroable};
-use psyche_core::{
-    serde_deserialize_string, serde_serialize_string, sha256, Bloom, FixedVec, MerkleRoot,
-    NodeIdentity, SmallBoolean,
-};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use psyche_core::{sha256, Bloom, FixedString, FixedVec, MerkleRoot, NodeIdentity, SmallBoolean};
+use serde::{Deserialize, Serialize};
 use std::hash::Hash;
+use ts_rs::TS;
 
 pub const SOLANA_MAX_STRING_LEN: usize = 64;
 pub const SOLANA_MAX_URL_STRING_LEN: usize = 192;
@@ -19,6 +17,8 @@ pub const SOLANA_MAX_NUM_WITNESSES: usize = 32;
 pub const SOLANA_MAX_NUM_CHECKPOINTERS: usize = 4;
 
 pub const BLOOM_FALSE_RATE: f64 = 0.01f64;
+pub const WITNESS_QUORUM_RAIO: f64 = 2.0f64 / 3.0f64;
+pub const WAITING_FOR_MEMBERS_EXTRA_SECONDS: u64 = 3;
 
 // bloom filter with 1024 bits (16 u64)
 pub type WitnessBloom = Bloom<16, 8>;
@@ -36,6 +36,7 @@ pub type WitnessBloom = Bloom<16, 8>;
     Serialize,
     Deserialize,
     InitSpace,
+    TS,
 )]
 pub enum RunState {
     #[default]
@@ -62,6 +63,7 @@ pub enum RunState {
     Serialize,
     Deserialize,
     InitSpace,
+    TS,
 )]
 pub enum ClientState {
     #[default]
@@ -81,8 +83,9 @@ pub enum ClientState {
     Deserialize,
     AnchorDeserialize,
     AnchorSerialize,
+    TS,
 )]
-#[serde(bound = "I: Serialize + DeserializeOwned + NodeIdentity")]
+#[serde(bound = "I: NodeIdentity")]
 pub struct Client<I> {
     pub id: I,
     pub state: ClientState,
@@ -95,10 +98,22 @@ impl<I: NodeIdentity> Hash for Client<I> {
     }
 }
 
-#[derive(Clone, Default, Debug, Zeroable, Copy, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Default,
+    Debug,
+    Zeroable,
+    Copy,
+    Serialize,
+    Deserialize,
+    AnchorSerialize,
+    AnchorDeserialize,
+    TS,
+)]
 #[repr(C)]
 pub struct Round {
-    pub witnesses: FixedVec<Witness, SOLANA_MAX_NUM_WITNESSES>,
+    pub witnesses: FixedVec<Witness, { SOLANA_MAX_NUM_WITNESSES }>,
+
     pub data_index: u64,
     pub random_seed: u64,
     pub height: u32,
@@ -116,6 +131,7 @@ pub struct Round {
     AnchorSerialize,
     Serialize,
     Deserialize,
+    TS,
 )]
 #[repr(C)]
 pub struct Witness {
@@ -123,6 +139,55 @@ pub struct Witness {
     pub participant_bloom: WitnessBloom,
     pub broadcast_bloom: WitnessBloom,
     pub broadcast_merkle: MerkleRoot,
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Zeroable,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    TS,
+    Default,
+    Debug,
+)]
+#[repr(C)]
+pub struct WitnessMetadata {
+    pub step: u32,
+    pub tokens_per_sec: f32,
+    pub bandwidth_per_sec: f32,
+    pub loss: f32,
+    pub evals: FixedVec<WitnessEvalResult, 8>,
+    pub efficency: f32,
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Zeroable,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    TS,
+    Default,
+    Debug,
+)]
+#[repr(C)]
+pub struct WitnessEvalResult {
+    pub name: FixedString<32>,
+    pub value: f32,
+}
+
+impl WitnessEvalResult {
+    pub fn new_trunc_name(name: &str, value: f32) -> Self {
+        Self {
+            name: FixedString::from_str_truncated(name),
+            value,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -151,10 +216,10 @@ pub type HealthChecks<T> = Vec<(T, CommitteeProof)>;
 pub const NUM_STORED_ROUNDS: usize = 4;
 
 #[derive(
-    Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorDeserialize, AnchorSerialize,
+    Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorDeserialize, AnchorSerialize, TS,
 )]
 #[repr(C)]
-#[serde(bound = "I: DeserializeOwned + NodeIdentity")]
+#[serde(bound = "I: NodeIdentity")]
 pub struct CoordinatorConfig<I> {
     pub warmup_time: u64,
     pub cooldown_time: u64,
@@ -173,22 +238,26 @@ pub struct CoordinatorConfig<I> {
     pub total_steps: u32,
 
     #[serde(default)]
-    pub checkpointers: FixedVec<I, SOLANA_MAX_NUM_CHECKPOINTERS>,
+    pub checkpointers: FixedVec<I, { SOLANA_MAX_NUM_CHECKPOINTERS }>,
 }
 
-#[derive(Clone, Debug, Zeroable, Copy, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorSerialize, AnchorDeserialize, TS,
+)]
 #[repr(C)]
-#[serde(bound = "T: DeserializeOwned + NodeIdentity")]
+#[serde(bound = "T: NodeIdentity")]
 pub struct CoordinatorEpochState<T> {
     pub rounds: [Round; NUM_STORED_ROUNDS],
-    pub clients: FixedVec<Client<T>, SOLANA_MAX_NUM_CLIENTS>,
-    pub exited_clients: FixedVec<Client<T>, SOLANA_MAX_NUM_CLIENTS>,
+    pub clients: FixedVec<Client<T>, { SOLANA_MAX_NUM_CLIENTS }>,
+    pub exited_clients: FixedVec<Client<T>, { SOLANA_MAX_NUM_CLIENTS }>,
     pub rounds_head: u32,
     pub first_round: SmallBoolean,
     pub checkpointed: SmallBoolean,
 }
 
-#[derive(Clone, Debug, Zeroable, Copy, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorSerialize, AnchorDeserialize, TS,
+)]
 #[repr(C)]
 pub struct CoordinatorProgress {
     pub epoch: u16,
@@ -196,15 +265,13 @@ pub struct CoordinatorProgress {
     pub epoch_start_data_index: u64,
 }
 
-#[derive(Clone, Debug, Zeroable, Copy, Serialize, Deserialize)]
-#[serde(bound = "T: DeserializeOwned + NodeIdentity")]
+#[derive(
+    Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorSerialize, AnchorDeserialize, TS,
+)]
+#[serde(bound = "T: NodeIdentity")]
 #[repr(C)]
 pub struct Coordinator<T> {
-    #[serde(
-        serialize_with = "serde_serialize_string",
-        deserialize_with = "serde_deserialize_string"
-    )]
-    pub run_id: [u8; SOLANA_MAX_STRING_LEN],
+    pub run_id: FixedString<{ SOLANA_MAX_STRING_LEN }>,
 
     pub run_state: RunState,
 
@@ -227,6 +294,7 @@ pub struct Coordinator<T> {
     #[serde(default)]
     pub last_step_unix_timestamp: u64,
 
+    #[serde(default)]
     pub pending_pause: SmallBoolean,
 }
 
@@ -386,24 +454,10 @@ impl<T: NodeIdentity> Coordinator<T> {
         from: &T,
         witness: Witness,
         unix_timestamp: u64,
+        random_seed: u64,
     ) -> std::result::Result<(), CoordinatorError> {
         if self.halted() {
             return Err(CoordinatorError::Halted);
-        }
-        if !CommitteeSelection::from_coordinator(self, 0)?.verify_witness_for_client::<T>(
-            from,
-            &witness.proof,
-            &self.epoch_state.clients,
-        ) || witness.proof.witness.is_false()
-        {
-            return Err(CoordinatorError::InvalidWitness);
-        }
-
-        if !matches!(
-            self.run_state,
-            RunState::RoundWitness | RunState::RoundTrain,
-        ) {
-            return Err(CoordinatorError::InvalidRunState);
         }
 
         let witness_nodes = if self.config.witness_nodes == 0 {
@@ -411,6 +465,25 @@ impl<T: NodeIdentity> Coordinator<T> {
         } else {
             self.config.witness_nodes as usize
         };
+
+        if !matches!(
+            self.run_state,
+            RunState::RoundWitness | RunState::RoundTrain | RunState::Warmup,
+        ) {
+            return Err(CoordinatorError::InvalidRunState);
+        }
+
+        if self.run_state != RunState::Warmup {
+            // anyone can be a witness during warmup
+            if !CommitteeSelection::from_coordinator(self, 0)?.verify_witness_for_client::<T>(
+                from,
+                &witness.proof,
+                &self.epoch_state.clients,
+            ) || witness.proof.witness.is_false()
+            {
+                return Err(CoordinatorError::InvalidWitness);
+            }
+        }
 
         let round = self.current_round().unwrap();
         for witness in round.witnesses.iter() {
@@ -425,7 +498,12 @@ impl<T: NodeIdentity> Coordinator<T> {
             .map_err(|_| CoordinatorError::WitnessesFull)?;
 
         if round.witnesses.len() == witness_nodes && !(self.run_state == RunState::RoundWitness) {
-            self.change_state(unix_timestamp, RunState::RoundWitness);
+            match self.run_state {
+                RunState::RoundTrain => self.change_state(unix_timestamp, RunState::RoundWitness),
+                RunState::Warmup => self.start_round_train(unix_timestamp, random_seed, 0),
+                RunState::RoundWitness => {}
+                _ => unreachable!(),
+            }
         }
         Ok(())
     }
@@ -560,7 +638,8 @@ impl<T: NodeIdentity> Coordinator<T> {
             0 => unreachable!(),
             1 => 1,
             2 => 2,
-            x => x / 2 + 1,
+            3 => 2,
+            witness_nodes => (witness_nodes as f64 * WITNESS_QUORUM_RAIO) as u16,
         }
     }
 
@@ -705,7 +784,10 @@ impl<T: NodeIdentity> Coordinator<T> {
             return Ok(TickResult::Ticked);
         };
 
-        if pending_clients.len() as u16 >= self.config.min_clients {
+        if pending_clients.len() as u16 >= self.config.min_clients
+            && self.check_timeout(unix_timestamp, WAITING_FOR_MEMBERS_EXTRA_SECONDS)
+        // This extra time allows for more clients to join even if the minimum number of clients is reached
+        {
             let height = self.current_round_unchecked().height;
             self.move_clients_to_exited(height);
 
@@ -737,6 +819,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                         .map(|x| Client::new(*x)),
                 )
                 .unwrap();
+
             self.start_warmup(unix_timestamp);
         }
 
@@ -849,6 +932,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     fn start_cooldown(&mut self, unix_timestamp: u64) {
+        self.current_round_mut_unchecked().witnesses.clear(); // clear witnesses for re-use in warmup
         self.change_state(unix_timestamp, RunState::Cooldown);
     }
 
@@ -926,8 +1010,12 @@ impl<T: NodeIdentity> Coordinator<T> {
             }
     }
 
-    pub fn is_epoch_just_starting(&self) -> bool {
+    pub fn is_warmup_just_starting(&self) -> bool {
         self.epoch_state.first_round.is_true() && self.run_state == RunState::Warmup
+    }
+
+    pub fn is_training_just_starting(&self) -> bool {
+        self.epoch_state.first_round.is_true() && self.run_state == RunState::RoundTrain
     }
 }
 

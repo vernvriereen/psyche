@@ -1,20 +1,19 @@
 use crate::{
     state::{DistroBroadcastAndPayload, FinishedBroadcast, RunManager},
-    Broadcast, BroadcastType, ClientTUIState, RunInitConfig, RunInitConfigAndIO, TrainingResult,
-    NC,
+    Broadcast, BroadcastType, ClientTUIState, Finished, RunInitConfig, RunInitConfigAndIO,
+    TrainingResult, NC,
 };
 use anyhow::{bail, Error, Result};
 use futures::future::join_all;
 use psyche_coordinator::{Commitment, RunState};
 use psyche_core::NodeIdentity;
 use psyche_network::{
-    allowlist, raw_p2p_verify, request_model, AuthenticatableIdentity, BlobTicket, ConnectionType,
+    allowlist, raw_p2p_verify, request_model, AuthenticatableIdentity, BlobTicket,
     DownloadComplete, ModelRequestType, NetworkConnection, NetworkEvent, NetworkTUIState,
     Networkable, NodeId, SharableModel, TransmittableDownload,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use tokenizers::Tokenizer;
-use wandb::DataValue;
 
 use rand::{seq::SliceRandom, thread_rng};
 use std::{
@@ -53,6 +52,7 @@ const MAX_DOWNLOAD_RETRIES: usize = 3;
 const REBROADCAST_SHAREABLE: Duration = Duration::from_secs(2);
 const DOWNLOAD_RETRY_BACKOFF_BASE: Duration = Duration::from_secs(2);
 const DOWNLOAD_RETRY_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+const OPPROTUNISTIC_WITNESS_INTERVAL: Duration = Duration::from_millis(500);
 
 impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'static>
     Client<T, A, B>
@@ -120,6 +120,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                 let mut broadcasts_rebroadcast_index = 0;
                 let mut sharing_downloadable_interval = interval(REBROADCAST_SHAREABLE);
                 let mut retry_check_interval = interval(DOWNLOAD_RETRY_CHECK_INTERVAL);
+                let mut opprotunistic_witness_interval = interval(OPPROTUNISTIC_WITNESS_INTERVAL);
                 debug!("Starting client loop");
                 loop {
                     select! {
@@ -143,10 +144,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 client_id = %identity,
                                 old_state = old_run_state,
                                 new_state = new_state.run_state.to_string(),
+                                epoch = new_state.progress.epoch,
+                                step = new_state.progress.step,
                                 "apply_state"
                             );
 
-                            let connected_p2p_nodes = p2p.get_all_peers().await.into_iter().filter(|(_, connection)| *connection != ConnectionType::None).map(|(addr, _)| addr.node_id).collect::<BTreeSet<_>>();
+                            let connected_p2p_nodes: BTreeSet<_> = p2p.neighbors().collect();
                             {
                                 let run_participating_node_ids: Vec<NodeId> = new_state
                                     .epoch_state
@@ -181,13 +184,25 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 }
                             }
 
-                            if old_state.map(|s| s.run_state) != Some(new_state.run_state) && new_state.run_state == RunState::RoundTrain {
-                                debug!(num_peers = connected_p2p_nodes.len(), "Updating p2p");
-                                let last_needed_step_blobs = new_state.progress.step.saturating_sub(2);
-                                p2p.remove_blobs_with_tag_less_than(last_needed_step_blobs);
-                                let p2p_info = get_p2p_info(&p2p).await?;
-                                run.set_node_info(p2p_info);
-                                broadcasts.retain(|(_, step)| *step >= last_needed_step_blobs);
+                            if old_state.map(|s| s.run_state) != Some(new_state.run_state)   {
+                                match new_state.run_state {
+                                    RunState::RoundTrain => {
+                                        debug!(num_peers = connected_p2p_nodes.len(), "Updating p2p");
+                                        let last_needed_step_blobs = new_state.progress.step.saturating_sub(2);
+                                        p2p.remove_blobs_with_tag_less_than(last_needed_step_blobs);
+                                        let p2p_info = get_p2p_info(&p2p).await?;
+                                        if let Err(e) = run.set_node_info(p2p_info) {
+                                            warn!("failed to set p2p info: {e}");
+                                        }
+                                        broadcasts.retain(|(_, step)| *step >= last_needed_step_blobs);
+                                    }
+                                    RunState::Cooldown => {
+                                        // clear all broadcasts
+                                        p2p.remove_blobs_with_tag_less_than(0);
+                                        broadcasts.clear();
+                                    }
+                                    _ => {},
+                                }
                             }
                             run.apply_state(*new_state).await?;
                         }
@@ -196,6 +211,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             if let Some(message) = res? {
                                 match message {
                                     NetworkEvent::MessageReceived((from, broadcast)) => {
+                                        trace!("NetworkEvent::MessageReceived");
                                         if let Some(client) = watcher.get_client_for_p2p_public_key(from.as_bytes()) {
                                             if raw_p2p_verify(from.as_bytes(), &broadcast.commitment.data_hash, &broadcast.commitment.signature) {
                                                 match &broadcast.data {
@@ -217,6 +233,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     NetworkEvent::DownloadComplete(DownloadComplete {
                                         data: download_data, hash, ..
                                     }) => {
+                                        trace!("NetworkEvent::DownloadComplete({})", hex::encode(hash));
                                         if retried_downloads.remove(&hash).is_some() {
                                             debug!("Successfully downloaded previously failed blob {}", hex::encode(hash));
                                         }
@@ -226,7 +243,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                                 run.apply_distro_result(hash, distro_result, None).await;
                                             },
                                             TransmittableDownload::ModelParameter(parameter) => {
-                                                sharable_model.add_parameter(parameter)?;
+                                                sharable_model.add_parameter(parameter).await?;
                                                 if sharable_model.is_download_complete() {
                                                     sharable_model.send_init_parameters()?;
                                                 }
@@ -238,6 +255,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         }
                                     }
                                     NetworkEvent::DownloadFailed(dl) => {
+                                        trace!("NetworkEvent::DownloadFailed({:?})", dl.error);
                                         let hash = dl.blob_ticket.hash();
                                         let info = retried_downloads.get(&hash);
                                         let retries = info.map(|i| i.retries).unwrap_or(0);
@@ -264,42 +282,31 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         }
                                     }
                                     NetworkEvent::ParameterRequest(parameter_name, protocol_req_tx) => {
-
                                         // TODO: We should validate that the parameter is requested while we are in RunState::Warmup.
-
-                                        match sharable_model.get_transmittable_parameter(&parameter_name) {
+                                        trace!("NetworkEvent::ParameterRequest({parameter_name})");
+                                        match sharable_model.get_transmittable_parameter(&parameter_name, &mut p2p, 0).await {
                                             Err(e) => {
                                                 if let Err(e) = protocol_req_tx.send(Err(e)) {
                                                     warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e:?}");
                                                 }
                                             },
-                                            Ok(transmittable_parameter) => {
-                                                 let transmittable_download = TransmittableDownload::ModelParameter(transmittable_parameter);
-                                            // tag 0 means when we enter a train step, it'll get wiped.
-                                            let ticket = p2p.add_downloadable(transmittable_download, 0).await?;
-
-                                            // TODO: Here we should probably encode & sign beforehand, and then pass it to the protocol to respond
-                                            // to the client
-
-                                            info!("Sending requested model parameter blob ticket");
-                                            if let Err(e) = protocol_req_tx.send(Ok(ticket)) {
-                                                warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e:?}");
-                                            };
+                                            Ok(ticket) => {
+                                                info!(parameter = parameter_name, "Sending requested model parameter blob ticket");
+                                                if let Err(e) = protocol_req_tx.send(Ok(ticket)) {
+                                                    warn!("Could not send model parameter {parameter_name} blob ticket. Error: {e:?}");
+                                                };
                                             }
                                         }
                                     },
                                     NetworkEvent::ModelConfigRequest(protocol_req_tx) => {
-                                        match sharable_model.get_transmittable_config() {
+                                        trace!("NetworkEvent::ModelConfigRequest");
+                                        match sharable_model.get_transmittable_config(&mut p2p, 0).await {
                                             Err(e) => {
                                                 if let Err(e) = protocol_req_tx.send(Err(e)) {
                                                     warn!("Could not send model config blob ticket. Error: {e:?}");
                                                 }
                                             },
-                                            Ok(sharable_config) => {
-                                                let transmittable_config = TransmittableDownload::ModelConfig(sharable_config);
-                                                // tag 0 means when we enter a train step, it'll get wiped.
-                                                let config_ticket = p2p.add_downloadable(transmittable_config, 0).await?;
-
+                                            Ok(config_ticket) => {
                                                 info!("Sending requested model config blob ticket");
                                                 if let Err(e) = protocol_req_tx.send(Ok(config_ticket)) {
                                                     warn!("Could not send model config blob ticket. Error: {e:?}");
@@ -311,11 +318,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             }
                         }
 
-                        () = run.opportunistic_witness_wait_notified() => {
-                            run.try_send_opportunistic_witness().await?;
-                        }
-
-                        Some(FinishedBroadcast { step, merkle, commitment_data_hash, proof }) = rx_broadcast_finished.recv() => {
+                        Some(FinishedBroadcast { step, merkle, commitment_data_hash, proof, warmup }) = rx_broadcast_finished.recv() => {
                             debug!(
                                 "Broadcasting finished step {step} merkle 0x{}",
                                 hex::encode(merkle.inner),
@@ -323,9 +326,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                             let signature = network_identity.raw_p2p_sign(&private_key, &commitment_data_hash);
                             let commitment = Commitment { data_hash: commitment_data_hash, signature};
-                            let training_result = Broadcast { step, proof, nonce: 0, commitment, data: BroadcastType::Finished(merkle)};
+                            let training_result = Broadcast { step, proof, nonce: 0, commitment, data: BroadcastType::Finished(Finished {
+                                broadcast_merkle: merkle, warmup
+                            })};
 
                             p2p.broadcast(&training_result).await?;
+                            broadcasts.push((training_result.clone(), step));
 
                             // simulate us recving it & apply like anyone else's
                             run.apply_message(identity,  training_result).await?;
@@ -392,11 +398,15 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             }
                         }
 
+                        _ = opprotunistic_witness_interval.tick() => {
+                            run.try_send_opportunistic_witness()?;
+                        }
+
                         Some((download_ticket, tag)) = rx_request_download.recv() => {
                             p2p.start_download(download_ticket, tag).await?;
                         }
-                        Some(witness) = rx_witness.recv() => {
-                            watcher.backend_mut().send_witness(witness).await?;
+                        Some((witness, metadata)) = rx_witness.recv() => {
+                            watcher.backend_mut().send_witness(witness, metadata).await?;
                         }
                         Some(health_check) = rx_health_check.recv() => {
                             watcher.backend_mut().send_health_check(health_check).await?;
@@ -461,7 +471,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                             if !busy_peers.lock().unwrap().insert(peer_id) {
                                                 continue;
                                             }
-                                            debug!("Requesting parameter {param_name} from peer {peer_id}");
+                                            debug!(parameter = param_name, peer = %peer_id, "Requesting parameter");
                                             match request_model(router.clone(), peer_id, ModelRequestType::Parameter(param_name.clone())).await {
                                                 Ok(parameter_blob_ticket) => {
                                                   parameter_blob_tickets_clone.lock().unwrap().push(parameter_blob_ticket);
@@ -470,7 +480,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                                   break;
                                                 },
                                                 Err(e) => {
-                                                  warn!("Failed to get parameter {param_name} from peer {peer_id}: {e}");
+                                                  warn!(parameter = param_name, peer = %peer_id, "Failed to get parameter: {e}");
                                                   busy_peers.lock().unwrap().remove(&peer_id);
                                                   // Continue to request this parameter to another peer
                                                   continue;
@@ -521,6 +531,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             })
                             .filter(|peer_id| peer_id != &me)
                             .collect();
+
+                            if peer_ids.is_empty() {
+                                return Err(anyhow::anyhow!("No peers available to request the model"))
+                            }
+
                             let peer_ids_iter = peer_ids.into_iter().cycle();
                             for peer_id in peer_ids_iter {
                                 match request_model(router.clone(), peer_id, ModelRequestType::Config).await {
@@ -569,9 +584,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
     }
 }
 
+pub struct P2PNodeInfo {
+    pub ips: Vec<String>,
+    pub bandwidth: f64,
+}
+
 async fn get_p2p_info<B, D>(
     p2p: &NetworkConnection<B, D>,
-) -> anyhow::Result<HashMap<String, DataValue>>
+) -> anyhow::Result<HashMap<String, P2PNodeInfo>>
 where
     B: Networkable,
     D: Networkable,
@@ -583,39 +603,26 @@ where
         .map(|(x, bandwidth)| {
             (
                 x.node_id.to_string(),
-                HashMap::from([
-                    (
-                        "ips",
-                        DataValue::from(
-                            x.addrs
-                                .into_iter()
-                                .map(|y| y.addr.to_string())
-                                .collect::<Vec<_>>()
-                                .join(","),
-                        ),
-                    ),
-                    ("bandwidth", DataValue::from(bandwidth)),
-                ])
-                .into(),
+                P2PNodeInfo {
+                    ips: x
+                        .addrs
+                        .into_iter()
+                        .map(|y| y.addr.to_string())
+                        .collect::<Vec<_>>(),
+                    bandwidth,
+                },
             )
         })
         .chain(std::iter::once((
             node_addr.node_id.to_string(),
-            HashMap::from([
-                (
-                    "ips",
-                    DataValue::from(
-                        node_addr
-                            .direct_addresses
-                            .iter()
-                            .map(|x| x.to_string())
-                            .collect::<Vec<_>>()
-                            .join(","),
-                    ),
-                ),
-                ("bandwidth", DataValue::from(0f32)),
-            ])
-            .into(),
+            P2PNodeInfo {
+                ips: node_addr
+                    .direct_addresses
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>(),
+                bandwidth: 0.0,
+            },
         )))
         .collect())
 }

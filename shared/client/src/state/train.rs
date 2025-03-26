@@ -28,7 +28,7 @@ use std::{
 };
 use thiserror::Error;
 use tokio::{
-    sync::{mpsc, Mutex, Notify},
+    sync::{mpsc, Mutex},
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
@@ -147,7 +147,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
         trainers: Vec<Trainer>,
         previous_round: &mut RoundState<T>,
         current_round: &mut RoundState<T>,
-        notify_try_opportunistic_witness: Arc<Notify>,
     ) -> Result<TrainingStep, TrainError> {
         if trainers.is_empty() {
             return Err(TrainError::NoTrainers);
@@ -252,7 +251,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     let round_duration = Instant::now() - round_start;
                     debug!("Training for round finished, duration {:?}", round_duration);
                     finished.store(true, Ordering::SeqCst);
-                    notify_try_opportunistic_witness.notify_one();
                     Ok(FinishedTrainers {
                         evals_or_trainers: MaybeRunningEvals::Running(
                             eval_runner
@@ -446,7 +444,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     let round_duration = Instant::now() - round_start;
                     debug!("Training for round finished, duration {:?}", round_duration);
                     finished.store(true, Ordering::SeqCst);
-                    notify_try_opportunistic_witness.notify_one();
                     Ok(FinishedTrainers {
                         evals_or_trainers: evals,
                         round_losses,
@@ -509,7 +506,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                 .get_num_trainer_nodes(),
         );
 
-        let b = batch_ids.clone();
         Ok(tokio::task::spawn(async move {
                 let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
 
@@ -521,7 +517,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                             continue;
                         }
                     };
-                    debug!("Commitments for batch {batch_id}: {batch_commitments:?}");
+                    trace!("Commitments for batch {batch_id}: {batch_commitments:?}");
                     let consensus = match Coordinator::<T>::select_consensus_commitment_by_witnesses(
                         &batch_commitments
                             .iter()
@@ -593,7 +589,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     trainers.len()
                 );
                 Ok(trainers)
-            }.instrument(debug_span!("Applying distro results", ?b))))
+            }.instrument(debug_span!("Applying distro results"))))
     }
 }
 
@@ -621,8 +617,10 @@ fn start_sending_health_checks<T: NodeIdentity>(
                     let proof = committee_selection.get_committee(index as u64);
                     if !state.healthy(&client.id, &proof).unwrap_or(false) {
                         warn!(
-                            "Found unhealthy client at index {index} , client: {:?}",
-                            &client.id
+                            unhealthy_warn = "Found unhealthy trainer at",
+                            index = index,
+                            client_id = %&client.id,
+                            current_step = state.epoch_state.rounds_head
                         );
                         checks.push((client.id, proof));
                     }

@@ -11,8 +11,12 @@ use iroh::{protocol::ProtocolHandler, Endpoint};
 
 use crate::{p2p_model_sharing, Allowlist, ModelSharing};
 
+/// TODO: This entire struct can be replaced with the builtin Router using the new connection
+/// limiting functionality in Iroh:
+/// https://github.com/n0-computer/iroh/pull/3157/commits/54e6b66d4292ad0b38ac479b13c3a96776d23d08
+///
 /// The allowlist-enabled router.
-// This is mostly verbatim from Iroh's source, just modified to let us insert the allowlist.
+/// This is mostly verbatim from Iroh's source, just modified to let us insert the allowlist.
 ///
 /// Construct this using [`Router::spawn`].
 ///
@@ -222,6 +226,7 @@ async fn handle_connection<A: Allowlist + 'static + Send>(
             return;
         }
     };
+
     if !allowlist.allowed(node_id) {
         // kill connection completely!
         connection.close(0u8.into(), b"not in allowlist");

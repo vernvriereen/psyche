@@ -18,7 +18,7 @@ use clap::{Args, Parser, Subcommand};
 use psyche_client::{print_identity_keys, read_identity_secret_key, TrainArgs};
 use psyche_coordinator::{model::Model, CoordinatorConfig};
 use psyche_network::SecretKey;
-use psyche_solana_coordinator::{find_coordinator_instance, ClientId};
+use psyche_solana_coordinator::{find_coordinator_instance, ClientId, RunMetadata};
 use psyche_tui::{maybe_start_render_loop, LogOutput};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -76,6 +76,18 @@ enum Commands {
 
         #[clap(short, long, env)]
         run_id: String,
+
+        #[clap(long)]
+        name: Option<String>,
+
+        #[clap(long)]
+        description: Option<String>,
+
+        #[clap(long)]
+        num_parameters: Option<u64>,
+
+        #[clap(long)]
+        vocab_size: Option<u64>,
     },
     CloseRun {
         #[clap(flatten)]
@@ -129,6 +141,13 @@ enum Commands {
         #[clap(long, env, default_value_t = String::from(""))]
         ws_rpc_2: String,
     },
+
+    // Prints the help, optionally as markdown. Used for docs generation.
+    #[clap(hide = true)]
+    PrintAllHelp {
+        #[arg(long, required = true)]
+        markdown: bool,
+    },
 }
 
 impl From<ClusterArgs> for Cluster {
@@ -176,6 +195,10 @@ async fn async_main() -> Result<()> {
             cluster,
             wallet,
             run_id,
+            name,
+            description,
+            num_parameters,
+            vocab_size,
         } => {
             let run_id = run_id.trim_matches('"').to_string(); // Trim quotes, if any
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
@@ -185,11 +208,34 @@ async fn async_main() -> Result<()> {
                 CommitmentConfig::confirmed(),
             )
             .unwrap();
-            let created = backend.create_run(run_id.clone()).await?;
+            let created = backend
+                .create_run(
+                    run_id.clone(),
+                    RunMetadata {
+                        name: name
+                            .as_deref()
+                            .unwrap_or(run_id.as_str())
+                            .try_into()
+                            .unwrap(),
+                        description: description
+                            .unwrap_or(format!("run {run_id}"))
+                            .as_str()
+                            .try_into()
+                            .unwrap(),
+                        num_parameters: num_parameters.unwrap_or(0),
+                        vocab_size: vocab_size.unwrap_or(0),
+                    },
+                )
+                .await?;
             let locked = backend.get_balance(&created.account).await?;
             println!(
-                "Created run {} with transaction {}",
-                run_id, created.transaction
+                "Created run {} with transactions: create {}, create auth? {}",
+                run_id,
+                created.tx_create_coordinator,
+                created
+                    .tx_create_auth
+                    .map(|t| t.to_string())
+                    .unwrap_or("None".to_string()),
             );
             println!("Instance account: {}", created.instance);
             println!("Coordinator account: {}", created.account);
@@ -344,12 +390,22 @@ async fn async_main() -> Result<()> {
                 grad_accum_in_fp32: args.grad_accum_in_fp32,
                 dummy_training_delay_secs: args.dummy_training_delay_secs,
                 max_concurrent_parameter_requests: args.max_concurrent_parameter_requests,
+                max_concurrent_downloads: args.max_concurrent_downloads,
             })
             .build()
             .await
             .unwrap();
 
             app.run(allowlist, p2p, state_options).await
+        }
+
+        Commands::PrintAllHelp { markdown } => {
+            // This is a required argument for the time being.
+            assert!(markdown);
+
+            let () = clap_markdown::print_help_markdown::<CliArgs>();
+
+            Ok(())
         }
     }
 }

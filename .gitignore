@@ -24,7 +24,10 @@ ehthumbs_vista.db
 
 ### Tooling ###
 result
+result-*
 nix-results/
+after_drv
+before_drv
 .direnv/
 .aider*
 flamegraph.svg
@@ -36,6 +39,7 @@ perf.data.*
 libtorch*
 slurm*
 *.key
+node_modules/
 
 ### Data folders ###
 /data

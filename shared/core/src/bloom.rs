@@ -1,9 +1,17 @@
-use anchor_lang::prelude::*;
+use anchor_lang::prelude::{borsh::BorshSerialize, *};
+use anchor_lang_idl::{
+    build::IdlBuild,
+    types::{
+        IdlArrayLen, IdlDefinedFields, IdlField, IdlRepr, IdlReprModifier, IdlType, IdlTypeDef,
+        IdlTypeDefTy,
+    },
+};
 use bitvec::array::BitArray;
 use bytemuck::Zeroable;
 use fnv::FnvHasher;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::{fmt, hash::Hasher};
+use std::{collections::BTreeMap, fmt, hash::Hasher};
+use ts_rs::TS;
 
 // Modified from https://github.com/solana-labs/solana/blob/27eff8408b7223bb3c4ab70523f8a8dca3ca6645/bloom/src/bloom.rs
 
@@ -13,16 +21,63 @@ pub trait BloomHashIndex {
     fn hash_at_index(&self, hash_index: u64) -> u64;
 }
 
-#[derive(Clone, PartialEq, Eq, Copy, Zeroable)]
+#[derive(Clone, PartialEq, Eq, Copy, Zeroable, TS)]
 #[repr(C)]
 pub struct Bloom<const U: usize, const K: usize> {
     pub keys: [u64; K],
     pub bits: BitArrayWrapper<U>,
 }
 
-#[derive(Clone, PartialEq, Eq, Copy, Default, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Copy, Default, Serialize, Deserialize, TS)]
 #[repr(transparent)]
-pub struct BitArrayWrapper<const U: usize>(pub BitArray<[u64; U]>);
+pub struct BitArrayWrapper<const U: usize>(#[ts(type = "number[]")] pub BitArray<[u64; U]>);
+
+impl<const U: usize> AnchorSerialize for BitArrayWrapper<U> {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        let raw_data = self.0.as_raw_slice();
+        for chunk in raw_data {
+            AnchorSerialize::serialize(chunk, writer)?;
+        }
+        Ok(())
+    }
+}
+
+impl<const U: usize> AnchorDeserialize for BitArrayWrapper<U> {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut data = [0u64; U];
+        for chunk in &mut data {
+            *chunk = u64::deserialize_reader(reader)?;
+        }
+        Ok(BitArrayWrapper(BitArray::new(data)))
+    }
+}
+
+impl<const U: usize> IdlBuild for BitArrayWrapper<U> {
+    fn create_type() -> Option<IdlTypeDef> {
+        Some(IdlTypeDef {
+            name: format!("BitArrayWrapper{}", U).to_string(),
+            docs: vec!["A wrapper around BitArray for serialization".to_string()],
+            serialization: Default::default(),
+            repr: Some(IdlRepr::Transparent),
+            generics: vec![],
+            ty: IdlTypeDefTy::Struct {
+                fields: Some(IdlDefinedFields::Named(vec![IdlField {
+                    name: "0".to_string(),
+                    docs: vec!["The underlying bit array".to_string()],
+                    ty: IdlType::Array(Box::new(IdlType::U64), IdlArrayLen::Value(U)),
+                }])),
+            },
+        })
+    }
+
+    fn insert_types(_types: &mut BTreeMap<String, IdlTypeDef>) {
+        // no inner types in idl
+    }
+
+    fn get_full_path() -> String {
+        format!("{}::BitArrayWrapper{}", module_path!(), U)
+    }
+}
 
 unsafe impl<const U: usize> Zeroable for BitArrayWrapper<U> {}
 
@@ -88,15 +143,9 @@ impl<'de, const U: usize, const K: usize> Deserialize<'de> for Bloom<U, K> {
 impl<const U: usize, const K: usize> AnchorSerialize for Bloom<U, K> {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         for key in &self.keys {
-            AnchorSerialize::serialize(&key, writer)?;
+            AnchorSerialize::serialize(key, writer)?;
         }
-
-        let bits_data = self.bits.0.as_raw_slice();
-        for bit in bits_data {
-            AnchorSerialize::serialize(&bit, writer)?;
-        }
-
-        Ok(())
+        BorshSerialize::serialize(&self.bits, writer)
     }
 }
 
@@ -106,20 +155,56 @@ impl<const U: usize, const K: usize> AnchorDeserialize for Bloom<U, K> {
         for key in &mut keys {
             *key = u64::deserialize_reader(reader)?;
         }
-
-        let mut bits_data = [0u64; U];
-        for bit in &mut bits_data {
-            *bit = u64::deserialize_reader(reader)?;
-        }
-        let bits = BitArrayWrapper::new(bits_data);
-
+        let bits = BitArrayWrapper::deserialize_reader(reader)?;
         Ok(Bloom { keys, bits })
     }
 }
 
-impl<const U: usize, const K: usize> Space for Bloom<U, K> {
-    const INIT_SPACE: usize = U * std::mem::size_of::<u64>() + K * std::mem::size_of::<u64>();
+impl<const U: usize, const K: usize> IdlBuild for Bloom<U, K> {
+    fn create_type() -> Option<IdlTypeDef> {
+        Some(IdlTypeDef {
+            name: format!("Bloom{}_{}", U, K),
+            docs: vec![
+                "A Bloom filter implementation with configurable size and number of hash functions"
+                    .to_string(),
+            ],
+            serialization: Default::default(),
+            repr: Some(IdlRepr::C(IdlReprModifier {
+                packed: false,
+                align: None,
+            })),
+            generics: vec![],
+            ty: IdlTypeDefTy::Struct {
+                fields: Some(IdlDefinedFields::Named(vec![
+                    IdlField {
+                        name: "keys".to_string(),
+                        docs: vec!["Hash function keys".to_string()],
+                        ty: IdlType::Array(Box::new(IdlType::U64), IdlArrayLen::Value(K)),
+                    },
+                    IdlField {
+                        name: "bits".to_string(),
+                        docs: vec!["Bit array for the Bloom filter".to_string()],
+                        ty: IdlType::Defined {
+                            name: format!("BitArrayWrapper{}", U),
+                            generics: vec![],
+                        },
+                    },
+                ])),
+            },
+        })
+    }
+
+    fn insert_types(types: &mut BTreeMap<String, IdlTypeDef>) {
+        if let Some(ty) = BitArrayWrapper::<U>::create_type() {
+            types.insert(ty.name.clone(), ty);
+        }
+    }
+
+    fn get_full_path() -> String {
+        format!("{}::Bloom{}_{}", module_path!(), U, K)
+    }
 }
+
 impl<const U: usize, const K: usize> fmt::Debug for Bloom<U, K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Bloom {{ keys.len: {} bits: ", self.keys.len())?;

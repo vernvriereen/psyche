@@ -1,8 +1,10 @@
-#! /bin/bash
+#!/usr/bin/env bash
 
-set -e
+set -euo pipefail
 
-WALLET_FILE=${WALLET_FILE:-"$HOME/.config/solana/id.json"}
+# use the agenix provided wallet if you have it
+DEFAULT_WALLET=${devnet__keypair__wallet_PATH:-"$HOME/.config/solana/id.json"}
+WALLET_FILE=${KEY_FILE:-"$DEFAULT_WALLET"}
 RPC=${RPC:-"http://127.0.0.1:8899"}
 WS_RPC=${WS_RPC:-"ws://127.0.0.1:8900"}
 RUN_ID=${RUN_ID:-"test"}
@@ -12,7 +14,8 @@ DP=${DP:-"8"}
 TP=${TP:-"1"}
 BATCH_SIZE=${BATCH_SIZE:-"1"}
 
-solana airdrop 10 "$(solana-keygen pubkey ${WALLET_FILE})" --url "${RPC}"
+# fine if this fails
+solana airdrop 10 "$(solana-keygen pubkey ${WALLET_FILE})" --url "${RPC}" || true
 
 export RUST_LOG="info,psyche=debug"
 
@@ -26,4 +29,4 @@ cargo run --release --bin psyche-solana-client -- \
         --tensor-parallelism ${TP} \
         --micro-batch-size ${BATCH_SIZE} \
         --logs "console" \
-        --ticker
+        --ticker "$@"

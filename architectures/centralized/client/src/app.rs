@@ -5,10 +5,10 @@ use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientM
 use psyche_client::{
     CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
 };
-use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
+use psyche_coordinator::{model, Coordinator, HealthChecks, Witness, WitnessMetadata};
 use psyche_network::{
-    allowlist, AuthenticatableIdentity, DiscoveryMode, NetworkTUIState, NetworkTui, NodeId,
-    RelayMode, SecretKey, TcpClient,
+    allowlist, psyche_relay_map, AuthenticatableIdentity, DiscoveryMode, NetworkTUIState,
+    NetworkTui, NodeId, RelayMode, SecretKey, TcpClient,
 };
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
@@ -54,7 +54,7 @@ impl WatcherBackend<ClientId> for Backend {
         Ok(new_state)
     }
 
-    async fn send_witness(&mut self, witness: Witness) -> Result<()> {
+    async fn send_witness(&mut self, witness: Witness, _metadata: WitnessMetadata) -> Result<()> {
         self.tx.send(ToSend::Witness(Box::new(witness)))?;
         Ok(())
     }
@@ -103,6 +103,7 @@ pub struct AppParams {
     pub dummy_training_delay_secs: Option<u64>,
     pub discovery_mode: DiscoveryMode,
     pub max_concurrent_parameter_requests: usize,
+    pub max_concurrent_downloads: usize,
 }
 
 impl AppBuilder {
@@ -134,11 +135,12 @@ impl AppBuilder {
             &p.run_id,
             p.p2p_port,
             p.p2p_interface,
-            RelayMode::Default,
+            RelayMode::Custom(psyche_relay_map()),
             p.discovery_mode,
             vec![],
             Some(p.identity_secret_key.clone()),
             allowlist.clone(),
+            p.max_concurrent_downloads,
         )
         .await?;
 

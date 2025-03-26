@@ -4,7 +4,7 @@ use psyche_coordinator::{
     model::{self, HubRepo},
     Coordinator,
 };
-use psyche_core::{to_fixed_size_array, u8_to_string, NodeIdentity};
+use psyche_core::{FixedString, NodeIdentity};
 use psyche_data_provider::{upload_model_repo_async, UploadModelError};
 use psyche_modeling::{
     save_tensors_into_safetensors, SaveSafetensorsError, Trainer, TrainerThreadCommunicationError,
@@ -94,7 +94,7 @@ impl CooldownStepMetadata {
         };
 
         let step = state.progress.step - 1;
-        let run_id = u8_to_string(&state.run_id);
+        let run_id = String::from(&state.run_id);
         let checkpoint_extra_files = self.checkpoint_extra_files.clone();
         let checkpoint_info = self.checkpoint_info.clone();
         let tx_checkpoint = self.tx_checkpoint.clone();
@@ -103,10 +103,11 @@ impl CooldownStepMetadata {
 
         let checkpointing_and_evals = tokio::task::spawn(
             async move {
-                info!("Extracting full model");
+                info!("Extracting full model...");
                 let (variables, trainer) =
                     tokio::task::spawn_blocking::<_, Result<_, CheckpointError>>(|| {
                         let variables = trainer.extract()?;
+                        info!("Model extracted; {} parameters", variables.len());
                         Ok((variables, trainer))
                     })
                     .await
@@ -172,8 +173,8 @@ impl CooldownStepMetadata {
 
                     tx_checkpoint
                         .send(HubRepo {
-                            repo_id: to_fixed_size_array(&hub_repo),
-                            revision: Some(to_fixed_size_array(&revision)),
+                            repo_id: FixedString::from_str_truncated(&hub_repo),
+                            revision: Some(FixedString::from_str_truncated(&revision)),
                         })
                         .map_err(|_| CheckpointError::SendCheckpoint)?;
 

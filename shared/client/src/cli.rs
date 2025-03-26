@@ -49,11 +49,11 @@ pub struct TrainArgs {
     pub identity_secret_key_path: Option<PathBuf>,
 
     /// Sets the port for the client's P2P network participation. If not provided, a random port will be chosen.
-    #[clap(short, long, env)]
+    #[clap(long, env)]
     pub bind_p2p_port: Option<u16>,
 
     /// Sets the network interface for the client's P2P network participation. If not provided, will bind to all interfaces.
-    #[clap(short, long, env)]
+    #[clap(long, env)]
     pub bind_p2p_interface: Option<String>,
 
     /// Sets clients logs interface
@@ -130,8 +130,21 @@ pub struct TrainArgs {
     #[clap(long, env)]
     pub dummy_training_delay_secs: Option<u64>,
 
-    #[clap(long, default_value_t = 10, env)]
+    #[clap(long, default_value_t = 8, env)]
     pub max_concurrent_parameter_requests: usize,
+
+    #[clap(long, default_value_t = 8, env)]
+    pub max_concurrent_downloads: usize,
+
+    // how hard to compress parameters and DisTrO results.
+    // if you have fast upload and a slow CPU, set this low.
+    // if you have slow upload and a fast CPU, set this high.
+    // range is from 1-9, but there's seriously diminishing returns after `2`.
+    // you can do `cargo run -p psyche-network --example compress_distro_result_comparison <distro_results_postcard_file>`,
+    // where that postcard file is one from `--write-gradients-dir` (use some step a few 10s or 100s in)
+    // to benchmark the tradeoffs for your specific machine.
+    #[clap(long, default_value_t = 2, env)]
+    pub compression: u32,
 }
 
 impl TrainArgs {

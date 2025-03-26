@@ -1,6 +1,7 @@
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::Zeroable;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 #[derive(
     AnchorSerialize,
@@ -12,6 +13,7 @@ use serde::{Deserialize, Serialize};
     Debug,
     Zeroable,
     Copy,
+    TS,
 )]
 #[repr(C)]
 pub enum Shuffle {

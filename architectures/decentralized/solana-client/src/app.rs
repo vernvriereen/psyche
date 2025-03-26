@@ -12,7 +12,9 @@ use psyche_client::{
     CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
 };
 use psyche_coordinator::{Coordinator, RunState};
-use psyche_network::{allowlist, DiscoveryMode, NetworkTUIState, NetworkTui, RelayMode, SecretKey};
+use psyche_network::{
+    allowlist, psyche_relay_map, DiscoveryMode, NetworkTUIState, NetworkTui, RelayMode, SecretKey,
+};
 use psyche_tui::{logging::LoggerWidget, CustomWidget, TabbedWidget};
 use psyche_watcher::CoordinatorTui;
 use rand::RngCore;
@@ -68,6 +70,7 @@ pub struct AppParams {
     pub grad_accum_in_fp32: bool,
     pub dummy_training_delay_secs: Option<u64>,
     pub max_concurrent_parameter_requests: usize,
+    pub max_concurrent_downloads: usize,
 }
 
 impl AppBuilder {
@@ -91,11 +94,12 @@ impl AppBuilder {
             &p.run_id,
             p.p2p_port,
             p.p2p_interface,
-            RelayMode::Default,
+            RelayMode::Custom(psyche_relay_map()),
             DiscoveryMode::N0,
             vec![],
             Some(p.identity_secret_key.clone()),
             allowlist.clone(),
+            p.max_concurrent_downloads,
         )
         .await?;
 
@@ -180,6 +184,7 @@ impl App {
             .state
             .coordinator;
 
+        let mut already_joined_next_run: bool;
         if current_coordinator_state.run_state == RunState::WaitingForMembers {
             let joined = backend
                 .join_run(
@@ -195,17 +200,18 @@ impl App {
                 "Joined run {} from {} with transaction {}",
                 self.run_id, signer, joined
             );
+            already_joined_next_run = true;
         } else {
             info!("Waiting for the current epoch to end before joining.");
+            already_joined_next_run = false;
         }
 
         // Update the latest update after joining the run to advance the state.
-        let mut latest_update = backend
+        let coordinator_state = backend
             .get_coordinator_account(&coordinator_account)
             .await?
-            .state
-            .coordinator;
-
+            .state;
+        let mut latest_update = coordinator_state.coordinator;
         let mut updates = backend_runner.updates();
         let mut tick_tx: Option<JoinHandle<Result<Signature>>> = None;
         let mut client = Client::new(backend_runner, allowlist, p2p, state_options);
@@ -225,14 +231,17 @@ impl App {
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
                         .as_secs();
-                    match ticked.tick(Some([].iter()), timestamp, rand::thread_rng().next_u64()) {
+
+                    let pending_clients_ids = (ticked.run_state == RunState::WaitingForMembers).then(|| coordinator_state.clients_state.get_active_clients_ids());
+
+                    match ticked.tick(pending_clients_ids, timestamp, rand::thread_rng().next_u64()) {
                         Ok(_) => {
                             if ticked.run_state != latest_update.run_state {
                                 let backend = backend.clone();
                                 let backend_clone = backend.clone();
                                 tick_tx = Some(tokio::spawn(async move { backend.tick(coordinator_instance, coordinator_account).await }));
                                 // This means the epoch finished so we're rejoining the run to participate in the next one.
-                                if ticked.run_state == RunState::WaitingForMembers && latest_update.run_state == RunState::Cooldown {
+                                if ticked.run_state == RunState::WaitingForMembers && latest_update.run_state == RunState::Cooldown && !already_joined_next_run {
                                     let joined = backend_clone
                                         .join_run(
                                             coordinator_instance,
@@ -247,6 +256,9 @@ impl App {
                                         "Joined run for next epoch {} from {} with transaction {}",
                                         self.run_id, signer, joined
                                     );
+                                    already_joined_next_run = true;
+                                } else if ticked.run_state == RunState::RoundTrain && latest_update.run_state == RunState::Warmup {
+                                    already_joined_next_run = false;
                                 }
                             }
                         }

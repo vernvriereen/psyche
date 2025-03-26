@@ -1,8 +1,5 @@
 use anyhow::Result;
-use iroh::{
-    endpoint::{Connecting, Connection},
-    protocol::ProtocolHandler,
-};
+use iroh::{endpoint::Connection, protocol::ProtocolHandler};
 use iroh_blobs::ticket::BlobTicket;
 use psyche_core::BoxedFuture;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
@@ -11,12 +8,13 @@ use tch::Tensor;
 use thiserror::Error;
 use tokenizers::Tokenizer;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
-use tracing::warn;
+use tokio::task::JoinHandle;
+use tracing::{debug, trace};
 
-use crate::Networkable;
+use crate::{NetworkConnection, Networkable, TransmittableDownload};
 
 pub const ALPN: &[u8] = b"model-sharing/0";
-pub const MODEL_REQUEST_TIMEOUT_SECS: u64 = 3;
+pub const MODEL_REQUEST_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Error, Debug, serde::Serialize, serde::Deserialize)]
 pub enum SharableModelError {
@@ -48,6 +46,10 @@ pub enum SharableModelError {
     ParseConfig(String),
     #[error("Could not send the config to the client")]
     SendConfig,
+    #[error("Sharable parameter load thread crashed")]
+    LoadThreadCrashed,
+    #[error("P2P add download error: {0}")]
+    P2PAddDownloadError(String),
 }
 
 // This convertions are done manually since the original errors does not implement serialize and deserialize
@@ -129,8 +131,13 @@ impl TransmittableModelConfig {
 #[derive(Debug)]
 pub struct SharableModel {
     parameters: Option<HashMap<String, Option<Tensor>>>,
+    serializing_parameters: Option<
+        HashMap<String, JoinHandle<Result<TransmittableModelParameter, SharableModelError>>>,
+    >,
+    serialized_parameters: Option<HashMap<String, BlobTicket>>,
     model_config: Option<String>,
     tokenizer_config: Option<Tokenizer>,
+    config_and_tokenizer_ticket: Option<BlobTicket>,
     pub tx_model_config_response: Option<oneshot::Sender<(String, Tokenizer)>>,
     tx_params_response: Option<oneshot::Sender<HashMap<String, Tensor>>>,
 }
@@ -141,9 +148,12 @@ impl SharableModel {
     pub fn empty() -> Self {
         Self {
             parameters: None,
+            serializing_parameters: None,
+            serialized_parameters: None,
             tx_params_response: None,
             model_config: None,
             tokenizer_config: None,
+            config_and_tokenizer_ticket: None,
             tx_model_config_response: None,
         }
     }
@@ -156,29 +166,48 @@ impl SharableModel {
         &mut self,
         new_parameters: HashMap<String, Tensor>,
     ) -> Result<(), SharableModelError> {
-        let Some(parameters) = self.parameters.as_mut() else {
-            let mut parameters = HashMap::new();
-            let new_parameters = new_parameters;
-            new_parameters.into_iter().for_each(|(param_name, tensor)| {
-                parameters.insert(param_name, Some(tensor));
-            });
-            self.parameters = Some(parameters);
-            return Ok(());
-        };
+        debug!(
+            "Updating sharable parameters with new {} new parameters",
+            new_parameters.len()
+        );
 
-        // validate that both models have the same parameters
-        let new_parameters_names: HashSet<_> = new_parameters.keys().cloned().collect();
-        let parameters_names: HashSet<_> = parameters.keys().cloned().collect();
-        if new_parameters_names != parameters_names {
-            return Err(SharableModelError::InvalidUpdate);
-        }
+        if let Some(parameters) = &mut self.parameters {
+            // validate that both models have the same parameters
+            let new_parameters_names: HashSet<_> = new_parameters.keys().cloned().collect();
+            let parameters_names: HashSet<_> = parameters.keys().cloned().collect();
+            if new_parameters_names != parameters_names {
+                return Err(SharableModelError::InvalidUpdate);
+            }
+        };
 
         let mut parameters = HashMap::new();
         let new_parameters = new_parameters;
-        new_parameters.into_iter().for_each(|(param_name, tensor)| {
-            parameters.insert(param_name, Some(tensor));
-        });
+        for (param_name, tensor) in &new_parameters {
+            parameters.insert(param_name.clone(), Some(tensor.shallow_clone()));
+        }
         self.parameters = Some(parameters);
+
+        let mut serialzing_parameters = HashMap::new();
+        for (param_name, parameter) in new_parameters {
+            serialzing_parameters.insert(
+                param_name.clone(),
+                tokio::task::spawn_blocking(move || {
+                    let mut param_name_buffer = Vec::new();
+                    let mut param_value_buffer = Vec::new();
+
+                    param_name_buffer.write_all(param_name.as_bytes())?;
+                    parameter.save_to_stream(&mut param_value_buffer)?;
+
+                    let transmittable_parameter =
+                        TransmittableModelParameter::new(param_name_buffer, param_value_buffer);
+
+                    trace!("Finished serializing parameter {param_name} for sharing");
+                    Ok(transmittable_parameter)
+                }),
+            );
+        }
+        self.serialized_parameters = Some(HashMap::new());
+        self.serializing_parameters = Some(serialzing_parameters);
         Ok(())
     }
 
@@ -189,51 +218,84 @@ impl SharableModel {
     ) -> Result<(), SharableModelError> {
         self.model_config = Some(model_config);
         self.tokenizer_config = Some(tokenizer_config);
+        self.config_and_tokenizer_ticket = None;
         Ok(())
     }
 
-    pub fn get_transmittable_parameter(
-        &self,
+    pub async fn get_transmittable_parameter<B: Networkable>(
+        &mut self,
         param_name: &str,
-    ) -> Result<TransmittableModelParameter, SharableModelError> {
-        let Some(parameters) = self.parameters.as_ref() else {
+        p2p: &mut NetworkConnection<B, TransmittableDownload>,
+        tag: u32,
+    ) -> Result<BlobTicket, SharableModelError> {
+        let Some(loading_parameters) = self.serializing_parameters.as_mut() else {
+            return Err(SharableModelError::ParametersNotInitialized);
+        };
+        let Some(loaded_parameters) = self.serialized_parameters.as_mut() else {
             return Err(SharableModelError::ParametersNotInitialized);
         };
 
-        match parameters.get(param_name) {
-            Some(Some(parameter)) => {
-                let mut param_name_buffer = Vec::new();
-                let mut param_value_buffer = Vec::new();
-
-                param_name_buffer.write_all(param_name.as_bytes())?;
-                parameter.save_to_stream(&mut param_value_buffer)?;
-
-                let transmittable_parameter =
-                    TransmittableModelParameter::new(param_name_buffer, param_value_buffer);
-
-                Ok(transmittable_parameter)
+        match loaded_parameters.get(param_name) {
+            Some(blob_ticket) => {
+                trace!("Using cached downloadable for {param_name}");
+                Ok(blob_ticket.clone())
             }
-            _ => {
-                warn!("Paramater {param_name:?} not initialized");
-                Err(SharableModelError::ParameterUnknown(param_name.to_string()))
-            }
+            None => match loading_parameters.remove(param_name) {
+                Some(loading) => {
+                    trace!("Waiting for {param_name} parameter to finish serializing");
+                    let transmittable_parameter = loading
+                        .await
+                        .map_err(|_| SharableModelError::LoadThreadCrashed)??;
+                    let transmittable_download =
+                        TransmittableDownload::ModelParameter(transmittable_parameter);
+                    trace!("Adding paramerter downloadable {param_name}");
+                    let blob_ticket = p2p
+                        .add_downloadable(transmittable_download, tag)
+                        .await
+                        .map_err(|err| SharableModelError::P2PAddDownloadError(err.to_string()))?;
+                    loaded_parameters.insert(param_name.to_string(), blob_ticket.clone());
+                    trace!("Finished adding paramerter downloadable {param_name}");
+                    Ok(blob_ticket)
+                }
+                None => Err(SharableModelError::ParameterUnknown(param_name.to_string())),
+            },
         }
     }
 
     /// Used for clients that already have the config and needs to share it via p2p.
-    pub fn get_transmittable_config(&self) -> Result<TransmittableModelConfig, SharableModelError> {
-        let Some(config) = self.model_config.as_ref() else {
-            return Err(SharableModelError::ModelConfigNotInitialized);
-        };
-        let Some(tokenizer) = self.tokenizer_config.as_ref() else {
-            return Err(SharableModelError::TokenizerConfigNotInitialized);
-        };
-        let raw_tokenizer = tokenizer
-            .to_string(false)
-            .map_err(|err| SharableModelError::ParseConfig(err.to_string()))?;
-        let transmittable_config: TransmittableModelConfig =
-            TransmittableModelConfig::new(config.clone(), raw_tokenizer);
-        Ok(transmittable_config)
+    pub async fn get_transmittable_config<B: Networkable>(
+        &mut self,
+        p2p: &mut NetworkConnection<B, TransmittableDownload>,
+        tag: u32,
+    ) -> Result<BlobTicket, SharableModelError> {
+        match self.config_and_tokenizer_ticket.as_ref() {
+            Some(ticket) => {
+                trace!("Using cached config and tokenizer downloadable");
+                Ok(ticket.clone())
+            }
+            None => {
+                trace!("Building config and tokenizer downloadable");
+                let Some(config) = self.model_config.as_ref() else {
+                    return Err(SharableModelError::ModelConfigNotInitialized);
+                };
+                let Some(tokenizer) = self.tokenizer_config.as_ref() else {
+                    return Err(SharableModelError::TokenizerConfigNotInitialized);
+                };
+                let raw_tokenizer = tokenizer
+                    .to_string(false)
+                    .map_err(|err| SharableModelError::ParseConfig(err.to_string()))?;
+                let transmittable_config: TransmittableModelConfig =
+                    TransmittableModelConfig::new(config.clone(), raw_tokenizer);
+                let transmittable_download =
+                    TransmittableDownload::ModelConfig(transmittable_config);
+                let ticket = p2p
+                    .add_downloadable(transmittable_download, tag)
+                    .await
+                    .map_err(|err| SharableModelError::P2PAddDownloadError(err.to_string()))?;
+                self.config_and_tokenizer_ticket = Some(ticket.clone());
+                Ok(ticket)
+            }
+        }
     }
 }
 
@@ -258,7 +320,7 @@ impl SharableModel {
     }
 
     // Add new parameter downloaded from another peer
-    pub fn add_parameter(
+    pub async fn add_parameter(
         &mut self,
         parameter: TransmittableModelParameter,
     ) -> Result<(), SharableModelError> {
@@ -269,7 +331,11 @@ impl SharableModel {
         // Deserialize model parameter
         let param_name = String::from_utf8(parameter.param_name_bytes)?;
         let buf_reader = Cursor::new(parameter.param_value_bytes);
-        let param_value = Tensor::load_from_stream(buf_reader)?;
+        trace!("Start loading parameter {param_name}");
+        let param_value = tokio::task::spawn_blocking(move || Tensor::load_from_stream(buf_reader))
+            .await
+            .map_err(|_| SharableModelError::LoadThreadCrashed)??;
+        trace!("Finished loading parameter {param_name}");
 
         // Validate that the parameter does not already exist
         // This should be called only by a client that joins the run
@@ -422,11 +488,10 @@ impl ModelSharing {
 }
 
 impl ProtocolHandler for ModelSharing {
-    fn accept(&self, connecting: Connecting) -> BoxedFuture<Result<()>> {
+    fn accept(&self, connection: Connection) -> BoxedFuture<Result<()>> {
         let tx_model_parameter_req = self.tx_model_parameter_req.clone();
         let tx_model_config_req = self.tx_model_config_req.clone();
         Box::pin(async move {
-            let connection = connecting.await?;
             Self::_accept_connection(connection, tx_model_parameter_req, tx_model_config_req).await
         })
     }

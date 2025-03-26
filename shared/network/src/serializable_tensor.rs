@@ -4,13 +4,13 @@ use tch::{Device, Kind, TchError, Tensor};
 
 use crate::serializable_kind::SerializableKind;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum SerializableTensorData {
     Full(#[serde(with = "serde_bytes")] Vec<u8>),
     OneBit(#[serde(with = "serde_bytes")] Vec<u8>),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct SerializableTensor {
     dims: Vec<i64>,
     kind: SerializableKind,

@@ -53,7 +53,9 @@ mod util;
 
 pub use authenticable_identity::{raw_p2p_verify, AuthenticatableIdentity, FromSignedBytesError};
 pub use download_manager::{DownloadComplete, DownloadFailed, TransmittableDownload};
+use iroh::defaults::DEFAULT_STUN_PORT;
 pub use iroh::{Endpoint, PublicKey, SecretKey};
+use iroh_relay::{RelayMap, RelayNode, RelayQuicConfig};
 pub use p2p_model_sharing::{
     ModelRequestType, ModelSharing, SharableModel, SharableModelError, TransmittableModelConfig,
     ALPN,
@@ -67,6 +69,12 @@ pub use serialized_distro::{
 pub use signed_message::SignedMessage;
 pub use tcp::{ClientNotification, TcpClient, TcpServer};
 pub use tui::{NetworkTUIState, NetworkTui};
+use url::Url;
+pub use util::fmt_bytes;
+
+const USE_RELAY_HOSTNAME: &str = "use1-1.relay.psyche.iroh.link";
+const USW_RELAY_HOSTNAME: &str = "usw1-1.relay.psyche.iroh.link";
+const EUC_RELAY_HOSTNAME: &str = "euc1-1.relay.psyche.iroh.link";
 
 /// How should this node discover other nodes?
 ///
@@ -128,6 +136,7 @@ where
         bootstrap_peers: Vec<NodeAddr>,
         secret_key: Option<SecretKey>,
         allowlist: A,
+        max_concurrent_downloads: usize,
     ) -> Result<Self> {
         let secret_key = match secret_key {
             None => SecretKey::generate(&mut rand::rngs::OsRng),
@@ -168,7 +177,7 @@ where
         let endpoint = {
             let endpoint = Endpoint::builder()
                 .secret_key(secret_key)
-                .relay_mode(relay_mode)
+                .relay_mode(RelayMode::Custom(psyche_relay_map()))
                 .bind_addr_v4(SocketAddrV4::new(ipv4, port.unwrap_or(0)));
 
             let e = match discovery_mode {
@@ -184,12 +193,15 @@ where
         let node_addr = endpoint.node_addr().await?;
 
         info!("Our node addr: {}", node_addr.node_id);
+        info!("Our join ticket: {}", PeerList(vec![node_addr]));
 
         trace!("creating blobs...");
         let blobs = Blobs::memory()
             .concurrency_limits(ConcurrencyLimits {
                 max_concurrent_requests_per_node: 1,
-                ..Default::default()
+                max_concurrent_requests: max_concurrent_downloads,
+                max_open_connections: 512,
+                max_concurrent_dials_per_hash: 2,
             })
             .build(&endpoint);
         trace!("blobs created!");
@@ -318,8 +330,11 @@ where
     }
 
     pub async fn add_downloadable(&mut self, data: Download, tag: u32) -> Result<BlobTicket> {
-        let bytes = postcard::to_allocvec(&data)?;
-        let blob_res = self.blobs.client().add_bytes(bytes).await?;
+        let blob_res = self
+            .blobs
+            .client()
+            .add_bytes(postcard::to_allocvec(&data)?)
+            .await?;
         let addr = self.router.endpoint().node_addr().await?;
         let blob_ticket = BlobTicket::new(addr, blob_res.hash, blob_res.format)?;
 
@@ -397,36 +412,38 @@ where
         // these are factored out to separate fns so rustfmt works on their contents :)
         select! {
             Some(event) = self.gossip_rx.next() => {
-                if let Some(result) = parse_gossip_event(event.map_err(|ee| ee.into())) {
-                    return Ok(Some(NetworkEvent::MessageReceived(result)));
+                match parse_gossip_event(event.map_err(|ee| ee.into())) {
+                    Some(result) => Ok(Some(NetworkEvent::MessageReceived(result))),
+                    None => Ok(None),
                 }
             }
             update = self.download_manager.poll_next() => {
                 match update {
                     Some(DownloadManagerEvent::Complete(result)) => {
-                        return Ok(Some(NetworkEvent::DownloadComplete(result)))
+                        Ok(Some(NetworkEvent::DownloadComplete(result)))
                     }
                     Some(DownloadManagerEvent::Update(update)) => {
                         self.on_download_update(update)?;
+                        Ok(None)
                     },
                     Some(DownloadManagerEvent::Failed(result)) => {
-                        return Ok(Some(NetworkEvent::DownloadFailed(result)))
+                        Ok(Some(NetworkEvent::DownloadFailed(result)))
                     }
-                    None => {}
+                    None => Ok(None),
                 }
             }
             Some(ParameterSharingMessage::Get(parameter_name, protocol_req_tx)) = self.rx_model_parameter_req.recv() => {
-                return Ok(Some(NetworkEvent::ParameterRequest(parameter_name, protocol_req_tx)));
+                Ok(Some(NetworkEvent::ParameterRequest(parameter_name, protocol_req_tx)))
             }
             Some(ModelConfigSharingMessage::Get(protocol_req_tx)) = self.rx_model_config_req.recv() => {
-                return Ok(Some(NetworkEvent::ModelConfigRequest(protocol_req_tx)));
+                Ok(Some(NetworkEvent::ModelConfigRequest(protocol_req_tx)))
             }
             _ = self.update_stats_interval.tick() => {
                 on_update_stats(self.router.endpoint(), &mut self.state).await?;
+                Ok(None)
             }
-        };
-
-        Ok(None)
+            else => { Ok(None) }
+        }
     }
 
     fn on_download_update(&mut self, update: DownloadUpdate) -> Result<()> {
@@ -489,6 +506,10 @@ where
     pub fn router(&self) -> Arc<Router> {
         self.router.clone()
     }
+
+    pub fn neighbors(&self) -> impl Iterator<Item = NodeId> + '_ {
+        self.gossip_rx.neighbors()
+    }
 }
 
 pub async fn request_model(
@@ -509,7 +530,7 @@ pub async fn request_model(
 
     // Receive parameter value blob ticket
     let parameter_blob_ticket_bytes = recv
-        .read_to_end(500)
+        .read_to_end(16384)
         .timeout(Duration::from_secs(MODEL_REQUEST_TIMEOUT_SECS))
         .await??;
     let parameter_blob_ticket: Result<BlobTicket, SharableModelError> =
@@ -576,4 +597,53 @@ async fn on_update_stats(endpoint: &Endpoint, stats: &mut State) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Get the Psyche [`RelayMap`].
+pub fn psyche_relay_map() -> RelayMap {
+    RelayMap::from_nodes([
+        psyche_use_relay_node(),
+        psyche_usw_relay_node(),
+        psyche_euc_relay_node(),
+    ])
+    .expect("default nodes invalid")
+}
+
+/// Get the Psyche [`RelayNode`] for US East.
+pub fn psyche_use_relay_node() -> RelayNode {
+    let url: Url = format!("https://{USE_RELAY_HOSTNAME}")
+        .parse()
+        .expect("default url");
+    RelayNode {
+        url: url.into(),
+        stun_only: false,
+        stun_port: DEFAULT_STUN_PORT,
+        quic: Some(RelayQuicConfig::default()),
+    }
+}
+
+/// Get the Psyche [`RelayNode`] for US West.
+pub fn psyche_usw_relay_node() -> RelayNode {
+    let url: Url = format!("https://{USW_RELAY_HOSTNAME}")
+        .parse()
+        .expect("default_url");
+    RelayNode {
+        url: url.into(),
+        stun_only: false,
+        stun_port: DEFAULT_STUN_PORT,
+        quic: Some(RelayQuicConfig::default()),
+    }
+}
+
+/// Get the Psyche [`RelayNode`] for Europe
+pub fn psyche_euc_relay_node() -> RelayNode {
+    let url: Url = format!("https://{EUC_RELAY_HOSTNAME}")
+        .parse()
+        .expect("default_url");
+    RelayNode {
+        url: url.into(),
+        stun_only: false,
+        stun_port: DEFAULT_STUN_PORT,
+        quic: Some(RelayQuicConfig::default()),
+    }
 }

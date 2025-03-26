@@ -1,33 +1,63 @@
-use anchor_lang::prelude::*;
-use bytemuck::Pod;
-use bytemuck::Zeroable;
-use psyche_coordinator::model::Model;
-use psyche_coordinator::ClientState;
-use psyche_coordinator::Coordinator;
-use psyche_coordinator::CoordinatorConfig;
-use psyche_coordinator::HealthChecks;
-use psyche_coordinator::RunState;
-use psyche_coordinator::TickResult;
-use psyche_coordinator::Witness;
-use psyche_core::sha256v;
-
 use crate::client::Client;
 use crate::clients_state::ClientsState;
 use crate::ClientId;
 use crate::ProgramError;
 
-#[derive(Clone, Copy, Zeroable)]
+use anchor_lang::prelude::*;
+use bytemuck::{Pod, Zeroable};
+use psyche_coordinator::{
+    model::Model, ClientState, Coordinator, CoordinatorConfig, HealthChecks,
+    RunState, TickResult, Witness, SOLANA_MAX_STRING_LEN,
+};
+use psyche_core::sha256v;
+use psyche_core::{FixedString, SmallBoolean};
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+#[derive(
+    Clone,
+    Copy,
+    Zeroable,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    TS,
+    Default,
+)]
+#[repr(C)]
+pub struct RunMetadata {
+    pub name: FixedString<{ SOLANA_MAX_STRING_LEN }>,
+
+    pub description: FixedString<280>,
+
+    pub num_parameters: u64,
+    pub vocab_size: u64,
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Zeroable,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    TS,
+)]
 #[repr(C)]
 pub struct CoordinatorInstanceState {
+    pub metadata: RunMetadata,
     pub coordinator: Coordinator<ClientId>,
     pub clients_state: ClientsState,
+    pub is_warmup_first_tick: SmallBoolean,
+    pub is_training_first_tick: SmallBoolean,
 }
 
 unsafe impl Pod for CoordinatorInstanceState {}
 
 impl CoordinatorInstanceState {
-    pub fn tick(&mut self) -> Result<()> {
-        let clock: Clock = Clock::get()?;
+    fn get_random_seed(clock: &Clock) -> u64 {
         let random_seed_bytes = sha256v(&[
             &clock.unix_timestamp.to_ne_bytes(),
             &clock.slot.to_ne_bytes(),
@@ -35,30 +65,51 @@ impl CoordinatorInstanceState {
 
         let mut random_seed: [u8; 8] = [0; 8];
         random_seed.copy_from_slice(&random_seed_bytes[..8]);
+        u64::from_ne_bytes(random_seed)
+    }
 
-        let active_clients = match self.coordinator.run_state {
+    pub fn tick(&mut self) -> Result<()> {
+        let active_clients_ids = match self.coordinator.run_state {
             RunState::WaitingForMembers => {
-                let active_clients = self.clients_state.active_clients();
-                msg!("Pending active clients: {}", active_clients.len());
-                Some(active_clients)
+                // Reset state flags
+                self.is_warmup_first_tick = SmallBoolean::from(true);
+                self.is_training_first_tick = SmallBoolean::from(true);
+
+                self.clients_state.purge_inactive_clients();
+                let active_clients_ids =
+                    self.clients_state.get_active_clients_ids();
+
+                msg!(
+                    "Pending active clients ids: {}",
+                    active_clients_ids.len()
+                );
+                Some(active_clients_ids)
             },
             _ => None,
         };
 
         msg!("Pre-tick run state: {}", self.coordinator.run_state);
 
+        let clock: Clock = Clock::get()?;
         match self.coordinator.tick(
-            active_clients,
+            active_clients_ids,
             clock.unix_timestamp as u64,
-            u64::from_ne_bytes(random_seed),
+            Self::get_random_seed(&clock),
         ) {
             Ok(TickResult::Ticked) => {
-                if self.coordinator.is_epoch_just_starting() {
+                if self.coordinator.is_warmup_just_starting()
+                    && self.is_warmup_first_tick.is_true()
+                {
                     msg!("New epoch just starting, save epoch rewards rate");
                     self.clients_state.current_epoch_rates =
                         self.clients_state.future_epoch_rates;
+                    self.is_warmup_first_tick = SmallBoolean::from(false);
+                } else if self.coordinator.is_training_just_starting()
+                    && self.is_training_first_tick.is_true()
+                {
                     msg!("New epoch just starting, save epoch active clients");
                     self.clients_state.next_active += 1;
+                    self.is_training_first_tick = SmallBoolean::from(false);
                 }
             },
             Ok(TickResult::EpochEnd(success)) => {
@@ -133,9 +184,16 @@ impl CoordinatorInstanceState {
     pub fn witness(&mut self, payer: &Pubkey, witness: Witness) -> Result<()> {
         let id = self.clients_state.find_signer(payer)?;
 
+        let clock: Clock = Clock::get()?;
         self.coordinator
-            .witness(id, witness, Clock::get()?.unix_timestamp as u64)
+            .witness(
+                id,
+                witness,
+                clock.unix_timestamp as u64,
+                Self::get_random_seed(&clock),
+            )
             .map_err(|err| anchor_lang::error!(ProgramError::from(err)))?;
+
         self.tick()
     }
 
@@ -210,10 +268,10 @@ impl CoordinatorInstanceState {
                 .clients
                 .push(Client {
                     id,
-                    staked: 0,
                     earned: 0,
                     slashed: 0,
                     active: self.clients_state.next_active,
+                    _unused: Default::default(),
                 })
                 .is_err()
         {

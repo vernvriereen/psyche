@@ -1,11 +1,11 @@
 use crate::{
     p2p_model_sharing::{TransmittableModelConfig, TransmittableModelParameter},
     serialized_distro::TransmittableDistroResult,
-    util::convert_bytes,
+    util::fmt_bytes,
     Networkable,
 };
 
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{bail, Error, Result};
 use bytes::Bytes;
 use futures_util::future::select_all;
 use iroh::PublicKey;
@@ -281,7 +281,12 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
             FutureResult::Download(index, result) => {
                 Self::handle_download_progress(downloads, result, index)
             }
-            FutureResult::Read(index, result) => Self::handle_read_result(reading, result, index),
+            FutureResult::Read(index, result) => {
+                let downloader: ReadingFinishedDownload = reading.swap_remove(index);
+                tokio::task::spawn_blocking(move || Self::handle_read_result(downloader, result))
+                    .await
+                    .unwrap()
+            }
         }
     }
 
@@ -336,7 +341,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                         debug!(
                             "Downloaded (index {index}) {}, {} ",
                             download.blob_ticket.hash(),
-                            convert_bytes(stats.bytes_read as f64)
+                            fmt_bytes(stats.bytes_read as f64)
                         );
                         Some(DownloadUpdate {
                             blob_ticket: download.blob_ticket.clone(),
@@ -379,15 +384,13 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
     }
 
     fn handle_read_result(
-        reading: &mut Vec<ReadingFinishedDownload>,
+        downloader: ReadingFinishedDownload,
         result: Result<Bytes>,
-        index: usize,
     ) -> Result<Option<DownloadManagerEvent<D>>> {
-        let downloader: ReadingFinishedDownload = reading.swap_remove(index);
         match result {
             Ok(bytes) => {
-                let decoded = D::from_bytes(bytes.as_ref())
-                    .with_context(|| "Failed to decode downloaded data")?;
+                let decoded = postcard::from_bytes(&bytes)?;
+
                 Ok(Some(DownloadManagerEvent::Complete(DownloadComplete {
                     data: decoded,
                     from: downloader.blob_ticket.node_addr().node_id,

@@ -1,24 +1,45 @@
 use anchor_lang::prelude::*;
-use bytemuck::Pod;
-use bytemuck::Zeroable;
-use psyche_core::FixedVec;
-use psyche_core::SizedIterator;
 
-use crate::client::Client;
-use crate::program_error::ProgramError;
-use crate::ClientId;
-use crate::SOLANA_MAX_NUM_PENDING_CLIENTS;
+use crate::{
+    client::Client, program_error::ProgramError, ClientId,
+    SOLANA_MAX_NUM_PENDING_CLIENTS,
+};
 
-#[derive(Debug, Clone, Copy, Zeroable)]
+use bytemuck::{Pod, Zeroable};
+use psyche_core::{FixedVec, SizedIterator};
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Zeroable,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    TS,
+)]
 #[repr(C)]
 pub struct ClientsState {
-    pub clients: FixedVec<Client, SOLANA_MAX_NUM_PENDING_CLIENTS>,
+    pub clients: FixedVec<Client, { SOLANA_MAX_NUM_PENDING_CLIENTS }>,
     pub next_active: u64,
     pub current_epoch_rates: ClientsEpochRates,
     pub future_epoch_rates: ClientsEpochRates,
 }
 
-#[derive(Debug, Clone, Copy, Zeroable)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Zeroable,
+    AnchorSerialize,
+    AnchorDeserialize,
+    Serialize,
+    Deserialize,
+    TS,
+)]
 #[repr(C)]
 pub struct ClientsEpochRates {
     pub earning_rate: u64,
@@ -28,7 +49,12 @@ pub struct ClientsEpochRates {
 unsafe impl Pod for ClientsState {}
 
 impl ClientsState {
-    pub fn active_clients(
+    pub fn purge_inactive_clients(&mut self) {
+        self.clients
+            .retain(|client| client.active == self.next_active);
+    }
+
+    pub fn get_active_clients_ids(
         &self,
     ) -> SizedIterator<impl Iterator<Item = &ClientId>> {
         let mut size = 0;
@@ -37,14 +63,12 @@ impl ClientsState {
                 size += 1;
             }
         }
-
         let iter = self.clients.iter().filter_map(move |x| {
             match x.active == self.next_active {
                 true => Some(&x.id),
                 false => None,
             }
         });
-
         SizedIterator::new(iter, size)
     }
 

@@ -6,11 +6,10 @@ use anchor_lang::{
 };
 use bytemuck::{Zeroable, ZeroableInOption};
 use psyche_core::{
-    serde_deserialize_optional_string, serde_deserialize_string, serde_serialize_optional_string,
-    serde_serialize_string, u8_to_string, ConstantLR, LearningRateSchedule, OptimizerDefinition,
-    Shuffle, TokenSize,
+    ConstantLR, FixedString, LearningRateSchedule, OptimizerDefinition, Shuffle, TokenSize,
 };
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 #[derive(
     Clone,
@@ -22,6 +21,7 @@ use serde::{Deserialize, Serialize};
     Serialize,
     Deserialize,
     InitSpace,
+    TS,
 )]
 #[repr(C)]
 pub enum Model {
@@ -40,6 +40,7 @@ unsafe impl ZeroableInOption for Model {}
     Serialize,
     Deserialize,
     InitSpace,
+    TS,
 )]
 #[repr(C)]
 pub enum LLMArchitecture {
@@ -57,6 +58,7 @@ pub enum LLMArchitecture {
     Serialize,
     Deserialize,
     InitSpace,
+    TS,
 )]
 #[repr(C)]
 pub enum LLMTrainingDataType {
@@ -74,25 +76,14 @@ pub enum LLMTrainingDataType {
     Debug,
     Zeroable,
     Copy,
+    TS,
 )]
 #[repr(C)]
 #[allow(clippy::large_enum_variant)]
 pub enum LLMTrainingDataLocation {
     Dummy,
-    Server(
-        #[serde(
-            serialize_with = "serde_serialize_string",
-            deserialize_with = "serde_deserialize_string"
-        )]
-        [u8; SOLANA_MAX_URL_STRING_LEN],
-    ),
-    Local(
-        #[serde(
-            serialize_with = "serde_serialize_string",
-            deserialize_with = "serde_deserialize_string"
-        )]
-        [u8; SOLANA_MAX_URL_STRING_LEN],
-    ),
+    Server(FixedString<{ SOLANA_MAX_STRING_LEN }>),
+    Local(FixedString<{ SOLANA_MAX_URL_STRING_LEN }>),
     Http {
         location: HttpTrainingDataLocation,
         token_size_in_bytes: TokenSize,
@@ -111,40 +102,23 @@ pub enum LLMTrainingDataLocation {
     Debug,
     Zeroable,
     Copy,
+    TS,
 )]
 #[repr(C)]
 #[allow(clippy::large_enum_variant)]
 pub enum HttpTrainingDataLocation {
-    SingleUrl(
-        #[serde(
-            serialize_with = "serde_serialize_string",
-            deserialize_with = "serde_deserialize_string"
-        )]
-        [u8; SOLANA_MAX_URL_STRING_LEN],
-    ),
+    SingleUrl(FixedString<{ SOLANA_MAX_URL_STRING_LEN }>),
     NumberedFiles {
-        #[serde(
-            serialize_with = "serde_serialize_string",
-            deserialize_with = "serde_deserialize_string"
-        )]
-        url_template: [u8; SOLANA_MAX_URL_STRING_LEN],
+        url_template: FixedString<{ SOLANA_MAX_STRING_LEN }>,
         start_index: u32,
         n_left_pad_zeros: u8,
         num_files: u32,
     },
     Gcp {
-        #[serde(
-            serialize_with = "serde_serialize_string",
-            deserialize_with = "serde_deserialize_string"
-        )]
-        bucket_name: [u8; SOLANA_MAX_STRING_LEN],
+        bucket_name: FixedString<{ SOLANA_MAX_STRING_LEN }>,
 
         /// 0 len === no filter
-        #[serde(
-            serialize_with = "serde_serialize_string",
-            deserialize_with = "serde_deserialize_string"
-        )]
-        filter_directory: [u8; SOLANA_MAX_URL_STRING_LEN],
+        filter_directory: FixedString<{ SOLANA_MAX_URL_STRING_LEN }>,
     },
 }
 
@@ -158,6 +132,7 @@ pub enum HttpTrainingDataLocation {
     Debug,
     Zeroable,
     Copy,
+    TS,
 )]
 #[repr(C)]
 pub struct LLM {
@@ -194,25 +169,17 @@ impl LLM {
     Serialize,
     Deserialize,
     PartialEq,
+    TS,
 )]
 pub struct HubRepo {
-    #[serde(
-        serialize_with = "serde_serialize_string",
-        deserialize_with = "serde_deserialize_string"
-    )]
-    pub repo_id: [u8; SOLANA_MAX_STRING_LEN],
-    #[serde(
-        serialize_with = "serde_serialize_optional_string",
-        deserialize_with = "serde_deserialize_optional_string",
-        default
-    )]
-    pub revision: Option<[u8; SOLANA_MAX_STRING_LEN]>,
+    pub repo_id: FixedString<{ SOLANA_MAX_STRING_LEN }>,
+    pub revision: Option<FixedString<{ SOLANA_MAX_STRING_LEN }>>,
 }
 
 impl HubRepo {
     pub fn dummy() -> Self {
         Self {
-            repo_id: [0; SOLANA_MAX_STRING_LEN],
+            repo_id: FixedString::new(),
             revision: None,
         }
     }
@@ -228,6 +195,7 @@ impl HubRepo {
     Debug,
     Zeroable,
     Copy,
+    TS,
 )]
 #[repr(C)]
 pub enum Checkpoint {
@@ -242,9 +210,9 @@ impl std::fmt::Display for Checkpoint {
         match self {
             Checkpoint::Dummy(_hub_repo) => write!(f, "Dummy"),
             Checkpoint::Ephemeral => write!(f, "Ephemeral"),
-            Checkpoint::Hub(hub_repo) => write!(f, "{}", u8_to_string(&hub_repo.repo_id)),
+            Checkpoint::Hub(hub_repo) => write!(f, "{}", &hub_repo.repo_id),
             Checkpoint::P2P(hub_repo) => {
-                write!(f, "P2P - Hub repo: {}", u8_to_string(&hub_repo.repo_id))
+                write!(f, "P2P - Hub repo: {}", &hub_repo.repo_id)
             }
         }
     }
@@ -260,28 +228,30 @@ impl Model {
                 }
                 let bad_data_location = match llm.data_location {
                     LLMTrainingDataLocation::Dummy => false,
-                    LLMTrainingDataLocation::Server(url) => url[0] == 0,
+                    LLMTrainingDataLocation::Server(url) => url.is_empty(),
                     LLMTrainingDataLocation::Local(_) => false,
                     LLMTrainingDataLocation::Http { location, .. } => match location {
-                        HttpTrainingDataLocation::SingleUrl(url) => url[0] == 0,
+                        HttpTrainingDataLocation::SingleUrl(url) => url.is_empty(),
                         HttpTrainingDataLocation::NumberedFiles {
                             url_template,
                             num_files,
                             ..
-                        } => url_template[0] == 0 || num_files == 0,
-                        HttpTrainingDataLocation::Gcp { bucket_name, .. } => bucket_name[0] == 0,
+                        } => url_template.is_empty() || num_files == 0,
+                        HttpTrainingDataLocation::Gcp { bucket_name, .. } => bucket_name.is_empty(),
                     },
                 };
                 if bad_data_location {
                     msg!("model check failed: bad LLM training data location.");
                     return false;
                 }
-                if !match llm.checkpoint {
+                let bad_checkpoint = match llm.checkpoint {
                     Checkpoint::Dummy(_hub_repo) => false,
                     Checkpoint::Ephemeral => true,
-                    Checkpoint::Hub(hub_repo) => !hub_repo.repo_id[0] != 0,
-                    Checkpoint::P2P(hub_repo) => !hub_repo.repo_id[0] != 0,
-                } {
+                    Checkpoint::Hub(hub_repo) => hub_repo.repo_id.is_empty(),
+                    Checkpoint::P2P(hub_repo) => hub_repo.repo_id.is_empty(),
+                };
+
+                if bad_checkpoint {
                     msg!("model check failed: bad checkpoint");
                     return false;
                 }

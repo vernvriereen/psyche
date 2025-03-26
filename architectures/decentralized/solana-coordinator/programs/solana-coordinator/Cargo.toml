@@ -15,13 +15,26 @@ no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build"]
+anchor-debug = []
 
 [dependencies]
 anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "a7a23eea308440a9fa9cb79cee7bddd30ab163d5" }
-bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
+bytemuck = { version = "1", features = [
+  "derive",
+  "min_const_generics",
+  "extern_crate_std",
+] }
 psyche-core = { path = "../../../../../shared/core" }
 psyche-coordinator = { path = "../../../../../shared/coordinator" }
 serde = { version = "1.0.209", features = ["derive"] }
 psyche-solana-authorizer = { path = "../../../solana-authorizer/programs/solana-authorizer", features = [
   "cpi",
 ] }
+ts-rs = { git = "https://github.com/arilotter/ts-rs.git", rev = "92ce1752227fec9bb868ad8f25b26f110a795099", features = [
+  "psyche-impl",
+] }
+
+[dev-dependencies]
+solana-sdk = "=2.1.4"
+solana_toolbox_endpoint = "=0.1.38-solana-2.1.4"
+tokio = "1.42.0"

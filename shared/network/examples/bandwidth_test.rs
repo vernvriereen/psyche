@@ -2,9 +2,10 @@ use anyhow::{bail, Result};
 use chrono::{Local, Timelike};
 use clap::{ArgAction, Parser};
 use iroh::{PublicKey, RelayMap, RelayMode, RelayUrl};
+use psyche_network::Hash;
 use psyche_network::{
-    allowlist, BlobTicket, DiscoveryMode, NetworkConnection, NetworkEvent, NetworkTUIState,
-    NetworkTui, PeerList,
+    allowlist, fmt_bytes, BlobTicket, DiscoveryMode, NetworkConnection, NetworkEvent,
+    NetworkTUIState, NetworkTui, PeerList,
 };
 use psyche_tui::{
     logging::LoggerWidget,
@@ -18,6 +19,7 @@ use psyche_tui::{
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     str::FromStr,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -111,6 +113,7 @@ struct App {
     tx_tui_state: Option<Sender<TUIState>>,
     send_data_interval: Interval,
     update_tui_interval: Interval,
+    start_time: HashMap<Hash, Instant>,
 }
 
 impl App {
@@ -120,8 +123,18 @@ impl App {
                 _ = self.cancel.cancelled() => {
                     break;
                 }
-                Ok(Some(event)) = self.network.poll_next() => {
-                    self.on_network_event(event).await;
+                event = self.network.poll_next() => {
+                    match event {
+                        Ok(event) => {
+                            if let Some(event) = event {
+                                self.on_network_event(event).await;
+                            }
+                        }
+                        Err(err) => {
+                            error!("Network error: {err}");
+                            return;
+                        }
+                    }
                 }
                 _ = self.send_data_interval.tick() => {
                     self.on_tick().await;
@@ -129,7 +142,6 @@ impl App {
                 _ = self.update_tui_interval.tick() => {
                     self.update_tui().await;
                 }
-                else => break,
             }
         }
     }
@@ -151,6 +163,7 @@ impl App {
             }
             NetworkEvent::MessageReceived((from, Message::DistroResult { step, blob_ticket })) => {
                 info!("[{from}]: step {step} blob ticket {blob_ticket}");
+                self.start_time.insert(blob_ticket.hash(), Instant::now());
                 self.network
                     .start_download(blob_ticket, step)
                     .await
@@ -159,10 +172,14 @@ impl App {
             NetworkEvent::DownloadComplete(result) => {
                 let hash = result.hash;
                 let file = result.data;
+                let duration =
+                    Instant::now() - self.start_time.remove(&hash).unwrap_or(Instant::now());
+                let speed = file.data.len() as f64 / (duration.as_secs_f64() + 1e-6);
                 info!(
-                    "Download complete: {hash}! step {}: {} bytes downloaded.",
+                    "Download complete: {hash}! step {}: {} downloaded @ {}/s",
                     file.step,
-                    file.data.len()
+                    fmt_bytes(file.data.len() as f64),
+                    fmt_bytes(speed),
                 )
             }
             NetworkEvent::DownloadFailed(result) => {
@@ -268,6 +285,7 @@ async fn main() -> Result<()> {
         peers,
         secret_key,
         allowlist::AllowAll,
+        4,
     )
     .await?;
 
@@ -290,6 +308,7 @@ async fn main() -> Result<()> {
         tx_tui_state,
         send_data_interval,
         update_tui_interval: interval(Duration::from_millis(150)),
+        start_time: HashMap::new(),
     }
     .run()
     .await;
