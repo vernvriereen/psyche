@@ -1,10 +1,10 @@
 services:
     psyche-run-owner:
         env_file:
-            - "../../config/client/.env.test" # Sobreescribe el env_file
+            - "../../config/client/.env.test"
     psyche-test-client:
         env_file:
-            - "../../config/client/.env.test" # Sobreescribe el env_file
+            - "../../config/client/.env.test"
 
     nginx:
         image: nginx:latest
