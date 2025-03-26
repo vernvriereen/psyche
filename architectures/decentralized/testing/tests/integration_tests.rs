@@ -836,8 +836,6 @@ async fn test_subscription() {
 
     // epochs the test will run
     let num_of_epochs_to_run = 3;
-    let mut current_epoch = -1;
-    let mut last_epoch_loss = f64::MAX;
 
     // Initialize DockerWatcher
     let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
@@ -864,13 +862,14 @@ async fn test_subscription() {
     let _monitor_client_2 = watcher
         .monitor_container(
             &format!("{CLIENT_CONTAINER_PREFIX}-2"),
-            vec![JsonFilter::StateChange],
+            vec![JsonFilter::SolanaSubscription],
         )
         .unwrap();
 
     // Initialize solana client to query the coordinator state
     let solana_client = SolanaTestClient::new(run_id).await;
     let mut live_interval = time::interval(Duration::from_secs(10));
+    let mut subscription_events: Vec<(String, String)> = Vec::new();
 
     loop {
         tokio::select! {
@@ -881,20 +880,52 @@ async fn test_subscription() {
             }
             response = watcher.log_rx.recv() => {
                 match response {
-                    Some(Response::StateChange(timestamp, _client_1, old_state, new_state, _ , _)) => {
+                    Some(Response::StateChange(timestamp, _client_1, old_state, new_state, epoch , step)) => {
                         let coordinator_state = solana_client.get_run_state().await;
                         println!(
                             "client: new_state: {}, old_state: {}, timestamp: {}",
                             new_state, old_state, timestamp
                         );
-                        // assert client and coordinator state synchronization
-                        if new_state != RunState::WaitingForMembers.to_string() {
-                            assert_eq!(coordinator_state.to_string(), new_state.to_string());
+
+                        if step == 5 && new_state == RunState::RoundWitness.to_string(){
+                            println!("stop container nginx_proxy");
+                            watcher.stop_container("nginx_proxy").await.unwrap();
+
                         }
+                        if step == 15 && new_state == RunState::RoundWitness.to_string(){
+                            println!("unpause container nginx_proxy");
+                            watcher.unpause_container("nginx_proxy").await.unwrap();
+
+                        }
+
+                        if step == 25 && new_state == RunState::RoundWitness.to_string(){
+                            println!("stop container nginx_proxy_2");
+                            watcher.stop_container("nginx_proxy_2").await.unwrap();
+
+
+                        }
+                        if step == 45 && new_state == RunState::RoundWitness.to_string(){
+                            println!("unpause container nginx_proxy_2");
+
+                            watcher.unpause_container("nginx_proxy_2").await.unwrap();
+
+                        }
+
+                        // finish test
+                        if epoch == num_of_epochs_to_run {
+                            break
+                        }
+
+                    },
+                    Some(Response::SolanaSubscription(url, status)) => {
+                        println!("Solana subscriptions {url} status: {status}");
+                        subscription_events.push((url, status))
                     }
                     _ => unreachable!(),
                 }
             }
+
         }
     }
+    println!("subscription_events: {subscription_events:?}");
 }

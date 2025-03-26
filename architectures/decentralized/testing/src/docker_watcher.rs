@@ -23,6 +23,7 @@ pub enum JsonFilter {
     LoadedModel,
     HealthCheck,
     UntrainedBatches,
+    SolanaSubscription,
 }
 
 #[derive(Debug)]
@@ -32,6 +33,7 @@ pub enum Response {
     LoadedModel(String),
     HealthCheck(String, u64, u64),
     UntrainedBatches(Vec<u64>),
+    SolanaSubscription(String, String),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -220,6 +222,31 @@ impl DockerWatcher {
                                 println!("Probably the test ended so we drop the log sender");
                             }
                         }
+                        JsonFilter::SolanaSubscription => {
+                            if !(parsed_log.get("type") == Some(&"Solana subscription".into())) {
+                                continue;
+                            }
+                            let url = parsed_log.get("url").unwrap();
+
+                            let mut response =
+                                Response::SolanaSubscription("".to_string(), "".to_string());
+                            if parsed_log.get("level").unwrap() == "ERROR" {
+                                response = Response::SolanaSubscription(
+                                    url.to_string(),
+                                    "Subscription Down".to_string(),
+                                );
+                            }
+
+                            if parsed_log.get("level").unwrap() == "INFO" {
+                                response = Response::SolanaSubscription(
+                                    url.to_string(),
+                                    "Subscription Up".to_string(),
+                                );
+                            }
+                            if log_sender.send(response).await.is_err() {
+                                println!("Probably the test ended so we drop the log sender");
+                            }
+                        }
                     }
                 }
             }
@@ -232,6 +259,20 @@ impl DockerWatcher {
     pub async fn kill_container(&self, name: &str) -> Result<(), DockerWatcherError> {
         self.client
             .kill_container(name, Some(KillContainerOptions { signal: "SIGKILL" }))
+            .await
+            .map_err(|err| DockerWatcherError::LogsError { inner: err })
+    }
+
+    pub async fn stop_container(&self, name: &str) -> Result<(), DockerWatcherError> {
+        self.client
+            .pause_container(name)
+            .await
+            .map_err(|err| DockerWatcherError::LogsError { inner: err })
+    }
+
+    pub async fn unpause_container(&self, name: &str) -> Result<(), DockerWatcherError> {
+        self.client
+            .unpause_container(name)
             .await
             .map_err(|err| DockerWatcherError::LogsError { inner: err })
     }

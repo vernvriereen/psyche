@@ -55,7 +55,11 @@ async fn subscribe_to_account(
 ) {
     loop {
         let Ok(sub_client) = PubsubClient::new(&url).await else {
-            warn!("Solana subscription error, could not connect to url: {url}");
+            warn!(
+                type = "Solana subscription",
+                url = url,
+                "Solana subscription error, could not connect to url: {url}",
+            );
             tokio::time::sleep(Duration::from_secs(5)).await;
             continue;
         };
@@ -78,7 +82,11 @@ async fn subscribe_to_account(
             }
         };
 
-        info!("Correctly subscribe to Solana {url}");
+        info!(
+            type = "Solana subscription",
+            url = url,
+            "Correctly subscribe to Solana url: {url}",
+        );
         while let Some(update) = notifications.next().await {
             tx.send(update).unwrap();
         }
@@ -138,7 +146,6 @@ impl SolanaBackend {
                     if tx_update.send(update.clone()).is_err() {
                         break;
                     }
-                    println!("TX send");
                     last_data = data.clone();
                     last_slot = update.context.slot;
                 }
