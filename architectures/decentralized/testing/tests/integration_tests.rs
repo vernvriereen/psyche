@@ -4,7 +4,7 @@ use bollard::Docker;
 use psyche_coordinator::{model::Checkpoint, RunState};
 use psyche_decentralized_testing::{
     chaos::{ChaosAction, ChaosScheduler},
-    docker_setup::{e2e_testing_setup, spawn_new_client},
+    docker_setup::{e2e_testing_setup, e2e_testing_setup_subscription, spawn_new_client},
     docker_watcher::{DockerWatcher, JsonFilter, Response},
     utils::SolanaTestClient,
     CLIENT_CONTAINER_PREFIX, VALIDATOR_CONTAINER_PREFIX,
@@ -436,6 +436,92 @@ async fn test_delay_solana_client(#[values(1, 2)] n_clients: u8, #[values(0, 10)
                    }
                }
            }
+        }
+    }
+}
+
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
+async fn test_subscription() {
+    // set test variables
+    let run_id = "test".to_string();
+
+    // epochs the test will run
+    let num_of_epochs_to_run = 3;
+    let mut current_epoch = -1;
+    let mut last_epoch_loss = f64::MAX;
+
+    // Initialize DockerWatcher
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+
+    // Initialize a Solana run with 1 client
+    let _cleanup = e2e_testing_setup_subscription(
+        docker.clone(),
+        2,
+        Some(PathBuf::from(
+            "../../config/solana-test/light-two-min-clients.toml",
+        )),
+    )
+    .await;
+
+    // Monitor the client container
+    let _monitor_client_1 = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-1"),
+            vec![JsonFilter::StateChange, JsonFilter::Loss],
+        )
+        .unwrap();
+
+    let _monitor_client_2 = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-2"),
+            vec![JsonFilter::StateChange, JsonFilter::Loss],
+        )
+        .unwrap();
+
+    // Initialize solana client to query the coordinator state
+    let solana_client = SolanaTestClient::new(run_id).await;
+    let mut live_interval = time::interval(Duration::from_secs(10));
+
+    loop {
+        tokio::select! {
+            _ = live_interval.tick() => {
+                if let Err(e) = watcher.monitor_clients_health(2).await {
+                    panic!("{}", e);
+                }
+            }
+            response = watcher.log_rx.recv() => {
+                match response {
+                    Some(Response::StateChange(timestamp, _client_1, old_state, new_state)) => {
+                        let coordinator_state = solana_client.get_run_state().await;
+                        println!(
+                            "client: new_state: {}, old_state: {}, timestamp: {}",
+                            new_state, old_state, timestamp
+                        );
+                        // assert client and coordinator state synchronization
+                        if new_state != RunState::WaitingForMembers.to_string() {
+                            assert_eq!(coordinator_state.to_string(), new_state.to_string());
+                        }
+                    }
+                    Some(Response::Loss(client, epoch, step, loss)) => {
+                        println!(
+                            "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                            client, epoch, step, loss
+                        );
+                        // assert that the loss decreases each epoch
+                        if epoch as i64 > current_epoch {
+                            current_epoch = epoch as i64;
+                            assert!(loss < last_epoch_loss);
+                            last_epoch_loss = loss;
+                            if epoch == num_of_epochs_to_run {
+                                break;
+                            }
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
         }
     }
 }
