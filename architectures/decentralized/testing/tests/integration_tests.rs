@@ -522,7 +522,7 @@ async fn disconnect_client() {
     // initialize a Solana run with 2 client
     let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
     let mut watcher = DockerWatcher::new(docker.clone());
-    let _cleanup = e2e_testing_setup(docker.clone(), 2, None).await;
+    let _cleanup = e2e_testing_setup(docker.clone(), 1, None).await;
 
     let _monitor_client_1 = watcher
         .monitor_container(
@@ -534,6 +534,9 @@ async fn disconnect_client() {
             ],
         )
         .unwrap();
+
+    tokio::time::sleep(Duration::from_secs(20)).await;
+    spawn_new_client(docker.clone()).await.unwrap();
 
     // initialize solana client to query the coordinator state
     let solana_client = SolanaTestClient::new(run_id).await;
@@ -610,7 +613,7 @@ async fn disconnect_client() {
     }
 
     // assert that just one healthcheck was send
-    assert!(health_check_step.len() == 1);
+    assert_eq!(health_check_step.len(), 1);
 
     // check how many batches where lost due to the client shutdown
     // ideally, we should only lose 2 batches (The ones assigned in the step where it didn't train and the ones where it ran the Health Check and gets kicked)
@@ -621,6 +624,7 @@ async fn disconnect_client() {
 /// Drop a client below the minimum required, go to WaitingForMembers
 /// Reconnect a client and then go back to warmup
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
 async fn drop_a_client_waitingformembers_then_reconnect() {
     let n_clients = 2;
     let num_of_epochs_to_run = 3;
@@ -637,6 +641,7 @@ async fn drop_a_client_waitingformembers_then_reconnect() {
         )),
     )
     .await;
+
     let solana_client = SolanaTestClient::new(run_id).await;
     // Monitor clients
     for i in 1..=n_clients {

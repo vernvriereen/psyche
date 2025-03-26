@@ -60,13 +60,10 @@ futures-util = "0.3.30"
 chrono = "0.4.38"
 fast-math = "0.1"
 async-trait = "0.1.82"
-iroh = { git = "https://github.com/NousResearch/iroh", rev = "3539b2946e53c474746324702ec1aa8b13613553" }
-iroh-relay = { git = "https://github.com/NousResearch/iroh", rev = "3539b2946e53c474746324702ec1aa8b13613553" }
-iroh-blobs = { git = "https://github.com/NousResearch/iroh-blobs", rev = "28f716e9cf43fe7b8f986be3983823cc31af514c", features = [
-    "rpc",
-    "downloader",
-] }
-iroh-gossip = { git = "https://github.com/n0-computer/iroh-gossip", rev = "4f62c6c857841dd6a1f68c2bfa19702183117cb6" }
+iroh = { git = "https://github.com/NousResearch/iroh", rev = "9671150d3809cf6618532e08bbaaaaba1f8d4759" }
+iroh-relay = { git = "https://github.com/NousResearch/iroh", rev = "9671150d3809cf6618532e08bbaaaaba1f8d4759" }
+iroh-blobs = { git = "https://github.com/NousResearch/iroh-blobs", rev = "dda4a502f76969e6d80aa964985ee1864f85d446", features = [ "rpc", "downloader" ] }
+iroh-gossip = { version = "0.34.1" }
 memmap2 = { version = "0.9.3", features = ["stable_deref_trait"] }
 indicatif = "0.17.5"
 tokenizers = { version = "0.20.0", default-features = false, features = [
@@ -106,4 +103,4 @@ rstest = "0.25.0"
 opt-level = 1
 
 [patch.crates-io]
-iroh = { git = "https://github.com/NousResearch/iroh", rev = "3539b2946e53c474746324702ec1aa8b13613553" }
+iroh = { git = "https://github.com/NousResearch/iroh", rev = "9671150d3809cf6618532e08bbaaaaba1f8d4759" }
