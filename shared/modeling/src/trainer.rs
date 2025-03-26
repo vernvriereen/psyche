@@ -3,9 +3,7 @@ use crate::{
     Distro, DistroResult, EosToks, Fp32GradientAccumulator, Optimizer, ReduceType,
 };
 use anyhow::{Error, Result};
-use psyche_core::{
-    BatchId, CancellableBarrier, LearningRateSchedule, LearningRateScheduler, OptimizerDefinition,
-};
+use psyche_core::{BatchId, CancellableBarrier, LearningRateSchedule, OptimizerDefinition};
 use std::{
     collections::HashMap,
     ops::ControlFlow,
@@ -158,7 +156,6 @@ impl Trainer {
         micro_batch_size: usize,
         stats: Option<u32>,
         grad_accum_in_fp32: bool,
-        warmup_starting_at_step: Option<u32>,
         data_parallel: Option<Vec<DataParallel>>,
     ) -> Self {
         assert!(!models.is_empty());
@@ -187,16 +184,6 @@ impl Trainer {
             let optimizer = Optimizer::new(optimizer, model.as_ref());
 
             let barrier = barrier.clone();
-            let lr_warmup = warmup_starting_at_step.map(|step| {
-                (
-                    psyche_core::ConstantLR::new(
-                        lr_scheduler.get_lr(step + lr_scheduler.get_warmup_steps()),
-                        lr_scheduler.get_warmup_steps(),
-                        lr_scheduler.get_warmup_init_lr(),
-                    ),
-                    step,
-                )
-            });
             let data_parallel = data_parallel.clone();
 
             std::thread::spawn(move || {
@@ -211,7 +198,6 @@ impl Trainer {
                     barrier,
                     stats,
                     grad_accum_in_fp32,
-                    lr_warmup,
                     data_parallel,
                 )
             });
@@ -427,7 +413,6 @@ impl Trainer {
         barrier: Arc<CancellableBarrier>,
         optim_stats_every_n_steps: Option<u32>,
         grad_accum_in_fp32: bool,
-        lr_warmup: Option<(psyche_core::ConstantLR, u32)>,
         data_parallel_def: Option<DataParallel>,
     ) {
         #[allow(unused_mut)]
@@ -512,15 +497,7 @@ impl Trainer {
                         grad_accum.zero_grad();
                     }
 
-                    let lr = match &lr_warmup {
-                        Some((warmup_scheduler, warmup_start_step)) => {
-                            match step - warmup_start_step <= warmup_scheduler.get_warmup_steps() {
-                                true => warmup_scheduler.get_lr(step - warmup_start_step),
-                                false => lr_scheduler.get_lr(step),
-                            }
-                        }
-                        None => lr_scheduler.get_lr(step),
-                    };
+                    let lr = lr_scheduler.get_lr(step);
 
                     match &mut optimizer {
                         Optimizer::Torch { optimizer, .. } => optimizer.zero_grad().unwrap(),
@@ -614,10 +591,6 @@ impl Trainer {
                             Optimizer::Distro {
                                 optimizer,
                                 clip_grad_norm,
-                                compression_decay_warmup_steps,
-                                compression_topk,
-                                compression_topk_startup,
-                                compression_topk_startup_steps,
                                 quantize_1bit: _,
                             } => {
                                 let clipped = match clip_grad_norm {
@@ -633,16 +606,6 @@ impl Trainer {
                                 if clipped {
                                     let ret = optimizer.generate(
                                         lr,
-                                        match step > *compression_decay_warmup_steps {
-                                            true => 1.0,
-                                            false => {
-                                                step as f64 / *compression_decay_warmup_steps as f64
-                                            }
-                                        },
-                                        match step <= *compression_topk_startup_steps {
-                                            true => *compression_topk_startup,
-                                            false => *compression_topk,
-                                        },
                                         optim_stats_every_n_steps
                                             .map(|stats| step % stats == 0)
                                             .unwrap_or(false),
@@ -689,15 +652,7 @@ impl Trainer {
                     distro_results,
                     step,
                 }) => {
-                    let lr = match &lr_warmup {
-                        Some((warmup_scheduler, warmup_start_step)) => {
-                            match step - warmup_start_step <= warmup_scheduler.get_warmup_steps() {
-                                true => warmup_scheduler.get_lr(step - warmup_start_step),
-                                false => lr_scheduler.get_lr(step),
-                            }
-                        }
-                        None => lr_scheduler.get_lr(step),
-                    };
+                    let lr = lr_scheduler.get_lr(step);
                     if optimize_step(
                         &mut model,
                         lr,

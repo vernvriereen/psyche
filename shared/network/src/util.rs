@@ -25,7 +25,7 @@ pub fn fmt_relay_mode(relay_mode: &RelayMode) -> String {
     }
 }
 
-pub fn convert_bytes(bytes: f64) -> String {
+pub fn fmt_bytes(bytes: f64) -> String {
     const KB: f64 = 1024.0;
     const MB: f64 = KB * 1024.0;
     const GB: f64 = MB * 1024.0;

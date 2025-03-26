@@ -309,7 +309,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         } else if self.previous_round.step == broadcast.step {
             &mut self.previous_round
         } else {
-            debug!(
+            trace!(
                 "Unknown round for gossiped, says it's for step {} but our current round is step {} and previous round is step {}",
                 result_step, self.current_round.step, self.previous_round.step,
             );

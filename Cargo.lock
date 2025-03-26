@@ -4201,8 +4201,7 @@ checksum = "ddc24109865250148c2e0f3d25d4f0f479571723792d3802153c60922a4fb708"
 [[package]]
 name = "iroh"
 version = "0.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b7224d4eeec6c8b5b1a9b2347a4dff3588834a7fb17233044bff3e90e7b293d"
+source = "git+https://github.com/NousResearch/iroh?rev=3539b2946e53c474746324702ec1aa8b13613553#3539b2946e53c474746324702ec1aa8b13613553"
 dependencies = [
  "aead",
  "anyhow",
@@ -4221,7 +4220,7 @@ dependencies = [
  "http 1.1.0",
  "igd-next",
  "instant",
- "iroh-base",
+ "iroh-base 0.34.0 (git+https://github.com/NousResearch/iroh?rev=3539b2946e53c474746324702ec1aa8b13613553)",
  "iroh-metrics",
  "iroh-net-report",
  "iroh-quinn",
@@ -4275,6 +4274,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "iroh-base"
+version = "0.34.0"
+source = "git+https://github.com/NousResearch/iroh?rev=3539b2946e53c474746324702ec1aa8b13613553#3539b2946e53c474746324702ec1aa8b13613553"
+dependencies = [
+ "curve25519-dalek 4.1.3",
+ "data-encoding",
+ "derive_more",
+ "ed25519-dalek 2.1.1",
+ "rand_core 0.6.4",
+ "serde",
+ "thiserror 2.0.11",
+ "url",
+]
+
+[[package]]
 name = "iroh-blake3"
 version = "1.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4306,7 +4320,7 @@ dependencies = [
  "hashlink",
  "hex",
  "iroh",
- "iroh-base",
+ "iroh-base 0.34.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "iroh-blake3",
  "iroh-io",
  "iroh-metrics",
@@ -4398,15 +4412,14 @@ dependencies = [
 [[package]]
 name = "iroh-net-report"
 version = "0.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63407d73331e8e38980be7e39b1db8e173fc28545b3ea0c48c9a718f95877b8e"
+source = "git+https://github.com/NousResearch/iroh?rev=3539b2946e53c474746324702ec1aa8b13613553#3539b2946e53c474746324702ec1aa8b13613553"
 dependencies = [
  "anyhow",
  "bytes",
  "cfg_aliases",
  "derive_more",
  "hickory-resolver",
- "iroh-base",
+ "iroh-base 0.34.0 (git+https://github.com/NousResearch/iroh?rev=3539b2946e53c474746324702ec1aa8b13613553)",
  "iroh-metrics",
  "iroh-quinn",
  "iroh-relay",
@@ -4482,8 +4495,7 @@ dependencies = [
 [[package]]
 name = "iroh-relay"
 version = "0.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21d282c04a71a83a90b8fe6872ba30ae341853255aa908375a3e6181f7215d7b"
+source = "git+https://github.com/NousResearch/iroh?rev=3539b2946e53c474746324702ec1aa8b13613553#3539b2946e53c474746324702ec1aa8b13613553"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4495,7 +4507,7 @@ dependencies = [
  "http-body-util",
  "hyper 1.5.1",
  "hyper-util",
- "iroh-base",
+ "iroh-base 0.34.0 (git+https://github.com/NousResearch/iroh?rev=3539b2946e53c474746324702ec1aa8b13613553)",
  "iroh-metrics",
  "iroh-quinn",
  "iroh-quinn-proto",
@@ -6803,7 +6815,6 @@ dependencies = [
  "clap",
  "data-encoding",
  "ed25519 2.2.3",
- "flate2",
  "futures-util",
  "get_if_addrs",
  "iroh",
