@@ -7,12 +7,11 @@ use crate::{
 
 use anyhow::{bail, Error, Result};
 use bytes::Bytes;
-use flate2::read::ZlibDecoder;
 use futures_util::future::select_all;
 use iroh::PublicKey;
 use iroh_blobs::{get::db::DownloadProgress, ticket::BlobTicket};
 use serde::{Deserialize, Serialize};
-use std::{fmt::Debug, future::Future, io::Read, marker::PhantomData, pin::Pin, sync::Arc};
+use std::{fmt::Debug, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 use tokio::{
     sync::{mpsc, oneshot, Mutex},
     task::JoinHandle,
@@ -390,14 +389,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
     ) -> Result<Option<DownloadManagerEvent<D>>> {
         match result {
             Ok(bytes) => {
-                let decompressed_bytes = {
-                    let mut decoder = ZlibDecoder::new(&bytes[..]);
-                    let mut result = Vec::new();
-                    decoder.read_to_end(&mut result)?;
-                    result
-                };
-
-                let decoded = postcard::from_bytes(&decompressed_bytes)?;
+                let decoded = postcard::from_bytes(&bytes)?;
 
                 Ok(Some(DownloadManagerEvent::Complete(DownloadComplete {
                     data: decoded,

@@ -1,5 +1,4 @@
 use anyhow::Result;
-use flate2::Compression;
 use iroh::{endpoint::Connection, protocol::ProtocolHandler};
 use iroh_blobs::ticket::BlobTicket;
 use psyche_core::BoxedFuture;
@@ -251,7 +250,7 @@ impl SharableModel {
                         TransmittableDownload::ModelParameter(transmittable_parameter);
                     trace!("Adding paramerter downloadable {param_name}");
                     let blob_ticket = p2p
-                        .add_downloadable(transmittable_download, tag, Compression::fast())
+                        .add_downloadable(transmittable_download, tag)
                         .await
                         .map_err(|err| SharableModelError::P2PAddDownloadError(err.to_string()))?;
                     loaded_parameters.insert(param_name.to_string(), blob_ticket.clone());
@@ -290,7 +289,7 @@ impl SharableModel {
                 let transmittable_download =
                     TransmittableDownload::ModelConfig(transmittable_config);
                 let ticket = p2p
-                    .add_downloadable(transmittable_download, tag, Compression::fast())
+                    .add_downloadable(transmittable_download, tag)
                     .await
                     .map_err(|err| SharableModelError::P2PAddDownloadError(err.to_string()))?;
                 self.config_and_tokenizer_ticket = Some(ticket.clone());

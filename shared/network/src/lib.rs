@@ -1,7 +1,6 @@
 use allowlist::Allowlist;
 use anyhow::{anyhow, Context, Error, Result};
 use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
-use flate2::write::ZlibEncoder;
 use futures_util::StreamExt;
 use iroh::{endpoint::RemoteInfo, NodeAddr};
 use iroh_blobs::{downloader::ConcurrencyLimits, net_protocol::Blobs, store::mem::Store};
@@ -54,7 +53,6 @@ mod util;
 
 pub use authenticable_identity::{raw_p2p_verify, AuthenticatableIdentity, FromSignedBytesError};
 pub use download_manager::{DownloadComplete, DownloadFailed, TransmittableDownload};
-pub use flate2::Compression;
 use iroh::defaults::DEFAULT_STUN_PORT;
 pub use iroh::{Endpoint, PublicKey, SecretKey};
 use iroh_relay::{RelayMap, RelayNode, RelayQuicConfig};
@@ -331,20 +329,12 @@ where
         Ok(())
     }
 
-    pub async fn add_downloadable(
-        &mut self,
-        data: Download,
-        tag: u32,
-        compression: Compression,
-    ) -> Result<BlobTicket> {
-        let compressed_bytes = tokio::task::spawn_blocking(move || {
-            postcard::to_io(&data, ZlibEncoder::new(Vec::new(), compression))
-                .unwrap()
-                .finish()
-        })
-        .await
-        .unwrap()?;
-        let blob_res = self.blobs.client().add_bytes(compressed_bytes).await?;
+    pub async fn add_downloadable(&mut self, data: Download, tag: u32) -> Result<BlobTicket> {
+        let blob_res = self
+            .blobs
+            .client()
+            .add_bytes(postcard::to_allocvec(&data)?)
+            .await?;
         let addr = self.router.endpoint().node_addr().await?;
         let blob_ticket = BlobTicket::new(addr, blob_res.hash, blob_res.format)?;
 

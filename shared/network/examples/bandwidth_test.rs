@@ -1,7 +1,6 @@
 use anyhow::{bail, Result};
 use chrono::{Local, Timelike};
 use clap::{ArgAction, Parser};
-use flate2::Compression;
 use iroh::{PublicKey, RelayMap, RelayMode, RelayUrl};
 use psyche_network::Hash;
 use psyche_network::{
@@ -214,7 +213,7 @@ impl App {
 
         let blob_ticket = match self
             .network
-            .add_downloadable(DistroResultBlob { step, data }, step, Compression::fast())
+            .add_downloadable(DistroResultBlob { step, data }, step)
             .await
         {
             Ok(v) => v,

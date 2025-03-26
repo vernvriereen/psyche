@@ -71,7 +71,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
         let identity = init_config.identity;
         let network_identity = init_config.network_identity.clone();
         let private_key = init_config.private_key.clone();
-        let distro_compression = init_config.distro_compression;
         let join = tokio::spawn({
             let cancel = cancel.clone();
             let req_tui_state = req_tui_state.clone();
@@ -341,7 +340,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         Some(DistroBroadcastAndPayload{ step, batch_id, commitment_data_hash, proof, distro_result, original_distro_result }) = rx_distro_result.recv() => {
 
                             let transmittable_distro_result = TransmittableDownload::DistroResult(distro_result.clone());
-                            let ticket = p2p.add_downloadable(transmittable_distro_result, step, distro_compression).await?;
+                            let ticket = p2p.add_downloadable(transmittable_distro_result, step).await?;
                             let hash = ticket.hash();
                             debug!(
                                 "Broadcasting payload step {step} batch id {batch_id} hash 0x{}",
