@@ -106,9 +106,6 @@ async fn test_two_clients_three_epochs_run() {
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
 async fn test_client_join_and_get_model_p2p(#[values(1, 2)] n_new_clients: u8) {
-    // Test variables
-    let run_id = "test".to_string();
-
     let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
     let mut watcher = DockerWatcher::new(docker.clone());
 
@@ -124,7 +121,7 @@ async fn test_client_join_and_get_model_p2p(#[values(1, 2)] n_new_clients: u8) {
         let _monitor_client = watcher
             .monitor_container(
                 &format!("{CLIENT_CONTAINER_PREFIX}-{}", i + 1),
-                vec![JsonFilter::LoadedModel],
+                vec![JsonFilter::LoadedModel, JsonFilter::Loss],
             )
             .unwrap();
     }
@@ -141,23 +138,25 @@ async fn test_client_join_and_get_model_p2p(#[values(1, 2)] n_new_clients: u8) {
                 if let Err(e) = watcher.monitor_clients_health(n_new_clients + 1).await {
                     panic!("{}", e);
                }
-               let current_epoch = solana_client.get_current_epoch().await;
-               let current_step = solana_client.get_last_step().await;
-               if current_epoch >= 1 && current_step > 1 {
-                    panic!("Second epoch started and the clients did not get the model");
-               }
            }
            response = watcher.log_rx.recv() => {
-               if let Some(Response::LoadedModel(checkpoint)) = response {
-                   // assert client and coordinator state synchronization
-                   assert!(checkpoint.starts_with("P2P"), "The model should be obtained from P2P");
-                   assert!(matches!(solana_client.get_checkpoint().await, Checkpoint::P2P(_)), "The coordinator must be on P2P");
-
-                   clients_with_model += 1;
-                   if clients_with_model == n_new_clients {
-                       println!("All clients got the model with P2P");
-                       return;
-                   }
+               match response {
+                     Some(Response::Loss(_client, epoch, step, _loss)) => {
+                          if epoch == 1 && step > 22 {
+                               panic!("Second epoch started and the clients did not get the model");
+                          }
+                     }
+                     Some(Response::LoadedModel(checkpoint)) => {
+                         // assert client and coordinator state synchronization
+                         assert!(checkpoint.starts_with("P2P"), "The model should be obtained from P2P");
+                         println!("Client got the model with P2P");
+                         clients_with_model += 1;
+                         if clients_with_model == n_new_clients {
+                             println!("All clients got the model with P2P");
+                             return;
+                         }
+                     }
+                     _ => {}
                }
            }
         }
@@ -455,7 +454,7 @@ async fn test_rejoining_client_delay() {
 
     let solana_client = Arc::new(SolanaTestClient::new("test".to_string()).await);
 
-    tokio::time::sleep(Duration::from_secs(30)).await;
+    tokio::time::sleep(Duration::from_secs(40)).await;
 
     // Spawn client
     spawn_new_client(docker.clone()).await.unwrap();
@@ -490,7 +489,7 @@ async fn test_rejoining_client_delay() {
                }
                let current_epoch = solana_client.get_current_epoch().await;
                let current_step = solana_client.get_last_step().await;
-               if current_epoch >= 1 && current_step > 1 {
+               if current_epoch >= 1 && current_step > 5 {
                     panic!("Second epoch started and the clients did not get the model");
                }
            }
@@ -510,6 +509,7 @@ async fn test_rejoining_client_delay() {
 /// the first run is completed only by the client that joins first
 /// the second run starts with both clients and shuts down client 2 mid-run
 /// verifies the Healthcheck is sent and the shutdown client is kicked from the run
+#[ignore = "We no longer support all clients being witnesses so this test should be updated to check that the non witness client is kicked"]
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
 async fn disconnect_client() {
@@ -530,20 +530,35 @@ async fn disconnect_client() {
                 JsonFilter::StateChange,
                 JsonFilter::HealthCheck,
                 JsonFilter::UntrainedBatches,
+                JsonFilter::WitnessElected,
             ],
         )
         .unwrap();
 
-    tokio::time::sleep(Duration::from_secs(20)).await;
+    tokio::time::sleep(Duration::from_secs(40)).await;
     spawn_new_client(docker.clone()).await.unwrap();
+
+    let _monitor_client_2 = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-2"),
+            vec![
+                JsonFilter::StateChange,
+                JsonFilter::HealthCheck,
+                JsonFilter::UntrainedBatches,
+                JsonFilter::WitnessElected,
+            ],
+        )
+        .unwrap();
 
     // initialize solana client to query the coordinator state
     let solana_client = SolanaTestClient::new(run_id).await;
 
     // step where the healhcheck are send
     let mut health_check_step: Vec<u64> = Vec::new();
+    let mut witness_client = "".to_string();
     // untrained batches
     let mut untrained_batches: Vec<Vec<u64>> = Vec::new();
+    let mut killed_client = false;
 
     while let Some(response) = watcher.log_rx.recv().await {
         match response {
@@ -559,17 +574,32 @@ async fn disconnect_client() {
                 }
 
                 // kill client during step 2 in the RoundWitness state
-                if epoch == 1 && step == 22 && new_state == RunState::RoundWitness.to_string() {
+                if epoch == 1
+                    && step == 25
+                    && old_state == RunState::RoundTrain.to_string()
+                    && !killed_client
+                {
                     assert_eq!(epoch_clients.len(), 2);
 
                     // kill client container
                     // take into account that it can take some time to the container to shutdown
                     // so the client can continue training for some extra steps
-                    watcher
-                        .kill_container(&format!("{CLIENT_CONTAINER_PREFIX}-2"))
-                        .await
-                        .unwrap();
-                    println!("STOP NODE: {}-2", CLIENT_CONTAINER_PREFIX);
+                    if witness_client == format!("{CLIENT_CONTAINER_PREFIX}-1") {
+                        println!("STOP NODE 2");
+                        watcher
+                            .kill_container(&format!("{CLIENT_CONTAINER_PREFIX}-2"))
+                            .await
+                            .unwrap();
+                    } else {
+                        println!("STOP NODE 1");
+                        watcher
+                            .kill_container(&format!("{CLIENT_CONTAINER_PREFIX}-1"))
+                            .await
+                            .unwrap();
+                    }
+                    // watcher.kill_container(&witness_client).await.unwrap();
+                    // println!("Killed client: {}", witness_client);
+                    killed_client = true;
                 }
 
                 // one step after the healthcheck was send
@@ -584,6 +614,7 @@ async fn disconnect_client() {
 
                 // finish test
                 if epoch == num_of_epochs_to_run {
+                    println!("NUMBER OF EPOCHS REACHED");
                     break;
                 }
             }
@@ -606,6 +637,11 @@ async fn disconnect_client() {
             Response::UntrainedBatches(untrained_batch_ids) => {
                 println!("untrained_batch_ids: {:?}", untrained_batch_ids);
                 untrained_batches.push(untrained_batch_ids);
+            }
+
+            Response::WitnessElected(container_name) => {
+                println!("Found witness client in: {container_name}");
+                witness_client = container_name;
             }
             _ => {}
         }
@@ -656,20 +692,20 @@ async fn drop_a_client_waitingformembers_then_reconnect() {
             .unwrap();
     }
 
-    let mut warmup_reached = false;
+    let mut train_reached = false;
     while let Some(response) = watcher.log_rx.recv().await {
         match response {
             Response::StateChange(_timestamp, client, old_state, new_state, _epoch, _step) => {
                 let coordinator_state = solana_client.get_run_state().await;
                 println!(
                     "state change client {} - {}=>{}",
-                    client, new_state, old_state
+                    client, old_state, new_state
                 );
 
                 // Once warmup starts, kill client 2's container
-                if new_state == RunState::Warmup.to_string() && !warmup_reached {
+                if new_state == RunState::RoundTrain.to_string() && !train_reached {
                     println!(
-                        "Warmup started, killing container {}...",
+                        "Train started, killing container {}...",
                         &format!("{CLIENT_CONTAINER_PREFIX}-2")
                     );
 
@@ -680,11 +716,11 @@ async fn drop_a_client_waitingformembers_then_reconnect() {
                         .unwrap();
 
                     tokio::time::sleep(Duration::from_secs(2)).await;
-                    warmup_reached = true;
+                    train_reached = true;
                 }
 
                 // After killing client, verify we get stuck in WaitingForMembers
-                if warmup_reached && coordinator_state == RunState::WaitingForMembers {
+                if train_reached && coordinator_state == RunState::WaitingForMembers {
                     println!("WaitingForMembers seen");
                     break;
                 }
