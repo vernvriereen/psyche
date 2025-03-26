@@ -4201,7 +4201,7 @@ checksum = "ddc24109865250148c2e0f3d25d4f0f479571723792d3802153c60922a4fb708"
 [[package]]
 name = "iroh"
 version = "0.34.0"
-source = "git+https://github.com/n0-computer/iroh?rev=cf3e650694ba94224adfe0ee961d9f471a042650#cf3e650694ba94224adfe0ee961d9f471a042650"
+source = "git+https://github.com/NousResearch/iroh?rev=3539b2946e53c474746324702ec1aa8b13613553#3539b2946e53c474746324702ec1aa8b13613553"
 dependencies = [
  "aead",
  "anyhow",
@@ -4220,7 +4220,7 @@ dependencies = [
  "http 1.1.0",
  "igd-next",
  "instant",
- "iroh-base 0.34.0 (git+https://github.com/n0-computer/iroh?rev=cf3e650694ba94224adfe0ee961d9f471a042650)",
+ "iroh-base 0.34.0 (git+https://github.com/NousResearch/iroh?rev=3539b2946e53c474746324702ec1aa8b13613553)",
  "iroh-metrics",
  "iroh-net-report",
  "iroh-quinn",
@@ -4276,7 +4276,7 @@ dependencies = [
 [[package]]
 name = "iroh-base"
 version = "0.34.0"
-source = "git+https://github.com/n0-computer/iroh?rev=cf3e650694ba94224adfe0ee961d9f471a042650#cf3e650694ba94224adfe0ee961d9f471a042650"
+source = "git+https://github.com/NousResearch/iroh?rev=3539b2946e53c474746324702ec1aa8b13613553#3539b2946e53c474746324702ec1aa8b13613553"
 dependencies = [
  "curve25519-dalek 4.1.3",
  "data-encoding",
@@ -4284,7 +4284,7 @@ dependencies = [
  "ed25519-dalek 2.1.1",
  "rand_core 0.6.4",
  "serde",
- "thiserror 2.0.12",
+ "thiserror 2.0.11",
  "url",
 ]
 
@@ -4304,8 +4304,7 @@ dependencies = [
 [[package]]
 name = "iroh-blobs"
 version = "0.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8d7a6872c7ec4a2613d0386b4dc19b5f3cf4822d81361c5136a63fd56ba2372"
+source = "git+https://github.com/NousResearch/iroh-blobs?rev=28f716e9cf43fe7b8f986be3983823cc31af514c#28f716e9cf43fe7b8f986be3983823cc31af514c"
 dependencies = [
  "anyhow",
  "async-channel 2.3.1",
@@ -4355,9 +4354,8 @@ dependencies = [
 
 [[package]]
 name = "iroh-gossip"
-version = "0.34.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71a9d638618fb6a4dac68d59cb694774478ea039bc9afca4709e242726591be1"
+version = "0.34.0"
+source = "git+https://github.com/n0-computer/iroh-gossip?rev=4f62c6c857841dd6a1f68c2bfa19702183117cb6#4f62c6c857841dd6a1f68c2bfa19702183117cb6"
 dependencies = [
  "anyhow",
  "async-channel 2.3.1",
@@ -4414,14 +4412,14 @@ dependencies = [
 [[package]]
 name = "iroh-net-report"
 version = "0.34.0"
-source = "git+https://github.com/n0-computer/iroh?rev=cf3e650694ba94224adfe0ee961d9f471a042650#cf3e650694ba94224adfe0ee961d9f471a042650"
+source = "git+https://github.com/NousResearch/iroh?rev=3539b2946e53c474746324702ec1aa8b13613553#3539b2946e53c474746324702ec1aa8b13613553"
 dependencies = [
  "anyhow",
  "bytes",
  "cfg_aliases",
  "derive_more",
  "hickory-resolver",
- "iroh-base 0.34.0 (git+https://github.com/n0-computer/iroh?rev=cf3e650694ba94224adfe0ee961d9f471a042650)",
+ "iroh-base 0.34.0 (git+https://github.com/NousResearch/iroh?rev=3539b2946e53c474746324702ec1aa8b13613553)",
  "iroh-metrics",
  "iroh-quinn",
  "iroh-relay",
@@ -4497,7 +4495,7 @@ dependencies = [
 [[package]]
 name = "iroh-relay"
 version = "0.34.0"
-source = "git+https://github.com/n0-computer/iroh?rev=cf3e650694ba94224adfe0ee961d9f471a042650#cf3e650694ba94224adfe0ee961d9f471a042650"
+source = "git+https://github.com/NousResearch/iroh?rev=3539b2946e53c474746324702ec1aa8b13613553#3539b2946e53c474746324702ec1aa8b13613553"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4509,7 +4507,7 @@ dependencies = [
  "http-body-util",
  "hyper 1.5.1",
  "hyper-util",
- "iroh-base 0.34.0 (git+https://github.com/n0-computer/iroh?rev=cf3e650694ba94224adfe0ee961d9f471a042650)",
+ "iroh-base 0.34.0 (git+https://github.com/NousResearch/iroh?rev=3539b2946e53c474746324702ec1aa8b13613553)",
  "iroh-metrics",
  "iroh-quinn",
  "iroh-quinn-proto",
