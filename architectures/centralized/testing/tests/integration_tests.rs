@@ -13,7 +13,6 @@ use psyche_coordinator::{
     model::{Checkpoint, HubRepo},
     RunState,
 };
-use psyche_decentralized_testing::docker_setup::e2e_testing_setup_subscription;
 use tracing::info;
 
 #[test_log::test(tokio::test(flavor = "multi_thread"))]

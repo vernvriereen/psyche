@@ -128,11 +128,12 @@ impl SolanaBackend {
         });
 
         let tx_subscribe_2 = tx_subscribe.clone();
-        let url_2 = if &std::env::var("ws_rpc_2")? == "" {
-            cluster.ws_url().to_string()
-        } else {
-            std::env::var("ws_rpc_2")?
-        };
+
+        let url_2 = std::env::var("ws_rpc_2")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| cluster.ws_url().to_string());
+
         tokio::spawn(async move {
             subscribe_to_account(url_2, commitment, &coordinator_account, tx_subscribe_2).await
         });

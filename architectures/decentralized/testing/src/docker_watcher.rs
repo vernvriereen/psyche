@@ -226,11 +226,12 @@ impl DockerWatcher {
                             if !(parsed_log.get("type") == Some(&"Solana subscription".into())) {
                                 continue;
                             }
+                            println!("AVER: {parsed_log:?}");
                             let url = parsed_log.get("url").unwrap();
 
                             let mut response =
                                 Response::SolanaSubscription("".to_string(), "".to_string());
-                            if parsed_log.get("level").unwrap() == "ERROR" {
+                            if parsed_log.get("level").unwrap() == "WARN" {
                                 response = Response::SolanaSubscription(
                                     url.to_string(),
                                     "Subscription Down".to_string(),
@@ -259,20 +260,6 @@ impl DockerWatcher {
     pub async fn kill_container(&self, name: &str) -> Result<(), DockerWatcherError> {
         self.client
             .kill_container(name, Some(KillContainerOptions { signal: "SIGKILL" }))
-            .await
-            .map_err(|err| DockerWatcherError::LogsError { inner: err })
-    }
-
-    pub async fn stop_container(&self, name: &str) -> Result<(), DockerWatcherError> {
-        self.client
-            .pause_container(name)
-            .await
-            .map_err(|err| DockerWatcherError::LogsError { inner: err })
-    }
-
-    pub async fn unpause_container(&self, name: &str) -> Result<(), DockerWatcherError> {
-        self.client
-            .unpause_container(name)
             .await
             .map_err(|err| DockerWatcherError::LogsError { inner: err })
     }

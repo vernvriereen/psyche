@@ -1,5 +1,6 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
+use bollard::container::StartContainerOptions;
 use bollard::{container::KillContainerOptions, Docker};
 use psyche_coordinator::{model::Checkpoint, RunState};
 use psyche_decentralized_testing::docker_setup::e2e_testing_setup_subscription;
@@ -885,35 +886,45 @@ async fn test_subscription() {
             }
             response = watcher.log_rx.recv() => {
                 match response {
-                    Some(Response::StateChange(timestamp, _client_1, old_state, new_state, epoch , step)) => {
-                        let coordinator_state = solana_client.get_run_state().await;
-                        println!(
-                            "client: new_state: {}, old_state: {}, timestamp: {}",
-                            new_state, old_state, timestamp
-                        );
+                    Some(Response::StateChange(_timestamp, _client_1, old_state, new_state, epoch , step)) => {
+                        if old_state == RunState::WaitingForMembers.to_string() {
+                            println!(
+                                "Starting epoch: {epoch}",
+                            );
+                        }
 
                         if step == 5 && new_state == RunState::RoundWitness.to_string(){
                             println!("stop container nginx_proxy");
-                            watcher.stop_container("nginx_proxy").await.unwrap();
+                            docker
+                                .stop_container("nginx_proxy", None)
+                                .await
+                                .unwrap()
 
                         }
                         if step == 15 && new_state == RunState::RoundWitness.to_string(){
                             println!("unpause container nginx_proxy");
-                            watcher.unpause_container("nginx_proxy").await.unwrap();
+                            docker
+                                .start_container("nginx_proxy", None::<StartContainerOptions<String>>)
+                                .await
+                                .unwrap();
 
                         }
 
                         if step == 25 && new_state == RunState::RoundWitness.to_string(){
                             println!("stop container nginx_proxy_2");
-                            watcher.stop_container("nginx_proxy_2").await.unwrap();
-
+                            docker
+                                .stop_container("nginx_proxy_2", None)
+                                .await
+                                .unwrap()
 
                         }
                         if step == 45 && new_state == RunState::RoundWitness.to_string(){
                             println!("unpause container nginx_proxy_2");
 
-                            watcher.unpause_container("nginx_proxy_2").await.unwrap();
-
+                            docker
+                                .start_container("nginx_proxy_2", None::<StartContainerOptions<String>>)
+                                .await
+                                .unwrap();
                         }
 
                         // finish test

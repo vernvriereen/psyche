@@ -53,7 +53,6 @@ pub async fn e2e_testing_setup_subscription(
     config: Option<PathBuf>,
 ) -> DockerTestCleanup {
     remove_old_client_containers(docker_client).await;
-    // spawn_psyche_network(init_num_clients, config).unwrap();
     let mut command = Command::new("just");
     let command = command
         .args([
