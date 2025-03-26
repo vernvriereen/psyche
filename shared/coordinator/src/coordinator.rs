@@ -468,15 +468,20 @@ impl<T: NodeIdentity> Coordinator<T> {
             return Err(CoordinatorError::Halted);
         }
 
+        // If we received a warmup witness but we already transitioned to the next state, we just ignore it.
+        if matches!(self.run_state, RunState::RoundTrain) {
+            return Ok(());
+        }
+
+        if !matches!(self.run_state, RunState::Warmup) {
+            return Err(CoordinatorError::InvalidRunState);
+        }
+
         let witness_nodes = if self.config.witness_nodes == 0 {
             self.epoch_state.clients.len().min(SOLANA_MAX_NUM_WITNESSES)
         } else {
             self.config.witness_nodes as usize
         };
-
-        if !matches!(self.run_state, RunState::RoundTrain | RunState::Warmup,) {
-            return Err(CoordinatorError::InvalidRunState);
-        }
 
         // Everyone can send a witness in the warmup phase so we don't need to check for the committee
         let round = self.current_round().unwrap();
@@ -492,11 +497,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             .map_err(|_| CoordinatorError::WitnessesFull)?;
 
         if round.witnesses.len() == witness_nodes {
-            match self.run_state {
-                RunState::Warmup => self.start_round_train(unix_timestamp, random_seed, 0),
-                RunState::RoundTrain => {}
-                _ => unreachable!(),
-            }
+            self.start_round_train(unix_timestamp, random_seed, 0);
         }
 
         Ok(())
@@ -546,7 +547,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             .push(witness)
             .map_err(|_| CoordinatorError::WitnessesFull)?;
 
-        if round.witnesses.len() == witness_nodes {
+        if round.witnesses.len() == witness_nodes && !(self.run_state == RunState::RoundWitness) {
             self.change_state(unix_timestamp, RunState::RoundWitness);
         }
         Ok(())
