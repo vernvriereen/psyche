@@ -1,3 +1,4 @@
+#![allow(unexpected_cfgs)]
 mod client;
 mod clients_state;
 mod instance_state;
