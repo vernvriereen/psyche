@@ -12,7 +12,7 @@ services:
         ports:
             - "8901:8901"
         volumes:
-            - ./nginx.conf:/etc/nginx/nginx.conf:ro
+            - ./subscriptions_test/nginx_p8901.conf:/etc/nginx/nginx.conf:ro
         depends_on:
             - psyche-solana-test-validator
         networks:
@@ -24,7 +24,7 @@ services:
         ports:
             - "8902:8902"
         volumes:
-            - ./nginx_copy.conf:/etc/nginx/nginx.conf:ro
+            - ./subscriptions_test/nginx_p8902.conf:/etc/nginx/nginx.conf:ro
         depends_on:
             - psyche-solana-test-validator
         networks:

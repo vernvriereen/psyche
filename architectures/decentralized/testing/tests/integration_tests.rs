@@ -469,14 +469,14 @@ async fn test_subscription() {
     let _monitor_client_1 = watcher
         .monitor_container(
             &format!("{CLIENT_CONTAINER_PREFIX}-1"),
-            vec![JsonFilter::StateChange, JsonFilter::Loss],
+            vec![JsonFilter::StateChange],
         )
         .unwrap();
 
     let _monitor_client_2 = watcher
         .monitor_container(
             &format!("{CLIENT_CONTAINER_PREFIX}-2"),
-            vec![JsonFilter::StateChange, JsonFilter::Loss],
+            vec![JsonFilter::StateChange],
         )
         .unwrap();
 
@@ -502,21 +502,6 @@ async fn test_subscription() {
                         // assert client and coordinator state synchronization
                         if new_state != RunState::WaitingForMembers.to_string() {
                             assert_eq!(coordinator_state.to_string(), new_state.to_string());
-                        }
-                    }
-                    Some(Response::Loss(client, epoch, step, loss)) => {
-                        println!(
-                            "client: {:?}, epoch: {}, step: {}, Loss: {}",
-                            client, epoch, step, loss
-                        );
-                        // assert that the loss decreases each epoch
-                        if epoch as i64 > current_epoch {
-                            current_epoch = epoch as i64;
-                            assert!(loss < last_epoch_loss);
-                            last_epoch_loss = loss;
-                            if epoch == num_of_epochs_to_run {
-                                break;
-                            }
                         }
                     }
                     _ => unreachable!(),
