@@ -389,13 +389,12 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
     ) -> Result<Option<DownloadManagerEvent<D>>> {
         match result {
             Ok(bytes) => {
-                // let decompressed_bytes = {
-                //     let mut decoder = ZlibDecoder::new(&bytes[..]);
-                //     let mut result = Vec::new();
-                //     decoder.read_to_end(&mut result)?;
-                //     result
-                // };
-                let decompressed_bytes = bytes;
+                let decompressed_bytes = {
+                    let mut decoder = ZlibDecoder::new(&bytes[..]);
+                    let mut result = Vec::new();
+                    decoder.read_to_end(&mut result)?;
+                    result
+                };
 
                 let decoded = postcard::from_bytes(&decompressed_bytes)?;
 
