@@ -194,6 +194,7 @@ where
         let node_addr = endpoint.node_addr().await?;
 
         info!("Our node addr: {}", node_addr.node_id);
+        info!("Our join ticket: {}", PeerList(vec![node_addr]));
 
         trace!("creating blobs...");
         let blobs = Blobs::memory()
