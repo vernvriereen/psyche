@@ -10,7 +10,7 @@ use psyche_coordinator::{
     RunState, TickResult, Witness, SOLANA_MAX_STRING_LEN,
 };
 use psyche_core::sha256v;
-use psyche_core::{FixedString, SizedIterator, SmallBoolean};
+use psyche_core::{FixedString, SmallBoolean};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -69,15 +69,21 @@ impl CoordinatorInstanceState {
     }
 
     pub fn tick(&mut self) -> Result<()> {
-        let active_clients = match self.coordinator.run_state {
+        let active_clients_ids = match self.coordinator.run_state {
             RunState::WaitingForMembers => {
                 // Reset state flags
                 self.is_warmup_first_tick = SmallBoolean::from(true);
                 self.is_training_first_tick = SmallBoolean::from(true);
 
-                let active_clients = self.clients_state.active_clients();
-                msg!("Pending active clients: {}", active_clients.len());
-                Some(active_clients)
+                self.clients_state.purge_inactive_clients();
+                let active_clients_ids =
+                    self.clients_state.get_active_clients_ids();
+
+                msg!(
+                    "Pending active clients ids: {}",
+                    active_clients_ids.len()
+                );
+                Some(active_clients_ids)
             },
             _ => None,
         };
@@ -86,7 +92,7 @@ impl CoordinatorInstanceState {
 
         let clock: Clock = Clock::get()?;
         match self.coordinator.tick(
-            active_clients,
+            active_clients_ids,
             clock.unix_timestamp as u64,
             Self::get_random_seed(&clock),
         ) {
@@ -237,12 +243,6 @@ impl CoordinatorInstanceState {
         Ok(())
     }
 
-    pub fn get_active_clients(
-        &self,
-    ) -> SizedIterator<impl Iterator<Item = &ClientId>> {
-        self.clients_state.active_clients()
-    }
-
     pub fn join_run(&mut self, id: ClientId) -> Result<()> {
         let exisiting = match self
             .clients_state
@@ -268,10 +268,10 @@ impl CoordinatorInstanceState {
                 .clients
                 .push(Client {
                     id,
-                    staked: 0,
                     earned: 0,
                     slashed: 0,
                     active: self.clients_state.next_active,
+                    _unused: Default::default(),
                 })
                 .is_err()
         {

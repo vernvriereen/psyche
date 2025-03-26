@@ -232,9 +232,9 @@ impl App {
                         .unwrap()
                         .as_secs();
 
-                    let pending_clients = (ticked.run_state == RunState::WaitingForMembers).then(|| coordinator_state.get_active_clients());
+                    let pending_clients_ids = (ticked.run_state == RunState::WaitingForMembers).then(|| coordinator_state.clients_state.get_active_clients_ids());
 
-                    match ticked.tick(pending_clients, timestamp, rand::thread_rng().next_u64()) {
+                    match ticked.tick(pending_clients_ids, timestamp, rand::thread_rng().next_u64()) {
                         Ok(_) => {
                             if ticked.run_state != latest_update.run_state {
                                 let backend = backend.clone();
