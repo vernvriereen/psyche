@@ -12,6 +12,8 @@ use psyche_core::ConstantLR;
 use psyche_core::FixedVec;
 use psyche_core::LearningRateSchedule;
 use psyche_core::OptimizerDefinition;
+use psyche_solana_authorizer::logic::AuthorizationGranteeUpdateParams;
+use psyche_solana_authorizer::logic::AuthorizationGrantorUpdateParams;
 use psyche_solana_coordinator::instruction::Witness;
 use psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE;
 use psyche_solana_coordinator::ClientId;
@@ -30,7 +32,6 @@ use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_run
 use psyche_solana_tooling::process_treasurer_instructions::process_treasurer_run_update;
 use psyche_solana_treasurer::logic::RunCreateParams;
 use psyche_solana_treasurer::logic::RunUpdateParams;
-use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 
@@ -253,7 +254,7 @@ pub async fn run() {
         &payer,
         &join_authority,
         &authorization,
-        true,
+        AuthorizationGrantorUpdateParams { active: true },
     )
     .await
     .unwrap();
@@ -264,7 +265,10 @@ pub async fn run() {
         &payer,
         &participant,
         &authorization,
-        &[Pubkey::new_unique(), client.pubkey()],
+        AuthorizationGranteeUpdateParams {
+            delegates_clear: false,
+            delegates_added: vec![client.pubkey()],
+        },
     )
     .await
     .unwrap();

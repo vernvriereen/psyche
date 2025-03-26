@@ -58,7 +58,7 @@ pub async fn process_authorizer_authorization_grantor_update(
     payer: &Keypair,
     grantor: &Keypair,
     authorization: &Pubkey,
-    active: bool,
+    params: AuthorizationGrantorUpdateParams,
 ) -> Result<Signature, ToolboxEndpointError> {
     let accounts = AuthorizationGrantorUpdateAccounts {
         grantor: grantor.pubkey(),
@@ -66,10 +66,7 @@ pub async fn process_authorizer_authorization_grantor_update(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: AuthorizationGrantorUpdate {
-            params: AuthorizationGrantorUpdateParams { active },
-        }
-        .data(),
+        data: AuthorizationGrantorUpdate { params }.data(),
         program_id: psyche_solana_authorizer::ID,
     };
     endpoint
@@ -82,7 +79,7 @@ pub async fn process_authorizer_authorization_grantee_update(
     payer: &Keypair,
     grantee: &Keypair,
     authorization: &Pubkey,
-    delegates: &[Pubkey],
+    params: AuthorizationGranteeUpdateParams,
 ) -> Result<Signature, ToolboxEndpointError> {
     let accounts = AuthorizationGranteeUpdateAccounts {
         payer: payer.pubkey(),
@@ -92,12 +89,7 @@ pub async fn process_authorizer_authorization_grantee_update(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: AuthorizationGranteeUpdate {
-            params: AuthorizationGranteeUpdateParams {
-                delegates: delegates.to_vec(),
-            },
-        }
-        .data(),
+        data: AuthorizationGranteeUpdate { params }.data(),
         program_id: psyche_solana_authorizer::ID,
     };
     endpoint

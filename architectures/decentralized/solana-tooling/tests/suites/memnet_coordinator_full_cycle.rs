@@ -13,6 +13,7 @@ use psyche_core::ConstantLR;
 use psyche_core::FixedVec;
 use psyche_core::LearningRateSchedule;
 use psyche_core::OptimizerDefinition;
+use psyche_solana_authorizer::logic::AuthorizationGrantorUpdateParams;
 use psyche_solana_coordinator::instruction::Witness;
 use psyche_solana_coordinator::logic::InitCoordinatorParams;
 use psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE;
@@ -156,7 +157,7 @@ pub async fn run() {
         &payer,
         &join_authority,
         &authorization,
-        true,
+        AuthorizationGrantorUpdateParams { active: true },
     )
     .await
     .unwrap();
