@@ -1,4 +1,4 @@
-use crate::{peer_list::PeerList, util::convert_bytes, NetworkConnection, Networkable};
+use crate::{peer_list::PeerList, util::fmt_bytes, NetworkConnection, Networkable};
 
 use iroh::{endpoint::ConnectionType, PublicKey};
 use psyche_tui::ratatui::{
@@ -96,8 +96,8 @@ impl psyche_tui::CustomWidget for NetworkTui {
                         ListItem::new(format!(
                             "[{:02.1}%] {}/{}: {}",
                             percent,
-                            convert_bytes(download.downloaded as f64),
-                            convert_bytes(download.total as f64),
+                            fmt_bytes(download.downloaded as f64),
+                            fmt_bytes(download.total as f64),
                             hash,
                         ))
                     }))
@@ -132,7 +132,7 @@ impl psyche_tui::CustomWidget for NetworkTui {
                         Block::default()
                             .title(format!(
                                 "Download Bandwidth {}/s",
-                                convert_bytes(state.total_data_per_sec)
+                                fmt_bytes(state.total_data_per_sec)
                             ))
                             .borders(Borders::ALL),
                     )
@@ -145,11 +145,7 @@ impl psyche_tui::CustomWidget for NetworkTui {
                     .y_axis(
                         Axis::default()
                             .title("Bytes/s)")
-                            .labels(vec![
-                                convert_bytes(0.0),
-                                convert_bytes(ymax / 2.0),
-                                convert_bytes(ymax),
-                            ])
+                            .labels(vec![fmt_bytes(0.0), fmt_bytes(ymax / 2.0), fmt_bytes(ymax)])
                             .bounds([0.0, ymax]),
                     )
                     .render(download_chunks[1], buf);

@@ -1,18 +1,17 @@
 use crate::{
     p2p_model_sharing::{TransmittableModelConfig, TransmittableModelParameter},
     serialized_distro::TransmittableDistroResult,
-    util::convert_bytes,
+    util::fmt_bytes,
     Networkable,
 };
 
 use anyhow::{bail, Error, Result};
 use bytes::Bytes;
-use flate2::read::ZlibDecoder;
 use futures_util::future::select_all;
 use iroh::PublicKey;
 use iroh_blobs::{get::db::DownloadProgress, ticket::BlobTicket};
 use serde::{Deserialize, Serialize};
-use std::{fmt::Debug, future::Future, io::Read, marker::PhantomData, pin::Pin, sync::Arc};
+use std::{fmt::Debug, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 use tokio::{
     sync::{mpsc, oneshot, Mutex},
     task::JoinHandle,
@@ -282,7 +281,12 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
             FutureResult::Download(index, result) => {
                 Self::handle_download_progress(downloads, result, index)
             }
-            FutureResult::Read(index, result) => Self::handle_read_result(reading, result, index),
+            FutureResult::Read(index, result) => {
+                let downloader: ReadingFinishedDownload = reading.swap_remove(index);
+                tokio::task::spawn_blocking(move || Self::handle_read_result(downloader, result))
+                    .await
+                    .unwrap()
+            }
         }
     }
 
@@ -337,7 +341,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                         debug!(
                             "Downloaded (index {index}) {}, {} ",
                             download.blob_ticket.hash(),
-                            convert_bytes(stats.bytes_read as f64)
+                            fmt_bytes(stats.bytes_read as f64)
                         );
                         Some(DownloadUpdate {
                             blob_ticket: download.blob_ticket.clone(),
@@ -380,21 +384,12 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
     }
 
     fn handle_read_result(
-        reading: &mut Vec<ReadingFinishedDownload>,
+        downloader: ReadingFinishedDownload,
         result: Result<Bytes>,
-        index: usize,
     ) -> Result<Option<DownloadManagerEvent<D>>> {
-        let downloader: ReadingFinishedDownload = reading.swap_remove(index);
         match result {
             Ok(bytes) => {
-                let decompressed_bytes = {
-                    let mut decoder = ZlibDecoder::new(&bytes[..]);
-                    let mut result = Vec::new();
-                    decoder.read_to_end(&mut result)?;
-                    result
-                };
-
-                let decoded = postcard::from_bytes(&decompressed_bytes)?;
+                let decoded = postcard::from_bytes(&bytes)?;
 
                 Ok(Some(DownloadManagerEvent::Complete(DownloadComplete {
                     data: decoded,

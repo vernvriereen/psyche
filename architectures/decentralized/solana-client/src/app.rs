@@ -13,8 +13,7 @@ use psyche_client::{
 };
 use psyche_coordinator::{Coordinator, RunState};
 use psyche_network::{
-    allowlist, psyche_relay_map, Compression, DiscoveryMode, NetworkTUIState, NetworkTui,
-    RelayMode, SecretKey,
+    allowlist, psyche_relay_map, DiscoveryMode, NetworkTUIState, NetworkTui, RelayMode, SecretKey,
 };
 use psyche_tui::{logging::LoggerWidget, CustomWidget, TabbedWidget};
 use psyche_watcher::CoordinatorTui;
@@ -72,7 +71,6 @@ pub struct AppParams {
     pub dummy_training_delay_secs: Option<u64>,
     pub max_concurrent_parameter_requests: usize,
     pub max_concurrent_downloads: usize,
-    pub compression: u32,
 }
 
 impl AppBuilder {
@@ -142,7 +140,6 @@ impl AppBuilder {
                 grad_accum_in_fp32: p.grad_accum_in_fp32,
                 dummy_training_delay_secs: p.dummy_training_delay_secs,
                 max_concurrent_parameter_requests: p.max_concurrent_parameter_requests,
-                distro_compression: Compression::new(p.compression),
             };
 
         Ok((app, allowlist, p2p, state_options))

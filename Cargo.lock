@@ -6842,7 +6842,6 @@ dependencies = [
  "clap",
  "data-encoding",
  "ed25519 2.2.3",
- "flate2",
  "futures-util",
  "get_if_addrs",
  "iroh",
