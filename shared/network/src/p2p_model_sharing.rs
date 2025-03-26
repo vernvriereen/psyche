@@ -167,7 +167,10 @@ impl SharableModel {
         &mut self,
         new_parameters: HashMap<String, Tensor>,
     ) -> Result<(), SharableModelError> {
-        debug!("Updating sharable parameters with new {} new parameters", new_parameters.len());
+        debug!(
+            "Updating sharable parameters with new {} new parameters",
+            new_parameters.len()
+        );
 
         if let Some(parameters) = &mut self.parameters {
             // validate that both models have the same parameters
@@ -255,7 +258,7 @@ impl SharableModel {
                     trace!("Finished adding paramerter downloadable {param_name}");
                     Ok(blob_ticket)
                 }
-                None => { return Err(SharableModelError::ParameterUnknown(param_name.to_string()))}
+                None => Err(SharableModelError::ParameterUnknown(param_name.to_string())),
             },
         }
     }
@@ -267,7 +270,7 @@ impl SharableModel {
         tag: u32,
     ) -> Result<BlobTicket, SharableModelError> {
         match self.config_and_tokenizer_ticket.as_ref() {
-            Some(ticket) =>  {
+            Some(ticket) => {
                 trace!("Using cached config and tokenizer downloadable");
                 Ok(ticket.clone())
             }
@@ -330,7 +333,9 @@ impl SharableModel {
         let param_name = String::from_utf8(parameter.param_name_bytes)?;
         let buf_reader = Cursor::new(parameter.param_value_bytes);
         trace!("Start loading parameter {param_name}");
-        let param_value = tokio::task::spawn_blocking(move || Tensor::load_from_stream(buf_reader)).await.map_err(|_| SharableModelError::LoadThreadCrashed)??;
+        let param_value = tokio::task::spawn_blocking(move || Tensor::load_from_stream(buf_reader))
+            .await
+            .map_err(|_| SharableModelError::LoadThreadCrashed)??;
         trace!("Finished loading parameter {param_name}");
 
         // Validate that the parameter does not already exist

@@ -1,13 +1,12 @@
 use crate::{
     p2p_model_sharing::{TransmittableModelConfig, TransmittableModelParameter},
     serialized_distro::TransmittableDistroResult,
-    util::convert_bytes,
+    util::fmt_bytes,
     Networkable,
 };
 
 use anyhow::{bail, Error, Result};
 use bytes::Bytes;
-use flate2::read::ZlibDecoder;
 use futures_util::future::select_all;
 use iroh::PublicKey;
 use iroh_blobs::{get::db::DownloadProgress, ticket::BlobTicket};
@@ -342,7 +341,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                         debug!(
                             "Downloaded (index {index}) {}, {} ",
                             download.blob_ticket.hash(),
-                            convert_bytes(stats.bytes_read as f64)
+                            fmt_bytes(stats.bytes_read as f64)
                         );
                         Some(DownloadUpdate {
                             blob_ticket: download.blob_ticket.clone(),

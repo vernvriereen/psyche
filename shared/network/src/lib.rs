@@ -1,7 +1,6 @@
 use allowlist::Allowlist;
 use anyhow::{anyhow, Context, Error, Result};
 use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
-use flate2::write::ZlibEncoder;
 use futures_util::StreamExt;
 use iroh::{endpoint::RemoteInfo, NodeAddr};
 use iroh_blobs::{downloader::ConcurrencyLimits, net_protocol::Blobs, store::mem::Store};
@@ -72,6 +71,7 @@ pub use signed_message::SignedMessage;
 pub use tcp::{ClientNotification, TcpClient, TcpServer};
 pub use tui::{NetworkTUIState, NetworkTui};
 use url::Url;
+pub use util::fmt_bytes;
 
 const USE_RELAY_HOSTNAME: &str = "use1-1.relay.psyche.iroh.link";
 const USW_RELAY_HOSTNAME: &str = "usw1-1.relay.psyche.iroh.link";
@@ -418,36 +418,34 @@ where
         // these are factored out to separate fns so rustfmt works on their contents :)
         select! {
             Some(event) = self.gossip_rx.next() => {
-                if let Some(result) = parse_gossip_event(event.map_err(|ee| ee.into())) {
-                    return Ok(Some(NetworkEvent::MessageReceived(result)));
+                match parse_gossip_event(event.map_err(|ee| ee.into())) {
+                    Some(result) => Ok(Some(NetworkEvent::MessageReceived(result))),
+                    None => Ok(None),
                 }
             }
             update = self.download_manager.poll_next() => {
                 match update {
                     Some(DownloadManagerEvent::Complete(result)) => {
-                        return Ok(Some(NetworkEvent::DownloadComplete(result)))
+                        Ok(Some(NetworkEvent::DownloadComplete(result)))
                     }
                     Some(DownloadManagerEvent::Update(update)) => {
                         self.on_download_update(update)?;
+                        Ok(None)
                     },
                     Some(DownloadManagerEvent::Failed(result)) => {
-                        return Ok(Some(NetworkEvent::DownloadFailed(result)))
+                        Ok(Some(NetworkEvent::DownloadFailed(result)))
                     }
-                    None => {}
+                    None => Ok(None),
                 }
             }
             Some(ParameterSharingMessage::Get(parameter_name, protocol_req_tx)) = self.rx_model_parameter_req.recv() => {
-                return Ok(Some(NetworkEvent::ParameterRequest(parameter_name, protocol_req_tx)));
+                Ok(Some(NetworkEvent::ParameterRequest(parameter_name, protocol_req_tx)))
             }
             Some(ModelConfigSharingMessage::Get(protocol_req_tx)) = self.rx_model_config_req.recv() => {
-                return Ok(Some(NetworkEvent::ModelConfigRequest(protocol_req_tx)));
+                Ok(Some(NetworkEvent::ModelConfigRequest(protocol_req_tx)))
             }
-            _ = self.update_stats_interval.tick() => {
-                on_update_stats(self.router.endpoint(), &mut self.state).await?;
-            }
-        };
-
-        Ok(None)
+            else => { Ok(None) }
+        }
     }
 
     fn on_download_update(&mut self, update: DownloadUpdate) -> Result<()> {
