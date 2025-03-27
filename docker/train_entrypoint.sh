@@ -64,7 +64,6 @@ echo "
 "
 
 num_restarts=0
-
 while true; do
     echo -e "\n[+] Starting to train in run ${RUN_ID}..."
 
