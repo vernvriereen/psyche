@@ -60,8 +60,8 @@ futures-util = "0.3.30"
 chrono = "0.4.38"
 fast-math = "0.1"
 async-trait = "0.1.82"
-iroh = { git = "https://github.com/NousResearch/iroh", rev = "9671150d3809cf6618532e08bbaaaaba1f8d4759" }
-iroh-relay = { git = "https://github.com/NousResearch/iroh", rev = "9671150d3809cf6618532e08bbaaaaba1f8d4759" }
+iroh = { git = "https://github.com/NousResearch/iroh", rev = "81722b05cf39d605b00657192dc7842259f2816f" }
+iroh-relay = { git = "https://github.com/NousResearch/iroh", rev = "81722b05cf39d605b00657192dc7842259f2816f" }
 iroh-blobs = { git = "https://github.com/NousResearch/iroh-blobs", rev = "dda4a502f76969e6d80aa964985ee1864f85d446", features = [ "rpc", "downloader" ] }
 iroh-gossip = { version = "0.34.1" }
 memmap2 = { version = "0.9.3", features = ["stable_deref_trait"] }
@@ -102,4 +102,4 @@ rstest = "0.25.0"
 opt-level = 1
 
 [patch.crates-io]
-iroh = { git = "https://github.com/NousResearch/iroh", rev = "9671150d3809cf6618532e08bbaaaaba1f8d4759" }
+iroh = { git = "https://github.com/NousResearch/iroh", rev = "81722b05cf39d605b00657192dc7842259f2816f" }
