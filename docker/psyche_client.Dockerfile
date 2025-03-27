@@ -12,11 +12,11 @@ ENV LD_LIBRARY_PATH=/usr/home/libtorch/lib
 
 # Copy the psyche client binary from base
 COPY --from=base /usr/src/psyche/target/release/psyche-solana-client /usr/local/bin/psyche-solana-client
-
-# Copy the entrypoint script from host machine
+COPY --chmod=755 ./docker/train_entrypoint.sh /usr/local
 
 ENV RUST_BACKTRACE=1
 ENV RUST_LOG=info,psyche=debug
 
-ENTRYPOINT ["/usr/local/bin/psyche-solana-client"]
-CMD ["--help"]
+# ENTRYPOINT ["/usr/local/bin/psyche-solana-client"]
+ENTRYPOINT ["/usr/local/train_entrypoint.sh"]
+# CMD ["--help"]
