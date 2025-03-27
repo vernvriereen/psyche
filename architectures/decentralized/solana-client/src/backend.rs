@@ -63,7 +63,7 @@ async fn subscribe_to_account(
             tokio::time::sleep(Duration::from_secs(5)).await;
             continue;
         };
-        let commitment = commitment;
+
         let mut notifications = match sub_client
             .account_subscribe(
                 coordinator_account,
@@ -116,10 +116,9 @@ impl SolanaBackend {
         coordinator_account: Pubkey,
     ) -> Result<SolanaBackendRunner> {
         let (tx_update, rx_update) = broadcast::channel(32);
-        // Clone these values before moving them into the async block
         let cluster = self.cluster.clone();
         let url = cluster.ws_url().to_string();
-        let commitment = self.program_coordinator.rpc().commitment().clone();
+        let commitment = self.program_coordinator.rpc().commitment();
 
         let (tx_subscribe, mut rx_subscribe) = mpsc::unbounded_channel();
         let tx_subscribe_1 = tx_subscribe.clone();
@@ -153,7 +152,6 @@ impl SolanaBackend {
             }
             // TODO: should be add a retry here?
             error!("No subscriptions available");
-            return;
         });
 
         let coordinator_instance = psyche_solana_coordinator::find_coordinator_instance(&run_id);

@@ -837,9 +837,6 @@ async fn test_when_all_clients_disconnect_checkpoint_is_hub() {
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
 async fn test_subscription() {
-    // set test variables
-    let run_id = "test".to_string();
-
     // epochs the test will run
     let num_of_epochs_to_run = 3;
 
@@ -847,7 +844,7 @@ async fn test_subscription() {
     let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
     let mut watcher = DockerWatcher::new(docker.clone());
 
-    // Initialize a Solana run with 1 client
+    // Initialize a Solana run with 2 client
     let _cleanup = e2e_testing_setup_subscription(
         docker.clone(),
         2,
@@ -857,7 +854,7 @@ async fn test_subscription() {
     )
     .await;
 
-    // Monitor the client container
+    // Monitor the client containers
     let _monitor_client_1 = watcher
         .monitor_container(
             &format!("{CLIENT_CONTAINER_PREFIX}-1"),
@@ -872,8 +869,6 @@ async fn test_subscription() {
         )
         .unwrap();
 
-    // Initialize solana client to query the coordinator state
-    let solana_client = SolanaTestClient::new(run_id).await;
     let mut live_interval = time::interval(Duration::from_secs(10));
     let mut subscription_events: Vec<(String, String)> = Vec::new();
 
@@ -893,6 +888,7 @@ async fn test_subscription() {
                             );
                         }
 
+                        // shutdown subscription 1
                         if step == 5 && new_state == RunState::RoundWitness.to_string(){
                             println!("stop container nginx_proxy");
                             docker
@@ -901,6 +897,7 @@ async fn test_subscription() {
                                 .unwrap()
 
                         }
+                        // resume subscription 1
                         if step == 15 && new_state == RunState::RoundWitness.to_string(){
                             println!("unpause container nginx_proxy");
                             docker
@@ -910,6 +907,7 @@ async fn test_subscription() {
 
                         }
 
+                        // shutdown subscription 2
                         if step == 25 && new_state == RunState::RoundWitness.to_string(){
                             println!("stop container nginx_proxy_2");
                             docker
@@ -918,6 +916,7 @@ async fn test_subscription() {
                                 .unwrap()
 
                         }
+                        // resume subscription 2
                         if step == 45 && new_state == RunState::RoundWitness.to_string(){
                             println!("unpause container nginx_proxy_2");
 
@@ -935,7 +934,7 @@ async fn test_subscription() {
                     },
                     Some(Response::SolanaSubscription(url, status)) => {
                         println!("Solana subscriptions {url} status: {status}");
-                        subscription_events.push((url, status))
+                        subscription_events.push((url , status))
                     }
                     _ => unreachable!(),
                 }
@@ -943,5 +942,38 @@ async fn test_subscription() {
 
         }
     }
+    subscription_events.dedup();
+    let expected_subscription_events = vec![
+        // init subscriptions
+        (
+            r#""ws://nginx_proxy_2:8902/ws/""#.into(),
+            "Subscription Up".into(),
+        ),
+        (
+            r#""ws://nginx_proxy:8901/ws/""#.into(),
+            "Subscription Up".into(),
+        ),
+        // subscription 1 shutdown and reconnection
+        (
+            r#""ws://nginx_proxy:8901/ws/""#.into(),
+            "Subscription Down".into(),
+        ),
+        (
+            r#""ws://nginx_proxy:8901/ws/""#.into(),
+            "Subscription Up".into(),
+        ),
+        // subscription 2 shutdown and reconnection
+        (
+            r#""ws://nginx_proxy_2:8902/ws/""#.into(),
+            "Subscription Down".into(),
+        ),
+        (
+            r#""ws://nginx_proxy_2:8902/ws/""#.into(),
+            "Subscription Up".into(),
+        ),
+    ];
+
+    // skip the first two events since init subscriptions can vary the order
+    assert_eq!(subscription_events[2..], expected_subscription_events[2..]);
     println!("subscription_events: {subscription_events:?}");
 }
