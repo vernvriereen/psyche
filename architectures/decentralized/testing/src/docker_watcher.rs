@@ -226,7 +226,6 @@ impl DockerWatcher {
                             if !(parsed_log.get("type") == Some(&"Solana subscription".into())) {
                                 continue;
                             }
-                            println!("AVER: {parsed_log:?}");
                             let url = parsed_log.get("url").unwrap();
 
                             let mut response =

@@ -21,7 +21,7 @@ use psyche_coordinator::{
 };
 use psyche_watcher::Backend as WatcherBackend;
 use solana_account_decoder_client_types::{UiAccount, UiAccountData, UiAccountEncoding};
-use std::{sync::Arc, time::Duration};
+use std::{cmp::min, sync::Arc, time::Duration};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, warn};
 
@@ -53,6 +53,7 @@ async fn subscribe_to_account(
     coordinator_account: &Pubkey,
     tx: mpsc::UnboundedSender<RpcResponse<UiAccount>>,
 ) {
+    let mut retries: u64 = 0;
     loop {
         let Ok(sub_client) = PubsubClient::new(&url).await else {
             warn!(
@@ -60,9 +61,14 @@ async fn subscribe_to_account(
                 url = url,
                 "Solana subscription error, could not connect to url: {url}",
             );
-            tokio::time::sleep(Duration::from_secs(5)).await;
+
+            // wait a time before we try a reconnection
+            let sleep_time = min(600, retries.saturating_mul(5));
+            tokio::time::sleep(Duration::from_secs(sleep_time)).await;
+            retries += 1;
             continue;
         };
+        retries = 0;
 
         let mut notifications = match sub_client
             .account_subscribe(
