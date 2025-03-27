@@ -4,7 +4,9 @@ use async_trait::async_trait;
 use bytemuck::Zeroable;
 use futures::future::try_join_all;
 use parquet::data_type::AsBytes;
-use psyche_coordinator::{model, Coordinator, HealthChecks, Witness, WitnessMetadata};
+use psyche_coordinator::{
+    model, Coordinator, HealthChecks, OpportunisticData, Witness, WitnessMetadata,
+};
 use psyche_core::{BatchId, NodeIdentity};
 use psyche_data_provider::{
     DataProviderTcpClient, DataProviderTcpServer, LengthKnownDataProvider, TokenizedDataProvider,
@@ -28,11 +30,7 @@ impl<T: NodeIdentity> WatcherBackend<T> for DummyBackend<T> {
         Ok(Coordinator::zeroed())
     }
 
-    async fn send_witness(
-        &mut self,
-        _witness: Witness,
-        _metadata: WitnessMetadata,
-    ) -> anyhow::Result<()> {
+    async fn send_witness(&mut self, opportunistic_data: OpportunisticData) -> anyhow::Result<()> {
         bail!("Data provider does not send witnesses");
     }
 
