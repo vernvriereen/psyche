@@ -4,22 +4,28 @@ mod instance_state;
 pub mod logic;
 mod program_error;
 
-pub use crate::instance_state::RunMetadata;
-
 use anchor_lang::prelude::*;
+pub use client::Client;
+pub use client::ClientId;
 pub use instance_state::CoordinatorInstanceState;
 use logic::*;
 pub use program_error::ProgramError;
-use psyche_coordinator::{
-    model::Model, Committee, CommitteeProof, CoordinatorConfig, Witness,
-    WitnessBloom, WitnessMetadata, WitnessProof, SOLANA_MAX_NUM_CLIENTS,
-    SOLANA_MAX_STRING_LEN,
-};
+use psyche_coordinator::model::Model;
+use psyche_coordinator::Committee;
+use psyche_coordinator::CommitteeProof;
+use psyche_coordinator::CoordinatorConfig;
+use psyche_coordinator::Witness;
+use psyche_coordinator::WitnessBloom;
+use psyche_coordinator::WitnessMetadata;
+use psyche_coordinator::WitnessProof;
+use psyche_coordinator::SOLANA_MAX_NUM_CLIENTS;
+use psyche_coordinator::SOLANA_MAX_STRING_LEN;
 use psyche_core::MerkleRoot;
-
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use ts_rs::TS;
-pub use {client::Client, client::ClientId};
+
+pub use crate::instance_state::RunMetadata;
 
 declare_id!("C5qtZvpCLXCJFeVMSfqD3fpGLpbFq85HXS1YwhQcfq49");
 
@@ -104,7 +110,6 @@ impl CoordinatorInstance {
 
 #[program]
 pub mod psyche_solana_coordinator {
-    use psyche_core::MerkleRoot;
 
     use super::*;
 
@@ -186,6 +191,29 @@ pub mod psyche_solana_coordinator {
                 broadcast_merkle,
             },
         )
+    }
+
+    #[allow(unused_variables)] // for the metadata field. adding a _ prefix results in anchor's IDL not matching the actual types. lol.
+    pub fn warmup_witness(
+        ctx: Context<PermissionlessCoordinatorAccounts>,
+        proof: WitnessProof,
+        participant_bloom: WitnessBloom,
+        broadcast_bloom: WitnessBloom,
+        broadcast_merkle: MerkleRoot,
+    ) -> Result<()> {
+        ctx.accounts
+            .coordinator_account
+            .load_mut()?
+            .state
+            .warmup_witness(
+                ctx.accounts.user.key,
+                Witness {
+                    proof,
+                    participant_bloom,
+                    broadcast_bloom,
+                    broadcast_merkle,
+                },
+            )
     }
 
     pub fn health_check(

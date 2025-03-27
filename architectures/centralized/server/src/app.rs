@@ -5,8 +5,8 @@ use psyche_coordinator::model::{
     self, Checkpoint, LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM,
 };
 use psyche_coordinator::{
-    Client, ClientState, Coordinator, CoordinatorError, HealthChecks, Round, RunState, TickResult,
-    Witness, WitnessMetadata, SOLANA_MAX_NUM_CLIENTS,
+    Client, ClientState, Coordinator, CoordinatorError, HealthChecks, OpportunisticData, Round,
+    RunState, TickResult, SOLANA_MAX_NUM_CLIENTS,
 };
 
 use psyche_core::{FixedVec, Shuffle, SizedIterator, TokenSize};
@@ -71,7 +71,7 @@ impl psyche_watcher::Backend<ClientId> for ChannelCoordinatorBackend {
         Ok(self.rx.recv().await.expect("channel closed? :("))
     }
 
-    async fn send_witness(&mut self, _witness: Witness, _metadata: WitnessMetadata) -> Result<()> {
+    async fn send_witness(&mut self, _opportunistic_data: OpportunisticData) -> Result<()> {
         bail!("Server does not send witnesses");
     }
 
@@ -378,12 +378,10 @@ impl App {
             }
             ClientToServerMessage::Witness(witness) => {
                 let state_before = self.coordinator.run_state;
-                if let Err(error) = self.coordinator.witness(
-                    &from,
-                    *witness,
-                    Self::get_timestamp(),
-                    rand::thread_rng().next_u64(),
-                ) {
+                if let Err(error) = self
+                    .coordinator
+                    .witness(&from, *witness, Self::get_timestamp())
+                {
                     warn!("Error when processing witness: {error}");
                 }
                 self.coordinator.run_state != state_before
