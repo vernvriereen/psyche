@@ -5,8 +5,8 @@ use psyche_coordinator::model::{
     self, Checkpoint, LLMTrainingDataLocation, LLMTrainingDataType, Model, LLM,
 };
 use psyche_coordinator::{
-    Client, ClientState, Coordinator, CoordinatorError, HealthChecks, OpportunisticData, Round,
-    RunState, TickResult, SOLANA_MAX_NUM_CLIENTS,
+    Client, ClientState, Coordinator, CoordinatorError, HealthChecks, Round, RunState, TickResult,
+    SOLANA_MAX_NUM_CLIENTS,
 };
 
 use psyche_core::{FixedVec, Shuffle, SizedIterator, TokenSize};
@@ -17,7 +17,7 @@ use psyche_network::{ClientNotification, TcpServer};
 use psyche_tui::{
     logging::LoggerWidget, maybe_start_render_loop, CustomWidget, MaybeTui, TabbedWidget,
 };
-use psyche_watcher::CoordinatorTui;
+use psyche_watcher::{CoordinatorTui, OpportunisticData};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -378,12 +378,19 @@ impl App {
             }
             ClientToServerMessage::Witness(witness) => {
                 let state_before = self.coordinator.run_state;
-                if let Err(error) = self
-                    .coordinator
-                    .witness(&from, *witness, Self::get_timestamp())
-                {
+                if let Err(error) = match *witness {
+                    OpportunisticData::WitnessStep(witness, _witness_metadata) => self
+                        .coordinator
+                        .witness(&from, witness, Self::get_timestamp()),
+                    OpportunisticData::WarmupStep(witness) => self.coordinator.warmup_witness(
+                        &from,
+                        witness,
+                        Self::get_timestamp(),
+                        rand::thread_rng().next_u64(),
+                    ),
+                } {
                     warn!("Error when processing witness: {error}");
-                }
+                };
                 self.coordinator.run_state != state_before
             }
             ClientToServerMessage::HealthCheck(health_checks) => {

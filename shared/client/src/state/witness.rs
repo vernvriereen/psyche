@@ -1,5 +1,6 @@
-use psyche_coordinator::{Coordinator, OpportunisticData, Witness, WitnessMetadata};
+use psyche_coordinator::{Coordinator, Witness, WitnessMetadata};
 use psyche_core::{MerkleRoot, MerkleTree, NodeIdentity};
+use psyche_watcher::OpportunisticData;
 use thiserror::Error;
 use tokio::{
     sync::mpsc::{self},

@@ -6586,6 +6586,7 @@ dependencies = [
  "psyche-coordinator",
  "psyche-core",
  "psyche-network",
+ "psyche-watcher",
  "serde",
  "ts-rs",
 ]
@@ -6937,6 +6938,7 @@ dependencies = [
  "psyche-core",
  "psyche-network",
  "psyche-tui",
+ "serde",
 ]
 
 [[package]]

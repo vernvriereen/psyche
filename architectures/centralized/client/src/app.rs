@@ -5,14 +5,14 @@ use psyche_centralized_shared::{ClientId, ClientToServerMessage, ServerToClientM
 use psyche_client::{
     CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
 };
-use psyche_coordinator::{model, Coordinator, HealthChecks, OpportunisticData, Witness};
+use psyche_coordinator::{model, Coordinator, HealthChecks};
 use psyche_network::{
     allowlist, psyche_relay_map, AuthenticatableIdentity, DiscoveryMode, NetworkTUIState,
     NetworkTui, NodeId, RelayMode, SecretKey, TcpClient,
 };
 use psyche_tui::logging::LoggerWidget;
 use psyche_tui::{CustomWidget, TabbedWidget};
-use psyche_watcher::{Backend as WatcherBackend, CoordinatorTui};
+use psyche_watcher::{Backend as WatcherBackend, CoordinatorTui, OpportunisticData};
 use std::{path::PathBuf, time::Duration};
 use tokio::sync::mpsc::Sender;
 use tokio::time::interval;
@@ -25,7 +25,7 @@ pub const TAB_NAMES: [&str; 4] = ["Client", "Coordinator", "Network", "Logger"];
 type TabsData = <Tabs as CustomWidget>::Data;
 
 pub enum ToSend {
-    Witness(Box<Witness>),
+    Witness(Box<OpportunisticData>),
     HealthCheck(HealthChecks<ClientId>),
     Checkpoint(model::HubRepo),
 }
@@ -55,10 +55,9 @@ impl WatcherBackend<ClientId> for Backend {
     }
 
     async fn send_witness(&mut self, opportunistic_data: OpportunisticData) -> Result<()> {
-        if let OpportunisticData::WitnessStep(witness, _metadata) = opportunistic_data {
-            self.tx.send(ToSend::Witness(Box::new(witness)))?;
-        }
-        Ok(())
+        Ok(self
+            .tx
+            .send(ToSend::Witness(Box::new(opportunistic_data)))?)
     }
 
     async fn send_health_check(&mut self, health_checks: HealthChecks<ClientId>) -> Result<()> {
