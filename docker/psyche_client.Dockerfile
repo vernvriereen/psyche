@@ -17,6 +17,4 @@ COPY --chmod=755 ./docker/train_entrypoint.sh /usr/local
 ENV RUST_BACKTRACE=1
 ENV RUST_LOG=info,psyche=debug
 
-# ENTRYPOINT ["/usr/local/bin/psyche-solana-client"]
 ENTRYPOINT ["/usr/local/train_entrypoint.sh"]
-# CMD ["--help"]
