@@ -4,12 +4,11 @@ use crate::{
     Broadcast, BroadcastType, ClientTUIState,
 };
 
-use psyche_coordinator::{
-    Committee, Coordinator, OpportunisticData, RunState, Witness, WitnessProof,
-};
+use psyche_coordinator::{Committee, Coordinator, RunState, Witness, WitnessProof};
 use psyche_core::{sha256, MerkleRoot, MerkleTree, NodeIdentity};
 use psyche_modeling::{DistroResult, Trainer};
 use psyche_network::{AuthenticatableIdentity, BlobTicket, Hash, TransmittableDistroResult};
+use psyche_watcher::OpportunisticData;
 use std::{
     collections::HashMap,
     fmt,

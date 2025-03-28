@@ -212,13 +212,6 @@ pub enum TickResult {
     EpochEnd(bool), // if successfully finished
 }
 
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug)]
-pub enum OpportunisticData {
-    WitnessStep(Witness, WitnessMetadata),
-    WarmupStep(Witness),
-}
-
 pub type HealthChecks<T> = Vec<(T, CommitteeProof)>;
 
 pub const NUM_STORED_ROUNDS: usize = 4;
@@ -490,6 +483,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 return Err(CoordinatorError::DuplicateWitness);
             }
         }
+
         let round = self.current_round_mut_unchecked();
         round
             .witnesses

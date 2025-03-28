@@ -1,7 +1,7 @@
 use crate::{fetch_data::DataFetcher, WandBInfo};
 use psyche_coordinator::{
     model::{self, LLMTrainingDataLocation},
-    Coordinator, HealthChecks, OpportunisticData,
+    Coordinator, HealthChecks,
 };
 use psyche_core::{CancellableBarrier, NodeIdentity, TokenSize};
 use psyche_data_provider::{
@@ -15,6 +15,7 @@ use psyche_modeling::{
     ParallelModels, PretrainedSource, Trainer,
 };
 use psyche_network::{AuthenticatableIdentity, BlobTicket};
+use psyche_watcher::OpportunisticData;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tch::{Device, Kind, Tensor};
 use thiserror::Error;

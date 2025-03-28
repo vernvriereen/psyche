@@ -1,6 +1,14 @@
 use anyhow::Result;
-use psyche_coordinator::{model, Coordinator, HealthChecks, OpportunisticData};
+use psyche_coordinator::{model, Coordinator, HealthChecks, Witness, WitnessMetadata};
 use psyche_core::NodeIdentity;
+use serde::{Deserialize, Serialize};
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum OpportunisticData {
+    WitnessStep(Witness, WitnessMetadata),
+    WarmupStep(Witness),
+}
 
 #[async_trait::async_trait]
 pub trait Backend<T: NodeIdentity>: Send + Sync {

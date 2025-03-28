@@ -17,9 +17,9 @@ use anyhow::{anyhow, bail, Result};
 use futures_util::StreamExt;
 use psyche_coordinator::{
     model::{self, Model},
-    CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks, OpportunisticData,
+    CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks,
 };
-use psyche_watcher::Backend as WatcherBackend;
+use psyche_watcher::{Backend as WatcherBackend, OpportunisticData};
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
 use std::sync::Arc;
 use tokio::sync::broadcast;

@@ -8,6 +8,7 @@ psyche-coordinator.workspace = true
 psyche-core.workspace = true
 psyche-network.workspace = true
 psyche-client.workspace = true
+psyche-watcher.workspace = true
 anchor-lang.workspace = true
 bytemuck.workspace = true
 anyhow.workspace = true
