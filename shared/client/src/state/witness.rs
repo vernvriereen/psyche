@@ -1,5 +1,6 @@
 use psyche_coordinator::{Coordinator, Witness, WitnessMetadata};
 use psyche_core::{MerkleRoot, MerkleTree, NodeIdentity};
+use psyche_watcher::OpportunisticData;
 use thiserror::Error;
 use tokio::{
     sync::mpsc::{self},
@@ -30,7 +31,7 @@ pub enum WitnessingError {
 pub struct WitnessStepMetadata<T: NodeIdentity> {
     pub identity: T,
     pub eval_runner: EvalRunner,
-    pub tx_witness: mpsc::UnboundedSender<(Witness, WitnessMetadata)>,
+    pub tx_witness: mpsc::UnboundedSender<OpportunisticData>,
 }
 
 #[derive(Debug)]
@@ -61,7 +62,7 @@ impl<T: NodeIdentity> WitnessStepMetadata<T> {
             let tx_witness = self.tx_witness.clone();
             Some(tokio::task::spawn(async move {
                 tx_witness
-                    .send((witness, metadata))
+                    .send(OpportunisticData::WitnessStep(witness, metadata))
                     .map_err(|_| WitnessingError::Send)
             }))
         } else {

@@ -405,8 +405,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         Some((download_ticket, tag)) = rx_request_download.recv() => {
                             p2p.start_download(download_ticket, tag).await?;
                         }
-                        Some((witness, metadata)) = rx_witness.recv() => {
-                            watcher.backend_mut().send_witness(witness, metadata).await?;
+                        Some(opportunistic_data) = rx_witness.recv() => {
+                            watcher.backend_mut().send_witness(opportunistic_data).await?;
                         }
                         Some(health_check) = rx_health_check.recv() => {
                             watcher.backend_mut().send_health_check(health_check).await?;

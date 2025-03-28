@@ -4180,7 +4180,7 @@ checksum = "469fb0b9cefa57e3ef31275ee7cacb78f2fdca44e4765491884a2b119d4eb130"
 [[package]]
 name = "iroh"
 version = "0.34.0"
-source = "git+https://github.com/NousResearch/iroh?rev=9671150d3809cf6618532e08bbaaaaba1f8d4759#9671150d3809cf6618532e08bbaaaaba1f8d4759"
+source = "git+https://github.com/NousResearch/iroh?rev=81722b05cf39d605b00657192dc7842259f2816f#81722b05cf39d605b00657192dc7842259f2816f"
 dependencies = [
  "aead",
  "anyhow",
@@ -4199,7 +4199,7 @@ dependencies = [
  "http 1.3.1",
  "igd-next",
  "instant",
- "iroh-base 0.34.0 (git+https://github.com/NousResearch/iroh?rev=9671150d3809cf6618532e08bbaaaaba1f8d4759)",
+ "iroh-base 0.34.0 (git+https://github.com/NousResearch/iroh?rev=81722b05cf39d605b00657192dc7842259f2816f)",
  "iroh-metrics",
  "iroh-net-report",
  "iroh-quinn",
@@ -4255,7 +4255,7 @@ dependencies = [
 [[package]]
 name = "iroh-base"
 version = "0.34.0"
-source = "git+https://github.com/NousResearch/iroh?rev=9671150d3809cf6618532e08bbaaaaba1f8d4759#9671150d3809cf6618532e08bbaaaaba1f8d4759"
+source = "git+https://github.com/NousResearch/iroh?rev=81722b05cf39d605b00657192dc7842259f2816f#81722b05cf39d605b00657192dc7842259f2816f"
 dependencies = [
  "curve25519-dalek 4.1.3",
  "data-encoding",
@@ -4392,14 +4392,14 @@ dependencies = [
 [[package]]
 name = "iroh-net-report"
 version = "0.34.0"
-source = "git+https://github.com/NousResearch/iroh?rev=9671150d3809cf6618532e08bbaaaaba1f8d4759#9671150d3809cf6618532e08bbaaaaba1f8d4759"
+source = "git+https://github.com/NousResearch/iroh?rev=81722b05cf39d605b00657192dc7842259f2816f#81722b05cf39d605b00657192dc7842259f2816f"
 dependencies = [
  "anyhow",
  "bytes",
  "cfg_aliases",
  "derive_more",
  "hickory-resolver",
- "iroh-base 0.34.0 (git+https://github.com/NousResearch/iroh?rev=9671150d3809cf6618532e08bbaaaaba1f8d4759)",
+ "iroh-base 0.34.0 (git+https://github.com/NousResearch/iroh?rev=81722b05cf39d605b00657192dc7842259f2816f)",
  "iroh-metrics",
  "iroh-quinn",
  "iroh-relay",
@@ -4475,7 +4475,7 @@ dependencies = [
 [[package]]
 name = "iroh-relay"
 version = "0.34.0"
-source = "git+https://github.com/NousResearch/iroh?rev=9671150d3809cf6618532e08bbaaaaba1f8d4759#9671150d3809cf6618532e08bbaaaaba1f8d4759"
+source = "git+https://github.com/NousResearch/iroh?rev=81722b05cf39d605b00657192dc7842259f2816f#81722b05cf39d605b00657192dc7842259f2816f"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4487,7 +4487,7 @@ dependencies = [
  "http-body-util",
  "hyper 1.6.0",
  "hyper-util",
- "iroh-base 0.34.0 (git+https://github.com/NousResearch/iroh?rev=9671150d3809cf6618532e08bbaaaaba1f8d4759)",
+ "iroh-base 0.34.0 (git+https://github.com/NousResearch/iroh?rev=81722b05cf39d605b00657192dc7842259f2816f)",
  "iroh-metrics",
  "iroh-quinn",
  "iroh-quinn-proto",
@@ -6586,6 +6586,7 @@ dependencies = [
  "psyche-coordinator",
  "psyche-core",
  "psyche-network",
+ "psyche-watcher",
  "serde",
  "ts-rs",
 ]
@@ -6937,6 +6938,7 @@ dependencies = [
  "psyche-core",
  "psyche-network",
  "psyche-tui",
+ "serde",
 ]
 
 [[package]]

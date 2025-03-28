@@ -17,9 +17,9 @@ use anyhow::{anyhow, bail, Result};
 use futures_util::StreamExt;
 use psyche_coordinator::{
     model::{self, Model},
-    CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks, Witness, WitnessMetadata,
+    CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks,
 };
-use psyche_watcher::Backend as WatcherBackend;
+use psyche_watcher::{Backend as WatcherBackend, OpportunisticData};
 use solana_account_decoder_client_types::{UiAccount, UiAccountData, UiAccountEncoding};
 use std::{cmp::min, sync::Arc, time::Duration};
 use tokio::sync::{broadcast, mpsc};
@@ -457,28 +457,48 @@ impl SolanaBackend {
         &self,
         coordinator_instance: Pubkey,
         coordinator_account: Pubkey,
-        witness: Witness,
-        metadata: WitnessMetadata,
+        opportunistic_data: OpportunisticData,
     ) -> Result<Signature> {
-        let signature = self
-            .program_coordinator
-            .request()
-            .accounts(
-                psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
-                    user: self.program_coordinator.payer(),
-                    coordinator_instance,
-                    coordinator_account,
-                },
-            )
-            .args(psyche_solana_coordinator::instruction::Witness {
-                proof: witness.proof,
-                participant_bloom: witness.participant_bloom,
-                broadcast_bloom: witness.broadcast_bloom,
-                broadcast_merkle: witness.broadcast_merkle,
-                metadata,
-            })
-            .send()
-            .await?;
+        let signature =
+            match opportunistic_data {
+                OpportunisticData::WitnessStep(witness, metadata) => self
+                    .program_coordinator
+                    .request()
+                    .accounts(
+                        psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                            user: self.program_coordinator.payer(),
+                            coordinator_instance,
+                            coordinator_account,
+                        },
+                    )
+                    .args(psyche_solana_coordinator::instruction::Witness {
+                        proof: witness.proof,
+                        participant_bloom: witness.participant_bloom,
+                        broadcast_bloom: witness.broadcast_bloom,
+                        broadcast_merkle: witness.broadcast_merkle,
+                        metadata,
+                    })
+                    .send()
+                    .await?,
+                OpportunisticData::WarmupStep(witness) => self
+                    .program_coordinator
+                    .request()
+                    .accounts(
+                        psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                            user: self.program_coordinator.payer(),
+                            coordinator_instance,
+                            coordinator_account,
+                        },
+                    )
+                    .args(psyche_solana_coordinator::instruction::WarmupWitness {
+                        proof: witness.proof,
+                        participant_bloom: witness.participant_bloom,
+                        broadcast_bloom: witness.broadcast_bloom,
+                        broadcast_merkle: witness.broadcast_merkle,
+                    })
+                    .send()
+                    .await?,
+            };
 
         Ok(signature)
     }
@@ -571,9 +591,9 @@ impl WatcherBackend<psyche_solana_coordinator::ClientId> for SolanaBackendRunner
             })
     }
 
-    async fn send_witness(&mut self, witness: Witness, metadata: WitnessMetadata) -> Result<()> {
+    async fn send_witness(&mut self, opportunistic_data: OpportunisticData) -> Result<()> {
         self.backend
-            .witness(self.instance, self.account, witness, metadata)
+            .witness(self.instance, self.account, opportunistic_data)
             .await?;
         Ok(())
     }
