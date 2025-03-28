@@ -20,6 +20,8 @@ use psyche_coordinator::{model::Model, CoordinatorConfig};
 use psyche_network::SecretKey;
 use psyche_solana_coordinator::{find_coordinator_instance, ClientId, RunMetadata};
 use psyche_tui::{maybe_start_render_loop, LogOutput};
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -348,21 +350,33 @@ async fn async_main() -> Result<()> {
             let checkpoint_upload_info = args.checkpoint_config()?;
             let eval_tasks = args.eval_tasks()?;
 
-            psyche_tui::init_logging(args.logs, Level::INFO, args.write_log.clone());
-
             info!(
                 "============ Client Startup at {} ============",
                 OffsetDateTime::now_utc()
             );
 
             let run_id = args.run_id.trim_matches('"').to_string(); // Trim quotes, if any
-            let identity_secret_key: SecretKey =
-                read_identity_secret_key(args.identity_secret_key_path.as_ref())?
-                    .unwrap_or_else(|| SecretKey::generate(&mut rand::rngs::OsRng));
 
             let wallet_keypair: Arc<Keypair> = Arc::new(wallet.try_into()?);
 
-            let wandb_info = args.wandb_info(format!("{}-{}", run_id, wallet_keypair.pubkey()))?;
+            let solana_pubkey = wallet_keypair.pubkey();
+            let wandb_info = args.wandb_info(format!("{}-{}", run_id, solana_pubkey))?;
+
+            let identity_secret_key: SecretKey =
+                read_identity_secret_key(args.identity_secret_key_path.as_ref())?
+                    // Iroh key should be deterministically derived from Solana Pubkey.
+                    .unwrap_or_else(|| {
+                        let mut rng = ChaCha8Rng::from_seed(solana_pubkey.to_bytes());
+                        SecretKey::generate(&mut rng)
+                    });
+
+            let logger = psyche_tui::init_logging(
+                args.logs,
+                Level::INFO,
+                args.write_log.clone(),
+                true,
+                Some(identity_secret_key.public().fmt_short()),
+            )?;
 
             let (cancel, tx_tui_state) = maybe_start_render_loop(
                 (args.logs == LogOutput::TUI).then(|| Tabs::new(Default::default(), &TAB_NAMES)),
@@ -397,7 +411,10 @@ async fn async_main() -> Result<()> {
             .await
             .unwrap();
 
-            app.run(allowlist, p2p, state_options).await
+            app.run(allowlist, p2p, state_options).await?;
+            logger.shutdown()?;
+
+            Ok(())
         }
 
         Commands::PrintAllHelp { markdown } => {

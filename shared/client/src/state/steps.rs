@@ -21,7 +21,7 @@ use tokio::{
     sync::mpsc::{self},
     task::JoinHandle,
 };
-use tracing::{debug, error, info, info_span, trace, warn, Instrument};
+use tracing::{debug, error, info, trace, trace_span, warn, Instrument};
 
 use super::{
     cooldown::{CooldownError, CooldownStep, CooldownStepMetadata},
@@ -942,7 +942,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunManager<T, A> {
         if let InitStage::Running(state_machine) = &mut self.0 {
             state_machine
                 .apply_state(state)
-                .instrument(info_span!("StepStateMachine::apply_state"))
+                .instrument(trace_span!("StepStateMachine::apply_state"))
                 .await?;
         }
 

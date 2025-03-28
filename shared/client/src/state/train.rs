@@ -203,12 +203,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
             let participant_bloom =
                 Bloom::random(state.epoch_state.clients.len(), BLOOM_FALSE_RATE);
             let broadcast_bloom = Bloom::random(num_all_batch_ids, BLOOM_FALSE_RATE);
-            debug!(
+            trace!(
                 "Participant bloom size: {} bits, {} keys",
                 participant_bloom.bits.0.len(),
                 participant_bloom.keys.len()
             );
-            debug!(
+            trace!(
                 "Broadcast bloom size: {} bits, {} keys",
                 broadcast_bloom.bits.0.len(),
                 broadcast_bloom.keys.len()
@@ -234,7 +234,15 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
         };
 
         info!(
-            "Assignment for step {} (round {}/epoch {}): index={} committee position={} committee={} witness position={} witness={}",
+            step = state.progress.step,
+            round = round.height,
+            epoch = state.progress.epoch,
+            index = client_index,
+            comittee_position = committee_proof.position,
+            committee = committee_proof.committee.to_string(),
+            witness_position = witness_proof.position,
+            witness_proof = witness_proof.witness.to_string(),
+            "Got training assignment for step {} (round {}/epoch {}): index={} committee position={} committee={} witness position={} witness={}",
             state.progress.step, round.height, state.progress.epoch, client_index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness
         );
         debug!(target: "witness_selection", witness = %witness_proof.witness);

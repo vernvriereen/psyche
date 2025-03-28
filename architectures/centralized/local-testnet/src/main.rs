@@ -75,7 +75,7 @@ struct StartArgs {
     random_kill_interval: u64,
 
     /// Sets the level of the logging for more granular information
-    #[clap(long, default_value = "info,psyche=debug")]
+    #[clap(long, default_value = "warn,psyche=debug")]
     log: String,
 
     /// HF repo where the first client could get the model and the configuration to use.

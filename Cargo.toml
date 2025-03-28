@@ -57,12 +57,20 @@ postcard = { version = "1.0.10", features = ["use-std"] }
 sha2 = "0.10.8"
 futures = "0.3.30"
 futures-util = "0.3.30"
-chrono = "0.4.38"
+chrono = { version = "0.4.38", features = ["clock"] }
 fast-math = "0.1"
 async-trait = "0.1.82"
-iroh = { git = "https://github.com/NousResearch/iroh", rev = "81722b05cf39d605b00657192dc7842259f2816f" }
-iroh-relay = { git = "https://github.com/NousResearch/iroh", rev = "81722b05cf39d605b00657192dc7842259f2816f" }
-iroh-blobs = { git = "https://github.com/NousResearch/iroh-blobs", rev = "dda4a502f76969e6d80aa964985ee1864f85d446", features = [ "rpc", "downloader" ] }
+iroh = { git = "https://github.com/NousResearch/iroh", rev = "81722b05cf39d605b00657192dc7842259f2816f", features = [
+    "metrics",
+] }
+iroh-relay = { git = "https://github.com/NousResearch/iroh", rev = "81722b05cf39d605b00657192dc7842259f2816f", features = [
+    "metrics",
+] }
+iroh-blobs = { git = "https://github.com/NousResearch/iroh-blobs", rev = "dda4a502f76969e6d80aa964985ee1864f85d446", features = [
+    "rpc",
+    "downloader",
+    "metrics",
+] }
 iroh-gossip = { version = "0.34.1" }
 memmap2 = { version = "0.9.3", features = ["stable_deref_trait"] }
 indicatif = "0.17.5"

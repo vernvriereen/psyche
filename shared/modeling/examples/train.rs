@@ -88,7 +88,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    init_logging(LogOutput::Console, Level::INFO, None);
+    let logger = init_logging(LogOutput::Console, Level::INFO, None, false, None)?;
     psyche_modeling::set_suggested_env_vars();
 
     let args = Args::parse();
@@ -351,5 +351,6 @@ fn main() -> Result<()> {
             step, duration, loss
         );
     }
+    logger.shutdown()?;
     Ok(())
 }
