@@ -24,6 +24,12 @@ pub enum ChaosAction {
     Kill {
         targets: Vec<String>,
     },
+    PacketLoss {
+        duration_secs: i64,
+        loss_percent: f64,
+        correlation: f64,
+        targets: Vec<String>,
+    },
 }
 
 pub struct ChaosScheduler {
@@ -73,6 +79,27 @@ impl ChaosScheduler {
                 )
             }
             ChaosAction::Kill { targets } => (vec!["kill".to_string()], targets),
+            ChaosAction::PacketLoss {
+                duration_secs,
+                loss_percent,
+                correlation,
+                targets,
+            } => {
+                let duration = format!("{duration_secs}s");
+                (
+                    vec![
+                        "netem".to_string(),
+                        "--duration".to_string(),
+                        duration,
+                        "loss".to_string(),
+                        "--percent".to_string(),
+                        loss_percent.to_string(),
+                        "--correlation".to_string(),
+                        correlation.to_string(),
+                    ],
+                    targets,
+                )
+            }
         };
 
         if chaos_step == 0 {
