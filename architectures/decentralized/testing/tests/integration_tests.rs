@@ -832,7 +832,6 @@ async fn test_when_all_clients_disconnect_checkpoint_is_hub() {
     }
 }
 
-
 /// This test creates a packet loss of 100% during 40 seconds, effectively disconnecting the client.
 /// When this happens, what happens is not deterministic and can change slightly in each execution:
 /// 1. An error does not occur and the client is not disconnected, in which the test passes.

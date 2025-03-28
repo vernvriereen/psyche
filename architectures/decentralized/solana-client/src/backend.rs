@@ -567,7 +567,7 @@ async fn account_subscribe_retryable<'a>(
     commitment: CommitmentConfig,
 ) -> Result<Pin<Box<dyn Stream<Item = Response<UiAccount>> + Send + 'a>>, RetryError<String>> {
     let pending_tx = sub_client.account_subscribe(
-        &coordinator_account,
+        coordinator_account,
         Some(RpcAccountInfoConfig {
             encoding: Some(UiAccountEncoding::Base64Zstd),
             commitment: Some(commitment),
@@ -587,7 +587,7 @@ async fn account_subscribe_retryable<'a>(
             warn!("account_subscribe_retryable error: {}", e);
             Err(RetryError::retryable_error(&format!(
                 "account_subscribe: {}",
-                e.to_string()
+                e
             )))
         }
     }
