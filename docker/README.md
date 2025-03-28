@@ -209,7 +209,7 @@ For running N instances of the Psyche client, you will need to fund N accounts. 
 do that. For using it, you will need some account with necessary funds for all of them.
 
 ```bash
-./scripts/fund_accounts.sh <PATH_TO_SOLANA_WALLET> <NUMBER_OF_ACCOUNTS> [OPTIONAL]<PATH_TO_KEYS_FILE>
+./scripts/devnet/fund_accounts.sh <PATH_TO_SOLANA_WALLET> <NUMBER_OF_ACCOUNTS> [OPTIONAL]<PATH_TO_KEYS_FILE>
 ```
 
 The script receives 2 required arguments and 1 optional argument:
