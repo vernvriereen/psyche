@@ -1,6 +1,8 @@
 # Example usages
 
-Note: We'll use the `jq` library in this example which is an open-source JSON cli tool
+Note: We'll use the `jq` library in this example which is an open-source JSON cli tool <https://jqlang.org/>
+
+Note: We'll also use the `solana-toolbox` from the `cargo install solana_toolbox_cli` rust crate
 
 ## Setting up an authorized user from the authority
 
