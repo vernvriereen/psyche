@@ -6,11 +6,11 @@ use anchor_client::solana_client::rpc_request::RpcError;
 use anchor_client::solana_sdk::transaction::TransactionError;
 use anchor_client::ClientError;
 use backon::{ExponentialBuilder, Retryable};
-use tracing::{error, trace, warn};
+use tracing::{error, warn};
 
-const DEFAULT_MAX_TIMES: usize = 10;
+const DEFAULT_MAX_TIMES: usize = 5;
 const DEFAULT_INITIAL_BACKOFF_MS: u64 = 500; // 0.5 seconds
-const DEFAULT_MAX_BACKOFF_MS: u64 = 20000; // 20 seconds
+const DEFAULT_MAX_BACKOFF_MS: u64 = 10000; // 10 seconds
 const DEFAULT_BACKOFF_FACTOR: f32 = 1.5;
 
 #[derive(Debug)]

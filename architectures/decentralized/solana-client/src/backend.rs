@@ -1,4 +1,5 @@
 use crate::retry::{retry_function, RetryError};
+use anchor_client::solana_client::rpc_response::Response;
 use anchor_client::{
     anchor_lang::system_program,
     solana_client::{
@@ -15,16 +16,20 @@ use anchor_client::{
 };
 use anyhow::Context;
 use anyhow::{anyhow, bail, Result};
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt};
 use psyche_coordinator::{
     model::{self, Model},
     CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks,
 };
 use psyche_watcher::{Backend as WatcherBackend, OpportunisticData};
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
+use std::pin::Pin;
 use std::{sync::Arc, time::Duration};
-use tokio::{sync::broadcast, time::timeout};
-use tracing::{debug, info, warn};
+use tokio::{
+    sync::broadcast,
+    time::{sleep, timeout},
+};
+use tracing::{debug, error, info, trace, warn};
 
 pub struct SolanaBackend {
     program_authorizer: Program<Arc<Keypair>>,
@@ -70,7 +75,14 @@ impl SolanaBackend {
         run_id: String,
         coordinator_account: Pubkey,
     ) -> Result<SolanaBackendRunner> {
-        let sub_client = PubsubClient::new(self.cluster.ws_url()).await?;
+        let sub_client = retry_function("start:pubsubclient_new", || async {
+            PubsubClient::new(self.cluster.ws_url()).await.map_err(|e| {
+                RetryError::retryable_error(&format!("Failed to create PubsubClient: {}", e))
+            })
+        })
+        .await
+        .map_err(|e| anyhow!("Failed to connect to PubSub: {}", e))?;
+
         let (tx, rx) = broadcast::channel(32);
 
         let coordinator_instance = psyche_solana_coordinator::find_coordinator_instance(&run_id);
@@ -90,27 +102,51 @@ impl SolanaBackend {
             .await?;
 
         tokio::spawn(async move {
-            let mut notifications = match sub_client
-                .account_subscribe(
-                    &coordinator_account,
-                    Some(RpcAccountInfoConfig {
-                        encoding: Some(UiAccountEncoding::Base64Zstd),
-                        commitment: Some(commitment),
-                        ..Default::default()
-                    }),
-                )
-                .await
-            {
-                Ok((notifications, _)) => notifications,
-                Err(err) => {
-                    tracing::error!("{}", err);
-                    return;
-                }
-            };
-            while let Some(update) = notifications.next().await {
-                if tx.send(update).is_err() {
+            let mut retry_count = 0;
+            const MAX_SUBSCRIPTION_RETRIES: u32 = 5;
+
+            loop {
+                if retry_count > MAX_SUBSCRIPTION_RETRIES {
+                    error!("Max subscription retries reached, giving up");
                     break;
                 }
+                let subscription_result = retry_function("start:account_subscribe", || {
+                    account_subscribe_retryable(&coordinator_account, &sub_client, commitment)
+                })
+                .await;
+
+                match subscription_result {
+                    Ok(notifications) => {
+                        info!("Successfully subscribed to account updates");
+
+                        let mut notifications_stream = notifications;
+                        while let Some(update) = notifications_stream.next().await {
+                            if tx.send(update).is_err() {
+                                // Channel closed, receiver dropped
+                                break;
+                            }
+                        }
+
+                        // If we exit the loop, the subscription has ended - try to reconnect
+                        warn!(
+                            "Account subscription ended, attempting to reconnect... attempt {}/{}",
+                            retry_count + 1,
+                            MAX_SUBSCRIPTION_RETRIES
+                        );
+                        retry_count += 1;
+                    }
+                    Err(_) => {
+                        warn!(
+                            "Account subscription error, attempting to reconnect... attempt {}/{}",
+                            retry_count + 1,
+                            MAX_SUBSCRIPTION_RETRIES
+                        );
+                        retry_count += 1;
+                    }
+                }
+
+                // Wait a bit before retrying
+                sleep(Duration::from_millis(500)).await;
             }
         });
 
@@ -525,11 +561,44 @@ impl SolanaBackendRunner {
     }
 }
 
+async fn account_subscribe_retryable<'a>(
+    coordinator_account: &'a Pubkey,
+    sub_client: &'a PubsubClient,
+    commitment: CommitmentConfig,
+) -> Result<Pin<Box<dyn Stream<Item = Response<UiAccount>> + Send + 'a>>, RetryError<String>> {
+    let pending_tx = sub_client.account_subscribe(
+        &coordinator_account,
+        Some(RpcAccountInfoConfig {
+            encoding: Some(UiAccountEncoding::Base64Zstd),
+            commitment: Some(commitment),
+            ..Default::default()
+        }),
+    );
+
+    match timeout(Duration::from_secs(5), pending_tx).await {
+        Ok(Ok((notifications, _))) => Ok(notifications),
+        Err(_elapsed) => {
+            error!("[TIMEOUT] tick_retryable");
+            Err(RetryError::non_retryable_error(
+                "timeout account_subscribe_retryable",
+            ))
+        }
+        Ok(Err(e)) => {
+            warn!("account_subscribe_retryable error: {}", e);
+            Err(RetryError::retryable_error(&format!(
+                "account_subscribe: {}",
+                e.to_string()
+            )))
+        }
+    }
+}
+
 async fn tick_retryable(
     coordinator: &Program<Arc<Keypair>>,
     coordinator_instance: Pubkey,
     coordinator_account: Pubkey,
 ) -> Result<Signature, RetryError<String>> {
+    trace!("tick_retryable");
     let pending_tx = coordinator
         .request()
         .accounts(
@@ -545,7 +614,7 @@ async fn tick_retryable(
     match timeout(Duration::from_secs(5), pending_tx).await {
         Ok(Ok(s)) => Ok(s),
         Err(_elapsed) => {
-            warn!("[TIMEOUT] tick_retryable");
+            error!("[TIMEOUT] tick_retryable");
             Err(RetryError::non_retryable_error("timeout tick_retryable"))
         }
         Ok(Err(e)) => {
@@ -600,7 +669,7 @@ async fn witness_retryable(
     match timeout(Duration::from_secs(5), pending_tx).await {
         Ok(Ok(s)) => Ok(s),
         Err(_elapsed) => {
-            warn!("[TIMEOUT] witness_retryable");
+            error!("[TIMEOUT] witness_retryable");
             Err(RetryError::non_retryable_error("timeout witness_retryable"))
         }
         Ok(Err(e)) => {
