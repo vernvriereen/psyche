@@ -65,12 +65,12 @@ AUTHORIZATION_PDA=$(\
 
 # We can then create add a new delegate keypair
 solana-keygen new -o delegate.json --no-bip39-passphrase
-DELEGATE=\"$(solana-keygen pubkey delegate.json)\"
+DELEGATE_PUBKEY=\"$(solana-keygen pubkey delegate.json)\"
 
 # Then we add the delegate key to our list of delegates
 solana-toolbox --rpc=devnet instruction \
     $PSYCHE_AUTHORIZER_ID authorization_grantee_update \
-    "{params:{delegates_clear:false,delegates_added:[$DELEGATE]}}" \
+    "{params:{delegates_clear:false,delegates_added:[$DELEGATE_PUBKEY]}}" \
     authorization:$AUTHORIZATION_PDA \
     grantee:$GRANTEE_KEYPAIR \
     payer:keypair --execute
