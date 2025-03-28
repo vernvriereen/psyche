@@ -1,3 +1,4 @@
+use crate::retry::{retry_function, RetryError};
 use anchor_client::{
     anchor_lang::system_program,
     solana_client::{
@@ -21,9 +22,9 @@ use psyche_coordinator::{
 };
 use psyche_watcher::{Backend as WatcherBackend, OpportunisticData};
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
-use std::sync::Arc;
-use tokio::sync::broadcast;
-use tracing::{debug, info};
+use std::{sync::Arc, time::Duration};
+use tokio::{sync::broadcast, time::timeout};
+use tracing::{debug, info, warn};
 
 pub struct SolanaBackend {
     program_authorizer: Program<Arc<Keypair>>,
@@ -377,21 +378,15 @@ impl SolanaBackend {
         coordinator_instance: Pubkey,
         coordinator_account: Pubkey,
     ) -> Result<Signature> {
-        let signature = self
-            .program_coordinator
-            .request()
-            .accounts(
-                psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
-                    user: self.program_coordinator.payer(),
-                    coordinator_instance,
-                    coordinator_account,
-                },
+        retry_function("tick", || {
+            tick_retryable(
+                &self.program_coordinator,
+                coordinator_instance,
+                coordinator_account,
             )
-            .args(psyche_solana_coordinator::instruction::Tick {})
-            .send()
-            .await?;
-
-        Ok(signature)
+        })
+        .await
+        .map_err(|e: RetryError<String>| anyhow!("tick error: {}", e))
     }
 
     pub async fn witness(
@@ -400,48 +395,16 @@ impl SolanaBackend {
         coordinator_account: Pubkey,
         opportunistic_data: OpportunisticData,
     ) -> Result<Signature> {
-        let signature =
-            match opportunistic_data {
-                OpportunisticData::WitnessStep(witness, metadata) => self
-                    .program_coordinator
-                    .request()
-                    .accounts(
-                        psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
-                            user: self.program_coordinator.payer(),
-                            coordinator_instance,
-                            coordinator_account,
-                        },
-                    )
-                    .args(psyche_solana_coordinator::instruction::Witness {
-                        proof: witness.proof,
-                        participant_bloom: witness.participant_bloom,
-                        broadcast_bloom: witness.broadcast_bloom,
-                        broadcast_merkle: witness.broadcast_merkle,
-                        metadata,
-                    })
-                    .send()
-                    .await?,
-                OpportunisticData::WarmupStep(witness) => self
-                    .program_coordinator
-                    .request()
-                    .accounts(
-                        psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
-                            user: self.program_coordinator.payer(),
-                            coordinator_instance,
-                            coordinator_account,
-                        },
-                    )
-                    .args(psyche_solana_coordinator::instruction::WarmupWitness {
-                        proof: witness.proof,
-                        participant_bloom: witness.participant_bloom,
-                        broadcast_bloom: witness.broadcast_bloom,
-                        broadcast_merkle: witness.broadcast_merkle,
-                    })
-                    .send()
-                    .await?,
-            };
-
-        Ok(signature)
+        retry_function("witness", || {
+            witness_retryable(
+                &self.program_coordinator,
+                coordinator_instance,
+                coordinator_account,
+                opportunistic_data.clone(),
+            )
+        })
+        .await
+        .map_err(|e: RetryError<String>| anyhow!("witness error: {}", e))
     }
 
     pub async fn health_check(
@@ -559,6 +522,91 @@ impl WatcherBackend<psyche_solana_coordinator::ClientId> for SolanaBackendRunner
 impl SolanaBackendRunner {
     pub fn updates(&self) -> broadcast::Receiver<RpcResponse<UiAccount>> {
         self.updates.resubscribe()
+    }
+}
+
+async fn tick_retryable(
+    coordinator: &Program<Arc<Keypair>>,
+    coordinator_instance: Pubkey,
+    coordinator_account: Pubkey,
+) -> Result<Signature, RetryError<String>> {
+    let pending_tx = coordinator
+        .request()
+        .accounts(
+            psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                user: coordinator.payer(),
+                coordinator_instance,
+                coordinator_account,
+            },
+        )
+        .args(psyche_solana_coordinator::instruction::Tick {})
+        .send();
+
+    match timeout(Duration::from_secs(5), pending_tx).await {
+        Ok(Ok(s)) => Ok(s),
+        Err(_elapsed) => {
+            warn!("[TIMEOUT] tick_retryable");
+            Err(RetryError::non_retryable_error("timeout tick_retryable"))
+        }
+        Ok(Err(e)) => {
+            warn!("tick_retryable error: {}", e);
+            Err(RetryError::from(e).into())
+        }
+    }
+}
+
+async fn witness_retryable(
+    coordinator: &Program<Arc<Keypair>>,
+    coordinator_instance: Pubkey,
+    coordinator_account: Pubkey,
+    opportunistic_data: OpportunisticData,
+) -> Result<Signature, RetryError<String>> {
+    let pending_tx = match opportunistic_data {
+        OpportunisticData::WitnessStep(witness, metadata) => coordinator
+            .request()
+            .accounts(
+                psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                    user: coordinator.payer(),
+                    coordinator_instance,
+                    coordinator_account,
+                },
+            )
+            .args(psyche_solana_coordinator::instruction::Witness {
+                proof: witness.proof,
+                participant_bloom: witness.participant_bloom,
+                broadcast_bloom: witness.broadcast_bloom,
+                broadcast_merkle: witness.broadcast_merkle,
+                metadata,
+            })
+            .send(),
+        OpportunisticData::WarmupStep(witness) => coordinator
+            .request()
+            .accounts(
+                psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                    user: coordinator.payer(),
+                    coordinator_instance,
+                    coordinator_account,
+                },
+            )
+            .args(psyche_solana_coordinator::instruction::WarmupWitness {
+                proof: witness.proof,
+                participant_bloom: witness.participant_bloom,
+                broadcast_bloom: witness.broadcast_bloom,
+                broadcast_merkle: witness.broadcast_merkle,
+            })
+            .send(),
+    };
+
+    match timeout(Duration::from_secs(5), pending_tx).await {
+        Ok(Ok(s)) => Ok(s),
+        Err(_elapsed) => {
+            warn!("[TIMEOUT] witness_retryable");
+            Err(RetryError::non_retryable_error("timeout witness_retryable"))
+        }
+        Ok(Err(e)) => {
+            warn!("witness_retryable error: {}", e);
+            Err(RetryError::from(e).into())
+        }
     }
 }
 

@@ -30,6 +30,7 @@ use tracing::{info, Level};
 mod app;
 mod backend;
 mod network_identity;
+mod retry;
 
 #[derive(Parser, Debug)]
 struct CliArgs {
