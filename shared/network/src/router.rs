@@ -385,7 +385,7 @@ mod tests {
             println!("subscribing {i} to topic..");
 
             subscriptions.push(async move {
-                if i < N_ALLOWED.into() {
+                if i < N_ALLOWED as usize {
                     println!("waiting for {i} to get at least 1 peer..");
                     sub.joined().await.unwrap();
                     println!("gossip connections {i} ready");

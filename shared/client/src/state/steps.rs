@@ -4,12 +4,11 @@ use crate::{
     Broadcast, BroadcastType, ClientTUIState,
 };
 
-use psyche_coordinator::{
-    Committee, Coordinator, RunState, Witness, WitnessMetadata, WitnessProof,
-};
+use psyche_coordinator::{Committee, Coordinator, RunState, Witness, WitnessProof};
 use psyche_core::{sha256, MerkleRoot, MerkleTree, NodeIdentity};
 use psyche_modeling::{DistroResult, Trainer};
 use psyche_network::{AuthenticatableIdentity, BlobTicket, Hash, TransmittableDistroResult};
+use psyche_watcher::OpportunisticData;
 use std::{
     collections::HashMap,
     fmt,
@@ -50,7 +49,7 @@ pub struct StepStateMachine<T: NodeIdentity, A: AuthenticatableIdentity + 'stati
     active_step: ActiveStep,
 
     tx_request_download: mpsc::UnboundedSender<(BlobTicket, u32)>,
-    tx_witness: mpsc::UnboundedSender<(Witness, WitnessMetadata)>,
+    tx_opportunistic_data: mpsc::UnboundedSender<OpportunisticData>,
     tx_broadcast_finished: mpsc::UnboundedSender<FinishedBroadcast>,
 
     current_round: RoundState<T>,
@@ -115,7 +114,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         trainers: Vec<Trainer>,
         coordinator_state: Coordinator<T>,
         tx_request_download: mpsc::UnboundedSender<(BlobTicket, u32)>,
-        tx_witness: mpsc::UnboundedSender<(Witness, WitnessMetadata)>,
+        tx_opportunistic_data: mpsc::UnboundedSender<OpportunisticData>,
         tx_broadcast_finished: mpsc::UnboundedSender<FinishedBroadcast>,
         stats_logger: StatsLogger,
     ) -> Self {
@@ -140,7 +139,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             previous_round,
 
             tx_request_download,
-            tx_witness,
+            tx_opportunistic_data,
             tx_broadcast_finished,
 
             coordinator_state,
@@ -217,14 +216,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                             .lock()
                             .map_err(|_| OpportunisticWitnessError::StatsLoggerMutex)?
                             .get_witness_metadata(&self.coordinator_state);
-                        self.tx_witness
-                            .send((witness, metadata))
+                        self.tx_opportunistic_data
+                            .send(OpportunisticData::WitnessStep(witness, metadata))
                             .map_err(|_| OpportunisticWitnessError::Send)?;
                     }
                 }
             }
         } else if self.coordinator_state.run_state == RunState::Warmup {
-            // trace!("Checking for opprotunistic witness in warmup");
             if !self.sent_warmup_finished {
                 let merkle = MerkleTree::new(&self.current_round.broadcasts)
                     .get_root()
@@ -271,23 +269,18 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                 {
                     // coordinator needs to check the index for duplicate detection
                     let index = index as u64;
-                    self.tx_witness
-                        .send((
-                            Witness {
-                                proof: WitnessProof {
-                                    position: index,
-                                    index,
-                                    witness: Default::default(),
-                                },
-                                participant_bloom: Default::default(),
-                                broadcast_bloom: Default::default(),
-                                broadcast_merkle: merkle,
-                            },
-                            self.stats_logger
-                                .lock()
-                                .unwrap()
-                                .get_witness_metadata(&self.coordinator_state),
-                        ))
+                    let witness = Witness {
+                        proof: WitnessProof {
+                            position: index,
+                            index,
+                            witness: Default::default(),
+                        },
+                        participant_bloom: Default::default(),
+                        broadcast_bloom: Default::default(),
+                        broadcast_merkle: merkle,
+                    };
+                    self.tx_opportunistic_data
+                        .send(OpportunisticData::WarmupStep(witness))
                         .map_err(|_| OpportunisticWitnessError::Send)?;
                 };
 

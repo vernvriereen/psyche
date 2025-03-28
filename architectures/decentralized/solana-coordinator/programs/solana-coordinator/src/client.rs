@@ -2,7 +2,8 @@ use anchor_lang::prelude::*;
 use bytemuck::Pod;
 use bytemuck::Zeroable;
 use psyche_core::NodeIdentity;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use ts_rs::TS;
 
 #[derive(

@@ -1,10 +1,11 @@
 use anchor_lang::{AnchorDeserialize, AnchorSerialize};
 use bytemuck::Zeroable;
-use psyche_coordinator::{model, Coordinator, HealthChecks, Witness};
+use psyche_coordinator::{model, Coordinator, HealthChecks};
 use psyche_core::NodeIdentity;
 use psyche_network::{
     AuthenticatableIdentity, FromSignedBytesError, NodeId, PublicKey, SecretKey, SignedMessage,
 };
+use psyche_watcher::OpportunisticData;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use ts_rs::TS;
@@ -12,7 +13,7 @@ use ts_rs::TS;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ClientToServerMessage {
     Join { run_id: String },
-    Witness(Box<Witness>),
+    Witness(Box<OpportunisticData>),
     HealthCheck(HealthChecks<ClientId>),
     Checkpoint(model::HubRepo),
 }

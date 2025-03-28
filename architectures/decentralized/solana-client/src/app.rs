@@ -43,6 +43,7 @@ pub struct App {
     cancel: CancellationToken,
     update_tui_interval: Interval,
     tx_tui_state: Option<Sender<TabsData>>,
+    joined_new_train_epoch: Option<Signature>,
 }
 
 pub struct AppBuilder(AppParams);
@@ -117,6 +118,7 @@ impl AppBuilder {
             cancel: p.cancel,
             tx_tui_state: p.tx_tui_state,
             update_tui_interval: interval(Duration::from_millis(150)),
+            joined_new_train_epoch: None,
         };
         let identity = psyche_solana_coordinator::ClientId::new(
             p.wallet_keypair.pubkey(),
@@ -184,7 +186,6 @@ impl App {
             .state
             .coordinator;
 
-        let mut already_joined_next_run: bool;
         if current_coordinator_state.run_state == RunState::WaitingForMembers {
             let joined = backend
                 .join_run(
@@ -200,10 +201,9 @@ impl App {
                 "Joined run {} from {} with transaction {}",
                 self.run_id, signer, joined
             );
-            already_joined_next_run = true;
+            self.joined_new_train_epoch = Some(joined);
         } else {
             info!("Waiting for the current epoch to end before joining.");
-            already_joined_next_run = false;
         }
 
         // Update the latest update after joining the run to advance the state.
@@ -232,7 +232,18 @@ impl App {
                         .unwrap()
                         .as_secs();
 
-                    let pending_clients_ids = (ticked.run_state == RunState::WaitingForMembers).then(|| coordinator_state.clients_state.get_active_clients_ids());
+                    let coordinator_state_in_waiting_for_members = if ticked.run_state == RunState::WaitingForMembers {
+                        Some(backend
+                            .get_coordinator_account(&coordinator_account)
+                            .await?
+                            .state)
+                    } else {
+                        None
+                    };
+
+                    let pending_clients_ids = coordinator_state_in_waiting_for_members
+                        .as_ref()
+                        .map(|state| state.clients_state.get_active_clients_ids());
 
                     match ticked.tick(pending_clients_ids, timestamp, rand::thread_rng().next_u64()) {
                         Ok(_) => {
@@ -241,7 +252,7 @@ impl App {
                                 let backend_clone = backend.clone();
                                 tick_tx = Some(tokio::spawn(async move { backend.tick(coordinator_instance, coordinator_account).await }));
                                 // This means the epoch finished so we're rejoining the run to participate in the next one.
-                                if ticked.run_state == RunState::WaitingForMembers && latest_update.run_state == RunState::Cooldown && !already_joined_next_run {
+                                if ticked.run_state == RunState::WaitingForMembers && latest_update.run_state == RunState::Cooldown && self.joined_new_train_epoch.is_none() {
                                     let joined = backend_clone
                                         .join_run(
                                             coordinator_instance,
@@ -256,9 +267,9 @@ impl App {
                                         "Joined run for next epoch {} from {} with transaction {}",
                                         self.run_id, signer, joined
                                     );
-                                    already_joined_next_run = true;
-                                } else if ticked.run_state == RunState::RoundTrain && latest_update.run_state == RunState::Warmup {
-                                    already_joined_next_run = false;
+                                    self.joined_new_train_epoch = Some(joined);
+                                } else if ticked.run_state == RunState::RoundTrain && self.joined_new_train_epoch.is_some() {
+                                   self.joined_new_train_epoch = None;
                                 }
                             }
                         }
