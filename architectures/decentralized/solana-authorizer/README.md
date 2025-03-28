@@ -20,10 +20,22 @@ GRANTOR_KEYPAIR=authority.json
 GRANTEE_PUBKEY=\"$(solana-keygen pubkey user.json)\"
 
 # Create a new authorization and save the created PDA's address:
-AUTHORIZATION_PDA=$(solana-toolbox --rpc=devnet instruction $PSYCHE_AUTHORIZER_ID authorization_create "{params:{grantee:$GRANTEE_PUBKEY,scope:$PSYCHE_AUTH_SCOPE}}" payer:keypair grantor:$GRANTOR_KEYPAIR --execute | jq .resolved.addresses.authorization)
+AUTHORIZATION_PDA=$(\
+    solana-toolbox --rpc=devnet instruction \
+        $PSYCHE_AUTHORIZER_ID authorization_create \
+        "{params:{grantee:$GRANTEE_PUBKEY,scope:$PSYCHE_AUTH_SCOPE}}" \
+        grantor:$GRANTOR_KEYPAIR \
+        payer:keypair --execute \
+    | jq .resolved.addresses.authorization \
+)
 
 # Activate the new authorization we just created (or deactivate it by flipping the flag to false)
-solana-toolbox --rpc=devnet instruction $PSYCHE_AUTHORIZER_ID authorization_grantor_update "{params:{active:true}}" grantor:$GRANTOR_KEYPAIR authorization:$AUTHORIZATION_PDA --execute
+solana-toolbox --rpc=devnet instruction \
+    $PSYCHE_AUTHORIZER_ID authorization_grantor_update \
+    "{params:{active:true}}" \
+    grantor:$GRANTOR_KEYPAIR \
+    authorization:$AUTHORIZATION_PDA \
+    --execute
 ```
 
 ## Setting up delegates from the authorized user
@@ -43,12 +55,23 @@ GRANTEE_KEYPAIR=user.json
 GRANTEE_PUBKEY=\"$(solana-keygen pubkey user.json)\"
 
 # Find the authorization PDA that should have already been created for us
-AUTHORIZATION_PDA=$(solana-toolbox --rpc=devnet instruction $PSYCHE_AUTHORIZER_ID authorization_create "{params:{grantee:$GRANTEE_PUBKEY,scope:$PSYCHE_AUTH_SCOPE}}" grantor:$GRANTOR_PUBKEY | jq .resolved.addresses.authorization)
+AUTHORIZATION_PDA=$(\
+    solana-toolbox --rpc=devnet instruction \
+    $PSYCHE_AUTHORIZER_ID authorization_create \
+    "{params:{grantee:$GRANTEE_PUBKEY,scope:$PSYCHE_AUTH_SCOPE}}" \
+    grantor:$GRANTOR_PUBKEY \
+    | jq .resolved.addresses.authorization \
+)
 
 # We can then create add a new delegate keypair
 solana-keygen new -o delegate.json --no-bip39-passphrase
 DELEGATE=\"$(solana-keygen pubkey delegate.json)\"
 
 # Then we add the delegate key to our list of delegates
-solana-toolbox --rpc=devnet instruction $PSYCHE_AUTHORIZER_ID authorization_grantee_update "{params:{delegates_clear:false,delegates_added:[$DELEGATE]}}" authorization:$AUTHORIZATION_PDA grantee:$GRANTEE_KEYPAIR payer:keypair --execute
+solana-toolbox --rpc=devnet instruction \
+    $PSYCHE_AUTHORIZER_ID authorization_grantee_update \
+    "{params:{delegates_clear:false,delegates_added:[$DELEGATE]}}" \
+    authorization:$AUTHORIZATION_PDA \
+    grantee:$GRANTEE_KEYPAIR \
+    payer:keypair --execute
 ```
