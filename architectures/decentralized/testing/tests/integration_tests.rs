@@ -836,7 +836,7 @@ async fn test_when_all_clients_disconnect_checkpoint_is_hub() {
 
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
-async fn test_subscription() {
+async fn test_solana_subscriptions() {
     // epochs the test will run
     let num_of_epochs_to_run = 3;
 
