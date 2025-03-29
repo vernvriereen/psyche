@@ -375,6 +375,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     broadcasts_rebroadcast_index = (broadcasts_rebroadcast_index + 1) % len;
                                     let (broadcast, _step) = &mut broadcasts[broadcasts_rebroadcast_index];
                                     broadcast.nonce += 1;
+                                    match &broadcast.data {
+                                        BroadcastType::TrainingResult(training_result) => trace!(client_id = %identity, step = training_result.step, "Rebroadcasting training result"),
+                                        BroadcastType::Finished(finished) => trace!(client_id = %identity, warmup = finished.warmup, "Rebroadcasting finished"),
+                                    }
                                     p2p.broadcast(broadcast).await?;
                                 }
                             }
