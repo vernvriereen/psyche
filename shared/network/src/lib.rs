@@ -4,7 +4,10 @@ use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
 use futures_util::StreamExt;
 use iroh::{endpoint::RemoteInfo, NodeAddr};
 use iroh_blobs::{downloader::ConcurrencyLimits, net_protocol::Blobs, store::mem::Store};
-use iroh_gossip::net::{Gossip, GossipEvent, GossipReceiver, GossipSender};
+use iroh_gossip::{
+    net::{Gossip, GossipEvent, GossipReceiver, GossipSender},
+    proto::{HyparviewConfig, PlumtreeConfig},
+};
 use p2p_model_sharing::{
     ModelConfigSharingMessage, ParameterSharingMessage, MODEL_REQUEST_TIMEOUT_SECS,
 };
@@ -207,7 +210,22 @@ where
         trace!("blobs created!");
 
         trace!("creating gossip...");
-        let gossip = Gossip::builder().spawn(endpoint.clone()).await?;
+        let gossip = Gossip::builder()
+            .max_message_size(4096)
+            .membership_config(HyparviewConfig {
+                active_view_capacity: 8,
+                shuffle_interval: Duration::from_secs(30),
+                neighbor_request_timeout: Duration::from_secs(2),
+                ..HyparviewConfig::default()
+            })
+            .broadcast_config(PlumtreeConfig {
+                graft_timeout_2: Duration::from_millis(200),
+                message_cache_retention: Duration::from_secs(1 * 60),
+                message_id_retention: Duration::from_secs(2 * 60),
+                ..PlumtreeConfig::default()
+            })
+            .spawn(endpoint.clone())
+            .await?;
         trace!("gossip created!");
 
         trace!("creating model parameter sharing...");
