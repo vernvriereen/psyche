@@ -320,7 +320,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                         Some(FinishedBroadcast { step, merkle, commitment_data_hash, proof, warmup }) = rx_broadcast_finished.recv() => {
                             debug!(
-                                "Broadcasting finished step {step} merkle 0x{}",
+                                client_id = %identity, step = step,
+                                "Broadcasting finished step merkle 0x{}",
                                 hex::encode(merkle.inner),
                             );
 
@@ -343,7 +344,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             let ticket = p2p.add_downloadable(transmittable_distro_result, step).await?;
                             let hash = ticket.hash();
                             debug!(
-                                "Broadcasting payload step {step} batch id {batch_id} hash 0x{}",
+                                client_id = %identity, step = step,
+                                "Broadcasting payload batch id {batch_id} hash 0x{}",
                                 hex::encode(hash),
                             );
 
