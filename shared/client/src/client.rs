@@ -15,7 +15,7 @@ use psyche_network::{
 use psyche_watcher::{Backend, BackendWatcher};
 use tokenizers::Tokenizer;
 
-use rand::{seq::SliceRandom, thread_rng};
+use rand::{seq::SliceRandom, thread_rng, RngCore};
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     marker::PhantomData,
@@ -327,7 +327,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                             let signature = network_identity.raw_p2p_sign(&private_key, &commitment_data_hash);
                             let commitment = Commitment { data_hash: commitment_data_hash, signature};
-                            let training_result = Broadcast { step, proof, nonce: 0, commitment, data: BroadcastType::Finished(Finished {
+                            let training_result = Broadcast { step, proof, nonce: thread_rng().next_u32(), commitment, data: BroadcastType::Finished(Finished {
                                 broadcast_merkle: merkle, warmup
                             })};
 
@@ -351,7 +351,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                             let signature = network_identity.raw_p2p_sign(&private_key, &commitment_data_hash);
                             let commitment = Commitment { data_hash: commitment_data_hash, signature};
-                            let training_result = Broadcast { step, proof, nonce: 0, commitment, data: BroadcastType::TrainingResult(TrainingResult { batch_id, ticket })};
+                            let training_result = Broadcast { step, proof, nonce: thread_rng().next_u32(), commitment, data: BroadcastType::TrainingResult(TrainingResult { batch_id, ticket })};
 
                             p2p.broadcast(&training_result).await?;
                             broadcasts.push((training_result.clone(), step));
@@ -376,7 +376,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     // periodically
                                     broadcasts_rebroadcast_index = (broadcasts_rebroadcast_index + 1) % len;
                                     let (broadcast, _step) = &mut broadcasts[broadcasts_rebroadcast_index];
-                                    broadcast.nonce += 1;
+                                    broadcast.nonce += thread_rng().next_u32();
                                     match &broadcast.data {
                                         BroadcastType::TrainingResult(training_result) => trace!(client_id = %identity, step = broadcast.step, nonce = broadcast.nonce, batch_id = %training_result.batch_id, "Rebroadcasting training result"),
                                         BroadcastType::Finished(finished) => trace!(client_id = %identity, step = broadcast.step, nonce = broadcast.nonce, warmup = finished.warmup, "Rebroadcasting finished"),
