@@ -220,7 +220,7 @@ where
             })
             .broadcast_config(PlumtreeConfig {
                 graft_timeout_2: Duration::from_millis(200),
-                message_cache_retention: Duration::from_secs(1 * 60),
+                message_cache_retention: Duration::from_secs(60),
                 message_id_retention: Duration::from_secs(2 * 60),
                 ..PlumtreeConfig::default()
             })

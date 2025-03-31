@@ -195,6 +195,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                             warn!("failed to set p2p info: {e}");
                                         }
                                         broadcasts.retain(|(_, step)| *step >= last_needed_step_blobs);
+                                        sharable_model.clear_cache(); // IMPORTANT -- any cached blobs are now invalid
                                     }
                                     RunState::Cooldown => {
                                         // clear all broadcasts
