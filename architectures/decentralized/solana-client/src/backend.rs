@@ -611,6 +611,8 @@ async fn tick_retryable(
         .args(psyche_solana_coordinator::instruction::Tick {})
         .send();
 
+    // We timeout the transaction at 5s max, since internally send() polls Solana until the
+    // tx is confirmed; we'd rather cancel early and attempt again.
     match timeout(Duration::from_secs(5), pending_tx).await {
         Ok(Ok(s)) => Ok(s),
         Err(_elapsed) => {
@@ -666,6 +668,8 @@ async fn witness_retryable(
             .send(),
     };
 
+    // We timeout the transaction at 5s max, since internally send() polls Solana until the
+    // tx is confirmed; we'd rather cancel early and attempt again.
     match timeout(Duration::from_secs(5), pending_tx).await {
         Ok(Ok(s)) => Ok(s),
         Err(_elapsed) => {

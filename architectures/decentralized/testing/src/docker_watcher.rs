@@ -5,7 +5,9 @@ use crate::CLIENT_CONTAINER_PREFIX;
 use bollard::container::KillContainerOptions;
 use bollard::{container::LogsOptions, Docker};
 use futures_util::StreamExt;
+use psyche_core::BatchId;
 use serde_json::Value;
+use std::str::FromStr;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -23,6 +25,7 @@ pub enum JsonFilter {
     LoadedModel,
     HealthCheck,
     UntrainedBatches,
+    WitnessElected,
     Error,
 }
 
@@ -33,6 +36,7 @@ pub enum Response {
     LoadedModel(String),
     HealthCheck(String, u64, u64),
     UntrainedBatches(Vec<u64>),
+    WitnessElected(String),
     Error(ObservedErrorKind, String),
 }
 
@@ -188,9 +192,11 @@ impl DockerWatcher {
                             }
                         }
                         JsonFilter::HealthCheck => {
-                            let Some(_) = parsed_log.get("unhealthy_warn") else {
+                            if parsed_log.get("target")
+                                != Some(&Value::String("unhealthy_client".to_string()))
+                            {
                                 continue;
-                            };
+                            }
                             let client_id = parsed_log
                                 .get("client_id")
                                 .and_then(|v| v.as_str())
@@ -217,30 +223,38 @@ impl DockerWatcher {
                             }
                         }
                         JsonFilter::UntrainedBatches => {
-                            if !(parsed_log.get("level") == Some(&"WARN".into())) {
-                                continue;
-                            }
-
-                            let Some(serde_json::Value::String(message)) =
-                                parsed_log.get("message")
-                            else {
-                                continue;
-                            };
-
-                            if !message.starts_with("No commitments for batch B") {
+                            if parsed_log.get("target")
+                                != Some(&Value::String("untrained_batch".to_string()))
+                            {
                                 continue;
                             }
 
                             // extract batch Ids
-                            let start_idx = message.find('[').unwrap() + 1;
-                            let end_idx = message.find(']').unwrap();
-                            let batchs_str = &message[start_idx..end_idx];
-                            let batch_ids: Vec<u64> = batchs_str
-                                .split(',')
-                                .map(|s| s.trim().parse().unwrap())
-                                .collect();
+                            let message =
+                                parsed_log.get("batch_id").and_then(|v| v.as_str()).unwrap();
+                            let batch_id_range = BatchId::from_str(message).unwrap();
+                            let batch_ids = batch_id_range.iter().collect();
 
                             let response = Response::UntrainedBatches(batch_ids);
+                            if log_sender.send(response).await.is_err() {
+                                println!("Probably the test ended so we drop the log sender");
+                            }
+                        }
+                        JsonFilter::WitnessElected => {
+                            if parsed_log.get("target")
+                                != Some(&Value::String("witness_selection".to_string()))
+                            {
+                                continue;
+                            }
+                            let is_witness = parsed_log
+                                .get("witness")
+                                .and_then(|v| v.as_str())
+                                .unwrap()
+                                .to_string();
+                            if is_witness != true.to_string() {
+                                continue;
+                            }
+                            let response = Response::WitnessElected(name.clone());
                             if log_sender.send(response).await.is_err() {
                                 println!("Probably the test ended so we drop the log sender");
                             }

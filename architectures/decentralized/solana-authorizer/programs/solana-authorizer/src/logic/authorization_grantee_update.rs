@@ -16,7 +16,10 @@ pub struct AuthorizationGranteeUpdateAccounts<'info> {
         constraint = authorization.grantee == grantee.key(),
         realloc = Authorization::space_with_discriminator(
             authorization.scope.len(),
-            params.delegates.len(),
+            match params.delegates_clear {
+                true => 0,
+                false => authorization.delegates.len(),
+            } + params.delegates_added.len()
         ),
         realloc::payer = payer,
         realloc::zero = true,
@@ -29,7 +32,8 @@ pub struct AuthorizationGranteeUpdateAccounts<'info> {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct AuthorizationGranteeUpdateParams {
-    pub delegates: Vec<Pubkey>,
+    pub delegates_clear: bool,
+    pub delegates_added: Vec<Pubkey>,
 }
 
 pub fn authorization_grantee_update_processor(
@@ -37,6 +41,9 @@ pub fn authorization_grantee_update_processor(
     params: AuthorizationGranteeUpdateParams,
 ) -> Result<()> {
     let authorization = &mut context.accounts.authorization;
-    authorization.delegates = params.delegates;
+    if params.delegates_clear {
+        authorization.delegates.clear();
+    }
+    authorization.delegates.extend(params.delegates_added);
     Ok(())
 }
