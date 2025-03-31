@@ -760,7 +760,7 @@ async fn test_total_packet_loss_in_client() {
             "../../config/solana-test/light-two-min-clients.toml",
         )),
     )
-        .await;
+    .await;
 
     let solana_client = Arc::new(SolanaTestClient::new(run_id).await);
     for i in 1..=n_clients {

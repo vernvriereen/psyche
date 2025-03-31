@@ -1,5 +1,4 @@
 use crate::retry::{retry_function, RetryError};
-use anchor_client::solana_client::rpc_response::Response;
 use anchor_client::{
     anchor_lang::system_program,
     solana_client::{
@@ -14,9 +13,8 @@ use anchor_client::{
     },
     Client, ClientError, Cluster, Program,
 };
-use anyhow::Context;
-use anyhow::{anyhow, bail, Result};
-use futures_util::{Stream, StreamExt};
+use anyhow::{anyhow, bail, Context, Result};
+use futures_util::StreamExt;
 use psyche_coordinator::{
     model::{self, Model},
     CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks,
@@ -24,14 +22,9 @@ use psyche_coordinator::{
 use psyche_watcher::{Backend as WatcherBackend, OpportunisticData};
 use solana_account_decoder_client_types::{UiAccount, UiAccountData, UiAccountEncoding};
 use std::{cmp::min, sync::Arc, time::Duration};
-use tokio::sync::{broadcast, mpsc};
-use tracing::{debug, error, info, warn};
-use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
-use std::pin::Pin;
-use std::{sync::Arc, time::Duration};
 use tokio::{
-    sync::broadcast,
-    time::{sleep, timeout},
+    sync::{broadcast, mpsc},
+    time::timeout,
 };
 use tracing::{debug, error, info, trace, warn};
 
@@ -78,7 +71,6 @@ async fn subscribe_to_account(
             retries += 1;
             continue;
         };
-        retries = 0;
 
         let mut notifications = match sub_client
             .account_subscribe(
@@ -104,8 +96,19 @@ async fn subscribe_to_account(
             "Correctly subscribe to Solana url: {url}",
         );
         while let Some(update) = notifications.next().await {
-            tx.send(update).unwrap();
+            if tx.send(update).is_err() {
+                // Channel closed, receiver dropped
+                break;
+            }
         }
+        warn!(
+            type = "Solana subscription",
+            url = url,
+            "Solana subscription error, could not connect to url: {url}",
+        );
+        let sleep_time = min(600, retries.saturating_mul(5));
+        tokio::time::sleep(Duration::from_secs(sleep_time)).await;
+        retries += 1;
     }
 }
 
@@ -590,38 +593,6 @@ impl WatcherBackend<psyche_solana_coordinator::ClientId> for SolanaBackendRunner
 impl SolanaBackendRunner {
     pub fn updates(&self) -> broadcast::Receiver<RpcResponse<UiAccount>> {
         self.updates.resubscribe()
-    }
-}
-
-async fn account_subscribe_retryable<'a>(
-    coordinator_account: &'a Pubkey,
-    sub_client: &'a PubsubClient,
-    commitment: CommitmentConfig,
-) -> Result<Pin<Box<dyn Stream<Item = Response<UiAccount>> + Send + 'a>>, RetryError<String>> {
-    let pending_tx = sub_client.account_subscribe(
-        coordinator_account,
-        Some(RpcAccountInfoConfig {
-            encoding: Some(UiAccountEncoding::Base64Zstd),
-            commitment: Some(commitment),
-            ..Default::default()
-        }),
-    );
-
-    match timeout(Duration::from_secs(5), pending_tx).await {
-        Ok(Ok((notifications, _))) => Ok(notifications),
-        Err(_elapsed) => {
-            error!("[TIMEOUT] tick_retryable");
-            Err(RetryError::non_retryable_error(
-                "timeout account_subscribe_retryable",
-            ))
-        }
-        Ok(Err(e)) => {
-            warn!("account_subscribe_retryable error: {}", e);
-            Err(RetryError::retryable_error(&format!(
-                "account_subscribe: {}",
-                e
-            )))
-        }
     }
 }
 
