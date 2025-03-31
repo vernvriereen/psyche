@@ -267,3 +267,127 @@ async fn test_weighted_data_provider_exhaustive() -> Result<()> {
 
     Ok(())
 }
+
+#[test(tokio::test)]
+async fn test_weighted_data_provider_exhausts_small_dataset_before_repeat() -> Result<()> {
+    let provider1 = MockDataProvider::new(1, 5, vec![0]);
+    let provider2 = MockDataProvider::new(2, 20, vec![0]);
+
+    // give equal weight (0.5 each). the total epoch size is 5 + 20 = 25
+    // target for Provider 1 = 0.5 * 25 = 12.5 samples (approx 12 or 13)
+    // since 12.5 > 5, Provider 1 must exhaust its unique samples and then repeat
+    // target for Provider 2 = 0.5 * 25 = 12.5 samples (approx 12 or 13)
+    // since 12.5 < 20, Provider 2 should *not* repeat samples
+    let mut weighted_provider = WeightedDataProvider::new(
+        vec![(provider1, 0.5), (provider2, 0.5)],
+        Shuffle::DontShuffle, // use Shuffle::DontShuffle to observe the direct output of the
+                              // index generation logic without randomization
+    );
+
+    let total_samples_in_epoch = weighted_provider.num_sequences();
+    assert_eq!(
+        total_samples_in_epoch, 25,
+        "Epoch size should be sum of provider sizes"
+    );
+
+    let batch = BatchId(ClosedInterval {
+        start: 0,
+        end: (total_samples_in_epoch - 1) as u64,
+    });
+    let samples = weighted_provider.get_samples(batch).await?;
+
+    assert_eq!(
+        samples.len(),
+        total_samples_in_epoch,
+        "Should receive all samples in the epoch"
+    );
+
+    let mut provider1_yielded_sample_ids: Vec<i32> = Vec::new();
+    let mut provider2_yielded_sample_ids: Vec<i32> = Vec::new();
+
+    for sample in samples.iter() {
+        // MockDataProvider encodes provider_id * 1000 + sample_id in the token
+        let value = sample.first().expect("Sample should not be empty");
+        let provider_id = value / 1000;
+        let sample_id_within_provider = value % 1000;
+
+        match provider_id {
+            1 => provider1_yielded_sample_ids.push(sample_id_within_provider),
+            2 => provider2_yielded_sample_ids.push(sample_id_within_provider),
+            _ => panic!("Unexpected provider ID encountered: {}", provider_id),
+        }
+    }
+
+    let p1_total_count = provider1_yielded_sample_ids.len();
+    let p1_unique_yielded_ids: std::collections::HashSet<i32> =
+        provider1_yielded_sample_ids.iter().cloned().collect();
+
+    assert!(
+        (12..=13).contains(&p1_total_count),
+        "Provider 1 count ({}) not in expected range [12, 13]",
+        p1_total_count
+    );
+
+    assert_eq!(
+        p1_unique_yielded_ids.len(),
+        5,
+        "Provider 1 should have yielded all 5 of its unique sample IDs"
+    );
+    for i in 0..5 {
+        assert!(
+            p1_unique_yielded_ids.contains(&i),
+            "Provider 1 unique IDs should contain {}",
+            i
+        );
+    }
+
+    assert!(
+        p1_total_count > 5,
+        "Provider 1 count ({}) must be > 5 to indicate repetition occurred",
+        p1_total_count
+    );
+
+    let mut first_5_p1_ids = std::collections::HashSet::new();
+    let mut p1_occurrences = 0;
+    for sample in &samples {
+        let value = sample[0];
+        if value / 1000 == 1 {
+            // If it's from provider 1
+            if p1_occurrences < 5 {
+                first_5_p1_ids.insert(value % 1000);
+            }
+            p1_occurrences += 1;
+        }
+    }
+    assert_eq!(
+        first_5_p1_ids.len(),
+        5,
+        "The first 5 samples selected from Provider 1 should have unique IDs 0-4"
+    );
+
+    let p2_total_count = provider2_yielded_sample_ids.len();
+    let p2_unique_yielded_ids: std::collections::HashSet<i32> =
+        provider2_yielded_sample_ids.iter().cloned().collect();
+
+    assert!(
+        (12..=13).contains(&p2_total_count),
+        "Provider 2 count ({}) not in expected range [12, 13]",
+        p2_total_count
+    );
+
+    assert_eq!(
+        p2_unique_yielded_ids.len(),
+        p2_total_count,
+        "Provider 2 should not have repeated any samples (unique count {} != total count {})",
+        p2_unique_yielded_ids.len(),
+        p2_total_count
+    );
+
+    assert_eq!(
+        p1_total_count + p2_total_count,
+        total_samples_in_epoch,
+        "Sum of provider counts should equal total samples requested"
+    );
+
+    Ok(())
+}
