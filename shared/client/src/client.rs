@@ -197,11 +197,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                         broadcasts.retain(|(_, step)| *step >= last_needed_step_blobs);
                                         sharable_model.clear_cache(); // IMPORTANT -- any cached blobs are now invalid
                                     }
-                                    RunState::Cooldown => {
-                                        // clear all broadcasts
-                                        p2p.remove_blobs_with_tag_less_than(0);
-                                        broadcasts.clear();
-                                    }
                                     _ => {},
                                 }
                             }
