@@ -7,6 +7,7 @@ mod hub;
 mod local;
 mod remote;
 mod traits;
+mod weighted;
 
 pub use data_provider::DataProvider;
 pub use dataset::{Dataset, Field, Row, Split};
@@ -19,3 +20,4 @@ pub use local::LocalDataProvider;
 pub use parquet::record::{ListAccessor, MapAccessor, RowAccessor};
 pub use remote::{DataProviderTcpClient, DataProviderTcpServer, DataServerTui};
 pub use traits::{LengthKnownDataProvider, TokenizedDataProvider};
+pub use weighted::{http::WeightedHttpProvidersConfig, WeightedDataProvider};

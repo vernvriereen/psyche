@@ -210,9 +210,7 @@ pub async fn run() {
                 checkpoint: Checkpoint::Dummy(HubRepo::dummy()),
                 max_seq_len: 4096,
                 data_type: LLMTrainingDataType::Pretraining,
-                data_location: LLMTrainingDataLocation::Local(
-                    Zeroable::zeroed(),
-                ),
+                data_location: LLMTrainingDataLocation::default(),
                 lr_schedule: LearningRateSchedule::Constant(
                     ConstantLR::default(),
                 ),

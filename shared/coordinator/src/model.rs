@@ -6,22 +6,14 @@ use anchor_lang::{
 };
 use bytemuck::{Zeroable, ZeroableInOption};
 use psyche_core::{
-    ConstantLR, FixedString, LearningRateSchedule, OptimizerDefinition, Shuffle, TokenSize,
+    ConstantLR, FixedString, FixedVec, LearningRateSchedule, OptimizerDefinition, Shuffle,
+    TokenSize,
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 #[derive(
-    Clone,
-    Debug,
-    Copy,
-    Zeroable,
-    AnchorDeserialize,
-    AnchorSerialize,
-    Serialize,
-    Deserialize,
-    InitSpace,
-    TS,
+    Clone, Debug, Copy, Zeroable, AnchorDeserialize, AnchorSerialize, Serialize, Deserialize, TS,
 )]
 #[repr(C)]
 pub enum Model {
@@ -84,11 +76,68 @@ pub enum LLMTrainingDataLocation {
     Dummy,
     Server(FixedString<{ SOLANA_MAX_STRING_LEN }>),
     Local(FixedString<{ SOLANA_MAX_URL_STRING_LEN }>),
-    Http {
-        location: HttpTrainingDataLocation,
-        token_size_in_bytes: TokenSize,
-        shuffle: Shuffle,
-    },
+    Http(HttpLLMTrainingDataLocation),
+    /// link to a JSON file that deserializes to a Vec<LLMTrainingDataLocationAndWeight>
+    WeightedHttp(FixedString<{ SOLANA_MAX_URL_STRING_LEN }>),
+}
+
+impl Default for LLMTrainingDataLocation {
+    fn default() -> Self {
+        Self::Dummy
+    }
+}
+
+#[derive(
+    AnchorSerialize,
+    AnchorDeserialize,
+    InitSpace,
+    Serialize,
+    Deserialize,
+    Clone,
+    Debug,
+    Zeroable,
+    Copy,
+    TS,
+)]
+#[repr(C)]
+#[allow(clippy::large_enum_variant)]
+pub struct HttpLLMTrainingDataLocation {
+    pub location: HttpTrainingDataLocation,
+    pub token_size_in_bytes: TokenSize,
+    pub shuffle: Shuffle,
+}
+
+/// these are deserialized from JSON
+#[derive(Serialize, Deserialize, Clone, Debug, Copy)]
+pub struct LLMTrainingDataLocationAndWeight {
+    pub location: LLMTrainingDataLocation,
+    pub weight: f32,
+}
+
+impl Default for LLMTrainingDataLocationAndWeight {
+    fn default() -> Self {
+        Self {
+            location: Default::default(),
+            weight: 1.0,
+        }
+    }
+}
+
+impl<const N: usize> From<LLMTrainingDataLocation>
+    for FixedVec<LLMTrainingDataLocationAndWeight, N>
+{
+    fn from(location: LLMTrainingDataLocation) -> Self {
+        FixedVec::from_iter([LLMTrainingDataLocationAndWeight {
+            location,
+            weight: 1.0,
+        }])
+    }
+}
+
+impl LLMTrainingDataLocationAndWeight {
+    pub fn new(location: LLMTrainingDataLocation, weight: f32) -> Self {
+        Self { location, weight }
+    }
 }
 
 /// NOTE: Support for Vecs of URLs is not enabled because of the large size it would support.
@@ -123,16 +172,7 @@ pub enum HttpTrainingDataLocation {
 }
 
 #[derive(
-    AnchorSerialize,
-    AnchorDeserialize,
-    InitSpace,
-    Serialize,
-    Deserialize,
-    Clone,
-    Debug,
-    Zeroable,
-    Copy,
-    TS,
+    AnchorSerialize, AnchorDeserialize, Serialize, Deserialize, Clone, Debug, Zeroable, Copy, TS,
 )]
 #[repr(C)]
 pub struct LLM {
@@ -150,7 +190,7 @@ impl LLM {
         Self {
             architecture: LLMArchitecture::HfLlama,
             checkpoint: Checkpoint::Dummy(HubRepo::dummy()),
-            data_location: LLMTrainingDataLocation::Dummy,
+            data_location: LLMTrainingDataLocation::default(),
             data_type: LLMTrainingDataType::Pretraining,
             lr_schedule: LearningRateSchedule::Constant(ConstantLR::default()),
             max_seq_len: 2048,
@@ -226,11 +266,14 @@ impl Model {
                     msg!("model check failed: max_seq_len is 0.");
                     return false;
                 }
+
                 let bad_data_location = match llm.data_location {
                     LLMTrainingDataLocation::Dummy => false,
                     LLMTrainingDataLocation::Server(url) => url.is_empty(),
                     LLMTrainingDataLocation::Local(_) => false,
-                    LLMTrainingDataLocation::Http { location, .. } => match location {
+                    LLMTrainingDataLocation::Http(HttpLLMTrainingDataLocation {
+                        location, ..
+                    }) => match location {
                         HttpTrainingDataLocation::SingleUrl(url) => url.is_empty(),
                         HttpTrainingDataLocation::NumberedFiles {
                             url_template,
@@ -239,6 +282,7 @@ impl Model {
                         } => url_template.is_empty() || num_files == 0,
                         HttpTrainingDataLocation::Gcp { bucket_name, .. } => bucket_name.is_empty(),
                     },
+                    LLMTrainingDataLocation::WeightedHttp(url) => url.is_empty(),
                 };
                 if bad_data_location {
                     msg!("model check failed: bad LLM training data location.");
