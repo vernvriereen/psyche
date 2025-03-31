@@ -237,6 +237,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
             "Assignment for step {} (round {}/epoch {}): index={} committee position={} committee={} witness position={} witness={}",
             state.progress.step, round.height, state.progress.epoch, client_index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness
         );
+        debug!(target: "witness_selection", witness = %witness_proof.witness);
 
         let eval_runner = self.eval_runner.clone();
         let finished = Arc::new(AtomicBool::new(false));
@@ -513,7 +514,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     let batch_commitments = match commitments.get(&batch_id) {
                         Some(x) => x,
                         None => {
-                            warn!("No commitments for batch {batch_id}");
+                            warn!(
+                                target: "untrained_batch",
+                                batch_id = %batch_id,
+                                "No commitments for batch {batch_id}",
+                            );
                             continue;
                         }
                     };
@@ -617,10 +622,11 @@ fn start_sending_health_checks<T: NodeIdentity>(
                     let proof = committee_selection.get_committee(index as u64);
                     if !state.healthy(&client.id, &proof).unwrap_or(false) {
                         warn!(
-                            unhealthy_warn = "Found unhealthy trainer at",
+                            target: "unhealthy_client",
                             index = index,
                             client_id = %&client.id,
-                            current_step = state.epoch_state.rounds_head
+                            current_step = state.epoch_state.rounds_head,
+                            "Found unhealthy trainer at index: {}", index,
                         );
                         checks.push((client.id, proof));
                     }

@@ -211,6 +211,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     ) {
                         debug!("Sending opportunistic witness");
 
+                        info!(target: "witness", id = %self.identity, "Sending opportunistic witness");
                         let metadata = self
                             .stats_logger
                             .lock()

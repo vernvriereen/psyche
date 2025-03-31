@@ -54,6 +54,14 @@ decentralized-integration-test test_name="":
         cargo test --release -p psyche-decentralized-testing --test integration_tests -- --nocapture "{{test_name}}"; \
     fi
 
+# run integration decentralized chaos tests
+decentralized-chaos-integration-test test_name="":
+    if [ "{{test_name}}" = "" ]; then \
+        cargo test --release -p psyche-decentralized-testing --test chaos_tests -- --nocapture; \
+    else \
+        cargo test --release -p psyche-decentralized-testing --test chaos_tests -- --nocapture "{{test_name}}"; \
+    fi
+
 # Deploy coordinator on localnet and create a "test" run for 1.1b model.
 setup-solana-localnet-test-run run_id="test" *args='':
     RUN_ID={{run_id}} ./scripts/setup-and-deploy-solana-test.sh {{args}}
@@ -109,7 +117,7 @@ generate_cli_docs:
     cargo run -p psyche-centralized-client print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-client.md
     cargo run -p psyche-centralized-server print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-server.md
     cargo run -p psyche-centralized-local-testnet print-all-help --markdown > psyche-book/generated/cli/psyche-centralized-local-testnet.md
-    
+
 
 build_docker_test_client:
     ./scripts/coordinator-address-check.sh

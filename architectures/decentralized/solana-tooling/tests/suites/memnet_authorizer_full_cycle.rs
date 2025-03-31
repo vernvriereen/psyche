@@ -1,4 +1,6 @@
 use psyche_solana_authorizer::find_authorization;
+use psyche_solana_authorizer::logic::AuthorizationGranteeUpdateParams;
+use psyche_solana_authorizer::logic::AuthorizationGrantorUpdateParams;
 use psyche_solana_tooling::create_memnet_endpoint::create_memnet_endpoint;
 use psyche_solana_tooling::get_accounts::get_authorization;
 use psyche_solana_tooling::process_authorizer_instructions::process_authorizer_authorization_close;
@@ -80,7 +82,10 @@ pub async fn run() {
         &payer,
         &grantee,
         &authorization,
-        &delegates[..5],
+        AuthorizationGranteeUpdateParams {
+            delegates_clear: false,
+            delegates_added: delegates[..5].to_vec(),
+        },
     )
     .await
     .unwrap();
@@ -114,7 +119,22 @@ pub async fn run() {
         &payer,
         &grantee,
         &authorization,
-        &delegates[10..90],
+        AuthorizationGranteeUpdateParams {
+            delegates_clear: true,
+            delegates_added: delegates[10..40].to_vec(),
+        },
+    )
+    .await
+    .unwrap();
+    process_authorizer_authorization_grantee_update(
+        &mut endpoint,
+        &payer,
+        &grantee,
+        &authorization,
+        AuthorizationGranteeUpdateParams {
+            delegates_clear: false,
+            delegates_added: delegates[40..90].to_vec(),
+        },
     )
     .await
     .unwrap();
@@ -143,7 +163,7 @@ pub async fn run() {
         &payer,
         &grantor,
         &authorization,
-        true,
+        AuthorizationGrantorUpdateParams { active: true },
     )
     .await
     .unwrap();
@@ -182,7 +202,10 @@ pub async fn run() {
         &payer,
         &grantee,
         &authorization,
-        &delegates[3..5],
+        AuthorizationGranteeUpdateParams {
+            delegates_clear: true,
+            delegates_added: delegates[3..5].to_vec(),
+        },
     )
     .await
     .unwrap();
@@ -221,7 +244,7 @@ pub async fn run() {
         &payer,
         &grantor,
         &authorization,
-        false,
+        AuthorizationGrantorUpdateParams { active: false },
     )
     .await
     .unwrap();
@@ -271,7 +294,10 @@ pub async fn run() {
         &payer,
         &grantee,
         &authorization,
-        &[],
+        AuthorizationGranteeUpdateParams {
+            delegates_clear: true,
+            delegates_added: vec![],
+        },
     )
     .await
     .unwrap();
