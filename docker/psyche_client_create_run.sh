@@ -50,7 +50,9 @@ fi
 echo -e "\n[+] Creating training run with run ID '${RUN_ID}'"
 docker run --rm -v "$WALLET_FILE":/keys/id.json \
     --add-host=host.docker.internal:host-gateway \
-    psyche-client create-run \
+    --entrypoint /usr/local/bin/psyche-solana-client \
+    psyche-client \
+        create-run \
         --wallet-private-key-path "/keys/id.json" \
         --rpc ${RPC} \
         --ws-rpc ${WS_RPC} \
@@ -62,7 +64,9 @@ echo -e "\n[+] Uploading model config..."
 docker run --rm -v "$WALLET_FILE":/keys/id.json \
            -v "$CONFIG_PATH":/model_config/config.toml \
            --add-host=host.docker.internal:host-gateway \
-    psyche-client update-config \
+    --entrypoint /usr/local/bin/psyche-solana-client \
+    psyche-client \
+        update-config \
         --wallet-private-key-path "/keys/id.json" \
         --rpc ${RPC} \
         --ws-rpc ${WS_RPC} \
@@ -73,7 +77,9 @@ echo -e "\n[+] Model config uploaded successfully"
 
 docker run --rm -v "$WALLET_FILE":/keys/id.json \
     --add-host=host.docker.internal:host-gateway \
-    psyche-client set-paused \
+    --entrypoint /usr/local/bin/psyche-solana-client \
+    psyche-client \
+        set-paused \
         --wallet-private-key-path "/keys/id.json" \
         --rpc ${RPC} \
         --ws-rpc ${WS_RPC} \

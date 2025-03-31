@@ -31,8 +31,8 @@ The `psyche_client.Dockerfile` is the dockerfile used to build the image for the
 end users, in a production-like environment.
 In essence, the image is built installing some basic OS dependencies and then copying the client binary from
 the `psyche-base` image.
-The `client_entrypoint.sh` script runs as the default entrypoint for the container, which is no more than a
-call to the `psyche-solana-client` binary to start training.
+The `train_entrypoint.sh` script runs as the default entrypoint for the container, which is no more than a
+call to the `psyche-solana-client` binary to start training, and some logic for restart the client in case it crashes.
 
 ## Psyche Solana test client
 
@@ -192,12 +192,13 @@ The environment variables that should be set are
 - `WS_RPC`: The url to the Solana websocket endpoint
 - `WALLET_FILE`: The path to your Solana keypair, used to pay for all transactions in the training process.
 - `RUN_ID`: A string representing the ID of the run to join
+- `RAW_WALLET_PRIVATE_KEY`: A string representing the Solana private key in base58 format that will be used to sign transactions in the Psyche client.
+- `NVIDIA_DRIVER_CAPABILITIES`: a variable that controls which driver libraries will be mounted in the container. Usually should be set to "all". Refer to https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/docker-specialized.html#driver-capabilities for more details.
 
-You can make a copy of the `config/client/.env.example` and set your variables accordingly.
-Once everything is set, to join the run and start training you should run
+Once everything is set, you can join the run and start training with
 
 ```bash
-./docker/psyche_client_train.sh
+docker run --rm -it --name psyche-client --env-file ./config/client/.env --gpus all --network "host" psyche-client
 ```
 
 ### Starting N dockerized clients with one GPU each
@@ -208,7 +209,7 @@ For running N instances of the Psyche client, you will need to fund N accounts. 
 do that. For using it, you will need some account with necessary funds for all of them.
 
 ```bash
-./scripts/fund_accounts.sh <PATH_TO_SOLANA_WALLET> <NUMBER_OF_ACCOUNTS> [OPTIONAL]<PATH_TO_KEYS_FILE>
+./scripts/devnet/fund_accounts.sh <PATH_TO_SOLANA_WALLET> <NUMBER_OF_ACCOUNTS> [OPTIONAL]<PATH_TO_KEYS_FILE>
 ```
 
 The script receives 2 required arguments and 1 optional argument:
