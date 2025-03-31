@@ -20,10 +20,10 @@ use psyche_coordinator::{
     CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks,
 };
 use psyche_watcher::{Backend as WatcherBackend, OpportunisticData};
-use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
-use std::sync::Arc;
-use tokio::sync::broadcast;
-use tracing::{debug, info};
+use solana_account_decoder_client_types::{UiAccount, UiAccountData, UiAccountEncoding};
+use std::{cmp::min, sync::Arc, time::Duration};
+use tokio::sync::{broadcast, mpsc};
+use tracing::{debug, error, info, warn};
 
 pub struct SolanaBackend {
     program_authorizer: Program<Arc<Keypair>>,
@@ -45,6 +45,58 @@ pub struct CreatedRun {
     pub account: Pubkey,
     pub tx_create_coordinator: Signature,
     pub tx_create_auth: Option<Signature>,
+}
+
+async fn subscribe_to_account(
+    url: String,
+    commitment: CommitmentConfig,
+    coordinator_account: &Pubkey,
+    tx: mpsc::UnboundedSender<RpcResponse<UiAccount>>,
+) {
+    let mut retries: u64 = 0;
+    loop {
+        let Ok(sub_client) = PubsubClient::new(&url).await else {
+            warn!(
+                type = "Solana subscription",
+                url = url,
+                "Solana subscription error, could not connect to url: {url}",
+            );
+
+            // wait a time before we try a reconnection
+            let sleep_time = min(600, retries.saturating_mul(5));
+            tokio::time::sleep(Duration::from_secs(sleep_time)).await;
+            retries += 1;
+            continue;
+        };
+        retries = 0;
+
+        let mut notifications = match sub_client
+            .account_subscribe(
+                coordinator_account,
+                Some(RpcAccountInfoConfig {
+                    encoding: Some(UiAccountEncoding::Base64Zstd),
+                    commitment: Some(commitment),
+                    ..Default::default()
+                }),
+            )
+            .await
+        {
+            Ok((notifications, _)) => notifications,
+            Err(err) => {
+                error!("{}", err);
+                return;
+            }
+        };
+
+        info!(
+            type = "Solana subscription",
+            url = url,
+            "Correctly subscribe to Solana url: {url}",
+        );
+        while let Some(update) = notifications.next().await {
+            tx.send(update).unwrap();
+        }
+    }
 }
 
 impl SolanaBackend {
@@ -69,8 +121,42 @@ impl SolanaBackend {
         run_id: String,
         coordinator_account: Pubkey,
     ) -> Result<SolanaBackendRunner> {
-        let sub_client = PubsubClient::new(self.cluster.ws_url()).await?;
-        let (tx, rx) = broadcast::channel(32);
+        let (tx_update, rx_update) = broadcast::channel(32);
+        let cluster = self.cluster.clone();
+        let url = cluster.ws_url().to_string();
+        let commitment = self.program_coordinator.rpc().commitment();
+
+        let (tx_subscribe, mut rx_subscribe) = mpsc::unbounded_channel();
+
+        let tx_subscribe_1 = tx_subscribe.clone();
+        tokio::spawn(async move {
+            subscribe_to_account(url, commitment, &coordinator_account, tx_subscribe_1).await
+        });
+
+        let tx_subscribe_2 = tx_subscribe.clone();
+        let url_2 = std::env::var("ws_rpc_2")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| cluster.ws_url().to_string());
+        tokio::spawn(async move {
+            subscribe_to_account(url_2, commitment, &coordinator_account, tx_subscribe_2).await
+        });
+
+        tokio::spawn(async move {
+            let mut last_data: UiAccountData = UiAccountData::LegacyBinary("".to_string());
+            let mut last_slot = 0;
+            while let Some(update) = rx_subscribe.recv().await {
+                let data = &update.value.data;
+                if update.context.slot >= last_slot && &last_data != data {
+                    if tx_update.send(update.clone()).is_err() {
+                        break;
+                    }
+                    last_data = data.clone();
+                    last_slot = update.context.slot;
+                }
+            }
+            error!("No subscriptions available");
+        });
 
         let coordinator_instance = psyche_solana_coordinator::find_coordinator_instance(&run_id);
 
@@ -80,42 +166,15 @@ impl SolanaBackend {
             run_id, coordinator_instance
         );
 
-        let commitment = self.program_coordinator.rpc().commitment();
-
         let init = self
             .program_coordinator
             .rpc()
             .get_account_data(&coordinator_account)
             .await?;
 
-        tokio::spawn(async move {
-            let mut notifications = match sub_client
-                .account_subscribe(
-                    &coordinator_account,
-                    Some(RpcAccountInfoConfig {
-                        encoding: Some(UiAccountEncoding::Base64Zstd),
-                        commitment: Some(commitment),
-                        ..Default::default()
-                    }),
-                )
-                .await
-            {
-                Ok((notifications, _)) => notifications,
-                Err(err) => {
-                    tracing::error!("{}", err);
-                    return;
-                }
-            };
-            while let Some(update) = notifications.next().await {
-                if tx.send(update).is_err() {
-                    break;
-                }
-            }
-        });
-
         Ok(SolanaBackendRunner {
             backend: self,
-            updates: rx,
+            updates: rx_update,
             instance: coordinator_instance,
             account: coordinator_account,
             init: Some(init),

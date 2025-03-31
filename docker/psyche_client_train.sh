@@ -59,6 +59,7 @@ docker run --rm -v "$WALLET_FILE":/keys/id.json \
         --wallet-private-key-path "/keys/id.json" \
         --rpc ${RPC} \
         --ws-rpc ${WS_RPC} \
+        --ws-rpc-2 ${WS_RPC_2} \
         --run-id ${RUN_ID} \
         --ticker \
         --logs "console"
