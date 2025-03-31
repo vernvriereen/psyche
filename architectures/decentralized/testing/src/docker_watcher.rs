@@ -27,6 +27,7 @@ pub enum JsonFilter {
     UntrainedBatches,
     SolanaSubscription,
     WitnessElected,
+    Error,
 }
 
 #[derive(Debug)]
@@ -38,6 +39,7 @@ pub enum Response {
     UntrainedBatches(Vec<u64>),
     SolanaSubscription(String, String),
     WitnessElected(String),
+    Error(ObservedErrorKind, String),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -53,6 +55,29 @@ pub enum DockerWatcherError {
 
     #[error("Client {0} has crashed")]
     ClientCrashedError(u8),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObservedErrorKind {
+    InvalidRunState,
+    InvalidWitness,
+    Timeout,
+    Unknown,
+}
+
+impl From<String> for ObservedErrorKind {
+    fn from(value: String) -> Self {
+        if value.contains("InvalidRunState") {
+            return ObservedErrorKind::InvalidRunState;
+        }
+        if value.contains("InvalidWitness") {
+            return ObservedErrorKind::InvalidWitness;
+        }
+        if value.contains("TIMEOUT") {
+            return ObservedErrorKind::Timeout;
+        }
+        ObservedErrorKind::Unknown
+    }
 }
 
 pub struct DockerWatcher {
@@ -257,6 +282,26 @@ impl DockerWatcher {
                                 continue;
                             }
                             let response = Response::WitnessElected(name.clone());
+                            if log_sender.send(response).await.is_err() {
+                                println!("Probably the test ended so we drop the log sender");
+                            }
+                        }
+                        JsonFilter::Error => {
+                            let Some(level) = parsed_log.get("level") else {
+                                continue;
+                            };
+                            if level != "ERROR" {
+                                continue;
+                            }
+                            let Some(message) = parsed_log.get("message") else {
+                                continue;
+                            };
+
+                            let response = Response::Error(
+                                ObservedErrorKind::from(message.to_string()),
+                                message.to_string(),
+                            );
+
                             if log_sender.send(response).await.is_err() {
                                 println!("Probably the test ended so we drop the log sender");
                             }

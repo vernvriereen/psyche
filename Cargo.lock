@@ -6840,6 +6840,7 @@ dependencies = [
  "anchor-client",
  "anyhow",
  "async-trait",
+ "backon",
  "bytemuck",
  "clap",
  "clap-markdown",
