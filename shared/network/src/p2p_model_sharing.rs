@@ -297,6 +297,11 @@ impl SharableModel {
             }
         }
     }
+
+    pub fn clear_cache(&mut self) {
+        self.config_and_tokenizer_ticket = None;
+        self.serialized_parameters = None;
+    }
 }
 
 // These impls on the `SharableModel` struct are the ones called by the

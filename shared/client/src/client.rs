@@ -15,7 +15,7 @@ use psyche_network::{
 use psyche_watcher::{Backend, BackendWatcher};
 use tokenizers::Tokenizer;
 
-use rand::{seq::SliceRandom, thread_rng};
+use rand::{seq::SliceRandom, thread_rng, RngCore};
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     marker::PhantomData,
@@ -184,26 +184,18 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 }
                             }
 
-                            if old_state.map(|s| s.run_state) != Some(new_state.run_state)   {
-                                match new_state.run_state {
-                                    RunState::RoundTrain => {
-                                        debug!(num_peers = connected_p2p_nodes.len(), "Updating p2p");
-                                        let last_needed_step_blobs = new_state.progress.step.saturating_sub(2);
-                                        p2p.remove_blobs_with_tag_less_than(last_needed_step_blobs);
-                                        let p2p_info = get_p2p_info(&p2p).await?;
-                                        if let Err(e) = run.set_node_info(p2p_info) {
-                                            warn!("failed to set p2p info: {e}");
-                                        }
-                                        broadcasts.retain(|(_, step)| *step >= last_needed_step_blobs);
-                                    }
-                                    RunState::Cooldown => {
-                                        // clear all broadcasts
-                                        p2p.remove_blobs_with_tag_less_than(0);
-                                        broadcasts.clear();
-                                    }
-                                    _ => {},
+                            if old_state.map(|s| s.run_state) != Some(new_state.run_state) && new_state.run_state == RunState::RoundTrain {
+                                debug!(num_peers = connected_p2p_nodes.len(), "Updating p2p");
+                                let last_needed_step_blobs = new_state.progress.step.saturating_sub(2);
+                                p2p.remove_blobs_with_tag_less_than(last_needed_step_blobs);
+                                let p2p_info = get_p2p_info(&p2p).await?;
+                                if let Err(e) = run.set_node_info(p2p_info) {
+                                    warn!("failed to set p2p info: {e}");
                                 }
+                                broadcasts.retain(|(_, step)| *step >= last_needed_step_blobs);
+                                sharable_model.clear_cache(); // IMPORTANT -- any cached blobs are now invalid
                             }
+
                             run.apply_state(*new_state).await?;
                         }
 
@@ -320,13 +312,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                         Some(FinishedBroadcast { step, merkle, commitment_data_hash, proof, warmup }) = rx_broadcast_finished.recv() => {
                             debug!(
-                                "Broadcasting finished step {step} merkle 0x{}",
+                                client_id = %identity, step = step,
+                                "Broadcasting finished step merkle 0x{}",
                                 hex::encode(merkle.inner),
                             );
 
                             let signature = network_identity.raw_p2p_sign(&private_key, &commitment_data_hash);
                             let commitment = Commitment { data_hash: commitment_data_hash, signature};
-                            let training_result = Broadcast { step, proof, nonce: 0, commitment, data: BroadcastType::Finished(Finished {
+                            let training_result = Broadcast { step, proof, nonce: thread_rng().next_u32(), commitment, data: BroadcastType::Finished(Finished {
                                 broadcast_merkle: merkle, warmup
                             })};
 
@@ -343,13 +336,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             let ticket = p2p.add_downloadable(transmittable_distro_result, step).await?;
                             let hash = ticket.hash();
                             debug!(
-                                "Broadcasting payload step {step} batch id {batch_id} hash 0x{}",
+                                client_id = %identity, step = step,
+                                "Broadcasting payload batch id {batch_id} hash 0x{}",
                                 hex::encode(hash),
                             );
 
                             let signature = network_identity.raw_p2p_sign(&private_key, &commitment_data_hash);
                             let commitment = Commitment { data_hash: commitment_data_hash, signature};
-                            let training_result = Broadcast { step, proof, nonce: 0, commitment, data: BroadcastType::TrainingResult(TrainingResult { batch_id, ticket })};
+                            let training_result = Broadcast { step, proof, nonce: thread_rng().next_u32(), commitment, data: BroadcastType::TrainingResult(TrainingResult { batch_id, ticket })};
 
                             p2p.broadcast(&training_result).await?;
                             broadcasts.push((training_result.clone(), step));
@@ -374,7 +368,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     // periodically
                                     broadcasts_rebroadcast_index = (broadcasts_rebroadcast_index + 1) % len;
                                     let (broadcast, _step) = &mut broadcasts[broadcasts_rebroadcast_index];
-                                    broadcast.nonce += 1;
+                                    broadcast.nonce += thread_rng().next_u32();
+                                    match &broadcast.data {
+                                        BroadcastType::TrainingResult(training_result) => trace!(client_id = %identity, step = broadcast.step, nonce = broadcast.nonce, batch_id = %training_result.batch_id, "Rebroadcasting training result"),
+                                        BroadcastType::Finished(finished) => trace!(client_id = %identity, step = broadcast.step, nonce = broadcast.nonce, warmup = finished.warmup, "Rebroadcasting finished"),
+                                    }
                                     p2p.broadcast(broadcast).await?;
                                 }
                             }
