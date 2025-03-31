@@ -9,3 +9,4 @@ As Psyche is a large & complex process, we'll walk you through some of the proce
 - [Secrets Management](./agenix.md)
 - [Building these docs](./book.md)
 - [CI](./ci.md)
+- [Contributing](./contributing.md)
