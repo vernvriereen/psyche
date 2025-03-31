@@ -184,22 +184,18 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 }
                             }
 
-                            if old_state.map(|s| s.run_state) != Some(new_state.run_state)   {
-                                match new_state.run_state {
-                                    RunState::RoundTrain => {
-                                        debug!(num_peers = connected_p2p_nodes.len(), "Updating p2p");
-                                        let last_needed_step_blobs = new_state.progress.step.saturating_sub(2);
-                                        p2p.remove_blobs_with_tag_less_than(last_needed_step_blobs);
-                                        let p2p_info = get_p2p_info(&p2p).await?;
-                                        if let Err(e) = run.set_node_info(p2p_info) {
-                                            warn!("failed to set p2p info: {e}");
-                                        }
-                                        broadcasts.retain(|(_, step)| *step >= last_needed_step_blobs);
-                                        sharable_model.clear_cache(); // IMPORTANT -- any cached blobs are now invalid
-                                    }
-                                    _ => {},
+                            if old_state.map(|s| s.run_state) != Some(new_state.run_state) && new_state.run_state == RunState::RoundTrain {
+                                debug!(num_peers = connected_p2p_nodes.len(), "Updating p2p");
+                                let last_needed_step_blobs = new_state.progress.step.saturating_sub(2);
+                                p2p.remove_blobs_with_tag_less_than(last_needed_step_blobs);
+                                let p2p_info = get_p2p_info(&p2p).await?;
+                                if let Err(e) = run.set_node_info(p2p_info) {
+                                    warn!("failed to set p2p info: {e}");
                                 }
+                                broadcasts.retain(|(_, step)| *step >= last_needed_step_blobs);
+                                sharable_model.clear_cache(); // IMPORTANT -- any cached blobs are now invalid
                             }
+
                             run.apply_state(*new_state).await?;
                         }
 
