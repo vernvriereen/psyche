@@ -102,14 +102,7 @@ impl SolanaBackend {
             .await?;
 
         tokio::spawn(async move {
-            let mut retry_count = 0;
-            const MAX_SUBSCRIPTION_RETRIES: u32 = 5;
-
             loop {
-                if retry_count > MAX_SUBSCRIPTION_RETRIES {
-                    error!("Max subscription retries reached, giving up");
-                    break;
-                }
                 let subscription_result = retry_function("start:account_subscribe", || {
                     account_subscribe_retryable(&coordinator_account, &sub_client, commitment)
                 })
@@ -128,20 +121,10 @@ impl SolanaBackend {
                         }
 
                         // If we exit the loop, the subscription has ended - try to reconnect
-                        warn!(
-                            "Account subscription ended, attempting to reconnect... attempt {}/{}",
-                            retry_count + 1,
-                            MAX_SUBSCRIPTION_RETRIES
-                        );
-                        retry_count += 1;
+                        warn!("Account subscription ended, attempting to reconnect...");
                     }
                     Err(_) => {
-                        warn!(
-                            "Account subscription error, attempting to reconnect... attempt {}/{}",
-                            retry_count + 1,
-                            MAX_SUBSCRIPTION_RETRIES
-                        );
-                        retry_count += 1;
+                        warn!("Account subscription error, attempting to reconnect...");
                     }
                 }
 
