@@ -179,30 +179,50 @@ fn build_weighted_index(
     weights: &[f64],
     dataset_sizes: &[usize],
 ) -> (Vec<usize>, Vec<u64>) {
+    let num_providers = weights.len();
     let mut dataset_index = Vec::with_capacity(n_samples);
     let mut dataset_sample_index = Vec::with_capacity(n_samples);
 
-    let mut current_samples = vec![0u64; weights.len()];
+    let mut total_samples_drawn = vec![0u64; num_providers];
+    let mut next_unique_index = vec![0u64; num_providers];
+    let mut is_exhausted = vec![false; num_providers];
 
     for sample_idx in 0..n_samples {
         let sample_idx_float = (sample_idx as f64).max(1.0);
 
+        // select provider based on weighted error
         let mut max_error = f64::NEG_INFINITY;
-        let mut max_error_index = 0;
-
-        for (i, &weight) in weights.iter().enumerate() {
-            let error = weight * sample_idx_float - current_samples[i] as f64;
+        let mut chosen_provider_idx = 0;
+        for i in 0..num_providers {
+            if dataset_sizes[i] == 0 {
+                continue;
+            }
+            let error = weights[i] * sample_idx_float - total_samples_drawn[i] as f64;
             if error > max_error {
                 max_error = error;
-                max_error_index = i;
+                chosen_provider_idx = i;
             }
         }
 
-        dataset_index.push(max_error_index);
-        dataset_sample_index
-            .push(current_samples[max_error_index] % dataset_sizes[max_error_index] as u64);
+        // determine the sample index
+        let provider_size = dataset_sizes[chosen_provider_idx] as u64;
+        let sample_to_yield: u64;
 
-        current_samples[max_error_index] += 1;
+        if !is_exhausted[chosen_provider_idx] {
+            sample_to_yield = next_unique_index[chosen_provider_idx];
+            next_unique_index[chosen_provider_idx] += 1;
+
+            if next_unique_index[chosen_provider_idx] == provider_size {
+                is_exhausted[chosen_provider_idx] = true;
+            }
+        } else {
+            sample_to_yield = total_samples_drawn[chosen_provider_idx] % provider_size;
+        }
+
+        dataset_index.push(chosen_provider_idx);
+        dataset_sample_index.push(sample_to_yield);
+
+        total_samples_drawn[chosen_provider_idx] += 1;
     }
 
     (dataset_index, dataset_sample_index)
