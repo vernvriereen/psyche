@@ -1,13 +1,13 @@
 use crate::{fetch_data::DataFetcher, WandBInfo};
 use psyche_coordinator::{
-    model::{self, LLMTrainingDataLocation},
+    model::{self, HttpLLMTrainingDataLocation, LLMTrainingDataLocation},
     Coordinator, HealthChecks,
 };
 use psyche_core::{CancellableBarrier, NodeIdentity, TokenSize};
 use psyche_data_provider::{
     download_model_repo_async,
     http::{FileURLs, HttpDataProvider},
-    DataProvider, DataProviderTcpClient, DummyDataProvider,
+    DataProvider, DataProviderTcpClient, DummyDataProvider, WeightedDataProvider,
 };
 use psyche_modeling::{
     auto_tokenizer, AutoConfig, AutoTokenizerError, CausalLM, CommunicatorId, DataParallel,
@@ -153,10 +153,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
 
         let data_future = async {
             debug!("Setting up data provider from {:?}", llm.data_location);
-            let data_provider = match &llm.data_location {
+            let data_provider = match llm.data_location {
                 LLMTrainingDataLocation::Server(data_server) => DataProvider::Server(
                     DataProviderTcpClient::connect(
-                        data_server.into(),
+                        (&data_server).into(),
                         init_config.network_identity,
                         init_config.private_key,
                     )
@@ -164,21 +164,28 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                 ),
                 LLMTrainingDataLocation::Local(_) => todo!(),
                 LLMTrainingDataLocation::Dummy => {
-                    DataProvider::Dummy(DummyDataProvider::new(TokenSize::TwoBytes, 2048))
+                    DataProvider::Dummy(DummyDataProvider::new(TokenSize::TwoBytes, 2048, u64::MAX))
                 }
-                LLMTrainingDataLocation::Http {
+                LLMTrainingDataLocation::Http(HttpLLMTrainingDataLocation {
                     location,
                     token_size_in_bytes,
                     shuffle,
-                } => {
-                    let file_urls = FileURLs::from_location(location).await?;
+                }) => {
+                    let file_urls = FileURLs::from_location(&location).await?;
                     DataProvider::Http(HttpDataProvider::new(
                         file_urls,
-                        *token_size_in_bytes,
+                        token_size_in_bytes,
                         llm.max_seq_len,
-                        *shuffle,
+                        shuffle,
                     )?)
                 }
+                LLMTrainingDataLocation::WeightedHttp(config_url) => DataProvider::WeightedHttp(
+                    WeightedDataProvider::<HttpDataProvider>::from_config_url(
+                        &String::from(&config_url),
+                        llm.max_seq_len,
+                    )
+                    .await?,
+                ),
             };
             Ok(data_provider)
         };

@@ -138,6 +138,9 @@ enum Commands {
 
         #[clap(long, env)]
         ticker: bool,
+
+        #[clap(long, env, default_value_t = String::from(""))]
+        ws_rpc_2: String,
     },
 
     // Prints the help, optionally as markdown. Used for docs generation.
@@ -336,9 +339,11 @@ async fn async_main() -> Result<()> {
             wallet,
             args,
             ticker,
+            ws_rpc_2,
         } => {
             psyche_client::prepare_environment();
 
+            std::env::set_var("ws_rpc_2", ws_rpc_2);
             let hub_read_token = std::env::var("HF_TOKEN").ok();
             let checkpoint_upload_info = args.checkpoint_config()?;
             let eval_tasks = args.eval_tasks()?;

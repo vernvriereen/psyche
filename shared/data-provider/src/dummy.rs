@@ -1,20 +1,23 @@
-use crate::traits::TokenizedDataProvider;
-use anyhow::Result;
+use crate::{traits::TokenizedDataProvider, LengthKnownDataProvider};
+use anyhow::{bail, Result};
 use psyche_core::{BatchId, TokenSize};
 
 pub struct DummyDataProvider {
     seq_len: usize,
     token_size_in_bytes: TokenSize,
+    num_sequences: u64,
 }
 
 impl DummyDataProvider {
     pub fn new(
         token_size_in_bytes: TokenSize,
         num_tokens_per_sequence: usize, // num tokens per sequence
+        num_sequences: u64,
     ) -> Self {
         Self {
             seq_len: num_tokens_per_sequence,
             token_size_in_bytes,
+            num_sequences,
         }
     }
 
@@ -42,6 +45,17 @@ impl DummyDataProvider {
 
 impl TokenizedDataProvider for DummyDataProvider {
     async fn get_samples(&mut self, data_ids: BatchId) -> Result<Vec<Vec<i32>>> {
+        for id in data_ids.iter() {
+            if id > self.num_sequences {
+                bail!("id {id} > self.num_sequences {}", self.num_sequences)
+            }
+        }
         self.internal_get_samples(data_ids.len())
+    }
+}
+
+impl LengthKnownDataProvider for DummyDataProvider {
+    fn num_sequences(&self) -> usize {
+        self.num_sequences as usize
     }
 }

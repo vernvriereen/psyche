@@ -30,7 +30,7 @@ pub struct LocalDataProvider {
 }
 
 impl LengthKnownDataProvider for LocalDataProvider {
-    fn len(&self) -> usize {
+    fn num_sequences(&self) -> usize {
         self.sequences.len()
     }
 }
@@ -158,7 +158,7 @@ impl Iterator for LocalDataProviderIter {
     type Item = Vec<i32>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current_index < self.provider.len() as u64 {
+        if self.current_index < self.provider.num_sequences() as u64 {
             let result = self
                 .provider
                 .internal_get_samples(BatchId(ClosedInterval::new(

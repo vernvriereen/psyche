@@ -119,7 +119,7 @@ where
                 .map(|(k, v)| (format!("{}", k), *v))
                 .collect(),
             tick: v.state.tick,
-            total_samples: v.local_data_provider.len(),
+            total_samples: v.local_data_provider.num_sequences(),
             given_samples: v.provided_sequences.values().fold(0, |acc, ele| acc + *ele),
         }
     }

@@ -1,7 +1,9 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
+use bollard::container::StartContainerOptions;
 use bollard::{container::KillContainerOptions, Docker};
 use psyche_coordinator::{model::Checkpoint, RunState};
+use psyche_decentralized_testing::docker_setup::e2e_testing_setup_subscription;
 use psyche_decentralized_testing::{
     chaos::{ChaosAction, ChaosScheduler},
     docker_setup::{
@@ -587,6 +589,150 @@ async fn test_when_all_clients_disconnect_checkpoint_is_hub() {
     }
 }
 
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
+async fn test_solana_subscriptions() {
+    // epochs the test will run
+    let num_of_epochs_to_run = 3;
+
+    // Initialize DockerWatcher
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+
+    // Initialize a Solana run with 2 client
+    let _cleanup = e2e_testing_setup_subscription(
+        docker.clone(),
+        2,
+        Some(PathBuf::from(
+            "../../config/solana-test/light-two-min-clients.toml",
+        )),
+    )
+    .await;
+
+    // Monitor the client containers
+    let _monitor_client_1 = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-1"),
+            vec![JsonFilter::StateChange],
+        )
+        .unwrap();
+
+    let _monitor_client_2 = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-2"),
+            vec![JsonFilter::SolanaSubscription],
+        )
+        .unwrap();
+
+    let mut live_interval = time::interval(Duration::from_secs(10));
+    let mut subscription_events: Vec<(String, String)> = Vec::new();
+
+    loop {
+        tokio::select! {
+            _ = live_interval.tick() => {
+                if let Err(e) = watcher.monitor_clients_health(2).await {
+                    panic!("{}", e);
+                }
+            }
+            response = watcher.log_rx.recv() => {
+                match response {
+                    Some(Response::StateChange(_timestamp, _client_1, old_state, new_state, epoch , step)) => {
+                        if old_state == RunState::WaitingForMembers.to_string() {
+                            println!(
+                                "Starting epoch: {epoch}",
+                            );
+                        }
+
+                        // shutdown subscription 1
+                        if step == 5 && new_state == RunState::RoundWitness.to_string(){
+                            println!("stop container nginx_proxy");
+                            docker
+                                .stop_container("nginx_proxy", None)
+                                .await
+                                .unwrap()
+
+                        }
+                        // resume subscription 1
+                        if step == 15 && new_state == RunState::RoundWitness.to_string(){
+                            println!("unpause container nginx_proxy");
+                            docker
+                                .start_container("nginx_proxy", None::<StartContainerOptions<String>>)
+                                .await
+                                .unwrap();
+
+                        }
+
+                        // shutdown subscription 2
+                        if step == 25 && new_state == RunState::RoundWitness.to_string(){
+                            println!("stop container nginx_proxy_2");
+                            docker
+                                .stop_container("nginx_proxy_2", None)
+                                .await
+                                .unwrap()
+
+                        }
+                        // resume subscription 2
+                        if step == 45 && new_state == RunState::RoundWitness.to_string(){
+                            println!("unpause container nginx_proxy_2");
+
+                            docker
+                                .start_container("nginx_proxy_2", None::<StartContainerOptions<String>>)
+                                .await
+                                .unwrap();
+                        }
+
+                        // finish test
+                        if epoch == num_of_epochs_to_run {
+                            break
+                        }
+
+                    },
+                    Some(Response::SolanaSubscription(url, status)) => {
+                        println!("Solana subscriptions {url} status: {status}");
+                        subscription_events.push((url , status))
+                    }
+                    _ => unreachable!(),
+                }
+            }
+
+        }
+    }
+    subscription_events.dedup();
+    let expected_subscription_events = vec![
+        // init subscriptions
+        (
+            r#""ws://nginx_proxy_2:8902/ws/""#.into(),
+            "Subscription Up".into(),
+        ),
+        (
+            r#""ws://nginx_proxy:8901/ws/""#.into(),
+            "Subscription Up".into(),
+        ),
+        // subscription 1 shutdown and reconnection
+        (
+            r#""ws://nginx_proxy:8901/ws/""#.into(),
+            "Subscription Down".into(),
+        ),
+        (
+            r#""ws://nginx_proxy:8901/ws/""#.into(),
+            "Subscription Up".into(),
+        ),
+        // subscription 2 shutdown and reconnection
+        (
+            r#""ws://nginx_proxy_2:8902/ws/""#.into(),
+            "Subscription Down".into(),
+        ),
+        (
+            r#""ws://nginx_proxy_2:8902/ws/""#.into(),
+            "Subscription Up".into(),
+        ),
+    ];
+
+    // skip the first two events since init subscriptions can vary the order
+    assert_eq!(subscription_events[2..], expected_subscription_events[2..]);
+    println!("subscription_events: {subscription_events:?}");
+}
+
 /// This test creates a packet loss of 100% during 40 seconds, effectively disconnecting the client.
 /// When this happens, what happens is not deterministic and can change slightly in each execution:
 /// 1. An error does not occur and the client is not disconnected, in which the test passes.
@@ -614,7 +760,7 @@ async fn test_total_packet_loss_in_client() {
             "../../config/solana-test/light-two-min-clients.toml",
         )),
     )
-    .await;
+        .await;
 
     let solana_client = Arc::new(SolanaTestClient::new(run_id).await);
     for i in 1..=n_clients {

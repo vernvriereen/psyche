@@ -175,66 +175,70 @@ impl App {
 
             debug!("potentially launching data server...");
 
-            let training_data_server = if let Model::LLM(LLM {
-                data_location: LLMTrainingDataLocation::Server(url),
-                data_type,
-                checkpoint,
-                ..
-            }) = &coordinator.model
-            {
-                if let LLMTrainingDataType::Finetuning = data_type {
-                    panic!("Finetuning is not supported yet.")
-                }
-
-                match checkpoint {
-                    Checkpoint::Hub(hub_repo) => {
-                        let repo_id = String::from(&hub_repo.repo_id);
-                        let revision = hub_repo.revision.map(|bytes| (&bytes).into());
-                        if revision.is_some()
-                            || !tokio::fs::try_exists(PathBuf::from(repo_id.clone()))
-                                .await
-                                .unwrap_or_default()
-                        {
-                            download_model_repo_async(&repo_id, revision, None, None, None, true)
-                                .await?;
+            let training_data_server = match &coordinator.model {
+                Model::LLM(LLM {
+                    data_location,
+                    data_type,
+                    checkpoint,
+                    ..
+                }) => {
+                    if let LLMTrainingDataType::Finetuning = data_type {
+                        panic!("Finetuning is not supported yet.")
+                    }
+                    if let LLMTrainingDataLocation::Server(url) = data_location {
+                        match checkpoint {
+                            Checkpoint::Hub(hub_repo) => {
+                                let repo_id = String::from(&hub_repo.repo_id);
+                                let revision = hub_repo.revision.map(|bytes| (&bytes).into());
+                                if revision.is_some()
+                                    || !tokio::fs::try_exists(PathBuf::from(repo_id.clone()))
+                                        .await
+                                        .unwrap_or_default()
+                                {
+                                    download_model_repo_async(&repo_id, revision, None, None, None, true)
+                                        .await?;
+                                }
+                            }
+                            Checkpoint::Ephemeral => {
+                                bail!("Can't start up a run with an Ephemeral checkpoint.")
+                            }
+                            Checkpoint::Dummy(_) => {
+                                // ok!
+                            }
+                            Checkpoint::P2P(_) => {
+                                bail!("Can't start up a run with a P2P checkpoint.")
+                            }
                         }
-                    }
-                    Checkpoint::Ephemeral => {
-                        bail!("Can't start up a run with an Ephemeral checkpoint.")
-                    }
-                    Checkpoint::Dummy(_) => {
-                        // ok!
-                    }
-                    Checkpoint::P2P(_) => {
-                        bail!("Can't start up a run with a P2P checkpoint.")
+
+                        let server_addr: SocketAddr = String::from(url).parse().map_err(|e| {
+                            anyhow!("Failed to parse training data server URL {:?}: {}", url, e)
+                        })?;
+                        let data_server_port = server_addr.port();
+                        let DataServerInfo {
+                            dir,
+                            seq_len,
+                            shuffle_seed,
+                            token_size
+                        } = data_server_config.ok_or_else(|| anyhow!(
+                            "Coordinator state requires we host training data, but no --data-config passed."
+                        ))?;
+
+                        let local_data_provider = LocalDataProvider::new_from_directory(
+                            dir,
+                            token_size,
+                            seq_len,
+                            Shuffle::Seeded(shuffle_seed),
+                        )?;
+
+                        let (tx, backend) = ChannelCoordinatorBackend::new();
+                        let data_server =
+                            DataProviderTcpServer::start(local_data_provider, backend, data_server_port)
+                                .await?;
+                        Some((tx, data_server))
+                    } else {
+                        None
                     }
                 }
-
-                let server_addr: SocketAddr = String::from(url).parse().map_err(|e| {
-                    anyhow!("Failed to parse training data server URL {:?}: {}", url, e)
-                })?;
-                let data_server_port = server_addr.port();
-                let DataServerInfo {
-                    dir,
-                    seq_len,
-                    shuffle_seed,
-                    token_size
-                } = data_server_config.ok_or_else(|| anyhow!("Coordinator state requires we host training data, but no --data-config passed."))?;
-
-                let local_data_provider = LocalDataProvider::new_from_directory(
-                    dir,
-                    token_size,
-                    seq_len,
-                    Shuffle::Seeded(shuffle_seed),
-                )?;
-
-                let (tx, backend) = ChannelCoordinatorBackend::new();
-                let data_server =
-                    DataProviderTcpServer::start(local_data_provider, backend, data_server_port)
-                        .await?;
-                Some((tx, data_server))
-            } else {
-                None
             };
             debug!("data server work done.");
 

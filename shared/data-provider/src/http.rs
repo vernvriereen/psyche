@@ -32,7 +32,7 @@ pub struct HttpDataProvider {
 }
 
 impl LengthKnownDataProvider for HttpDataProvider {
-    fn len(&self) -> usize {
+    fn num_sequences(&self) -> usize {
         self.sequences.len()
     }
 }

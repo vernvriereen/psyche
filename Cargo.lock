@@ -6705,6 +6705,7 @@ dependencies = [
  "rand_chacha 0.3.1",
  "reqwest 0.12.15",
  "serde",
+ "serde_json",
  "static-web-server",
  "tempfile",
  "test-log",

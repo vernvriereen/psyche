@@ -8,8 +8,8 @@ pub trait TokenizedDataProvider {
 }
 
 pub trait LengthKnownDataProvider {
-    fn len(&self) -> usize;
+    fn num_sequences(&self) -> usize;
     fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.num_sequences() == 0
     }
 }
