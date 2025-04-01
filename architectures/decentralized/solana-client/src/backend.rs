@@ -95,10 +95,26 @@ async fn subscribe_to_account(
             url = url,
             "Correctly subscribe to Solana url: {url}",
         );
-        while let Some(update) = notifications.next().await {
-            if tx.send(update).is_err() {
-                // Channel closed, receiver dropped
-                break;
+        loop {
+            match tokio::time::timeout(Duration::from_secs(600), notifications.next()).await {
+                Ok(Some(update)) => {
+                    tx.send(update).unwrap();
+                }
+                Ok(None) => {
+                    warn!(
+                        type = "Solana subscription",
+                        url = url,
+                        "Subscription stream closed by server");
+                    break;
+                }
+                Err(_) => {
+                    warn!(
+                        type = "Solana subscription",
+                        url = url,
+                        "No updates received for 10 minutes, reconnecting..."
+                    );
+                    break;
+                }
             }
         }
         warn!(
@@ -106,7 +122,7 @@ async fn subscribe_to_account(
             url = url,
             "Solana subscription error, could not connect to url: {url}",
         );
-        let sleep_time = min(600, retries.saturating_mul(5));
+        let sleep_time = min(10, retries.saturating_mul(5));
         tokio::time::sleep(Duration::from_secs(sleep_time)).await;
         retries += 1;
     }
