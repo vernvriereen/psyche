@@ -23,8 +23,8 @@ use psyche_tui::{maybe_start_render_loop, LogOutput};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::sync::Arc;
+use std::{io::Cursor, path::PathBuf};
 use time::OffsetDateTime;
 use tokio::runtime::Builder;
 use tracing::{info, Level};
@@ -166,7 +166,17 @@ impl TryInto<Keypair> for WalletArgs {
 
     fn try_into(self) -> std::result::Result<Keypair, Self::Error> {
         let wallet_keypair = match std::env::var("RAW_WALLET_PRIVATE_KEY").ok() {
-            Some(raw_wallet_private_key) => Keypair::from_base58_string(&raw_wallet_private_key),
+            Some(raw_wallet_private_key) => {
+                if raw_wallet_private_key.starts_with("[") {
+                    // assume Keypair::read format
+                    match Keypair::read(&mut Cursor::new(raw_wallet_private_key)) {
+                        Ok(keypair) => keypair,
+                        Err(err) => bail!("{}", err),
+                    }
+                } else {
+                    Keypair::from_base58_string(&raw_wallet_private_key)
+                }
+            },
             None => match self.wallet_private_key_path {
                 Some(wallet_private_key_path) => match Keypair::read_from_file(wallet_private_key_path) {
                     Ok(wallet_keypair) => wallet_keypair,
