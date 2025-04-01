@@ -101,15 +101,11 @@ async fn subscribe_to_account(
                     tx.send(update).unwrap();
                 }
                 Ok(None) => {
-                    warn!(
-                        type = "Solana subscription",
-                        url = url,
-                        "Subscription stream closed by server");
+                    warn!(url = url, "Subscription stream closed by server");
                     break;
                 }
                 Err(_) => {
                     warn!(
-                        type = "Solana subscription",
                         url = url,
                         "No updates received for 10 minutes, reconnecting..."
                     );
