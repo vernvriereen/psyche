@@ -20,7 +20,10 @@ ENV RUST_BACKTRACE=1
 COPY --from=base /usr/src/psyche/target/release/psyche-solana-client /usr/local/bin
 
 # Copy the entrypoint scripts from host machine.
-COPY --chmod=755 ./docker/test/client_test_entrypoint.sh /usr/local
-COPY --chmod=755 ./docker/test/run_owner_entrypoint.sh /usr/local
+COPY ./docker/test/client_test_entrypoint.sh /usr/local
+RUN chmod 755 /usr/local/client_test_entrypoint.sh
+
+COPY ./docker/test/run_owner_entrypoint.sh /usr/local
+RUN chmod 755 /usr/local/run_owner_entrypoint.sh
 
 ENTRYPOINT ["/usr/local/client_test_entrypoint.sh"]

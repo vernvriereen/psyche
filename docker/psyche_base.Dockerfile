@@ -1,7 +1,9 @@
 FROM nvidia/cuda:12.2.0-devel-ubuntu22.04 AS base
 WORKDIR /usr/src
 
-RUN apt-get update && apt-get install -y unzip perl libssl-dev pkg-config libgomp1 libnccl2 libnccl-dev curl wget build-essential && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    unzip libssl-dev libgomp1 libnccl2 libnccl-dev curl wget build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 # Download and extract libtorch
 RUN wget https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.6.0%2Bcu124.zip \
@@ -21,11 +23,14 @@ RUN cargo chef prepare --bin psyche-solana-client --recipe-path client-recipe.js
 # Chef builder
 FROM chef AS chef_builder
 
-# Copy and set libtorch from base
+# Copy libtorch from base
 COPY --from=base /usr/src/libtorch /usr/home/libtorch
+
+# Copy cuda shared libraries and headers from base
 COPY --from=base /usr/local/cuda /usr/home/cuda
 COPY --from=base /usr/include /usr/include
 
+# Set CUDA and libtorch env variables for Psyche client compilation
 ENV CUDA_HOME="/usr/home/cuda"
 ENV PATH="${CUDA_HOME}/bin:${PATH}"
 ENV CPATH="/usr/include:${CUDA_HOME}/include"
