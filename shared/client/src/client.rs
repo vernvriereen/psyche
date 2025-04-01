@@ -364,11 +364,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 0 => {},
                                 len => {
                                     // it's possible we've disconnected from a gossip peer, but we don't know until we try and send to them.
-                                    // in general, iroh-gossip doesn't guarantee delivery. so, we rebroadcast our live results (-2 rounds)
+                                    // in general, iroh-gossip doesn't guarantee delivery past 99.9%. so, we rebroadcast our live results (-2 rounds)
                                     // periodically
                                     broadcasts_rebroadcast_index = (broadcasts_rebroadcast_index + 1) % len;
                                     let (broadcast, _step) = &mut broadcasts[broadcasts_rebroadcast_index];
-                                    broadcast.nonce += thread_rng().next_u32();
+                                    broadcast.nonce = broadcast.nonce.wrapping_add(1);
                                     match &broadcast.data {
                                         BroadcastType::TrainingResult(training_result) => trace!(client_id = %identity, step = broadcast.step, nonce = broadcast.nonce, batch_id = %training_result.batch_id, "Rebroadcasting training result"),
                                         BroadcastType::Finished(finished) => trace!(client_id = %identity, step = broadcast.step, nonce = broadcast.nonce, warmup = finished.warmup, "Rebroadcasting finished"),
