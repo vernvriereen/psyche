@@ -122,7 +122,7 @@ async fn subscribe_to_account(
             url = url,
             "Solana subscription error, could not connect to url: {url}",
         );
-        let sleep_time = min(10, retries.saturating_mul(5));
+        let sleep_time = min(600, retries.saturating_mul(5));
         tokio::time::sleep(Duration::from_secs(sleep_time)).await;
         retries += 1;
     }
