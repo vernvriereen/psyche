@@ -1,7 +1,7 @@
 #!/bin/bash
 
 _usage() {
-    echo "Usage: $0 <SOLANA_RPC> <GRANTOR_PUBKEY> <GRANTEE_KEYPAIR_FILE> <DELEGATES_KEYPAIR_FILES...>"
+    echo "Usage: $0 <SOLANA_RPC> <GRANTOR_PUBKEY> <GRANTEE_KEYPAIR_FILE> [DELEGATES_KEYPAIR_FILES...]"
     echo "  SOLANA_RPC: The solana RPC url or moniker to use"
     echo "  GRANTOR_PUBKEY: The authority pubkey that issued the authorization"
     echo "  GRANTEE_KEYPAIR_FILE: The keypair that is the receiver of the authorization"
@@ -10,7 +10,7 @@ _usage() {
 }
 
 # Parse all our input values
-if [[ "$#" -lt 4 ]]; then
+if [[ "$#" -lt 3 ]]; then
     _usage
 fi
 
