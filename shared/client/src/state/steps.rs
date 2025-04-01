@@ -101,6 +101,9 @@ pub enum OpportunisticWitnessError {
 
     #[error("Stats logger mutex is poisoned")]
     StatsLoggerMutex,
+
+    #[error("Error applying state: {0}")]
+    ApplyState(#[from] ApplyStateError),
 }
 
 impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, A> {
@@ -829,7 +832,12 @@ impl fmt::Display for ActiveStep {
 pub enum InitStage<T: NodeIdentity, A: AuthenticatableIdentity + 'static> {
     NotYetInitialized(Option<RunInitConfigAndIO<T, A>>),
     #[allow(clippy::type_complexity)]
-    Initializing(JoinHandle<Result<StepStateMachine<T, A>, InitRunError>>),
+    Initializing(
+        (
+            JoinHandle<Result<StepStateMachine<T, A>, InitRunError>>,
+            Coordinator<T>,
+        ),
+    ),
     Running(StepStateMachine<T, A>),
 }
 
@@ -849,7 +857,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunManager<T, A> {
         Self(InitStage::NotYetInitialized(Some(config)))
     }
 
-    pub fn try_send_opportunistic_witness(&mut self) -> Result<(), OpportunisticWitnessError> {
+    pub async fn try_send_opportunistic_witness(
+        &mut self,
+    ) -> Result<(), OpportunisticWitnessError> {
+        if let InitStage::Initializing((_init_future, init_state)) = &mut self.0 {
+            // if we're still initializing, check to see if we're done
+            let init_state = *init_state;
+            self.apply_state(init_state).await?;
+        }
         if let InitStage::Running(state_machine) = &mut self.0 {
             state_machine.try_send_opportunistic_witness()?;
         }
@@ -899,8 +914,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunManager<T, A> {
             {
                 // Take ownership of init_info using std::mem::take
                 let init_info = init_info.take().unwrap();
-                Some(InitStage::Initializing(tokio::spawn(
-                    init_info.init_run(state),
+                Some(InitStage::Initializing((
+                    tokio::spawn(init_info.init_run(state)),
+                    state,
                 )))
             }
             InitStage::NotYetInitialized(None) => {
@@ -911,7 +927,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunManager<T, A> {
                 // wait for new clients to join the network.
                 return Ok(());
             }
-            InitStage::Initializing(ref mut init_future) => {
+            InitStage::Initializing((ref mut init_future, _)) => {
                 // Try to complete initialization
                 match init_future.is_finished() {
                     true => match init_future.await.unwrap() {

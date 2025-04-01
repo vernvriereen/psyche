@@ -70,7 +70,6 @@ while true; do
         --rpc ${RPC} \
         --ws-rpc ${WS_RPC} \
         --run-id ${RUN_ID} \
-        --ticker \
         --logs "console" &
 
     PSYCHE_CLIENT_PID=$!

@@ -89,6 +89,8 @@ impl<T: TokenizedDataProvider + LengthKnownDataProvider> WeightedDataProvider<T>
         full_dataset_index.truncate(num_samples);
         full_dataset_sample_index.truncate(num_samples);
 
+        tracing::info!(num_samples = num_samples, "Created weighted data provider",);
+
         Self {
             providers,
             dataset_index: full_dataset_index,

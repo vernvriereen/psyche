@@ -17,7 +17,7 @@ use psyche_network::{
 };
 use psyche_tui::{logging::LoggerWidget, CustomWidget, TabbedWidget};
 use psyche_watcher::CoordinatorTui;
-use rand::RngCore;
+use rand::{thread_rng, Rng, RngCore};
 use std::{path::PathBuf, time::Duration};
 use std::{
     sync::Arc,
@@ -26,11 +26,10 @@ use std::{
 use tokio::{
     select,
     sync::mpsc::Sender,
-    task::JoinHandle,
     time::{interval, Interval, MissedTickBehavior},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 pub(super) type Tabs = TabbedWidget<(ClientTUI, CoordinatorTui, NetworkTui, LoggerWidget)>;
 pub const TAB_NAMES: [&str; 4] = ["Client", "Coordinator", "Network", "Logger"];
@@ -39,7 +38,7 @@ type TabsData = <Tabs as CustomWidget>::Data;
 pub struct App {
     run_id: String,
     cluster: Cluster,
-    tick_check_interval: Option<Interval>,
+    tick_check_interval: Interval,
     cancel: CancellationToken,
     update_tui_interval: Interval,
     tx_tui_state: Option<Sender<TabsData>>,
@@ -53,7 +52,6 @@ pub struct AppParams {
     pub identity_secret_key: SecretKey,
     pub wallet_keypair: Arc<Keypair>,
     pub cluster: Cluster,
-    pub ticker: bool,
     pub tx_tui_state: Option<Sender<TabsData>>,
     pub run_id: String,
     pub data_parallelism: usize,
@@ -107,13 +105,10 @@ impl AppBuilder {
         let app = App {
             run_id: p.run_id.clone(),
             cluster: p.cluster,
-            tick_check_interval: match p.ticker {
-                true => {
-                    let mut interval = interval(Duration::from_millis(500));
-                    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-                    Some(interval)
-                }
-                false => None,
+            tick_check_interval: {
+                let mut interval = interval(Duration::from_millis(500));
+                interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+                interval
             },
             cancel: p.cancel,
             tx_tui_state: p.tx_tui_state,
@@ -180,13 +175,16 @@ impl App {
         let signer = state_options.private_key.0.pubkey();
         let p2p_identity = state_options.private_key.1.public();
 
-        let current_coordinator_state = backend
+        let start_coordinator_state = backend
             .get_coordinator_account(&coordinator_account)
             .await?
             .state
             .coordinator;
 
-        if current_coordinator_state.run_state == RunState::WaitingForMembers {
+        // if we're already in "WaitingForMembers" we won't get an update saying that
+        // (subscription is on change), so check if it's in that state right at boot
+        // and join the run if so
+        if start_coordinator_state.run_state == RunState::WaitingForMembers {
             let joined = backend
                 .join_run(
                     coordinator_instance,
@@ -198,12 +196,14 @@ impl App {
                 )
                 .await?;
             info!(
-                "Joined run {} from {} with transaction {}",
-                self.run_id, signer, joined
+                run_id = self.run_id,
+                from = %signer,
+                tx = %joined,
+                "Joined run",
             );
             self.joined_new_train_epoch = Some(joined);
         } else {
-            info!("Waiting for the current epoch to end before joining.");
+            info!("Waiting for the current epoch to end before joining");
         }
 
         // Update the latest update after joining the run to advance the state.
@@ -211,9 +211,9 @@ impl App {
             .get_coordinator_account(&coordinator_account)
             .await?
             .state;
+
         let mut latest_update = coordinator_state.coordinator;
         let mut updates = backend_runner.updates();
-        let mut tick_tx: Option<JoinHandle<Result<Signature>>> = None;
         let mut client = Client::new(backend_runner, allowlist, p2p, state_options);
 
         loop {
@@ -225,7 +225,7 @@ impl App {
                     let (client_tui_state, network_tui_state) = client.tui_states().await;
                     self.update_tui(client_tui_state, &latest_update, network_tui_state).await?;
                 }
-                _ = async { self.tick_check_interval.as_mut().unwrap().tick().await }, if self.tick_check_interval.is_some() && tick_tx.is_none() => {
+                _ = self.tick_check_interval.tick() => {
                     let mut ticked = latest_update;
                     let timestamp = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
@@ -248,28 +248,16 @@ impl App {
                     match ticked.tick(pending_clients_ids, timestamp, rand::thread_rng().next_u64()) {
                         Ok(_) => {
                             if ticked.run_state != latest_update.run_state {
-                                let backend = backend.clone();
-                                let backend_clone = backend.clone();
-                                tick_tx = Some(tokio::spawn(async move { backend.tick(coordinator_instance, coordinator_account).await }));
-                                // This means the epoch finished so we're rejoining the run to participate in the next one.
-                                if ticked.run_state == RunState::WaitingForMembers && latest_update.run_state == RunState::Cooldown && self.joined_new_train_epoch.is_none() {
-                                    let joined = backend_clone
-                                        .join_run(
-                                            coordinator_instance,
-                                            coordinator_account,
-                                            psyche_solana_coordinator::ClientId {
-                                                signer,
-                                                p2p_identity: *p2p_identity.as_bytes(),
-                                            },
-                                        )
-                                        .await?;
-                                    info!(
-                                        "Joined run for next epoch {} from {} with transaction {}",
-                                        self.run_id, signer, joined
-                                    );
-                                    self.joined_new_train_epoch = Some(joined);
-                                } else if ticked.run_state == RunState::RoundTrain && self.joined_new_train_epoch.is_some() {
-                                   self.joined_new_train_epoch = None;
+                                // to avoid *everyone* sending a tick, we probabilisticly send it
+                                // targetting having two clients send it per interval
+                                let send_tick = match ticked.epoch_state.clients.len() {
+                                    0..=2 => true,
+                                    len => { let rand: f32 = thread_rng().gen();
+                                        rand <= 2.0 / len as f32
+                                    }
+                                };
+                                if send_tick {
+                                    backend.send_tick(coordinator_instance, coordinator_account);
                                 }
                             }
                         }
@@ -284,13 +272,30 @@ impl App {
                         None => bail!("Unable to decode account data"),
                     };
                     latest_update = update;
-                }
-                tx = async { tick_tx.as_mut().unwrap().await }, if tick_tx.is_some() => {
-                    tick_tx = None;
-                    match tx? {
-                        Ok(signature) => info!("Tick transaction {}", signature),
-                        Err(err) => error!("Tick transaction error: {}", err)
-                    };
+                    match latest_update.run_state {
+                        RunState::WaitingForMembers => {
+                            if self.joined_new_train_epoch.is_none() {
+                                let joined = backend
+                                    .join_run(
+                                        coordinator_instance,
+                                        coordinator_account,
+                                        psyche_solana_coordinator::ClientId {
+                                            signer,
+                                            p2p_identity: *p2p_identity.as_bytes(),
+                                        },
+                                    )
+                                    .await?;
+                                info!(
+                                    run_id = self.run_id,
+                                    from = %signer,
+                                    tx = %joined,
+                                    "Joined run",
+                                );
+                                self.joined_new_train_epoch = Some(joined);
+                            }
+                        }
+                        _ => { self.joined_new_train_epoch = None; }
+                    }
                 }
                 res = client.finished() => {
                     res??;

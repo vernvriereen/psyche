@@ -32,7 +32,6 @@ use tracing::{info, Level};
 mod app;
 mod backend;
 mod network_identity;
-mod retry;
 
 #[derive(Parser, Debug)]
 struct CliArgs {
@@ -137,9 +136,6 @@ enum Commands {
 
         #[clap(flatten)]
         args: TrainArgs,
-
-        #[clap(long, env)]
-        ticker: bool,
 
         #[clap(long, env, default_value_t = String::from(""))]
         ws_rpc_2: String,
@@ -350,7 +346,6 @@ async fn async_main() -> Result<()> {
             cluster,
             wallet,
             args,
-            ticker,
             ws_rpc_2,
         } => {
             psyche_client::prepare_environment();
@@ -398,7 +393,6 @@ async fn async_main() -> Result<()> {
                 identity_secret_key,
                 wallet_keypair,
                 cluster: cluster.into(),
-                ticker,
                 run_id,
                 p2p_port: args.bind_p2p_port,
                 p2p_interface: args.bind_p2p_interface,
