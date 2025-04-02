@@ -141,12 +141,18 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 .map(|s| s.run_state.to_string())
                                 .unwrap_or_else(|| String::from(" - "));
 
-                            debug!(
-                                name: "apply_state",
+                            trace!(
+                                integration_test_log_marker = %IntegrationTestLogMarker::StateChange,
+                                client_id = %identity,
                                 old_state = old_run_state,
-                                new_state = new_state.run_state.to_string(),
+                                new_state = %new_state.run_state,
                                 epoch = new_state.progress.epoch,
                                 step = new_state.progress.step,
+                                "applying state epoch {} step {} ({} -> {})",
+                                new_state.progress.epoch,
+                                new_state.progress.step,
+                                old_run_state,
+                                new_state.run_state
                             );
 
                             let connected_p2p_nodes: BTreeSet<_> = p2p.neighbors().collect();
@@ -185,7 +191,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             }
 
                             if old_state.map(|s| s.run_state) != Some(new_state.run_state) && new_state.run_state == RunState::RoundTrain {
-                                debug!(num_peers = connected_p2p_nodes.len(), "Updating p2p");
+                                trace!(num_peers = connected_p2p_nodes.len(), "Updating p2p");
                                 let last_needed_step_blobs = new_state.progress.step.saturating_sub(2);
                                 p2p.remove_blobs_with_tag_less_than(last_needed_step_blobs);
                                 let p2p_info = get_p2p_info(&p2p).await?;
@@ -216,7 +222,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                                 }
                                                 run.apply_message(client.id, broadcast).await?;
                                             } else {
-                                                debug!("Invalid signature on commitment from {from}");
+                                                debug!(from=from.fmt_short(), "Invalid signature on commitment from {}", from.fmt_short());
                                             }
                                         } else {
                                             warn!("Got broadcast from unknown client {}", from);
@@ -311,7 +317,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         }
 
                         Some(FinishedBroadcast { step, merkle, commitment_data_hash, proof, warmup }) = rx_broadcast_finished.recv() => {
-                            debug!(
+                            trace!(
                                 client_id = %identity, step = step,
                                 "Broadcasting finished step merkle 0x{}",
                                 hex::encode(merkle.inner),
@@ -330,12 +336,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             run.apply_message(identity,  training_result).await?;
                         }
 
-                        Some(DistroBroadcastAndPayload{ step, batch_id, commitment_data_hash, proof, distro_result, original_distro_result }) = rx_distro_result.recv() => {
+                        Some(DistroBroadcastAndPayload { step, batch_id, commitment_data_hash, proof, distro_result, original_distro_result }) = rx_distro_result.recv() => {
 
                             let transmittable_distro_result = TransmittableDownload::DistroResult(distro_result.clone());
                             let ticket = p2p.add_downloadable(transmittable_distro_result, step).await?;
                             let hash = ticket.hash();
-                            debug!(
+                            trace!(
                                 client_id = %identity, step = step,
                                 "Broadcasting payload batch id {batch_id} hash 0x{}",
                                 hex::encode(hash),

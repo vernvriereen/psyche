@@ -66,7 +66,7 @@ iroh = { git = "https://github.com/NousResearch/iroh", rev = "81722b05cf39d605b0
 iroh-relay = { git = "https://github.com/NousResearch/iroh", rev = "81722b05cf39d605b00657192dc7842259f2816f", features = [
     "metrics",
 ] }
-iroh-blobs = { git = "https://github.com/NousResearch/iroh-blobs", rev = "dda4a502f76969e6d80aa964985ee1864f85d446", features = [
+iroh-blobs = { git = "https://github.com/NousResearch/iroh-blobs", rev = "f26e5a60c5b7fe32b5f2d4e590c7d55b97b346a5", features = [
     "rpc",
     "downloader",
     "metrics",

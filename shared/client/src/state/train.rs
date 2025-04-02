@@ -32,7 +32,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, debug_span, error, info, trace, warn, Instrument};
+use tracing::{debug, error, info, trace, trace_span, warn, Instrument};
 
 use super::{
     evals::{EvalRunner, MaybeRunningEvals},
@@ -482,7 +482,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
             // but, because we call this once with the default initalized RoundState (round 0)
             // and a second time (when transitioning from round 0 -> round 1), this check will skip
             // the two phases
-            info!("Skipping early apply");
+            trace!("Skipping early apply");
             return Ok(tokio::task::spawn(async move { Ok(trainers) }));
         }
 
@@ -545,7 +545,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                             continue;
                         }
                     };
-                    debug!("Consensus commitment for batch {batch_id}: {consensus:?}");
+                    trace!("Consensus commitment for batch {batch_id}: {consensus:?}");
 
                     let (commitment, result) = &batch_commitments[consensus].1;
                     let maybe_results: Result<Vec<DistroResult>, DeserializeError> = match payloads.remove(&result.ticket.hash()) {
@@ -596,13 +596,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     .map_err(|_| ApplyDistroResultError::ThreadCrashed)?
                     .into_iter()
                     .collect::<Result<_, _>>()?;
-                debug!(
+                trace!(
                     "Apply time: {:.1}s, {} trainers ready",
                     (Instant::now() - apply_start).as_secs_f32(),
                     trainers.len()
                 );
                 Ok(trainers)
-            }.instrument(debug_span!("Applying distro results"))))
+            }.instrument(trace_span!("Applying distro results"))))
     }
 }
 

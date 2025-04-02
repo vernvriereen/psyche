@@ -19,6 +19,7 @@ bitvec = { git = "https://github.com/arilotter/bitvec", rev = "d33a2437f810ee422
     "std",
 ] }
 ts-rs.workspace = true
+data-encoding = "2.8.0"
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
 sha2.workspace = true

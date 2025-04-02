@@ -13,7 +13,7 @@ use std::{
 use tch::{Device, Kind, Tensor};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, trace, warn};
 
 #[cfg(feature = "parallelism")]
 use tch::CNCCL;
@@ -344,7 +344,7 @@ impl Trainer {
         for (_, rx) in &self.models {
             match rx.recv()? {
                 ParallelResult::Optimize => {
-                    debug!(
+                    trace!(
                         "ParallelResult::Optimize received in {}s",
                         (Instant::now() - start).as_secs_f32()
                     );
@@ -828,7 +828,7 @@ fn optimize_step(
         Optimizer::Distro { optimizer, .. } => match distro_results {
             Some(results) => {
                 if !results.is_empty() {
-                    debug!("Applying {} DisTrO gradients", results.len());
+                    trace!("Applying {} DisTrO gradients", results.len());
                     if barrier.wait().is_err() {
                         return ControlFlow::Break(());
                     }

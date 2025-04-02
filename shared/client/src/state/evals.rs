@@ -14,7 +14,7 @@ use tokio::{
     task::{JoinError, JoinHandle},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, span, trace, Level};
+use tracing::{error, info, span, trace, Level};
 
 #[derive(Debug)]
 pub struct EvalTask {
@@ -178,7 +178,7 @@ impl EvalRunner {
 
     pub fn start(&self, trainers: Vec<Trainer>) -> RunningEvals {
         let cancel = CancellationToken::new();
-        debug!("Starting evals!");
+        trace!("Starting evals!");
 
         RunningEvals {
             cancel: cancel.clone(),

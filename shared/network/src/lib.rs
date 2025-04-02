@@ -307,7 +307,7 @@ where
             .map(|n| n.fmt_short())
             .collect::<Vec<_>>()
             .join(",");
-        info!(name: "gossip_join_peers", peers=peer_list);
+        debug!(name: "gossip_join_peers", peers=peer_list);
         self.gossip_tx
             .join_peers(
                 peers
@@ -323,7 +323,12 @@ where
         let encoded_message =
             SignedMessage::sign_and_encode(self.router.endpoint().secret_key(), message)?;
         let message_hash = hash_bytes(&encoded_message);
-        info!(name: "gossip_broadcast", message_hash = message_hash);
+        debug!(
+            name: "gossip_broadcast",
+            message_hash = message_hash,
+            "broadcasted gossip message with hash {message_hash}: {:?}",
+            message
+        );
         Ok(self.gossip_tx.broadcast(encoded_message).await?)
     }
 
@@ -336,7 +341,7 @@ where
         let hash = ticket.hash();
         self.state.currently_sharing_blobs.insert(hash);
         self.state.blob_tags.insert((tag, hash));
-        info!(name: "blob_download_start", hash = hash.fmt_short());
+        debug!(name: "blob_download_start", hash = hash.fmt_short(), "started downloading blob {}", hash.fmt_short());
 
         let (tx, rx) = mpsc::unbounded_channel();
 
@@ -367,7 +372,14 @@ where
         let addr = self.router.endpoint().node_addr().await?;
         let blob_ticket = BlobTicket::new(addr, blob_res.hash, blob_res.format)?;
 
-        info!(name: "blob_upload", hash = blob_res.hash.fmt_short(), size = blob_res.size);
+        debug!(
+            name: "blob_upload",
+            hash = blob_res.hash.fmt_short(),
+            size = blob_res.size,
+            "blob added for upload with hash {} and size {}",
+            blob_res.hash.fmt_short(),
+            blob_res.size
+        );
 
         let hash = blob_ticket.hash();
         self.state.currently_sharing_blobs.insert(hash);
@@ -487,7 +499,7 @@ where
                 None => {
                     let blobs = self.blobs.client().clone();
                     let (send, recv) = oneshot::channel();
-                    info!(name: "blob_download_read_start", hash = hash.fmt_short());
+                    trace!(name: "blob_download_read_start", hash = hash.fmt_short());
                     tokio::spawn(async move {
                         let blob_bytes = match blobs.read_to_bytes(hash).await {
                             Ok(b) => b,
@@ -496,8 +508,9 @@ where
                                 return;
                             }
                         };
+                        let size = blob_bytes.len();
                         let res = send.send(blob_bytes);
-                        info!(name: "blob_download_finish", hash = hash.fmt_short());
+                        debug!(name: "blob_download_finish", hash = hash.fmt_short(), "downloaded blob {}, {} bytes", hash.fmt_short(), size);
                         if res.is_err() {
                             error!("Failed to send read bytes result.");
                         }
@@ -570,9 +583,15 @@ fn parse_gossip_event<BroadcastMessage: Networkable>(
 ) -> Option<(PublicKey, BroadcastMessage)> {
     match event {
         Ok(iroh_gossip::net::Event::Gossip(GossipEvent::Received(msg))) => {
-            info!(name: "gossip_rx", message_hash = hash_bytes(&msg.content));
+            let message_hash = hash_bytes(&msg.content);
             match SignedMessage::<BroadcastMessage>::verify_and_decode(&msg.content) {
                 Ok(result) => {
+                    debug!(
+                        name: "gossip_rx",
+                        message_hash = message_hash,
+                        "received gossip message with hash {message_hash}: {:?}",
+                        result
+                    );
                     return Some(result);
                 }
                 Err(err) => {

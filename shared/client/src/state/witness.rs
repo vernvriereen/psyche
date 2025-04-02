@@ -6,7 +6,7 @@ use tokio::{
     sync::mpsc::{self},
     task::JoinHandle,
 };
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 
 use super::{
     evals::{EvalError, EvalRunner, MaybeRunningEvals, RunningEvals},
@@ -107,9 +107,9 @@ impl WitnessStep {
         info!("Submitting witness blooms");
         previous_round.sent_witness = true;
 
-        debug!("Participant bloom: {:?}", participant_bloom);
-        debug!("Broadcast bloom: {:?}", broadcast_bloom);
-        debug!("Merkle root: 0x{}", hex::encode(broadcast_merkle.inner));
+        trace!("Participant bloom: {:?}", participant_bloom);
+        trace!("Broadcast bloom: {:?}", broadcast_bloom);
+        trace!("Merkle root: 0x{}", hex::encode(broadcast_merkle.inner));
 
         Some(Witness {
             proof: *proof,
