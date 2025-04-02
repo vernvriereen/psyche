@@ -76,6 +76,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     logger.shutdown()?;
-    
+
     Ok(())
 }

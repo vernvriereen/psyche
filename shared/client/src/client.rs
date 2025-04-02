@@ -29,7 +29,7 @@ use tokio::{
     time::interval,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, info_span, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 pub type TUIStates = (ClientTUIState, NetworkTUIState);
 
