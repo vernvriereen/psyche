@@ -191,28 +191,32 @@ impl CoordinatorServerHandle {
     pub async fn new(init_min_clients: u16, global_batch_size: u16, witness_nodes: u16) -> Self {
         debug!("creating coordinator server...");
         let (query_chan_sender, query_chan_receiver) = mpsc::channel(64);
-        let mut server = CoordinatorServer::new(
-            query_chan_receiver,
-            init_min_clients,
-            global_batch_size,
-            witness_nodes,
-        )
-        .await;
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_time()
+            .enable_io()
+            .thread_stack_size(10 * 1024 * 1024)
+            .max_blocking_threads(8192)
+            .build()
+            .unwrap();
+
+        let mut server = rt
+            .spawn(CoordinatorServer::new(
+                query_chan_receiver,
+                init_min_clients,
+                global_batch_size,
+                witness_nodes,
+            ))
+            .await
+            .unwrap();
+
         let server_port = server.port;
         let run_id = server.run_id.clone();
         // tokio::spawn(async move { server.run().await });
         // the above line will stack overflow, for reasons best left to contemplative reflection.
         // as a substitute to maddness, we suggest the reader trust us on this point.
         std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .thread_stack_size(8 * 1024 * 1024)
-                .max_blocking_threads(8192)
-                .build()
-                .unwrap();
-
-            rt.block_on(async {
-                server.run().await;
-            });
+            rt.block_on(server.run());
         });
         debug!("coordinator server created on port {server_port}");
 
