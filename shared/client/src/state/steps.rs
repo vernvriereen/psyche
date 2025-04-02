@@ -754,7 +754,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             }
             // cooldown is done, we consider waiting for members and warmup to be basically the same
             (ActiveStep::Cooldown(cooldown), RunState::WaitingForMembers)
-            | (ActiveStep::Cooldown(cooldown), RunState::Warmup) => {
+            | (ActiveStep::Cooldown(cooldown), RunState::Warmup)
+            | (ActiveStep::Cooldown(cooldown), RunState::Paused) => {
                 let trainers = cooldown.finish().await?;
                 ActiveStep::Warmup(self.warmup.start(
                     trainers,
@@ -808,7 +809,10 @@ impl ActiveStep {
             (ActiveStep::Intermediate, _) => {
                 unreachable!("the intermediate run state can never be seen, it's ephemeral")
             }
-            (ActiveStep::Warmup(..), RunState::Warmup | RunState::WaitingForMembers) => true,
+            (
+                ActiveStep::Warmup(..),
+                RunState::Warmup | RunState::WaitingForMembers | RunState::Paused,
+            ) => true,
             (ActiveStep::Cooldown(..), RunState::Cooldown) => true,
             (ActiveStep::Training(..), RunState::RoundTrain) => true,
             (ActiveStep::Witness(..), RunState::RoundWitness) => true,
@@ -922,7 +926,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunManager<T, A> {
             InitStage::NotYetInitialized(None) => {
                 unreachable!("Once we take the init state, we move to initializing.");
             }
-            InitStage::Initializing(..) if state.run_state == RunState::WaitingForMembers => {
+            InitStage::Initializing(..)
+                if state.run_state == RunState::WaitingForMembers
+                    || state.run_state == RunState::Paused =>
+            {
                 // a client has left the network, transitioning back to RunState::WaitingForMembers.
                 // wait for new clients to join the network.
                 return Ok(());

@@ -174,6 +174,7 @@ pub struct CoordinatorTuiState {
     pub data_source: String,
     pub model_checkpoint: String,
     pub exited_clients: usize,
+    pub pending_pause: bool,
 }
 
 impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
@@ -196,6 +197,7 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
                 Model::LLM(l) => format!("{}", l.checkpoint),
             },
             exited_clients: value.epoch_state.exited_clients.len(),
+            pending_pause: value.pending_pause.is_true(),
         }
     }
 }

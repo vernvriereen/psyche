@@ -11,7 +11,7 @@ use anyhow::{anyhow, bail, Result};
 use psyche_client::{
     CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
 };
-use psyche_coordinator::{Coordinator, RunState};
+use psyche_coordinator::{Coordinator, CoordinatorError, RunState};
 use psyche_network::{
     allowlist, psyche_relay_map, DiscoveryMode, NetworkTUIState, NetworkTui, RelayMode, SecretKey,
 };
@@ -261,6 +261,7 @@ impl App {
                                 }
                             }
                         }
+                        Err(CoordinatorError::Halted) => {}, // don't print anything when halted. it's an "error" but no need to spam logs
                         Err(err) => debug!("Tick simulation error: {err}")
                     };
                 }

@@ -24,8 +24,10 @@ use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::ops::ControlFlow;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::Notify;
 use tokio::time::{interval, MissedTickBehavior};
 use tokio::{select, time::Interval};
 use tokio_util::sync::CancellationToken;
@@ -33,12 +35,13 @@ use tracing::{debug, info, info_span, warn, Instrument};
 
 use crate::dashboard::{DashboardState, DashboardTui};
 
-pub(super) type Tabs = TabbedWidget<(
+pub(super) type TabWidgetTypes = (
     DashboardTui,
     CoordinatorTui,
     MaybeTui<DataServerTui>,
     LoggerWidget,
-)>;
+);
+pub(super) type Tabs = TabbedWidget<TabWidgetTypes>;
 pub(super) const TAB_NAMES: [&str; 4] =
     ["Dashboard", "Coordinator", "Training Data Server", "Logger"];
 type TabsData = <Tabs as CustomWidget>::Data;
@@ -99,6 +102,7 @@ pub struct App {
     original_warmup_time: u64,
     original_min_clients: u16,
     withdraw_on_disconnect: bool,
+    pause: Option<Arc<Notify>>,
 }
 
 /// Methods intended for testing purposes only.
@@ -242,8 +246,16 @@ impl App {
             };
             debug!("data server work done.");
 
+            let (tabs, pause) = if tui {
+                let widgets: TabWidgetTypes = Default::default();
+                let pause = widgets.0.pause.clone();
+                let tabs = Tabs::new(widgets, &TAB_NAMES);
+                (Some(tabs), Some(pause))
+            } else {
+                (None, None)
+            };
             let (cancel, tx_tui_state) =
-                maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;
+                maybe_start_render_loop(tabs)?;
 
             let mut tick_interval = interval(Duration::from_millis(500));
             tick_interval.set_missed_tick_behavior(MissedTickBehavior::Skip); //important!
@@ -285,6 +297,7 @@ impl App {
                 original_warmup_time,
                 original_min_clients,
                 withdraw_on_disconnect,
+                pause,
             })
         }.instrument(info_span!("App::new")).await
     }
@@ -328,6 +341,9 @@ impl App {
                     tokio::task::yield_now().await;
                 }
             } => {}
+            _ = async { self.pause.as_ref().unwrap().notified().await }, if self.pause.is_some() => {
+                self.pause();
+            }
         }
         Ok(ControlFlow::Continue(()))
     }
@@ -508,6 +524,15 @@ impl App {
             if client.state != ClientState::Healthy {
                 self.backend.pending_clients.remove(&client.id);
             }
+        }
+    }
+
+    fn pause(&mut self) {
+        if let Err(err) = match self.coordinator.run_state {
+            RunState::Paused => self.coordinator.resume(Self::get_timestamp()),
+            _ => self.coordinator.pause(Self::get_timestamp()),
+        } {
+            warn!("Error pausing: {}", err);
         }
     }
 }
