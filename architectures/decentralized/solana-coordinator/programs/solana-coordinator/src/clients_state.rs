@@ -51,11 +51,6 @@ pub struct ClientsEpochRates {
 unsafe impl Pod for ClientsState {}
 
 impl ClientsState {
-    pub fn purge_inactive_clients(&mut self) {
-        self.clients
-            .retain(|client| client.active == self.next_active);
-    }
-
     pub fn get_active_clients_ids(
         &self,
     ) -> SizedIterator<impl Iterator<Item = &ClientId>> {
