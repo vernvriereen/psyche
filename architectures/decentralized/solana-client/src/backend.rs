@@ -1,8 +1,11 @@
 use anchor_client::{
     anchor_lang::system_program,
     solana_client::{
-        self, nonblocking::pubsub_client::PubsubClient, rpc_config::RpcAccountInfoConfig,
-        rpc_request::RpcError, rpc_response::Response as RpcResponse,
+        self,
+        nonblocking::pubsub_client::PubsubClient,
+        rpc_config::{RpcAccountInfoConfig, RpcTransactionConfig},
+        rpc_request::RpcError,
+        rpc_response::Response as RpcResponse,
     },
     solana_sdk::{
         commitment_config::CommitmentConfig,
@@ -20,6 +23,7 @@ use psyche_coordinator::{
 };
 use psyche_watcher::{Backend as WatcherBackend, OpportunisticData};
 use solana_account_decoder_client_types::{UiAccount, UiAccountData, UiAccountEncoding};
+use solana_transaction_status_client_types::UiTransactionEncoding;
 use std::{cmp::min, sync::Arc, time::Duration};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, warn};
@@ -388,6 +392,7 @@ impl SolanaBackend {
             .await?;
         Ok(signature)
     }
+
     pub async fn update_config_and_model(
         &self,
         coordinator_instance: Pubkey,
@@ -434,6 +439,28 @@ impl SolanaBackend {
                 },
             )
             .args(psyche_solana_coordinator::instruction::SetPaused { paused })
+            .send()
+            .await?;
+
+        Ok(signature)
+    }
+
+    pub async fn tick(
+        &self,
+        coordinator_instance: Pubkey,
+        coordinator_account: Pubkey,
+    ) -> Result<Signature> {
+        let signature = self
+            .program_coordinator
+            .request()
+            .accounts(
+                psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                    user: self.program_coordinator.payer(),
+                    coordinator_instance,
+                    coordinator_account,
+                },
+            )
+            .args(psyche_solana_coordinator::instruction::Tick {})
             .send()
             .await?;
 
@@ -577,6 +604,28 @@ impl SolanaBackend {
 
     pub async fn get_balance(&self, account: &Pubkey) -> Result<u64> {
         Ok(self.program_coordinator.rpc().get_balance(account).await?)
+    }
+
+    pub async fn get_logs(&self, tx: &Signature) -> Result<Vec<String>> {
+        let tx = self
+            .program_coordinator
+            .rpc()
+            .get_transaction_with_config(
+                tx,
+                RpcTransactionConfig {
+                    encoding: Some(UiTransactionEncoding::Json),
+                    commitment: Some(CommitmentConfig::confirmed()),
+                    max_supported_transaction_version: None,
+                },
+            )
+            .await?;
+
+        Ok(tx
+            .transaction
+            .meta
+            .ok_or(anyhow!("Transaction has no meta information"))?
+            .log_messages
+            .unwrap_or(Vec::new()))
     }
 }
 

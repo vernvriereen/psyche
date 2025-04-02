@@ -6990,6 +6990,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solana-account-decoder-client-types",
+ "solana-transaction-status-client-types",
  "time",
  "tokio",
  "tokio-util 0.7.14",

@@ -24,9 +24,12 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::{io::Cursor, path::PathBuf};
+use std::{io::Cursor, path::PathBuf, time::Duration};
 use time::OffsetDateTime;
-use tokio::runtime::Builder;
+use tokio::{
+    runtime::Builder,
+    time::{interval, MissedTickBehavior},
+};
 use tracing::{info, Level};
 
 mod app;
@@ -126,6 +129,22 @@ enum Commands {
 
         #[clap(long, env)]
         config_path: PathBuf,
+    },
+    Tick {
+        #[clap(flatten)]
+        cluster: ClusterArgs,
+
+        #[clap(flatten)]
+        wallet: WalletArgs,
+
+        #[clap(short, long, env)]
+        run_id: String,
+
+        #[clap(long, env, default_value_t = 1000)]
+        ms_interval: u64,
+
+        #[clap(long, env)]
+        count: Option<u64>,
     },
     Train {
         #[clap(flatten)]
@@ -276,6 +295,10 @@ async fn async_main() -> Result<()> {
             println!("Closed run {} with transaction {}", run_id, closed);
             let recovered = backend.get_balance(&key_pair.pubkey()).await? - balance;
             println!("Recovered {:.9} SOL", lamports_to_sol(recovered));
+            println!("\n===== Logs =====");
+            for log in backend.get_logs(&closed).await? {
+                println!("{log}");
+            }
             Ok(())
         }
         Commands::UpdateConfig {
@@ -311,6 +334,10 @@ async fn async_main() -> Result<()> {
                 )
                 .await?;
             println!("Updated config of {} with transaction {}", run_id, set);
+            println!("\n===== Logs =====");
+            for log in backend.get_logs(&set).await? {
+                println!("{log}");
+            }
             Ok(())
         }
         Commands::SetPaused {
@@ -340,6 +367,47 @@ async fn async_main() -> Result<()> {
                 "Set pause state to {} on run {} with transaction {}",
                 paused, run_id, set
             );
+            println!("\n===== Logs =====");
+            for log in backend.get_logs(&set).await? {
+                println!("{log}");
+            }
+            Ok(())
+        }
+        Commands::Tick {
+            cluster,
+            wallet,
+            run_id,
+            ms_interval,
+            count,
+        } => {
+            let run_id = run_id.trim_matches('"').to_string(); // Trim quotes, if any
+            let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
+            let backend = SolanaBackend::new(
+                cluster.into(),
+                key_pair.clone(),
+                CommitmentConfig::confirmed(),
+            )
+            .unwrap();
+            let coordinator_instance = find_coordinator_instance(&run_id);
+            let coordinator_instance_state = backend
+                .get_coordinator_instance(&coordinator_instance)
+                .await?;
+            let coordinator_account = coordinator_instance_state.coordinator_account;
+            let mut interval = interval(Duration::from_millis(ms_interval));
+            interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+            for _ in 0..count.unwrap_or(u64::MAX) {
+                let ticked = backend
+                    .tick(coordinator_instance, coordinator_account)
+                    .await?;
+                println!("Ticked run {} with transaction {}", run_id, ticked);
+                println!("\n===== Logs =====");
+                for log in backend.get_logs(&ticked).await? {
+                    println!("{log}");
+                }
+                println!();
+                interval.tick().await;
+            }
+
             Ok(())
         }
         Commands::Train {
