@@ -83,10 +83,8 @@ impl CoordinatorInstanceState {
                 self.is_warmup_first_tick = SmallBoolean::from(true);
                 self.is_training_first_tick = SmallBoolean::from(true);
 
-                self.clients_state.purge_inactive_clients();
                 let active_clients_ids =
                     self.clients_state.get_active_clients_ids();
-
                 msg!(
                     "Pending active clients ids: {}",
                     active_clients_ids.len()
