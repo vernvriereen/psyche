@@ -122,6 +122,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                 let mut retry_check_interval = interval(DOWNLOAD_RETRY_CHECK_INTERVAL);
                 let mut opprotunistic_witness_interval = interval(OPPROTUNISTIC_WITNESS_INTERVAL);
                 debug!("Starting client loop");
+
                 loop {
                     select! {
                         _ = cancel.cancelled() => {
@@ -141,12 +142,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 .unwrap_or_else(|| String::from(" - "));
 
                             debug!(
-                                client_id = %identity,
+                                name: "apply_state",
                                 old_state = old_run_state,
                                 new_state = new_state.run_state.to_string(),
                                 epoch = new_state.progress.epoch,
                                 step = new_state.progress.step,
-                                "apply_state"
                             );
 
                             let connected_p2p_nodes: BTreeSet<_> = p2p.neighbors().collect();

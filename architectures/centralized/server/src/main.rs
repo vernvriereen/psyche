@@ -140,7 +140,7 @@ async fn main() -> Result<()> {
             data_config: data_config_path,
         } => {
             let config = load_config_state(state_path.clone(), data_config_path);
-            psyche_tui::init_logging(LogOutput::Console, Level::INFO, None);
+            let _ = psyche_tui::init_logging(LogOutput::Console, Level::INFO, None, false, None);
             match config {
                 Ok(_) => info!("Configs are OK!"),
                 Err(error) => error!("Error found in config: {}", error),
@@ -148,7 +148,7 @@ async fn main() -> Result<()> {
         }
         Commands::Run { run_args } => {
             let config = load_config_state(run_args.state, run_args.data_config);
-            psyche_tui::init_logging(
+            let logger = psyche_tui::init_logging(
                 if run_args.tui {
                     LogOutput::TUI
                 } else {
@@ -156,7 +156,9 @@ async fn main() -> Result<()> {
                 },
                 Level::INFO,
                 None,
-            );
+                true,
+                Some("centralized-server".to_string()),
+            )?;
             match config {
                 Ok(config) => {
                     App::new(
@@ -175,6 +177,7 @@ async fn main() -> Result<()> {
                 }
                 Err(error) => error!("Error found in config: {}", error),
             }
+            logger.shutdown()?;
         }
         Commands::PrintAllHelp { markdown } => {
             // This is a required argument for the time being.

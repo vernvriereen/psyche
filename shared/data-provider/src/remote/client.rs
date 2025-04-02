@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use psyche_core::BatchId;
 use psyche_network::{AuthenticatableIdentity, TcpClient};
-use tracing::debug;
+use tracing::trace;
 
 use crate::TokenizedDataProvider;
 
@@ -54,7 +54,7 @@ impl<T: AuthenticatableIdentity> DataProviderTcpClient<T> {
 
 impl<T: AuthenticatableIdentity> TokenizedDataProvider for DataProviderTcpClient<T> {
     async fn get_samples(&mut self, data_ids: BatchId) -> Result<Vec<Vec<i32>>> {
-        debug!("[{:?}] get samples..", self.tcp_client.get_identity());
+        trace!("[{:?}] get samples..", self.tcp_client.get_identity());
         self.receive_training_data(data_ids).await
     }
 }

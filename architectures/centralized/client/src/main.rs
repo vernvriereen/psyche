@@ -57,8 +57,6 @@ async fn async_main() -> Result<()> {
             let checkpoint_upload_info = args.checkpoint_config()?;
             let eval_tasks = args.eval_tasks()?;
 
-            psyche_tui::init_logging(args.logs, Level::INFO, args.write_log.clone());
-
             info!(
                 "============ Client Startup at {} ============",
                 OffsetDateTime::now_utc()
@@ -67,6 +65,17 @@ async fn async_main() -> Result<()> {
             let identity_secret_key: SecretKey =
                 read_identity_secret_key(args.identity_secret_key_path.as_ref())?
                     .unwrap_or_else(|| SecretKey::generate(&mut rand::rngs::OsRng));
+
+            let logger = psyche_tui::init_logging(
+                args.logs,
+                Level::INFO,
+                args.write_log.clone(),
+                true,
+                Some(format!(
+                    "client-{}",
+                    identity_secret_key.public().fmt_short()
+                )),
+            )?;
 
             let wandb_info = args.wandb_info(format!(
                 "{}-{}",
@@ -106,7 +115,10 @@ async fn async_main() -> Result<()> {
             .await
             .unwrap();
 
-            app.run(allowlist, p2p, state_options).await
+            app.run(allowlist, p2p, state_options).await?;
+            logger.shutdown()?;
+
+            Ok(())
         }
         Commands::PrintAllHelp { markdown } => {
             // This is a required argument for the time being.
@@ -120,6 +132,7 @@ async fn async_main() -> Result<()> {
 }
 
 fn main() -> Result<()> {
+    // let shutdown_handler =
     let runtime = Builder::new_multi_thread()
         .enable_io()
         .enable_time()
@@ -127,5 +140,7 @@ fn main() -> Result<()> {
         .thread_stack_size(10 * 1024 * 1024)
         .build()
         .unwrap();
-    runtime.block_on(async_main())
+    runtime.block_on(async_main())?;
+    // shutdown_handler.shutdown()?;
+    Ok(())
 }
