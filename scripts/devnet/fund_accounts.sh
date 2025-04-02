@@ -12,7 +12,7 @@
 
 set -o errexit
 
-AMOUNT=1 # Amount of SOL to send to each recipient after airdrop
+AMOUNT="0.1" # Amount of SOL to send to each recipient after airdrop
 
 _usage() {
     echo "Usage: $0 <SENDER_KEYPAIR> <NUM_ACCOUNTS> optional:[RECIPIENTS_FILE]"
@@ -91,9 +91,7 @@ if [[ "$accounts_in_file" -lt "$NUM_ACCOUNTS" ]]; then
     exit 1
 fi
 
-total_solana_cost=$(($NUM_ACCOUNTS*$AMOUNT))
-
-echo -e "\nWe will be using a total of ${total_solana_cost} SOL for funding accounts"
+echo -e "\nWe will be using a total of (${NUM_ACCOUNTS} * ${AMOUNT}) SOL for funding accounts"
 _continue?
 
 # Fund each recipient with the specified amount of SOL
