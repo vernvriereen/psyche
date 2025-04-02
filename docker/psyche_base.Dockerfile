@@ -1,8 +1,8 @@
-FROM nvidia/cuda:12.2.0-devel-ubuntu22.04 AS base
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS base
 WORKDIR /usr/src
 
 RUN apt-get update && apt-get install -y \
-    unzip libssl-dev libgomp1 libnccl2 libnccl-dev curl wget build-essential \
+    unzip libssl-dev libgomp1 curl wget build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Download and extract libtorch
