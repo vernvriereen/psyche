@@ -630,9 +630,17 @@ impl<T: NodeIdentity> Coordinator<T> {
         Ok(())
     }
 
-    pub fn pause(&mut self) -> std::result::Result<(), CoordinatorError> {
-        self.pending_pause = true.into();
-        Ok(())
+    pub fn pause(&mut self, unix_timestamp: u64) -> std::result::Result<(), CoordinatorError> {
+        if !self.halted() {
+            if self.active() {
+                self.pending_pause = true.into();
+            } else {
+                self.change_state(unix_timestamp, RunState::Paused);
+            }
+            Ok(())
+        } else {
+            Err(CoordinatorError::Halted)
+        }
     }
 
     pub fn resume(&mut self, unix_timestamp: u64) -> Result<(), CoordinatorError> {

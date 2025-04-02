@@ -161,8 +161,9 @@ impl CoordinatorInstanceState {
     }
 
     pub fn set_paused(&mut self, paused: bool) -> Result<()> {
+        let unix_timestamp = Clock::get()?.unix_timestamp as u64;
         if let Err(err) = match paused {
-            true => self.coordinator.pause(),
+            true => self.coordinator.pause(unix_timestamp),
             false => {
                 if !self.coordinator.config.check() {
                     return err!(ProgramError::ConfigSanityCheckFailed);
@@ -179,7 +180,7 @@ impl CoordinatorInstanceState {
                     // step 1 is the first valid step
                     self.coordinator.progress.step = 1;
                 }
-                self.coordinator.resume(Clock::get()?.unix_timestamp as u64)
+                self.coordinator.resume(unix_timestamp)
             },
         } {
             return err!(ProgramError::from(err));
