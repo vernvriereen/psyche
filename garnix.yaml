@@ -1,20 +1,20 @@
 servers:
-  - configuration: psyche-http-devnet-authed
+  - configuration: psyche-http-devnet
     deployment:
       type: on-branch
       branch: test-deploy-devnet
 
-  - configuration: psyche-http-mainnet-authed
+  - configuration: psyche-http-mainnet
     deployment:
       type: on-branch
       branch: test-deploy-mainnet
 
-  - configuration: psyche-http-docs-authed
+  - configuration: psyche-http-docs
     deployment:
       type: on-branch
       branch: test-deploy-docs
 
-  - configuration: psyche-http-mainnet
+  - configuration: psyche-http
     deployment:
       type: on-branch
       branch: main

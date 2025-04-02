@@ -18,8 +18,8 @@ you must have your pubkey listed in `secrets.nix` for a secret if you want to mo
 
 ask someone whose key is in `secrets.nix` to be added.
 
-To edit the secret `backend.age`, run
+To edit the secret `whatever.age`, run
 
 ```bash
-$ agenix -e secrets/docs-http-basic.age
+$ agenix -e secrets/whatever.age
 ```
