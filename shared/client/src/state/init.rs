@@ -250,12 +250,17 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                                     ret
                                 } else {
                                     info!("Downloading {} (if needed)", hub_repo.repo_id);
+                                    let max_concurrent_downloads = match &init_config.hub_read_token
+                                    {
+                                        Some(_) => None,
+                                        None => Some(1), // anonymous downloads are connection throttled
+                                    };
                                     download_model_repo_async(
                                         &repo_id,
                                         revision,
                                         None,
                                         init_config.hub_read_token,
-                                        None,
+                                        max_concurrent_downloads,
                                         false,
                                     )
                                     .await?
