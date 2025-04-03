@@ -3191,6 +3191,7 @@ dependencies = [
  "anyhow",
  "bitvec",
  "bytemuck",
+ "data-encoding",
  "fast-math",
  "fnv",
  "postcard",
