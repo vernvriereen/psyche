@@ -14,7 +14,6 @@ pub const SOLANA_MAX_STRING_LEN: usize = 64;
 pub const SOLANA_MAX_URL_STRING_LEN: usize = 192;
 pub const SOLANA_MAX_NUM_CLIENTS: usize = 64;
 pub const SOLANA_MAX_NUM_WITNESSES: usize = 32;
-pub const SOLANA_MAX_NUM_CHECKPOINTERS: usize = 4;
 
 pub const BLOOM_FALSE_RATE: f64 = 0.01f64;
 pub const WITNESS_QUORUM_RAIO: f64 = 2.0f64 / 3.0f64;
@@ -199,7 +198,7 @@ pub enum CoordinatorError {
     DuplicateWitness,
     InvalidHealthCheck,
     Halted,
-    InvalidCheckpoint,
+    AlreadyCheckpointed,
     WitnessesFull,
     CannotResume,
     InvalidWithdraw,
@@ -220,8 +219,7 @@ pub const NUM_STORED_ROUNDS: usize = 4;
     Clone, Debug, Zeroable, Copy, Serialize, Deserialize, AnchorDeserialize, AnchorSerialize, TS,
 )]
 #[repr(C)]
-#[serde(bound = "I: NodeIdentity")]
-pub struct CoordinatorConfig<I> {
+pub struct CoordinatorConfig {
     pub warmup_time: u64,
     pub cooldown_time: u64,
 
@@ -239,9 +237,6 @@ pub struct CoordinatorConfig<I> {
     pub global_batch_size_end: u16,
 
     pub verification_percent: u8,
-
-    #[serde(default)]
-    pub checkpointers: FixedVec<I, { SOLANA_MAX_NUM_CHECKPOINTERS }>,
 }
 
 #[derive(
@@ -280,7 +275,7 @@ pub struct Coordinator<T> {
 
     pub model: Model,
 
-    pub config: CoordinatorConfig<T>,
+    pub config: CoordinatorConfig,
 
     #[serde(default)]
     pub progress: CoordinatorProgress,
@@ -359,7 +354,7 @@ impl std::fmt::Display for CoordinatorError {
             CoordinatorError::DuplicateWitness => write!(f, "Duplicate witness"),
             CoordinatorError::InvalidHealthCheck => write!(f, "Invalid health check"),
             CoordinatorError::Halted => write!(f, "Halted"),
-            CoordinatorError::InvalidCheckpoint => write!(f, "Invalid checkpoint"),
+            CoordinatorError::AlreadyCheckpointed => write!(f, "Already checkpointed"),
             CoordinatorError::WitnessesFull => write!(f, "Witnesses full"),
             CoordinatorError::CannotResume => write!(f, "Cannot resume"),
             CoordinatorError::InvalidWithdraw => write!(f, "Invalid withdraw"),
@@ -587,11 +582,14 @@ impl<T: NodeIdentity> Coordinator<T> {
     pub fn checkpoint(
         &mut self,
         from: &T,
+        index: u64,
         hub_repo: HubRepo,
     ) -> std::result::Result<(), CoordinatorError> {
-        if self.epoch_state.checkpointed.is_false()
-            && self.config.checkpointers.iter().any(|x| x == from)
-        {
+        let index = index as usize;
+        if index >= self.epoch_state.clients.len() || self.epoch_state.clients[index].id != *from {
+            return Err(CoordinatorError::InvalidCommitteeProof);
+        }
+        if self.epoch_state.checkpointed.is_false() {
             // TODO: In the case of more than one checkpointer, this will overwrite the hub repo
             // with the last checkpointed one. We could instead have a vector of hub repos to have
             // more download options.
@@ -605,7 +603,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             self.epoch_state.checkpointed = true.into();
             Ok(())
         } else {
-            Err(CoordinatorError::InvalidCheckpoint)
+            Err(CoordinatorError::AlreadyCheckpointed)
         }
     }
 
@@ -1087,7 +1085,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 }
 
-impl<I> CoordinatorConfig<I> {
+impl CoordinatorConfig {
     pub fn check(&self) -> bool {
         self.max_round_train_time != 0
             && self.round_witness_time != 0

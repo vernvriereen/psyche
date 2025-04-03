@@ -1,4 +1,3 @@
-use bytemuck::Zeroable;
 use psyche_coordinator::model::Checkpoint;
 use psyche_coordinator::model::HubRepo;
 use psyche_coordinator::model::LLMArchitecture;
@@ -10,7 +9,6 @@ use psyche_coordinator::CoordinatorConfig;
 use psyche_coordinator::RunState;
 use psyche_coordinator::WitnessProof;
 use psyche_core::ConstantLR;
-use psyche_core::FixedVec;
 use psyche_core::LearningRateSchedule;
 use psyche_core::OptimizerDefinition;
 use psyche_solana_authorizer::logic::AuthorizationGrantorUpdateParams;
@@ -92,7 +90,7 @@ pub async fn run() {
         &main_authority,
         &coordinator_instance,
         &coordinator_account,
-        Some(CoordinatorConfig::<ClientId> {
+        Some(CoordinatorConfig {
             warmup_time: 1,
             cooldown_time: 1,
             max_round_train_time: 3,
