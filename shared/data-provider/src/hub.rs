@@ -9,7 +9,7 @@ use std::{path::PathBuf, time::Instant};
 use thiserror::Error;
 use tracing::debug;
 
-const MODEL_EXTENSIONS: [&str; 2] = [".safetensors", ".json", ".py"];
+const MODEL_EXTENSIONS: [&str; 3] = [".safetensors", ".json", ".py"];
 const DATASET_EXTENSIONS: [&str; 1] = [".parquet"];
 
 fn check_extensions(sibling: &Siblings, extensions: &[&'static str]) -> bool {
