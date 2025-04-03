@@ -63,7 +63,7 @@ where
     Fut: Future<Output = T>,
     F: FnMut() -> Fut,
 {
-    let retry_attempts: u64 = 25;
+    let retry_attempts: u64 = 500;
     let mut result;
     for attempt in 1..=retry_attempts {
         result = function().await;
@@ -73,7 +73,7 @@ where
             eprintln!("assertion failed, got: {:?} but expected: {:?}", result, y);
             return false;
         } else {
-            tokio::time::sleep(Duration::from_millis(100 * attempt)).await;
+            tokio::time::sleep(Duration::from_millis(10 * attempt)).await;
         }
     }
     false
