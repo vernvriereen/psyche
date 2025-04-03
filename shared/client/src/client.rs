@@ -1,7 +1,7 @@
 use crate::{
     state::{DistroBroadcastAndPayload, FinishedBroadcast, RunManager},
-    Broadcast, BroadcastType, ClientTUIState, Finished, RunInitConfig, RunInitConfigAndIO,
-    TrainingResult, NC,
+    Broadcast, BroadcastType, ClientTUIState, Finished, IntegrationTestLogMarker, RunInitConfig,
+    RunInitConfigAndIO, TrainingResult, NC,
 };
 use anyhow::{bail, Error, Result};
 use futures::future::join_all;

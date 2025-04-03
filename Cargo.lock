@@ -6856,6 +6856,7 @@ dependencies = [
  "anchor-client",
  "bollard",
  "futures-util",
+ "psyche-client",
  "psyche-coordinator",
  "psyche-core",
  "psyche-solana-coordinator",

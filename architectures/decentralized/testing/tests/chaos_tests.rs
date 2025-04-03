@@ -1,13 +1,15 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use bollard::Docker;
+use psyche_client::IntegrationTestLogMarker;
 use psyche_decentralized_testing::{
     chaos::{ChaosAction, ChaosScheduler},
     docker_setup::e2e_testing_setup,
-    docker_watcher::{DockerWatcher, JsonFilter, Response},
+    docker_watcher::{DockerWatcher, Response},
     utils::SolanaTestClient,
     CLIENT_CONTAINER_PREFIX, VALIDATOR_CONTAINER_PREFIX,
 };
+
 use rstest::*;
 use serial_test::serial;
 use tokio::time;
@@ -22,6 +24,7 @@ async fn test_pause_solana_validator(
     #[values(0, 10)] pause_step: u64,
 ) {
     // Test variables
+
     let run_id = "test".to_string();
     let num_of_epochs_to_run = 2;
     let mut current_epoch = -1;
@@ -53,7 +56,7 @@ async fn test_pause_solana_validator(
         let _monitor_client = watcher
             .monitor_container(
                 &format!("{CLIENT_CONTAINER_PREFIX}-{}", i),
-                vec![JsonFilter::Loss],
+                vec![IntegrationTestLogMarker::Loss],
             )
             .unwrap();
     }
@@ -116,6 +119,7 @@ async fn test_delay_solana_test_validator(
     #[values(1000, 5000)] delay_milis: i64,
 ) {
     // Test variables
+
     let run_id = "test".to_string();
     let num_of_epochs_to_run = 2;
     let mut current_epoch = -1;
@@ -147,7 +151,7 @@ async fn test_delay_solana_test_validator(
         let _monitor_client = watcher
             .monitor_container(
                 &format!("{CLIENT_CONTAINER_PREFIX}-{}", i),
-                vec![JsonFilter::Loss],
+                vec![IntegrationTestLogMarker::Loss],
             )
             .unwrap();
     }
@@ -206,6 +210,7 @@ async fn test_delay_solana_test_validator(
 #[serial]
 async fn test_delay_solana_client(#[values(1, 2)] n_clients: u8, #[values(0, 10)] delay_step: u64) {
     // Test variables
+
     let run_id = "test".to_string();
     let num_of_epochs_to_run = 2;
     let mut current_epoch = -1;
@@ -237,7 +242,7 @@ async fn test_delay_solana_client(#[values(1, 2)] n_clients: u8, #[values(0, 10)
         let _monitor_client = watcher
             .monitor_container(
                 &format!("{CLIENT_CONTAINER_PREFIX}-{}", i),
-                vec![JsonFilter::Loss],
+                vec![IntegrationTestLogMarker::Loss],
             )
             .unwrap();
     }

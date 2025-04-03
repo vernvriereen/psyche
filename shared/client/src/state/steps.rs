@@ -1,7 +1,7 @@
 use crate::{
     client::P2PNodeInfo,
     state::{train::FinishedTrainers, types::DeserializeError},
-    Broadcast, BroadcastType, ClientTUIState,
+    Broadcast, BroadcastType, ClientTUIState, IntegrationTestLogMarker,
 };
 
 use psyche_coordinator::{Committee, Coordinator, RunState, Witness, WitnessProof};
@@ -707,6 +707,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     .map_err(|_| StepError::StatsLoggerMutex)?
                     .push_round_stats(&round_losses, round_duration, step_duration, optim_stats);
                 info!(
+                    integration_test_log_marker = %IntegrationTestLogMarker::Loss,
                     client_id = %self.identity,
                     epoch = state.progress.epoch,
                     step = state.progress.step,

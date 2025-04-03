@@ -15,6 +15,7 @@ use anchor_client::{
 };
 use anyhow::{anyhow, bail, Context, Result};
 use futures_util::StreamExt;
+use psyche_client::IntegrationTestLogMarker;
 use psyche_coordinator::{
     model::{self, Model},
     CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks,
@@ -60,7 +61,7 @@ async fn subscribe_to_account(
     loop {
         let Ok(sub_client) = PubsubClient::new(&url).await else {
             warn!(
-                type = "Solana subscription",
+                integration_test_log_marker = %IntegrationTestLogMarker::SolanaSubscription,
                 url = url,
                 "Solana subscription error, could not connect to url: {url}",
             );
@@ -91,7 +92,7 @@ async fn subscribe_to_account(
         };
 
         info!(
-            type = "Solana subscription",
+            integration_test_log_marker = %IntegrationTestLogMarker::SolanaSubscription,
             url = url,
             "Correctly subscribe to Solana url: {url}",
         );
@@ -102,7 +103,7 @@ async fn subscribe_to_account(
             }
         }
         warn!(
-            type = "Solana subscription",
+            integration_test_log_marker = %IntegrationTestLogMarker::SolanaSubscription,
             url = url,
             "Solana subscription error, could not connect to url: {url}",
         );
