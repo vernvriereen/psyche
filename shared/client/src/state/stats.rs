@@ -60,6 +60,7 @@ impl StatsLogger {
 
         round_log.insert("train/total_tokens", total_tokens(state));
         round_log.insert("train/tokens_per_sec", self.global_tokens_per_second(state));
+        round_log.insert("train/global_token_batch_size", token_batch_size(state));
         round_log.insert("train/efficency", self.efficency());
 
         round_log.insert("coordinator/num_clients", state.epoch_state.clients.len());
@@ -189,12 +190,18 @@ impl StatsLogger {
             false => match &state.model {
                 model::Model::LLM(llm) => match llm.data_type {
                     model::LLMTrainingDataType::Pretraining => {
-                        let tokens = state.config.global_batch_size as u32 * llm.max_seq_len;
+                        let tokens = state.get_current_target_global_batch_size() as u32
+                            * state.get_sequence_length()
+                            * self.step_durations.len() as u32;
                         let seconds = self
                             .step_durations
                             .iter()
                             .fold(0f32, |acc, ele| acc + ele.as_secs_f32());
-                        tokens as f32 / (seconds / self.step_durations.len() as f32)
+                        if seconds == 0.0 {
+                            0.0
+                        } else {
+                            tokens as f32 / seconds
+                        }
                     }
                     model::LLMTrainingDataType::Finetuning => todo!(),
                 },
@@ -266,4 +273,8 @@ fn no_nan(val: f32, replacement: f32) -> f32 {
     } else {
         val
     }
+}
+
+fn token_batch_size<T: NodeIdentity>(state: &Coordinator<T>) -> u32 {
+    state.get_current_target_global_batch_size() as u32 * state.get_sequence_length()
 }

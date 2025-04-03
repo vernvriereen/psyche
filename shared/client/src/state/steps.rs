@@ -1025,11 +1025,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> From<&RunManager<T, 
                         .as_ref()
                         .map(|x| x.efficency())
                         .unwrap_or_default(),
-                    total_tokens: coordinator.total_tokens(),
+                    total_tokens: coordinator.total_tokens_processed(),
                     evals: stats_guard
                         .as_ref()
                         .map(|s| s.eval_history().clone())
                         .unwrap_or_default(),
+                    token_batch_size: coordinator.get_sequence_length()
+                        * coordinator.get_current_target_global_batch_size() as u32,
                 }
             }
             _ => Default::default(),

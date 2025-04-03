@@ -46,7 +46,7 @@ pub struct RunInitConfig<T: NodeIdentity, A: AuthenticatableIdentity> {
     pub hub_read_token: Option<String>,
     pub data_parallelism: usize,
     pub tensor_parallelism: usize,
-    pub micro_batch_size: Option<usize>,
+    pub micro_batch_size: usize,
     pub optim_stats_every_n_steps: Option<u32>,
     pub grad_accum_in_fp32: bool,
 
@@ -438,7 +438,15 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                         let mut run_info = wandb::RunInfo::new(wandb_info.project)
                             .name(wandb_info.run)
                             .config((
-                                ("global_batch_size", state.config.global_batch_size),
+                                (
+                                    "global_batch_size_start",
+                                    state.config.global_batch_size_start,
+                                ),
+                                ("global_batch_size_end", state.config.global_batch_size_end),
+                                (
+                                    "global_batch_size_warmup_tokens",
+                                    state.config.global_batch_size_warmup_tokens,
+                                ),
                                 ("total_steps", state.config.total_steps),
                                 ("rounds_per_epoch", state.config.rounds_per_epoch),
                                 ("run_id", run_id),
@@ -517,9 +525,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                     models,
                     llm.lr_schedule,
                     llm.optimizer,
-                    init_config
-                        .micro_batch_size
-                        .unwrap_or(state.config.global_batch_size as usize),
+                    init_config.micro_batch_size,
                     init_config.optim_stats_every_n_steps,
                     init_config.grad_accum_in_fp32,
                     data_parallel,

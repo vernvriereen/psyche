@@ -56,7 +56,7 @@ pub struct AppParams {
     pub run_id: String,
     pub data_parallelism: usize,
     pub tensor_parallelism: usize,
-    pub micro_batch_size: Option<usize>,
+    pub micro_batch_size: usize,
     pub write_gradients_dir: Option<PathBuf>,
     pub p2p_port: Option<u16>,
     pub p2p_interface: Option<String>,

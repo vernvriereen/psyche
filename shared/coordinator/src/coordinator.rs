@@ -1,5 +1,5 @@
 use crate::{
-    model::{self, Checkpoint, HubRepo, Model},
+    model::{Checkpoint, HubRepo, Model},
     Commitment, Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
 
@@ -227,16 +227,18 @@ pub struct CoordinatorConfig<I> {
 
     pub max_round_train_time: u64,
     pub round_witness_time: u64,
-
-    pub min_clients: u16,
-
-    pub global_batch_size: u16,
-
-    pub verification_percent: u8,
-    pub witness_nodes: u16,
+    pub global_batch_size_warmup_tokens: u64,
 
     pub rounds_per_epoch: u32,
     pub total_steps: u32,
+
+    pub min_clients: u16,
+    pub witness_nodes: u16,
+
+    pub global_batch_size_start: u16,
+    pub global_batch_size_end: u16,
+
+    pub verification_percent: u8,
 
     #[serde(default)]
     pub checkpointers: FixedVec<I, { SOLANA_MAX_NUM_CHECKPOINTERS }>,
@@ -822,6 +824,32 @@ impl<T: NodeIdentity> Coordinator<T> {
             .collect()
     }
 
+    pub fn get_sequence_length(&self) -> u32 {
+        match &self.model {
+            Model::LLM(llm) => llm.max_seq_len,
+        }
+    }
+
+    pub fn get_current_target_global_batch_size(&self) -> u16 {
+        let tokens_processed = self.total_tokens_processed();
+        self.config.get_batch_size(tokens_processed)
+    }
+
+    pub fn total_tokens_processed(&self) -> u64 {
+        // use data_index from the *current* round, which marks the start of data for this round
+        // if no round active yet (e.g., warmup), use epoch_start_data_index
+        let current_data_start_index = self
+            .current_round()
+            .map(|r| r.data_index)
+            .unwrap_or(self.progress.epoch_start_data_index);
+
+        current_data_start_index * self.get_sequence_length() as u64
+    }
+
+    fn get_global_batch_size_for_tokens(&self, tokens_processed: u64) -> u16 {
+        self.config.get_batch_size(tokens_processed)
+    }
+
     fn tick_waiting_for_members<'a, 'b>(
         &'a mut self,
         pending_clients: Option<impl ExactSizeIterator<Item = &'b T>>,
@@ -953,8 +981,9 @@ impl<T: NodeIdentity> Coordinator<T> {
             || (self.config.cooldown_time > 0
                 && self.check_timeout(unix_timestamp, self.config.cooldown_time))
         {
+            let last_round_batch_size = self.get_current_target_global_batch_size();
             self.progress.epoch_start_data_index =
-                self.current_round_unchecked().data_index + self.config.global_batch_size as u64;
+                self.current_round_unchecked().data_index + last_round_batch_size as u64;
             self.progress.epoch += 1;
 
             let current_round = self.current_round_unchecked();
@@ -989,11 +1018,15 @@ impl<T: NodeIdentity> Coordinator<T> {
                 // very first round, don't increment -- just start here
                 (0usize, 0u32, self.progress.epoch_start_data_index)
             } else {
-                let current_round = &self.epoch_state.rounds[self.epoch_state.rounds_head as usize];
+                let prev_round = &self.epoch_state.rounds[self.epoch_state.rounds_head as usize];
+                let prev_round_start_tokens =
+                    prev_round.data_index * self.get_sequence_length() as u64;
+                let prev_round_batch_size =
+                    self.get_global_batch_size_for_tokens(prev_round_start_tokens);
                 (
                     (self.epoch_state.rounds_head + 1) as usize % self.epoch_state.rounds.len(),
-                    current_round.height + 1,
-                    current_round.data_index + self.config.global_batch_size as u64,
+                    prev_round.height + 1,
+                    prev_round.data_index + prev_round_batch_size as u64,
                 )
             };
         let round = &mut self.epoch_state.rounds[next_rounds_head];
@@ -1045,18 +1078,6 @@ impl<T: NodeIdentity> Coordinator<T> {
         });
     }
 
-    pub fn total_tokens(&self) -> u64 {
-        self.current_round()
-            .map(|y| y.data_index)
-            .unwrap_or_default()
-            * match &self.model {
-                Model::LLM(llm) => match llm.data_type {
-                    model::LLMTrainingDataType::Pretraining => llm.max_seq_len as u64,
-                    model::LLMTrainingDataType::Finetuning => todo!(),
-                },
-            }
-    }
-
     pub fn is_warmup_just_starting(&self) -> bool {
         self.epoch_state.first_round.is_true() && self.run_state == RunState::Warmup
     }
@@ -1071,11 +1092,26 @@ impl<I> CoordinatorConfig<I> {
         self.max_round_train_time != 0
             && self.round_witness_time != 0
             && self.min_clients != 0
-            && self.global_batch_size != 0
+            && self.global_batch_size_start != 0
+            && self.global_batch_size_end != 0
+            && self.global_batch_size_end >= self.global_batch_size_start
             && self.rounds_per_epoch >= 4 // need at least 4 rounds per epoch for overlapped pipeling
             && self.total_steps != 0
             && self.witness_nodes != 0
             && self.witness_nodes <= self.min_clients
             && self.witness_nodes as usize <= SOLANA_MAX_NUM_WITNESSES
+    }
+
+    pub fn get_batch_size(&self, total_tokens_processed: u64) -> u16 {
+        if total_tokens_processed >= self.global_batch_size_warmup_tokens {
+            self.global_batch_size_end
+        } else {
+            let progress =
+                total_tokens_processed as f64 / self.global_batch_size_warmup_tokens as f64;
+            (self.global_batch_size_start as f64
+                + (self.global_batch_size_end as f64 - self.global_batch_size_start as f64)
+                    * progress)
+                .round() as u16
+        }
     }
 }
