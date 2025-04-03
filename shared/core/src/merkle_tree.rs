@@ -51,6 +51,9 @@ impl HashWrapper {
     pub fn new(inner: [u8; 32]) -> Self {
         Self { inner }
     }
+    pub fn fmt_short(&self) -> String {
+        data_encoding::HEXLOWER.encode(&self.inner[..5])
+    }
 }
 
 impl AsRef<[u8]> for HashWrapper {

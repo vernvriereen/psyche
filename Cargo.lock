@@ -4284,7 +4284,7 @@ dependencies = [
 [[package]]
 name = "iroh-blobs"
 version = "0.34.0"
-source = "git+https://github.com/NousResearch/iroh-blobs?rev=dda4a502f76969e6d80aa964985ee1864f85d446#dda4a502f76969e6d80aa964985ee1864f85d446"
+source = "git+https://github.com/NousResearch/iroh-blobs?rev=f26e5a60c5b7fe32b5f2d4e590c7d55b97b346a5#f26e5a60c5b7fe32b5f2d4e590c7d55b97b346a5"
 dependencies = [
  "anyhow",
  "async-channel 2.3.1",
@@ -6801,6 +6801,7 @@ dependencies = [
  "approx",
  "bitvec",
  "bytemuck",
+ "data-encoding",
  "fast-math",
  "fnv",
  "postcard",
@@ -6855,6 +6856,7 @@ dependencies = [
  "anchor-client",
  "bollard",
  "futures-util",
+ "psyche-client",
  "psyche-coordinator",
  "psyche-core",
  "psyche-solana-coordinator",

@@ -79,7 +79,7 @@ impl From<serde_json::Error> for SharableModelError {
 
 /// Represent the different types of requests that a new client can make to obtain the model.
 /// It should request the Config first and extract the parameters from there.
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub enum ModelRequestType {
     /// Request for the model and tokenizer configs
     Config,

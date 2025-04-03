@@ -68,16 +68,37 @@ pub fn init_logging(
         None
     };
 
-    let subscriber = tracing_subscriber::registry().with(
-        EnvFilter::builder()
-            .with_default_directive(level.into())
-            .from_env_lossy(),
-    );
+    let output_logs_filter = EnvFilter::builder()
+        .with_default_directive(level.into())
+        .from_env()?;
+
+    let make_detailed_logs_filter = || {
+        if std::env::var("WRITE_RUST_LOG").is_ok() {
+            EnvFilter::builder()
+                .with_env_var("WRITE_RUST_LOG")
+                .from_env()
+        } else {
+            EnvFilter::builder()
+                .with_default_directive(level.into())
+                .from_env()
+        }
+    };
+
+    let subscriber = tracing_subscriber::registry();
 
     let tracer = logfire_handler.as_ref().map(|t| t.tracer.tracer().clone());
     let subscriber = match output {
-        LogOutput::TUI => subscriber.with(tui_logger::tracing_subscriber_layer().boxed()),
-        LogOutput::Console => subscriber.with(fmt::layer().with_writer(std::io::stdout).boxed()),
+        LogOutput::TUI => subscriber.with(
+            tui_logger::tracing_subscriber_layer()
+                .with_filter(output_logs_filter)
+                .boxed(),
+        ),
+        LogOutput::Console => subscriber.with(
+            fmt::layer()
+                .with_writer(std::io::stdout)
+                .with_filter(output_logs_filter)
+                .boxed(),
+        ),
         LogOutput::Json => subscriber.with(
             fmt::layer()
                 .json()
@@ -85,6 +106,7 @@ pub fn init_logging(
                 .with_writer(std::io::stdout)
                 .flatten_event(true)
                 .with_current_span(true)
+                .with_filter(output_logs_filter)
                 .boxed(),
         ),
     };
@@ -97,20 +119,30 @@ pub fn init_logging(
             .create(true)
             .open(dir)
             .unwrap();
-        let subscriber = subscriber.with(fmt::layer().with_ansi(false).with_writer(log_file));
+        let subscriber = subscriber.with(
+            fmt::layer()
+                .with_ansi(false)
+                .with_writer(log_file)
+                .with_filter(make_detailed_logs_filter()?),
+        );
 
         if let Some(tracer) = tracer {
             tracing::subscriber::set_global_default(
                 subscriber
-                    .with(LogfireTracingPendingSpanNotSentLayer)
+                    .with(
+                        LogfireTracingPendingSpanNotSentLayer
+                            .with_filter(make_detailed_logs_filter()?),
+                    )
                     .with(
                         tracing_opentelemetry::layer()
                             .with_error_records_to_exceptions(true)
-                            .with_tracer(tracer.clone()),
+                            .with_tracer(tracer.clone())
+                            .with_filter(make_detailed_logs_filter()?),
                     )
-                    .with(logfire::bridges::tracing::LogfireTracingLayer(
-                        tracer.clone(),
-                    )),
+                    .with(
+                        logfire::bridges::tracing::LogfireTracingLayer(tracer.clone())
+                            .with_filter(make_detailed_logs_filter()?),
+                    ),
             )
         } else {
             tracing::subscriber::set_global_default(subscriber)
@@ -118,15 +150,19 @@ pub fn init_logging(
     } else if let Some(tracer) = tracer {
         tracing::subscriber::set_global_default(
             subscriber
-                .with(LogfireTracingPendingSpanNotSentLayer)
+                .with(
+                    LogfireTracingPendingSpanNotSentLayer.with_filter(make_detailed_logs_filter()?),
+                )
                 .with(
                     tracing_opentelemetry::layer()
                         .with_error_records_to_exceptions(true)
-                        .with_tracer(tracer.clone()),
+                        .with_tracer(tracer.clone())
+                        .with_filter(make_detailed_logs_filter()?),
                 )
-                .with(logfire::bridges::tracing::LogfireTracingLayer(
-                    tracer.clone(),
-                )),
+                .with(
+                    logfire::bridges::tracing::LogfireTracingLayer(tracer.clone())
+                        .with_filter(make_detailed_logs_filter()?),
+                ),
         )
     } else {
         tracing::subscriber::set_global_default(subscriber)

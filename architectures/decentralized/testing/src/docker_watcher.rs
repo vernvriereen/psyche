@@ -5,6 +5,7 @@ use crate::CLIENT_CONTAINER_PREFIX;
 use bollard::container::KillContainerOptions;
 use bollard::{container::LogsOptions, Docker};
 use futures_util::StreamExt;
+use psyche_client::IntegrationTestLogMarker;
 use psyche_core::BatchId;
 use serde_json::Value;
 use std::str::FromStr;
@@ -16,18 +17,6 @@ pub enum StateFilter {
     Warmup,
     RoundTrain,
     RoundWitness,
-}
-
-#[derive(Clone, Copy)]
-pub enum JsonFilter {
-    StateChange,
-    Loss,
-    LoadedModel,
-    HealthCheck,
-    UntrainedBatches,
-    SolanaSubscription,
-    WitnessElected,
-    Error,
 }
 
 #[derive(Debug)]
@@ -55,6 +44,9 @@ pub enum DockerWatcherError {
 
     #[error("Client {0} has crashed")]
     ClientCrashedError(u8),
+
+    #[error("Invalid integration test log marker {0}")]
+    IntegrationTestLogMarker(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,7 +92,7 @@ impl DockerWatcher {
     pub fn monitor_container(
         &self,
         name: &str,
-        filters: Vec<JsonFilter>,
+        filters: Vec<IntegrationTestLogMarker>,
     ) -> Result<JoinHandle<Result<(), DockerWatcherError>>, DockerWatcherError> {
         let Ok(duration) = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) else {
             return Err(DockerWatcherError::UnixTimestampError);
@@ -133,178 +125,168 @@ impl DockerWatcher {
                     continue;
                 };
 
-                for filter in &filters {
-                    match filter {
-                        JsonFilter::StateChange => {
-                            let Some(old_state) =
-                                parsed_log.get("old_state").and_then(|v| v.as_str())
-                            else {
-                                continue;
-                            };
-
-                            // unwrapping here, it should not be possible for a log to have new_state
-                            // but no old_state
-                            let new_state = parsed_log
-                                .get("new_state")
-                                .and_then(|v| v.as_str())
-                                .unwrap();
-
-                            if old_state != new_state {
-                                let client_id = parsed_log
-                                    .get("client_id")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap();
-
-                                let timestamp = parsed_log
-                                    .get("timestamp")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap();
-                                let epoch =
-                                    parsed_log.get("epoch").and_then(|v| v.as_u64()).unwrap();
-                                let step = parsed_log.get("step").and_then(|v| v.as_u64()).unwrap();
-
-                                let response = Response::StateChange(
-                                    timestamp.to_string(),
-                                    client_id.to_string(),
-                                    old_state.to_string(),
-                                    new_state.to_string(),
-                                    epoch,
-                                    step,
-                                );
-
-                                if log_sender.send(response).await.is_err() {
-                                    println!("Probably the test ended so we drop the log sender");
-                                }
-                            }
+                let Some(log_marker_str) = parsed_log
+                    .get("integration_test_log_marker")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| {
+                        if let Some("ERROR") = parsed_log.get("level").and_then(|l| l.as_str()) {
+                            Some("error")
+                        } else {
+                            None
                         }
-                        JsonFilter::Loss => {
-                            let Some(loss) = parsed_log.get("loss").and_then(|v| v.as_f64()) else {
-                                continue;
-                            };
+                    })
+                else {
+                    continue;
+                };
+
+                let log_marker: IntegrationTestLogMarker = log_marker_str
+                    .parse::<IntegrationTestLogMarker>()
+                    .map_err(|_| {
+                        DockerWatcherError::IntegrationTestLogMarker(log_marker_str.to_string())
+                    })?;
+
+                let current_filter = filters.iter().find(|f| **f == log_marker);
+                let Some(filter) = current_filter else {
+                    continue;
+                };
+
+                // unwrapping is ok here, if the log has the marker, it should have all those props.
+                match filter {
+                    IntegrationTestLogMarker::StateChange => {
+                        let old_state = parsed_log
+                            .get("old_state")
+                            .and_then(|v| v.as_str())
+                            .unwrap();
+
+                        let new_state = parsed_log
+                            .get("new_state")
+                            .and_then(|v| v.as_str())
+                            .unwrap();
+
+                        if old_state != new_state {
                             let client_id = parsed_log
                                 .get("client_id")
                                 .and_then(|v| v.as_str())
-                                .unwrap()
-                                .to_string();
+                                .unwrap();
+
+                            let timestamp = parsed_log
+                                .get("timestamp")
+                                .and_then(|v| v.as_str())
+                                .unwrap();
                             let epoch = parsed_log.get("epoch").and_then(|v| v.as_u64()).unwrap();
                             let step = parsed_log.get("step").and_then(|v| v.as_u64()).unwrap();
-                            let response = Response::Loss(client_id, epoch, step, loss);
-                            if log_sender.send(response).await.is_err() {
-                                println!("Probably the test ended so we drop the log sender");
-                            }
-                        }
-                        JsonFilter::HealthCheck => {
-                            if parsed_log.get("target")
-                                != Some(&Value::String("unhealthy_client".to_string()))
-                            {
-                                continue;
-                            }
-                            let client_id = parsed_log
-                                .get("client_id")
-                                .and_then(|v| v.as_str())
-                                .unwrap()
-                                .to_string();
-                            let index = parsed_log.get("index").and_then(|v| v.as_u64()).unwrap();
-                            let current_step = parsed_log
-                                .get("current_step")
-                                .and_then(|v| v.as_u64())
-                                .unwrap();
-                            let response = Response::HealthCheck(client_id, index, current_step);
-                            if log_sender.send(response).await.is_err() {
-                                println!("Probably the test ended so we drop the log sender");
-                            }
-                        }
-                        JsonFilter::LoadedModel => {
-                            let Some(checkpoint) = parsed_log.get("checkpoint") else {
-                                continue;
-                            };
-                            let checkpoint = serde_json::from_value(checkpoint.clone()).unwrap();
-                            let response = Response::LoadedModel(checkpoint);
-                            if log_sender.send(response).await.is_err() {
-                                println!("Probably the test ended so we drop the log sender");
-                            }
-                        }
-                        JsonFilter::UntrainedBatches => {
-                            if parsed_log.get("target")
-                                != Some(&Value::String("untrained_batch".to_string()))
-                            {
-                                continue;
-                            }
 
-                            // extract batch Ids
-                            let message =
-                                parsed_log.get("batch_id").and_then(|v| v.as_str()).unwrap();
-                            let batch_id_range = BatchId::from_str(message).unwrap();
-                            let batch_ids = batch_id_range.iter().collect();
-
-                            let response = Response::UntrainedBatches(batch_ids);
-                            if log_sender.send(response).await.is_err() {
-                                println!("Probably the test ended so we drop the log sender");
-                            }
-                        }
-                        JsonFilter::SolanaSubscription => {
-                            if !(parsed_log.get("type") == Some(&"Solana subscription".into())) {
-                                continue;
-                            }
-                            let url = parsed_log.get("url").unwrap();
-
-                            let mut response =
-                                Response::SolanaSubscription("".to_string(), "".to_string());
-                            if parsed_log.get("level").unwrap() == "WARN" {
-                                response = Response::SolanaSubscription(
-                                    url.to_string(),
-                                    "Subscription Down".to_string(),
-                                );
-                            }
-
-                            if parsed_log.get("level").unwrap() == "INFO" {
-                                response = Response::SolanaSubscription(
-                                    url.to_string(),
-                                    "Subscription Up".to_string(),
-                                );
-                            }
-                            if log_sender.send(response).await.is_err() {
-                                println!("Probably the test ended so we drop the log sender");
-                            }
-                        }
-                        JsonFilter::WitnessElected => {
-                            if parsed_log.get("target")
-                                != Some(&Value::String("witness_selection".to_string()))
-                            {
-                                continue;
-                            }
-                            let is_witness = parsed_log
-                                .get("witness")
-                                .and_then(|v| v.as_str())
-                                .unwrap()
-                                .to_string();
-                            if is_witness != true.to_string() {
-                                continue;
-                            }
-                            let response = Response::WitnessElected(name.clone());
-                            if log_sender.send(response).await.is_err() {
-                                println!("Probably the test ended so we drop the log sender");
-                            }
-                        }
-                        JsonFilter::Error => {
-                            let Some(level) = parsed_log.get("level") else {
-                                continue;
-                            };
-                            if level != "ERROR" {
-                                continue;
-                            }
-                            let Some(message) = parsed_log.get("message") else {
-                                continue;
-                            };
-
-                            let response = Response::Error(
-                                ObservedErrorKind::from(message.to_string()),
-                                message.to_string(),
+                            let response = Response::StateChange(
+                                timestamp.to_string(),
+                                client_id.to_string(),
+                                old_state.to_string(),
+                                new_state.to_string(),
+                                epoch,
+                                step,
                             );
 
                             if log_sender.send(response).await.is_err() {
                                 println!("Probably the test ended so we drop the log sender");
                             }
+                        }
+                    }
+                    IntegrationTestLogMarker::Loss => {
+                        let loss = parsed_log.get("loss").and_then(|v| v.as_f64()).unwrap();
+                        let client_id = parsed_log
+                            .get("client_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap()
+                            .to_string();
+                        let epoch = parsed_log.get("epoch").and_then(|v| v.as_u64()).unwrap();
+                        let step = parsed_log.get("step").and_then(|v| v.as_u64()).unwrap();
+                        let response = Response::Loss(client_id, epoch, step, loss);
+                        if log_sender.send(response).await.is_err() {
+                            println!("Probably the test ended so we drop the log sender");
+                        }
+                    }
+                    IntegrationTestLogMarker::HealthCheck => {
+                        let client_id = parsed_log
+                            .get("client_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap()
+                            .to_string();
+                        let index = parsed_log.get("index").and_then(|v| v.as_u64()).unwrap();
+                        let current_step = parsed_log
+                            .get("current_step")
+                            .and_then(|v| v.as_u64())
+                            .unwrap();
+                        let response = Response::HealthCheck(client_id, index, current_step);
+                        if log_sender.send(response).await.is_err() {
+                            println!("Probably the test ended so we drop the log sender");
+                        }
+                    }
+                    IntegrationTestLogMarker::LoadedModel => {
+                        let checkpoint = parsed_log.get("checkpoint").unwrap();
+                        let checkpoint = serde_json::from_value(checkpoint.clone()).unwrap();
+                        let response = Response::LoadedModel(checkpoint);
+                        if log_sender.send(response).await.is_err() {
+                            println!("Probably the test ended so we drop the log sender");
+                        }
+                    }
+                    IntegrationTestLogMarker::UntrainedBatches => {
+                        // extract batch Ids
+                        let message = parsed_log.get("batch_id").and_then(|v| v.as_str()).unwrap();
+                        let batch_id_range = BatchId::from_str(message).unwrap();
+                        let batch_ids = batch_id_range.iter().collect();
+
+                        let response = Response::UntrainedBatches(batch_ids);
+                        if log_sender.send(response).await.is_err() {
+                            println!("Probably the test ended so we drop the log sender");
+                        }
+                    }
+                    IntegrationTestLogMarker::SolanaSubscription => {
+                        let url = parsed_log.get("url").unwrap();
+
+                        let mut response =
+                            Response::SolanaSubscription("".to_string(), "".to_string());
+                        if parsed_log.get("level").unwrap() == "WARN" {
+                            response = Response::SolanaSubscription(
+                                url.to_string(),
+                                "Subscription Down".to_string(),
+                            );
+                        }
+
+                        if parsed_log.get("level").unwrap() == "INFO" {
+                            response = Response::SolanaSubscription(
+                                url.to_string(),
+                                "Subscription Up".to_string(),
+                            );
+                        }
+                        if log_sender.send(response).await.is_err() {
+                            println!("Probably the test ended so we drop the log sender");
+                        }
+                    }
+                    IntegrationTestLogMarker::WitnessElected => {
+                        let is_witness = parsed_log
+                            .get("witness")
+                            .and_then(|v| v.as_str())
+                            .unwrap()
+                            .to_string();
+                        if is_witness != true.to_string() {
+                            continue;
+                        }
+                        let response = Response::WitnessElected(name.clone());
+                        if log_sender.send(response).await.is_err() {
+                            println!("Probably the test ended so we drop the log sender");
+                        }
+                    }
+                    IntegrationTestLogMarker::Error => {
+                        let Some(message) = parsed_log.get("message") else {
+                            continue;
+                        };
+
+                        let response = Response::Error(
+                            ObservedErrorKind::from(message.to_string()),
+                            message.to_string(),
+                        );
+
+                        if log_sender.send(response).await.is_err() {
+                            println!("Probably the test ended so we drop the log sender");
                         }
                     }
                 }
