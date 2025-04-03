@@ -83,7 +83,7 @@ pub async fn process_coordinator_update_config_model(
     authority: &Keypair,
     coordinator_instance: &Pubkey,
     coordinator_account: &Pubkey,
-    config: Option<CoordinatorConfig<ClientId>>,
+    config: Option<CoordinatorConfig>,
     model: Option<Model>,
 ) -> Result<Signature, ToolboxEndpointError> {
     let accounts = OwnerCoordinatorAccounts {

@@ -18,7 +18,7 @@ use clap::{Args, Parser, Subcommand};
 use psyche_client::{print_identity_keys, read_identity_secret_key, TrainArgs};
 use psyche_coordinator::{model::Model, CoordinatorConfig};
 use psyche_network::SecretKey;
-use psyche_solana_coordinator::{find_coordinator_instance, ClientId, RunMetadata};
+use psyche_solana_coordinator::{find_coordinator_instance, RunMetadata};
 use psyche_tui::{maybe_start_render_loop, LogOutput};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -59,7 +59,7 @@ pub struct ClusterArgs {
 
 #[derive(Serialize, Deserialize, Zeroable)]
 pub struct State {
-    pub config: CoordinatorConfig<ClientId>,
+    pub config: CoordinatorConfig,
     pub model: Model,
 }
 

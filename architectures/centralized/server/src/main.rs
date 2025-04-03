@@ -1,7 +1,7 @@
 mod app;
 mod dashboard;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use app::{App, DataServerInfo};
 use clap::{ArgAction, Parser};
 use psyche_centralized_shared::ClientId;
@@ -100,10 +100,6 @@ fn load_config_state(
             )
         })?,
     )?)?;
-
-    if coordinator.config.cooldown_time == 0 && coordinator.config.checkpointers.is_empty() {
-        bail!("cooldown time of 0 and no checkpointers will run forever. invalid coordinator state toml.")
-    }
 
     let data_server_config = match data_config_path {
         Some(config_path) => {

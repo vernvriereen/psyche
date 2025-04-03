@@ -6,7 +6,6 @@ use psyche_solana_coordinator::cpi::set_future_epoch_rates;
 use psyche_solana_coordinator::cpi::set_paused;
 use psyche_solana_coordinator::cpi::update_coordinator_config_model;
 use psyche_solana_coordinator::program::PsycheSolanaCoordinator;
-use psyche_solana_coordinator::ClientId;
 use psyche_solana_coordinator::CoordinatorAccount;
 use psyche_solana_coordinator::CoordinatorInstance;
 
@@ -37,7 +36,7 @@ pub struct RunUpdateAccounts<'info> {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct RunUpdateParams {
-    pub config: Option<CoordinatorConfig<ClientId>>,
+    pub config: Option<CoordinatorConfig>,
     pub model: Option<Model>,
     pub epoch_earning_rate: Option<u64>,
     pub epoch_slashing_rate: Option<u64>,

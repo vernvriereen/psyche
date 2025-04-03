@@ -11,7 +11,7 @@ pub use client::ClientId;
 pub use instance_state::CoordinatorInstanceState;
 use logic::*;
 pub use program_error::ProgramError;
-use psyche_coordinator::model::Model;
+use psyche_coordinator::model::{HubRepo, Model};
 use psyche_coordinator::Committee;
 use psyche_coordinator::CommitteeProof;
 use psyche_coordinator::CoordinatorConfig;
@@ -130,7 +130,7 @@ pub mod psyche_solana_coordinator {
 
     pub fn update_coordinator_config_model(
         ctx: Context<OwnerCoordinatorAccounts>,
-        config: Option<CoordinatorConfig<ClientId>>,
+        config: Option<CoordinatorConfig>,
         model: Option<Model>,
     ) -> Result<()> {
         ctx.accounts
@@ -239,6 +239,17 @@ pub mod psyche_solana_coordinator {
                     },
                 )],
             )
+    }
+
+    pub fn checkpoint(
+        ctx: Context<PermissionlessCoordinatorAccounts>,
+        repo: HubRepo,
+    ) -> Result<()> {
+        ctx.accounts
+            .coordinator_account
+            .load_mut()?
+            .state
+            .checkpoint(ctx.accounts.user.key, repo)
     }
 }
 

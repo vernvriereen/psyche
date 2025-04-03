@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use bytemuck::Pod;
 use bytemuck::Zeroable;
+use psyche_coordinator::model::HubRepo;
 use psyche_coordinator::model::Model;
 use psyche_coordinator::ClientState;
 use psyche_coordinator::Coordinator;
@@ -237,7 +238,7 @@ impl CoordinatorInstanceState {
 
     pub fn update_coordinator_config_model(
         &mut self,
-        config: Option<CoordinatorConfig<ClientId>>,
+        config: Option<CoordinatorConfig>,
         model: Option<Model>,
     ) -> Result<()> {
         if self.coordinator.run_state == RunState::Finished {
@@ -318,10 +319,28 @@ impl CoordinatorInstanceState {
         payer: &Pubkey,
         checks: HealthChecks<ClientId>,
     ) -> Result<()> {
+        // O(n) on clients, reconsider
         let id = self.clients_state.find_signer(payer)?;
 
         self.coordinator
             .health_check(id, checks)
+            .map_err(|err| anchor_lang::error!(ProgramError::from(err)))?;
+        self.tick()
+    }
+
+    pub fn checkpoint(&mut self, payer: &Pubkey, repo: HubRepo) -> Result<()> {
+        // O(n) on clients, reconsider
+        let id = self.clients_state.find_signer(payer)?;
+        let index = self
+            .coordinator
+            .epoch_state
+            .clients
+            .iter()
+            .position(|x| x.id == *id)
+            .ok_or(ProgramError::SignerNotAClient)?;
+
+        self.coordinator
+            .checkpoint(id, index as u64, repo)
             .map_err(|err| anchor_lang::error!(ProgramError::from(err)))?;
         self.tick()
     }

@@ -427,8 +427,21 @@ impl App {
                 }
             }
             ClientToServerMessage::Checkpoint(checkpoint) => {
-                if let Err(error) = self.coordinator.checkpoint(&from, checkpoint) {
-                    warn!("Error when processing checkpoint: {error}");
+                let position = self
+                    .coordinator
+                    .epoch_state
+                    .clients
+                    .iter()
+                    .position(|x| x.id == from);
+                match position {
+                    Some(index) => {
+                        if let Err(error) =
+                            self.coordinator.checkpoint(&from, index as u64, checkpoint)
+                        {
+                            warn!("Error when processing checkpoint: {error}");
+                        }
+                    }
+                    None => warn!("Got checkpoint but could not find {from} in client list"),
                 }
                 true
             }

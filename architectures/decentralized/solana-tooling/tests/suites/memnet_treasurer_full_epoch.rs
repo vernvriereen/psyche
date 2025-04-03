@@ -205,7 +205,6 @@ pub async fn run() {
                 witness_nodes: 1,
                 rounds_per_epoch: 4,
                 total_steps: 100,
-                checkpointers: FixedVec::zeroed(),
             }),
             model: Some(Model::LLM(LLM {
                 architecture: LLMArchitecture::HfLlama,

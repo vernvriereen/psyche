@@ -18,7 +18,7 @@ use anchor_client::{
 use anyhow::{anyhow, bail, Context, Result};
 use futures_util::StreamExt;
 use psyche_coordinator::{
-    model::{self, Model},
+    model::{self, HubRepo, Model},
     CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks,
 };
 use psyche_watcher::{Backend as WatcherBackend, OpportunisticData};
@@ -397,7 +397,7 @@ impl SolanaBackend {
         &self,
         coordinator_instance: Pubkey,
         coordinator_account: Pubkey,
-        config: Option<CoordinatorConfig<psyche_solana_coordinator::ClientId>>,
+        config: Option<CoordinatorConfig>,
         model: Option<Model>,
     ) -> Result<Signature> {
         let signature = self
@@ -573,6 +573,33 @@ impl SolanaBackend {
         });
     }
 
+    pub fn send_checkpoint(
+        &self,
+        coordinator_instance: Pubkey,
+        coordinator_account: Pubkey,
+        repo: HubRepo,
+    ) {
+        let program_coordinator = self.program_coordinator.clone();
+        tokio::task::spawn(async move {
+            let payer = program_coordinator.payer();
+            let pending_tx = program_coordinator
+                .request()
+                .accounts(
+                    psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                        user: payer,
+                        coordinator_instance,
+                        coordinator_account,
+                    },
+                )
+                .args(psyche_solana_coordinator::instruction::Checkpoint { repo })
+                .send();
+            match pending_tx.await {
+                Ok(signature) => info!(from = %payer, tx = %signature, "Checkpoint transaction"),
+                Err(err) => warn!(from = %payer, "Error sending checkpoint transaction: {err}"),
+            }
+        });
+    }
+
     pub async fn get_coordinator_instance(
         &self,
         coordinator_instance: &Pubkey,
@@ -671,8 +698,9 @@ impl WatcherBackend<psyche_solana_coordinator::ClientId> for SolanaBackendRunner
         Ok(())
     }
 
-    async fn send_checkpoint(&mut self, _checkpoint: model::HubRepo) -> Result<()> {
-        warn!("send_checkpoint unimplemented");
+    async fn send_checkpoint(&mut self, checkpoint: model::HubRepo) -> Result<()> {
+        self.backend
+            .send_checkpoint(self.instance, self.account, checkpoint);
         Ok(())
     }
 }

@@ -91,7 +91,7 @@ impl From<CoordinatorError> for ProgramError {
             CoordinatorError::Halted => {
                 ProgramError::CoordinatorErrorNoActiveRound
             },
-            CoordinatorError::InvalidCheckpoint => {
+            CoordinatorError::AlreadyCheckpointed => {
                 ProgramError::CoordinatorErrorInvalidCheckpoint
             },
             CoordinatorError::WitnessesFull => {
