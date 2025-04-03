@@ -1,7 +1,9 @@
+use std::fmt::Debug;
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-pub trait Networkable: Serialize + for<'a> Deserialize<'a> + Send + Sync + 'static {
+pub trait Networkable: Serialize + for<'a> Deserialize<'a> + Debug + Send + Sync + 'static {
     fn from_bytes(bytes: &[u8]) -> Result<Self> {
         postcard::from_bytes(bytes).map_err(Into::into)
     }
@@ -10,4 +12,4 @@ pub trait Networkable: Serialize + for<'a> Deserialize<'a> + Send + Sync + 'stat
     }
 }
 
-impl<T: Serialize + for<'a> Deserialize<'a> + Send + Sync + 'static> Networkable for T {}
+impl<T: Serialize + for<'a> Deserialize<'a> + Debug + Send + Sync + 'static> Networkable for T {}

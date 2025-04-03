@@ -14,7 +14,7 @@ use tokio::{
     task::JoinHandle,
     time::sleep,
 };
-use tracing::{debug, error, info_span, trace, warn, Instrument};
+use tracing::{debug, error, trace, trace_span, warn, Instrument};
 
 pub type BatchStep = u32;
 pub type BatchIdSet = HashSet<BatchId>;
@@ -48,13 +48,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> DataFetcher<T, A> {
         let step = state.progress.step;
 
         let mut assigned_batch_ids = get_batch_ids_for_node(data_assignments, identity);
-        debug!(
+        trace!(
+            name:"fetching_data_assignments",
             assigned_batch_ids = assigned_batch_ids
                 .iter()
                 .map(|i| i.to_string())
                 .collect::<Vec<_>>()
                 .join(","),
-            "fetching data for assigned batch IDs"
+            "Fetching data assignments..."
         );
 
         let (tx_next_sample, next_sample) = mpsc::channel(self.buffer_size);
@@ -116,7 +117,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> DataFetcher<T, A> {
                         }
                     }
                 }
-                .instrument(info_span!("fetch_data"))
+                .instrument(trace_span!("fetch_data"))
             }),
         ));
 

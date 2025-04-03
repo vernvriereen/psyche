@@ -1,4 +1,4 @@
-use crate::{fetch_data::DataFetcher, WandBInfo};
+use crate::{fetch_data::DataFetcher, IntegrationTestLogMarker, WandBInfo};
 use psyche_coordinator::{
     model::{self, HttpLLMTrainingDataLocation, LLMTrainingDataLocation},
     Coordinator, HealthChecks,
@@ -409,6 +409,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunInitConfigAndIO<T
                             models.push(model);
                         }
                         info!(
+                            integration_test_log_marker = %IntegrationTestLogMarker::LoadedModel,
                             checkpoint = %llm.checkpoint,
                             gpus = init_config.data_parallelism * init_config.tensor_parallelism,
                             dp = init_config.data_parallelism,

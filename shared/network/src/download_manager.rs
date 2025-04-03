@@ -1,7 +1,6 @@
 use crate::{
     p2p_model_sharing::{TransmittableModelConfig, TransmittableModelParameter},
     serialized_distro::TransmittableDistroResult,
-    util::fmt_bytes,
     Networkable,
 };
 
@@ -16,7 +15,7 @@ use tokio::{
     sync::{mpsc, oneshot, Mutex},
     task::JoinHandle,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, trace, warn};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum TransmittableDownload {
@@ -193,7 +192,6 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
         let downloads = self.downloads.clone();
         let sender = self.tx_new_item.clone();
         tokio::spawn(async move {
-            debug!("Adding new download: {}", blob_ticket.hash());
             downloads
                 .lock()
                 .await
@@ -324,7 +322,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                     }
                     DownloadProgress::FoundHashSeq { .. } => None,
                     DownloadProgress::Progress { offset, .. } => {
-                        let delta = offset - download.last_offset;
+                        let delta = offset.saturating_sub(download.last_offset);
                         download.last_offset = offset;
                         Some(DownloadUpdate {
                             blob_ticket: download.blob_ticket.clone(),
@@ -337,22 +335,15 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                         })
                     }
                     DownloadProgress::Done { .. } => None,
-                    DownloadProgress::AllDone(stats) => {
-                        debug!(
-                            "Downloaded (index {index}) {}, {} ",
-                            download.blob_ticket.hash(),
-                            fmt_bytes(stats.bytes_read as f64)
-                        );
-                        Some(DownloadUpdate {
-                            blob_ticket: download.blob_ticket.clone(),
-                            tag: download.tag,
-                            downloaded_size_delta: 0,
-                            downloaded_size: download.total_size,
-                            total_size: download.total_size,
-                            all_done: true,
-                            error: None,
-                        })
-                    }
+                    DownloadProgress::AllDone(_) => Some(DownloadUpdate {
+                        blob_ticket: download.blob_ticket.clone(),
+                        tag: download.tag,
+                        downloaded_size_delta: 0,
+                        downloaded_size: download.total_size,
+                        total_size: download.total_size,
+                        all_done: true,
+                        error: None,
+                    }),
                     DownloadProgress::Abort(err) => {
                         warn!("Download aborted: {:?}", err);
                         Some(DownloadUpdate {
@@ -376,8 +367,11 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
         };
         if let Ok(Some(DownloadManagerEvent::Update(DownloadUpdate { all_done, .. }))) = &r {
             if *all_done {
-                debug!("Since download is complete, removing it: {index};");
-                downloads.swap_remove(index);
+                let removed = downloads.swap_remove(index);
+                trace!(
+                    "Since download is complete, removing it: idx {index}, hash {}",
+                    removed.blob_ticket.hash()
+                );
             }
         }
         r

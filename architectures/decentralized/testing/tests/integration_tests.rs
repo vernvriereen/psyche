@@ -2,6 +2,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use bollard::container::StartContainerOptions;
 use bollard::{container::KillContainerOptions, Docker};
+use psyche_client::IntegrationTestLogMarker;
 use psyche_coordinator::{model::Checkpoint, RunState};
 use psyche_decentralized_testing::docker_setup::e2e_testing_setup_subscription;
 use psyche_decentralized_testing::{
@@ -9,7 +10,7 @@ use psyche_decentralized_testing::{
     docker_setup::{
         e2e_testing_setup, kill_all_clients, spawn_new_client, spawn_new_client_with_monitoring,
     },
-    docker_watcher::{DockerWatcher, JsonFilter, Response},
+    docker_watcher::{DockerWatcher, Response},
     utils::SolanaTestClient,
     CLIENT_CONTAINER_PREFIX,
 };
@@ -49,14 +50,20 @@ async fn test_two_clients_three_epochs_run() {
     let _monitor_client_1 = watcher
         .monitor_container(
             &format!("{CLIENT_CONTAINER_PREFIX}-1"),
-            vec![JsonFilter::StateChange, JsonFilter::Loss],
+            vec![
+                IntegrationTestLogMarker::StateChange,
+                IntegrationTestLogMarker::Loss,
+            ],
         )
         .unwrap();
 
     let _monitor_client_2 = watcher
         .monitor_container(
             &format!("{CLIENT_CONTAINER_PREFIX}-2"),
-            vec![JsonFilter::StateChange, JsonFilter::Loss],
+            vec![
+                IntegrationTestLogMarker::StateChange,
+                IntegrationTestLogMarker::Loss,
+            ],
         )
         .unwrap();
 
@@ -123,7 +130,10 @@ async fn test_client_join_and_get_model_p2p(#[values(1, 2)] n_new_clients: u8) {
         let _monitor_client = watcher
             .monitor_container(
                 &format!("{CLIENT_CONTAINER_PREFIX}-{}", i + 1),
-                vec![JsonFilter::LoadedModel, JsonFilter::Loss],
+                vec![
+                    IntegrationTestLogMarker::LoadedModel,
+                    IntegrationTestLogMarker::Loss,
+                ],
             )
             .unwrap();
     }
@@ -183,7 +193,7 @@ async fn test_rejoining_client_delay() {
     let _monitor_client = watcher
         .monitor_container(
             &format!("{CLIENT_CONTAINER_PREFIX}-{}", 2),
-            vec![JsonFilter::LoadedModel],
+            vec![IntegrationTestLogMarker::LoadedModel],
         )
         .unwrap();
 
@@ -248,10 +258,10 @@ async fn disconnect_client() {
         .monitor_container(
             &format!("{CLIENT_CONTAINER_PREFIX}-1"),
             vec![
-                JsonFilter::StateChange,
-                JsonFilter::HealthCheck,
-                JsonFilter::UntrainedBatches,
-                JsonFilter::WitnessElected,
+                IntegrationTestLogMarker::StateChange,
+                IntegrationTestLogMarker::HealthCheck,
+                IntegrationTestLogMarker::UntrainedBatches,
+                IntegrationTestLogMarker::WitnessElected,
             ],
         )
         .unwrap();
@@ -263,10 +273,10 @@ async fn disconnect_client() {
         .monitor_container(
             &format!("{CLIENT_CONTAINER_PREFIX}-2"),
             vec![
-                JsonFilter::StateChange,
-                JsonFilter::HealthCheck,
-                JsonFilter::UntrainedBatches,
-                JsonFilter::WitnessElected,
+                IntegrationTestLogMarker::StateChange,
+                IntegrationTestLogMarker::HealthCheck,
+                IntegrationTestLogMarker::UntrainedBatches,
+                IntegrationTestLogMarker::WitnessElected,
             ],
         )
         .unwrap();
@@ -405,9 +415,9 @@ async fn drop_a_client_waitingformembers_then_reconnect() {
             .monitor_container(
                 &format!("{CLIENT_CONTAINER_PREFIX}-{}", i),
                 vec![
-                    JsonFilter::Loss,
-                    JsonFilter::StateChange,
-                    JsonFilter::LoadedModel,
+                    IntegrationTestLogMarker::Loss,
+                    IntegrationTestLogMarker::StateChange,
+                    IntegrationTestLogMarker::LoadedModel,
                 ],
             )
             .unwrap();
@@ -613,14 +623,14 @@ async fn test_solana_subscriptions() {
     let _monitor_client_1 = watcher
         .monitor_container(
             &format!("{CLIENT_CONTAINER_PREFIX}-1"),
-            vec![JsonFilter::StateChange],
+            vec![IntegrationTestLogMarker::StateChange],
         )
         .unwrap();
 
     let _monitor_client_2 = watcher
         .monitor_container(
             &format!("{CLIENT_CONTAINER_PREFIX}-2"),
-            vec![JsonFilter::SolanaSubscription],
+            vec![IntegrationTestLogMarker::SolanaSubscription],
         )
         .unwrap();
 
