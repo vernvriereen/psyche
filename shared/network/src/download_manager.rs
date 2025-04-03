@@ -322,7 +322,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                     }
                     DownloadProgress::FoundHashSeq { .. } => None,
                     DownloadProgress::Progress { offset, .. } => {
-                        let delta = offset - download.last_offset;
+                        let delta = offset.saturating_sub(download.last_offset);
                         download.last_offset = offset;
                         Some(DownloadUpdate {
                             blob_ticket: download.blob_ticket.clone(),
