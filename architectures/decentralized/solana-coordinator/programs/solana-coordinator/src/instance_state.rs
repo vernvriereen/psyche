@@ -186,9 +186,13 @@ impl CoordinatorInstanceState {
         } {
             return err!(ProgramError::from(err));
         }
+
         if paused {
             Ok(()) // do not tick when setting paused, tick() errors when paused
         } else {
+            // clear all active joins -- require that everyone re-join
+            self.clients_state.next_active += 1;
+
             self.tick()
         }
     }
