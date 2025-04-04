@@ -828,16 +828,14 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
     }
 
-    pub fn get_current_target_global_batch_size(&self) -> u16 {
-        let tokens_processed = self.total_tokens_processed();
+    pub fn get_target_global_batch_size(&self, round: Option<&Round>) -> u16 {
+        let tokens_processed = self.total_tokens_processed(round);
         self.config.get_batch_size(tokens_processed)
     }
 
-    pub fn total_tokens_processed(&self) -> u64 {
-        // use data_index from the *current* round, which marks the start of data for this round
+    pub fn total_tokens_processed(&self, round: Option<&Round>) -> u64 {
         // if no round active yet (e.g., warmup), use epoch_start_data_index
-        let current_data_start_index = self
-            .current_round()
+        let current_data_start_index = round
             .map(|r| r.data_index)
             .unwrap_or(self.progress.epoch_start_data_index);
 
@@ -979,7 +977,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             || (self.config.cooldown_time > 0
                 && self.check_timeout(unix_timestamp, self.config.cooldown_time))
         {
-            let last_round_batch_size = self.get_current_target_global_batch_size();
+            let last_round_batch_size = self.get_target_global_batch_size(self.current_round());
             self.progress.epoch_start_data_index =
                 self.current_round_unchecked().data_index + last_round_batch_size as u64;
             self.progress.epoch += 1;

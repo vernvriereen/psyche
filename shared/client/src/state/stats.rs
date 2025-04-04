@@ -190,7 +190,8 @@ impl StatsLogger {
             false => match &state.model {
                 model::Model::LLM(llm) => match llm.data_type {
                     model::LLMTrainingDataType::Pretraining => {
-                        let tokens = state.get_current_target_global_batch_size() as u32
+                        let tokens = state.get_target_global_batch_size(state.current_round())
+                            as u32
                             * state.get_sequence_length()
                             * self.step_durations.len() as u32;
                         let seconds = self
@@ -276,5 +277,5 @@ fn no_nan(val: f32, replacement: f32) -> f32 {
 }
 
 fn token_batch_size<T: NodeIdentity>(state: &Coordinator<T>) -> u32 {
-    state.get_current_target_global_batch_size() as u32 * state.get_sequence_length()
+    state.get_target_global_batch_size(state.current_round()) as u32 * state.get_sequence_length()
 }
