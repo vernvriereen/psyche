@@ -88,9 +88,7 @@ impl From<CoordinatorError> for ProgramError {
             CoordinatorError::InvalidHealthCheck => {
                 ProgramError::CoordinatorErrorInvalidHealthCheck
             },
-            CoordinatorError::Halted => {
-                ProgramError::CoordinatorErrorNoActiveRound
-            },
+            CoordinatorError::Halted => ProgramError::CoordinatorErrorHalted,
             CoordinatorError::AlreadyCheckpointed => {
                 ProgramError::CoordinatorErrorInvalidCheckpoint
             },

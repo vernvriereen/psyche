@@ -186,7 +186,11 @@ impl CoordinatorInstanceState {
         } {
             return err!(ProgramError::from(err));
         }
-        self.tick()
+        if paused {
+            Ok(()) // do not tick when setting paused, tick() errors when paused
+        } else {
+            self.tick()
+        }
     }
 
     pub fn witness(&mut self, payer: &Pubkey, witness: Witness) -> Result<()> {
