@@ -28,6 +28,8 @@ use tokio::{
 };
 use tracing::{debug, error, info, trace, warn};
 
+const FORCE_RECONNECTION_TIME: u64 = 30;
+
 pub struct SolanaBackend {
     program_authorizer: Program<Arc<Keypair>>,
     program_coordinator: Program<Arc<Keypair>>,
@@ -55,7 +57,9 @@ async fn subscribe_to_account(
     commitment: CommitmentConfig,
     coordinator_account: &Pubkey,
     tx: mpsc::UnboundedSender<RpcResponse<UiAccount>>,
+    offset: u64,
 ) {
+    let mut first_subscription = true;
     let mut retries: u64 = 0;
     loop {
         let Ok(sub_client) = PubsubClient::new(&url).await else {
@@ -95,29 +99,43 @@ async fn subscribe_to_account(
             url = url,
             "Correctly subscribe to Solana url: {url}",
         );
+
+        let refresh_time: u64 = if first_subscription {
+            FORCE_RECONNECTION_TIME + ((offset * 10) % FORCE_RECONNECTION_TIME)
+        } else {
+            FORCE_RECONNECTION_TIME
+        };
+        first_subscription = false;
+        let refresh_timer = tokio::time::sleep(Duration::from_secs(refresh_time * 60));
+        tokio::pin!(refresh_timer);
+
         loop {
-            match tokio::time::timeout(Duration::from_secs(600), notifications.next()).await {
-                Ok(Some(update)) => {
-                    tx.send(update).unwrap();
-                }
-                Ok(None) => {
-                    warn!(url = url, "Subscription stream closed by server");
-                    break;
-                }
-                Err(_) => {
-                    warn!(
+            tokio::select! {
+                _ = &mut refresh_timer => {
+                    info!(
+                        type = "Solana subscription",
                         url = url,
-                        "No updates received for 10 minutes, reconnecting..."
-                    );
-                    break;
+                        "Foreced reconnection");
+                    break
+                }
+                update = notifications.next() => {
+                    match update {
+                        Some(data) => {
+                                if tx.send(data).is_err() {
+                                    break;
+                                }
+                        }
+                        None => {
+                            warn!(
+                                type = "Solana subscription",
+                                url = url,
+                                "Solana subscription error, websocket closed");
+                            break
+                        }
+                    }
                 }
             }
         }
-        warn!(
-            type = "Solana subscription",
-            url = url,
-            "Solana subscription error, could not connect to url: {url}",
-        );
         let sleep_time = min(600, retries.saturating_mul(5));
         tokio::time::sleep(Duration::from_secs(sleep_time)).await;
         retries += 1;
@@ -150,21 +168,37 @@ impl SolanaBackend {
         let cluster = self.cluster.clone();
         let url = cluster.ws_url().to_string();
         let commitment = self.program_coordinator.rpc().commitment();
+        let mut offset = 0;
 
         let (tx_subscribe, mut rx_subscribe) = mpsc::unbounded_channel();
 
         let tx_subscribe_1 = tx_subscribe.clone();
         tokio::spawn(async move {
-            subscribe_to_account(url, commitment, &coordinator_account, tx_subscribe_1).await
+            subscribe_to_account(
+                url,
+                commitment,
+                &coordinator_account,
+                tx_subscribe_1,
+                offset,
+            )
+            .await
         });
 
+        offset += 1;
         let tx_subscribe_2 = tx_subscribe.clone();
         let url_2 = std::env::var("ws_rpc_2")
             .ok()
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| cluster.ws_url().to_string());
         tokio::spawn(async move {
-            subscribe_to_account(url_2, commitment, &coordinator_account, tx_subscribe_2).await
+            subscribe_to_account(
+                url_2,
+                commitment,
+                &coordinator_account,
+                tx_subscribe_2,
+                offset,
+            )
+            .await
         });
 
         tokio::spawn(async move {
