@@ -115,7 +115,7 @@ async fn subscribe_to_account(
                     info!(
                         type = "Solana subscription",
                         url = url,
-                        "Foreced reconnection");
+                        "Force Solana subscription reconnection");
                     break
                 }
                 update = notifications.next() => {
@@ -166,40 +166,30 @@ impl SolanaBackend {
     ) -> Result<SolanaBackendRunner> {
         let (tx_update, rx_update) = broadcast::channel(32);
         let cluster = self.cluster.clone();
-        let url = cluster.ws_url().to_string();
         let commitment = self.program_coordinator.rpc().commitment();
-        let mut offset = 0;
 
         let (tx_subscribe, mut rx_subscribe) = mpsc::unbounded_channel();
 
-        let tx_subscribe_1 = tx_subscribe.clone();
-        tokio::spawn(async move {
-            subscribe_to_account(
-                url,
-                commitment,
-                &coordinator_account,
-                tx_subscribe_1,
-                offset,
-            )
-            .await
-        });
+        std::env::set_var("ws_rpc_1", cluster.ws_url());
 
-        offset += 1;
-        let tx_subscribe_2 = tx_subscribe.clone();
-        let url_2 = std::env::var("ws_rpc_2")
-            .ok()
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| cluster.ws_url().to_string());
-        tokio::spawn(async move {
-            subscribe_to_account(
-                url_2,
-                commitment,
-                &coordinator_account,
-                tx_subscribe_2,
-                offset,
-            )
-            .await
-        });
+        for i in 1..=3 {
+            let tx_subscribe_clone = tx_subscribe.clone();
+            let url = std::env::var(format!("ws_rpc_{}", i))
+                .ok()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| cluster.ws_url().to_string());
+
+            tokio::spawn(async move {
+                subscribe_to_account(
+                    url,
+                    commitment,
+                    &coordinator_account,
+                    tx_subscribe_clone,
+                    i - 1,
+                )
+                .await
+            });
+        }
 
         tokio::spawn(async move {
             let mut last_data: UiAccountData = UiAccountData::LegacyBinary("".to_string());
