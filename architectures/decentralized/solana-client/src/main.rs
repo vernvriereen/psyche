@@ -18,6 +18,7 @@ use bytemuck::Zeroable;
 use clap::{Args, Parser, Subcommand};
 use psyche_client::{print_identity_keys, read_identity_secret_key, TrainArgs};
 use psyche_coordinator::{model::Model, CoordinatorConfig};
+use psyche_core::sha256;
 use psyche_network::SecretKey;
 use psyche_solana_coordinator::{find_coordinator_instance, RunMetadata};
 use psyche_tui::{maybe_start_render_loop, LogOutput};
@@ -440,9 +441,10 @@ async fn async_main() -> Result<()> {
 
             let identity_secret_key: SecretKey =
                 read_identity_secret_key(args.identity_secret_key_path.as_ref())?
-                    // Iroh key should be deterministically derived from Solana Pubkey.
+                    // Iroh key should be deterministically derived from Solana key
                     .unwrap_or_else(|| {
-                        let mut rng = ChaCha8Rng::from_seed(solana_pubkey.to_bytes());
+                        let mut rng =
+                            ChaCha8Rng::from_seed(sha256(wallet_keypair.secret().as_bytes()));
                         SecretKey::generate(&mut rng)
                     });
 
