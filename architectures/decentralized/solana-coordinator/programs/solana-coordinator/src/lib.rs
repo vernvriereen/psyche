@@ -28,7 +28,7 @@ use ts_rs::TS;
 
 pub use crate::instance_state::RunMetadata;
 
-declare_id!("DQdAoyNF6q4RHSAUVSX9CRJEbku5SoEBCdAsbVSJy8SR");
+declare_id!("ApUYvwXyosJvfjkzDCv3yGykNoy2AcqKQyRe1aJ1pcW2");
 
 pub const SOLANA_MAX_NUM_PENDING_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 
