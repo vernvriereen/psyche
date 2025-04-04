@@ -1,3 +1,4 @@
+use crate::retry::RetryError;
 use anchor_client::{
     anchor_lang::system_program,
     solana_client::{
@@ -26,7 +27,10 @@ use psyche_watcher::{Backend as WatcherBackend, OpportunisticData};
 use solana_account_decoder_client_types::{UiAccount, UiAccountData, UiAccountEncoding};
 use solana_transaction_status_client_types::UiTransactionEncoding;
 use std::{cmp::min, sync::Arc, time::Duration};
-use tokio::sync::{broadcast, mpsc};
+use tokio::{
+    sync::{broadcast, mpsc},
+    time::timeout,
+};
 use tracing::{debug, error, info, warn};
 
 pub struct SolanaBackend {
@@ -364,6 +368,7 @@ impl SolanaBackend {
         Ok(signature)
     }
 
+    #[allow(unused)]
     pub async fn join_run(
         &self,
         coordinator_instance: Pubkey,
@@ -392,6 +397,52 @@ impl SolanaBackend {
             .send()
             .await?;
         Ok(signature)
+    }
+
+    pub async fn join_run_retryable(
+        &self,
+        coordinator_instance: Pubkey,
+        coordinator_account: Pubkey,
+        id: psyche_solana_coordinator::ClientId,
+    ) -> Result<Signature, RetryError<String>> {
+        let coordinator_instance_state = self
+            .get_coordinator_instance(&coordinator_instance)
+            .await
+            .map_err(|err| RetryError::Fatal(err.to_string()))?;
+        let authorization_global = psyche_solana_authorizer::find_authorization(
+            &coordinator_instance_state.join_authority,
+            &system_program::ID,
+            psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE,
+        );
+        let pending_tx = self
+            .program_coordinator
+            .request()
+            .accounts(psyche_solana_coordinator::accounts::JoinRunAccounts {
+                user: self.program_coordinator.payer(),
+                authorization: authorization_global,
+                coordinator_instance,
+                coordinator_account,
+            })
+            .args(psyche_solana_coordinator::instruction::JoinRun {
+                params: psyche_solana_coordinator::logic::JoinRunParams { client_id: id },
+            })
+            .send();
+
+        // We timeout the transaction at 5s max, since internally send() polls Solana until the
+        // tx is confirmed; we'd rather cancel early and attempt again.
+        match timeout(Duration::from_secs(5), pending_tx).await {
+            Ok(Ok(s)) => Ok(s),
+            Err(_elapsed) => {
+                error!("[TIMEOUT] join_run_retryable");
+                Err(RetryError::non_retryable_error(
+                    "timeout join_run_retryable",
+                ))
+            }
+            Ok(Err(e)) => {
+                warn!("join_run_retryable error: {}", e);
+                Err(RetryError::from(e).into())
+            }
+        }
     }
 
     pub async fn update_config_and_model(

@@ -1,4 +1,8 @@
-use crate::{backend::SolanaBackend, network_identity::NetworkIdentity};
+use crate::{
+    backend::SolanaBackend,
+    network_identity::NetworkIdentity,
+    retry::{retry_function, RetryError},
+};
 
 use anchor_client::{
     solana_sdk::{
@@ -185,8 +189,8 @@ impl App {
         // (subscription is on change), so check if it's in that state right at boot
         // and join the run if so
         if start_coordinator_state.run_state == RunState::WaitingForMembers {
-            let joined = backend
-                .join_run(
+            let joined = retry_function("join_run", || {
+                backend.join_run_retryable(
                     coordinator_instance,
                     coordinator_account,
                     psyche_solana_coordinator::ClientId {
@@ -194,7 +198,9 @@ impl App {
                         p2p_identity: *p2p_identity.as_bytes(),
                     },
                 )
-                .await?;
+            })
+            .await
+            .map_err(|e: RetryError<String>| anyhow!("join_run error: {}", e))?;
             info!(
                 run_id = self.run_id,
                 from = %signer,
@@ -276,16 +282,16 @@ impl App {
                     match latest_update.run_state {
                         RunState::WaitingForMembers => {
                             if self.joined_new_train_epoch.is_none() {
-                                let joined = backend
-                                    .join_run(
+                                let joined = retry_function("join_run", || backend
+                                    .join_run_retryable(
                                         coordinator_instance,
                                         coordinator_account,
                                         psyche_solana_coordinator::ClientId {
                                             signer,
                                             p2p_identity: *p2p_identity.as_bytes(),
                                         },
-                                    )
-                                    .await?;
+                                    ))
+                                    .await.map_err(|e: RetryError<String>| anyhow!("join_run error: {}", e))?;
                                 info!(
                                     run_id = self.run_id,
                                     from = %signer,
