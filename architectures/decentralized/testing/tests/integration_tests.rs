@@ -654,7 +654,7 @@ async fn test_solana_subscriptions() {
                         }
                         // resume subscription 1
                         if step == 15 && new_state == RunState::RoundWitness.to_string(){
-                            println!("unpause container nginx_proxy");
+                            println!("resume container nginx_proxy");
                             docker
                                 .start_container("nginx_proxy", None::<StartContainerOptions<String>>)
                                 .await
@@ -673,7 +673,7 @@ async fn test_solana_subscriptions() {
                         }
                         // resume subscription 2
                         if step == 45 && new_state == RunState::RoundWitness.to_string(){
-                            println!("unpause container nginx_proxy_2");
+                            println!("resume container nginx_proxy_2");
 
                             docker
                                 .start_container("nginx_proxy_2", None::<StartContainerOptions<String>>)
