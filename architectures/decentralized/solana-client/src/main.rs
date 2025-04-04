@@ -7,6 +7,7 @@ use anchor_client::{
     solana_sdk::{
         commitment_config::CommitmentConfig,
         native_token::lamports_to_sol,
+        pubkey::Pubkey,
         signature::{EncodableKey, Keypair},
         signer::Signer,
     },
@@ -23,6 +24,7 @@ use psyche_tui::{maybe_start_render_loop, LogOutput};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::{io::Cursor, path::PathBuf, time::Duration};
 use time::OffsetDateTime;
@@ -94,6 +96,9 @@ enum Commands {
 
         #[clap(long)]
         vocab_size: Option<u64>,
+
+        #[clap(long)]
+        join_authority: Option<String>,
     },
     CloseRun {
         #[clap(flatten)]
@@ -228,6 +233,7 @@ async fn async_main() -> Result<()> {
             description,
             num_parameters,
             vocab_size,
+            join_authority,
         } => {
             let run_id = run_id.trim_matches('"').to_string(); // Trim quotes, if any
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
@@ -254,17 +260,13 @@ async fn async_main() -> Result<()> {
                         num_parameters: num_parameters.unwrap_or(0),
                         vocab_size: vocab_size.unwrap_or(0),
                     },
+                    join_authority.map(|address| Pubkey::from_str(&address).unwrap()),
                 )
                 .await?;
             let locked = backend.get_balance(&created.account).await?;
             println!(
-                "Created run {} with transactions: create {}, create auth? {}",
-                run_id,
-                created.tx_create_coordinator,
-                created
-                    .tx_create_auth
-                    .map(|t| t.to_string())
-                    .unwrap_or("None".to_string()),
+                "Created run {} with transactions signatures: {:?}",
+                run_id, created.create_signatures,
             );
             println!("Instance account: {}", created.instance);
             println!("Coordinator account: {}", created.account);

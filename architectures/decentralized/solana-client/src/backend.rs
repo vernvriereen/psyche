@@ -2,10 +2,8 @@ use crate::retry::RetryError;
 use anchor_client::{
     anchor_lang::system_program,
     solana_client::{
-        self,
         nonblocking::pubsub_client::PubsubClient,
-        rpc_config::{RpcAccountInfoConfig, RpcTransactionConfig},
-        rpc_request::RpcError,
+        rpc_config::{RpcAccountInfoConfig, RpcSendTransactionConfig, RpcTransactionConfig},
         rpc_response::Response as RpcResponse,
     },
     solana_sdk::{
@@ -14,13 +12,13 @@ use anchor_client::{
         signature::{Keypair, Signature, Signer},
         system_instruction,
     },
-    Client, ClientError, Cluster, Program,
+    Client, Cluster, Program,
 };
 use anyhow::{anyhow, bail, Context, Result};
 use futures_util::StreamExt;
 use psyche_client::IntegrationTestLogMarker;
 use psyche_coordinator::{
-    model::{self, HubRepo, Model},
+    model::{HubRepo, Model},
     CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks,
 };
 use psyche_watcher::{Backend as WatcherBackend, OpportunisticData};
@@ -51,8 +49,7 @@ pub struct SolanaBackendRunner {
 pub struct CreatedRun {
     pub instance: Pubkey,
     pub account: Pubkey,
-    pub tx_create_coordinator: Signature,
-    pub tx_create_auth: Option<Signature>,
+    pub create_signatures: Vec<Signature>,
 }
 
 async fn subscribe_to_account(
@@ -203,6 +200,7 @@ impl SolanaBackend {
         &self,
         run_id: String,
         metadata: psyche_solana_coordinator::RunMetadata,
+        join_authority: Option<Pubkey>,
     ) -> Result<CreatedRun> {
         let space = psyche_solana_coordinator::CoordinatorAccount::space_with_discriminator();
         let rent = self
@@ -212,19 +210,13 @@ impl SolanaBackend {
             .await?;
 
         let payer = self.program_coordinator.payer();
-        let main_authority = self.program_coordinator.payer();
-        let join_authority = self.program_coordinator.payer();
+        let main_authority = payer;
+        let join_authority = join_authority.unwrap_or(payer);
 
         let coordinator_instance = psyche_solana_coordinator::find_coordinator_instance(&run_id);
 
         let coordinator_account_signer = Arc::new(Keypair::new());
         let coordinator_account = coordinator_account_signer.pubkey();
-
-        let authorization_global = psyche_solana_authorizer::find_authorization(
-            &join_authority,
-            &system_program::ID,
-            psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE,
-        );
 
         let create_coordinator_signature = self
             .program_coordinator
@@ -263,8 +255,30 @@ impl SolanaBackend {
             .send()
             .await?;
 
-        // fine if it fails, means it's already there!
-        let auth_create_signature = self
+        let mut create_signatures = vec![create_coordinator_signature];
+
+        if join_authority == payer {
+            let (authorization_create, authorization_activate) =
+                self.create_run_ensure_permissionless().await?;
+            create_signatures.push(authorization_create);
+            create_signatures.push(authorization_activate);
+        }
+
+        Ok(CreatedRun {
+            instance: coordinator_instance,
+            account: coordinator_account,
+            create_signatures,
+        })
+    }
+
+    async fn create_run_ensure_permissionless(&self) -> Result<(Signature, Signature)> {
+        let payer = self.program_coordinator.payer();
+        let authorization_from_payer_to_everyone = psyche_solana_authorizer::find_authorization(
+            &payer,
+            &system_program::ID,
+            psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE,
+        );
+        let authorization_create = self
             .program_authorizer
             .request()
             .instruction(
@@ -273,8 +287,8 @@ impl SolanaBackend {
                     .accounts(
                         psyche_solana_authorizer::accounts::AuthorizationCreateAccounts {
                             payer,
-                            grantor: join_authority,
-                            authorization: authorization_global,
+                            grantor: payer,
+                            authorization: authorization_from_payer_to_everyone,
                             system_program: system_program::ID,
                         },
                     )
@@ -289,13 +303,24 @@ impl SolanaBackend {
                     .unwrap()
                     .remove(0),
             )
+            .send_with_spinner_and_config(RpcSendTransactionConfig {
+                skip_preflight: true,
+                preflight_commitment: None,
+                encoding: None,
+                max_retries: None,
+                min_context_slot: None,
+            })
+            .await?;
+        let authorization_activate = self
+            .program_authorizer
+            .request()
             .instruction(
                 self.program_authorizer
                     .request()
                     .accounts(
                         psyche_solana_authorizer::accounts::AuthorizationGrantorUpdateAccounts {
-                            grantor: join_authority,
-                            authorization: authorization_global,
+                            grantor: payer,
+                            authorization: authorization_from_payer_to_everyone,
                         },
                     )
                     .args(
@@ -310,37 +335,15 @@ impl SolanaBackend {
                     .unwrap()
                     .remove(0),
             )
-            .send()
-            .await;
-
-        let auth_create_signature = match auth_create_signature {
-            Ok(signature) => {
-                println!("Authorization created successfully: {:?}", signature);
-                Some(signature)
-            }
-            Err(ClientError::SolanaClientError(solana_client::client_error::ClientError {
-                kind:
-                    solana_client::client_error::ClientErrorKind::RpcError(RpcError::RpcResponseError {
-                        code: -32002,
-                        message: _message,
-                        data,
-                    }),
-                ..
-            })) if format!("{data:?}").contains("already in use") => {
-                println!("Authorization account already exists, proceeding.");
-                None
-            }
-            Err(e) => {
-                bail!("Failed to create authorization: {}", e);
-            }
-        };
-
-        Ok(CreatedRun {
-            instance: coordinator_instance,
-            account: coordinator_account,
-            tx_create_coordinator: create_coordinator_signature,
-            tx_create_auth: auth_create_signature,
-        })
+            .send_with_spinner_and_config(RpcSendTransactionConfig {
+                skip_preflight: true,
+                preflight_commitment: None,
+                encoding: None,
+                max_retries: None,
+                min_context_slot: None,
+            })
+            .await?;
+        Ok((authorization_create, authorization_activate))
     }
 
     pub async fn close_run(
@@ -750,7 +753,7 @@ impl WatcherBackend<psyche_solana_coordinator::ClientId> for SolanaBackendRunner
         Ok(())
     }
 
-    async fn send_checkpoint(&mut self, checkpoint: model::HubRepo) -> Result<()> {
+    async fn send_checkpoint(&mut self, checkpoint: HubRepo) -> Result<()> {
         self.backend
             .send_checkpoint(self.instance, self.account, checkpoint);
         Ok(())
