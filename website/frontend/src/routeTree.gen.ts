@@ -12,6 +12,7 @@
 
 import { Route as rootRoute } from './routes/__root.tsx'
 import { Route as StatusImport } from './routes/status.tsx'
+import { Route as LegalImport } from './routes/legal.tsx'
 import { Route as ComponentsImport } from './routes/components.tsx'
 import { Route as RunsRouteImport } from './routes/runs/route.tsx'
 import { Route as IndexImport } from './routes/index.tsx'
@@ -21,172 +22,192 @@ import { Route as RunsRunImport } from './routes/runs/$run.tsx'
 // Create/Update Routes
 
 const StatusRoute = StatusImport.update({
-	id: '/status',
-	path: '/status',
-	getParentRoute: () => rootRoute,
+  id: '/status',
+  path: '/status',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const LegalRoute = LegalImport.update({
+  id: '/legal',
+  path: '/legal',
+  getParentRoute: () => rootRoute,
 } as any)
 
 const ComponentsRoute = ComponentsImport.update({
-	id: '/components',
-	path: '/components',
-	getParentRoute: () => rootRoute,
+  id: '/components',
+  path: '/components',
+  getParentRoute: () => rootRoute,
 } as any)
 
 const RunsRouteRoute = RunsRouteImport.update({
-	id: '/runs',
-	path: '/runs',
-	getParentRoute: () => rootRoute,
+  id: '/runs',
+  path: '/runs',
+  getParentRoute: () => rootRoute,
 } as any)
 
 const IndexRoute = IndexImport.update({
-	id: '/',
-	path: '/',
-	getParentRoute: () => rootRoute,
+  id: '/',
+  path: '/',
+  getParentRoute: () => rootRoute,
 } as any)
 
 const RunsIndexRoute = RunsIndexImport.update({
-	id: '/',
-	path: '/',
-	getParentRoute: () => RunsRouteRoute,
+  id: '/',
+  path: '/',
+  getParentRoute: () => RunsRouteRoute,
 } as any)
 
 const RunsRunRoute = RunsRunImport.update({
-	id: '/$run',
-	path: '/$run',
-	getParentRoute: () => RunsRouteRoute,
+  id: '/$run',
+  path: '/$run',
+  getParentRoute: () => RunsRouteRoute,
 } as any)
 
 // Populate the FileRoutesByPath interface
 
 declare module '@tanstack/react-router' {
-	interface FileRoutesByPath {
-		'/': {
-			id: '/'
-			path: '/'
-			fullPath: '/'
-			preLoaderRoute: typeof IndexImport
-			parentRoute: typeof rootRoute
-		}
-		'/runs': {
-			id: '/runs'
-			path: '/runs'
-			fullPath: '/runs'
-			preLoaderRoute: typeof RunsRouteImport
-			parentRoute: typeof rootRoute
-		}
-		'/components': {
-			id: '/components'
-			path: '/components'
-			fullPath: '/components'
-			preLoaderRoute: typeof ComponentsImport
-			parentRoute: typeof rootRoute
-		}
-		'/status': {
-			id: '/status'
-			path: '/status'
-			fullPath: '/status'
-			preLoaderRoute: typeof StatusImport
-			parentRoute: typeof rootRoute
-		}
-		'/runs/$run': {
-			id: '/runs/$run'
-			path: '/$run'
-			fullPath: '/runs/$run'
-			preLoaderRoute: typeof RunsRunImport
-			parentRoute: typeof RunsRouteImport
-		}
-		'/runs/': {
-			id: '/runs/'
-			path: '/'
-			fullPath: '/runs/'
-			preLoaderRoute: typeof RunsIndexImport
-			parentRoute: typeof RunsRouteImport
-		}
-	}
+  interface FileRoutesByPath {
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexImport
+      parentRoute: typeof rootRoute
+    }
+    '/runs': {
+      id: '/runs'
+      path: '/runs'
+      fullPath: '/runs'
+      preLoaderRoute: typeof RunsRouteImport
+      parentRoute: typeof rootRoute
+    }
+    '/components': {
+      id: '/components'
+      path: '/components'
+      fullPath: '/components'
+      preLoaderRoute: typeof ComponentsImport
+      parentRoute: typeof rootRoute
+    }
+    '/legal': {
+      id: '/legal'
+      path: '/legal'
+      fullPath: '/legal'
+      preLoaderRoute: typeof LegalImport
+      parentRoute: typeof rootRoute
+    }
+    '/status': {
+      id: '/status'
+      path: '/status'
+      fullPath: '/status'
+      preLoaderRoute: typeof StatusImport
+      parentRoute: typeof rootRoute
+    }
+    '/runs/$run': {
+      id: '/runs/$run'
+      path: '/$run'
+      fullPath: '/runs/$run'
+      preLoaderRoute: typeof RunsRunImport
+      parentRoute: typeof RunsRouteImport
+    }
+    '/runs/': {
+      id: '/runs/'
+      path: '/'
+      fullPath: '/runs/'
+      preLoaderRoute: typeof RunsIndexImport
+      parentRoute: typeof RunsRouteImport
+    }
+  }
 }
 
 // Create and export the route tree
 
 interface RunsRouteRouteChildren {
-	RunsRunRoute: typeof RunsRunRoute
-	RunsIndexRoute: typeof RunsIndexRoute
+  RunsRunRoute: typeof RunsRunRoute
+  RunsIndexRoute: typeof RunsIndexRoute
 }
 
 const RunsRouteRouteChildren: RunsRouteRouteChildren = {
-	RunsRunRoute: RunsRunRoute,
-	RunsIndexRoute: RunsIndexRoute,
+  RunsRunRoute: RunsRunRoute,
+  RunsIndexRoute: RunsIndexRoute,
 }
 
 const RunsRouteRouteWithChildren = RunsRouteRoute._addFileChildren(
-	RunsRouteRouteChildren
+  RunsRouteRouteChildren,
 )
 
 export interface FileRoutesByFullPath {
-	'/': typeof IndexRoute
-	'/runs': typeof RunsRouteRouteWithChildren
-	'/components': typeof ComponentsRoute
-	'/status': typeof StatusRoute
-	'/runs/$run': typeof RunsRunRoute
-	'/runs/': typeof RunsIndexRoute
+  '/': typeof IndexRoute
+  '/runs': typeof RunsRouteRouteWithChildren
+  '/components': typeof ComponentsRoute
+  '/legal': typeof LegalRoute
+  '/status': typeof StatusRoute
+  '/runs/$run': typeof RunsRunRoute
+  '/runs/': typeof RunsIndexRoute
 }
 
 export interface FileRoutesByTo {
-	'/': typeof IndexRoute
-	'/components': typeof ComponentsRoute
-	'/status': typeof StatusRoute
-	'/runs/$run': typeof RunsRunRoute
-	'/runs': typeof RunsIndexRoute
+  '/': typeof IndexRoute
+  '/components': typeof ComponentsRoute
+  '/legal': typeof LegalRoute
+  '/status': typeof StatusRoute
+  '/runs/$run': typeof RunsRunRoute
+  '/runs': typeof RunsIndexRoute
 }
 
 export interface FileRoutesById {
-	__root__: typeof rootRoute
-	'/': typeof IndexRoute
-	'/runs': typeof RunsRouteRouteWithChildren
-	'/components': typeof ComponentsRoute
-	'/status': typeof StatusRoute
-	'/runs/$run': typeof RunsRunRoute
-	'/runs/': typeof RunsIndexRoute
+  __root__: typeof rootRoute
+  '/': typeof IndexRoute
+  '/runs': typeof RunsRouteRouteWithChildren
+  '/components': typeof ComponentsRoute
+  '/legal': typeof LegalRoute
+  '/status': typeof StatusRoute
+  '/runs/$run': typeof RunsRunRoute
+  '/runs/': typeof RunsIndexRoute
 }
 
 export interface FileRouteTypes {
-	fileRoutesByFullPath: FileRoutesByFullPath
-	fullPaths:
-		| '/'
-		| '/runs'
-		| '/components'
-		| '/status'
-		| '/runs/$run'
-		| '/runs/'
-	fileRoutesByTo: FileRoutesByTo
-	to: '/' | '/components' | '/status' | '/runs/$run' | '/runs'
-	id:
-		| '__root__'
-		| '/'
-		| '/runs'
-		| '/components'
-		| '/status'
-		| '/runs/$run'
-		| '/runs/'
-	fileRoutesById: FileRoutesById
+  fileRoutesByFullPath: FileRoutesByFullPath
+  fullPaths:
+    | '/'
+    | '/runs'
+    | '/components'
+    | '/legal'
+    | '/status'
+    | '/runs/$run'
+    | '/runs/'
+  fileRoutesByTo: FileRoutesByTo
+  to: '/' | '/components' | '/legal' | '/status' | '/runs/$run' | '/runs'
+  id:
+    | '__root__'
+    | '/'
+    | '/runs'
+    | '/components'
+    | '/legal'
+    | '/status'
+    | '/runs/$run'
+    | '/runs/'
+  fileRoutesById: FileRoutesById
 }
 
 export interface RootRouteChildren {
-	IndexRoute: typeof IndexRoute
-	RunsRouteRoute: typeof RunsRouteRouteWithChildren
-	ComponentsRoute: typeof ComponentsRoute
-	StatusRoute: typeof StatusRoute
+  IndexRoute: typeof IndexRoute
+  RunsRouteRoute: typeof RunsRouteRouteWithChildren
+  ComponentsRoute: typeof ComponentsRoute
+  LegalRoute: typeof LegalRoute
+  StatusRoute: typeof StatusRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
-	IndexRoute: IndexRoute,
-	RunsRouteRoute: RunsRouteRouteWithChildren,
-	ComponentsRoute: ComponentsRoute,
-	StatusRoute: StatusRoute,
+  IndexRoute: IndexRoute,
+  RunsRouteRoute: RunsRouteRouteWithChildren,
+  ComponentsRoute: ComponentsRoute,
+  LegalRoute: LegalRoute,
+  StatusRoute: StatusRoute,
 }
 
 export const routeTree = rootRoute
-	._addFileChildren(rootRouteChildren)
-	._addFileTypes<FileRouteTypes>()
+  ._addFileChildren(rootRouteChildren)
+  ._addFileTypes<FileRouteTypes>()
 
 /* ROUTE_MANIFEST_START
 {
@@ -197,6 +218,7 @@ export const routeTree = rootRoute
         "/",
         "/runs",
         "/components",
+        "/legal",
         "/status"
       ]
     },
@@ -212,6 +234,9 @@ export const routeTree = rootRoute
     },
     "/components": {
       "filePath": "components.tsx"
+    },
+    "/legal": {
+      "filePath": "legal.tsx"
     },
     "/status": {
       "filePath": "status.tsx"

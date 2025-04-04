@@ -4,18 +4,20 @@ import { text } from '../fonts.js'
 import IrohLogo from '../assets/logos/iroh.svg?react'
 import TorchLogo from '../assets/logos/pytorch.svg?react'
 import HfLogo from '../assets/logos/hf.svg?react'
+import { slate } from '../colors.js'
+import { Link } from '@tanstack/react-router'
 
 const Container = styled.div`
 	background: var(--color-bg);
-	color: var(--color-fg);
+	color: ${slate[500]};
 	display: flex;
+	flex-wrap: wrap;
 	justify-content: space-between;
 	padding: 2px 16px;
-	& a svg {
-		height: 1em;
-	}
-	& path {
-		fill: currentColor;
+	gap: 12px;
+
+	& a {
+		color: ${slate[500]};
 	}
 `
 
@@ -24,33 +26,55 @@ const PoweredBy = styled.div`
 	justify-content: space-between;
 	align-items: center;
 	gap: 12px;
-
-	& > a {
-		color: var(--color-fg);
+	border-radius: 8px;
+	a {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		svg {
+			height: 1em;
+			width: 100%;
+		}
+	}
+`
+const ExpandContainer = styled.div`
+	flex-grow: 1;
+	display: flex;
+	flex-direction: column;
+	.empty {
+		flex-basis: 0px;
+		flex-grow: 1;
 	}
 `
 
 export function Footer() {
 	return (
-		<Container className={text["aux/sm/medium"]}>
-			<div>&copy;{new Date().getFullYear()} psyche foundation</div>
-			<PoweredBy>
-				<span>built on code by</span>
-				<a href="https://www.iroh.computer/">
-					<IrohLogo />
-				</a>
-				<a href="https://pytorch.org/">
-					<TorchLogo />
-				</a>
-				<a href="https://huggingface.co/">
-					<HfLogo />
-				</a>
-			</PoweredBy>
-			<SymbolSeparatedItems>
-				<a href="https://twitter.com/psycheoperation">twitter</a>
-				<a href="https://discord.gg/psychenetwork">discord</a>
-				<a href="https://nousresearch.com/nous-psyche/">blog post</a>
-			</SymbolSeparatedItems>
-		</Container>
+		<ExpandContainer>
+			<div className="empty" />
+			<Container className={text['aux/sm/medium']}>
+				<div>&copy;{new Date().getFullYear()} psyche foundation</div>
+				<PoweredBy>
+					<span>built using libraries by</span>
+					<a href="https://www.iroh.computer/">
+						<IrohLogo />
+					</a>
+					<a href="https://pytorch.org/">
+						<TorchLogo />
+					</a>
+					<a href="https://huggingface.co/">
+						<HfLogo />
+					</a>
+				</PoweredBy>
+				<SymbolSeparatedItems>
+					<a href="https://twitter.com/psycheoperation">twitter</a>
+					<a href="https://discord.gg/psychenetwork">discord</a>
+					<a href="https://nousresearch.com/nous-psyche/">
+						blog post
+					</a>
+					<Link to="/legal">legal</Link>
+					<a href="https://nousresearch.com">nous research</a>
+				</SymbolSeparatedItems>
+			</Container>
+		</ExpandContainer>
 	)
 }

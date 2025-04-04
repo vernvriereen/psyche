@@ -12,6 +12,7 @@ import { c, svgFillCurrentColor } from '../utils.js'
 import { useDarkMode } from 'usehooks-ts'
 import { iconClass } from '../icon.js'
 import { SymbolSeparatedItems } from './SymbolSeparatedItems.js'
+import { Link } from '@tanstack/react-router'
 
 const smallBreakpoint = '872px'
 
@@ -56,6 +57,12 @@ const NavMain = styled.div`
 	gap: 24px;
 	width: 100%;
 	padding: 24px;
+
+	& a.homelink,
+	a:visited.homelink {
+		text-decoration: none;
+		color: var(--color-fg);
+	}
 `
 
 const VerticalStack = styled.div`
@@ -64,7 +71,7 @@ const VerticalStack = styled.div`
 	gap: 12px;
 	width: fit-content;
 
-	& > span {
+	& span {
 		display: inline-flex;
 		align-items: center;
 	}
@@ -114,10 +121,12 @@ export function Header() {
 		<NavContainer>
 			<NavMain>
 				<VerticalStack>
-					<span className={text['display/5xl']}>
-						<PsycheLogo className={c(psycheLogo, iconClass)} />
-						<span>nous psyche</span>
-					</span>
+					<Link to="/" className="homelink">
+						<span className={text['display/5xl']}>
+							<PsycheLogo className={c(psycheLogo, iconClass)} />
+							<span>nous psyche</span>
+						</span>
+					</Link>
 					<span className={text['body/sm/medium']}>
 						DISTRIBUTED INTELLIGENCE NETWORK
 						<Symbol02 className={c(symbol02, iconClass)} />
@@ -129,11 +138,11 @@ export function Header() {
 						Cooperative training over&#8209;the&#8209;internet
 					</div>
 					<SymbolSeparatedItems>
-						<a href="https://github.com/PsycheFoundation/psyche">
+						<a href="https://github.com/PsycheFoundation/psyche" title="psyche's source code">
 							github
 						</a>
-						<a href="https://forum.psyche.network/">forum</a>
-						<a href="https://docs.psyche.network/">docs</a>
+						<a href="https://forum.psyche.network/" title="discuss psyche's code & propose new models">forum</a>
+						<a href="https://docs.psyche.network/" title="read about how psyche works">docs</a>
 					</SymbolSeparatedItems>
 				</VerticalStack>
 				<VerticalStack className="buttons">

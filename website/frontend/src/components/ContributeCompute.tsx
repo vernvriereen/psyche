@@ -367,7 +367,7 @@ export function ContributeCompute({
 											featured ? text['display/2xl'] : ''
 										}
 									>
-										<Address>{user.address}</Address>
+										<Address address={user.address}/>
 									</AddressBox>
 									<td
 										className={

@@ -20,7 +20,6 @@ import { BN, Program } from '@coral-xyz/anchor'
 
 import {
 	getAssociatedTokenAddressSync,
-	getMint,
 	getAccount as getTokenAccount,
 } from '@solana/spl-token'
 import {
