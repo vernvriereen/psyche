@@ -72,10 +72,6 @@ struct RunArgs {
     #[clap(long)]
     init_warmup_time: Option<u64>,
 
-    /// Sets the minimum number of clients required to start a run. This overrides the `min_clients` declared in the state file.
-    #[clap(long)]
-    init_min_clients: Option<u16>,
-
     /// Automatically withdraw clients that disconenct from the server
     #[clap(
         long,
@@ -164,7 +160,6 @@ async fn main() -> Result<()> {
                         run_args.server_port,
                         run_args.save_state_dir,
                         run_args.init_warmup_time,
-                        run_args.init_min_clients,
                         run_args.withdraw_on_disconnect,
                     )
                     .await?

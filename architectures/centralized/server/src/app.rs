@@ -100,7 +100,6 @@ pub struct App {
     training_data_server: Option<(Sender<Coordinator<ClientId>>, DataServer)>,
     save_state_dir: Option<PathBuf>,
     original_warmup_time: u64,
-    original_min_clients: u16,
     withdraw_on_disconnect: bool,
     pause: Option<Arc<Notify>>,
 }
@@ -167,7 +166,6 @@ impl App {
         coordinator_server_port: Option<u16>,
         save_state_dir: Option<PathBuf>,
         init_warmup_time: Option<u64>,
-        init_min_clients: Option<u16>,
         withdraw_on_disconnect: bool,
     ) -> Result<Self> {
         if !coordinator.config.check() {
@@ -273,13 +271,9 @@ impl App {
                 .await?;
 
             let original_warmup_time = coordinator.config.warmup_time;
-            let original_min_clients = coordinator.config.min_clients;
 
             if let Some(init_warmup_time) = init_warmup_time {
                 coordinator.config.warmup_time = init_warmup_time;
-            }
-            if let Some(init_min_clients) = init_min_clients {
-                coordinator.config.min_clients = init_min_clients;
             }
 
             Ok(Self {
@@ -295,7 +289,6 @@ impl App {
                 },
                 save_state_dir,
                 original_warmup_time,
-                original_min_clients,
                 withdraw_on_disconnect,
                 pause,
             })
@@ -503,7 +496,6 @@ impl App {
         if self.coordinator.active() {
             // reset to original values if we changed them to something special for init
             self.coordinator.config.warmup_time = self.original_warmup_time;
-            self.coordinator.config.min_clients = self.original_min_clients;
         }
         if broadcast {
             if let Err(err) = self

@@ -96,6 +96,7 @@ pub async fn run() {
             max_round_train_time: 3,
             round_witness_time: 1,
             min_clients: 1,
+            init_min_clients: 1,
             global_batch_size_start: 1,
             global_batch_size_end: 1,
             global_batch_size_warmup_tokens: 0,
@@ -214,6 +215,19 @@ pub async fn run() {
         &coordinator_instance,
         &coordinator_account,
         false,
+    )
+    .await
+    .unwrap();
+
+    // rejoin run
+    process_coordinator_join_run(
+        &mut endpoint,
+        &payer,
+        &client,
+        &authorization,
+        &coordinator_instance,
+        &coordinator_account,
+        client_id,
     )
     .await
     .unwrap();

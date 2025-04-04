@@ -30,10 +30,15 @@ max_round_train_time = 30
 # time, in seconds, to allow witnesses to publish their messages before next round
 round_witness_time = 1
 
-# minumum number of clients required before we transition from WaitingForClients to Warmup.
+# number of clients that need to be active for an epoch to continue on.
+# if the number of clients goes below this number, we initiate a Cooldown and then back to WaitingForClients.
 # this should be adjusted alongside max_round_train_time, because one client will train a lot slower
 # than 100.
 min_clients = 1
+
+# minumum number of clients required before we transition from WaitingForClients to Warmup.
+# must be equal to or greater than min_clients
+init_min_clients = 1
 
 # what percent of nodes are dedicated to verifying correctness. always set to 0 for now.
 verification_percent = 0

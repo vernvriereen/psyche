@@ -196,6 +196,7 @@ pub async fn run() {
                 max_round_train_time: 3,
                 round_witness_time: 1,
                 min_clients: 1,
+                init_min_clients: 1,
                 global_batch_size_start: 1,
                 global_batch_size_end: 1,
                 global_batch_size_warmup_tokens: 0,

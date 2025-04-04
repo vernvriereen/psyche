@@ -63,7 +63,7 @@ struct CoordinatorServer {
 impl CoordinatorServer {
     pub async fn new(
         query_chan_receiver: Receiver<TestingQueryMsg>,
-        init_min_clients: u16,
+        min_clients: u16,
         global_batch_size: u16,
         witness_nodes: u16,
     ) -> Self {
@@ -73,7 +73,8 @@ impl CoordinatorServer {
             rounds_per_epoch: 4,
             max_round_train_time: MAX_ROUND_TRAIN_TIME,
             round_witness_time: ROUND_WITNESS_TIME,
-            min_clients: init_min_clients,
+            min_clients,
+            init_min_clients: min_clients,
             global_batch_size_start: global_batch_size,
             global_batch_size_end: global_batch_size,
             global_batch_size_warmup_tokens: 0,
@@ -105,7 +106,6 @@ impl CoordinatorServer {
             None,
             None,
             Some(WARMUP_TIME),
-            Some(init_min_clients),
             true,
         )
         .await

@@ -230,6 +230,7 @@ pub struct CoordinatorConfig {
     pub rounds_per_epoch: u32,
     pub total_steps: u32,
 
+    pub init_min_clients: u16,
     pub min_clients: u16,
     pub witness_nodes: u16,
 
@@ -855,7 +856,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             return Ok(TickResult::Ticked);
         };
 
-        if pending_clients.len() as u16 >= self.config.min_clients
+        if pending_clients.len() as u16 >= self.config.init_min_clients
             && self.check_timeout(unix_timestamp, WAITING_FOR_MEMBERS_EXTRA_SECONDS)
         // This extra time allows for more clients to join even if the minimum number of clients is reached
         {
@@ -1088,6 +1089,8 @@ impl CoordinatorConfig {
         self.max_round_train_time != 0
             && self.round_witness_time != 0
             && self.min_clients != 0
+            && self.init_min_clients >= self.min_clients
+            && self.init_min_clients as usize <= SOLANA_MAX_NUM_CLIENTS
             && self.global_batch_size_start != 0
             && self.global_batch_size_end != 0
             && self.global_batch_size_end >= self.global_batch_size_start

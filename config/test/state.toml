@@ -7,6 +7,7 @@ rounds_per_epoch = 20
 max_round_train_time = 5
 round_witness_time = 2
 min_clients = 2
+init_min_clients = 2
 global_batch_size_start = 4
 global_batch_size_end = 4
 global_batch_size_warmup_tokens = 0
