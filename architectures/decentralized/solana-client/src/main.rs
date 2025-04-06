@@ -153,6 +153,22 @@ enum Commands {
         #[clap(long, env)]
         count: Option<u64>,
     },
+    SetFutureEpochRates {
+        #[clap(flatten)]
+        cluster: ClusterArgs,
+
+        #[clap(flatten)]
+        wallet: WalletArgs,
+
+        #[clap(short, long, env)]
+        run_id: String,
+
+        #[clap(long, env)]
+        earning_rate: Option<u64>,
+
+        #[clap(long, env)]
+        slashing_rate: Option<u64>,
+    },
     Train {
         #[clap(flatten)]
         cluster: ClusterArgs,
@@ -412,6 +428,44 @@ async fn async_main() -> Result<()> {
                 interval.tick().await;
             }
 
+            Ok(())
+        }
+        Commands::SetFutureEpochRates {
+            cluster,
+            wallet,
+            run_id,
+            earning_rate,
+            slashing_rate,
+        } => {
+            let run_id = run_id.trim_matches('"').to_string(); // Trim quotes, if any
+            let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
+            let backend = SolanaBackend::new(
+                cluster.into(),
+                key_pair.clone(),
+                CommitmentConfig::confirmed(),
+            )
+            .unwrap();
+            let coordinator_instance = find_coordinator_instance(&run_id);
+            let coordinator_instance_state = backend
+                .get_coordinator_instance(&coordinator_instance)
+                .await?;
+            let coordinator_account = coordinator_instance_state.coordinator_account;
+            let set = backend
+                .set_future_epoch_rates(
+                    coordinator_instance,
+                    coordinator_account,
+                    earning_rate,
+                    slashing_rate,
+                )
+                .await?;
+            println!(
+                "Set earning rate to {:?} and slashing rate to {:?} on run {} with transaction {}",
+                earning_rate, slashing_rate, run_id, set
+            );
+            println!("\n===== Logs =====");
+            for log in backend.get_logs(&set).await? {
+                println!("{log}");
+            }
             Ok(())
         }
         Commands::Train {

@@ -500,6 +500,35 @@ impl SolanaBackend {
         Ok(signature)
     }
 
+    pub async fn set_future_epoch_rates(
+        &self,
+        coordinator_instance: Pubkey,
+        coordinator_account: Pubkey,
+        epoch_earning_rate: Option<u64>,
+        epoch_slashing_rate: Option<u64>,
+    ) -> Result<Signature> {
+        let signature = self
+            .program_coordinator
+            .request()
+            .accounts(
+                psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                    authority: self.program_coordinator.payer(),
+                    coordinator_instance,
+                    coordinator_account,
+                },
+            )
+            .args(
+                psyche_solana_coordinator::instruction::SetFutureEpochRates {
+                    epoch_earning_rate,
+                    epoch_slashing_rate,
+                },
+            )
+            .send()
+            .await?;
+
+        Ok(signature)
+    }
+
     pub async fn tick(
         &self,
         coordinator_instance: Pubkey,
