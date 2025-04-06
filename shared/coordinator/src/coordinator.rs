@@ -974,9 +974,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         // cooldown_time == 0 means we never automatically advance to the next epoch,
         // so the only way to get there is through the checkpointing code.
         // this forces everything to wait on a valid checkpoint
-        if self.epoch_state.checkpointed.into()
-            || (self.config.cooldown_time > 0
-                && self.check_timeout(unix_timestamp, self.config.cooldown_time))
+        if self.check_timeout(unix_timestamp, self.config.cooldown_time)
         {
             let last_round_batch_size = self.get_target_global_batch_size(self.current_round());
             self.progress.epoch_start_data_index =
@@ -1099,6 +1097,7 @@ impl CoordinatorConfig {
             && self.witness_nodes != 0
             && self.witness_nodes <= self.min_clients
             && self.witness_nodes as usize <= SOLANA_MAX_NUM_WITNESSES
+            && self.cooldown_time > 0
     }
 
     pub fn get_batch_size(&self, total_tokens_processed: u64) -> u16 {
