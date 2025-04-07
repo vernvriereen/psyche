@@ -7,12 +7,13 @@ use bollard::{
     secret::{ContainerSummary, HostConfig},
     Docker,
 };
+use psyche_client::IntegrationTestLogMarker;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::{path::PathBuf, time::Duration};
 use tokio::signal;
 
-use crate::docker_watcher::{DockerWatcher, DockerWatcherError, JsonFilter};
+use crate::docker_watcher::{DockerWatcher, DockerWatcherError};
 
 pub const CLIENT_CONTAINER_PREFIX: &str = "test-psyche-test-client";
 pub const VALIDATOR_CONTAINER_PREFIX: &str = "test-psyche-solana-test-validator";
@@ -176,9 +177,9 @@ pub async fn spawn_new_client_with_monitoring(
         .monitor_container(
             &container_id,
             vec![
-                JsonFilter::LoadedModel,
-                JsonFilter::StateChange,
-                JsonFilter::Loss,
+                IntegrationTestLogMarker::LoadedModel,
+                IntegrationTestLogMarker::StateChange,
+                IntegrationTestLogMarker::Loss,
             ],
         )
         .unwrap();

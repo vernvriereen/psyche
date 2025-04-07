@@ -1,6 +1,7 @@
 use crate::{
     fetch_data::{BatchIdSet, DataFetcher, TrainingDataForStep},
     state::types::{DeserializeError, PayloadState},
+    IntegrationTestLogMarker,
 };
 
 use futures::{future::try_join_all, stream::FuturesUnordered, StreamExt};
@@ -32,7 +33,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, debug_span, error, info, trace, warn, Instrument};
+use tracing::{debug, error, info, trace, trace_span, warn, Instrument};
 
 use super::{
     evals::{EvalRunner, MaybeRunningEvals},
@@ -203,12 +204,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
             let participant_bloom =
                 Bloom::random(state.epoch_state.clients.len(), BLOOM_FALSE_RATE);
             let broadcast_bloom = Bloom::random(num_all_batch_ids, BLOOM_FALSE_RATE);
-            debug!(
+            trace!(
                 "Participant bloom size: {} bits, {} keys",
                 participant_bloom.bits.0.len(),
                 participant_bloom.keys.len()
             );
-            debug!(
+            trace!(
                 "Broadcast bloom size: {} bits, {} keys",
                 broadcast_bloom.bits.0.len(),
                 broadcast_bloom.keys.len()
@@ -234,11 +235,18 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
         };
 
         info!(
-            "Assignment for step {} (round {}/epoch {}): index={} committee position={} committee={} witness position={} witness={}",
+            integration_test_log_marker = %IntegrationTestLogMarker::WitnessElected,
+            step = state.progress.step,
+            round = round.height,
+            epoch = state.progress.epoch,
+            index = client_index,
+            comittee_position = committee_proof.position,
+            committee = %committee_proof.committee,
+            witness_position = witness_proof.position,
+            witness = %witness_proof.witness,
+            "Got training assignment for step {} (round {}/epoch {}): index={} committee position={} committee={} witness position={} witness={}",
             state.progress.step, round.height, state.progress.epoch, client_index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness
         );
-        debug!(target: "witness_selection", witness = %witness_proof.witness);
-
         let eval_runner = self.eval_runner.clone();
         let finished = Arc::new(AtomicBool::new(false));
 
@@ -474,7 +482,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
             // but, because we call this once with the default initalized RoundState (round 0)
             // and a second time (when transitioning from round 0 -> round 1), this check will skip
             // the two phases
-            info!("Skipping early apply");
+            trace!("Skipping early apply");
             return Ok(tokio::task::spawn(async move { Ok(trainers) }));
         }
 
@@ -515,7 +523,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                         Some(x) => x,
                         None => {
                             warn!(
-                                target: "untrained_batch",
+                                integration_test_log_marker = %IntegrationTestLogMarker::UntrainedBatches,
                                 batch_id = %batch_id,
                                 "No commitments for batch {batch_id}",
                             );
@@ -537,7 +545,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                             continue;
                         }
                     };
-                    debug!("Consensus commitment for batch {batch_id}: {consensus:?}");
+                    trace!("Consensus commitment for batch {batch_id}: {consensus:?}");
 
                     let (commitment, result) = &batch_commitments[consensus].1;
                     let maybe_results: Result<Vec<DistroResult>, DeserializeError> = match payloads.remove(&result.ticket.hash()) {
@@ -588,13 +596,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     .map_err(|_| ApplyDistroResultError::ThreadCrashed)?
                     .into_iter()
                     .collect::<Result<_, _>>()?;
-                debug!(
+                trace!(
                     "Apply time: {:.1}s, {} trainers ready",
                     (Instant::now() - apply_start).as_secs_f32(),
                     trainers.len()
                 );
                 Ok(trainers)
-            }.instrument(debug_span!("Applying distro results"))))
+            }.instrument(trace_span!("Applying distro results"))))
     }
 }
 
@@ -622,7 +630,7 @@ fn start_sending_health_checks<T: NodeIdentity>(
                     let proof = committee_selection.get_committee(index as u64);
                     if !state.healthy(&client.id, &proof).unwrap_or(false) {
                         warn!(
-                            target: "unhealthy_client",
+                            integration_test_log_marker = %IntegrationTestLogMarker::HealthCheck,
                             index = index,
                             client_id = %&client.id,
                             current_step = state.epoch_state.rounds_head,

@@ -1,5 +1,6 @@
 use allowlist::Allowlist;
 use anyhow::{anyhow, Context, Error, Result};
+use bytes::Bytes;
 use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
 use futures_util::StreamExt;
 use iroh::{endpoint::RemoteInfo, NodeAddr};
@@ -15,6 +16,7 @@ use router::Router;
 use state::State;
 use std::{
     fmt::Debug,
+    hash::{DefaultHasher, Hash as _, Hasher},
     marker::PhantomData,
     net::{IpAddr, Ipv4Addr, SocketAddrV4},
     ops::Sub,
@@ -300,6 +302,12 @@ where
     /// Don't call this often / with many peers!
     /// It can force disconnection of other gossip peers if we have too many.
     pub async fn add_peers(&mut self, peers: Vec<NodeId>) -> Result<()> {
+        let peer_list = peers
+            .iter()
+            .map(|n| n.fmt_short())
+            .collect::<Vec<_>>()
+            .join(",");
+        debug!(name: "gossip_join_peers", peers=peer_list);
         self.gossip_tx
             .join_peers(
                 peers
@@ -314,6 +322,13 @@ where
     pub async fn broadcast(&mut self, message: &BroadcastMessage) -> Result<()> {
         let encoded_message =
             SignedMessage::sign_and_encode(self.router.endpoint().secret_key(), message)?;
+        let message_hash = hash_bytes(&encoded_message);
+        debug!(
+            name: "gossip_broadcast",
+            message_hash = message_hash,
+            "broadcasted gossip message with hash {message_hash}: {:?}",
+            message
+        );
         Ok(self.gossip_tx.broadcast(encoded_message).await?)
     }
 
@@ -326,6 +341,7 @@ where
         let hash = ticket.hash();
         self.state.currently_sharing_blobs.insert(hash);
         self.state.blob_tags.insert((tag, hash));
+        debug!(name: "blob_download_start", hash = hash.fmt_short(), "started downloading blob {}", hash.fmt_short());
 
         let (tx, rx) = mpsc::unbounded_channel();
 
@@ -356,9 +372,12 @@ where
         let addr = self.router.endpoint().node_addr().await?;
         let blob_ticket = BlobTicket::new(addr, blob_res.hash, blob_res.format)?;
 
-        trace!(
-            "added downloadable hash {} size {}",
-            blob_res.hash,
+        debug!(
+            name: "blob_upload",
+            hash = blob_res.hash.fmt_short(),
+            size = blob_res.size,
+            "blob added for upload with hash {} and size {}",
+            blob_res.hash.fmt_short(),
             blob_res.size
         );
 
@@ -480,6 +499,7 @@ where
                 None => {
                     let blobs = self.blobs.client().clone();
                     let (send, recv) = oneshot::channel();
+                    trace!(name: "blob_download_read_start", hash = hash.fmt_short());
                     tokio::spawn(async move {
                         let blob_bytes = match blobs.read_to_bytes(hash).await {
                             Ok(b) => b,
@@ -488,7 +508,9 @@ where
                                 return;
                             }
                         };
+                        let size = blob_bytes.len();
                         let res = send.send(blob_bytes);
+                        debug!(name: "blob_download_finish", hash = hash.fmt_short(), "downloaded blob {}, {} bytes", hash.fmt_short(), size);
                         if res.is_err() {
                             error!("Failed to send read bytes result.");
                         }
@@ -559,9 +581,30 @@ pub async fn request_model(
 fn parse_gossip_event<BroadcastMessage: Networkable>(
     event: Result<iroh_gossip::net::Event>,
 ) -> Option<(PublicKey, BroadcastMessage)> {
-    if let Ok(iroh_gossip::net::Event::Gossip(GossipEvent::Received(msg))) = event {
-        if let Ok(result) = SignedMessage::<BroadcastMessage>::verify_and_decode(&msg.content) {
-            return Some(result);
+    match event {
+        Ok(iroh_gossip::net::Event::Gossip(GossipEvent::Received(msg))) => {
+            let message_hash = hash_bytes(&msg.content);
+            match SignedMessage::<BroadcastMessage>::verify_and_decode(&msg.content) {
+                Ok(result) => {
+                    debug!(
+                        name: "gossip_rx",
+                        message_hash = message_hash,
+                        "received gossip message with hash {message_hash}: {:?}",
+                        result
+                    );
+                    return Some(result);
+                }
+                Err(err) => {
+                    warn!("Got a gossip message, but could not verify / decode it! {err}");
+                }
+            }
+        }
+        Ok(iroh_gossip::net::Event::Gossip(_)) => {
+            // join, leave, etc.
+        }
+        Ok(iroh_gossip::net::Event::Lagged) => error!("Gossip lagged. We missed some events."),
+        Err(err) => {
+            warn!("Error on gossip event RX: {err}");
         }
     }
 
@@ -664,4 +707,10 @@ pub fn psyche_euc_relay_node() -> RelayNode {
         stun_port: DEFAULT_STUN_PORT,
         quic: Some(RelayQuicConfig::default()),
     }
+}
+
+fn hash_bytes(bytes: &Bytes) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    hasher.finish()
 }

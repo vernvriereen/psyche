@@ -3,6 +3,8 @@ use std::{fs::OpenOptions, path::PathBuf};
 use crate::CustomWidget;
 use clap::ValueEnum;
 use crossterm::event::{Event, KeyCode, MouseEventKind};
+use logfire::{bridges::tracing::LogfireTracingPendingSpanNotSentLayer, config::AdvancedOptions};
+use opentelemetry_sdk::Resource;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -19,16 +21,84 @@ pub enum LogOutput {
     Json,
 }
 
-pub fn init_logging(output: LogOutput, level: Level, write_logs_file: Option<PathBuf>) {
-    let subscriber = tracing_subscriber::registry().with(
-        EnvFilter::builder()
-            .with_default_directive(level.into())
-            .from_env_lossy(),
-    );
+pub struct ShutdownHandler {
+    handler: Option<logfire::ShutdownHandler>,
+}
 
+impl ShutdownHandler {
+    pub fn shutdown(self) -> Result<(), logfire::ConfigureError> {
+        if let Some(handler) = self.handler {
+            handler.shutdown()
+        } else {
+            Ok(())
+        }
+    }
+    pub fn tracer(&self) -> Option<opentelemetry_sdk::trace::Tracer> {
+        self.handler.as_ref().map(|t| t.tracer.tracer().clone())
+    }
+}
+
+pub fn init_logging(
+    output: LogOutput,
+    level: Level,
+    write_logs_file: Option<PathBuf>,
+    allow_remote_logs: bool,
+    service_name: Option<String>,
+) -> anyhow::Result<ShutdownHandler> {
+    let logfire_handler = if std::env::var("LOGFIRE_TOKEN").is_ok() && allow_remote_logs {
+        Some({
+            let mut builder = logfire::configure()
+                .install_panic_handler()
+                .with_console(None);
+            // .with_metrics(Some(
+            //     MetricsOptions::default().with_additional_reader(reader),
+            // ))
+            if let Some(service_name) = service_name {
+                builder = builder.with_advanced_options(
+                    AdvancedOptions::default().with_resource(
+                        Resource::builder_empty()
+                            .with_service_name(service_name)
+                            .build(),
+                    ),
+                )
+            }
+            builder.finish()?
+        })
+    } else {
+        None
+    };
+
+    let output_logs_filter = EnvFilter::builder()
+        .with_default_directive(level.into())
+        .from_env()?;
+
+    let make_detailed_logs_filter = || {
+        if std::env::var("WRITE_RUST_LOG").is_ok() {
+            EnvFilter::builder()
+                .with_env_var("WRITE_RUST_LOG")
+                .from_env()
+        } else {
+            EnvFilter::builder()
+                .with_default_directive(level.into())
+                .from_env()
+        }
+    };
+
+    let subscriber = tracing_subscriber::registry();
+
+    let tracer = logfire_handler.as_ref().map(|t| t.tracer.tracer().clone());
     let subscriber = match output {
-        LogOutput::TUI => subscriber.with(tui_logger::tracing_subscriber_layer().boxed()),
-        LogOutput::Console => subscriber.with(fmt::layer().with_writer(std::io::stdout).boxed()),
+        LogOutput::TUI => subscriber.with(
+            tui_logger::tracing_subscriber_layer()
+                .with_filter(output_logs_filter)
+                .boxed(),
+        ),
+        LogOutput::Console => subscriber.with(
+            fmt::layer()
+                .with_writer(std::io::stdout)
+                .with_filter(output_logs_filter)
+                .boxed(),
+        ),
         LogOutput::Json => subscriber.with(
             fmt::layer()
                 .json()
@@ -36,23 +106,72 @@ pub fn init_logging(output: LogOutput, level: Level, write_logs_file: Option<Pat
                 .with_writer(std::io::stdout)
                 .flatten_event(true)
                 .with_current_span(true)
+                .with_filter(output_logs_filter)
                 .boxed(),
         ),
     };
 
+    // TODO - can we type-erase the subscribers somehow?
+    // all this duplication is super ugly.
     if let Some(dir) = write_logs_file {
         let log_file = OpenOptions::new()
             .append(true)
             .create(true)
             .open(dir)
             .unwrap();
-        let subscriber = subscriber.with(fmt::layer().with_ansi(false).with_writer(log_file));
+        let subscriber = subscriber.with(
+            fmt::layer()
+                .with_ansi(false)
+                .with_writer(log_file)
+                .with_filter(make_detailed_logs_filter()?),
+        );
 
-        tracing::subscriber::set_global_default(subscriber)
+        if let Some(tracer) = tracer {
+            tracing::subscriber::set_global_default(
+                subscriber
+                    .with(
+                        LogfireTracingPendingSpanNotSentLayer
+                            .with_filter(make_detailed_logs_filter()?),
+                    )
+                    .with(
+                        tracing_opentelemetry::layer()
+                            .with_error_records_to_exceptions(true)
+                            .with_tracer(tracer.clone())
+                            .with_filter(make_detailed_logs_filter()?),
+                    )
+                    .with(
+                        logfire::bridges::tracing::LogfireTracingLayer(tracer.clone())
+                            .with_filter(make_detailed_logs_filter()?),
+                    ),
+            )
+        } else {
+            tracing::subscriber::set_global_default(subscriber)
+        }
+    } else if let Some(tracer) = tracer {
+        tracing::subscriber::set_global_default(
+            subscriber
+                .with(
+                    LogfireTracingPendingSpanNotSentLayer.with_filter(make_detailed_logs_filter()?),
+                )
+                .with(
+                    tracing_opentelemetry::layer()
+                        .with_error_records_to_exceptions(true)
+                        .with_tracer(tracer.clone())
+                        .with_filter(make_detailed_logs_filter()?),
+                )
+                .with(
+                    logfire::bridges::tracing::LogfireTracingLayer(tracer.clone())
+                        .with_filter(make_detailed_logs_filter()?),
+                ),
+        )
     } else {
         tracing::subscriber::set_global_default(subscriber)
-    }
-    .expect("Unable to set global default subscriber");
+    }?;
+
+    let shutdown_handler = ShutdownHandler {
+        handler: logfire_handler,
+    };
+    Ok(shutdown_handler)
 }
 
 #[derive(Default)]

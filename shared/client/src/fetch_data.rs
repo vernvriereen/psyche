@@ -14,7 +14,7 @@ use tokio::{
     task::JoinHandle,
     time::sleep,
 };
-use tracing::{debug, error, info_span, warn, Instrument};
+use tracing::{debug, error, trace, trace_span, warn, Instrument};
 
 pub type BatchStep = u32;
 pub type BatchIdSet = HashSet<BatchId>;
@@ -48,22 +48,27 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> DataFetcher<T, A> {
         let step = state.progress.step;
 
         let mut assigned_batch_ids = get_batch_ids_for_node(data_assignments, identity);
-        debug!(
-            "My assignments: {:?}, my id: {}",
-            assigned_batch_ids, identity
+        trace!(
+            name:"fetching_data_assignments",
+            assigned_batch_ids = assigned_batch_ids
+                .iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+            "Fetching data assignments..."
         );
 
         let (tx_next_sample, next_sample) = mpsc::channel(self.buffer_size);
 
         if let Some((last_step, task)) = self.active_fetch_task.take() {
-            debug!("Killing previous fetch task from step {last_step}.");
+            trace!("Killing previous fetch task from step {last_step}.");
             task.abort(); // we don't need it anymore :)
         }
 
         self.active_fetch_task = Some((
             step,
             tokio::spawn({
-                debug!("New fetch task for step {step} has been spawned");
+                trace!("New fetch task for step {step} has been spawned");
                 let data_provider = self.data_provider.clone(); // only one of these tasks will acquire the lock at once. once one dies, the lock is released for sure.
 
                 async move {
@@ -112,7 +117,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> DataFetcher<T, A> {
                         }
                     }
                 }
-                .instrument(info_span!("fetch_data"))
+                .instrument(trace_span!("fetch_data"))
             }),
         ));
 

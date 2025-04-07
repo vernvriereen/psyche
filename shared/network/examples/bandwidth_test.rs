@@ -159,10 +159,10 @@ impl App {
     async fn on_network_event(&mut self, event: NetworkEvent<Message, DistroResultBlob>) {
         match event {
             NetworkEvent::MessageReceived((from, Message::Message { text })) => {
-                info!("[{from}]: {text}")
+                info!(name:"message_recv_text", from=from.fmt_short(), text=text)
             }
             NetworkEvent::MessageReceived((from, Message::DistroResult { step, blob_ticket })) => {
-                info!("[{from}]: step {step} blob ticket {blob_ticket}");
+                info!(name:"message_recv_distro", from=from.fmt_short(), step=step, blob=blob_ticket.hash().fmt_short());
                 self.start_time.insert(blob_ticket.hash(), Instant::now());
                 self.network
                     .start_download(blob_ticket, step)
@@ -180,7 +180,8 @@ impl App {
                     file.step,
                     fmt_bytes(file.data.len() as f64),
                     fmt_bytes(speed),
-                )
+                );
+                info!(name:"download_blob", from=result.from.fmt_short(), step=file.step, blob=hash.fmt_short());
             }
             NetworkEvent::DownloadFailed(result) => {
                 info!(
@@ -210,13 +211,17 @@ impl App {
         const DATA_SIZE_MB: usize = 10;
         let mut data = vec![0u8; DATA_SIZE_MB * 1024 * 1024];
         rand::thread_rng().fill(&mut data[..]);
+        let node_id = self.network.node_id();
 
         let blob_ticket = match self
             .network
             .add_downloadable(DistroResultBlob { step, data }, step)
             .await
         {
-            Ok(v) => v,
+            Ok(v) => {
+                info!(name:"upload_blob", from=node_id.fmt_short(), step=step, blob=v.hash().fmt_short());
+                v
+            }
             Err(e) => {
                 error!("Couldn't add downloadable for step {step}. {}", e);
                 return;
@@ -232,6 +237,7 @@ impl App {
             error!("Error sending message: {}", e);
         } else {
             info!("broadcasted message for step {step}: {}", blob_ticket);
+            info!(name:"message_send_distro", from=node_id.fmt_short(), step=step, blob=blob_ticket.hash().fmt_short());
         }
     }
 }
@@ -240,7 +246,7 @@ impl App {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    psyche_tui::init_logging(
+    let logger = psyche_tui::init_logging(
         if args.tui {
             LogOutput::TUI
         } else {
@@ -248,7 +254,9 @@ async fn main() -> Result<()> {
         },
         Level::INFO,
         None,
-    );
+        false,
+        None,
+    )?;
 
     let PeerList(peers) = args
         .peer_list
@@ -293,12 +301,14 @@ async fn main() -> Result<()> {
 
     let (cancel, tx_tui_state) = maybe_start_render_loop(tui.then(Tui::default))?;
 
-    // fire at wall-clock 15-second intervals.
+    const SEND_DATA_INTERVAL: u64 = 3;
+    // fire at wall-clock 3-second intervals.
     let send_data_interval = {
         let now = Local::now();
-        let seconds_until_next: u64 = 15 - (now.second() as u64 % 15);
+        let seconds_until_next: u64 =
+            SEND_DATA_INTERVAL - (now.second() as u64 % SEND_DATA_INTERVAL);
         let start = Instant::now() + Duration::from_secs(seconds_until_next);
-        interval_at(start.into(), Duration::from_secs(15))
+        interval_at(start.into(), Duration::from_secs(SEND_DATA_INTERVAL))
     };
 
     App {
@@ -312,6 +322,8 @@ async fn main() -> Result<()> {
     }
     .run()
     .await;
+
+    logger.shutdown()?;
 
     Ok(())
 }

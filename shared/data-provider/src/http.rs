@@ -10,7 +10,7 @@ use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use reqwest::IntoUrl;
 use tokio::task::JoinHandle;
-use tracing::{debug, info, trace};
+use tracing::{info, trace};
 
 use crate::{
     file_extensions::DATA_FILE_EXTENSIONS,
@@ -314,7 +314,7 @@ impl HttpDataProvider {
             // total length is all sequences plus one extra token at the end
             let total_length = single_seq_bytes * sequences.len() + token_size;
 
-            debug!(
+            trace!(
                 length = total_length,
                 offset = start_offset,
                 url = %self.file_urls[first_file_index],
@@ -340,7 +340,7 @@ impl HttpDataProvider {
 
             Ok(result)
         } else {
-            debug!(
+            trace!(
                 num_sequences = sequences.len(),
                 "Non-sequential data access",
             );

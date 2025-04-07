@@ -1,7 +1,7 @@
 use crate::{
     client::P2PNodeInfo,
     state::{train::FinishedTrainers, types::DeserializeError},
-    Broadcast, BroadcastType, ClientTUIState,
+    Broadcast, BroadcastType, ClientTUIState, IntegrationTestLogMarker,
 };
 
 use psyche_coordinator::{Committee, Coordinator, RunState, Witness, WitnessProof};
@@ -21,7 +21,7 @@ use tokio::{
     sync::mpsc::{self},
     task::JoinHandle,
 };
-use tracing::{debug, error, info, info_span, trace, warn, Instrument};
+use tracing::{debug, error, info, trace, trace_span, warn, Instrument};
 
 use super::{
     cooldown::{CooldownError, CooldownStep, CooldownStepMetadata},
@@ -209,9 +209,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                         &mut self.previous_round,
                         &mut self.current_round,
                     ) {
-                        debug!("Sending opportunistic witness");
+                        info!(target: "witness", id = %self.identity, merkle=witness.broadcast_merkle.fmt_short(), "Sending opportunistic witness");
 
-                        info!(target: "witness", id = %self.identity, "Sending opportunistic witness");
                         let metadata = self
                             .stats_logger
                             .lock()
@@ -230,7 +229,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     .cloned()
                     .unwrap_or(MerkleRoot::default());
 
-                debug!("Sending warmup broadcast");
+                debug!(name: "send_warmup_broadcast", epoch = self.coordinator_state.progress.epoch, "sending warmup broadcast");
                 self.tx_broadcast_finished
                     .send(FinishedBroadcast {
                         step: 0,
@@ -254,7 +253,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             }
 
             if !self.sent_warmup_witness {
-                debug!("Sending warmup witness");
+                trace!("Sending warmup witness");
 
                 let merkle = MerkleTree::new(&self.current_round.broadcasts)
                     .get_root()
@@ -413,13 +412,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                 // start downloading the payload unless this is a self-message
                 // (assuming the caller will put our payload in the proper place)
                 if from_client_id != self.identity {
-                    debug!(
-                        "Requesting download of round {} batch {}: {}",
-                        round_state.height,
-                        batch_id,
-                        ticket.hash()
-                    );
-
                     self.tx_request_download
                         .send((ticket, result_step))
                         .map_err(|_| ApplyMessageError::StartDownloadBlob)?;
@@ -470,21 +462,23 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             );
             &mut self.previous_round
         } else {
-            debug!("Unknown download {}", hash);
+            warn!("Unknown download {}", hash);
             return;
         };
 
         if let Some(self_result) = self_result {
-            debug!(
+            trace!(
                 "Processing our own distro result for batch {} in step {} with hash {hash}",
-                distro_result.batch_id, distro_result.step
+                distro_result.batch_id,
+                distro_result.step
             );
 
             round_state.self_distro_results.push(self_result);
         } else {
-            debug!(
+            trace!(
                 "Finished download of distro result for batch {} in step {} with hash {hash}",
-                distro_result.batch_id, distro_result.step
+                distro_result.batch_id,
+                distro_result.step
             );
         }
 
@@ -553,16 +547,17 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     if remaining_batch_ids.contains(&batch_id) {
                         // first received payload for this batch id, vote for it in consensus
                         broadcast_bloom.add(&commitment.data_hash);
-                        debug!("Adding batch {batch_id} to broadcast bloom");
+                        trace!("Adding batch {batch_id} to broadcast bloom");
                     } else {
-                        debug!(
+                        trace!(
                             "Don't have {} in our remaining batch IDs {:?}, discarding",
-                            batch_id, remaining_batch_ids
+                            batch_id,
+                            remaining_batch_ids
                         );
                     }
                 }
                 None => {
-                    debug!(
+                    trace!(
                         "Already submitted witness, not adding {} to participant bloom",
                         from
                     );
@@ -571,16 +566,17 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
 
             remaining_batch_ids.remove(&batch_id);
 
-            debug!(
+            trace!(
                 "Remaining batches to download for step {}: {:?}",
-                distro_result.step, remaining_batch_ids
+                distro_result.step,
+                remaining_batch_ids
             );
 
             *num_batch_ids_left = remaining_batch_ids.len();
 
             remaining_batch_ids.is_empty()
         } else {
-            debug!("All batches already trained on, discarding batch {batch_id}");
+            trace!("All batches already trained on, discarding batch {batch_id}");
             false
         };
 
@@ -598,9 +594,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                         .iter()
                         .map(|x| x.try_into())
                         .collect::<Result<Vec<DistroResult>, TchError>>();
-                    debug!(
+                    trace!(
+                        hash = %hash,
+                        batch_id = %batch_id,
                         "Finished deserializing payload {} for batch {}",
-                        hash, batch_id
+                        hash,
+                        batch_id
                     );
                     r
                 })
@@ -708,6 +707,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     .map_err(|_| StepError::StatsLoggerMutex)?
                     .push_round_stats(&round_losses, round_duration, step_duration, optim_stats);
                 info!(
+                    integration_test_log_marker = %IntegrationTestLogMarker::Loss,
                     client_id = %self.identity,
                     epoch = state.progress.epoch,
                     step = state.progress.step,
@@ -942,7 +942,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunManager<T, A> {
         if let InitStage::Running(state_machine) = &mut self.0 {
             state_machine
                 .apply_state(state)
-                .instrument(info_span!("StepStateMachine::apply_state"))
+                .instrument(trace_span!("StepStateMachine::apply_state"))
                 .await?;
         }
 

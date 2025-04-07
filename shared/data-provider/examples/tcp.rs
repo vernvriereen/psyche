@@ -129,7 +129,13 @@ impl LengthKnownDataProvider for DummyDataProvider {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init_logging(psyche_tui::LogOutput::Console, Level::INFO, None);
+    let _ = init_logging(
+        psyche_tui::LogOutput::Console,
+        Level::INFO,
+        None,
+        false,
+        None,
+    )?;
 
     let clients: Vec<_> = (0..4).map(DummyNodeIdentity).collect();
     let backend = DummyBackend(clients.clone());
