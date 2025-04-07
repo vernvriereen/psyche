@@ -23,16 +23,16 @@ impl FromStr for BatchId {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim_start_matches('B');
-        let start = u64::from_str(
-            s.get(s.find('[').unwrap() + 1..s.find(',').unwrap())
-                .unwrap(),
-        )
-        .unwrap();
-        let end = u64::from_str(
-            s.get(s.find(',').unwrap() + 1..s.find(']').unwrap())
-                .unwrap(),
-        )
-        .unwrap();
+
+        let start_bracket = s.find('[').ok_or("Missing '[' in input")?;
+        let comma = s.find(',').ok_or("Missing ',' in input")?;
+        let end_bracket = s.find(']').ok_or("Missing ']' in input")?;
+
+        let start = u64::from_str(&s[start_bracket + 1..comma])
+            .map_err(|_| "Failed to parse start value")?;
+        let end =
+            u64::from_str(&s[comma + 1..end_bracket]).map_err(|_| "Failed to parse end value")?;
+
         let interval = ClosedInterval { start, end };
         Ok(BatchId(interval))
     }
