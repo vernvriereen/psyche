@@ -68,7 +68,7 @@ As the training results are recieved from other clients, they are downloaded to 
 
 ## Witnessing
 
-At the start of each round, one or more clients are randomly selected as witnesses. The number of witnesses can be configured. Witnesses train the model as usual, but also build bloom filters that track which nodes they have recieved training results from, signifying that they are actively participating and providing valid results.
+At the start of each round, one or more clients are randomly selected as witnesses. The number of witnesses can be configured. Witnesses train the model as usual, but also build bloom filters that track which nodes they have received training results from, signifying that they are actively participating and providing valid results.
 
 These bloom filters are sent to the coordinator, which then combines them into a provable consensus of which results to apply to the model.
 
