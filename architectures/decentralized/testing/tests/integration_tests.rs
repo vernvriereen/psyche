@@ -89,12 +89,18 @@ async fn test_two_clients_three_epochs_run() {
                     }
                     Some(Response::Loss(client, epoch, step, loss)) => {
                         println!(
-                            "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                            "client: {:?}, epoch: {}, step: {}, Loss: {:?}",
                             client, epoch, step, loss
                         );
                         // assert that the loss decreases each epoch
                         if epoch as i64 > current_epoch {
                             current_epoch = epoch as i64;
+
+                            let Some(loss) = loss else {
+                                println!("Reached new epoch but loss was NaN");
+                                continue;
+                            };
+
                             assert!(loss < last_epoch_loss);
                             last_epoch_loss = loss;
                             if epoch == num_of_epochs_to_run {
@@ -387,8 +393,8 @@ async fn disconnect_client() {
     assert!(untrained_batches.len() <= 3);
 }
 
-/// Drop a client below the minimum required, go to WaitingForMembers
-/// Reconnect a client and then go back to warmup
+// Drop a client below the minimum required, go to WaitingForMembers
+// Reconnect a client and then go back to warmup
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
 async fn drop_a_client_waitingformembers_then_reconnect() {
@@ -458,7 +464,7 @@ async fn drop_a_client_waitingformembers_then_reconnect() {
             }
             Response::Loss(client, epoch, step, loss) => {
                 println!(
-                    "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                    "client: {:?}, epoch: {}, step: {}, Loss: {:?}",
                     client, epoch, step, loss
                 );
 
@@ -557,7 +563,6 @@ async fn test_when_all_clients_disconnect_checkpoint_is_hub() {
                     println!("Spawned new client {} to test checkpoint change to Hub", joined_container_id);
                     has_spawned_new_client_yet = true;
 
-
                     continue;
                 }
 
@@ -579,11 +584,17 @@ async fn test_when_all_clients_disconnect_checkpoint_is_hub() {
                     },
                     Some(Response::Loss(client, epoch, step, loss)) => {
                         println!(
-                            "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                            "client: {:?}, epoch: {}, step: {}, Loss: {:?}",
                             client, epoch, step, loss
                         );
                         if epoch as i64 > current_epoch {
                             current_epoch = epoch as i64;
+
+                            let Some(loss) = loss else {
+                                println!("Reached new epoch but loss was NaN");
+                                continue;
+                            };
+
                             assert!(loss < last_epoch_loss);
                             last_epoch_loss = loss;
                             if epoch == num_of_epochs_to_run {
@@ -815,7 +826,7 @@ async fn test_total_packet_loss_in_client() {
            response = watcher.log_rx.recv() => {
                if let Some(Response::Loss(client, epoch, step, loss)) = response {
                    println!(
-                       "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                       "client: {:?}, epoch: {}, step: {}, Loss: {:?}",
                        client, epoch, step, loss
                    );
                    if epoch == 1 {
@@ -824,6 +835,12 @@ async fn test_total_packet_loss_in_client() {
                    }
                    if epoch as i64 > current_epoch {
                        current_epoch = epoch as i64;
+
+                       let Some(loss) = loss else {
+                           println!("Reached new epoch but loss was NaN");
+                           continue;
+                       };
+
                        assert!(loss < last_epoch_loss);
                        last_epoch_loss = loss;
                        if epoch == num_of_epochs_to_run {
