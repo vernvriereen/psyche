@@ -176,14 +176,18 @@ function RouteComponent() {
 				<RunSummaryCard
 					info={{
 						id: 'run_001',
+						index: 0,
 						name: 'land-seer',
 						description: 'Processing landscape photographs',
 						size: 7_000_0000n,
-						totalTokens: 1000,
-						completedTokens: 750,
+						totalTokens: 1000n,
+						completedTokens: 750n,
 						arch: 'HfLlama',
 						type: 'vision',
-						startTime: new Date('2024-01-15T09:30:00'),
+						startTime: {
+							time: new Date('2024-01-15T09:30:00'),
+							slot: 12345n,
+						},
 						status: { type: 'active' },
 					}}
 				/>

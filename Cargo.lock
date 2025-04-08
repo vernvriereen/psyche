@@ -6801,6 +6801,7 @@ dependencies = [
  "approx",
  "bitvec",
  "bytemuck",
+ "data-encoding",
  "fast-math",
  "fnv",
  "postcard",

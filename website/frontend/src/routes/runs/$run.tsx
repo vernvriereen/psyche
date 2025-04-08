@@ -10,7 +10,7 @@ import { Runtime } from '../../components/Runtime.js'
 import { ProgressBar } from '../../components/ProgressBar.js'
 import { MiniCard } from '../../components/MiniCard.js'
 import { RadialGraph } from '../../components/RadialGraph.js'
-import { formatBytes, formatNumber, metricToGraph } from '../../utils.js'
+import { c, formatBytes, formatNumber, metricToGraph } from '../../utils.js'
 import { ResponsiveLineGraph } from '../../components/Chart.js'
 import { useMemo } from 'react'
 import { css } from '@linaria/core'
@@ -170,10 +170,10 @@ function RouteComponent() {
 						</span>
 					</RunHeader>
 					<div
-						className={css`
+						className={c(css`
 							padding: 48px;
 							text-align: center;
-						`}
+						`, text["body/base/regular"])}
 					>
 						Sorry! Try another run ID.
 					</div>
@@ -215,10 +215,10 @@ function RouteComponent() {
 					<RuntimeLabel>
 						runtime
 						<Runtime
-							start={info.startTime}
+							start={info.startTime.time}
 							end={
 								info.status.type === 'completed'
-									? info.status.at
+									? info.status.at.time
 									: undefined
 							}
 						/>
@@ -226,15 +226,15 @@ function RouteComponent() {
 					<div>
 						<ProgressBar
 							big
-							ratio={info.completedTokens / info.totalTokens}
+							ratio={Number(info.completedTokens) / Number(info.totalTokens)}
 							chunkHeight={36}
 							chunkWidth={24}
 						/>
 						<ProgressDescription>
 							<span>tokens</span>
 							<span>
-								{formatNumber(info.completedTokens, 3)}/
-								{formatNumber(info.totalTokens, 3)}
+								{formatNumber(Number(info.completedTokens), 3)}/
+								{formatNumber(Number(info.totalTokens), 3)}
 							</span>
 						</ProgressDescription>
 					</div>

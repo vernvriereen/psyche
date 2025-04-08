@@ -8,31 +8,31 @@ import {
 } from 'shared'
 import { CoordinatorDataStore, MiningPoolDataStore } from './dataStore.js'
 import { startWatchCoordinatorChainLoop } from './coordinatorChainLoop.js'
+import { mkdirSync } from 'fs'
+import { FlatFileCoordinatorDataStore } from './dataStores/flatFileCoordinator.js'
+import { FlatFileMiningPoolDataStore } from './dataStores/flatFileMiningPool.js'
 import { startWatchMiningPoolChainLoop } from './miningPoolChainLoop.js'
 
 export function startIndexingChainToDataStores(
 	coordinator: {
 		connection: Connection
-		dataStore: CoordinatorDataStore
 		addressOverride?: string
 	},
 	miningPool: {
 		connection: Connection
-		dataStore: MiningPoolDataStore
 		addressOverride?: string
 	}
 ): {
 	cancel: () => void
-	coordinatorStopped: Promise<void>
-	miningPoolStopped: Promise<void>
+	coordinator: { stopped: Promise<void>; dataStore: CoordinatorDataStore }
+	miningPool: { stopped: Promise<void>; dataStore: MiningPoolDataStore }
 } {
-	const cancelled = { cancelled: false }
+	const stateDirectory = process.env.STATE_DIRECTORY ?? process.cwd()
 
-	console.log('Initializing watch chain loop for coordinator & mining pool:')
-	console.log(`Coordinator address: ${coordinator.addressOverride}`)
-	console.log(`Coordinator RPC: ${coordinator.connection.rpcEndpoint}`)
-	console.log(`MiningPool address: ${miningPool.addressOverride}`)
-	console.log(`MiningPool RPC: ${miningPool.connection.rpcEndpoint}`)
+	// create working dir so we can write files to it later
+	mkdirSync(stateDirectory, { recursive: true })
+
+	const cancelled = { cancelled: false }
 
 	let coordinatorRes!: () => void
 	let coordinatorRej!: (reason?: any) => void
@@ -41,23 +41,24 @@ export function startIndexingChainToDataStores(
 		coordinatorRej = rej
 	})
 
-	try {
-		const coordinatorProgram = new Program<PsycheSolanaCoordinator>(
-			coordinator.addressOverride
-				? { ...coordinatorIdl, address: coordinator.addressOverride }
-				: (coordinatorIdl as any),
-			coordinator
-		)
-		startWatchCoordinatorChainLoop(
-			coordinator.dataStore,
-			coordinatorProgram,
-			cancelled
-		)
-			.catch(coordinatorRej)
-			.then(coordinatorRes)
-	} catch (err) {
-		coordinatorRej(err)
-	}
+	const coordinatorProgram = new Program<PsycheSolanaCoordinator>(
+		coordinator.addressOverride
+			? { ...coordinatorIdl, address: coordinator.addressOverride }
+			: (coordinatorIdl as any),
+		coordinator
+	)
+
+	const coordinatorDataStore = new FlatFileCoordinatorDataStore(
+		stateDirectory,
+		coordinatorProgram.programId
+	)
+	startWatchCoordinatorChainLoop(
+		coordinatorDataStore,
+		coordinatorProgram,
+		cancelled
+	)
+		.catch(coordinatorRej)
+		.then(coordinatorRes)
 
 	let miningPoolRes!: () => void
 	let miningPoolRej!: (reason?: any) => void
@@ -65,27 +66,42 @@ export function startIndexingChainToDataStores(
 		miningPoolRes = res
 		miningPoolRej = rej
 	})
-	try {
-		const miningPoolProgram = new Program<PsycheSolanaMiningPool>(
-			miningPool.addressOverride
-				? { ...miningPoolIdl, address: miningPool.addressOverride }
-				: (miningPoolIdl as any),
-			miningPool
-		)
-		startWatchMiningPoolChainLoop(
-			miningPool.dataStore,
-			miningPoolProgram,
-			cancelled
-		)
-			.catch(miningPoolRej)
-			.then(miningPoolRes)
-	} catch (err) {
-		miningPoolRej(err)
-	}
+	const miningPoolProgram = new Program<PsycheSolanaMiningPool>(
+		miningPool.addressOverride
+			? { ...miningPoolIdl, address: miningPool.addressOverride }
+			: (miningPoolIdl as any),
+		miningPool
+	)
+	const miningPoolDataStore = new FlatFileMiningPoolDataStore(
+		stateDirectory,
+		miningPoolProgram.programId
+	)
 
-	const cancel = () => {
-		cancelled.cancelled = true
-	}
+	console.log('Initializing watch chain loop for coordinator & mining pool:')
+	console.log(`Coordinator ProgramID: ${coordinatorProgram.programId}`)
+	console.log(`Coordinator RPC: ${coordinator.connection.rpcEndpoint}`)
+	console.log(`MiningPool ProgramID: ${miningPoolProgram.programId}`)
+	console.log(`MiningPool RPC: ${miningPool.connection.rpcEndpoint}`)
 
-	return { coordinatorStopped, miningPoolStopped, cancel }
+	startWatchMiningPoolChainLoop(
+		miningPoolDataStore,
+		miningPoolProgram,
+		cancelled
+	)
+		.catch(miningPoolRej)
+		.then(miningPoolRes)
+
+	return {
+		coordinator: {
+			stopped: coordinatorStopped,
+			dataStore: coordinatorDataStore,
+		},
+		miningPool: {
+			stopped: miningPoolStopped,
+			dataStore: miningPoolDataStore,
+		},
+		cancel: () => {
+			cancelled.cancelled = true
+		},
+	}
 }

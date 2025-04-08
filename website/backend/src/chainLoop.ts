@@ -9,11 +9,13 @@ import {
 	PartiallyDecodedInstruction,
 	PublicKey,
 } from '@solana/web3.js'
-import {
-	ChainDataStore,
-} from './dataStore.js'
+import { ChainDataStore } from './dataStore.js'
 
-export function startWatchChainLoop<D>(): <T, I extends Idl, S extends ChainDataStore>(
+export function startWatchChainLoop<D>(): <
+	T,
+	I extends Idl,
+	S extends ChainDataStore,
+>(
 	name: string,
 	dataStore: S,
 	program: Program<I>,
@@ -51,9 +53,6 @@ export function startWatchChainLoop<D>(): <T, I extends Idl, S extends ChainData
 			if (processUntilSlot === lastProcessedSlot) {
 				continue
 			}
-			console.debug(
-				`[${name}] checking new TXs from ${lastProcessedSlot} to ${processUntilSlot}...`
-			)
 
 			const catchupTxs = await catchupOnTxsToAddress(
 				name,
@@ -63,6 +62,7 @@ export function startWatchChainLoop<D>(): <T, I extends Idl, S extends ChainData
 				lastProcessedSlot,
 				cancelled
 			)
+
 			if (catchupTxs === null) {
 				// cancelled
 				return
@@ -77,29 +77,48 @@ export function startWatchChainLoop<D>(): <T, I extends Idl, S extends ChainData
 			const state = process.onStartCatchup(lastProcessedSlot === -1)
 
 			for (const tx of catchupTxs) {
+				if (catchupTxs.indexOf(tx) % 1000 === 0) {
+					console.log(
+						`[${name}] processing changes from tx ${catchupTxs.indexOf(tx)} / ${catchupTxs.length} (${((catchupTxs.indexOf(tx) / catchupTxs.length) * 100).toFixed(2)}%)`
+					)
+				}
+				if (cancelled.cancelled) {
+					return
+				}
 				const instr = tx.transaction.message.instructions
 				for (const i of instr) {
 					// instructions without a payload aren't useful to us.
 					if (!('data' in i)) {
 						continue
 					}
-
-					const rawDecoded = instructionCoder.decode(i.data, 'base58')
-					// instructions that we can't decode with our IDL aren't useful to us.
-					if (rawDecoded === null) {
+					let rawDecoded
+					try {
+						rawDecoded = instructionCoder.decode(i.data, 'base58')	
+					} catch (err) {
+						// instructions that we can't decode with our IDL aren't useful to us. hopefully this doesn't break.
+						console.warn(
+							`Failed to process instruction from tx in slot ${tx.slot}. Attempting to continue. Maybe we have a different IDL than this was created with?`
+						)
+					}
+					if (!rawDecoded) {
 						continue
 					}
-
 					try {
 						// this is a bit of a "hope and pray" cast,
 						// the IDL stuff is a bit of a nightmare to work with.
 						process.onInstruction(tx, i, rawDecoded as D, state)
+						if (cancelled.cancelled) {
+							break
+						}
 					} catch (err) {
 						throw new Error(
 							`failed to process instruction in ${program.programId} from TX in slot ${tx.slot}: ${err}`
 						)
 					}
 				}
+			}
+			if (cancelled.cancelled) {
+				break
 			}
 			lastProcessedSlot = processUntilSlot
 			await process.onDoneCatchup(dataStore, state)
@@ -117,20 +136,23 @@ async function catchupOnTxsToAddress(
 	lastProcessedSlot: number,
 	cancelled: { cancelled: boolean }
 ) {
-	const catchupTxs = []
-
 	// start with the newest possible signature, and go back to the oldest one.
-	let minProcessedSignature = undefined
+	let oldestSeenSignature: { signature: string; slot: number } | undefined =
+		undefined
+	const allSignatures = []
 	while (true) {
-		const numAlreadyProcessed = catchupTxs.length
+		console.log(
+			`[${name}] fetching sigs from slot ${lastProcessedSlot} to ${oldestSeenSignature?.slot ?? latestSlotHeight}: total ${allSignatures.length}`
+		)
 		const signatures = await provider.connection.getSignaturesForAddress(
 			address,
 			{
 				minContextSlot: latestSlotHeight,
-				before: minProcessedSignature,
+				before: oldestSeenSignature?.signature,
 			},
 			'confirmed'
 		)
+
 		if (cancelled.cancelled) {
 			return null
 		}
@@ -139,58 +161,12 @@ async function catchupOnTxsToAddress(
 			(s) => s.slot > lastProcessedSlot
 		)
 
-		const maybeMoreSignatures = signatures.length === 1000
-
-		if (signaturesAfterLastProcessedSlot.length != 0) {
-			const signatures = signaturesAfterLastProcessedSlot.map(
-				(s) => s.signature
-			)
-			console.log(
-				`[${name}] fetching ${signaturesAfterLastProcessedSlot.length} sigs catching up from ${lastProcessedSlot} to ${minProcessedSignature ?? latestSlotHeight}`
-			)
-
-			const transactions: Array<ParsedTransactionWithMeta | null> = []
-			for (const signature of signatures) {
-				console.log(
-					`[${name}] fetching sig ${transactions.length + catchupTxs.length}/${numAlreadyProcessed + signatures.length}${maybeMoreSignatures ? '+' : ''}...`
-				)
-				const tx = await provider.connection.getParsedTransaction(
-					signature,
-					{
-						commitment: 'confirmed',
-						maxSupportedTransactionVersion: 0,
-					}
-				)
-
-				if (cancelled.cancelled) {
-					return null
-				}
-
-				transactions.push(tx)
-			}
-
-			const nonNullTransactions = transactions.filter((t) => {
-				const txParsed = t != null
-				if (!txParsed) {
-					console.warn(`Transaction failed to decode!!!`)
-				}
-				return txParsed
-			})
-			catchupTxs.push(...nonNullTransactions)
-
-			// pick the lowest signature as our next iter's highest sig to start from,
-			// so we'll iter further and further back into the past
-			minProcessedSignature = nonNullTransactions.reduce(
-				(min, curr) => {
-					if ((curr.slot ?? Infinity) < (min?.slot ?? Infinity)) {
-						return curr
-					} else {
-						return min
-					}
-				},
-				null as null | ParsedTransactionWithMeta
-			)?.transaction.signatures[0]
-		}
+		// pick the last signature as our next iter's highest sig to start from,
+		// so we'll iter further and further back into the past
+		oldestSeenSignature = signaturesAfterLastProcessedSlot.at(-1)
+		allSignatures.push(
+			...signaturesAfterLastProcessedSlot.map((s) => s.signature)
+		)
 
 		// if we've run out of signatures to process, or at lesat one signature has gone past our last processed slot, we're done.
 		if (
@@ -201,6 +177,48 @@ async function catchupOnTxsToAddress(
 		}
 	}
 
+	// nice early exit :)
+	if (allSignatures.length === 0) {
+		return []
+	}
+
+	console.log(
+		`[${name}] fetching ${allSignatures.length} transactions catching up from ${lastProcessedSlot} to ${oldestSeenSignature ?? latestSlotHeight}`
+	)
+
+	let completedCount = 0
+
+	// fetch in parallel. the fetch rate limiter will limit this to something reasonable.
+	const fetchPromises = allSignatures.map((signature) =>
+		provider.connection
+			.getParsedTransaction(signature, {
+				commitment: 'confirmed',
+				maxSupportedTransactionVersion: 0,
+			})
+			.then((tx) => {
+				completedCount++
+				console.log(
+					`[${name}] fetched sig ${completedCount}/${allSignatures.length}, ${((completedCount / allSignatures.length) * 100).toFixed(2)}% ...`
+				)
+
+				if (cancelled.cancelled) {
+					throw new Error('Operation cancelled')
+				}
+
+				if (!tx) {
+					console.warn(
+						`[${name}] Transaction failed to decode at signature ${signature}`
+					)
+				}
+
+				return tx
+			})
+	)
+
+	const transactions: Array<ParsedTransactionWithMeta | null> =
+		await Promise.all(fetchPromises)
+
+	const catchupTxs = transactions.filter((t) => !!t)
 	// ok here, we now have a list of TXs to the this account, from newest to oldest.
 	// reverse into oldest -> newest, so can process in chronological order.
 	catchupTxs.reverse()

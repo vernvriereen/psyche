@@ -20,6 +20,11 @@ export {
 	type PsycheSolanaMiningPool,
 }
 
+export interface ChainTimestamp {
+	slot: BigInt
+	time: Date
+}
+
 export interface ContributionInfo {
 	totalDepositedCollateralAmount: bigint
 	maxDepositCollateralAmount: bigint
@@ -34,18 +39,22 @@ export type ModelType = 'vision' | 'text'
 
 export type RunStatus =
 	| { type: 'active' | 'funding' }
-	| { type: 'completed'; at: Date }
+	| { type: 'completed'; at: ChainTimestamp }
 
 export interface RunSummary {
 	id: string
+
+	// there can be an arbitrary number of runs with the same ID as long as you create/destroy them.
+	// this is how we track which iteration of a run this is.
+	index: number
 	name: string
 	description: string
 	status: RunStatus
 
-	startTime: Date
+	startTime: ChainTimestamp
 
-	totalTokens: number
-	completedTokens: number
+	totalTokens: bigint
+	completedTokens: bigint
 
 	size: bigint
 	arch: LLMArchitecture
@@ -254,6 +263,14 @@ export function u64ToLeBytes(value: bigint) {
 	const view = new DataView(buffer)
 	view.setBigUint64(0, value, true)
 	return new Uint8Array(buffer)
+}
+
+export function getRunPDA(coordinatorProgramId: PublicKey, runId: string) {
+	const e = new TextEncoder()
+	return PublicKey.findProgramAddressSync(
+		[e.encode('coordinator'), e.encode(runId)],
+		coordinatorProgramId
+	)[0]
 }
 
 const poolSeedPrefix = new Uint8Array(

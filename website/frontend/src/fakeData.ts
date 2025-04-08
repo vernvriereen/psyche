@@ -19,7 +19,7 @@ export const fakeIndexerStatus: IndexerStatus = {
 				id: 'run-003',
 				status: {
 					type: 'completed',
-					at: new Date(Date.now() - 1000 * 60 * 60 * 24),
+					at: { slot: 12345n, time: new Date(Date.now() - 1000 * 60 * 60 * 24)},
 				},
 			},
 		],
@@ -39,39 +39,42 @@ export const fakeIndexerStatus: IndexerStatus = {
 export const fakeRunSummaries: RunSummary[] = [
 	{
 		id: 'run-001',
+		index: 0,
 		name: 'Vision Model Alpha',
 		description: 'Training a vision model to recognize everyday objects',
 		status: { type: 'active' },
-		startTime: new Date(Date.now() - 1000 * 60 * 60 * 24 * 14), // 2 weeks ago
-		totalTokens: 100000,
-		completedTokens: 65000,
+		startTime: {slot: 12345n, time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 14)}, // 2 weeks ago
+		totalTokens: 100000n,
+		completedTokens: 65000n,
 		size: BigInt('1000000000'),
 		arch: 'HfLlama',
 		type: 'vision',
 	},
 	{
 		id: 'run-002',
+		index: 0,
 		name: 'Text Assistant Beta',
 		description: 'Assistant-like model with reasoning capabilities',
 		status: { type: 'active' },
-		startTime: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3), // 3 days ago
-		totalTokens: 200000,
-		completedTokens: 0,
+		startTime: {slot: 12345n, time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3)}, // 3 days ago
+		totalTokens: 200000n,
+		completedTokens: 0n,
 		size: BigInt('2000000000'),
 		arch: 'HfLlama',
 		type: 'text',
 	},
 	{
 		id: 'run-003',
+		index: 0,
 		name: 'Small Language Model',
 		description: 'Compact text model for edge devices',
 		status: {
 			type: 'completed',
-			at: new Date(Date.now() - 1000 * 60 * 60 * 24),
+			at: {slot: 12345n, time: new Date(Date.now() - 1000 * 60 * 60 * 24)},
 		}, // 1 day ago
-		startTime: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10), // 10 days ago
-		totalTokens: 50000,
-		completedTokens: 50000,
+		startTime: {slot: 12345n, time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10)}, // 10 days ago
+		totalTokens: 50000n,
+		completedTokens: 50000n,
 		size: BigInt('500000000'),
 		arch: 'HfLlama',
 		type: 'text',

@@ -12,13 +12,8 @@ import {
 	miningPoolIdl,
 	psycheJsonReplacer,
 } from 'shared'
-import {
-	FlatFileCoordinatorDataStore as FlatFileCoordinatorDataStore,
-	FlatFileMiningPoolDataStore,
-} from './dataStore.js'
 import { Connection } from '@solana/web3.js'
 import { makeRateLimitedFetch } from './rateLimitedFetch.js'
-import { mkdir } from 'fs/promises'
 
 const requiredEnvVars = [
 	'COORDINATOR_RPC',
@@ -26,22 +21,15 @@ const requiredEnvVars = [
 ] as const
 
 async function main() {
-	const stateDirectory = process.env.STATE_DIRECTORY ?? process.cwd()
 
 	for (const v of requiredEnvVars) {
 		if (!process.env[v]) {
 			throw new Error(`env var ${v} is not set.`)
 		}
 	}
-	// create working dir so we can write files to it later
-	await mkdir(stateDirectory, { recursive: true })
-
 	const coordinatorRpc = new Connection(process.env.COORDINATOR_RPC!, {
 		fetch: makeRateLimitedFetch(),
 	})
-	const coordinatorDataStore = new FlatFileCoordinatorDataStore(
-		stateDirectory
-	)
 
 	// if the RPCs are the same, use only one to share rate limits.
 	const miningPoolRpc =
@@ -51,17 +39,14 @@ async function main() {
 					fetch: makeRateLimitedFetch(),
 				})
 
-	const miningPoolDataStore = new FlatFileMiningPoolDataStore(stateDirectory)
 
-	const { coordinatorStopped, miningPoolStopped, cancel } =
+	const { coordinator, miningPool, cancel } =
 		await startIndexingChainToDataStores(
 			{
-				dataStore: coordinatorDataStore,
 				connection: coordinatorRpc,
 				addressOverride: process.env.COORDINATOR_PROGRAM_ID,
 			},
 			{
-				dataStore: miningPoolDataStore,
 				connection: miningPoolRpc,
 				addressOverride: process.env.MINING_POOL_PROGRAM_ID,
 			}
@@ -75,18 +60,18 @@ async function main() {
 		console.log('got shutdown signal, shutting down!')
 		cancel()
 		await fastify.close()
-		await Promise.all([coordinatorStopped, miningPoolStopped])
+		await Promise.all([coordinator.stopped, miningPool.stopped])
 		process.exit(0)
 	}
 
 	let coordinatorError: Error | null = null
-	coordinatorStopped.catch((err) => {
+	coordinator.stopped.catch((err) => {
 		console.error(`[${Date.now()}] coordinator broken: `, err)
 		coordinatorError = new Error(err)
 	})
 
 	let miningPoolError: Error | null = null
-	miningPoolStopped.catch((err) => {
+	miningPool.stopped.catch((err) => {
 		console.error(`[${Date.now()}] mining pool broken: `, err)
 		miningPoolError = new Error(err)
 	})
@@ -103,7 +88,7 @@ async function main() {
 
 	fastify.get('/contributionInfo', (_req, res) => {
 		const data: ApiGetContributionInfo = {
-			...miningPoolDataStore.getContributionInfo(),
+			...miningPool.dataStore.getContributionInfo(),
 			miningPoolProgramId: process.env.MINING_POOL_PROGRAM_ID!,
 			error: miningPoolError,
 		}
@@ -114,7 +99,7 @@ async function main() {
 
 	fastify.get('/runs', (_req, res) => {
 		const runs: ApiGetRuns = {
-			runs: coordinatorDataStore.getRunSummaries(),
+			runs: coordinator.dataStore.getRunSummaries(),
 			error: coordinatorError,
 		}
 
@@ -129,7 +114,7 @@ async function main() {
 			const { runId } = req.params
 
 			const matchingRun = runId
-				? coordinatorDataStore.getRunData(runId)
+				? coordinator.dataStore.getRunDataById(runId)
 				: null
 			const data: ApiGetRun = {
 				run: matchingRun,
@@ -147,12 +132,12 @@ async function main() {
 			initTime,
 			coordinator: {
 				status: coordinatorError ? coordinatorError.toString() : 'ok',
-				trackedRuns: coordinatorDataStore
+				trackedRuns: coordinator.dataStore
 					.getRunSummaries()
 					.map((r) => ({ id: r.id, status: r.status })),
 				chain: {
 					chainSlotHeight: await coordinatorRpc.getSlot('confirmed'),
-					indexedSlot: coordinatorDataStore.lastProcessedSlot(),
+					indexedSlot: coordinator.dataStore.lastProcessedSlot(),
 					programId: process.env.COORDINATOR_PROGRAM_ID ?? coordinatorIdl.address,
 					networkGenesis: await coordinatorRpc.getGenesisHash(),
 				},
@@ -161,7 +146,7 @@ async function main() {
 				status: miningPoolError ? miningPoolError.toString() : 'ok',
 				chain: {
 					chainSlotHeight: await miningPoolRpc.getSlot('confirmed'),
-					indexedSlot: miningPoolDataStore.lastProcessedSlot(),
+					indexedSlot: miningPool.dataStore.lastProcessedSlot(),
 					programId: process.env.MINING_POOL_PROGRAM_ID ?? miningPoolIdl.address,
 					networkGenesis: await miningPoolRpc.getGenesisHash(),
 				},

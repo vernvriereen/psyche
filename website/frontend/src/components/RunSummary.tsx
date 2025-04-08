@@ -101,35 +101,39 @@ export function RunSummaryCard({
 			</RunHeader>
 
 			<InfoChits>
-				<InfoChit label="params">
-					{formatNumber(Number(size), 2)}
-				</InfoChit>
+				{size !== 0n && (
+					<InfoChit label="params">
+						{formatNumber(Number(size), 2)}
+					</InfoChit>
+				)}
 				<InfoChit label="arch">{arch}</InfoChit>
 				<InfoChit label="type">{type}</InfoChit>
 				<InfoChit label="tokens">
-					{formatNumber(totalTokens, 2)}
+					{formatNumber(Number(totalTokens), 2)}
 				</InfoChit>
 			</InfoChits>
 
 			<Progress>
 				<ProgressBar
-					ratio={completedTokens / totalTokens}
+					ratio={Number(completedTokens) / Number(totalTokens)}
 					chunkHeight={16}
 					chunkWidth={12}
 				/>
 				<ProgressDescription className={text['aux/xs/regular']}>
 					<span>tokens</span>
 					<span>
-						{formatNumber(completedTokens, 3)}/
-						{formatNumber(totalTokens, 3)}
+						{formatNumber(Number(completedTokens), 3)}/
+						{formatNumber(Number(totalTokens), 3)}
 					</span>
 				</ProgressDescription>
 			</Progress>
 			<div className={text['aux/xs/regular']}>
 				runtime{' '}
 				<Runtime
-					start={startTime}
-					end={status.type === 'completed' ? status.at : undefined}
+					start={startTime.time}
+					end={
+						status.type === 'completed' ? status.at.time : undefined
+					}
 				/>
 			</div>
 		</ShadowCard>
