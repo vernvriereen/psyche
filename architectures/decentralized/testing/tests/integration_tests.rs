@@ -719,6 +719,8 @@ async fn test_solana_subscriptions() {
 
         }
     }
+    // skip the first 3 events since init subscriptions can vary the order
+    subscription_events = subscription_events[3..].into();
     subscription_events.dedup();
     let expected_subscription_events = vec![
         // init subscriptions
@@ -730,7 +732,11 @@ async fn test_solana_subscriptions() {
             format!(r#""ws://{NGINX_PROXY_PREFIX}-1:8901/ws/""#).into(),
             "Subscription Up".into(),
         ),
-        // subscription 1 shutdown and reconnection
+        (
+            format!(r#""ws://{NGINX_PROXY_PREFIX}-1:8901/ws/""#).into(),
+            "Subscription Up".into(),
+        ),
+        // proxy 1 shutdown and reconnection
         (
             format!(r#""ws://{NGINX_PROXY_PREFIX}-1:8901/ws/""#).into(),
             "Subscription Down".into(),
@@ -739,7 +745,7 @@ async fn test_solana_subscriptions() {
             format!(r#""ws://{NGINX_PROXY_PREFIX}-1:8901/ws/""#).into(),
             "Subscription Up".into(),
         ),
-        // subscription 2 shutdown and reconnection
+        // proxy 2 shutdown and reconnection
         (
             format!(r#""ws://{NGINX_PROXY_PREFIX}-2:8902/ws/""#).into(),
             "Subscription Down".into(),
@@ -750,8 +756,7 @@ async fn test_solana_subscriptions() {
         ),
     ];
 
-    // skip the first two events since init subscriptions can vary the order
-    assert_eq!(subscription_events[2..], expected_subscription_events[2..]);
+    assert_eq!(subscription_events, expected_subscription_events[3..]);
     println!("subscription_events: {subscription_events:?}");
 }
 
