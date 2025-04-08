@@ -105,7 +105,7 @@ impl DockerWatcher {
             stderr: true,
             stdout: true,
             follow: true,
-            since: current_unix_timestamp,
+            since: current_unix_timestamp - 10, // -10 to ensure we read all the docker logs
             ..Default::default()
         });
 

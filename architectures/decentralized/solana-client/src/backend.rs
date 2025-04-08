@@ -58,15 +58,16 @@ async fn subscribe_to_account(
     commitment: CommitmentConfig,
     coordinator_account: &Pubkey,
     tx: mpsc::UnboundedSender<RpcResponse<UiAccount>>,
-    offset: u64,
+    id: u64,
 ) {
-    let mut first_subscription = true;
+    let mut first_connection = true;
     let mut retries: u64 = 0;
     loop {
         let Ok(sub_client) = PubsubClient::new(&url).await else {
             warn!(
                 integration_test_log_marker = %IntegrationTestLogMarker::SolanaSubscription,
                 url = url,
+                subscription_number = id,
                 "Solana subscription error, could not connect to url: {url}",
             );
 
@@ -90,7 +91,12 @@ async fn subscribe_to_account(
         {
             Ok((notifications, _)) => notifications,
             Err(err) => {
-                error!("{}", err);
+                error!(
+                    url = url,
+                    subscription_number = id,
+                    error = err.to_string(),
+                    "Solana account subscribe error",
+                );
                 return;
             }
         };
@@ -98,15 +104,16 @@ async fn subscribe_to_account(
         info!(
             integration_test_log_marker = %IntegrationTestLogMarker::SolanaSubscription,
             url = url,
+            subscription_number = id,
             "Correctly subscribe to Solana url: {url}",
         );
 
-        let refresh_time: u64 = if first_subscription {
-            FORCE_RECONNECTION_TIME + ((offset * 10) % FORCE_RECONNECTION_TIME)
+        let refresh_time: u64 = if first_connection {
+            FORCE_RECONNECTION_TIME + (((id - 1) * 10) % FORCE_RECONNECTION_TIME)
         } else {
             FORCE_RECONNECTION_TIME
         };
-        first_subscription = false;
+        first_connection = false;
         let refresh_timer = tokio::time::sleep(Duration::from_secs(refresh_time * 60));
         tokio::pin!(refresh_timer);
 
@@ -115,8 +122,8 @@ async fn subscribe_to_account(
                 _ = &mut refresh_timer => {
                     info!(
                         integration_test_log_marker = %IntegrationTestLogMarker::SolanaSubscription,
-                        type = "Solana subscription",
                         url = url,
+                        subscription_number = id,
                         "Force Solana subscription reconnection");
                     break
                 }
@@ -130,8 +137,8 @@ async fn subscribe_to_account(
                         None => {
                             warn!(
                                 integration_test_log_marker = %IntegrationTestLogMarker::SolanaSubscription,
-                                type = "Solana subscription",
                                 url = url,
+                                subscription_number = id,
                                 "Solana subscription error, websocket closed");
                             break
                         }
@@ -183,14 +190,8 @@ impl SolanaBackend {
                 .unwrap_or_else(|| cluster.ws_url().to_string());
 
             tokio::spawn(async move {
-                subscribe_to_account(
-                    url,
-                    commitment,
-                    &coordinator_account,
-                    tx_subscribe_clone,
-                    i - 1,
-                )
-                .await
+                subscribe_to_account(url, commitment, &coordinator_account, tx_subscribe_clone, i)
+                    .await
             });
         }
 

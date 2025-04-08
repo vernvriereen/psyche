@@ -667,7 +667,6 @@ async fn test_solana_subscriptions() {
                         // shutdown subscription 1
                         if step == 5 && new_state == RunState::RoundWitness.to_string(){
                             println!("stop container {NGINX_PROXY_PREFIX}-1");
-                            // &format!("{CLIENT_CONTAINER_PREFIX}-{}", i),
 
                             docker
                                 .stop_container(&format!("{NGINX_PROXY_PREFIX}-1"), None)
