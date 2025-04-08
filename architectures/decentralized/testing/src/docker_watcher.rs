@@ -22,7 +22,7 @@ pub enum StateFilter {
 #[derive(Debug)]
 pub enum Response {
     StateChange(String, String, String, String, u64, u64),
-    Loss(String, u64, u64, f64),
+    Loss(String, u64, u64, Option<f64>),
     LoadedModel(String),
     HealthCheck(String, u64, u64),
     UntrainedBatches(Vec<u64>),
@@ -191,7 +191,7 @@ impl DockerWatcher {
                         }
                     }
                     IntegrationTestLogMarker::Loss => {
-                        let loss = parsed_log.get("loss").and_then(|v| v.as_f64()).unwrap();
+                        let loss = parsed_log.get("loss").and_then(|v| v.as_f64());
                         let client_id = parsed_log
                             .get("client_id")
                             .and_then(|v| v.as_str())
