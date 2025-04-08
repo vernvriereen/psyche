@@ -21,6 +21,7 @@ use crate::client::Client;
 use crate::clients_state::ClientsState;
 use crate::ClientId;
 use crate::ProgramError;
+use crate::COORDINATOR_VERSION;
 
 #[derive(
     Clone,
@@ -264,7 +265,20 @@ impl CoordinatorInstanceState {
         Ok(())
     }
 
-    pub fn join_run(&mut self, id: ClientId) -> Result<()> {
+    pub fn join_run(
+        &mut self,
+        id: ClientId,
+        client_version: &str,
+    ) -> Result<()> {
+        if client_version != COORDINATOR_VERSION {
+            msg!(
+                "Client version mismatch, coordinator: {}, client: {}",
+                COORDINATOR_VERSION,
+                client_version
+            );
+            return err!(ProgramError::ClientVersionMismatch);
+        }
+
         let exisiting = match self
             .clients_state
             .clients

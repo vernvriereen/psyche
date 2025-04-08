@@ -28,6 +28,8 @@ use solana_sdk::system_program;
 use solana_toolbox_endpoint::ToolboxEndpoint;
 use solana_toolbox_endpoint::ToolboxEndpointError;
 
+use crate::SOLANA_TOOLING_VERSION;
+
 pub async fn process_coordinator_init(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
@@ -119,7 +121,10 @@ pub async fn process_coordinator_join_run(
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
         data: JoinRun {
-            params: JoinRunParams { client_id },
+            params: JoinRunParams {
+                client_id,
+                client_version: SOLANA_TOOLING_VERSION.to_string(),
+            },
         }
         .data(),
         program_id: psyche_solana_coordinator::ID,

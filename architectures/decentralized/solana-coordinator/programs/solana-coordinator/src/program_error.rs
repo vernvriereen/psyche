@@ -15,6 +15,9 @@ pub enum ProgramError {
     #[msg("Client id mismatch")]
     ClientIdMismatch,
 
+    #[msg("Client version mismatch")]
+    ClientVersionMismatch,
+
     #[msg("Clients list full")]
     ClientsFull,
 

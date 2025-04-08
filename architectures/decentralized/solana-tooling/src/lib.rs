@@ -3,3 +3,5 @@ pub mod get_accounts;
 pub mod process_authorizer_instructions;
 pub mod process_coordinator_instructions;
 pub mod process_treasurer_instructions;
+
+pub const SOLANA_TOOLING_VERSION: &str = env!("CARGO_PKG_VERSION");

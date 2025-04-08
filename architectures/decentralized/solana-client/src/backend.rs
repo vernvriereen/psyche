@@ -29,6 +29,8 @@ use tokio::{
 };
 use tracing::{debug, error, info, trace, warn};
 
+pub const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub struct SolanaBackend {
     program_authorizer: Program<Arc<Keypair>>,
     program_coordinator: Program<Arc<Keypair>>,
@@ -370,6 +372,11 @@ impl SolanaBackend {
         coordinator_account: Pubkey,
         id: psyche_solana_coordinator::ClientId,
     ) -> Result<Signature> {
+        let client_version = CLIENT_VERSION.to_string();
+        if client_version.is_empty() {
+            panic!("Failed to join run: Invalid Version");
+        }
+
         let coordinator_instance_state =
             self.get_coordinator_instance(&coordinator_instance).await?;
         let authorization_global = psyche_solana_authorizer::find_authorization(
@@ -377,7 +384,7 @@ impl SolanaBackend {
             &system_program::ID,
             psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE,
         );
-        let signature = self
+        let result = self
             .program_coordinator
             .request()
             .accounts(psyche_solana_coordinator::accounts::JoinRunAccounts {
@@ -387,11 +394,27 @@ impl SolanaBackend {
                 coordinator_account,
             })
             .args(psyche_solana_coordinator::instruction::JoinRun {
-                params: psyche_solana_coordinator::logic::JoinRunParams { client_id: id },
+                params: psyche_solana_coordinator::logic::JoinRunParams {
+                    client_id: id,
+                    client_version: client_version.clone(),
+                },
             })
             .send()
-            .await?;
-        Ok(signature)
+            .await;
+
+        if let Ok(signature) = result {
+            return Ok(signature);
+        }
+
+        let error = result.unwrap_err();
+        let error_string = error.to_string();
+
+        if error_string.contains("-32002") && error_string.contains("Client version mismatch") {
+            bail!("❌ Failed to join run. Version mismatch error: Client version ({}) is incompatible with coordinator version. Please update your client.", 
+                  client_version);
+        } else {
+            Err(anyhow!("❌ Failed to join run: {}", error_string))
+        }
     }
     pub async fn update_config_and_model(
         &self,
