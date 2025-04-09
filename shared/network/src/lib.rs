@@ -15,23 +15,26 @@ use p2p_model_sharing::{
 use router::Router;
 use state::State;
 use std::{
+    collections::{HashMap, HashSet},
     fmt::Debug,
     hash::{DefaultHasher, Hash as _, Hasher},
+    iter::Cycle,
     marker::PhantomData,
     net::{IpAddr, Ipv4Addr, SocketAddrV4},
     ops::Sub,
-    sync::Arc,
+    sync::{Arc, Mutex as StdMutex},
     time::{Duration, Instant},
+    vec::IntoIter,
 };
 use tokio::{
     select,
-    sync::{mpsc::UnboundedReceiver, oneshot},
+    sync::{mpsc::UnboundedReceiver, oneshot, Mutex},
 };
 use tokio::{
     sync::mpsc,
     time::{interval, Interval},
 };
-use tokio_util::time::FutureExt;
+use tokio_util::{sync::CancellationToken, time::FutureExt};
 use tracing::{debug, error, info, trace, warn};
 use util::{fmt_relay_mode, gossip_topic};
 
@@ -713,4 +716,63 @@ fn hash_bytes(bytes: &Bytes) -> u64 {
     let mut hasher = DefaultHasher::new();
     bytes.hash(&mut hasher);
     hasher.finish()
+}
+
+pub async fn param_request_task(
+    param_name: String,
+    router: Arc<Router>,
+    parameter_blob_tickets: Arc<StdMutex<Vec<BlobTicket>>>,
+    peer_cycle: Arc<Mutex<Cycle<IntoIter<PublicKey>>>>,
+    busy_peers: Arc<StdMutex<HashSet<PublicKey>>>,
+    errored_peers: Arc<StdMutex<HashMap<PublicKey, usize>>>,
+    num_peers: usize,
+    cancel_token: CancellationToken,
+) {
+    const MAX_ERRORS_PER_PEER: usize = 3;
+    loop {
+        let Some(peer_id) = peer_cycle.lock().await.next() else {
+            // This should never really happen, since the only chance for calling
+            // `next()` on a `Cycle` iterator and return `None` is when the iterator
+            // is empty, which was checked previously.
+            unreachable!();
+        };
+
+        if !busy_peers.lock().unwrap().insert(peer_id) {
+            continue;
+        }
+
+        debug!(parameter = param_name, peer = %peer_id, "Requesting parameter");
+        match request_model(
+            router.clone(),
+            peer_id,
+            ModelRequestType::Parameter(param_name.clone()),
+        )
+        .await
+        {
+            Ok(parameter_blob_ticket) => {
+                parameter_blob_tickets
+                    .lock()
+                    .unwrap()
+                    .push(parameter_blob_ticket);
+                busy_peers.lock().unwrap().remove(&peer_id);
+                // Continue to next parameter request
+                break;
+            }
+            Err(e) => {
+                warn!(parameter = param_name, peer = %peer_id, "Failed to get parameter: {e}");
+                busy_peers.lock().unwrap().remove(&peer_id);
+                let mut errored_peers_lock = errored_peers.lock().unwrap();
+                *errored_peers_lock.entry(peer_id.clone()).or_insert(0) += 1;
+                let min_peers_error_count = *errored_peers_lock.values().min().unwrap_or(&1);
+                if errored_peers_lock.len() == num_peers
+                    && min_peers_error_count >= MAX_ERRORS_PER_PEER
+                {
+                    cancel_token.cancel();
+                    break;
+                }
+                // Continue to request this parameter to another peer
+                continue;
+            }
+        }
+    }
 }
