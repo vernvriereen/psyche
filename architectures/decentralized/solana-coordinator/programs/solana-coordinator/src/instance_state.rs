@@ -8,6 +8,7 @@ use psyche_coordinator::CoordinatorConfig;
 use psyche_coordinator::HealthChecks;
 use psyche_coordinator::RunState;
 use psyche_coordinator::TickResult;
+use psyche_coordinator::Version;
 use psyche_coordinator::Witness;
 use psyche_coordinator::SOLANA_MAX_STRING_LEN;
 use psyche_core::sha256v;
@@ -21,7 +22,6 @@ use crate::client::Client;
 use crate::clients_state::ClientsState;
 use crate::ClientId;
 use crate::ProgramError;
-use crate::COORDINATOR_VERSION_MAJOR;
 
 #[derive(
     Clone,
@@ -61,6 +61,7 @@ pub struct CoordinatorInstanceState {
     pub clients_state: ClientsState,
     pub is_warmup_first_tick: SmallBoolean,
     pub is_training_first_tick: SmallBoolean,
+    pub version: Version,
 }
 
 unsafe impl Pod for CoordinatorInstanceState {}
@@ -268,16 +269,28 @@ impl CoordinatorInstanceState {
     pub fn join_run(
         &mut self,
         id: ClientId,
-        client_version: &str,
+        client_version: Version,
     ) -> Result<()> {
-        if client_version != COORDINATOR_VERSION_MAJOR {
+        // Both MAJOR and MINOR versions must match on client and coordinator (MAJOR.MINOR.PATCH)
+        if client_version.major != self.version.major
+            || client_version.minor != self.version.minor
+        {
             msg!(
-                "Client version mismatch, coordinator: {}.y.z, client: {}.y.z",
-                COORDINATOR_VERSION_MAJOR,
+                "Error. Client version mismatch, coordinator: {}, client: {}",
+                self.version,
                 client_version
             );
             return err!(ProgramError::ClientVersionMismatch);
         }
+
+        // If the patch (x.y.PATCH) version is different, log a warning but don't error on the client
+        if client_version.patch != self.version.patch {
+            msg!(
+                "Warn. Client patch version mismatch, coordinator: {}, client: {}",
+                self.version,
+                client_version
+            )
+        };
 
         let exisiting = match self
             .clients_state

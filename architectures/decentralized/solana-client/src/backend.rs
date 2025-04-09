@@ -18,7 +18,7 @@ use futures_util::StreamExt;
 use psyche_client::IntegrationTestLogMarker;
 use psyche_coordinator::{
     model::{self, Model},
-    CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks,
+    CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks, Version,
 };
 use psyche_watcher::{Backend as WatcherBackend, OpportunisticData};
 use solana_account_decoder_client_types::{UiAccount, UiAccountData, UiAccountEncoding};
@@ -30,6 +30,8 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 
 pub const CLIENT_VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
+pub const CLIENT_VERSION_MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
+pub const CLIENT_VERSION_PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
 
 pub struct SolanaBackend {
     program_authorizer: Program<Arc<Keypair>>,
@@ -372,10 +374,12 @@ impl SolanaBackend {
         coordinator_account: Pubkey,
         id: psyche_solana_coordinator::ClientId,
     ) -> Result<Signature> {
-        let client_version = CLIENT_VERSION_MAJOR.to_string();
-        if client_version.is_empty() {
-            panic!("Failed to join run: Invalid Version");
-        }
+        let client_version = Version::new_from_str(
+            CLIENT_VERSION_MAJOR,
+            CLIENT_VERSION_MINOR,
+            CLIENT_VERSION_PATCH,
+        )
+        .map_err(|_| anyhow!("❌ Failed to join run: Invalid Version"))?;
 
         let coordinator_instance_state =
             self.get_coordinator_instance(&coordinator_instance).await?;
@@ -396,7 +400,7 @@ impl SolanaBackend {
             .args(psyche_solana_coordinator::instruction::JoinRun {
                 params: psyche_solana_coordinator::logic::JoinRunParams {
                     client_id: id,
-                    client_version: client_version.clone(),
+                    client_version,
                 },
             })
             .send()
@@ -410,7 +414,7 @@ impl SolanaBackend {
         let error_string = error.to_string();
 
         if error_string.contains("-32002") && error_string.contains("Client version mismatch") {
-            bail!("❌ Failed to join run. Version mismatch error: Client version ({}.y.z) is incompatible with coordinator version. Please update your client.", 
+            bail!("❌ Failed to join run. Version mismatch error: Client version ({}) is incompatible with coordinator version. Please update your client.", 
                   client_version);
         } else {
             Err(anyhow!("❌ Failed to join run: {}", error_string))

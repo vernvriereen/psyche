@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use psyche_coordinator::Version;
 use psyche_solana_authorizer::state::Authorization;
 
 use crate::bytes_from_string;
@@ -43,7 +44,7 @@ pub struct JoinRunAccounts<'info> {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct JoinRunParams {
     pub client_id: ClientId,
-    pub client_version: String,
+    pub client_version: Version,
 }
 
 pub fn join_run_processor(
@@ -58,5 +59,5 @@ pub fn join_run_processor(
         .coordinator_account
         .load_mut()?
         .state
-        .join_run(params.client_id, &params.client_version)
+        .join_run(params.client_id, params.client_version)
 }

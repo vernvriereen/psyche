@@ -2,6 +2,7 @@ use anchor_lang::InstructionData;
 use anchor_lang::ToAccountMetas;
 use psyche_coordinator::model::Model;
 use psyche_coordinator::CoordinatorConfig;
+use psyche_coordinator::Version;
 use psyche_solana_coordinator::accounts::FreeCoordinatorAccounts;
 use psyche_solana_coordinator::accounts::InitCoordinatorAccounts;
 use psyche_solana_coordinator::accounts::JoinRunAccounts;
@@ -29,6 +30,8 @@ use solana_toolbox_endpoint::ToolboxEndpoint;
 use solana_toolbox_endpoint::ToolboxEndpointError;
 
 use crate::SOLANA_TOOLING_VERSION_MAJOR;
+use crate::SOLANA_TOOLING_VERSION_MINOR;
+use crate::SOLANA_TOOLING_VERSION_PATCH;
 
 pub async fn process_coordinator_init(
     endpoint: &mut ToolboxEndpoint,
@@ -123,7 +126,12 @@ pub async fn process_coordinator_join_run(
         data: JoinRun {
             params: JoinRunParams {
                 client_id,
-                client_version: SOLANA_TOOLING_VERSION_MAJOR.to_string(),
+                client_version: Version::new_from_str(
+                    SOLANA_TOOLING_VERSION_MAJOR,
+                    SOLANA_TOOLING_VERSION_MINOR,
+                    SOLANA_TOOLING_VERSION_PATCH,
+                )
+                .expect("Failed to parse version number"),
             },
         }
         .data(),
