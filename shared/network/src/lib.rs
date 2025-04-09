@@ -718,6 +718,7 @@ fn hash_bytes(bytes: &Bytes) -> u64 {
     hasher.finish()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn param_request_task(
     param_name: String,
     router: Arc<Router>,
@@ -762,7 +763,7 @@ pub async fn param_request_task(
                 warn!(parameter = param_name, peer = %peer_id, "Failed to get parameter: {e}");
                 busy_peers.lock().unwrap().remove(&peer_id);
                 let mut errored_peers_lock = errored_peers.lock().unwrap();
-                *errored_peers_lock.entry(peer_id.clone()).or_insert(0) += 1;
+                *errored_peers_lock.entry(peer_id).or_insert(0) += 1;
                 let min_peers_error_count = *errored_peers_lock.values().min().unwrap_or(&1);
                 if errored_peers_lock.len() == num_peers
                     && min_peers_error_count >= MAX_ERRORS_PER_PEER
