@@ -28,7 +28,7 @@ use solana_sdk::system_program;
 use solana_toolbox_endpoint::ToolboxEndpoint;
 use solana_toolbox_endpoint::ToolboxEndpointError;
 
-use crate::SOLANA_TOOLING_VERSION;
+use crate::SOLANA_TOOLING_VERSION_MAJOR;
 
 pub async fn process_coordinator_init(
     endpoint: &mut ToolboxEndpoint,
@@ -123,7 +123,7 @@ pub async fn process_coordinator_join_run(
         data: JoinRun {
             params: JoinRunParams {
                 client_id,
-                client_version: SOLANA_TOOLING_VERSION.to_string(),
+                client_version: SOLANA_TOOLING_VERSION_MAJOR.to_string(),
             },
         }
         .data(),

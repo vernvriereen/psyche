@@ -21,7 +21,7 @@ use crate::client::Client;
 use crate::clients_state::ClientsState;
 use crate::ClientId;
 use crate::ProgramError;
-use crate::COORDINATOR_VERSION;
+use crate::COORDINATOR_VERSION_MAJOR;
 
 #[derive(
     Clone,
@@ -270,10 +270,10 @@ impl CoordinatorInstanceState {
         id: ClientId,
         client_version: &str,
     ) -> Result<()> {
-        if client_version != COORDINATOR_VERSION {
+        if client_version != COORDINATOR_VERSION_MAJOR {
             msg!(
-                "Client version mismatch, coordinator: {}, client: {}",
-                COORDINATOR_VERSION,
+                "Client version mismatch, coordinator: {}.y.z, client: {}.y.z",
+                COORDINATOR_VERSION_MAJOR,
                 client_version
             );
             return err!(ProgramError::ClientVersionMismatch);

@@ -29,7 +29,7 @@ use tokio::{
 };
 use tracing::{debug, error, info, trace, warn};
 
-pub const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CLIENT_VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
 
 pub struct SolanaBackend {
     program_authorizer: Program<Arc<Keypair>>,
@@ -372,7 +372,7 @@ impl SolanaBackend {
         coordinator_account: Pubkey,
         id: psyche_solana_coordinator::ClientId,
     ) -> Result<Signature> {
-        let client_version = CLIENT_VERSION.to_string();
+        let client_version = CLIENT_VERSION_MAJOR.to_string();
         if client_version.is_empty() {
             panic!("Failed to join run: Invalid Version");
         }
@@ -410,7 +410,7 @@ impl SolanaBackend {
         let error_string = error.to_string();
 
         if error_string.contains("-32002") && error_string.contains("Client version mismatch") {
-            bail!("❌ Failed to join run. Version mismatch error: Client version ({}) is incompatible with coordinator version. Please update your client.", 
+            bail!("❌ Failed to join run. Version mismatch error: Client version ({}.y.z) is incompatible with coordinator version. Please update your client.", 
                   client_version);
         } else {
             Err(anyhow!("❌ Failed to join run: {}", error_string))
