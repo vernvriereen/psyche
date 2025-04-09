@@ -5,7 +5,7 @@ import { ParentSize } from '@visx/responsive'
 import { scaleLinear, scalePower } from '@visx/scale'
 import { Bar, Line, LinePath } from '@visx/shape'
 import type React from 'react'
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { GridOfPlusSymbols } from './ChartPlus.js'
 import { useDarkMode } from 'usehooks-ts'
 import { forest, lime, slate } from '../colors.js'
@@ -31,6 +31,7 @@ interface LineGraphProps {
 	title?: string
 	scale?: 'linear' | 'power'
 	renderValue?: (x: number) => string
+	forceMinX?: number
 }
 
 const margin = {
@@ -74,63 +75,61 @@ const WaitingForData = styled.div`
 	height: 100%;
 `
 
-function integerMarkers(
+function findNiceDivisor(max: number, targetDivisions: number): number {
+	// Calculate the rough step size
+	const roughStep = max / targetDivisions;
+	
+	// Find the magnitude of the rough step
+	const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)));
+	
+	// Consider candidates: 1, 2, 5, 10 times the magnitude
+	const candidates = [
+	  1 * magnitude, 
+	  2 * magnitude, 
+	  5 * magnitude, 
+	  10 * magnitude
+	];
+	
+	// Find the candidate that gives the closest number of divisions to target
+	let bestCandidate = candidates[0];
+	let bestDiff = Math.abs(max / bestCandidate - targetDivisions);
+	
+	for (let i = 1; i < candidates.length; i++) {
+	  const divisions = max / candidates[i];
+	  const diff = Math.abs(divisions - targetDivisions);
+	  
+	  if (diff < bestDiff) {
+		bestCandidate = candidates[i];
+		bestDiff = diff;
+	  }
+	}
+	
+	return bestCandidate;
+  }
+
+
+  function integerMarkers(
 	domain: [number, number],
-	targetMarkers: number
-): number[] {
-	const [min, max] = domain
-	const range = max - min
-
-	// ideal spacing if we didn't care about hitting ints
-	const idealSpacing = range / targetMarkers
-
-	// find the closest "nice" int step size
-	const potentialSteps = [
-		1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000, 2000, 5000, 10_000,
-		20_000, 50_000,
-	]
-	const step = potentialSteps.reduce((prev, curr) => {
-		return Math.abs(curr - idealSpacing) < Math.abs(prev - idealSpacing)
-			? curr
-			: prev
-	})
-
-	const idealMarkers: number[] = []
-	const start = Math.ceil(min)
-	const end = Math.ceil(max)
-
-	for (let i = start; i < end; i += step) {
-		idealMarkers.push(i)
+	targetMarkers: number,
+	oneOver: boolean = false
+  ): number[] {
+	const [min, max] = domain;
+	const range = max - min;
+	
+	const step = findNiceDivisor(range, targetMarkers);
+	const firstMarker = Math.ceil(min / step) * step;
+	const markers: number[] = [];
+	
+	for (let marker = firstMarker; marker <= max; marker += step) {
+	  markers.push(Number(marker.toFixed(10)));
 	}
-	if (idealMarkers.at(-1) !== max) {
-		idealMarkers.pop()
-		idealMarkers.push(max)
+	if(oneOver && (markers.at(-1) ?? 0 < max)) {
+		markers.push(firstMarker + (markers.length *step))
 	}
+	
+	return markers;
+  }
 
-	return idealMarkers
-}
-
-function interpolateArray(arr: number[], n: number) {
-	if (arr.length < 2) return arr
-
-	const result = []
-
-	for (let i = 0; i < arr.length - 1; i++) {
-		const start = arr[i]
-		const end = arr[i + 1]
-		const step = (end - start) / (n + 1)
-
-		result.push(start)
-
-		for (let j = 1; j <= n; j++) {
-			result.push(start + step * j)
-		}
-	}
-
-	result.push(arr[arr.length - 1])
-
-	return result
-}
 
 // overcomplicated logic to make sure min & max are never both the same OR 0,
 // lest we infinite loop trying to do tick markets.
@@ -147,25 +146,26 @@ function scaleDomainToEnsureSpace(nums: number[]): [number, number] {
 	]
 }
 
+const scaleFuncs: Record<'linear' | 'power', typeof scaleLinear> = {
+	linear: scaleLinear,
+	power: scalePower,
+}
+
 const LineGraphInner: React.FC<
 	LineGraphProps & { width: number; height: number }
-> = ({ xLabel, renderValue, title: rawTitle, width, height, line, scale }) => {
+> = ({ xLabel, renderValue, title: rawTitle, width, height, line, scale, forceMinX = 0 }) => {
 	const xMax = width - margin.left - margin.right - padding.left
 	const yMax = height - margin.bottom - padding.bottom
 
 	const scaleKind = scale === undefined ? 'linear' : scale
 
-	const xScale = scaleLinear<number>({
-		domain: scaleDomainToEnsureSpace(line.points.map((d) => d.x)),
+	const xScale = useMemo(() => scaleLinear<number>({
+		domain: scaleDomainToEnsureSpace([forceMinX, ...line.points.map((d) => d.x)]),
 		range: [0, xMax],
-	})
+	}), [line, xMax])
 
-	const scaleFuncs: Record<typeof scaleKind, typeof scaleLinear> = {
-		linear: scaleLinear,
-		power: scalePower,
-	}
 
-	const yScale = scaleFuncs[scaleKind]<number>({
+	const yScale = useMemo(() => scaleFuncs[scaleKind]<number>({
 		domain: scaleDomainToEnsureSpace(line.points.map((d) => d.y)),
 		range: [yMax, 0],
 		...(scaleKind === 'power'
@@ -173,7 +173,7 @@ const LineGraphInner: React.FC<
 					exponent: 10,
 				}
 			: {}),
-	})
+	}), [scaleKind, yMax, line])
 
 	const [tooltipData, setTooltipData] = useState<{
 		x: number
@@ -255,45 +255,16 @@ const LineGraphInner: React.FC<
 	const numXMarkers = width / 96
 	const numYMarkers = height / 32
 
-	// Calculate marker intervals based on domain and number of markers
-	const verticalLinePositions = integerMarkers(
+	const verticalLinePositions = useMemo(() => integerMarkers(
 		[xDomain[0], xDomain[1]],
 		numXMarkers
-	)
+	), [xDomain, numXMarkers])
 
-	const xAxisLabelPositions = interpolateArray(verticalLinePositions, 2)
 
-	// Horizontal lines
-	const yMarkersEvery = (yDomain[1] - yDomain[0]) / numYMarkers
-
-	const horizontalLinePositions: number[] = []
-	for (let i = yDomain[0]; i <= yDomain[1]; i += yMarkersEvery) {
-		horizontalLinePositions.push(i)
-	}
-
-	// Major ticks Y-axis
-	const majorTicksPerHorizontalLine = 2
-	const majorTickValuesYAxis: number[] = []
-	for (
-		let i = yDomain[0];
-		i <= yDomain[1];
-		i += yMarkersEvery / majorTicksPerHorizontalLine
-	) {
-		majorTickValuesYAxis.push(i)
-	}
-
-	// Minor ticks Y-axis
-	const minorTicksPerMajorTickY = 5
-	const allTickValuesYAxis: number[] = []
-	for (
-		let i = yDomain[0];
-		i <= yDomain[1];
-		i +=
-			yMarkersEvery /
-			(majorTicksPerHorizontalLine * minorTicksPerMajorTickY)
-	) {
-		allTickValuesYAxis.push(i)
-	}
+	const horizontalLinePositions = useMemo(() => integerMarkers(
+		[yDomain[0], yDomain[1]],
+		numYMarkers,
+	), [yDomain, numYMarkers])
 
 	const centerLineThickness = 1
 	const plusSize = 6
@@ -337,7 +308,7 @@ const LineGraphInner: React.FC<
 						data={line.points}
 						x={(d) => xScale(d.x)}
 						y={(d) => yScale(d.y)}
-						strokeWidth={3}
+						strokeWidth={1}
 						stroke={lineColor}
 						strokeLinecap="butt"
 					/>
@@ -348,49 +319,49 @@ const LineGraphInner: React.FC<
 						orientation="bottom"
 						scale={xScale}
 						top={yMax}
-						tickValues={xAxisLabelPositions}
+						tickValues={verticalLinePositions}
 						hideTicks
 						hideAxisLine
-						tickFormat={(value, index) =>
-							index % 3 === 0
-								? `${+value.valueOf().toFixed(2)}`
-								: ''
-						}
-						tickComponent={({ formattedValue, ...tickProps }) =>
-							formattedValue && (
-								<text {...tickProps} fill={labelColor}>
-									<tspan>{formattedValue}</tspan>
-								</text>
-							)
-						}
-					/>
-				</Group>
-				<Group left={margin.left} top={padding.bottom}>
-					<Axis
-						orientation="left"
-						scale={yScale}
-						tickValues={majorTickValuesYAxis}
-						hideAxisLine
-						hideTicks
-						tickFormat={(value, index) =>
-							index % 2 == 0
-								? `${value.valueOf() >= 0 ? '' : '-'}${(renderValue ?? ((x) => x.toFixed(1)))(value.valueOf()).slice(0, 7)}`
-								: ''
-						}
 						tickComponent={({ formattedValue, ...tickProps }) => {
 							return (
 								formattedValue && (
 									<text
 										{...tickProps}
-										dy={'0.6ch'}
+										dy={'0.5ch'}
 										fill={labelColor}
+
 									>
 										{formattedValue}
 									</text>
 								)
 							)
 						}}
-						hideZero
+						/>
+				</Group>
+				<Group left={margin.left} top={padding.bottom}>
+					<Axis
+						orientation="left"
+						scale={yScale}
+						tickValues={horizontalLinePositions}
+						hideAxisLine
+						hideTicks
+						tickFormat={(value) =>
+								`${value.valueOf() >= 0 ? '' : '-'}${(renderValue ?? ((x) => x.toFixed(1)))(value.valueOf()).slice(0, 7)}`
+						}
+						tickComponent={({ formattedValue, ...tickProps }) => {
+							return (
+								formattedValue && (
+									<text
+										{...tickProps}
+										dy={'0.5ch'}
+										fill={labelColor}
+
+									>
+										{formattedValue}
+									</text>
+								)
+							)
+						}}
 					/>
 				</Group>
 				<Bar

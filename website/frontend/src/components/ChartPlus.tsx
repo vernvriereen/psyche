@@ -37,7 +37,7 @@ const PlusSymbol: React.FC<PlusSymbolProps> = ({
 
 const SplitPlusSymbol: React.FC<
 	PlusSymbolProps & {
-		half: 'left' | 'right' | 'full'
+		half: 'left' | 'right' | 'full' | 'hor'
 		centerLineThickness: number
 	}
 > = ({ half, x, y, size, thickness, centerLineThickness, stroke }) => {
@@ -71,26 +71,30 @@ const SplitPlusSymbol: React.FC<
 		<g>
 			{half !== 'right' && (
 				<>
-					<line
-						{...verticalLineLeft}
-						stroke={stroke}
-						strokeWidth={thickness}
-					/>
+					{half !== 'hor' && (
+						<line
+							{...verticalLineLeft}
+							stroke={stroke}
+							strokeWidth={thickness}
+						/>
+					)}
 					<line
 						{...horizontalLineLeft}
 						stroke={stroke}
 						strokeWidth={thickness}
-					/>{' '}
+					/>
 				</>
 			)}
 
 			{half !== 'left' && (
 				<>
-					<line
-						{...verticalLineRight}
-						stroke={stroke}
-						strokeWidth={thickness}
-					/>
+					{half !== 'hor' && (
+						<line
+							{...verticalLineRight}
+							stroke={stroke}
+							strokeWidth={thickness}
+						/>
+					)}
 					<line
 						{...horizontalLineRight}
 						stroke={stroke}
@@ -149,13 +153,7 @@ export const GridOfPlusSymbols: React.FC<{
 						size={size}
 						thickness={thickness}
 						centerLineThickness={centerLineThickness}
-						half={
-							i === 0
-								? 'right'
-								: i === verticalLinePositions.length - 1
-									? 'left'
-									: 'full'
-						}
+						half={i === 0 ? 'right' : 'hor'}
 					/>
 				))
 			})}

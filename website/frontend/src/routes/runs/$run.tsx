@@ -154,10 +154,17 @@ function RouteComponent() {
 			back
 		</Button>
 	)
-	const graphData = useMemo(
-		() => run && metricToGraph(run.metrics.history, 100),
-		[run]
-	)
+	const graphData = useMemo(() => {
+		if (run) {
+			const graphs = metricToGraph(run.metrics.history, 1000)
+			for (const vals of Object.values(graphs.evals)) {
+				for (const val of vals) {
+					val.y *= 100
+				}
+			}
+			return graphs
+		}
+	}, [run])
 
 	if (!run) {
 		return (
@@ -170,10 +177,13 @@ function RouteComponent() {
 						</span>
 					</RunHeader>
 					<div
-						className={c(css`
-							padding: 48px;
-							text-align: center;
-						`, text["body/base/regular"])}
+						className={c(
+							css`
+								padding: 48px;
+								text-align: center;
+							`,
+							text['body/base/regular']
+						)}
 					>
 						Sorry! Try another run ID.
 					</div>
@@ -226,7 +236,10 @@ function RouteComponent() {
 					<div>
 						<ProgressBar
 							big
-							ratio={Number(info.completedTokens) / Number(info.totalTokens)}
+							ratio={
+								Number(info.completedTokens) /
+								Number(info.totalTokens)
+							}
 							chunkHeight={36}
 							chunkWidth={24}
 						/>
@@ -264,10 +277,10 @@ function RouteComponent() {
 					<HistoryContainer>
 						{graphData && (
 							<>
-								{/* // TODO: render confidence and perplexity */}
+								{/* TODO: render confidence and perplexity */}
 								<LineGraphContainer>
 									<ResponsiveLineGraph
-										renderValue={(x) => `${x.toFixed(2)}`}
+										renderValue={(x) => `${+x.toFixed(2)}`}
 										xLabel="step"
 										title="loss"
 										line={{
@@ -293,13 +306,14 @@ function RouteComponent() {
 								<LineGraphContainer>
 									<ResponsiveLineGraph
 										renderValue={(x) =>
-											`${formatBytes(x, 2, 'bits')}/s`
+											`${formatBytes(x, 0, 'bits')}`
 										}
 										xLabel="step"
 										title="inter-node bandwidth"
 										line={{
 											label: 'bandwidth',
 											points: graphData.bandwidth,
+											unit: '/s',
 										}}
 									/>
 								</LineGraphContainer>
@@ -309,7 +323,7 @@ function RouteComponent() {
 										<LineGraphContainer key={label}>
 											<ResponsiveLineGraph
 												renderValue={(x) =>
-													`${(x * 100).toFixed(2)}`
+													(+`${x.toFixed(2)}`).toString()
 												}
 												xLabel="step"
 												title={`Model Evaluation: ${label}`}
