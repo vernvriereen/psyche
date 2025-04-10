@@ -22,7 +22,7 @@ pub enum StateFilter {
 #[derive(Debug)]
 pub enum Response {
     StateChange(String, String, String, String, u64, u64),
-    Loss(String, u64, u64, f64),
+    Loss(String, u64, u64, Option<f64>),
     LoadedModel(String),
     HealthCheck(String, u64, u64),
     UntrainedBatches(Vec<u64>),
@@ -191,7 +191,7 @@ impl DockerWatcher {
                         }
                     }
                     IntegrationTestLogMarker::Loss => {
-                        let loss = parsed_log.get("loss").and_then(|v| v.as_f64()).unwrap();
+                        let loss = parsed_log.get("loss").and_then(|v| v.as_f64());
                         let client_id = parsed_log
                             .get("client_id")
                             .and_then(|v| v.as_str())
@@ -229,9 +229,30 @@ impl DockerWatcher {
                         }
                     }
                     IntegrationTestLogMarker::UntrainedBatches => {
+                        if parsed_log.get("target")
+                            != Some(&Value::String("untrained_batch".to_string()))
+                        {
+                            continue;
+                        }
+
                         // extract batch Ids
-                        let message = parsed_log.get("batch_id").and_then(|v| v.as_str()).unwrap();
-                        let batch_id_range = BatchId::from_str(message).unwrap();
+                        let Some(message) = parsed_log.get("batch_id").and_then(|v| v.as_str())
+                        else {
+                            println!("Invalid batch_id: {:?}", parsed_log);
+                            let response = Response::UntrainedBatches(vec![0, 0]);
+                            if log_sender.send(response).await.is_err() {
+                                println!("Probably the test ended so we drop the log sender");
+                            }
+                            continue;
+                        };
+                        let Ok(batch_id_range) = BatchId::from_str(message) else {
+                            println!("Invalid batch_id range: {}", message);
+                            let response = Response::UntrainedBatches(vec![0, 0]);
+                            if log_sender.send(response).await.is_err() {
+                                println!("Probably the test ended so we drop the log sender");
+                            }
+                            continue;
+                        };
                         let batch_ids = batch_id_range.iter().collect();
 
                         let response = Response::UntrainedBatches(batch_ids);

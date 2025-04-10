@@ -4,9 +4,6 @@ let
   keys = import ./nix/keys.nix;
 in
 {
-  # http basic auth for our test deployments
-  "secrets/docs-http-basic.age".publicKeys = keys.allKeys;
-
   # RPC urls for our devnet indexer
   "secrets/devnet/backend.age".publicKeys = keys.allKeys;
 

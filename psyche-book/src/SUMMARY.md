@@ -16,3 +16,4 @@
   - [Secrets](./development/agenix.md)
   - [Building these docs](./development/book.md)
   - [CI](./development/ci.md)
+  - [Contributing](./development/contributing.md)

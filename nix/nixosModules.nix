@@ -128,11 +128,6 @@
                   enable = true;
                   name = configName;
                 };
-                age.secrets.caddyBasicAuth = {
-                  file = ../secrets/docs-http-basic.age;
-                  owner = "caddy";
-                  group = "caddy";
-                };
                 services.caddy =
                   let
                     cfg = ''
@@ -144,10 +139,6 @@
 
                       handle_path ${backendPath}/* {
                         reverse_proxy :${backend-port}
-                      }
-
-                      basic_auth {
-                        import ${config.age.secrets.caddyBasicAuth.path}
                       }
                     '';
                   in
@@ -172,22 +163,22 @@
         };
     in
     {
-      # server for hosting the frontend/backend with http basic auth, for testing
-      nixosConfigurations."psyche-http-devnet-authed" = persistentPsycheWebsite {
-        configName = "psyche-http-devnet-authed";
+      # server for hosting the frontend/backend, for testing
+      nixosConfigurations."psyche-http-devnet" = persistentPsycheWebsite {
+        configName = "psyche-http-devnet";
         hostnames = [ "devnet-preview.psyche.network" ];
         backendSecret = ../secrets/devnet/backend.age;
         miningPoolRpc = "https://api.devnet.solana.com";
       };
-      nixosConfigurations."psyche-http-mainnet-authed" = persistentPsycheWebsite {
-        configName = "psyche-http-mainnet-authed";
+      nixosConfigurations."psyche-http-mainnet" = persistentPsycheWebsite {
+        configName = "psyche-http-mainnet";
         hostnames = [ "mainnet-preview.psyche.network" ];
         backendSecret = ../secrets/backend-mainnet.age;
         miningPoolRpc = "https://api.mainnet-beta.solana.com/";
       };
 
-      # server for hosting with no auth, for main
-      nixosConfigurations."psyche-http-mainnet" = inputs.nixpkgs.lib.nixosSystem {
+      # server for hosting
+      nixosConfigurations."psyche-http" = inputs.nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
         modules = base-system ++ [
           debug-ssh
@@ -238,21 +229,27 @@
         ];
       };
 
-      # server for hosting docs with auth, for test deploys
-      nixosConfigurations."psyche-http-docs-authed" = inputs.nixpkgs.lib.nixosSystem {
+      # server for hosting docs, for test deploys
+      nixosConfigurations."psyche-http-docs" = inputs.nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
         modules = base-system ++ [
           (
             { pkgs, ... }:
             {
-              services.caddy = {
-                enable = true;
-                virtualHosts."http://psyche-http-docs-authed.test-deploy-docs.psyche.NousResearch.garnix.me".extraConfig =
-                  ''
+              services.caddy =
+                let
+                  conf = ''
                     root * ${self.packages.${pkgs.system}.psyche-book}
                     file_server
                   '';
-              };
+                in
+                {
+                  enable = true;
+                  virtualHosts = {
+                    "http://psyche-http-docs.test-deploy-docs.psyche.NousResearch.garnix.me".extraConfig = conf;
+                    "http://docs-preview.psyche.network".extraConfig = conf;
+                  };
+                };
             }
           )
         ];
