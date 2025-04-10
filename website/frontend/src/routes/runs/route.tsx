@@ -55,7 +55,7 @@ function RouteComponent() {
 					<OutlineBox title="mining pool">
 						<ContributeCompute {...contributions} />
 					</OutlineBox>
-					<OutlineBox title="runs">
+					<OutlineBox title="training">
 						<Outlet />
 					</OutlineBox>
 				</MainContents>

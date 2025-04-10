@@ -77,6 +77,10 @@ const WaitingForData = styled.div`
 	height: 100%;
 `
 
+const FgColor = styled.span`
+	color: var(--color-fg);
+`
+
 function findNiceDivisor(max: number, targetDivisions: number): number {
 	// Calculate the rough step size
 	const roughStep = max / targetDivisions
@@ -294,10 +298,15 @@ const LineGraphInner: React.FC<
 		<GraphContainer>
 			{title && (
 				<Title color={labelColor} className={text['body/sm/semibold']}>
-					<span>{title}</span>
 					<span>
-						[{(renderValue ?? ((x) => x.toFixed(1)))(lastYValue)}
-						{line.unit}]
+						[<FgColor>{title}</FgColor>
+					</span>
+					<span>
+						<FgColor>
+							{(renderValue ?? ((x) => x.toFixed(1)))(lastYValue)}
+							{line.unit}
+						</FgColor>
+						]
 					</span>
 				</Title>
 			)}
@@ -435,7 +444,7 @@ const LineGraphInner: React.FC<
 								}),
 					}}
 				>
-					<div className="font-eva text-xl">{line.label}</div>
+					<div>{line.label}</div>
 					<div>
 						{xLabel} {tooltipData.x}:{' '}
 						{(renderValue ?? ((x) => x.toFixed(2)))(tooltipData.y)}

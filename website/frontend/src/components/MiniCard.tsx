@@ -1,8 +1,12 @@
 import { styled } from '@linaria/react'
 import { text } from '../fonts.js'
+import { forest } from '../colors.js'
 
 const RunShadow = styled.div`
 	background: var(--color-fg);
+	.theme-dark & {
+		background: ${forest[400]};
+	}
 	width: 100%;
 	height: 100%;
 	position: absolute;
@@ -26,6 +30,10 @@ const ShadowContainer = styled.a`
 	border: 1px solid var(--color-fg);
 	outline: 1px solid var(--color-fg);
 
+	.theme-dark & {
+		outline-color: ${forest[400]};
+		border-color: ${forest[400]};
+	}
 	max-width: 192px;
 	min-width: 128px;
 
