@@ -119,6 +119,7 @@ async function main() {
 			const data: ApiGetRun = {
 				run: matchingRun,
 				error: coordinatorError,
+				isOnlyRun: coordinator.dataStore.getRunSummaries().length === 1
 			}
 			res.header('content-type', 'application/json').send(
 				JSON.stringify(data, psycheJsonReplacer)

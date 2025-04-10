@@ -24,7 +24,7 @@ const RunContainer = styled.div`
 	padding: 0 24px;
 	container-type: inline-size;
 	height: 100%;
-	
+
 	@container (width < 400px) {
 		padding: 0 8px;
 	}
@@ -209,16 +209,18 @@ function RouteComponent() {
 
 	return (
 		<RunContainer>
-			<Button
-				style="action"
-				icon={{
-					side: 'left',
-					svg: ArrowLeft,
-				}}
-				to={'/runs'}
-			>
-				back
-			</Button>
+			{!isOnlyRun && (
+				<Button
+					style="action"
+					icon={{
+						side: 'left',
+						svg: ArrowLeft,
+					}}
+					to={'/runs'}
+				>
+					back
+				</Button>
+			)}
 			<RunBox>
 				<RunHeader>
 					<span className={text['display/4xl']}>{info.name}</span>
@@ -270,7 +272,12 @@ function RouteComponent() {
 						{Object.entries(run.metrics.summary.evals).length >
 							3 && (
 							<RadialContainer>
-								<RadialGraph data={run.metrics.summary.evals} formatValue={v => `${(+(v * 100).toFixed(2))}%`}/>
+								<RadialGraph
+									data={run.metrics.summary.evals}
+									formatValue={(v) =>
+										`${+(v * 100).toFixed(2)}%`
+									}
+								/>
 							</RadialContainer>
 						)}
 						<StatBoxes>

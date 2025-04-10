@@ -1,9 +1,19 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { Runs } from '../../components/Runs.js'
 import { fetchRuns } from '../../fetchRuns.js'
 
 export const Route = createFileRoute('/runs/')({
-	loader: fetchRuns,
+	loader: () => fetchRuns().then(runs => {
+		if(runs.runs.length === 1) {
+			throw redirect({
+				to: '/runs/$run',
+				params: {
+					run: runs.runs[0].id
+				}
+			})
+		}
+		return runs
+	}),
 	component: RouteComponent,
 })
 

@@ -51,7 +51,7 @@ export async function fetchRuns(): Promise<ApiGetRuns> {
 
 export async function fetchRun(runId: string): Promise<ApiGetRun> {
 	return import.meta.env.VITE_FAKE_DATA
-		? ({ run: fakeRunData[runId] } satisfies ApiGetRun)
+		? ({ run: fakeRunData[runId], isOnlyRun: false } satisfies ApiGetRun)
 		: psycheJsonFetch(`run/${runId}`).then((r) => r ?? null)
 }
 
