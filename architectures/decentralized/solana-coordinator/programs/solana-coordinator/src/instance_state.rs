@@ -6,6 +6,7 @@ use psyche_coordinator::model::Model;
 use psyche_coordinator::ClientState;
 use psyche_coordinator::Coordinator;
 use psyche_coordinator::CoordinatorConfig;
+use psyche_coordinator::CoordinatorProgress;
 use psyche_coordinator::HealthChecks;
 use psyche_coordinator::RunState;
 use psyche_coordinator::TickResult;
@@ -181,6 +182,12 @@ impl CoordinatorInstanceState {
                     // step 1 is the first valid step
                     self.coordinator.progress.step = 1;
                 }
+
+                // check progress after potentially setting step to 1 (errors for default 0)
+                if !self.coordinator.progress.check() {
+                    return err!(ProgramError::ProgressSanityCheckFailed);
+                }
+
                 self.coordinator.resume(unix_timestamp)
             },
         } {
@@ -244,10 +251,11 @@ impl CoordinatorInstanceState {
         Ok(())
     }
 
-    pub fn update_coordinator_config_model(
+    pub fn update(
         &mut self,
         config: Option<CoordinatorConfig>,
         model: Option<Model>,
+        progress: Option<CoordinatorProgress>,
     ) -> Result<()> {
         if self.coordinator.run_state == RunState::Finished {
             return err!(ProgramError::UpdateConfigFinished);
@@ -269,6 +277,14 @@ impl CoordinatorInstanceState {
             }
 
             let _ = std::mem::replace(&mut self.coordinator.model, model);
+        }
+
+        if let Some(progress) = progress {
+            if !progress.check() {
+                return err!(ProgramError::ModelSanityCheckFailed);
+            }
+
+            let _ = std::mem::replace(&mut self.coordinator.progress, progress);
         }
 
         Ok(())

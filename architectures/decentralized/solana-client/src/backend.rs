@@ -19,7 +19,7 @@ use futures_util::StreamExt;
 use psyche_client::IntegrationTestLogMarker;
 use psyche_coordinator::{
     model::{HubRepo, Model},
-    CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks,
+    CommitteeProof, Coordinator, CoordinatorConfig, CoordinatorProgress, HealthChecks,
 };
 use psyche_watcher::{Backend as WatcherBackend, OpportunisticData};
 use solana_account_decoder_client_types::{UiAccount, UiAccountData, UiAccountEncoding};
@@ -448,12 +448,13 @@ impl SolanaBackend {
         }
     }
 
-    pub async fn update_config_and_model(
+    pub async fn update(
         &self,
         coordinator_instance: Pubkey,
         coordinator_account: Pubkey,
         config: Option<CoordinatorConfig>,
         model: Option<Model>,
+        progress: Option<CoordinatorProgress>,
     ) -> Result<Signature> {
         let signature = self
             .program_coordinator
@@ -466,9 +467,10 @@ impl SolanaBackend {
                 },
             )
             .args(
-                psyche_solana_coordinator::instruction::UpdateCoordinatorConfigModel {
+                psyche_solana_coordinator::instruction::Update {
                     config,
                     model,
+                    progress,
                 },
             )
             .send()

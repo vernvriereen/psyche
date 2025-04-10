@@ -25,8 +25,8 @@ use psyche_solana_tooling::process_coordinator_instructions::process_coordinator
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_join_run;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_set_paused;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_tick;
-use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_update_config_model;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_witness;
+use psyche_solana_tooling::process_coordinator_instructions::process_update;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 
@@ -84,7 +84,7 @@ pub async fn run() {
     );
 
     // update the coordinator's model
-    process_coordinator_update_config_model(
+    process_update(
         &mut endpoint,
         &payer,
         &main_authority,
@@ -121,6 +121,7 @@ pub async fn run() {
                 weight_decay: None,
             },
         })),
+        None, // no explicit progress
     )
     .await
     .unwrap();

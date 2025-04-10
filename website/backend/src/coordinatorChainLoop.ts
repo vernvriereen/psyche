@@ -77,6 +77,7 @@ export async function startWatchCoordinatorChainLoop(
 
 					case 'tick':
 					case 'update_coordinator_config_model':
+					case 'update':
 					case 'join_run': {
 						const runPubkey = i.accounts[1].toString()
 						runsToUpdate.set(runPubkey, tx.slot)

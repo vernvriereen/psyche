@@ -223,6 +223,7 @@ pub async fn run() {
                     weight_decay: None,
                 },
             })),
+            progress: None,
             epoch_earning_rate: Some(earned_point_per_epoch),
             epoch_slashing_rate: None,
             paused: Some(false),

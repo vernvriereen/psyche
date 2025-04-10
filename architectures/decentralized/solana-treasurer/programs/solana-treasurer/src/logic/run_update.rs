@@ -1,10 +1,11 @@
 use anchor_lang::prelude::*;
 use psyche_coordinator::model::Model;
 use psyche_coordinator::CoordinatorConfig;
+use psyche_coordinator::CoordinatorProgress;
 use psyche_solana_coordinator::cpi::accounts::OwnerCoordinatorAccounts;
 use psyche_solana_coordinator::cpi::set_future_epoch_rates;
 use psyche_solana_coordinator::cpi::set_paused;
-use psyche_solana_coordinator::cpi::update_coordinator_config_model;
+use psyche_solana_coordinator::cpi::update;
 use psyche_solana_coordinator::program::PsycheSolanaCoordinator;
 use psyche_solana_coordinator::CoordinatorAccount;
 use psyche_solana_coordinator::CoordinatorInstance;
@@ -38,6 +39,7 @@ pub struct RunUpdateAccounts<'info> {
 pub struct RunUpdateParams {
     pub config: Option<CoordinatorConfig>,
     pub model: Option<Model>,
+    pub progress: Option<CoordinatorProgress>,
     pub epoch_earning_rate: Option<u64>,
     pub epoch_slashing_rate: Option<u64>,
     pub paused: Option<bool>,
@@ -52,7 +54,7 @@ pub fn run_update_processor(
         &[&[Run::SEEDS_PREFIX, &run.identity.to_bytes(), &[run.bump]]];
 
     if params.config.is_some() || params.model.is_some() {
-        update_coordinator_config_model(
+        update(
             CpiContext::new(
                 context.accounts.coordinator_program.to_account_info(),
                 OwnerCoordinatorAccounts {
@@ -70,6 +72,7 @@ pub fn run_update_processor(
             .with_signer(run_signer_seeds),
             params.config,
             params.model,
+            params.progress,
         )?;
     }
 

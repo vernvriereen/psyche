@@ -15,6 +15,7 @@ use psyche_coordinator::model::{HubRepo, Model};
 use psyche_coordinator::Committee;
 use psyche_coordinator::CommitteeProof;
 use psyche_coordinator::CoordinatorConfig;
+use psyche_coordinator::CoordinatorProgress;
 use psyche_coordinator::Witness;
 use psyche_coordinator::WitnessBloom;
 use psyche_coordinator::WitnessMetadata;
@@ -128,16 +129,17 @@ pub mod psyche_solana_coordinator {
         free_coordinator_processor(context, params)
     }
 
-    pub fn update_coordinator_config_model(
+    pub fn update(
         ctx: Context<OwnerCoordinatorAccounts>,
         config: Option<CoordinatorConfig>,
         model: Option<Model>,
+        progress: Option<CoordinatorProgress>,
     ) -> Result<()> {
         ctx.accounts
             .coordinator_account
             .load_mut()?
             .state
-            .update_coordinator_config_model(config, model)
+            .update(config, model, progress)
     }
 
     pub fn set_future_epoch_rates(

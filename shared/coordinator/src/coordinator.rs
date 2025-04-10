@@ -1113,3 +1113,9 @@ impl CoordinatorConfig {
         }
     }
 }
+
+impl CoordinatorProgress {
+    pub fn check(&self) -> bool {
+        self.step > 0
+    }
+}

@@ -47,13 +47,13 @@ struct CliArgs {
 }
 
 #[derive(Args, Debug)]
-pub struct WalletArgs {
+struct WalletArgs {
     #[clap(short, long, env)]
     wallet_private_key_path: Option<PathBuf>,
 }
 
 #[derive(Args, Debug)]
-pub struct ClusterArgs {
+struct ClusterArgs {
     #[clap(long, env, default_value_t = Cluster::Localnet.url().to_string())]
     rpc: String,
 
@@ -62,9 +62,17 @@ pub struct ClusterArgs {
 }
 
 #[derive(Serialize, Deserialize, Zeroable)]
-pub struct State {
+struct State {
     pub config: CoordinatorConfig,
     pub model: Model,
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+enum ShowChoices {
+    Config,
+    Model,
+    EpochState,
+    Progress,
 }
 
 #[allow(clippy::large_enum_variant)] // it's only used at startup, we don't care.
@@ -168,6 +176,15 @@ enum Commands {
 
         #[clap(long, env)]
         slashing_rate: Option<u64>,
+    },
+    Show {
+        #[clap(flatten)]
+        cluster: ClusterArgs,
+
+        #[clap(short, long, env)]
+        run_id: String,
+
+        choice: ShowChoices,
     },
     Train {
         #[clap(flatten)]
@@ -345,12 +362,13 @@ async fn async_main() -> Result<()> {
                 .get_coordinator_instance(&coordinator_instance)
                 .await?;
             let coordinator_account = coordinator_instance_state.coordinator_account;
-            let set = backend
-                .update_config_and_model(
+            let set: anchor_client::solana_sdk::signature::Signature = backend
+                .update(
                     coordinator_instance,
                     coordinator_account,
                     Some(state.config),
                     Some(state.model),
+                    None,
                 )
                 .await?;
             println!("Updated config of {} with transaction {}", run_id, set);
@@ -465,6 +483,47 @@ async fn async_main() -> Result<()> {
             println!("\n===== Logs =====");
             for log in backend.get_logs(&set).await? {
                 println!("{log}");
+            }
+            Ok(())
+        }
+        Commands::Show {
+            cluster,
+            run_id,
+            choice,
+        } => {
+            let run_id = run_id.trim_matches('"').to_string(); // Trim quotes, if any
+            let key_pair: Arc<Keypair> = Arc::new(Keypair::new());
+            let backend = SolanaBackend::new(
+                cluster.into(),
+                key_pair.clone(),
+                CommitmentConfig::confirmed(),
+            )
+            .unwrap();
+            let coordinator_instance = find_coordinator_instance(&run_id);
+            let coordinator_instance_state = backend
+                .get_coordinator_instance(&coordinator_instance)
+                .await?;
+            let coordinator_account = coordinator_instance_state.coordinator_account;
+            let account = backend
+                .get_coordinator_account(&coordinator_account)
+                .await?;
+            match choice {
+                ShowChoices::Config => println!(
+                    "{}",
+                    toml::to_string_pretty(&account.state.coordinator.config)?
+                ),
+                ShowChoices::Model => println!(
+                    "{}",
+                    toml::to_string_pretty(&account.state.coordinator.model)?
+                ),
+                ShowChoices::EpochState => println!(
+                    "{}",
+                    toml::to_string_pretty(&account.state.coordinator.epoch_state)?
+                ),
+                ShowChoices::Progress => println!(
+                    "{}",
+                    toml::to_string_pretty(&account.state.coordinator.progress)?
+                ),
             }
             Ok(())
         }
