@@ -149,7 +149,7 @@ const InfoChits = styled.div`
 `
 
 function RouteComponent() {
-	const { run } = Route.useLoaderData()
+	const { run, isOnlyRun } = Route.useLoaderData()
 	const backButton = (
 		<Button
 			style="action"
@@ -174,7 +174,14 @@ function RouteComponent() {
 		}
 	}, [run])
 
-	if (!run) {
+	const info = run?.info
+
+	const pauses = useMemo(
+		() => info?.pauseHistory.map((p) => [p[0], p[1].time] as const),
+		[info?.pauseHistory]
+	)
+
+	if (!info) {
 		return (
 			<RunContainer>
 				{backButton}
@@ -200,7 +207,6 @@ function RouteComponent() {
 		)
 	}
 
-	const info = run.info
 	return (
 		<RunContainer>
 			<Button
@@ -234,6 +240,7 @@ function RouteComponent() {
 						runtime
 						<Runtime
 							start={info.startTime.time}
+							pauses={pauses}
 							end={
 								info.status.type === 'completed'
 									? info.status.at.time

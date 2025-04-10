@@ -38,7 +38,7 @@ export interface ContributionInfo {
 export type ModelType = 'vision' | 'text'
 
 export type RunStatus =
-	| { type: 'active' | 'funding' }
+	| { type: 'active' | 'funding' | 'paused' }
 	| { type: 'completed'; at: ChainTimestamp }
 
 export interface RunSummary {
@@ -52,6 +52,7 @@ export interface RunSummary {
 	status: RunStatus
 
 	startTime: ChainTimestamp
+	pauseHistory: Array<['paused' | 'unpaused', ChainTimestamp]>
 
 	totalTokens: bigint
 	completedTokens: bigint
@@ -254,7 +255,7 @@ export type MaybeError<T extends object> = T & {
 	error?: Error | null | undefined
 }
 
-export type ApiGetRun = MaybeError<{ run: RunData | null }>
+export type ApiGetRun = MaybeError<{ run: RunData | null; isOnlyRun: boolean }>
 export type ApiGetRuns = MaybeError<{ runs: RunSummary[] }>
 export type ApiGetContributionInfo = MaybeError<ContributionInfo>
 

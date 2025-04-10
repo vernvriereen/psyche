@@ -8,6 +8,7 @@ import { formatNumber } from '../utils.js'
 import { RunSummary } from 'shared'
 import { ShadowCard } from './ShadowCard.jsx'
 import { forest, slate } from '../colors.js'
+import { useMemo } from 'react'
 
 const RunTitleRow = styled.div`
 	display: flex;
@@ -77,10 +78,12 @@ export function RunSummaryCard({
 		totalTokens,
 		status,
 		type,
+		pauseHistory
 	},
 }: {
 	info: RunSummary
 }) {
+	const pauses = useMemo(() =>pauseHistory.map(p => [p[0], p[1].time] as const), [pauseHistory])
 	return (
 		<ShadowCard
 			to="/runs/$run"
@@ -131,6 +134,7 @@ export function RunSummaryCard({
 				runtime{' '}
 				<Runtime
 					start={startTime.time}
+					pauses={pauses}
 					end={
 						status.type === 'completed' ? status.at.time : undefined
 					}

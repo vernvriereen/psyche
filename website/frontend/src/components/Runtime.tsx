@@ -1,5 +1,5 @@
 import { styled } from '@linaria/react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useInterval } from 'usehooks-ts'
 
 const Number = styled.span`
@@ -12,11 +12,53 @@ const Container = styled.span`
 	padding: 4px;
 `
 
-export function Runtime({ start, end }: { start: Date; end?: Date }) {
+export function Runtime({
+	start,
+	end,
+	pauses,
+}: {
+	start: Date
+	end?: Date
+	pauses?: Array<readonly ['paused' | 'unpaused', Date]>
+}) {
 	const [now, setNow] = useState(Date.now())
 	useInterval(() => setNow(Date.now()), 1000)
 
-	const elapsed = (end ? end.valueOf() : now) - start.valueOf()
+	// calculate duration we were paused
+	const { pauseDuration, timeOfCurrentPause } = useMemo(() => {
+		if (!pauses || !pauses.length)
+			return {
+				pauseDuration: 0,
+				isPaused: false,
+				lastPauseTime: null,
+			}
+
+		let pauseDuration = 0
+		let timeOfCurrentPause = null
+
+		for (const [action, timestamp] of pauses) {
+			if (action === 'paused') {
+				timeOfCurrentPause = timestamp.valueOf()
+			} else if (action === 'unpaused' && timeOfCurrentPause !== null) {
+				pauseDuration += timestamp.valueOf() - timeOfCurrentPause
+				timeOfCurrentPause = null
+			}
+		}
+		return { pauseDuration, timeOfCurrentPause }
+	}, [pauses, start])
+
+	const endTime = end ? end.valueOf() : now
+	const rawElapsed = endTime - start.valueOf()
+
+	// if paused, the "full" duration is start <-> time of current pause
+	// if not, it's start <-> now
+
+	// then we substract the time we spent paused from that
+	const elapsed =
+		(timeOfCurrentPause
+			? timeOfCurrentPause - start.valueOf()
+			: rawElapsed) - pauseDuration
+
 	const days = Math.floor(elapsed / (1000 * 60 * 60 * 24))
 	const hours = Math.floor(
 		(elapsed % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)

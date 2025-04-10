@@ -189,6 +189,7 @@ function RouteComponent() {
 							slot: 12345n,
 						},
 						status: { type: 'active' },
+						pauseHistory: [],
 					}}
 				/>
 			</Section>

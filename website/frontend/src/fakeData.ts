@@ -49,6 +49,7 @@ export const fakeRunSummaries: RunSummary[] = [
 		size: BigInt('1000000000'),
 		arch: 'HfLlama',
 		type: 'vision',
+		pauseHistory: []
 	},
 	{
 		id: 'run-002',
@@ -62,6 +63,7 @@ export const fakeRunSummaries: RunSummary[] = [
 		size: BigInt('2000000000'),
 		arch: 'HfLlama',
 		type: 'text',
+		pauseHistory: []
 	},
 	{
 		id: 'run-003',
@@ -78,6 +80,7 @@ export const fakeRunSummaries: RunSummary[] = [
 		size: BigInt('500000000'),
 		arch: 'HfLlama',
 		type: 'text',
+		pauseHistory: []
 	},
 ]
 

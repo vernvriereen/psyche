@@ -331,9 +331,13 @@ function makeRunSummary(run: RunHistory, index: number): RunSummary | null {
 						at: run.lastUpdated,
 					}
 				: {
-						type: 'active',
+						type:
+							run.pauseTimestamps.at(-1)?.[0] === 'paused'
+								? 'paused'
+								: 'active',
 					},
 		startTime: run.createdAt,
+		pauseHistory: run.pauseTimestamps,
 		totalTokens,
 		completedTokens,
 		size: run.lastState.metadata.num_parameters,

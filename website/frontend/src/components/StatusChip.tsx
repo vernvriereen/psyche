@@ -1,5 +1,5 @@
 import { styled } from '@linaria/react'
-import { forest, lime, success } from '../colors.js'
+import { forest, gold, lime, success } from '../colors.js'
 import { text } from '../fonts.js'
 import { c } from '../utils.js'
 import { css } from '@linaria/core'
@@ -12,6 +12,7 @@ const colors: Record<RunStatus['type'], string> = {
 	active: success[400],
 	funding: lime[300],
 	completed: forest[500],
+	paused: gold[300]
 }
 
 const StatusChipContainer = styled.div`
