@@ -230,14 +230,6 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			return null
 		}
 
-		const lastWitnessUpdate = run.witnessUpdates.at(-1)
-		const summary: Metrics = {
-			bandwidth: lastWitnessUpdate?.[0].bandwidth_per_sec ?? 0,
-			loss: lastWitnessUpdate?.[0].loss ?? Infinity,
-			tokensPerSecond: lastWitnessUpdate?.[0].tokens_per_sec ?? 0,
-			evals: {},
-		}
-
 		const evals: Record<string, Array<{ step: number; value: number }>> = {}
 		for (const [r] of run.witnessUpdates) {
 			for (const { name, value } of r.evals) {
@@ -261,6 +253,18 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 				.map(([h]) => ({ step: h.step, value: h.tokens_per_sec }))
 				.filter(goodNumber),
 			evals,
+		}
+
+		const lastWitnessUpdate = run.witnessUpdates.at(-1)
+		const summary: Metrics = {
+			bandwidth: lastWitnessUpdate?.[0].bandwidth_per_sec ?? 0,
+			loss: lastWitnessUpdate?.[0].loss ?? Infinity,
+			tokensPerSecond: lastWitnessUpdate?.[0].tokens_per_sec ?? 0,
+			evals: Object.fromEntries(
+				Object.entries(evals)
+					.map(([k, v]) => [k, v.at(-1)?.value] as const)
+					.filter((x): x is [string, number] => x[1] !== undefined)
+			),
 		}
 		return {
 			info,
