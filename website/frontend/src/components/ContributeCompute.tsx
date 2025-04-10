@@ -264,13 +264,12 @@ export function ContributeCompute({
 			return
 		}
 		const color = isDarkMode ? forest[300] : forest[500]
-		const cancel = createSphereAnimation(canvasRef.current, color)
-		return () => cancel.cancel()
+		return createSphereAnimation(canvasRef.current, color)
 	}, [isDarkMode])
 	const { width = 0, height = 0 } = useWindowSize()
 
 	const canvasSize = useMemo(
-		() => 256 * window.devicePixelRatio,
+		() => 256,
 		[width, height]
 	)
 

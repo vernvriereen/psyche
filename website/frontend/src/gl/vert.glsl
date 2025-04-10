@@ -10,6 +10,9 @@ varying float noiseAmt2;
 varying vec3 fragNrm;
 varying vec3 fragWorldPos;
 
+uniform vec2 mousePos;
+uniform bool mouseIn;
+
 #include noise.glsl
 
 float noise(vec3 x) {
@@ -45,6 +48,11 @@ void main() {
            -sin(rotationAngle), 0.0, cos(rotationAngle));
 
   vec3 P = rotationMatrix * position * d;
+
+  vec3 repulsionDir = vec3(mousePos.x, mousePos.y, P.z);
+  float distToMouse = length(P - repulsionDir);
+  float pushStrength = 0.03 / max(0.2, distToMouse * 1.);
+  P += normalize(P - repulsionDir) * pushStrength * float(mouseIn);
 
   vec3 T = rotationMatrix * (calc(phi + e, theta) - position * d);
   vec3 B = rotationMatrix * (calc(phi, theta - e) - position * d);
