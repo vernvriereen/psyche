@@ -374,12 +374,8 @@ impl SolanaBackend {
         coordinator_account: Pubkey,
         id: psyche_solana_coordinator::ClientId,
     ) -> Result<Signature> {
-        let client_version = Version::new_from_str(
-            CLIENT_VERSION_MAJOR,
-            CLIENT_VERSION_MINOR,
-            CLIENT_VERSION_PATCH,
-        )
-        .map_err(|_| anyhow!("❌ Failed to join run: Invalid Version"))?;
+        self.check_coordinator_version_matches(coordinator_account)
+            .await?;
 
         let coordinator_instance_state =
             self.get_coordinator_instance(&coordinator_instance).await?;
@@ -388,7 +384,7 @@ impl SolanaBackend {
             &system_program::ID,
             psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE,
         );
-        let result = self
+        let signature = self
             .program_coordinator
             .request()
             .accounts(psyche_solana_coordinator::accounts::JoinRunAccounts {
@@ -398,27 +394,11 @@ impl SolanaBackend {
                 coordinator_account,
             })
             .args(psyche_solana_coordinator::instruction::JoinRun {
-                params: psyche_solana_coordinator::logic::JoinRunParams {
-                    client_id: id,
-                    client_version,
-                },
+                params: psyche_solana_coordinator::logic::JoinRunParams { client_id: id },
             })
             .send()
-            .await;
-
-        if let Ok(signature) = result {
-            return Ok(signature);
-        }
-
-        let error = result.unwrap_err();
-        let error_string = error.to_string();
-
-        if error_string.contains("-32002") && error_string.contains("Client version mismatch") {
-            bail!("❌ Failed to join run. Version mismatch error: Client version ({}) is incompatible with coordinator version. Please update your client.", 
-                  client_version);
-        } else {
-            Err(anyhow!("❌ Failed to join run: {}", error_string))
-        }
+            .await?;
+        Ok(signature)
     }
     pub async fn update_config_and_model(
         &self,
@@ -566,6 +546,36 @@ impl SolanaBackend {
 
     pub async fn get_balance(&self, account: &Pubkey) -> Result<u64> {
         Ok(self.program_coordinator.rpc().get_balance(account).await?)
+    }
+
+    async fn check_coordinator_version_matches(&self, coordinator_account: Pubkey) -> Result<()> {
+        let client_version = Version::new_from_str(
+            CLIENT_VERSION_MAJOR,
+            CLIENT_VERSION_MINOR,
+            CLIENT_VERSION_PATCH,
+        )
+        .map_err(|_| anyhow!("❌ Failed to join run: Invalid Version"))?;
+
+        let coordinator_account_instance =
+            self.get_coordinator_account(&coordinator_account).await?;
+        let coordinator_version = coordinator_account_instance.state.version;
+
+        debug!("Coordinator Version: {}", coordinator_version);
+        // Both MAJOR and MINOR versions must match on client and coordinator (MAJOR.MINOR.PATCH)
+        if client_version.major != coordinator_version.major
+            || client_version.minor != coordinator_version.minor
+        {
+            bail!("❌ Failed to join run: Client version ({}) is incompatible with coordinator version ({})",
+                  client_version, coordinator_version);
+        }
+        // If the patch (x.y.PATCH) version is different, log a warning but don't bail
+        if client_version.patch != coordinator_version.patch {
+            warn!(
+                "⚠️ Warn. Client patch version mismatch, client: {}, coordinator: {}",
+                client_version, coordinator_version
+            );
+        }
+        Ok(())
     }
 }
 

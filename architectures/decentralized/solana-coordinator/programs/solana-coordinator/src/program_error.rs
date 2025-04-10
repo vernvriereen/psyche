@@ -15,9 +15,6 @@ pub enum ProgramError {
     #[msg("Client id mismatch")]
     ClientIdMismatch,
 
-    #[msg("Client version mismatch")]
-    ClientVersionMismatch,
-
     #[msg("Clients list full")]
     ClientsFull,
 
@@ -26,6 +23,9 @@ pub enum ProgramError {
 
     #[msg("Model sanity check failed")]
     ModelSanityCheckFailed,
+
+    #[msg("Invalid version")]
+    InvalidVersion,
 
     #[msg("Signer not a client")]
     SignerNotAClient,

@@ -266,32 +266,7 @@ impl CoordinatorInstanceState {
         Ok(())
     }
 
-    pub fn join_run(
-        &mut self,
-        id: ClientId,
-        client_version: Version,
-    ) -> Result<()> {
-        // Both MAJOR and MINOR versions must match on client and coordinator (MAJOR.MINOR.PATCH)
-        if client_version.major != self.version.major
-            || client_version.minor != self.version.minor
-        {
-            msg!(
-                "Error. Client version mismatch, coordinator: {}, client: {}",
-                self.version,
-                client_version
-            );
-            return err!(ProgramError::ClientVersionMismatch);
-        }
-
-        // If the patch (x.y.PATCH) version is different, log a warning but don't error on the client
-        if client_version.patch != self.version.patch {
-            msg!(
-                "Warn. Client patch version mismatch, coordinator: {}, client: {}",
-                self.version,
-                client_version
-            )
-        };
-
+    pub fn join_run(&mut self, id: ClientId) -> Result<()> {
         let exisiting = match self
             .clients_state
             .clients
