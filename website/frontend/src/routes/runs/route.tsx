@@ -38,6 +38,9 @@ const MainContents = styled.div`
 		grid-template-columns: 1fr;
 		padding: 16px;
 	}
+	@container (width < 400px) {
+		padding: 4px;
+	}
 	& > * {
 		background: var(--color-bg);
 	}

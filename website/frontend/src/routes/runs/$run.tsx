@@ -24,6 +24,10 @@ const RunContainer = styled.div`
 	padding: 0 24px;
 	container-type: inline-size;
 	height: 100%;
+	
+	@container (width < 400px) {
+		padding: 0 8px;
+	}
 `
 
 const RunHeader = styled.div`
@@ -114,6 +118,10 @@ const RunContents = styled.div`
 	flex-direction: column;
 	gap: 24px;
 	padding: 24px;
+
+	@container (width < 400px) {
+		padding: 24px 8px;
+	}
 `
 
 const HistoryContainer = styled.div`

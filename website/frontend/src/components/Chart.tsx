@@ -66,6 +66,8 @@ const Title = styled.div`
 	color: ${(props) => props.color};
 	pointer-events: none;
 	text-transform: uppercase;
+	display: flex;
+	justify-content: space-between;
 `
 
 const WaitingForData = styled.div`
@@ -77,59 +79,57 @@ const WaitingForData = styled.div`
 
 function findNiceDivisor(max: number, targetDivisions: number): number {
 	// Calculate the rough step size
-	const roughStep = max / targetDivisions;
-	
+	const roughStep = max / targetDivisions
+
 	// Find the magnitude of the rough step
-	const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)));
-	
+	const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)))
+
 	// Consider candidates: 1, 2, 5, 10 times the magnitude
 	const candidates = [
-	  1 * magnitude, 
-	  2 * magnitude, 
-	  5 * magnitude, 
-	  10 * magnitude
-	];
-	
+		1 * magnitude,
+		2 * magnitude,
+		5 * magnitude,
+		10 * magnitude,
+	]
+
 	// Find the candidate that gives the closest number of divisions to target
-	let bestCandidate = candidates[0];
-	let bestDiff = Math.abs(max / bestCandidate - targetDivisions);
-	
+	let bestCandidate = candidates[0]
+	let bestDiff = Math.abs(max / bestCandidate - targetDivisions)
+
 	for (let i = 1; i < candidates.length; i++) {
-	  const divisions = max / candidates[i];
-	  const diff = Math.abs(divisions - targetDivisions);
-	  
-	  if (diff < bestDiff) {
-		bestCandidate = candidates[i];
-		bestDiff = diff;
-	  }
+		const divisions = max / candidates[i]
+		const diff = Math.abs(divisions - targetDivisions)
+
+		if (diff < bestDiff) {
+			bestCandidate = candidates[i]
+			bestDiff = diff
+		}
 	}
-	
-	return bestCandidate;
-  }
 
+	return bestCandidate
+}
 
-  function integerMarkers(
+function integerMarkers(
 	domain: [number, number],
 	targetMarkers: number,
 	oneOver: boolean = false
-  ): number[] {
-	const [min, max] = domain;
-	const range = max - min;
-	
-	const step = findNiceDivisor(range, targetMarkers);
-	const firstMarker = Math.ceil(min / step) * step;
-	const markers: number[] = [];
-	
-	for (let marker = firstMarker; marker <= max; marker += step) {
-	  markers.push(Number(marker.toFixed(10)));
-	}
-	if(oneOver && (markers.at(-1) ?? 0 < max)) {
-		markers.push(firstMarker + (markers.length *step))
-	}
-	
-	return markers;
-  }
+): number[] {
+	const [min, max] = domain
+	const range = max - min
 
+	const step = findNiceDivisor(range, targetMarkers)
+	const firstMarker = Math.ceil(min / step) * step
+	const markers: number[] = []
+
+	for (let marker = firstMarker; marker <= max; marker += step) {
+		markers.push(Number(marker.toFixed(10)))
+	}
+	if (oneOver && (markers.at(-1) ?? 0 < max)) {
+		markers.push(firstMarker + markers.length * step)
+	}
+
+	return markers
+}
 
 // overcomplicated logic to make sure min & max are never both the same OR 0,
 // lest we infinite loop trying to do tick markets.
@@ -153,27 +153,46 @@ const scaleFuncs: Record<'linear' | 'power', typeof scaleLinear> = {
 
 const LineGraphInner: React.FC<
 	LineGraphProps & { width: number; height: number }
-> = ({ xLabel, renderValue, title: rawTitle, width, height, line, scale, forceMinX = 0 }) => {
+> = ({
+	xLabel,
+	renderValue,
+	title: rawTitle,
+	width,
+	height,
+	line,
+	scale,
+	forceMinX = 0,
+}) => {
 	const xMax = width - margin.left - margin.right - padding.left
 	const yMax = height - margin.bottom - padding.bottom
 
 	const scaleKind = scale === undefined ? 'linear' : scale
 
-	const xScale = useMemo(() => scaleLinear<number>({
-		domain: scaleDomainToEnsureSpace([forceMinX, ...line.points.map((d) => d.x)]),
-		range: [0, xMax],
-	}), [line, xMax])
+	const xScale = useMemo(
+		() =>
+			scaleLinear<number>({
+				domain: scaleDomainToEnsureSpace([
+					forceMinX,
+					...line.points.map((d) => d.x),
+				]),
+				range: [0, xMax],
+			}),
+		[line, xMax]
+	)
 
-
-	const yScale = useMemo(() => scaleFuncs[scaleKind]<number>({
-		domain: scaleDomainToEnsureSpace(line.points.map((d) => d.y)),
-		range: [yMax, 0],
-		...(scaleKind === 'power'
-			? {
-					exponent: 10,
-				}
-			: {}),
-	}), [scaleKind, yMax, line])
+	const yScale = useMemo(
+		() =>
+			scaleFuncs[scaleKind]<number>({
+				domain: scaleDomainToEnsureSpace(line.points.map((d) => d.y)),
+				range: [yMax, 0],
+				...(scaleKind === 'power'
+					? {
+							exponent: 10,
+						}
+					: {}),
+			}),
+		[scaleKind, yMax, line]
+	)
 
 	const [tooltipData, setTooltipData] = useState<{
 		x: number
@@ -255,26 +274,31 @@ const LineGraphInner: React.FC<
 	const numXMarkers = width / 96
 	const numYMarkers = height / 32
 
-	const verticalLinePositions = useMemo(() => integerMarkers(
-		[xDomain[0], xDomain[1]],
-		numXMarkers
-	), [xDomain, numXMarkers])
+	const verticalLinePositions = useMemo(
+		() => integerMarkers([xDomain[0], xDomain[1]], numXMarkers),
+		[xDomain, numXMarkers]
+	)
 
-
-	const horizontalLinePositions = useMemo(() => integerMarkers(
-		[yDomain[0], yDomain[1]],
-		numYMarkers,
-	), [yDomain, numYMarkers])
+	const horizontalLinePositions = useMemo(
+		() => integerMarkers([yDomain[0], yDomain[1]], numYMarkers),
+		[yDomain, numYMarkers]
+	)
 
 	const centerLineThickness = 1
 	const plusSize = 6
 	const plusThickness = 1
 
+	const lastYValue = line.points.at(-1)!.y
+
 	return (
 		<GraphContainer>
 			{title && (
 				<Title color={labelColor} className={text['body/sm/semibold']}>
-					{title}
+					<span>{title}</span>
+					<span>
+						[{(renderValue ?? ((x) => x.toFixed(1)))(lastYValue)}
+						{line.unit}]
+					</span>
 				</Title>
 			)}
 			<svg width={width} height={height} style={{ position: 'absolute' }}>
@@ -329,14 +353,13 @@ const LineGraphInner: React.FC<
 										{...tickProps}
 										dy={'0.5ch'}
 										fill={labelColor}
-
 									>
 										{formattedValue}
 									</text>
 								)
 							)
 						}}
-						/>
+					/>
 				</Group>
 				<Group left={margin.left} top={padding.bottom}>
 					<Axis
@@ -346,7 +369,7 @@ const LineGraphInner: React.FC<
 						hideAxisLine
 						hideTicks
 						tickFormat={(value) =>
-								`${value.valueOf() >= 0 ? '' : '-'}${(renderValue ?? ((x) => x.toFixed(1)))(value.valueOf()).slice(0, 7)}`
+							`${value.valueOf() >= 0 ? '' : '-'}${(renderValue ?? ((x) => x.toFixed(1)))(value.valueOf()).slice(0, 7)}`
 						}
 						tickComponent={({ formattedValue, ...tickProps }) => {
 							return (
@@ -355,7 +378,6 @@ const LineGraphInner: React.FC<
 										{...tickProps}
 										dy={'0.5ch'}
 										fill={labelColor}
-
 									>
 										{formattedValue}
 									</text>
