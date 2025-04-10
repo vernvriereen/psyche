@@ -4,7 +4,9 @@ use bollard::container::StartContainerOptions;
 use bollard::{container::KillContainerOptions, Docker};
 use psyche_client::IntegrationTestLogMarker;
 use psyche_coordinator::{model::Checkpoint, RunState};
-use psyche_decentralized_testing::docker_setup::e2e_testing_setup_subscription;
+use psyche_decentralized_testing::docker_setup::{
+    e2e_testing_setup_subscription, e2e_testing_setup_three_clients,
+};
 use psyche_decentralized_testing::{
     chaos::{ChaosAction, ChaosScheduler},
     docker_setup::{
@@ -242,11 +244,10 @@ async fn test_rejoining_client_delay() {
     }
 }
 
-/// creates a run and spawns 2 clients
-/// the first run is completed only by the client that joins first
-/// the second run starts with both clients and shuts down client 2 mid-run
-/// verifies the Healthcheck is sent and the shutdown client is kicked from the run
-#[ignore = "We no longer support all clients being witnesses so this test should be updated to check that the non witness client is kicked"]
+/// creates a run and spawns 3 clients
+/// Then we kill a client, and we verify that the other two clients are still alive and
+/// two healthchecks have been sent by those alive clients.
+#[ignore = "This test needs at least 3 GPUs to run since we are running 3 clients"]
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
 async fn disconnect_client() {
@@ -258,7 +259,13 @@ async fn disconnect_client() {
     // initialize a Solana run with 2 client
     let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
     let mut watcher = DockerWatcher::new(docker.clone());
-    let _cleanup = e2e_testing_setup(docker.clone(), 1, None).await;
+    let _cleanup = e2e_testing_setup_three_clients(
+        docker.clone(),
+        Some(PathBuf::from(
+            "../../../config/solana-test/config-three-clients.toml",
+        )),
+    )
+    .await;
 
     let _monitor_client_1 = watcher
         .monitor_container(
@@ -268,12 +275,10 @@ async fn disconnect_client() {
                 IntegrationTestLogMarker::HealthCheck,
                 IntegrationTestLogMarker::UntrainedBatches,
                 IntegrationTestLogMarker::WitnessElected,
+                IntegrationTestLogMarker::Loss,
             ],
         )
         .unwrap();
-
-    tokio::time::sleep(Duration::from_secs(40)).await;
-    spawn_new_client(docker.clone()).await.unwrap();
 
     let _monitor_client_2 = watcher
         .monitor_container(
@@ -283,6 +288,20 @@ async fn disconnect_client() {
                 IntegrationTestLogMarker::HealthCheck,
                 IntegrationTestLogMarker::UntrainedBatches,
                 IntegrationTestLogMarker::WitnessElected,
+                IntegrationTestLogMarker::Loss,
+            ],
+        )
+        .unwrap();
+
+    let _monitor_client_3 = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-3"),
+            vec![
+                IntegrationTestLogMarker::StateChange,
+                IntegrationTestLogMarker::HealthCheck,
+                IntegrationTestLogMarker::UntrainedBatches,
+                IntegrationTestLogMarker::WitnessElected,
+                IntegrationTestLogMarker::Loss,
             ],
         )
         .unwrap();
@@ -290,16 +309,17 @@ async fn disconnect_client() {
     // initialize solana client to query the coordinator state
     let solana_client = SolanaTestClient::new(run_id).await;
 
-    // step where the healhcheck are send
-    let mut health_check_step: Vec<u64> = Vec::new();
-    let mut witness_client = "".to_string();
-    // untrained batches
+    let mut seen_health_checks: Vec<u64> = Vec::new();
     let mut untrained_batches: Vec<Vec<u64>> = Vec::new();
     let mut killed_client = false;
 
     while let Some(response) = watcher.log_rx.recv().await {
         match response {
-            Response::StateChange(_timestamp, _client_id, old_state, new_state, epoch, step) => {
+            Response::StateChange(_timestamp, client_id, old_state, new_state, epoch, step) => {
+                println!(
+                    "step: {} state change client {} - {}=>{}",
+                    step, client_id, old_state, new_state
+                );
                 let epoch_clients = solana_client.get_current_epoch_clients().await;
 
                 if old_state == RunState::WaitingForMembers.to_string() {
@@ -312,44 +332,29 @@ async fn disconnect_client() {
 
                 // kill client during step 2 in the RoundWitness state
                 if epoch == 1
-                    && step == 25
+                    && step == 15
                     && old_state == RunState::RoundTrain.to_string()
                     && !killed_client
                 {
-                    assert_eq!(epoch_clients.len(), 2);
-
-                    // kill client container
-                    // take into account that it can take some time to the container to shutdown
-                    // so the client can continue training for some extra steps
-                    if witness_client == format!("{CLIENT_CONTAINER_PREFIX}-1") {
-                        println!("STOP NODE 2");
-                        watcher
-                            .kill_container(&format!("{CLIENT_CONTAINER_PREFIX}-2"))
-                            .await
-                            .unwrap();
-                    } else {
-                        println!("STOP NODE 1");
-                        watcher
-                            .kill_container(&format!("{CLIENT_CONTAINER_PREFIX}-1"))
-                            .await
-                            .unwrap();
-                    }
-                    // watcher.kill_container(&witness_client).await.unwrap();
-                    // println!("Killed client: {}", witness_client);
+                    assert_eq!(epoch_clients.len(), 3);
+                    // Kill any client, since all are witnesses
+                    watcher
+                        .kill_container(&format!("{CLIENT_CONTAINER_PREFIX}-1"))
+                        .await
+                        .unwrap();
+                    println!("Killed client: {CLIENT_CONTAINER_PREFIX}-1");
                     killed_client = true;
                 }
 
-                // one step after the healthcheck was send
-                // the unhealthy client should be removed
-                if !health_check_step.is_empty()
-                    && health_check_step[0] + 1 == step
-                    && new_state == RunState::RoundTrain.to_string()
+                if killed_client
+                    && !seen_health_checks.is_empty()
+                    && new_state == RunState::Cooldown.to_string()
                 {
-                    // assert idle client was kicked
-                    assert_eq!(epoch_clients.len(), 1);
+                    assert_eq!(epoch_clients.len(), 2, "Client 2 should have been kicked");
+                    break;
                 }
 
-                // finish test
+                // In case we never see the health_checks, run up to max epochs
                 if epoch == num_of_epochs_to_run {
                     println!("NUMBER OF EPOCHS REACHED");
                     break;
@@ -366,7 +371,7 @@ async fn disconnect_client() {
                     .iter()
                     .map(|client| client.id.to_string())
                     .collect();
-                health_check_step.push(current_step);
+                seen_health_checks.push(current_step);
                 assert!(clients_ids.contains(&unhealthy_client_id));
             }
 
@@ -378,19 +383,32 @@ async fn disconnect_client() {
 
             Response::WitnessElected(container_name) => {
                 println!("Found witness client in: {container_name}");
-                witness_client = container_name;
+            }
+
+            Response::Loss(client, epoch, step, loss) => {
+                println!(
+                    "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                    client, epoch, step, loss
+                );
             }
             _ => {}
         }
     }
 
-    // assert that just one healthcheck was send
-    assert_eq!(health_check_step.len(), 1);
+    // assert that two healthchecks were sent, by the alive clients
+    assert_eq!(
+        seen_health_checks.len(),
+        2,
+        "Two healthchecks should have been sent"
+    );
 
     // check how many batches where lost due to the client shutdown
     // ideally, we should only lose 2 batches (The ones assigned in the step where it didn't train and the ones where it ran the Health Check and gets kicked)
     // see issue: https://github.com/NousResearch/psyche/issues/269
-    assert!(untrained_batches.len() <= 3);
+    assert!(
+        untrained_batches.len() <= 3,
+        "Num of untrained batches should be less than 4"
+    );
 }
 
 // Drop a client below the minimum required, go to WaitingForMembers
