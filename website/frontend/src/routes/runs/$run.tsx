@@ -255,7 +255,7 @@ function RouteComponent() {
 						{Object.entries(run.metrics.summary.evals).length >
 							3 && (
 							<RadialContainer>
-								<RadialGraph data={run.metrics.summary.evals} />
+								<RadialGraph data={run.metrics.summary.evals} formatValue={v => `${(+(v * 100).toFixed(2))}%`}/>
 							</RadialContainer>
 						)}
 						<StatBoxes>

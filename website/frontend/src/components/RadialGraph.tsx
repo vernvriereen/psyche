@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react'
+import { useRef, useMemo, Fragment } from 'react'
 import { Group } from '@visx/group'
 import { Circle, LineRadial } from '@visx/shape'
 import { scaleLinear } from '@visx/scale'
@@ -8,8 +8,15 @@ import { ParentSize } from '@visx/responsive'
 import { useDarkMode } from 'usehooks-ts'
 import { forest, slate } from '../colors.js'
 import { Text, TextProps } from '@visx/text'
+type FormatValue = (v: number) => string
 
-export function RadialGraph({ data }: { data: Record<string, number> }) {
+export function RadialGraph({
+	data,
+	formatValue,
+}: {
+	data: Record<string, number>
+	formatValue?: FormatValue
+}) {
 	return (
 		<ParentSize debounceTime={10}>
 			{({ width: visWidth, height: visHeight }) => (
@@ -17,6 +24,7 @@ export function RadialGraph({ data }: { data: Record<string, number> }) {
 					data={data}
 					width={visWidth}
 					height={visHeight}
+					formatValue={formatValue}
 				/>
 			)}
 		</ParentSize>
@@ -33,10 +41,12 @@ function RadialGraphInner({
 	data,
 	width,
 	height,
+	formatValue
 }: {
 	data: Record<string, number>
 	width: number
 	height: number
+	formatValue?: FormatValue
 }) {
 	const lineRef = useRef<SVGPathElement>(null)
 
@@ -217,9 +227,8 @@ function RadialGraphInner({
 						} as const
 
 						return (
-							<>
+							<Fragment key={`${k}-label`}>
 								<Text
-									key={`${k}-k`}
 									x={position[0][0]}
 									y={position[0][1]}
 									{...textProps}
@@ -227,14 +236,13 @@ function RadialGraphInner({
 									{k}
 								</Text>
 								<Text
-									key={`${k}-v`}
 									x={position[1][0]}
 									y={position[1][1]}
 									{...textProps}
 								>
-									{v.toFixed(2)}
+									{formatValue ? formatValue(v) : +v.toFixed(2)}
 								</Text>
-							</>
+							</Fragment>
 						)
 					})}
 				</Group>
