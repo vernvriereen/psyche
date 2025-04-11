@@ -2,7 +2,14 @@ import { ErrorComponentProps } from '@tanstack/react-router'
 import { Header } from './Header.js'
 import { styled } from '@linaria/react'
 import { text } from '../fonts.js'
+import { Footer } from './Footer.js'
 
+const Outer = styled.div`
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	height: 100vh;
+`
 const Container = styled.div`
 	text-align: center;
 `
@@ -18,7 +25,7 @@ const ErrorContainer = styled.pre`
 `
 export function SiteBroken({ error }: ErrorComponentProps) {
 	return (
-		<div>
+		<Outer>
 			<Header />
 
 			<Container>
@@ -31,7 +38,9 @@ export function SiteBroken({ error }: ErrorComponentProps) {
 					{'\n'}
 					{error.message}
 				</ErrorContainer>
+				<div className="grow" />
 			</Container>
-		</div>
+			<Footer />
+		</Outer>
 	)
 }
