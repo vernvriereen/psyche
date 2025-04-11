@@ -70,6 +70,9 @@ struct Args {
     #[arg(long, default_value = "NousResearch/Llama-2-7b-hf")]
     model: String,
 
+    #[arg(long)]
+    revision: Option<String>,
+
     #[arg(long, default_value_t = 0.6)]
     temperature: f64,
 
@@ -192,7 +195,7 @@ fn main() -> Result<()> {
             .map(|x| x.unwrap().path())
             .collect::<Vec<_>>()
     } else {
-        download_model_repo_sync(&args.model.clone(), None, None, None, true)?
+        download_model_repo_sync(&args.model.clone(), args.revision.clone(), None, None, true)?
     };
     let tokenizer = auto_tokenizer(&repo_files)?;
 
