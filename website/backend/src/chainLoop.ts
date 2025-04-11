@@ -183,7 +183,7 @@ async function catchupOnTxsToAddress(
 	}
 
 	console.log(
-		`[${name}] fetching ${allSignatures.length} transactions catching up from ${lastProcessedSlot} to ${oldestSeenSignature ?? latestSlotHeight}`
+		`[${name}] fetching ${allSignatures.length} transactions catching up from ${lastProcessedSlot} to ${oldestSeenSignature?.slot ?? latestSlotHeight}`
 	)
 
 	let completedCount = 0

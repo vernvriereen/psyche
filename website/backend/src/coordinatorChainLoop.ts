@@ -286,7 +286,7 @@ export async function startWatchCoordinatorChainLoop(
 							const { coordinatorAccountAddress } =
 								latestRun.lastUpdated
 							console.log(
-								`[coordinator] fetching state for run ${coordinatorAccountAddress}, last updated at slot ${latestRun.lastUpdated.timestamp.slot}`
+								`[coordinator] fetching state for run ${addr}, whose coordinator PDA lives at ${coordinatorAccountAddress}, we saw updated at slot ${latestRun.lastUpdated.timestamp.slot}`
 							)
 							return getRunCoordinatorState(
 								coordinator.provider,
