@@ -12,7 +12,7 @@ use psyche_decentralized_testing::{
     docker_setup::{
         e2e_testing_setup, kill_all_clients, spawn_new_client, spawn_new_client_with_monitoring,
     },
-    docker_watcher::{DockerWatcher, Response},
+    docker_watcher::{DockerWatcher, ObservedErrorKind, Response},
     utils::SolanaTestClient,
     CLIENT_CONTAINER_PREFIX, NGINX_PROXY_PREFIX,
 };
@@ -744,37 +744,245 @@ async fn test_solana_subscriptions() {
     let expected_subscription_events = vec![
         // init subscriptions
         (
-            format!(r#""ws://{NGINX_PROXY_PREFIX}-2:8902/ws/""#).into(),
+            format!(r#""ws://{NGINX_PROXY_PREFIX}-2:8902/ws/""#),
             "Subscription Up".into(),
         ),
         (
-            format!(r#""ws://{NGINX_PROXY_PREFIX}-1:8901/ws/""#).into(),
+            format!(r#""ws://{NGINX_PROXY_PREFIX}-1:8901/ws/""#),
             "Subscription Up".into(),
         ),
         (
-            format!(r#""ws://{NGINX_PROXY_PREFIX}-1:8901/ws/""#).into(),
+            format!(r#""ws://{NGINX_PROXY_PREFIX}-1:8901/ws/""#),
             "Subscription Up".into(),
         ),
         // proxy 1 shutdown and reconnection
         (
-            format!(r#""ws://{NGINX_PROXY_PREFIX}-1:8901/ws/""#).into(),
+            format!(r#""ws://{NGINX_PROXY_PREFIX}-1:8901/ws/""#),
             "Subscription Down".into(),
         ),
         (
-            format!(r#""ws://{NGINX_PROXY_PREFIX}-1:8901/ws/""#).into(),
+            format!(r#""ws://{NGINX_PROXY_PREFIX}-1:8901/ws/""#),
             "Subscription Up".into(),
         ),
         // proxy 2 shutdown and reconnection
         (
-            format!(r#""ws://{NGINX_PROXY_PREFIX}-2:8902/ws/""#).into(),
+            format!(r#""ws://{NGINX_PROXY_PREFIX}-2:8902/ws/""#),
             "Subscription Down".into(),
         ),
         (
-            format!(r#""ws://{NGINX_PROXY_PREFIX}-2:8902/ws/""#).into(),
+            format!(r#""ws://{NGINX_PROXY_PREFIX}-2:8902/ws/""#),
             "Subscription Up".into(),
         ),
     ];
 
     assert_eq!(subscription_events, expected_subscription_events[3..]);
     println!("subscription_events: {subscription_events:?}");
+}
+
+/// This test creates a packet loss of 100% during 40 seconds, effectively disconnecting the client.
+/// When this happens, what happens is not deterministic and can change slightly in each execution:
+/// 1. An error does not occur and the client is not disconnected, in which the test passes.
+/// 2. InvalidRunState is observed, which is fatal. In that case we check the client has disconnected.
+/// 3. InvalidWitness is observed, which is fatal. In that case we check the client has disconnected.
+#[rstest]
+#[trace]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
+async fn test_total_packet_loss_in_client() {
+    let n_clients = 2;
+    let chaos_step = 5;
+    let run_id = "test".to_string();
+    let num_of_epochs_to_run = 2;
+    let mut current_epoch = -1;
+    let mut last_epoch_loss = f64::MAX;
+
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+
+    let _cleanup = e2e_testing_setup(
+        docker.clone(),
+        n_clients,
+        Some(PathBuf::from(
+            "../../config/solana-test/light-two-min-clients.toml",
+        )),
+    )
+    .await;
+
+    let solana_client = Arc::new(SolanaTestClient::new(run_id).await);
+    for i in 1..=n_clients {
+        let _monitor_client: tokio::task::JoinHandle<
+            Result<(), psyche_decentralized_testing::docker_watcher::DockerWatcherError>,
+        > = watcher
+            .monitor_container(
+                &format!("{CLIENT_CONTAINER_PREFIX}-{}", i),
+                vec![
+                    IntegrationTestLogMarker::Loss,
+                    IntegrationTestLogMarker::Error,
+                ],
+            )
+            .unwrap();
+    }
+
+    // Sleep to let the coordinator to be deployed and run to be configured
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
+    let chaos_targets = vec![format!("{CLIENT_CONTAINER_PREFIX}-1")];
+
+    let chaos_scheduler = ChaosScheduler::new(docker.clone(), solana_client);
+    chaos_scheduler
+        .schedule_chaos(
+            ChaosAction::PacketLoss {
+                duration_secs: 10,
+                loss_percent: 100.0,
+                correlation: 0.0,
+                targets: chaos_targets.clone(),
+            },
+            chaos_step,
+        )
+        .await;
+
+    let mut liveness_check_interval = time::interval(Duration::from_secs(10));
+    println!("Train starting");
+
+    loop {
+        tokio::select! {
+           _ = liveness_check_interval.tick() => {
+           }
+           response = watcher.log_rx.recv() => {
+               if let Some(Response::Loss(client, epoch, step, loss)) = response {
+                   println!(
+                       "client: {:?}, epoch: {}, step: {}, Loss: {:?}",
+                       client, epoch, step, loss
+                   );
+                   if epoch == 1 {
+                        println!("Reached first epoch without errors. Test Successful.");
+                        return;
+                   }
+                   if epoch as i64 > current_epoch {
+                       current_epoch = epoch as i64;
+
+                       let Some(loss) = loss else {
+                           println!("Reached new epoch but loss was NaN");
+                           continue;
+                       };
+
+                       assert!(loss < last_epoch_loss);
+                       last_epoch_loss = loss;
+                       if epoch == num_of_epochs_to_run {
+                           return;
+                       }
+                   }
+               } else if let Some(Response::Error(error, message)) = response {
+                   println!("Error: {:?}, message: {}", error, message);
+                   // Wait two seconds to ensure the client is disconnected
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                   if error == ObservedErrorKind::Timeout {
+                       if watcher.monitor_clients_health(1).await.is_err() {
+                            println!("{:?} observed and client disconnected. Test successfully completed.", error);
+                            return;
+                       } else {
+                            panic!("{:?} observed but client wasn't disconnected. Test Failed.", error);
+                       }
+                    }
+                }
+           }
+        }
+    }
+}
+
+/// Test that verifies a second client can continue a run after the first client that started the run is killed
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+#[serial]
+async fn test_kill_original_client_after_join() {
+    // Initialize DockerWatcher
+    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
+    let mut watcher = DockerWatcher::new(docker.clone());
+
+    // Initialize a Solana run with 1 client, minimum 1 client
+    let _cleanup = e2e_testing_setup(
+        docker.clone(),
+        1,
+        Some(PathBuf::from("../../config/solana-test/light-config.toml")),
+    )
+    .await;
+
+    // Monitor the original client container
+    let _monitor_client_1 = watcher
+        .monitor_container(
+            &format!("{CLIENT_CONTAINER_PREFIX}-1"),
+            vec![
+                IntegrationTestLogMarker::StateChange,
+                IntegrationTestLogMarker::Loss,
+            ],
+        )
+        .unwrap();
+
+    let mut first_client_killed = false;
+    tokio::time::sleep(Duration::from_secs(30)).await;
+
+    // Join a second client
+    let second_client_id = format!("{CLIENT_CONTAINER_PREFIX}-2");
+    println!("Joining a second client to the run");
+    spawn_new_client(docker.clone()).await.unwrap();
+    let _monitor_client_2 = watcher
+        .monitor_container(
+            &second_client_id,
+            vec![
+                IntegrationTestLogMarker::StateChange,
+                IntegrationTestLogMarker::Loss,
+            ],
+        )
+        .unwrap();
+
+    loop {
+        tokio::select! {
+            response = watcher.log_rx.recv() => {
+                match response {
+                    Some(Response::StateChange(_timestamp, client_id, old_state, new_state, _epoch, _step)) => {
+                        println!(
+                            "State change for client {}: {} => {}",
+                            client_id, old_state, new_state
+                        );
+
+                        // When cooldown is reached and second client is joined, kill the first client
+                        if new_state == RunState::Cooldown.to_string() && !first_client_killed {
+                            println!("Cooldown reached, killing the first client");
+
+                            watcher
+                                .kill_container(&format!("{CLIENT_CONTAINER_PREFIX}-1"))
+                                .await
+                                .unwrap();
+
+                            first_client_killed = true;
+                            println!("First client killed, waiting to see if second client continues...");
+                        }
+
+                        if first_client_killed && new_state == RunState::WaitingForMembers.to_string() {
+                            println!("Second client is in WaitingForMembers after first client was killed");
+                            println!("Waiting a few seconds to see if the client has crashed...");
+                            tokio::time::sleep(Duration::from_secs(15)).await;
+                            if let Err(e) = watcher.monitor_client_health(&second_client_id).await {
+                                panic!("Second client has crashed after first client was killed. Test Failed. {}", e);
+                            }
+                            println!("Second client is still alive after first client was killed. Test Successful");
+                            return;
+                        }
+
+                        // If we already killed the 1st client and we're back to WaitingForMembers
+                    }
+                    Some(Response::Loss(client, epoch, step, loss)) => {
+                        if loss.is_none() {
+                            println!("Loss was NaN, skipping...");
+                            continue;
+                        }
+                        println!(
+                            "client: {:?}, epoch: {}, step: {}, Loss: {:?}",
+                            client, epoch, step, loss.unwrap()
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
 }

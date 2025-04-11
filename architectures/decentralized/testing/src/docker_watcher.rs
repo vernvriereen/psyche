@@ -43,7 +43,7 @@ pub enum DockerWatcherError {
     LogsError { inner: bollard::errors::Error },
 
     #[error("Client {0} has crashed")]
-    ClientCrashedError(u8),
+    ClientCrashedError(String),
 
     #[error("Invalid integration test log marker {0}")]
     IntegrationTestLogMarker(String),
@@ -337,11 +337,30 @@ impl DockerWatcher {
             match state.status {
                 Some(bollard::secret::ContainerStateStatusEnum::DEAD)
                 | Some(bollard::secret::ContainerStateStatusEnum::EXITED) => {
-                    return Err(DockerWatcherError::ClientCrashedError(i))
+                    return Err(DockerWatcherError::ClientCrashedError(container_name))
                 }
                 _ => continue,
             }
         }
         Ok(())
+    }
+
+    pub async fn monitor_client_health(
+        &self,
+        container_name: &str,
+    ) -> Result<(), DockerWatcherError> {
+        let container = self
+            .client
+            .inspect_container(container_name, None)
+            .await
+            .unwrap();
+        let state = container.state.unwrap();
+        match state.status {
+            Some(bollard::secret::ContainerStateStatusEnum::DEAD)
+            | Some(bollard::secret::ContainerStateStatusEnum::EXITED) => Err(
+                DockerWatcherError::ClientCrashedError(container_name.to_string()),
+            ),
+            _ => Ok(()),
+        }
     }
 }
