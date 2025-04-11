@@ -3,12 +3,15 @@ import { writeFile } from 'fs/promises'
 
 import path from 'path'
 import { psycheJsonReviver, psycheJsonReplacer, ContributionInfo } from 'shared'
-import { MiningPoolDataStore } from '../dataStore.js'
+import { LastUpdateInfo, MiningPoolDataStore } from '../dataStore.js'
 import { PsycheMiningPoolAccount } from '../idlTypes.js'
 import { PublicKey } from '@solana/web3.js'
 
 export class FlatFileMiningPoolDataStore implements MiningPoolDataStore {
-	#lastSlot: number = -1
+	#lastUpdateInfo: LastUpdateInfo = {
+		time: new Date(),
+		highestSignature: undefined
+	}
 	#programId: PublicKey
 	#data: {
 		totalDepositedCollateralAmount: bigint
@@ -32,14 +35,14 @@ export class FlatFileMiningPoolDataStore implements MiningPoolDataStore {
 
 		console.log('loading mining pool db from disk...')
 		try {
-			const { lastSlot, data, programId } = JSON.parse(
+			const { lastUpdateInfo, data, programId } = JSON.parse(
 				readFileSync(this.#db, 'utf-8'),
 				psycheJsonReviver
 			)
 			if (this.#programId.equals(programId)) {
-				this.#lastSlot = lastSlot
+				this.#lastUpdateInfo = lastUpdateInfo
 				this.#data = data
-				console.log(`loaded DB from disk at slot ${this.#lastSlot}`)
+				console.log(`loaded DB from disk. previous info state: time: ${this.#lastUpdateInfo.time}, ${JSON.stringify(this.#lastUpdateInfo.highestSignature)}`)
 			} else {
 				console.warn(
 					`Program ID for mining pool changed from ${programId} in saved state to ${this.#programId} in args. **Starting from a fresh database**.`
@@ -70,17 +73,17 @@ export class FlatFileMiningPoolDataStore implements MiningPoolDataStore {
 		this.#data.userDeposits.set(address, amount)
 	}
 
-	lastProcessedSlot(): number {
-		return this.#lastSlot
+	lastUpdate(): LastUpdateInfo {
+		return this.#lastUpdateInfo
 	}
 
-	async sync(lastProcessedSlot: number): Promise<void> {
-		this.#lastSlot = lastProcessedSlot
+	async sync(lastUpdateInfo: LastUpdateInfo): Promise<void> {
+		this.#lastUpdateInfo = lastUpdateInfo
 		await writeFile(
 			this.#db,
 			JSON.stringify(
 				{
-					lastSlot: this.#lastSlot,
+					lastUpdateInfo: this.#lastUpdateInfo,
 					data: this.#data,
 					programId: this.#programId
 				},

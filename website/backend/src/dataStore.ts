@@ -3,11 +3,19 @@ import { RunSummary, RunData, ContributionInfo, ChainTimestamp } from 'shared'
 import { PsycheMiningPoolAccount, WitnessMetadata } from './idlTypes.js'
 import { PublicKey } from '@solana/web3.js'
 
-export interface ChainDataStore {
-	lastProcessedSlot(): number
+export interface IndexedSignature {
+	signature: string
+	slot: number
+}
 
-	/// flush to disk
-	sync(lastProcessedSlot: number): Promise<void>
+export interface LastUpdateInfo {
+	time: Date
+	highestSignature?: IndexedSignature
+}
+
+export interface ChainDataStore {
+	lastUpdate(): LastUpdateInfo
+	sync(lastUpdateInfo: LastUpdateInfo): Promise<void>
 }
 
 export interface CoordinatorDataStore extends ChainDataStore {
@@ -16,7 +24,7 @@ export interface CoordinatorDataStore extends ChainDataStore {
 		runId: string,
 		timestamp: ChainTimestamp,
 		// it's possible that we never get a state, if the run was created then destroyed while we're offline.
-		newState?: PsycheCoordinator,
+		newState?: PsycheCoordinator
 	): void
 	updateRun(
 		pubkey: string,

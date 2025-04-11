@@ -12,7 +12,7 @@ import {
 	ChainTimestamp,
 	getRunPDA,
 } from 'shared'
-import { CoordinatorDataStore } from '../dataStore.js'
+import { CoordinatorDataStore, LastUpdateInfo } from '../dataStore.js'
 import { WitnessMetadata, WitnessEvalResult } from '../idlTypes.js'
 import { PublicKey } from '@solana/web3.js'
 
@@ -36,7 +36,10 @@ interface RunHistory {
 
 export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 	#runs: Map<string, RunHistory[]> = new Map()
-	#lastSlot: number = -1
+	#lastUpdateInfo: LastUpdateInfo = {
+		time: new Date(),
+		highestSignature: undefined
+	}
 	#db: string
 	#programId: PublicKey
 
@@ -45,14 +48,14 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		this.#programId = programId
 		console.log('loading coordinator db from disk...')
 		try {
-			const { lastSlot, runs, programId } = JSON.parse(
+			const { lastUpdateInfo, runs, programId } = JSON.parse(
 				readFileSync(this.#db, 'utf-8'),
 				psycheJsonReviver
 			)
 			if (this.#programId.equals(programId)) {
-				this.#lastSlot = lastSlot
+				this.#lastUpdateInfo = lastUpdateInfo
 				this.#runs = runs
-				console.log(`loaded DB from disk at slot ${this.#lastSlot}`)
+				console.log(`loaded DB from disk at slot ${this.#lastUpdateInfo}`)
 			} else {
 				console.warn(
 					`Program ID for coordinator changed from ${programId} in saved state to ${this.#programId} in args. **Starting from a fresh database**.`
@@ -79,13 +82,13 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		return lastRun
 	}
 
-	async sync(lastProcessedSlot: number) {
-		this.#lastSlot = lastProcessedSlot
+	async sync(lastUpdateInfo: LastUpdateInfo) {
+		this.#lastUpdateInfo = lastUpdateInfo
 		await writeFile(
 			this.#db,
 			JSON.stringify(
 				{
-					lastSlot: this.#lastSlot,
+					lastUpdateInfo: this.#lastUpdateInfo,
 					runs: this.#runs,
 					programId: this.#programId,
 				},
@@ -94,8 +97,8 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		)
 	}
 
-	lastProcessedSlot() {
-		return this.#lastSlot
+	lastUpdate() {
+		return this.#lastUpdateInfo
 	}
 
 	createRun(
@@ -145,6 +148,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 				`Tried to set run ${pubkey} to pause state ${newPauseState} at slot ${timestamp.slot}, but it's already in that state from pause change at slot ${lastPauseChange[1].slot}.`
 			)
 		}
+		lastRun.lastUpdated = timestamp
 		lastRun.pauseTimestamps.push([newPauseState, timestamp])
 	}
 

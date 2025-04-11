@@ -15,13 +15,9 @@ import {
 import { Connection } from '@solana/web3.js'
 import { makeRateLimitedFetch } from './rateLimitedFetch.js'
 
-const requiredEnvVars = [
-	'COORDINATOR_RPC',
-	'MINING_POOL_RPC',
-] as const
+const requiredEnvVars = ['COORDINATOR_RPC', 'MINING_POOL_RPC'] as const
 
 async function main() {
-
 	for (const v of requiredEnvVars) {
 		if (!process.env[v]) {
 			throw new Error(`env var ${v} is not set.`)
@@ -38,7 +34,6 @@ async function main() {
 			: new Connection(process.env.MINING_POOL_RPC!, {
 					fetch: makeRateLimitedFetch(),
 				})
-
 
 	const { coordinator, miningPool, cancel } =
 		await startIndexingChainToDataStores(
@@ -119,7 +114,7 @@ async function main() {
 			const data: ApiGetRun = {
 				run: matchingRun,
 				error: coordinatorError,
-				isOnlyRun: coordinator.dataStore.getRunSummaries().length === 1
+				isOnlyRun: coordinator.dataStore.getRunSummaries().length === 1,
 			}
 			res.header('content-type', 'application/json').send(
 				JSON.stringify(data, psycheJsonReplacer)
@@ -138,8 +133,12 @@ async function main() {
 					.map((r) => ({ id: r.id, status: r.status })),
 				chain: {
 					chainSlotHeight: await coordinatorRpc.getSlot('confirmed'),
-					indexedSlot: coordinator.dataStore.lastProcessedSlot(),
-					programId: process.env.COORDINATOR_PROGRAM_ID ?? coordinatorIdl.address,
+					indexedSlot:
+						coordinator.dataStore.lastUpdate().highestSignature
+							?.slot ?? 0,
+					programId:
+						process.env.COORDINATOR_PROGRAM_ID ??
+						coordinatorIdl.address,
 					networkGenesis: await coordinatorRpc.getGenesisHash(),
 				},
 			},
@@ -147,8 +146,12 @@ async function main() {
 				status: miningPoolError ? miningPoolError.toString() : 'ok',
 				chain: {
 					chainSlotHeight: await miningPoolRpc.getSlot('confirmed'),
-					indexedSlot: miningPool.dataStore.lastProcessedSlot(),
-					programId: process.env.MINING_POOL_PROGRAM_ID ?? miningPoolIdl.address,
+					indexedSlot:
+						miningPool.dataStore.lastUpdate().highestSignature
+							?.slot ?? 0,
+					programId:
+						process.env.MINING_POOL_PROGRAM_ID ??
+						miningPoolIdl.address,
 					networkGenesis: await miningPoolRpc.getGenesisHash(),
 				},
 			},

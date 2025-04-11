@@ -9,7 +9,7 @@ import {
 	PartiallyDecodedInstruction,
 	PublicKey,
 } from '@solana/web3.js'
-import { ChainDataStore } from './dataStore.js'
+import { ChainDataStore, IndexedSignature } from './dataStore.js'
 
 export function startWatchChainLoop<D>(): <
 	T,
@@ -40,26 +40,18 @@ export function startWatchChainLoop<D>(): <
 		process,
 		delayMsBetweenUpdates = 1000
 	) => {
-		let lastProcessedSlot = dataStore.lastProcessedSlot()
+		let lastUpdate = dataStore.lastUpdate()
 
 		const instructionCoder = new BorshInstructionCoder(program.rawIdl)
 
 		while (!cancelled.cancelled) {
 			await new Promise((r) => setTimeout(r, delayMsBetweenUpdates))
 
-			// always go a few slots behind so we don't get ourselves in trouble ;)
-			const processUntilSlot =
-				(await program.provider.connection.getSlot('confirmed')) - 20
-			if (processUntilSlot === lastProcessedSlot) {
-				continue
-			}
-
 			const catchupTxs = await catchupOnTxsToAddress(
 				name,
 				program.provider,
 				program.programId,
-				processUntilSlot,
-				lastProcessedSlot,
+				lastUpdate?.highestSignature,
 				cancelled
 			)
 
@@ -70,16 +62,18 @@ export function startWatchChainLoop<D>(): <
 
 			if (catchupTxs.length) {
 				console.debug(
-					`[${name}] updated from slot ${lastProcessedSlot} to slot ${processUntilSlot}.`
+					`[${name}] updated from slot ${lastUpdate} to latest slot.`
 				)
 			}
 
-			const state = process.onStartCatchup(lastProcessedSlot === -1)
+			const state = process.onStartCatchup(!lastUpdate.highestSignature)
 
-			for (const tx of catchupTxs) {
-				if (catchupTxs.indexOf(tx) % 1000 === 0) {
+			for (const data of catchupTxs) {
+				const tx = data[1]
+				const index = catchupTxs.indexOf(data)
+				if (index % 1000 === 0) {
 					console.log(
-						`[${name}] processing changes from tx ${catchupTxs.indexOf(tx)} / ${catchupTxs.length} (${((catchupTxs.indexOf(tx) / catchupTxs.length) * 100).toFixed(2)}%)`
+						`[${name}] processing changes from tx ${index} / ${catchupTxs.length} (${((index / catchupTxs.length) * 100).toFixed(2)}%)`
 					)
 				}
 				if (cancelled.cancelled) {
@@ -93,7 +87,7 @@ export function startWatchChainLoop<D>(): <
 					}
 					let rawDecoded
 					try {
-						rawDecoded = instructionCoder.decode(i.data, 'base58')	
+						rawDecoded = instructionCoder.decode(i.data, 'base58')
 					} catch (err) {
 						// instructions that we can't decode with our IDL aren't useful to us. hopefully this doesn't break.
 						console.warn(
@@ -120,9 +114,17 @@ export function startWatchChainLoop<D>(): <
 			if (cancelled.cancelled) {
 				break
 			}
-			lastProcessedSlot = processUntilSlot
+
+			lastUpdate.time = new Date()
+			if (catchupTxs.length) {
+				const [signature, { slot }] = catchupTxs.at(-1)!
+				lastUpdate.highestSignature = {
+					signature,
+					slot,
+				}
+			}
 			await process.onDoneCatchup(dataStore, state)
-			await dataStore.sync(processUntilSlot)
+			await dataStore.sync(lastUpdate)
 		}
 		console.info(`[${name}] chain loop was cancelled, exiting cleanly...`)
 	}
@@ -132,8 +134,7 @@ async function catchupOnTxsToAddress(
 	name: string,
 	provider: Provider,
 	address: PublicKey,
-	latestSlotHeight: number,
-	lastProcessedSlot: number,
+	lastIndexedSignature: IndexedSignature | undefined,
 	cancelled: { cancelled: boolean }
 ) {
 	// start with the newest possible signature, and go back to the oldest one.
@@ -142,12 +143,11 @@ async function catchupOnTxsToAddress(
 	const allSignatures = []
 	while (true) {
 		console.log(
-			`[${name}] fetching sigs from slot ${lastProcessedSlot} to ${oldestSeenSignature?.slot ?? latestSlotHeight}: total ${allSignatures.length}`
+			`[${name}] fetching sigs from slot ${lastIndexedSignature?.slot ?? '0'} to ${oldestSeenSignature?.slot ?? 'the latest block'}: total ${allSignatures.length}`
 		)
 		const signatures = await provider.connection.getSignaturesForAddress(
 			address,
 			{
-				minContextSlot: latestSlotHeight,
 				before: oldestSeenSignature?.signature,
 			},
 			'confirmed'
@@ -158,7 +158,7 @@ async function catchupOnTxsToAddress(
 		}
 
 		const signaturesAfterLastProcessedSlot = signatures.filter(
-			(s) => s.slot > lastProcessedSlot
+			(s) => s.slot > (lastIndexedSignature?.slot ?? -1)
 		)
 
 		// pick the last signature as our next iter's highest sig to start from,
@@ -183,7 +183,7 @@ async function catchupOnTxsToAddress(
 	}
 
 	console.log(
-		`[${name}] fetching ${allSignatures.length} transactions catching up from ${lastProcessedSlot} to ${oldestSeenSignature?.slot ?? latestSlotHeight}`
+		`[${name}] fetching ${allSignatures.length} transactions catching up from slot ${lastIndexedSignature?.slot ?? '0'} to ${oldestSeenSignature?.slot ?? 'the latest block'}`
 	)
 
 	let completedCount = 0
@@ -211,14 +211,17 @@ async function catchupOnTxsToAddress(
 					)
 				}
 
-				return tx
+				return [signature, tx] as const
 			})
 	)
 
-	const transactions: Array<ParsedTransactionWithMeta | null> =
-		await Promise.all(fetchPromises)
+	const transactions: Array<
+		readonly [string, ParsedTransactionWithMeta | null]
+	> = await Promise.all(fetchPromises)
 
-	const catchupTxs = transactions.filter((t) => !!t)
+	const catchupTxs = transactions.filter(
+		(t): t is readonly [string, ParsedTransactionWithMeta] => !!t[1]
+	)
 	// ok here, we now have a list of TXs to the this account, from newest to oldest.
 	// reverse into oldest -> newest, so can process in chronological order.
 	catchupTxs.reverse()
