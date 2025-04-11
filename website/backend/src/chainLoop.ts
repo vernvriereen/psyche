@@ -49,7 +49,7 @@ export function startWatchChainLoop<D>(): <
 
 			// always go a few slots behind so we don't get ourselves in trouble ;)
 			const processUntilSlot =
-				(await program.provider.connection.getSlot('confirmed')) - 10
+				(await program.provider.connection.getSlot('confirmed')) - 20
 			if (processUntilSlot === lastProcessedSlot) {
 				continue
 			}
