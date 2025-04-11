@@ -3,7 +3,10 @@ use crate::{
     Commitment, Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
 
-use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
+use anchor_lang::{
+    prelude::{borsh, msg},
+    AnchorDeserialize, AnchorSerialize, InitSpace,
+};
 use bytemuck::{Pod, Zeroable};
 use psyche_core::{sha256, Bloom, FixedString, FixedVec, MerkleRoot, NodeIdentity, SmallBoolean};
 use serde::{Deserialize, Serialize};
@@ -851,6 +854,41 @@ impl<T: NodeIdentity> Coordinator<T> {
             && self.check_timeout(unix_timestamp, WAITING_FOR_MEMBERS_EXTRA_SECONDS)
         // This extra time allows for more clients to join even if the minimum number of clients is reached
         {
+
+            let pending_clients: Vec<_> = pending_clients.collect();
+            for client in pending_clients.iter() {
+                msg!("pending_client: {:?}", client);
+            }
+
+            // Ensure every client in self.epoch_state.clients is present in pending_clients
+            // If all clients are no longer present we need to use a Hub checkpoint since there
+            // will be no peers for P2P sharing.
+            let mut all_prev_clients_disconnected = true;
+            for client in self.epoch_state.clients.iter() {
+                msg!("epoch_state.client: {} :: {:?}", client.id, client.id.get_p2p_public_key());
+                if client.id.get_p2p_public_key().iter().all(|&byte| byte == 0) {
+                    continue;
+                }
+                // If there's at least one client then we can use P2P
+                for pending in pending_clients.iter() {
+                    msg!("comparing client={} with pending={}", client.id, pending);
+                    if **pending == client.id {
+                        msg!("Found matching client. Not all disconnected.");
+                        all_prev_clients_disconnected = false;
+                        break;
+                    }
+                }
+            }
+
+            if all_prev_clients_disconnected {
+                msg!("All clients disconnected in tick_waiting_for_members. Using Hub Checkpoint.");
+                let Model::LLM(llm) = &mut self.model;
+                if let Checkpoint::P2P(hub_repo) = llm.checkpoint {
+                    msg!("Setting checkpoint to Hub");
+                    llm.checkpoint = Checkpoint::Hub(hub_repo);
+                }
+            }
+
             let height = self.current_round_unchecked().height;
             self.move_clients_to_exited(height);
 
@@ -861,7 +899,16 @@ impl<T: NodeIdentity> Coordinator<T> {
             let Model::LLM(llm) = &mut self.model;
             if self.epoch_state.clients.is_empty() {
                 if let Checkpoint::P2P(hub_repo) = llm.checkpoint {
+                    msg!("Setting checkpoint to Hub");
                     llm.checkpoint = Checkpoint::Hub(hub_repo);
+                }
+            } else if self.progress.epoch != 0  && !all_prev_clients_disconnected {
+                match llm.checkpoint {
+                    Checkpoint::Hub(hub_repo) | Checkpoint::Dummy(hub_repo) => {
+                        msg!("Setting checkpoint to P2P");
+                        llm.checkpoint = Checkpoint::P2P(hub_repo)
+                    }
+                    _ => {}
                 }
             }
 
@@ -871,6 +918,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 .clients
                 .extend(
                     pending_clients
+                        .into_iter()
                         .take(SOLANA_MAX_NUM_CLIENTS)
                         .map(|x| Client::new(*x)),
                 )
