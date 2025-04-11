@@ -386,6 +386,7 @@ async fn disconnect_client() {
             }
 
             Response::Loss(client, epoch, step, loss) => {
+                let loss = loss.unwrap();
                 println!(
                     "client: {:?}, epoch: {}, step: {}, Loss: {}",
                     client, epoch, step, loss
