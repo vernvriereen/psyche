@@ -872,13 +872,6 @@ impl<T: NodeIdentity> Coordinator<T> {
                 if let Checkpoint::P2P(hub_repo) = llm.checkpoint {
                     llm.checkpoint = Checkpoint::Hub(hub_repo);
                 }
-            } else if self.progress.epoch != 0 {
-                match llm.checkpoint {
-                    Checkpoint::Hub(hub_repo) | Checkpoint::Dummy(hub_repo) => {
-                        llm.checkpoint = Checkpoint::P2P(hub_repo)
-                    }
-                    _ => {}
-                }
             }
 
             bytemuck::write_zeroes(&mut self.epoch_state);
@@ -971,9 +964,6 @@ impl<T: NodeIdentity> Coordinator<T> {
         &mut self,
         unix_timestamp: u64,
     ) -> std::result::Result<TickResult, CoordinatorError> {
-        // cooldown_time == 0 means we never automatically advance to the next epoch,
-        // so the only way to get there is through the checkpointing code.
-        // this forces everything to wait on a valid checkpoint
         if self.check_timeout(unix_timestamp, self.config.cooldown_time) {
             let last_round_batch_size = self.get_target_global_batch_size(self.current_round());
             self.progress.epoch_start_data_index =
@@ -983,6 +973,16 @@ impl<T: NodeIdentity> Coordinator<T> {
             let current_round = self.current_round_unchecked();
             let height = current_round.height;
             self.move_clients_to_exited(height);
+
+            // we've completed an epoch, switch to P2P from now on
+            let Model::LLM(llm) = &mut self.model;
+            match llm.checkpoint {
+                Checkpoint::Hub(hub_repo) | Checkpoint::Dummy(hub_repo) => {
+                    llm.checkpoint = Checkpoint::P2P(hub_repo)
+                }
+                _ => {}
+            }
+
             if self.pending_pause.is_true() {
                 self.change_state(unix_timestamp, RunState::Paused);
                 self.pending_pause = false.into();
