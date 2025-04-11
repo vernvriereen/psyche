@@ -8,9 +8,9 @@ use futures::future::join_all;
 use psyche_coordinator::{Commitment, RunState};
 use psyche_core::NodeIdentity;
 use psyche_network::{
-    allowlist, param_request_task, param_request_task_config, raw_p2p_verify, request_model,
-    AuthenticatableIdentity, BlobTicket, DownloadComplete, ModelRequestType, NetworkConnection,
-    NetworkEvent, NetworkTUIState, Networkable, NodeId, SharableModel, TransmittableDownload,
+    allowlist, param_request_task, raw_p2p_verify, AuthenticatableIdentity, BlobTicket,
+    DownloadComplete, ModelRequestType, NetworkConnection, NetworkEvent, NetworkTUIState,
+    Networkable, NodeId, SharableModel, TransmittableDownload,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use tokenizers::Tokenizer;
@@ -469,7 +469,16 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     let errored_peers = errored_peers.clone();
 
                                     let request_handle = tokio::spawn(
-                                        param_request_task(param_name, router, parameter_blob_tickets.clone(), peer_cycle, busy_peers, errored_peers, num_peers, param_requests_cancel_token.clone())
+                                        param_request_task(
+                                            ModelRequestType::Parameter(param_name),
+                                            router,
+                                            parameter_blob_tickets.clone(),
+                                            peer_cycle,
+                                            busy_peers,
+                                            errored_peers,
+                                            num_peers,
+                                            param_requests_cancel_token.clone()
+                                        )
                                     );
 
                                     // Check if we reached the max number of concurrent requests, and if that is the case,
@@ -516,19 +525,27 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             .filter(|peer_id| peer_id != &me)
                             .collect();
 
+                            // initialize variables to request model config
                             let parameter_blob_tickets = Arc::new(std::sync::Mutex::new(Vec::new()));
                             let busy_peers = Arc::new(std::sync::Mutex::new(HashSet::new()));
                             let errored_peers = Arc::new(std::sync::Mutex::new(HashMap::new()));
-
-                            let num_peers = peer_ids.len().clone();
+                            let num_peers = peer_ids.len();
                             let peer_cycle = peer_ids.into_iter().cycle();
                             let peer_cycle = Arc::new(Mutex::new(peer_cycle));
 
                             if num_peers == 0 {
                                 return Err(anyhow::anyhow!("No peers available to request the model"))
                             }
-
-                            param_request_task_config(router, parameter_blob_tickets.clone(), peer_cycle, busy_peers, errored_peers, num_peers, param_requests_cancel_token.clone()).await;
+                            param_request_task(
+                                ModelRequestType::Config,
+                                router,
+                                parameter_blob_tickets.clone(),
+                                peer_cycle,
+                                busy_peers,
+                                errored_peers,
+                                num_peers,
+                                param_requests_cancel_token.clone()
+                            ).await;
 
                             let parameter_blob_tickets: Vec<BlobTicket> = {
                                 let mut parameter_blob_tickets_lock = parameter_blob_tickets.lock().unwrap();
@@ -539,17 +556,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 // tag 0 means when we enter a train step, it'll get wiped.
                                 p2p.start_download(ticket, 0).await?;
                             }
-                            // let peer_ids_iter = peer_ids.into_iter().cycle();
-                            // for peer_id in peer_ids_iter {
-                            //     match request_model(router.clone(), peer_id, ModelRequestType::Config).await {
-                            //         Ok(ticket) => {
-                            //             // tag 0 means when we enter a train step, it'll get wiped.
-                            //             p2p.start_download(ticket, 0).await?;
-                            //             break;
-                            //         }
-                            //         Err(err) => warn!("Error obtaining blob ticket for model config: {}", err),
-                            //     }
-                            // }
+
                         }
                         Some(param_blob_tickets) = rx_params_download.recv() => {
                             for ticket in param_blob_tickets {

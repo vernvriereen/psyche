@@ -558,7 +558,7 @@ where
 pub async fn request_model(
     router: Arc<Router>,
     node_addr: NodeId,
-    request_type: ModelRequestType,
+    request_type: &ModelRequestType,
 ) -> Result<BlobTicket> {
     let conn = router
         .endpoint()
@@ -720,7 +720,7 @@ fn hash_bytes(bytes: &Bytes) -> u64 {
 
 #[allow(clippy::too_many_arguments)]
 pub async fn param_request_task(
-    param_name: String,
+    model_request_type: ModelRequestType,
     router: Arc<Router>,
     parameter_blob_tickets: Arc<StdMutex<Vec<BlobTicket>>>,
     peer_cycle: Arc<Mutex<Cycle<IntoIter<PublicKey>>>>,
@@ -742,14 +742,8 @@ pub async fn param_request_task(
             continue;
         }
 
-        debug!(parameter = param_name, peer = %peer_id, "Requesting parameter");
-        match request_model(
-            router.clone(),
-            peer_id,
-            ModelRequestType::Parameter(param_name.clone()),
-        )
-        .await
-        {
+        debug!(parameter = ?&model_request_type, peer = %peer_id, "Requesting parameter");
+        match request_model(router.clone(), peer_id, &model_request_type).await {
             Ok(parameter_blob_ticket) => {
                 parameter_blob_tickets
                     .lock()
@@ -760,60 +754,7 @@ pub async fn param_request_task(
                 break;
             }
             Err(e) => {
-                warn!(parameter = param_name, peer = %peer_id, "Failed to get parameter: {e}");
-                busy_peers.lock().unwrap().remove(&peer_id);
-                let mut errored_peers_lock = errored_peers.lock().unwrap();
-                *errored_peers_lock.entry(peer_id).or_insert(0) += 1;
-                let min_peers_error_count = *errored_peers_lock.values().min().unwrap_or(&1);
-                if errored_peers_lock.len() == num_peers
-                    && min_peers_error_count >= MAX_ERRORS_PER_PEER
-                {
-                    cancel_token.cancel();
-                    break;
-                }
-                // Continue to request this parameter to another peer
-                continue;
-            }
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub async fn param_request_task_config(
-    router: Arc<Router>,
-    parameter_blob_tickets: Arc<StdMutex<Vec<BlobTicket>>>,
-    peer_cycle: Arc<Mutex<Cycle<IntoIter<PublicKey>>>>,
-    busy_peers: Arc<StdMutex<HashSet<PublicKey>>>,
-    errored_peers: Arc<StdMutex<HashMap<PublicKey, usize>>>,
-    num_peers: usize,
-    cancel_token: CancellationToken,
-) {
-    const MAX_ERRORS_PER_PEER: usize = 3;
-    loop {
-        let Some(peer_id) = peer_cycle.lock().await.next() else {
-            // This should never really happen, since the only chance for calling
-            // `next()` on a `Cycle` iterator and return `None` is when the iterator
-            // is empty, which was checked previously.
-            unreachable!();
-        };
-
-        if !busy_peers.lock().unwrap().insert(peer_id) {
-            continue;
-        }
-
-        debug!(parameter = "param_name", peer = %peer_id, "Requesting parameter");
-        match request_model(router.clone(), peer_id, ModelRequestType::Config).await {
-            Ok(parameter_blob_ticket) => {
-                parameter_blob_tickets
-                    .lock()
-                    .unwrap()
-                    .push(parameter_blob_ticket);
-                busy_peers.lock().unwrap().remove(&peer_id);
-                // Continue to next parameter request
-                break;
-            }
-            Err(e) => {
-                warn!(parameter = "param_name", peer = %peer_id, "Failed to get parameter: {e}");
+                warn!(parameter = ?&model_request_type, peer = %peer_id, "Failed to get parameter: {e}");
                 busy_peers.lock().unwrap().remove(&peer_id);
                 let mut errored_peers_lock = errored_peers.lock().unwrap();
                 *errored_peers_lock.entry(peer_id).or_insert(0) += 1;
