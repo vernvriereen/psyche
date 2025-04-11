@@ -42,6 +42,7 @@ type TabsData = <Tabs as CustomWidget>::Data;
 pub struct App {
     run_id: String,
     cluster: Cluster,
+    backup_clusters: Vec<Cluster>,
     tick_check_interval: Interval,
     cancel: CancellationToken,
     update_tui_interval: Interval,
@@ -56,6 +57,7 @@ pub struct AppParams {
     pub identity_secret_key: SecretKey,
     pub wallet_keypair: Arc<Keypair>,
     pub cluster: Cluster,
+    pub backup_clusters: Vec<Cluster>,
     pub tx_tui_state: Option<Sender<TabsData>>,
     pub run_id: String,
     pub data_parallelism: usize,
@@ -109,6 +111,7 @@ impl AppBuilder {
         let app = App {
             run_id: p.run_id.clone(),
             cluster: p.cluster,
+            backup_clusters: p.backup_clusters,
             tick_check_interval: {
                 let mut interval = interval(Duration::from_millis(500));
                 interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -156,6 +159,7 @@ impl App {
     ) -> Result<()> {
         let backend = SolanaBackend::new(
             self.cluster.clone(),
+            self.backup_clusters.clone(),
             state_options.private_key.0.clone(),
             CommitmentConfig::confirmed(),
         )?;
@@ -173,6 +177,7 @@ impl App {
 
         let backend = Arc::new(SolanaBackend::new(
             self.cluster.clone(),
+            self.backup_clusters.clone(),
             state_options.private_key.0.clone(),
             CommitmentConfig::confirmed(),
         )?);

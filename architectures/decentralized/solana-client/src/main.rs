@@ -196,8 +196,11 @@ enum Commands {
         #[clap(flatten)]
         args: TrainArgs,
 
-        #[clap(long, env, default_value_t = String::from(""))]
-        ws_rpc_2: String,
+        #[clap(long, env)]
+        rpc_2: Option<String>,
+
+        #[clap(long, env)]
+        ws_rpc_2: Option<String>,
     },
 
     // Prints the help, optionally as markdown. Used for docs generation.
@@ -273,6 +276,7 @@ async fn async_main() -> Result<()> {
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
             let backend = SolanaBackend::new(
                 cluster.into(),
+                vec![],
                 key_pair.clone(),
                 CommitmentConfig::confirmed(),
             )
@@ -316,6 +320,7 @@ async fn async_main() -> Result<()> {
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
             let backend = SolanaBackend::new(
                 cluster.into(),
+                vec![],
                 key_pair.clone(),
                 CommitmentConfig::confirmed(),
             )
@@ -348,6 +353,7 @@ async fn async_main() -> Result<()> {
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
             let backend = SolanaBackend::new(
                 cluster.into(),
+                vec![],
                 key_pair.clone(),
                 CommitmentConfig::confirmed(),
             )
@@ -389,6 +395,7 @@ async fn async_main() -> Result<()> {
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
             let backend = SolanaBackend::new(
                 cluster.into(),
+                vec![],
                 key_pair.clone(),
                 CommitmentConfig::confirmed(),
             )
@@ -422,6 +429,7 @@ async fn async_main() -> Result<()> {
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
             let backend = SolanaBackend::new(
                 cluster.into(),
+                vec![],
                 key_pair.clone(),
                 CommitmentConfig::confirmed(),
             )
@@ -459,6 +467,7 @@ async fn async_main() -> Result<()> {
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
             let backend = SolanaBackend::new(
                 cluster.into(),
+                vec![],
                 key_pair.clone(),
                 CommitmentConfig::confirmed(),
             )
@@ -495,6 +504,7 @@ async fn async_main() -> Result<()> {
             let key_pair: Arc<Keypair> = Arc::new(Keypair::new());
             let backend = SolanaBackend::new(
                 cluster.into(),
+                vec![],
                 key_pair.clone(),
                 CommitmentConfig::confirmed(),
             )
@@ -531,11 +541,11 @@ async fn async_main() -> Result<()> {
             cluster,
             wallet,
             args,
+            rpc_2,
             ws_rpc_2,
         } => {
             psyche_client::prepare_environment();
 
-            std::env::set_var("ws_rpc_2", ws_rpc_2);
             let hub_read_token = std::env::var("HF_TOKEN").ok();
             let checkpoint_upload_info = args.checkpoint_config()?;
             let eval_tasks = args.eval_tasks()?;
@@ -573,12 +583,20 @@ async fn async_main() -> Result<()> {
                 (args.logs == LogOutput::TUI).then(|| Tabs::new(Default::default(), &TAB_NAMES)),
             )?;
 
+            let backup_clusters = match (rpc_2, ws_rpc_2) {
+                (Some(rpc_2), None) => vec![Cluster::Custom(rpc_2, cluster.ws_rpc.clone())],
+                (None, Some(ws_rpc_2)) => vec![Cluster::Custom(cluster.rpc.clone(), ws_rpc_2)],
+                (Some(rpc_2), Some(ws_rpc_2)) => vec![Cluster::Custom(rpc_2, ws_rpc_2)],
+                (None, None) => vec![],
+            };
+
             let (mut app, allowlist, p2p, state_options) = AppBuilder::new(AppParams {
                 cancel,
                 tx_tui_state,
                 identity_secret_key,
                 wallet_keypair,
                 cluster: cluster.into(),
+                backup_clusters,
                 run_id,
                 p2p_port: args.bind_p2p_port,
                 p2p_interface: args.bind_p2p_interface,

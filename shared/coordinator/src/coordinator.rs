@@ -974,8 +974,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         // cooldown_time == 0 means we never automatically advance to the next epoch,
         // so the only way to get there is through the checkpointing code.
         // this forces everything to wait on a valid checkpoint
-        if self.check_timeout(unix_timestamp, self.config.cooldown_time)
-        {
+        if self.check_timeout(unix_timestamp, self.config.cooldown_time) {
             let last_round_batch_size = self.get_target_global_batch_size(self.current_round());
             self.progress.epoch_start_data_index =
                 self.current_round_unchecked().data_index + last_round_batch_size as u64;

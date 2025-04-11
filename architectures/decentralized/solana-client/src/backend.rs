@@ -2,7 +2,7 @@ use crate::retry::RetryError;
 use anchor_client::{
     anchor_lang::system_program,
     solana_client::{
-        nonblocking::pubsub_client::PubsubClient,
+        nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
         rpc_config::{RpcAccountInfoConfig, RpcSendTransactionConfig, RpcTransactionConfig},
         rpc_response::Response as RpcResponse,
     },
@@ -35,6 +35,8 @@ pub struct SolanaBackend {
     program_authorizer: Program<Arc<Keypair>>,
     program_coordinator: Arc<Program<Arc<Keypair>>>,
     cluster: Cluster,
+    backup_clusters: Vec<Cluster>,
+    backup_clients: Vec<Arc<RpcClient>>,
 }
 
 pub struct SolanaBackendRunner {
@@ -118,6 +120,7 @@ impl SolanaBackend {
     #[allow(dead_code)]
     pub fn new(
         cluster: Cluster,
+        backup_clusters: Vec<Cluster>,
         payer: Arc<Keypair>,
         committment: CommitmentConfig,
     ) -> Result<Self> {
@@ -128,6 +131,11 @@ impl SolanaBackend {
             program_authorizer,
             program_coordinator,
             cluster,
+            backup_clients: backup_clusters
+                .iter()
+                .map(|x| Arc::new(RpcClient::new(x.url().to_string())))
+                .collect(),
+            backup_clusters,
         })
     }
 
@@ -137,25 +145,23 @@ impl SolanaBackend {
         coordinator_account: Pubkey,
     ) -> Result<SolanaBackendRunner> {
         let (tx_update, rx_update) = broadcast::channel(32);
-        let cluster = self.cluster.clone();
-        let url = cluster.ws_url().to_string();
-        let commitment = self.program_coordinator.rpc().commitment();
-
         let (tx_subscribe, mut rx_subscribe) = mpsc::unbounded_channel();
 
-        let tx_subscribe_1 = tx_subscribe.clone();
+        let commitment = self.program_coordinator.rpc().commitment();
+
+        let tx_subscribe_ = tx_subscribe.clone();
+        let url = self.cluster.ws_url().to_string();
         tokio::spawn(async move {
-            subscribe_to_account(url, commitment, &coordinator_account, tx_subscribe_1).await
+            subscribe_to_account(url, commitment, &coordinator_account, tx_subscribe_).await
         });
 
-        let tx_subscribe_2 = tx_subscribe.clone();
-        let url_2 = std::env::var("ws_rpc_2")
-            .ok()
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| cluster.ws_url().to_string());
-        tokio::spawn(async move {
-            subscribe_to_account(url_2, commitment, &coordinator_account, tx_subscribe_2).await
-        });
+        for cluster in &self.backup_clusters {
+            let tx_subscribe_ = tx_subscribe.clone();
+            let url = cluster.ws_url().to_string();
+            tokio::spawn(async move {
+                subscribe_to_account(url, commitment, &coordinator_account, tx_subscribe_).await
+            });
+        }
 
         tokio::spawn(async move {
             let mut last_data: UiAccountData = UiAccountData::LegacyBinary("".to_string());
@@ -466,13 +472,11 @@ impl SolanaBackend {
                     coordinator_account,
                 },
             )
-            .args(
-                psyche_solana_coordinator::instruction::Update {
-                    config,
-                    model,
-                    progress,
-                },
-            )
+            .args(psyche_solana_coordinator::instruction::Update {
+                config,
+                model,
+                progress,
+            })
             .send()
             .await?;
 
@@ -555,9 +559,10 @@ impl SolanaBackend {
 
     pub fn send_tick(&self, coordinator_instance: Pubkey, coordinator_account: Pubkey) {
         let program_coordinator = self.program_coordinator.clone();
+        let backup_clients = self.backup_clients.clone();
         tokio::task::spawn(async move {
             let payer = program_coordinator.payer();
-            let pending_tx = program_coordinator
+            let pending_tx_builder = program_coordinator
                 .request()
                 .accounts(
                     psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
@@ -566,11 +571,22 @@ impl SolanaBackend {
                         coordinator_account,
                     },
                 )
-                .args(psyche_solana_coordinator::instruction::Tick {})
-                .send();
-            match pending_tx.await {
-                Ok(signature) => info!(from = %payer, tx = %signature, "Tick transaction"),
-                Err(err) => warn!(from = %payer, "Error sending tick transaction: {err}"),
+                .args(psyche_solana_coordinator::instruction::Tick {});
+            match pending_tx_builder.signed_transaction().await {
+                Ok(signed_tx) => {
+                    let pending_tx = pending_tx_builder.send();
+                    for client in backup_clients {
+                        let signed_tx = signed_tx.clone();
+                        tokio::spawn(async move { client.send_transaction(&signed_tx).await });
+                    }
+                    match pending_tx.await {
+                        Ok(signature) => info!(from = %payer, tx = %signature, "Tick transaction"),
+                        Err(err) => warn!(from = %payer, "Error sending tick transaction: {err}"),
+                    }
+                }
+                Err(err) => {
+                    warn!(from = %payer, "Error signing tick: {err}");
+                }
             }
         });
     }
@@ -582,9 +598,10 @@ impl SolanaBackend {
         opportunistic_data: OpportunisticData,
     ) {
         let program_coordinator = self.program_coordinator.clone();
+        let backup_clients = self.backup_clients.clone();
         tokio::task::spawn(async move {
             let payer = program_coordinator.payer();
-            let pending_tx = match opportunistic_data {
+            let pending_tx_builder = match opportunistic_data {
                 OpportunisticData::WitnessStep(witness, metadata) => program_coordinator
                     .request()
                     .accounts(
@@ -600,8 +617,7 @@ impl SolanaBackend {
                         broadcast_bloom: witness.broadcast_bloom,
                         broadcast_merkle: witness.broadcast_merkle,
                         metadata,
-                    })
-                    .send(),
+                    }),
                 OpportunisticData::WarmupStep(witness) => program_coordinator
                     .request()
                     .accounts(
@@ -616,12 +632,27 @@ impl SolanaBackend {
                         participant_bloom: witness.participant_bloom,
                         broadcast_bloom: witness.broadcast_bloom,
                         broadcast_merkle: witness.broadcast_merkle,
-                    })
-                    .send(),
+                    }),
             };
-            match pending_tx.await {
-                Ok(signature) => info!(from = %payer, tx = %signature, "Witness transaction"),
-                Err(err) => warn!(from = %payer, "Error sending witness transaction: {err}"),
+            match pending_tx_builder.signed_transaction().await {
+                Ok(signed_tx) => {
+                    let pending_tx = pending_tx_builder.send();
+                    for client in backup_clients {
+                        let signed_tx = signed_tx.clone();
+                        tokio::spawn(async move { client.send_transaction(&signed_tx).await });
+                    }
+                    match pending_tx.await {
+                        Ok(signature) => {
+                            info!(from = %payer, tx = %signature, "Witness transaction")
+                        }
+                        Err(err) => {
+                            warn!(from = %payer, "Error sending witness transaction: {err}")
+                        }
+                    }
+                }
+                Err(err) => {
+                    warn!(from = %payer, "Error signing witness: {err}");
+                }
             }
         });
     }
@@ -634,9 +665,10 @@ impl SolanaBackend {
         check: CommitteeProof,
     ) {
         let program_coordinator = self.program_coordinator.clone();
+        let backup_clients = self.backup_clients.clone();
         tokio::task::spawn(async move {
             let payer = program_coordinator.payer();
-            let pending_tx = program_coordinator
+            let pending_tx_builder = program_coordinator
                 .request()
                 .accounts(
                     psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
@@ -650,11 +682,26 @@ impl SolanaBackend {
                     committee: check.committee,
                     position: check.position,
                     index: check.index,
-                })
-                .send();
-            match pending_tx.await {
-                Ok(signature) => info!(from = %payer, tx = %signature, "Health check transaction"),
-                Err(err) => warn!(from = %payer, "Error sending health check transaction: {err}"),
+                });
+            match pending_tx_builder.signed_transaction().await {
+                Ok(signed_tx) => {
+                    let pending_tx = pending_tx_builder.send();
+                    for client in backup_clients {
+                        let signed_tx = signed_tx.clone();
+                        tokio::spawn(async move { client.send_transaction(&signed_tx).await });
+                    }
+                    match pending_tx.await {
+                        Ok(signature) => {
+                            info!(from = %payer, tx = %signature, "Health check transaction")
+                        }
+                        Err(err) => {
+                            warn!(from = %payer, "Error sending health check transaction: {err}")
+                        }
+                    }
+                }
+                Err(err) => {
+                    warn!(from = %payer, "Error signing health check: {err}");
+                }
             }
         });
     }
@@ -666,9 +713,10 @@ impl SolanaBackend {
         repo: HubRepo,
     ) {
         let program_coordinator = self.program_coordinator.clone();
+        let backup_clients = self.backup_clients.clone();
         tokio::task::spawn(async move {
             let payer = program_coordinator.payer();
-            let pending_tx = program_coordinator
+            let pending_tx_builder = program_coordinator
                 .request()
                 .accounts(
                     psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
@@ -677,11 +725,26 @@ impl SolanaBackend {
                         coordinator_account,
                     },
                 )
-                .args(psyche_solana_coordinator::instruction::Checkpoint { repo })
-                .send();
-            match pending_tx.await {
-                Ok(signature) => info!(from = %payer, tx = %signature, "Checkpoint transaction"),
-                Err(err) => warn!(from = %payer, "Error sending checkpoint transaction: {err}"),
+                .args(psyche_solana_coordinator::instruction::Checkpoint { repo });
+            match pending_tx_builder.signed_transaction().await {
+                Ok(signed_tx) => {
+                    let pending_tx = pending_tx_builder.send();
+                    for client in backup_clients {
+                        let signed_tx = signed_tx.clone();
+                        tokio::spawn(async move { client.send_transaction(&signed_tx).await });
+                    }
+                    match pending_tx.await {
+                        Ok(signature) => {
+                            info!(from = %payer, tx = %signature, "Checkpoint transaction")
+                        }
+                        Err(err) => {
+                            warn!(from = %payer, "Error sending checkpoint transaction: {err}")
+                        }
+                    }
+                }
+                Err(err) => {
+                    warn!(from = %payer, "Error signing checkpoint: {err}");
+                }
             }
         });
     }
