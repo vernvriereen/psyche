@@ -8,6 +8,7 @@ use psyche_coordinator::CoordinatorConfig;
 use psyche_coordinator::HealthChecks;
 use psyche_coordinator::RunState;
 use psyche_coordinator::TickResult;
+use psyche_coordinator::Version;
 use psyche_coordinator::Witness;
 use psyche_coordinator::SOLANA_MAX_STRING_LEN;
 use psyche_core::sha256v;
@@ -60,6 +61,7 @@ pub struct CoordinatorInstanceState {
     pub clients_state: ClientsState,
     pub is_warmup_first_tick: SmallBoolean,
     pub is_training_first_tick: SmallBoolean,
+    pub version: Version,
 }
 
 unsafe impl Pod for CoordinatorInstanceState {}

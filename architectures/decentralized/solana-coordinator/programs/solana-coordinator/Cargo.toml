@@ -1,6 +1,6 @@
 [package]
 name = "psyche-solana-coordinator"
-version = "0.1.0"
+version.workspace = true
 description = "Nous Research - Psyche Solana Coordinator"
 edition = "2021"
 
