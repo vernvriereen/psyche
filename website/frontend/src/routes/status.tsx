@@ -23,6 +23,7 @@ const Container = styled.div`
 
 function RouteComponent() {
 	const { commit, initTime, coordinator, miningPool } = Route.useLoaderData()
+
 	return (
 		<Container>
 			<ShadowCard disabled>
@@ -34,41 +35,52 @@ function RouteComponent() {
 						['coordinator', coordinator.chain],
 						['mining pool', miningPool.chain],
 					] as const
-				).map(([name, c]) => (
-					<div>
-						<h4>{name}</h4>
-						<div>program id:</div>
-						<pre>{coordinator.chain.programId}</pre>
-						<div>network genesis block:</div>
-						<pre>{coordinator.chain.networkGenesis}</pre>
-						<div
-							className={css`
-								display: flex;
-								margin-bottom: 4px;
-								justify-content: space-between;
-							`}
-						>
-							<div>
-								{(
-									(c.indexedSlot / c.chainSlotHeight) *
-									100
-								).toFixed(4)}
-								% indexed
+				).map(([name, c]) => {
+					const numRecentSlots = 1000
+					const ratioRecentSlots = Math.min(
+						1,
+						Math.max(
+							0,
+							(c.indexedSlot - (c.chainSlotHeight - numRecentSlots)) / numRecentSlots
+						)
+					)
+					return (
+						<div>
+							<h4>{name}</h4>
+							<div>program id:</div>
+							<pre>{coordinator.chain.programId}</pre>
+							<div>network genesis block:</div>
+							<pre>{coordinator.chain.networkGenesis}</pre>
+							<div
+								className={css`
+									display: flex;
+									margin-bottom: 4px;
+									justify-content: space-between;
+								`}
+							>
+								<div>
+									{(
+										ratioRecentSlots *
+										100
+									).toFixed(1)}
+									% of last {numRecentSlots} slots indexed
+								</div>
+								<div>
+									slot {c.indexedSlot} / {c.chainSlotHeight}
+								</div>
+								<div>
+									{c.chainSlotHeight - c.indexedSlot} slots
+									behind
+								</div>
 							</div>
-							<div>
-								slot {c.indexedSlot} / {c.chainSlotHeight}
-							</div>
-							<div>
-								{c.chainSlotHeight - c.indexedSlot} slots behind
-							</div>
+							<ProgressBar
+								ratio={ratioRecentSlots}
+								chunkWidth={-2}
+								chunkHeight={24}
+							/>
 						</div>
-						<ProgressBar
-							ratio={c.indexedSlot / c.chainSlotHeight}
-							chunkWidth={-2}
-							chunkHeight={24}
-						/>
-					</div>
-				))}
+					)
+				})}
 				<div className={text['aux/xs/regular']}>
 					uptime
 					<Runtime start={new Date(initTime)} />
