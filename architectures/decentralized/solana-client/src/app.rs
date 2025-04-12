@@ -11,7 +11,7 @@ use anchor_client::{
     },
     Cluster,
 };
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 use psyche_client::{
     CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
 };
@@ -277,13 +277,7 @@ impl App {
                     };
                 }
                 update = async { updates.recv().await } => {
-                    let update = match update?.value.data.decode() {
-                        Some(data) => psyche_solana_coordinator::coordinator_account_from_bytes(&data)
-                            .map_err(|_| anyhow!("Unable to decode coordinator account data"))
-                            .map(|x| x.state.coordinator)?,
-                        None => bail!("Unable to decode account data"),
-                    };
-                    latest_update = update;
+                    latest_update = update?;
                     match latest_update.run_state {
                         RunState::WaitingForMembers => {
                             if self.joined_new_train_epoch.is_none() {

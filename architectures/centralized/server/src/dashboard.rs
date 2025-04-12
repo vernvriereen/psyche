@@ -86,7 +86,6 @@ impl CustomWidget for DashboardTui {
                         state.coordinator_state.exited_clients
                     ),
                     format!("Height: {}", state.coordinator_state.height),
-                    format!("Tick: {}", state.coordinator_state.tick),
                     format!("Checkpoint: {}", state.coordinator_state.model_checkpoint),
                 ]
                 .into_iter()

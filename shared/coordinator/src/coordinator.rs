@@ -286,12 +286,6 @@ pub struct Coordinator<T> {
 
     #[serde(default)]
     pub run_state_start_unix_timestamp: u64,
-    #[serde(default)]
-    pub tick: u64,
-    #[serde(default)]
-    pub last_tick_unix_timestamp: u64,
-    #[serde(default)]
-    pub last_step_unix_timestamp: u64,
 
     #[serde(default)]
     pub pending_pause: SmallBoolean,
@@ -443,8 +437,6 @@ impl<T: NodeIdentity> Coordinator<T> {
                 }
             }
         }?;
-        self.tick += 1;
-        self.last_tick_unix_timestamp = unix_timestamp;
         Ok(ret)
     }
 

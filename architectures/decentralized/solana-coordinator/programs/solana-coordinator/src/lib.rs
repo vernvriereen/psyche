@@ -87,6 +87,7 @@ pub fn coordinator_account_from_bytes(
 #[derive(Serialize, Deserialize, TS)]
 pub struct CoordinatorAccount {
     pub state: CoordinatorInstanceState,
+    pub nonce: u64,
 }
 impl CoordinatorAccount {
     pub fn space_with_discriminator() -> usize {
@@ -135,11 +136,9 @@ pub mod psyche_solana_coordinator {
         model: Option<Model>,
         progress: Option<CoordinatorProgress>,
     ) -> Result<()> {
-        ctx.accounts
-            .coordinator_account
-            .load_mut()?
-            .state
-            .update(config, model, progress)
+        let mut account = ctx.accounts.coordinator_account.load_mut()?;
+        account.nonce += 1;
+        account.state.update(config, model, progress)
     }
 
     pub fn set_future_epoch_rates(
@@ -147,9 +146,9 @@ pub mod psyche_solana_coordinator {
         epoch_earning_rate: Option<u64>,
         epoch_slashing_rate: Option<u64>,
     ) -> Result<()> {
-        ctx.accounts
-            .coordinator_account
-            .load_mut()?
+        let mut account = ctx.accounts.coordinator_account.load_mut()?;
+        account.nonce += 1;
+        account
             .state
             .set_future_epoch_rates(epoch_earning_rate, epoch_slashing_rate)
     }
@@ -165,15 +164,15 @@ pub mod psyche_solana_coordinator {
         ctx: Context<OwnerCoordinatorAccounts>,
         paused: bool,
     ) -> Result<()> {
-        ctx.accounts
-            .coordinator_account
-            .load_mut()?
-            .state
-            .set_paused(paused)
+        let mut account = ctx.accounts.coordinator_account.load_mut()?;
+        account.nonce += 1;
+        account.state.set_paused(paused)
     }
 
     pub fn tick(ctx: Context<PermissionlessCoordinatorAccounts>) -> Result<()> {
-        ctx.accounts.coordinator_account.load_mut()?.state.tick()
+        let mut account = ctx.accounts.coordinator_account.load_mut()?;
+        account.nonce += 1;
+        account.state.tick()
     }
 
     #[allow(unused_variables)] // for the metadata field. adding a _ prefix results in anchor's IDL not matching the actual types. lol.
@@ -185,7 +184,9 @@ pub mod psyche_solana_coordinator {
         broadcast_merkle: MerkleRoot,
         metadata: WitnessMetadata,
     ) -> Result<()> {
-        ctx.accounts.coordinator_account.load_mut()?.state.witness(
+        let mut account = ctx.accounts.coordinator_account.load_mut()?;
+        account.nonce += 1;
+        account.state.witness(
             ctx.accounts.user.key,
             Witness {
                 proof,
@@ -204,19 +205,17 @@ pub mod psyche_solana_coordinator {
         broadcast_bloom: WitnessBloom,
         broadcast_merkle: MerkleRoot,
     ) -> Result<()> {
-        ctx.accounts
-            .coordinator_account
-            .load_mut()?
-            .state
-            .warmup_witness(
-                ctx.accounts.user.key,
-                Witness {
-                    proof,
-                    participant_bloom,
-                    broadcast_bloom,
-                    broadcast_merkle,
-                },
-            )
+        let mut account = ctx.accounts.coordinator_account.load_mut()?;
+        account.nonce += 1;
+        account.state.warmup_witness(
+            ctx.accounts.user.key,
+            Witness {
+                proof,
+                participant_bloom,
+                broadcast_bloom,
+                broadcast_merkle,
+            },
+        )
     }
 
     pub fn health_check(
@@ -226,32 +225,28 @@ pub mod psyche_solana_coordinator {
         position: u64,
         index: u64,
     ) -> Result<()> {
-        ctx.accounts
-            .coordinator_account
-            .load_mut()?
-            .state
-            .health_check(
-                ctx.accounts.user.key,
-                vec![(
-                    id,
-                    CommitteeProof {
-                        committee,
-                        position,
-                        index,
-                    },
-                )],
-            )
+        let mut account = ctx.accounts.coordinator_account.load_mut()?;
+        account.nonce += 1;
+        account.state.health_check(
+            ctx.accounts.user.key,
+            vec![(
+                id,
+                CommitteeProof {
+                    committee,
+                    position,
+                    index,
+                },
+            )],
+        )
     }
 
     pub fn checkpoint(
         ctx: Context<PermissionlessCoordinatorAccounts>,
         repo: HubRepo,
     ) -> Result<()> {
-        ctx.accounts
-            .coordinator_account
-            .load_mut()?
-            .state
-            .checkpoint(ctx.accounts.user.key, repo)
+        let mut account = ctx.accounts.coordinator_account.load_mut()?;
+        account.nonce += 1;
+        account.state.checkpoint(ctx.accounts.user.key, repo)
     }
 }
 

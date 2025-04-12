@@ -73,6 +73,7 @@ pub fn init_coordinator_processor(
     let account = bytemuck::from_bytes_mut::<CoordinatorAccount>(
         &mut data[disc.len()..CoordinatorAccount::space_with_discriminator()],
     );
+    account.nonce = 0;
     // Setup the run_id const
     account.state.coordinator.run_id =
         FixedString::from_str_truncated(&params.run_id);

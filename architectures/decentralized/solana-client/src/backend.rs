@@ -14,7 +14,7 @@ use anchor_client::{
     },
     Client, Cluster, Program,
 };
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use futures_util::StreamExt;
 use psyche_client::IntegrationTestLogMarker;
 use psyche_coordinator::{
@@ -22,14 +22,14 @@ use psyche_coordinator::{
     CommitteeProof, Coordinator, CoordinatorConfig, CoordinatorProgress, HealthChecks,
 };
 use psyche_watcher::{Backend as WatcherBackend, OpportunisticData};
-use solana_account_decoder_client_types::{UiAccount, UiAccountData, UiAccountEncoding};
+use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
 use solana_transaction_status_client_types::UiTransactionEncoding;
 use std::{cmp::min, sync::Arc, time::Duration};
 use tokio::{
     sync::{broadcast, mpsc},
     time::timeout,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, trace, warn};
 
 pub struct SolanaBackend {
     program_authorizer: Program<Arc<Keypair>>,
@@ -43,8 +43,8 @@ pub struct SolanaBackendRunner {
     pub(crate) backend: SolanaBackend,
     instance: Pubkey,
     account: Pubkey,
-    updates: broadcast::Receiver<RpcResponse<UiAccount>>,
-    init: Option<Vec<u8>>,
+    updates: broadcast::Receiver<Coordinator<psyche_solana_coordinator::ClientId>>,
+    init: Option<Coordinator<psyche_solana_coordinator::ClientId>>,
 }
 
 #[derive(Debug, Clone)]
@@ -164,16 +164,29 @@ impl SolanaBackend {
         }
 
         tokio::spawn(async move {
-            let mut last_data: UiAccountData = UiAccountData::LegacyBinary("".to_string());
-            let mut last_slot = 0;
+            let mut last_nonce = 0;
             while let Some(update) = rx_subscribe.recv().await {
-                let data = &update.value.data;
-                if update.context.slot >= last_slot && &last_data != data {
-                    if tx_update.send(update.clone()).is_err() {
-                        break;
+                match update.value.data.decode() {
+                    Some(data) => {
+                        match psyche_solana_coordinator::coordinator_account_from_bytes(&data) {
+                            Ok(account) => {
+                                if account.nonce > last_nonce {
+                                    trace!(
+                                        nonce = account.nonce,
+                                        last_nonce = last_nonce,
+                                        "Coordinator account update"
+                                    );
+                                    if let Err(err) = tx_update.send(account.state.coordinator) {
+                                        error!("Error sending coordinator update: {err}");
+                                        break;
+                                    }
+                                    last_nonce = account.nonce;
+                                }
+                            }
+                            Err(err) => error!("Error deserializing coordinator account: {err}"),
+                        }
                     }
-                    last_data = data.clone();
-                    last_slot = update.context.slot;
+                    None => error!("Error decoding coordinator account"),
                 }
             }
             error!("No subscriptions available");
@@ -187,11 +200,15 @@ impl SolanaBackend {
             run_id, coordinator_instance
         );
 
-        let init = self
-            .program_coordinator
-            .rpc()
-            .get_account_data(&coordinator_account)
-            .await?;
+        let init = psyche_solana_coordinator::coordinator_account_from_bytes(
+            &self
+                .program_coordinator
+                .rpc()
+                .get_account_data(&coordinator_account)
+                .await?,
+        )?
+        .state
+        .coordinator;
 
         Ok(SolanaBackendRunner {
             backend: self,
@@ -810,24 +827,14 @@ impl WatcherBackend<psyche_solana_coordinator::ClientId> for SolanaBackendRunner
     async fn wait_for_new_state(
         &mut self,
     ) -> Result<Coordinator<psyche_solana_coordinator::ClientId>> {
-        let data = match self.init.take() {
-            Some(init) => init,
-            None => match self.updates.recv().await {
-                Ok(update) => match update.value.data.decode() {
-                    Some(data) => data,
-                    None => bail!("Unable to decode account data"),
-                },
-                Err(err) => bail!("Account updates channel error: {err}"),
-            },
-        };
-
-        psyche_solana_coordinator::coordinator_account_from_bytes(&data)
-            .map_err(|_| anyhow!("Unable to decode coordinator account data"))
-            .map(|x| {
-                let update = x.state.coordinator;
-                debug!("Coordinator account update, run_state={}", update.run_state);
-                update
-            })
+        match self.init.take() {
+            Some(init) => Ok(init),
+            None => self
+                .updates
+                .recv()
+                .await
+                .map_err(|err| anyhow!("Error receiving new state: {err}")),
+        }
     }
 
     async fn send_witness(&mut self, opportunistic_data: OpportunisticData) -> Result<()> {
@@ -855,7 +862,7 @@ impl WatcherBackend<psyche_solana_coordinator::ClientId> for SolanaBackendRunner
 }
 
 impl SolanaBackendRunner {
-    pub fn updates(&self) -> broadcast::Receiver<RpcResponse<UiAccount>> {
+    pub fn updates(&self) -> broadcast::Receiver<Coordinator<psyche_solana_coordinator::ClientId>> {
         self.updates.resubscribe()
     }
 }

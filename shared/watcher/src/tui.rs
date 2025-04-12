@@ -59,7 +59,6 @@ impl psyche_tui::CustomWidget for CoordinatorTui {
                     [
                         format!("Clients: {:?}", state.clients.len()),
                         format!("Height: {:?}", state.height),
-                        format!("Tick: {:?}", state.tick),
                     ]
                     .into_iter()
                     .map(Line::from)
@@ -170,7 +169,6 @@ pub struct CoordinatorTuiState {
     pub run_state: TuiRunState,
     pub height: u32,
     pub clients: Vec<String>,
-    pub tick: u64,
     pub data_source: String,
     pub model_checkpoint: String,
     pub exited_clients: usize,
@@ -189,7 +187,6 @@ impl<T: NodeIdentity> From<&Coordinator<T>> for CoordinatorTuiState {
                 .iter()
                 .map(|c| format!("{:?}", c.id))
                 .collect(),
-            tick: value.tick,
             data_source: match &value.model {
                 Model::LLM(l) => format!("{:?}", l.data_type),
             },
