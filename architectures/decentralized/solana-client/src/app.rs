@@ -7,6 +7,7 @@ use crate::{
 use anchor_client::{
     solana_sdk::{
         commitment_config::CommitmentConfig,
+        pubkey::Pubkey,
         signature::{Keypair, Signature, Signer},
     },
     Cluster,
@@ -48,6 +49,7 @@ pub struct App {
     update_tui_interval: Interval,
     tx_tui_state: Option<Sender<TabsData>>,
     joined_new_train_epoch: Option<Signature>,
+    authorizer: Option<Pubkey>,
 }
 
 pub struct AppBuilder(AppParams);
@@ -76,6 +78,7 @@ pub struct AppParams {
     pub dummy_training_delay_secs: Option<u64>,
     pub max_concurrent_parameter_requests: usize,
     pub max_concurrent_downloads: usize,
+    pub authorizer: Option<Pubkey>,
 }
 
 impl AppBuilder {
@@ -121,6 +124,7 @@ impl AppBuilder {
             tx_tui_state: p.tx_tui_state,
             update_tui_interval: interval(Duration::from_millis(150)),
             joined_new_train_epoch: None,
+            authorizer: p.authorizer,
         };
         let identity = psyche_solana_coordinator::ClientId::new(
             p.wallet_keypair.pubkey(),
@@ -202,6 +206,7 @@ impl App {
                         signer,
                         p2p_identity: *p2p_identity.as_bytes(),
                     },
+                    self.authorizer,
                 )
             })
             .await
@@ -289,6 +294,7 @@ impl App {
                                             signer,
                                             p2p_identity: *p2p_identity.as_bytes(),
                                         },
+                                        self.authorizer,
                                     ))
                                     .await.map_err(|e: RetryError<String>| anyhow!("join_run error: {}", e))?;
                                 info!(

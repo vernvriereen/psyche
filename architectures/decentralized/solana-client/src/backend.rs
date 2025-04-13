@@ -400,12 +400,13 @@ impl SolanaBackend {
         coordinator_instance: Pubkey,
         coordinator_account: Pubkey,
         id: psyche_solana_coordinator::ClientId,
+        authorizer: Option<Pubkey>,
     ) -> Result<Signature> {
         let coordinator_instance_state =
             self.get_coordinator_instance(&coordinator_instance).await?;
-        let authorization_global = psyche_solana_authorizer::find_authorization(
+        let authorization = psyche_solana_authorizer::find_authorization(
             &coordinator_instance_state.join_authority,
-            &system_program::ID,
+            &authorizer.unwrap_or(system_program::ID),
             psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE,
         );
         let signature = self
@@ -413,7 +414,7 @@ impl SolanaBackend {
             .request()
             .accounts(psyche_solana_coordinator::accounts::JoinRunAccounts {
                 user: self.program_coordinator.payer(),
-                authorization: authorization_global,
+                authorization,
                 coordinator_instance,
                 coordinator_account,
             })
@@ -430,6 +431,7 @@ impl SolanaBackend {
         coordinator_instance: Pubkey,
         coordinator_account: Pubkey,
         id: psyche_solana_coordinator::ClientId,
+        authorizer: Option<Pubkey>,
     ) -> Result<Signature, RetryError<String>> {
         let coordinator_instance_state = self
             .get_coordinator_instance(&coordinator_instance)
@@ -437,7 +439,7 @@ impl SolanaBackend {
             .map_err(|err| RetryError::Fatal(err.to_string()))?;
         let authorization_global = psyche_solana_authorizer::find_authorization(
             &coordinator_instance_state.join_authority,
-            &system_program::ID,
+            &authorizer.unwrap_or(system_program::ID),
             psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE,
         );
         let pending_tx = self

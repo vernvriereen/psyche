@@ -201,6 +201,9 @@ enum Commands {
 
         #[clap(long, env)]
         ws_rpc_2: Option<String>,
+
+        #[clap(long, env)]
+        authorizer: Option<Pubkey>,
     },
 
     // Prints the help, optionally as markdown. Used for docs generation.
@@ -543,6 +546,7 @@ async fn async_main() -> Result<()> {
             args,
             rpc_2,
             ws_rpc_2,
+            authorizer,
         } => {
             psyche_client::prepare_environment();
 
@@ -614,6 +618,7 @@ async fn async_main() -> Result<()> {
                 dummy_training_delay_secs: args.dummy_training_delay_secs,
                 max_concurrent_parameter_requests: args.max_concurrent_parameter_requests,
                 max_concurrent_downloads: args.max_concurrent_downloads,
+                authorizer,
             })
             .build()
             .await
