@@ -53,6 +53,6 @@ pub fn join_run_processor(
         return err!(ProgramError::SignerMismatch);
     }
     let mut account = context.accounts.coordinator_account.load_mut()?;
-    account.nonce += 1;
+    account.increment_nonce();
     account.state.join_run(params.client_id)
 }

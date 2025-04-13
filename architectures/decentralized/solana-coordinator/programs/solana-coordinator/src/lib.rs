@@ -89,10 +89,16 @@ pub struct CoordinatorAccount {
     pub state: CoordinatorInstanceState,
     pub nonce: u64,
 }
+
 impl CoordinatorAccount {
     pub fn space_with_discriminator() -> usize {
         CoordinatorAccount::DISCRIMINATOR.len()
             + std::mem::size_of::<CoordinatorAccount>()
+    }
+
+    pub fn increment_nonce(&mut self) {
+        self.nonce += 1;
+        msg!("Nonce: {}", self.nonce);
     }
 }
 
@@ -137,7 +143,7 @@ pub mod psyche_solana_coordinator {
         progress: Option<CoordinatorProgress>,
     ) -> Result<()> {
         let mut account = ctx.accounts.coordinator_account.load_mut()?;
-        account.nonce += 1;
+        account.increment_nonce();
         account.state.update(config, model, progress)
     }
 
@@ -147,7 +153,7 @@ pub mod psyche_solana_coordinator {
         epoch_slashing_rate: Option<u64>,
     ) -> Result<()> {
         let mut account = ctx.accounts.coordinator_account.load_mut()?;
-        account.nonce += 1;
+        account.increment_nonce();
         account
             .state
             .set_future_epoch_rates(epoch_earning_rate, epoch_slashing_rate)
@@ -165,13 +171,13 @@ pub mod psyche_solana_coordinator {
         paused: bool,
     ) -> Result<()> {
         let mut account = ctx.accounts.coordinator_account.load_mut()?;
-        account.nonce += 1;
+        account.increment_nonce();
         account.state.set_paused(paused)
     }
 
     pub fn tick(ctx: Context<PermissionlessCoordinatorAccounts>) -> Result<()> {
         let mut account = ctx.accounts.coordinator_account.load_mut()?;
-        account.nonce += 1;
+        account.increment_nonce();
         account.state.tick()
     }
 
@@ -185,7 +191,7 @@ pub mod psyche_solana_coordinator {
         metadata: WitnessMetadata,
     ) -> Result<()> {
         let mut account = ctx.accounts.coordinator_account.load_mut()?;
-        account.nonce += 1;
+        account.increment_nonce();
         account.state.witness(
             ctx.accounts.user.key,
             Witness {
@@ -206,7 +212,7 @@ pub mod psyche_solana_coordinator {
         broadcast_merkle: MerkleRoot,
     ) -> Result<()> {
         let mut account = ctx.accounts.coordinator_account.load_mut()?;
-        account.nonce += 1;
+        account.increment_nonce();
         account.state.warmup_witness(
             ctx.accounts.user.key,
             Witness {
@@ -226,7 +232,7 @@ pub mod psyche_solana_coordinator {
         index: u64,
     ) -> Result<()> {
         let mut account = ctx.accounts.coordinator_account.load_mut()?;
-        account.nonce += 1;
+        account.increment_nonce();
         account.state.health_check(
             ctx.accounts.user.key,
             vec![(
@@ -245,7 +251,7 @@ pub mod psyche_solana_coordinator {
         repo: HubRepo,
     ) -> Result<()> {
         let mut account = ctx.accounts.coordinator_account.load_mut()?;
-        account.nonce += 1;
+        account.increment_nonce();
         account.state.checkpoint(ctx.accounts.user.key, repo)
     }
 }

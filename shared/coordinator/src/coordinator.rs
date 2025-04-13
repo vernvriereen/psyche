@@ -613,12 +613,11 @@ impl<T: NodeIdentity> Coordinator<T> {
     }
 
     pub fn withdraw_all(&mut self) -> std::result::Result<(), CoordinatorError> {
-        if self.epoch_state.clients.is_empty() {
-            return Err(CoordinatorError::InvalidWithdraw);
-        }
-        let clients_max_index = self.epoch_state.clients.len() - 1;
-        for client_index in 0..=clients_max_index {
-            self.withdraw(client_index as u64)?;
+        if !self.epoch_state.clients.is_empty() {
+            let clients_max_index = self.epoch_state.clients.len() - 1;
+            for client_index in 0..=clients_max_index {
+                self.withdraw(client_index as u64)?;
+            }
         }
         Ok(())
     }
