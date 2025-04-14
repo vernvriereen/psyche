@@ -18,7 +18,7 @@ use futures_util::StreamExt;
 use psyche_client::IntegrationTestLogMarker;
 use psyche_coordinator::{
     model::{self, Model},
-    CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks, Version,
+    CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks,
 };
 use psyche_watcher::{Backend as WatcherBackend, OpportunisticData};
 use solana_account_decoder_client_types::{UiAccount, UiAccountData, UiAccountEncoding};
@@ -28,10 +28,6 @@ use tokio::{
     time::timeout,
 };
 use tracing::{debug, error, info, trace, warn};
-
-pub const CLIENT_VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
-pub const CLIENT_VERSION_MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
-pub const CLIENT_VERSION_PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
 
 pub struct SolanaBackend {
     program_authorizer: Program<Arc<Keypair>>,
@@ -374,9 +370,6 @@ impl SolanaBackend {
         coordinator_account: Pubkey,
         id: psyche_solana_coordinator::ClientId,
     ) -> Result<Signature> {
-        self.check_coordinator_version_matches(coordinator_account)
-            .await?;
-
         let coordinator_instance_state =
             self.get_coordinator_instance(&coordinator_instance).await?;
         let authorization_global = psyche_solana_authorizer::find_authorization(
@@ -546,36 +539,6 @@ impl SolanaBackend {
 
     pub async fn get_balance(&self, account: &Pubkey) -> Result<u64> {
         Ok(self.program_coordinator.rpc().get_balance(account).await?)
-    }
-
-    async fn check_coordinator_version_matches(&self, coordinator_account: Pubkey) -> Result<()> {
-        let client_version = Version::new_from_str(
-            CLIENT_VERSION_MAJOR,
-            CLIENT_VERSION_MINOR,
-            CLIENT_VERSION_PATCH,
-        )
-        .map_err(|_| anyhow!("❌ Failed to join run: Invalid Version"))?;
-
-        let coordinator_account_instance =
-            self.get_coordinator_account(&coordinator_account).await?;
-        let coordinator_version = coordinator_account_instance.state.version;
-
-        debug!("Coordinator Version: {}", coordinator_version);
-        // Both MAJOR and MINOR versions must match on client and coordinator (MAJOR.MINOR.PATCH)
-        if client_version.major != coordinator_version.major
-            || client_version.minor != coordinator_version.minor
-        {
-            bail!("❌ Failed to join run: Client version ({}) is incompatible with coordinator version ({})",
-                  client_version, coordinator_version);
-        }
-        // If the patch (x.y.PATCH) version is different, log a warning but don't bail
-        if client_version.patch != coordinator_version.patch {
-            warn!(
-                "⚠️ Warn. Client patch version mismatch, client: {}, coordinator: {}",
-                client_version, coordinator_version
-            );
-        }
-        Ok(())
     }
 }
 

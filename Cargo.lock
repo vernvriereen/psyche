@@ -6638,7 +6638,7 @@ dependencies = [
 
 [[package]]
 name = "psyche-centralized-client"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6676,7 +6676,7 @@ dependencies = [
 
 [[package]]
 name = "psyche-centralized-server"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6708,7 +6708,7 @@ dependencies = [
 
 [[package]]
 name = "psyche-centralized-shared"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anyhow",
@@ -7002,7 +7002,7 @@ dependencies = [
 
 [[package]]
 name = "psyche-solana-coordinator"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "bytemuck",

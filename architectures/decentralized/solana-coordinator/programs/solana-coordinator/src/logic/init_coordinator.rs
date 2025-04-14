@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use psyche_coordinator::Version;
 use psyche_core::FixedString;
 
 use crate::bytes_from_string;
@@ -7,9 +6,6 @@ use crate::CoordinatorAccount;
 use crate::CoordinatorInstance;
 use crate::ProgramError;
 use crate::RunMetadata;
-use crate::COORDINATOR_VERSION_MAJOR;
-use crate::COORDINATOR_VERSION_MINOR;
-use crate::COORDINATOR_VERSION_PATCH;
 
 #[derive(Accounts)]
 #[instruction(params: InitCoordinatorParams)]
@@ -77,16 +73,6 @@ pub fn init_coordinator_processor(
     let account = bytemuck::from_bytes_mut::<CoordinatorAccount>(
         &mut data[disc.len()..CoordinatorAccount::space_with_discriminator()],
     );
-
-    let Ok(version) = Version::new_from_str(
-        COORDINATOR_VERSION_MAJOR,
-        COORDINATOR_VERSION_MINOR,
-        COORDINATOR_VERSION_PATCH,
-    ) else {
-        return err!(ProgramError::InvalidVersion);
-    };
-    account.state.version = version;
-
     // Setup the run_id const
     account.state.coordinator.run_id =
         FixedString::from_str_truncated(&params.run_id);

@@ -12,7 +12,7 @@ pub use committee_selection::{
 };
 pub use coordinator::{
     Client, ClientState, Coordinator, CoordinatorConfig, CoordinatorEpochState, CoordinatorError,
-    HealthChecks, Round, RunState, TickResult, Version, Witness, WitnessBloom, WitnessEvalResult,
+    HealthChecks, Round, RunState, TickResult, Witness, WitnessBloom, WitnessEvalResult,
     WitnessMetadata, BLOOM_FALSE_RATE, NUM_STORED_ROUNDS, SOLANA_MAX_NUM_CLIENTS,
     SOLANA_MAX_NUM_WITNESSES, SOLANA_MAX_STRING_LEN,
 };

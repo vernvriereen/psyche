@@ -7,7 +7,6 @@ use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace}
 use bytemuck::{Pod, Zeroable};
 use psyche_core::{sha256, Bloom, FixedString, FixedVec, MerkleRoot, NodeIdentity, SmallBoolean};
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
 use std::hash::Hash;
 use ts_rs::TS;
 
@@ -23,44 +22,6 @@ pub const WAITING_FOR_MEMBERS_EXTRA_SECONDS: u64 = 3;
 
 // bloom filter with 1024 bits (16 u64)
 pub type WitnessBloom = Bloom<16, 8>;
-
-#[derive(
-    Clone,
-    Debug,
-    Zeroable,
-    Default,
-    Copy,
-    Serialize,
-    Deserialize,
-    AnchorSerialize,
-    AnchorDeserialize,
-    TS,
-)]
-pub struct Version {
-    pub major: u8,
-    pub minor: u8,
-    pub patch: u8,
-}
-
-impl Display for Version {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
-    }
-}
-
-impl Version {
-    pub fn new_from_str(
-        major: &str,
-        minor: &str,
-        patch: &str,
-    ) -> Result<Self, std::num::ParseIntError> {
-        Ok(Self {
-            major: major.parse()?,
-            minor: minor.parse()?,
-            patch: patch.parse()?,
-        })
-    }
-}
 
 #[repr(u8)]
 #[derive(

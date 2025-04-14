@@ -32,10 +32,6 @@ declare_id!("C5qtZvpCLXCJFeVMSfqD3fpGLpbFq85HXS1YwhQcfq49");
 
 pub const SOLANA_MAX_NUM_PENDING_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 
-pub const COORDINATOR_VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
-pub const COORDINATOR_VERSION_MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
-pub const COORDINATOR_VERSION_PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
-
 pub fn bytes_from_string(str: &str) -> &[u8] {
     &str.as_bytes()[..SOLANA_MAX_STRING_LEN.min(str.len())]
 }
