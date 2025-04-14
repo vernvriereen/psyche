@@ -11,10 +11,11 @@ pub use client::ClientId;
 pub use instance_state::CoordinatorInstanceState;
 use logic::*;
 pub use program_error::ProgramError;
-use psyche_coordinator::model::Model;
+use psyche_coordinator::model::{HubRepo, Model};
 use psyche_coordinator::Committee;
 use psyche_coordinator::CommitteeProof;
 use psyche_coordinator::CoordinatorConfig;
+use psyche_coordinator::CoordinatorProgress;
 use psyche_coordinator::Witness;
 use psyche_coordinator::WitnessBloom;
 use psyche_coordinator::WitnessMetadata;
@@ -28,7 +29,7 @@ use ts_rs::TS;
 
 pub use crate::instance_state::RunMetadata;
 
-declare_id!("C5qtZvpCLXCJFeVMSfqD3fpGLpbFq85HXS1YwhQcfq49");
+declare_id!("HR8RN2TP9E9zsi2kjhvPbirJWA1R6L6ruf4xNNGpjU5Y");
 
 pub const SOLANA_MAX_NUM_PENDING_CLIENTS: usize = SOLANA_MAX_NUM_CLIENTS;
 
@@ -86,11 +87,18 @@ pub fn coordinator_account_from_bytes(
 #[derive(Serialize, Deserialize, TS)]
 pub struct CoordinatorAccount {
     pub state: CoordinatorInstanceState,
+    pub nonce: u64,
 }
+
 impl CoordinatorAccount {
     pub fn space_with_discriminator() -> usize {
         CoordinatorAccount::DISCRIMINATOR.len()
             + std::mem::size_of::<CoordinatorAccount>()
+    }
+
+    pub fn increment_nonce(&mut self) {
+        self.nonce += 1;
+        msg!("Nonce: {}", self.nonce);
     }
 }
 
@@ -128,16 +136,15 @@ pub mod psyche_solana_coordinator {
         free_coordinator_processor(context, params)
     }
 
-    pub fn update_coordinator_config_model(
+    pub fn update(
         ctx: Context<OwnerCoordinatorAccounts>,
-        config: Option<CoordinatorConfig<ClientId>>,
+        config: Option<CoordinatorConfig>,
         model: Option<Model>,
+        progress: Option<CoordinatorProgress>,
     ) -> Result<()> {
-        ctx.accounts
-            .coordinator_account
-            .load_mut()?
-            .state
-            .update_coordinator_config_model(config, model)
+        let mut account = ctx.accounts.coordinator_account.load_mut()?;
+        account.increment_nonce();
+        account.state.update(config, model, progress)
     }
 
     pub fn set_future_epoch_rates(
@@ -145,9 +152,9 @@ pub mod psyche_solana_coordinator {
         epoch_earning_rate: Option<u64>,
         epoch_slashing_rate: Option<u64>,
     ) -> Result<()> {
-        ctx.accounts
-            .coordinator_account
-            .load_mut()?
+        let mut account = ctx.accounts.coordinator_account.load_mut()?;
+        account.increment_nonce();
+        account
             .state
             .set_future_epoch_rates(epoch_earning_rate, epoch_slashing_rate)
     }
@@ -163,15 +170,15 @@ pub mod psyche_solana_coordinator {
         ctx: Context<OwnerCoordinatorAccounts>,
         paused: bool,
     ) -> Result<()> {
-        ctx.accounts
-            .coordinator_account
-            .load_mut()?
-            .state
-            .set_paused(paused)
+        let mut account = ctx.accounts.coordinator_account.load_mut()?;
+        account.increment_nonce();
+        account.state.set_paused(paused)
     }
 
     pub fn tick(ctx: Context<PermissionlessCoordinatorAccounts>) -> Result<()> {
-        ctx.accounts.coordinator_account.load_mut()?.state.tick()
+        let mut account = ctx.accounts.coordinator_account.load_mut()?;
+        account.increment_nonce();
+        account.state.tick()
     }
 
     #[allow(unused_variables)] // for the metadata field. adding a _ prefix results in anchor's IDL not matching the actual types. lol.
@@ -183,7 +190,9 @@ pub mod psyche_solana_coordinator {
         broadcast_merkle: MerkleRoot,
         metadata: WitnessMetadata,
     ) -> Result<()> {
-        ctx.accounts.coordinator_account.load_mut()?.state.witness(
+        let mut account = ctx.accounts.coordinator_account.load_mut()?;
+        account.increment_nonce();
+        account.state.witness(
             ctx.accounts.user.key,
             Witness {
                 proof,
@@ -202,19 +211,17 @@ pub mod psyche_solana_coordinator {
         broadcast_bloom: WitnessBloom,
         broadcast_merkle: MerkleRoot,
     ) -> Result<()> {
-        ctx.accounts
-            .coordinator_account
-            .load_mut()?
-            .state
-            .warmup_witness(
-                ctx.accounts.user.key,
-                Witness {
-                    proof,
-                    participant_bloom,
-                    broadcast_bloom,
-                    broadcast_merkle,
-                },
-            )
+        let mut account = ctx.accounts.coordinator_account.load_mut()?;
+        account.increment_nonce();
+        account.state.warmup_witness(
+            ctx.accounts.user.key,
+            Witness {
+                proof,
+                participant_bloom,
+                broadcast_bloom,
+                broadcast_merkle,
+            },
+        )
     }
 
     pub fn health_check(
@@ -224,21 +231,28 @@ pub mod psyche_solana_coordinator {
         position: u64,
         index: u64,
     ) -> Result<()> {
-        ctx.accounts
-            .coordinator_account
-            .load_mut()?
-            .state
-            .health_check(
-                ctx.accounts.user.key,
-                vec![(
-                    id,
-                    CommitteeProof {
-                        committee,
-                        position,
-                        index,
-                    },
-                )],
-            )
+        let mut account = ctx.accounts.coordinator_account.load_mut()?;
+        account.increment_nonce();
+        account.state.health_check(
+            ctx.accounts.user.key,
+            vec![(
+                id,
+                CommitteeProof {
+                    committee,
+                    position,
+                    index,
+                },
+            )],
+        )
+    }
+
+    pub fn checkpoint(
+        ctx: Context<PermissionlessCoordinatorAccounts>,
+        repo: HubRepo,
+    ) -> Result<()> {
+        let mut account = ctx.accounts.coordinator_account.load_mut()?;
+        account.increment_nonce();
+        account.state.checkpoint(ctx.accounts.user.key, repo)
     }
 }
 

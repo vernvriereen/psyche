@@ -79,8 +79,8 @@ pub struct TrainArgs {
     #[clap(long, default_value_t = 1, env)]
     pub tensor_parallelism: usize,
 
-    #[clap(long, env)]
-    pub micro_batch_size: Option<usize>,
+    #[clap(long, env, default_value_t = 1)]
+    pub micro_batch_size: usize,
 
     /// If provided, every shared gradient this client sees will be written to this directory.
     #[clap(long, env)]

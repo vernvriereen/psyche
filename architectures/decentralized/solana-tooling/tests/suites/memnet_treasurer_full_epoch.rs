@@ -1,4 +1,3 @@
-use bytemuck::Zeroable;
 use psyche_coordinator::model::Checkpoint;
 use psyche_coordinator::model::HubRepo;
 use psyche_coordinator::model::LLMArchitecture;
@@ -9,7 +8,6 @@ use psyche_coordinator::model::LLM;
 use psyche_coordinator::CoordinatorConfig;
 use psyche_coordinator::WitnessProof;
 use psyche_core::ConstantLR;
-use psyche_core::FixedVec;
 use psyche_core::LearningRateSchedule;
 use psyche_core::OptimizerDefinition;
 use psyche_solana_authorizer::logic::AuthorizationGranteeUpdateParams;
@@ -192,18 +190,20 @@ pub async fn run() {
         &coordinator_instance,
         &coordinator_account,
         RunUpdateParams {
-            config: Some(CoordinatorConfig::<ClientId> {
+            config: Some(CoordinatorConfig {
                 warmup_time: 1,
                 cooldown_time: 1,
                 max_round_train_time: 3,
                 round_witness_time: 1,
                 min_clients: 1,
-                global_batch_size: 1,
+                init_min_clients: 1,
+                global_batch_size_start: 1,
+                global_batch_size_end: 1,
+                global_batch_size_warmup_tokens: 0,
                 verification_percent: 0,
                 witness_nodes: 1,
                 rounds_per_epoch: 4,
                 total_steps: 100,
-                checkpointers: FixedVec::zeroed(),
             }),
             model: Some(Model::LLM(LLM {
                 architecture: LLMArchitecture::HfLlama,
@@ -223,6 +223,7 @@ pub async fn run() {
                     weight_decay: None,
                 },
             })),
+            progress: None,
             epoch_earning_rate: Some(earned_point_per_epoch),
             epoch_slashing_rate: None,
             paused: Some(false),

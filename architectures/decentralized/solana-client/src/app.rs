@@ -1,23 +1,28 @@
-use crate::{backend::SolanaBackend, network_identity::NetworkIdentity};
+use crate::{
+    backend::SolanaBackend,
+    network_identity::NetworkIdentity,
+    retry::{retry_function, RetryError},
+};
 
 use anchor_client::{
     solana_sdk::{
         commitment_config::CommitmentConfig,
+        pubkey::Pubkey,
         signature::{Keypair, Signature, Signer},
     },
     Cluster,
 };
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 use psyche_client::{
     CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
 };
-use psyche_coordinator::{Coordinator, RunState};
+use psyche_coordinator::{Coordinator, CoordinatorError, RunState};
 use psyche_network::{
     allowlist, psyche_relay_map, DiscoveryMode, NetworkTUIState, NetworkTui, RelayMode, SecretKey,
 };
 use psyche_tui::{logging::LoggerWidget, CustomWidget, TabbedWidget};
 use psyche_watcher::CoordinatorTui;
-use rand::RngCore;
+use rand::{thread_rng, Rng, RngCore};
 use std::{path::PathBuf, time::Duration};
 use std::{
     sync::Arc,
@@ -26,11 +31,10 @@ use std::{
 use tokio::{
     select,
     sync::mpsc::Sender,
-    task::JoinHandle,
     time::{interval, Interval, MissedTickBehavior},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 pub(super) type Tabs = TabbedWidget<(ClientTUI, CoordinatorTui, NetworkTui, LoggerWidget)>;
 pub const TAB_NAMES: [&str; 4] = ["Client", "Coordinator", "Network", "Logger"];
@@ -39,11 +43,13 @@ type TabsData = <Tabs as CustomWidget>::Data;
 pub struct App {
     run_id: String,
     cluster: Cluster,
-    tick_check_interval: Option<Interval>,
+    backup_clusters: Vec<Cluster>,
+    tick_check_interval: Interval,
     cancel: CancellationToken,
     update_tui_interval: Interval,
     tx_tui_state: Option<Sender<TabsData>>,
     joined_new_train_epoch: Option<Signature>,
+    authorizer: Option<Pubkey>,
 }
 
 pub struct AppBuilder(AppParams);
@@ -53,12 +59,12 @@ pub struct AppParams {
     pub identity_secret_key: SecretKey,
     pub wallet_keypair: Arc<Keypair>,
     pub cluster: Cluster,
-    pub ticker: bool,
+    pub backup_clusters: Vec<Cluster>,
     pub tx_tui_state: Option<Sender<TabsData>>,
     pub run_id: String,
     pub data_parallelism: usize,
     pub tensor_parallelism: usize,
-    pub micro_batch_size: Option<usize>,
+    pub micro_batch_size: usize,
     pub write_gradients_dir: Option<PathBuf>,
     pub p2p_port: Option<u16>,
     pub p2p_interface: Option<String>,
@@ -72,6 +78,7 @@ pub struct AppParams {
     pub dummy_training_delay_secs: Option<u64>,
     pub max_concurrent_parameter_requests: usize,
     pub max_concurrent_downloads: usize,
+    pub authorizer: Option<Pubkey>,
 }
 
 impl AppBuilder {
@@ -107,18 +114,17 @@ impl AppBuilder {
         let app = App {
             run_id: p.run_id.clone(),
             cluster: p.cluster,
-            tick_check_interval: match p.ticker {
-                true => {
-                    let mut interval = interval(Duration::from_millis(500));
-                    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-                    Some(interval)
-                }
-                false => None,
+            backup_clusters: p.backup_clusters,
+            tick_check_interval: {
+                let mut interval = interval(Duration::from_millis(500));
+                interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+                interval
             },
             cancel: p.cancel,
             tx_tui_state: p.tx_tui_state,
             update_tui_interval: interval(Duration::from_millis(150)),
             joined_new_train_epoch: None,
+            authorizer: p.authorizer,
         };
         let identity = psyche_solana_coordinator::ClientId::new(
             p.wallet_keypair.pubkey(),
@@ -157,6 +163,7 @@ impl App {
     ) -> Result<()> {
         let backend = SolanaBackend::new(
             self.cluster.clone(),
+            self.backup_clusters.clone(),
             state_options.private_key.0.clone(),
             CommitmentConfig::confirmed(),
         )?;
@@ -174,36 +181,45 @@ impl App {
 
         let backend = Arc::new(SolanaBackend::new(
             self.cluster.clone(),
+            self.backup_clusters.clone(),
             state_options.private_key.0.clone(),
             CommitmentConfig::confirmed(),
         )?);
         let signer = state_options.private_key.0.pubkey();
         let p2p_identity = state_options.private_key.1.public();
 
-        let current_coordinator_state = backend
+        let start_coordinator_state = backend
             .get_coordinator_account(&coordinator_account)
             .await?
             .state
             .coordinator;
 
-        if current_coordinator_state.run_state == RunState::WaitingForMembers {
-            let joined = backend
-                .join_run(
+        // if we're already in "WaitingForMembers" we won't get an update saying that
+        // (subscription is on change), so check if it's in that state right at boot
+        // and join the run if so
+        if start_coordinator_state.run_state == RunState::WaitingForMembers {
+            let joined = retry_function("join_run", || {
+                backend.join_run_retryable(
                     coordinator_instance,
                     coordinator_account,
                     psyche_solana_coordinator::ClientId {
                         signer,
                         p2p_identity: *p2p_identity.as_bytes(),
                     },
+                    self.authorizer,
                 )
-                .await?;
+            })
+            .await
+            .map_err(|e: RetryError<String>| anyhow!("join_run error: {}", e))?;
             info!(
-                "Joined run {} from {} with transaction {}",
-                self.run_id, signer, joined
+                run_id = self.run_id,
+                from = %signer,
+                tx = %joined,
+                "Joined run",
             );
             self.joined_new_train_epoch = Some(joined);
         } else {
-            info!("Waiting for the current epoch to end before joining.");
+            info!("Waiting for the current epoch to end before joining");
         }
 
         // Update the latest update after joining the run to advance the state.
@@ -211,9 +227,9 @@ impl App {
             .get_coordinator_account(&coordinator_account)
             .await?
             .state;
+
         let mut latest_update = coordinator_state.coordinator;
         let mut updates = backend_runner.updates();
-        let mut tick_tx: Option<JoinHandle<Result<Signature>>> = None;
         let mut client = Client::new(backend_runner, allowlist, p2p, state_options);
 
         loop {
@@ -225,7 +241,7 @@ impl App {
                     let (client_tui_state, network_tui_state) = client.tui_states().await;
                     self.update_tui(client_tui_state, &latest_update, network_tui_state).await?;
                 }
-                _ = async { self.tick_check_interval.as_mut().unwrap().tick().await }, if self.tick_check_interval.is_some() && tick_tx.is_none() => {
+                _ = self.tick_check_interval.tick() => {
                     let mut ticked = latest_update;
                     let timestamp = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
@@ -248,49 +264,50 @@ impl App {
                     match ticked.tick(pending_clients_ids, timestamp, rand::thread_rng().next_u64()) {
                         Ok(_) => {
                             if ticked.run_state != latest_update.run_state {
-                                let backend = backend.clone();
-                                let backend_clone = backend.clone();
-                                tick_tx = Some(tokio::spawn(async move { backend.tick(coordinator_instance, coordinator_account).await }));
-                                // This means the epoch finished so we're rejoining the run to participate in the next one.
-                                if ticked.run_state == RunState::WaitingForMembers && latest_update.run_state == RunState::Cooldown && self.joined_new_train_epoch.is_none() {
-                                    let joined = backend_clone
-                                        .join_run(
-                                            coordinator_instance,
-                                            coordinator_account,
-                                            psyche_solana_coordinator::ClientId {
-                                                signer,
-                                                p2p_identity: *p2p_identity.as_bytes(),
-                                            },
-                                        )
-                                        .await?;
-                                    info!(
-                                        "Joined run for next epoch {} from {} with transaction {}",
-                                        self.run_id, signer, joined
-                                    );
-                                    self.joined_new_train_epoch = Some(joined);
-                                } else if ticked.run_state == RunState::RoundTrain && self.joined_new_train_epoch.is_some() {
-                                   self.joined_new_train_epoch = None;
+                                // to avoid *everyone* sending a tick, we probabilisticly send it
+                                // targetting having two clients send it per interval
+                                let send_tick = match ticked.epoch_state.clients.len() {
+                                    0..=2 => true,
+                                    len => { let rand: f32 = thread_rng().gen();
+                                        rand <= 2.0 / len as f32
+                                    }
+                                };
+                                if send_tick {
+                                    backend.send_tick(coordinator_instance, coordinator_account);
                                 }
                             }
                         }
+                        Err(CoordinatorError::Halted) => {}, // don't print anything when halted. it's an "error" but no need to spam logs
                         Err(err) => debug!("Tick simulation error: {err}")
                     };
                 }
                 update = async { updates.recv().await } => {
-                    let update = match update?.value.data.decode() {
-                        Some(data) => psyche_solana_coordinator::coordinator_account_from_bytes(&data)
-                            .map_err(|_| anyhow!("Unable to decode coordinator account data"))
-                            .map(|x| x.state.coordinator)?,
-                        None => bail!("Unable to decode account data"),
-                    };
-                    latest_update = update;
-                }
-                tx = async { tick_tx.as_mut().unwrap().await }, if tick_tx.is_some() => {
-                    tick_tx = None;
-                    match tx? {
-                        Ok(signature) => info!("Tick transaction {}", signature),
-                        Err(err) => error!("Tick transaction error: {}", err)
-                    };
+                    latest_update = update?;
+                    match latest_update.run_state {
+                        RunState::WaitingForMembers => {
+                            if self.joined_new_train_epoch.is_none() {
+                                let joined = retry_function("join_run", || backend
+                                    .join_run_retryable(
+                                        coordinator_instance,
+                                        coordinator_account,
+                                        psyche_solana_coordinator::ClientId {
+                                            signer,
+                                            p2p_identity: *p2p_identity.as_bytes(),
+                                        },
+                                        self.authorizer,
+                                    ))
+                                    .await.map_err(|e: RetryError<String>| anyhow!("join_run error: {}", e))?;
+                                info!(
+                                    run_id = self.run_id,
+                                    from = %signer,
+                                    tx = %joined,
+                                    "Joined run",
+                                );
+                                self.joined_new_train_epoch = Some(joined);
+                            }
+                        }
+                        _ => { self.joined_new_train_epoch = None; }
+                    }
                 }
                 res = client.finished() => {
                     res??;

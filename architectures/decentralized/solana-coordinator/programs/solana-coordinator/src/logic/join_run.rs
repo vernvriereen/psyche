@@ -52,10 +52,7 @@ pub fn join_run_processor(
     if &params.client_id.signer != context.accounts.user.key {
         return err!(ProgramError::SignerMismatch);
     }
-    context
-        .accounts
-        .coordinator_account
-        .load_mut()?
-        .state
-        .join_run(params.client_id)
+    let mut account = context.accounts.coordinator_account.load_mut()?;
+    account.increment_nonce();
+    account.state.join_run(params.client_id)
 }

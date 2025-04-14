@@ -2,6 +2,7 @@ use anchor_lang::InstructionData;
 use anchor_lang::ToAccountMetas;
 use psyche_coordinator::model::Model;
 use psyche_coordinator::CoordinatorConfig;
+use psyche_coordinator::CoordinatorProgress;
 use psyche_solana_coordinator::accounts::FreeCoordinatorAccounts;
 use psyche_solana_coordinator::accounts::InitCoordinatorAccounts;
 use psyche_solana_coordinator::accounts::JoinRunAccounts;
@@ -13,7 +14,7 @@ use psyche_solana_coordinator::instruction::InitCoordinator;
 use psyche_solana_coordinator::instruction::JoinRun;
 use psyche_solana_coordinator::instruction::SetPaused;
 use psyche_solana_coordinator::instruction::Tick;
-use psyche_solana_coordinator::instruction::UpdateCoordinatorConfigModel;
+use psyche_solana_coordinator::instruction::Update;
 use psyche_solana_coordinator::instruction::Witness;
 use psyche_solana_coordinator::logic::FreeCoordinatorParams;
 use psyche_solana_coordinator::logic::InitCoordinatorParams;
@@ -77,14 +78,16 @@ pub async fn process_coordinator_free(
         .await
 }
 
-pub async fn process_coordinator_update_config_model(
+#[allow(clippy::too_many_arguments)]
+pub async fn process_update(
     endpoint: &mut ToolboxEndpoint,
     payer: &Keypair,
     authority: &Keypair,
     coordinator_instance: &Pubkey,
     coordinator_account: &Pubkey,
-    config: Option<CoordinatorConfig<ClientId>>,
+    config: Option<CoordinatorConfig>,
     model: Option<Model>,
+    progress: Option<CoordinatorProgress>,
 ) -> Result<Signature, ToolboxEndpointError> {
     let accounts = OwnerCoordinatorAccounts {
         authority: authority.pubkey(),
@@ -93,7 +96,12 @@ pub async fn process_coordinator_update_config_model(
     };
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
-        data: UpdateCoordinatorConfigModel { config, model }.data(),
+        data: Update {
+            config,
+            model,
+            progress,
+        }
+        .data(),
         program_id: psyche_solana_coordinator::ID,
     };
     endpoint

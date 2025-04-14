@@ -405,7 +405,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         }
 
                         _ = opprotunistic_witness_interval.tick() => {
-                            run.try_send_opportunistic_witness()?;
+                            run.try_send_opportunistic_witness().await?;
                         }
 
                         Some((download_ticket, tag)) = rx_request_download.recv() => {

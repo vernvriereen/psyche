@@ -75,7 +75,6 @@ for i in $(seq 1 "$num_clients"); do
             --rpc ${RPC} \
             --ws-rpc ${WS_RPC} \
             --run-id ${RUN_ID} \
-            --ticker \
             --logs "json"
 
     echo "Started psyche-client-${i} on GPU $gpu_id"

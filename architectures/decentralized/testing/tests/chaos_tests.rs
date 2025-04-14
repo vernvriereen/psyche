@@ -90,6 +90,7 @@ async fn test_pause_solana_validator(
            }
            response = watcher.log_rx.recv() => {
                if let Some(Response::Loss(client, epoch, step, loss)) = response {
+                   let loss = loss.unwrap();
                    println!(
                        "client: {:?}, epoch: {}, step: {}, Loss: {}",
                        client, epoch, step, loss
@@ -185,6 +186,7 @@ async fn test_delay_solana_test_validator(
            }
            response = watcher.log_rx.recv() => {
                if let Some(Response::Loss(client, epoch, step, loss)) = response {
+                   let loss = loss.unwrap();
                    println!(
                        "client: {:?}, epoch: {}, step: {}, Loss: {}",
                        client, epoch, step, loss
@@ -277,6 +279,7 @@ async fn test_delay_solana_client(#[values(1, 2)] n_clients: u8, #[values(0, 10)
            }
            response = watcher.log_rx.recv() => {
                if let Some(Response::Loss(client, epoch, step, loss)) = response {
+                   let loss = loss.unwrap();
                    println!(
                        "client: {:?}, epoch: {}, step: {}, Loss: {}",
                        client, epoch, step, loss

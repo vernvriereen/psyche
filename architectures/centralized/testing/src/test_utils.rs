@@ -63,7 +63,7 @@ where
     Fut: Future<Output = T>,
     F: FnMut() -> Fut,
 {
-    let retry_attempts: u64 = 25;
+    let retry_attempts: u64 = 500;
     let mut result;
     for attempt in 1..=retry_attempts {
         result = function().await;
@@ -73,7 +73,7 @@ where
             eprintln!("assertion failed, got: {:?} but expected: {:?}", result, y);
             return false;
         } else {
-            tokio::time::sleep(Duration::from_millis(100 * attempt)).await;
+            tokio::time::sleep(Duration::from_millis(10 * attempt)).await;
         }
     }
     false
@@ -123,7 +123,7 @@ pub fn dummy_client_app_params_with_training_delay(
         run_id: run_id.to_string(),
         data_parallelism: 1,
         tensor_parallelism: 1,
-        micro_batch_size: None,
+        micro_batch_size: 1,
         write_gradients_dir: None,
         p2p_port: None,
         p2p_interface: None,
@@ -150,7 +150,7 @@ pub fn dummy_client_app_params_default(server_port: u16, run_id: &str) -> AppPar
         run_id: run_id.to_string(),
         data_parallelism: 1,
         tensor_parallelism: 1,
-        micro_batch_size: None,
+        micro_batch_size: 1,
         write_gradients_dir: None,
         p2p_port: None,
         p2p_interface: None,

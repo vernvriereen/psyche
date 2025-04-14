@@ -134,8 +134,15 @@ impl psyche_tui::CustomWidget for ClientTUI {
                 Layout::horizontal([Constraint::Fill(1), Constraint::Length(right_size)])
                     .split(coord_split[1]);
 
-            let hsplit =
-                Layout::horizontal(Constraint::from_fills([1, 1, 1, 1])).split(plot_split[0]);
+            let rows = Layout::vertical([Constraint::Length(1), Constraint::Length(1)])
+                .split(plot_split[0]);
+
+            let top_row_layout =
+                Layout::horizontal(Constraint::from_fills([1, 1, 1])).split(rows[0]);
+
+            let bottom_row_layout =
+                Layout::horizontal(Constraint::from_fills([1, 1])).split(rows[1]);
+
             Paragraph::new(format!(
                 "State: {}",
                 match state.run_state {
@@ -144,22 +151,36 @@ impl psyche_tui::CustomWidget for ClientTUI {
                     _ => format!("{}", state.run_state),
                 }
             ))
-            .render(hsplit[0], buf);
+            .centered()
+            .render(top_row_layout[0], buf);
+
             Paragraph::new(format!(
                 "Efficency: {}%",
                 (state.efficency * 100.0) as usize
             ))
-            .render(hsplit[1], buf);
+            .centered()
+            .render(top_row_layout[1], buf);
+
             Paragraph::new(format!(
                 "Global Speed: {}",
                 convert_tokens_per_sec(state.global_tokens_per_second)
             ))
-            .render(hsplit[2], buf);
+            .centered()
+            .render(top_row_layout[2], buf);
+
+            Paragraph::new(format!(
+                "Batch Size: {}",
+                convert_tokens(state.token_batch_size as u64)
+            ))
+            .centered()
+            .render(bottom_row_layout[0], buf);
+
             Paragraph::new(format!(
                 "Total Tokens: {}",
                 convert_tokens(state.total_tokens)
             ))
-            .render(hsplit[3], buf);
+            .centered()
+            .render(bottom_row_layout[1], buf);
         }
         if !state.evals.is_empty() {
             let plot_split =
@@ -236,5 +257,6 @@ pub struct ClientTUIState {
     pub loss: Vec<f32>,
     pub evals: HashMap<String, Vec<f64>>,
     pub global_tokens_per_second: f32,
+    pub token_batch_size: u32,
     pub total_tokens: u64,
 }

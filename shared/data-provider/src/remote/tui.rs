@@ -63,7 +63,6 @@ impl psyche_tui::CustomWidget for DataServerTui {
                     [
                         format!("Clients: {:?}", state.clients.len()),
                         format!("Height: {:?}", state.height),
-                        format!("Tick: {:?}", state.tick),
                     ]
                     .into_iter()
                     .map(Line::from)
@@ -81,7 +80,6 @@ pub struct DataServerTuiState {
     pub height: u32,
     //pub clients: Vec<(String, [u64; 2], bool)>,
     pub clients: Vec<(String, usize)>,
-    pub tick: u64,
 
     pub total_samples: usize,
     pub given_samples: usize,
@@ -118,7 +116,6 @@ where
                 .iter()
                 .map(|(k, v)| (format!("{}", k), *v))
                 .collect(),
-            tick: v.state.tick,
             total_samples: v.local_data_provider.num_sequences(),
             given_samples: v.provided_sequences.values().fold(0, |acc, ele| acc + *ele),
         }

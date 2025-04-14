@@ -35,7 +35,7 @@ pub fn assign_data_for_state<T: NodeIdentity>(
     let mut trainer_nodes = trainer_nodes;
     deterministic_shuffle(&mut trainer_nodes, round.random_seed);
 
-    let total_size = coordinator.config.global_batch_size as u64;
+    let total_size = coordinator.get_target_global_batch_size(coordinator.current_round()) as u64;
     let num_trainers = trainer_nodes.len() as u64;
     let base_size = total_size / num_trainers;
     let remainder = total_size % num_trainers;
@@ -65,7 +65,7 @@ pub fn get_batch_ids_for_round<T: NodeIdentity>(
     num_trainer_nodes: u64,
 ) -> Vec<BatchId> {
     let start = round.data_index;
-    let total_size = coordinator.config.global_batch_size as u64;
+    let total_size = coordinator.get_target_global_batch_size(Some(round)) as u64;
     let end = start + total_size;
 
     let base_size = total_size / num_trainer_nodes;

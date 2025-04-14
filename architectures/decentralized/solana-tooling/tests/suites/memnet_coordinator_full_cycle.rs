@@ -1,4 +1,3 @@
-use bytemuck::Zeroable;
 use psyche_coordinator::model::Checkpoint;
 use psyche_coordinator::model::HubRepo;
 use psyche_coordinator::model::LLMArchitecture;
@@ -10,7 +9,6 @@ use psyche_coordinator::CoordinatorConfig;
 use psyche_coordinator::RunState;
 use psyche_coordinator::WitnessProof;
 use psyche_core::ConstantLR;
-use psyche_core::FixedVec;
 use psyche_core::LearningRateSchedule;
 use psyche_core::OptimizerDefinition;
 use psyche_solana_authorizer::logic::AuthorizationGrantorUpdateParams;
@@ -27,8 +25,8 @@ use psyche_solana_tooling::process_coordinator_instructions::process_coordinator
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_join_run;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_set_paused;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_tick;
-use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_update_config_model;
 use psyche_solana_tooling::process_coordinator_instructions::process_coordinator_witness;
+use psyche_solana_tooling::process_coordinator_instructions::process_update;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 
@@ -86,24 +84,26 @@ pub async fn run() {
     );
 
     // update the coordinator's model
-    process_coordinator_update_config_model(
+    process_update(
         &mut endpoint,
         &payer,
         &main_authority,
         &coordinator_instance,
         &coordinator_account,
-        Some(CoordinatorConfig::<ClientId> {
+        Some(CoordinatorConfig {
             warmup_time: 1,
             cooldown_time: 1,
             max_round_train_time: 3,
             round_witness_time: 1,
             min_clients: 1,
-            global_batch_size: 1,
+            init_min_clients: 1,
+            global_batch_size_start: 1,
+            global_batch_size_end: 1,
+            global_batch_size_warmup_tokens: 0,
             verification_percent: 0,
             witness_nodes: 1,
             rounds_per_epoch: 10,
             total_steps: 100,
-            checkpointers: FixedVec::zeroed(),
         }),
         Some(Model::LLM(LLM {
             architecture: LLMArchitecture::HfLlama,
@@ -121,6 +121,7 @@ pub async fn run() {
                 weight_decay: None,
             },
         })),
+        None, // no explicit progress
     )
     .await
     .unwrap();
@@ -215,6 +216,19 @@ pub async fn run() {
         &coordinator_instance,
         &coordinator_account,
         false,
+    )
+    .await
+    .unwrap();
+
+    // rejoin run
+    process_coordinator_join_run(
+        &mut endpoint,
+        &payer,
+        &client,
+        &authorization,
+        &coordinator_instance,
+        &coordinator_account,
+        client_id,
     )
     .await
     .unwrap();

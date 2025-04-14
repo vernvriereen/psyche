@@ -24,6 +24,9 @@ pub enum ProgramError {
     #[msg("Model sanity check failed")]
     ModelSanityCheckFailed,
 
+    #[msg("Progress sanity check failed")]
+    ProgressSanityCheckFailed,
+
     #[msg("Signer not a client")]
     SignerNotAClient,
 
@@ -88,10 +91,8 @@ impl From<CoordinatorError> for ProgramError {
             CoordinatorError::InvalidHealthCheck => {
                 ProgramError::CoordinatorErrorInvalidHealthCheck
             },
-            CoordinatorError::Halted => {
-                ProgramError::CoordinatorErrorNoActiveRound
-            },
-            CoordinatorError::InvalidCheckpoint => {
+            CoordinatorError::Halted => ProgramError::CoordinatorErrorHalted,
+            CoordinatorError::AlreadyCheckpointed => {
                 ProgramError::CoordinatorErrorInvalidCheckpoint
             },
             CoordinatorError::WitnessesFull => {
