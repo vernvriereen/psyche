@@ -2,9 +2,6 @@
 members = ["programs/*"]
 resolver = "2"
 
-[workspace.package]
-version = "0.0.1"
-
 [profile.release]
 overflow-checks = true
 lto = "fat"

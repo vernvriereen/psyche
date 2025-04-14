@@ -24,9 +24,6 @@ pub enum ProgramError {
     #[msg("Model sanity check failed")]
     ModelSanityCheckFailed,
 
-    #[msg("Invalid version")]
-    InvalidVersion,
-
     #[msg("Signer not a client")]
     SignerNotAClient,
 

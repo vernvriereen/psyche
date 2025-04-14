@@ -1,7 +1,4 @@
-use crate::{
-    backend::{SolanaBackend, CLIENT_VERSION_MAJOR, CLIENT_VERSION_MINOR, CLIENT_VERSION_PATCH},
-    network_identity::NetworkIdentity,
-};
+use crate::{backend::SolanaBackend, network_identity::NetworkIdentity};
 
 use anchor_client::{
     solana_sdk::{
@@ -158,10 +155,6 @@ impl App {
         p2p: NC,
         state_options: RunInitConfig<psyche_solana_coordinator::ClientId, NetworkIdentity>,
     ) -> Result<()> {
-        info!(
-            "Client Version: {}.{}.{}",
-            CLIENT_VERSION_MAJOR, CLIENT_VERSION_MINOR, CLIENT_VERSION_PATCH
-        );
         let backend = SolanaBackend::new(
             self.cluster.clone(),
             state_options.private_key.0.clone(),
