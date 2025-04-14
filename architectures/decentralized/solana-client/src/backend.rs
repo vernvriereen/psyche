@@ -191,23 +191,25 @@ impl SolanaBackend {
         let tx_subscribe_ = tx_subscribe.clone();
 
         let url = self.cluster.clone().ws_url().to_string();
-            tokio::spawn(async move {
-                subscribe_to_account(url, commitment, &coordinator_account, tx_subscribe_, 0)
-                    .await
-        }
-    );
-
-    for cluster in self.backup_clusters.clone(){
-        let mut subscription_number = 1;
-        let tx_subscribe_ = tx_subscribe.clone();
         tokio::spawn(async move {
-            subscribe_to_account(cluster.ws_url().to_string().clone(), commitment, &coordinator_account, tx_subscribe_, subscription_number)
+            subscribe_to_account(url, commitment, &coordinator_account, tx_subscribe_, 0).await
+        });
+
+        let mut subscription_number = 1;
+        for cluster in self.backup_clusters.clone() {
+            let tx_subscribe_ = tx_subscribe.clone();
+            tokio::spawn(async move {
+                subscribe_to_account(
+                    cluster.ws_url().to_string().clone(),
+                    commitment,
+                    &coordinator_account,
+                    tx_subscribe_,
+                    subscription_number,
+                )
                 .await
-    }
-);
-subscription_number+=1;
-        
-    }
+            });
+            subscription_number += 1;
+        }
         tokio::spawn(async move {
             let mut last_nonce = 0;
             while let Some(update) = rx_subscribe.recv().await {

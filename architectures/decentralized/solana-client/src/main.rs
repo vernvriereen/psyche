@@ -196,11 +196,12 @@ enum Commands {
         #[clap(flatten)]
         args: TrainArgs,
 
-        #[clap(long, env)]
-        rpc_2: Option<String>,
-
+        #[clap(long, env, default_value_t = String::from(""))]
+        rpc_2: String,
         #[clap(long, env, default_value_t = String::from(""))]
         ws_rpc_2: String,
+        #[clap(long, env, default_value_t = String::from(""))]
+        rpc_3: String,
         #[clap(long, env, default_value_t = String::from(""))]
         ws_rpc_3: String,
         #[clap(long, env)]
@@ -547,6 +548,7 @@ async fn async_main() -> Result<()> {
             args,
             rpc_2,
             ws_rpc_2,
+            rpc_3,
             ws_rpc_3,
             authorizer,
         } => {
@@ -590,14 +592,19 @@ async fn async_main() -> Result<()> {
             )?;
 
             let mut backup_clusters = Vec::new();
-            for y in [ws_rpc_2, ws_rpc_3] {
-                if y == "" {
-                    backup_clusters.push(Cluster::Custom(cluster.rpc.clone(), cluster.ws_rpc.clone()));
+            for (rpc, ws) in [(rpc_2, ws_rpc_2), (rpc_3, ws_rpc_3)] {
+                let rpc = if rpc.is_empty() {
+                    cluster.rpc.clone()
                 } else {
-                    backup_clusters.push(Cluster::Custom(cluster.rpc.clone(), y));
-
-                }
-            };
+                    rpc
+                };
+                let ws = if ws.is_empty() {
+                    cluster.ws_rpc.clone()
+                } else {
+                    ws
+                };
+                backup_clusters.push(Cluster::Custom(rpc, ws))
+            }
 
             let (mut app, allowlist, p2p, state_options) = AppBuilder::new(AppParams {
                 cancel,
