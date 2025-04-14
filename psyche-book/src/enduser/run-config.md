@@ -30,10 +30,15 @@ max_round_train_time = 30
 # time, in seconds, to allow witnesses to publish their messages before next round
 round_witness_time = 1
 
-# minumum number of clients required before we transition from WaitingForClients to Warmup.
+# number of clients that need to be active for an epoch to continue on.
+# if the number of clients goes below this number, we initiate a Cooldown and then back to WaitingForClients.
 # this should be adjusted alongside max_round_train_time, because one client will train a lot slower
 # than 100.
 min_clients = 1
+
+# minumum number of clients required before we transition from WaitingForClients to Warmup.
+# must be equal to or greater than min_clients
+init_min_clients = 1
 
 # what percent of nodes are dedicated to verifying correctness. always set to 0 for now.
 verification_percent = 0
@@ -42,15 +47,14 @@ verification_percent = 0
 witness_nodes = 1
 
 # the total number of training data batches per-step. this also determines your maximum number of clients.
-global_batch_size = 8
+# the batch size will linearly increase from global_batch_size_start to global_batch_size_end over
+# global_batch_size_warmup_tokens tokens
+global_batch_size_start = 8
+global_batch_size_end = 8
+global_batch_size_warmup_tokens = 0
 
 # the total number of training steps to partake in. this is used for the LR schedule in the model section too.
 total_steps = 25000
-
-# node IDs of any nodes you would like to force to upload a HF checkpoint and synchronously publish
-# in cooldown, before transitioning to warmup.
-# we recommend you leave this empty to use the p2p model downloading code.
-checkpointers = []
 ```
 
 ## Model

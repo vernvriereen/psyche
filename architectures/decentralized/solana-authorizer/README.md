@@ -1,8 +1,74 @@
-# Example usages
+# Psyche Solana Authorizer
+
+This smart contract is a piece of the Psyche's onchain logic dedicated to giving permissions to specific users.
+
+## How it works
+
+The Authorizer smart contract manages `Authorization` PDAs.
+
+Each `Authorization` conceptually represents a single role (the `scope`) assigned to a single user (the `grantee`) by a specific authority (the `grantor`). The `grantee` is then able to select a list of other keys that can act on its behalf (the `delegates`).
+
+Conceptually an `Authorization` is made of:
+
+```rust
+// This is all the on-chain data relevant to the user
+pub struct Authorization {
+    pub grantor: Pubkey, // The authority granting the new permissions
+    pub grantee: Pubkey, // The user receiving the new role
+    pub scope: Vec<u8>, // The byte array representing the role being assigned to the grantee
+    pub active: bool, // Activation flag that can be set at any time by the grantor
+    pub delegates: Vec<Pubkey>, // List of delegates set by the grantee
+}
+// This is a simple function that can be used to check if a user has the proper permissions
+impl Authorization {
+    pub fn is_valid_for(
+        &self,
+        grantor: &Pubkey,
+        grantee: &Pubkey,
+        scope: &[u8],
+    ) -> bool {
+        if !self.active {
+            return false;
+        }
+        if !self.grantor.eq(grantor) {
+            return false;
+        }
+        if !self.scope.eq(scope) {
+            return false;
+        }
+        self.grantee == Pubkey::default()
+            || self.grantee.eq(grantee)
+            || self.delegates.contains(grantee)
+    }
+}
+```
+
+The smart contract then exposes a set of instruction to manipulate those `Authorization` PDAs:
+
+- `authoziation_create`, create a new PDA
+- `authorization_grantor_update`, allow the grantor to activate/deactivate the authorization
+- `authorization_grantee_update`, allow the grantee to add/remove delegates
+- `authorization_close` allow the grantor to remove the PDA
+
+
+## Example usages
 
 Note: We'll use the `jq` library in this example which is an open-source JSON cli tool <https://jqlang.org/>
-
 Note: We'll also use the `solana-toolbox` from the `cargo install solana_toolbox_cli` rust crate
+
+## Psyche's specific scripts
+
+We provide a standard script for creating a new coordinator's join authorization in psyche:
+
+```sh
+sh scripts/join-authorization-create.sh devnet grantor.json $GRANTEE_PUBKEY
+```
+
+We also provide a standard script for a grantee to set its delegates:
+
+```sh
+sh scripts/join-authorization-set-delegates.sh devnet $GRANTOR_PUBKEY grantee.json delegate*.json
+```
 
 ## Setting up an authorized user from the authority
 

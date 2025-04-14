@@ -5,11 +5,11 @@ use hf_hub::{
     },
     Cache, Repo, RepoType,
 };
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Instant};
 use thiserror::Error;
 use tracing::debug;
 
-const MODEL_EXTENSIONS: [&str; 2] = [".safetensors", ".json"];
+const MODEL_EXTENSIONS: [&str; 3] = [".safetensors", ".json", ".py"];
 const DATASET_EXTENSIONS: [&str; 1] = [".parquet"];
 
 fn check_extensions(sibling: &Siblings, extensions: &[&'static str]) -> bool {
@@ -56,7 +56,20 @@ async fn download_repo_async(
     for chunk in siblings.chunks(max_concurrent_downloads.unwrap_or(siblings.len())) {
         let futures = chunk
             .iter()
-            .map(|x| api.get(&x.rfilename))
+            .map(|x| async {
+                let start_time = Instant::now();
+                tracing::debug!(filename = x.rfilename, "Starting file download from hub");
+                let res = api.get(&x.rfilename).await;
+                if res.is_ok() {
+                    let duration_secs = (Instant::now() - start_time).as_secs_f32();
+                    tracing::info!(
+                        filename = x.rfilename,
+                        duration_secs = duration_secs,
+                        "Finished downloading file from hub"
+                    );
+                }
+                res
+            })
             .collect::<Vec<_>>();
         for future in futures {
             ret.push(future.await?);

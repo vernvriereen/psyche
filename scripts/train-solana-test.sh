@@ -29,4 +29,4 @@ cargo run --release --bin psyche-solana-client -- \
         --tensor-parallelism ${TP} \
         --micro-batch-size ${BATCH_SIZE} \
         --logs "console" \
-        --ticker "$@"
+        "$@"

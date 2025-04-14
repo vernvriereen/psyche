@@ -101,6 +101,9 @@ pub enum OpportunisticWitnessError {
 
     #[error("Stats logger mutex is poisoned")]
     StatsLoggerMutex,
+
+    #[error("Error applying state: {0}")]
+    ApplyState(#[from] ApplyStateError),
 }
 
 impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, A> {
@@ -751,7 +754,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             }
             // cooldown is done, we consider waiting for members and warmup to be basically the same
             (ActiveStep::Cooldown(cooldown), RunState::WaitingForMembers)
-            | (ActiveStep::Cooldown(cooldown), RunState::Warmup) => {
+            | (ActiveStep::Cooldown(cooldown), RunState::Warmup)
+            | (ActiveStep::Cooldown(cooldown), RunState::Paused) => {
                 let trainers = cooldown.finish().await?;
                 ActiveStep::Warmup(self.warmup.start(
                     trainers,
@@ -805,7 +809,10 @@ impl ActiveStep {
             (ActiveStep::Intermediate, _) => {
                 unreachable!("the intermediate run state can never be seen, it's ephemeral")
             }
-            (ActiveStep::Warmup(..), RunState::Warmup | RunState::WaitingForMembers) => true,
+            (
+                ActiveStep::Warmup(..),
+                RunState::Warmup | RunState::WaitingForMembers | RunState::Paused,
+            ) => true,
             (ActiveStep::Cooldown(..), RunState::Cooldown) => true,
             (ActiveStep::Training(..), RunState::RoundTrain) => true,
             (ActiveStep::Witness(..), RunState::RoundWitness) => true,
@@ -829,7 +836,12 @@ impl fmt::Display for ActiveStep {
 pub enum InitStage<T: NodeIdentity, A: AuthenticatableIdentity + 'static> {
     NotYetInitialized(Option<RunInitConfigAndIO<T, A>>),
     #[allow(clippy::type_complexity)]
-    Initializing(JoinHandle<Result<StepStateMachine<T, A>, InitRunError>>),
+    Initializing(
+        (
+            JoinHandle<Result<StepStateMachine<T, A>, InitRunError>>,
+            Coordinator<T>,
+        ),
+    ),
     Running(StepStateMachine<T, A>),
 }
 
@@ -849,7 +861,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunManager<T, A> {
         Self(InitStage::NotYetInitialized(Some(config)))
     }
 
-    pub fn try_send_opportunistic_witness(&mut self) -> Result<(), OpportunisticWitnessError> {
+    pub async fn try_send_opportunistic_witness(
+        &mut self,
+    ) -> Result<(), OpportunisticWitnessError> {
+        if let InitStage::Initializing((_init_future, init_state)) = &mut self.0 {
+            // if we're still initializing, check to see if we're done
+            let init_state = *init_state;
+            self.apply_state(init_state).await?;
+        }
         if let InitStage::Running(state_machine) = &mut self.0 {
             state_machine.try_send_opportunistic_witness()?;
         }
@@ -899,19 +918,23 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunManager<T, A> {
             {
                 // Take ownership of init_info using std::mem::take
                 let init_info = init_info.take().unwrap();
-                Some(InitStage::Initializing(tokio::spawn(
-                    init_info.init_run(state),
+                Some(InitStage::Initializing((
+                    tokio::spawn(init_info.init_run(state)),
+                    state,
                 )))
             }
             InitStage::NotYetInitialized(None) => {
                 unreachable!("Once we take the init state, we move to initializing.");
             }
-            InitStage::Initializing(..) if state.run_state == RunState::WaitingForMembers => {
+            InitStage::Initializing(..)
+                if state.run_state == RunState::WaitingForMembers
+                    || state.run_state == RunState::Paused =>
+            {
                 // a client has left the network, transitioning back to RunState::WaitingForMembers.
                 // wait for new clients to join the network.
                 return Ok(());
             }
-            InitStage::Initializing(ref mut init_future) => {
+            InitStage::Initializing((ref mut init_future, _)) => {
                 // Try to complete initialization
                 match init_future.is_finished() {
                     true => match init_future.await.unwrap() {
@@ -1002,11 +1025,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> From<&RunManager<T, 
                         .as_ref()
                         .map(|x| x.efficency())
                         .unwrap_or_default(),
-                    total_tokens: coordinator.total_tokens(),
+                    total_tokens: coordinator.total_tokens_processed(coordinator.current_round()),
                     evals: stats_guard
                         .as_ref()
                         .map(|s| s.eval_history().clone())
                         .unwrap_or_default(),
+                    token_batch_size: coordinator.get_sequence_length()
+                        * coordinator.get_target_global_batch_size(coordinator.current_round())
+                            as u32,
                 }
             }
             _ => Default::default(),

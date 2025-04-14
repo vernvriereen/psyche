@@ -1,10 +1,12 @@
 use anchor_lang::prelude::*;
 use bytemuck::Pod;
 use bytemuck::Zeroable;
+use psyche_coordinator::model::HubRepo;
 use psyche_coordinator::model::Model;
 use psyche_coordinator::ClientState;
 use psyche_coordinator::Coordinator;
 use psyche_coordinator::CoordinatorConfig;
+use psyche_coordinator::CoordinatorProgress;
 use psyche_coordinator::HealthChecks;
 use psyche_coordinator::RunState;
 use psyche_coordinator::TickResult;
@@ -161,8 +163,9 @@ impl CoordinatorInstanceState {
     }
 
     pub fn set_paused(&mut self, paused: bool) -> Result<()> {
+        let unix_timestamp = Clock::get()?.unix_timestamp as u64;
         if let Err(err) = match paused {
-            true => self.coordinator.pause(),
+            true => self.coordinator.pause(unix_timestamp),
             false => {
                 if !self.coordinator.config.check() {
                     return err!(ProgramError::ConfigSanityCheckFailed);
@@ -179,12 +182,26 @@ impl CoordinatorInstanceState {
                     // step 1 is the first valid step
                     self.coordinator.progress.step = 1;
                 }
-                self.coordinator.resume(Clock::get()?.unix_timestamp as u64)
+
+                // check progress after potentially setting step to 1 (errors for default 0)
+                if !self.coordinator.progress.check() {
+                    return err!(ProgramError::ProgressSanityCheckFailed);
+                }
+
+                self.coordinator.resume(unix_timestamp)
             },
         } {
             return err!(ProgramError::from(err));
         }
-        self.tick()
+
+        if paused {
+            Ok(()) // do not tick when setting paused, tick() errors when paused
+        } else {
+            // clear all active joins -- require that everyone re-join
+            self.clients_state.next_active += 1;
+
+            self.tick()
+        }
     }
 
     pub fn witness(&mut self, payer: &Pubkey, witness: Witness) -> Result<()> {
@@ -234,10 +251,11 @@ impl CoordinatorInstanceState {
         Ok(())
     }
 
-    pub fn update_coordinator_config_model(
+    pub fn update(
         &mut self,
-        config: Option<CoordinatorConfig<ClientId>>,
+        config: Option<CoordinatorConfig>,
         model: Option<Model>,
+        progress: Option<CoordinatorProgress>,
     ) -> Result<()> {
         if self.coordinator.run_state == RunState::Finished {
             return err!(ProgramError::UpdateConfigFinished);
@@ -259,6 +277,14 @@ impl CoordinatorInstanceState {
             }
 
             let _ = std::mem::replace(&mut self.coordinator.model, model);
+        }
+
+        if let Some(progress) = progress {
+            if !progress.check() {
+                return err!(ProgramError::ModelSanityCheckFailed);
+            }
+
+            let _ = std::mem::replace(&mut self.coordinator.progress, progress);
         }
 
         Ok(())
@@ -317,10 +343,28 @@ impl CoordinatorInstanceState {
         payer: &Pubkey,
         checks: HealthChecks<ClientId>,
     ) -> Result<()> {
+        // O(n) on clients, reconsider
         let id = self.clients_state.find_signer(payer)?;
 
         self.coordinator
             .health_check(id, checks)
+            .map_err(|err| anchor_lang::error!(ProgramError::from(err)))?;
+        self.tick()
+    }
+
+    pub fn checkpoint(&mut self, payer: &Pubkey, repo: HubRepo) -> Result<()> {
+        // O(n) on clients, reconsider
+        let id = self.clients_state.find_signer(payer)?;
+        let index = self
+            .coordinator
+            .epoch_state
+            .clients
+            .iter()
+            .position(|x| x.id == *id)
+            .ok_or(ProgramError::SignerNotAClient)?;
+
+        self.coordinator
+            .checkpoint(id, index as u64, repo)
             .map_err(|err| anchor_lang::error!(ProgramError::from(err)))?;
         self.tick()
     }

@@ -10,11 +10,6 @@ if [[ "$NVIDIA_DRIVER_CAPABILITIES" == "" ]]; then
     exit 1
 fi
 
-if [[ "$RAW_WALLET_PRIVATE_KEY" == "" ]]; then
-    echo -e "\n[!] The RAW_WALLET_PRIVATE_KEY env variable was not set."
-    exit 1
-fi
-
 if [[ "$RPC" == "" ]]; then
    echo -e "\n[!] The RPC env variable was not set."
    exit 1
@@ -75,7 +70,6 @@ while true; do
         --rpc ${RPC} \
         --ws-rpc ${WS_RPC} \
         --run-id ${RUN_ID} \
-        --ticker \
         --logs "console" &
 
     PSYCHE_CLIENT_PID=$!

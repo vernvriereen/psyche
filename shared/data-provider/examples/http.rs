@@ -109,7 +109,7 @@ async fn main() -> Result<()> {
             for (i, sample) in samples.iter().enumerate() {
                 println!("=== Batch {} Sample {} ===", batch.0.start, i);
                 let decoded = tokenizer
-                    .decode(&sample.iter().map(|&x| x as u32).collect::<Vec<_>>(), true)
+                    .decode(&sample.iter().map(|&x| x as u32).collect::<Vec<_>>(), false)
                     .expect("tokenizer decode worked");
                 println!("{}", decoded);
                 println!();

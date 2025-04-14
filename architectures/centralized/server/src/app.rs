@@ -24,8 +24,10 @@ use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::ops::ControlFlow;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::Notify;
 use tokio::time::{interval, MissedTickBehavior};
 use tokio::{select, time::Interval};
 use tokio_util::sync::CancellationToken;
@@ -33,12 +35,13 @@ use tracing::{debug, info, info_span, warn, Instrument};
 
 use crate::dashboard::{DashboardState, DashboardTui};
 
-pub(super) type Tabs = TabbedWidget<(
+pub(super) type TabWidgetTypes = (
     DashboardTui,
     CoordinatorTui,
     MaybeTui<DataServerTui>,
     LoggerWidget,
-)>;
+);
+pub(super) type Tabs = TabbedWidget<TabWidgetTypes>;
 pub(super) const TAB_NAMES: [&str; 4] =
     ["Dashboard", "Coordinator", "Training Data Server", "Logger"];
 type TabsData = <Tabs as CustomWidget>::Data;
@@ -97,8 +100,8 @@ pub struct App {
     training_data_server: Option<(Sender<Coordinator<ClientId>>, DataServer)>,
     save_state_dir: Option<PathBuf>,
     original_warmup_time: u64,
-    original_min_clients: u16,
     withdraw_on_disconnect: bool,
+    pause: Option<Arc<Notify>>,
 }
 
 /// Methods intended for testing purposes only.
@@ -163,7 +166,6 @@ impl App {
         coordinator_server_port: Option<u16>,
         save_state_dir: Option<PathBuf>,
         init_warmup_time: Option<u64>,
-        init_min_clients: Option<u16>,
         withdraw_on_disconnect: bool,
     ) -> Result<Self> {
         if !coordinator.config.check() {
@@ -242,8 +244,16 @@ impl App {
             };
             debug!("data server work done.");
 
+            let (tabs, pause) = if tui {
+                let widgets: TabWidgetTypes = Default::default();
+                let pause = widgets.0.pause.clone();
+                let tabs = Tabs::new(widgets, &TAB_NAMES);
+                (Some(tabs), Some(pause))
+            } else {
+                (None, None)
+            };
             let (cancel, tx_tui_state) =
-                maybe_start_render_loop(tui.then(|| Tabs::new(Default::default(), &TAB_NAMES)))?;
+                maybe_start_render_loop(tabs)?;
 
             let mut tick_interval = interval(Duration::from_millis(500));
             tick_interval.set_missed_tick_behavior(MissedTickBehavior::Skip); //important!
@@ -261,13 +271,9 @@ impl App {
                 .await?;
 
             let original_warmup_time = coordinator.config.warmup_time;
-            let original_min_clients = coordinator.config.min_clients;
 
             if let Some(init_warmup_time) = init_warmup_time {
                 coordinator.config.warmup_time = init_warmup_time;
-            }
-            if let Some(init_min_clients) = init_min_clients {
-                coordinator.config.min_clients = init_min_clients;
             }
 
             Ok(Self {
@@ -283,8 +289,8 @@ impl App {
                 },
                 save_state_dir,
                 original_warmup_time,
-                original_min_clients,
                 withdraw_on_disconnect,
+                pause,
             })
         }.instrument(info_span!("App::new")).await
     }
@@ -328,6 +334,9 @@ impl App {
                     tokio::task::yield_now().await;
                 }
             } => {}
+            _ = async { self.pause.as_ref().unwrap().notified().await }, if self.pause.is_some() => {
+                self.pause();
+            }
         }
         Ok(ControlFlow::Continue(()))
     }
@@ -411,8 +420,21 @@ impl App {
                 }
             }
             ClientToServerMessage::Checkpoint(checkpoint) => {
-                if let Err(error) = self.coordinator.checkpoint(&from, checkpoint) {
-                    warn!("Error when processing checkpoint: {error}");
+                let position = self
+                    .coordinator
+                    .epoch_state
+                    .clients
+                    .iter()
+                    .position(|x| x.id == from);
+                match position {
+                    Some(index) => {
+                        if let Err(error) =
+                            self.coordinator.checkpoint(&from, index as u64, checkpoint)
+                        {
+                            warn!("Error when processing checkpoint: {error}");
+                        }
+                    }
+                    None => warn!("Got checkpoint but could not find {from} in client list"),
                 }
                 true
             }
@@ -474,7 +496,6 @@ impl App {
         if self.coordinator.active() {
             // reset to original values if we changed them to something special for init
             self.coordinator.config.warmup_time = self.original_warmup_time;
-            self.coordinator.config.min_clients = self.original_min_clients;
         }
         if broadcast {
             if let Err(err) = self
@@ -508,6 +529,15 @@ impl App {
             if client.state != ClientState::Healthy {
                 self.backend.pending_clients.remove(&client.id);
             }
+        }
+    }
+
+    fn pause(&mut self) {
+        if let Err(err) = match self.coordinator.run_state {
+            RunState::Paused => self.coordinator.resume(Self::get_timestamp()),
+            _ => self.coordinator.pause(Self::get_timestamp()),
+        } {
+            warn!("Error pausing: {}", err);
         }
     }
 }

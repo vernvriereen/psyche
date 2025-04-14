@@ -8,9 +8,9 @@ use futures::future::join_all;
 use psyche_coordinator::{Commitment, RunState};
 use psyche_core::NodeIdentity;
 use psyche_network::{
-    allowlist, raw_p2p_verify, request_model, AuthenticatableIdentity, BlobTicket,
-    DownloadComplete, ModelRequestType, NetworkConnection, NetworkEvent, NetworkTUIState,
-    Networkable, NodeId, SharableModel, TransmittableDownload,
+    allowlist, param_request_task, raw_p2p_verify, request_model, AuthenticatableIdentity,
+    BlobTicket, DownloadComplete, ModelRequestType, NetworkConnection, NetworkEvent,
+    NetworkTUIState, Networkable, NodeId, SharableModel, TransmittableDownload,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use tokenizers::Tokenizer;
@@ -71,8 +71,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
         let identity = init_config.identity;
         let network_identity = init_config.network_identity.clone();
         let private_key = init_config.private_key.clone();
+        let param_requests_cancel_token = CancellationToken::new();
         let join = tokio::spawn({
             let cancel = cancel.clone();
+            let param_requests_cancel_token = param_requests_cancel_token.clone();
             let req_tui_state = req_tui_state.clone();
             async move {
                 #[cfg(not(feature = "parallelism"))]
@@ -403,7 +405,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         }
 
                         _ = opprotunistic_witness_interval.tick() => {
-                            run.try_send_opportunistic_witness()?;
+                            run.try_send_opportunistic_witness().await?;
                         }
 
                         Some((download_ticket, tag)) = rx_request_download.recv() => {
@@ -446,13 +448,15 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 bail!("There are no peers to request parameters from. Try joining the run again.");
                             }
                             peer_ids.shuffle(&mut thread_rng());
-
+                            let num_peers = peer_ids.len();
+                            let param_requests_cancel_token = param_requests_cancel_token.clone();
                             let handle: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
                                 // We use std mutex implementation here and call `.unwrap()` when acquiring the lock since there
                                 // is no chance of mutex poisoning; locks are acquired only to insert or remove items from them
                                 // and dropped immediately
                                 let parameter_blob_tickets = Arc::new(std::sync::Mutex::new(Vec::new()));
                                 let busy_peers = Arc::new(std::sync::Mutex::new(HashSet::new()));
+                                let errored_peers = Arc::new(std::sync::Mutex::new(HashMap::new()));
 
                                 let peer_cycle = peer_ids.into_iter().cycle();
                                 let peer_cycle = Arc::new(Mutex::new(peer_cycle));
@@ -461,43 +465,20 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 for param_name in param_names {
                                     let router = router.clone();
                                     let busy_peers = busy_peers.clone();
-                                    let parameter_blob_tickets_clone = parameter_blob_tickets.clone();
+                                    // let parameter_blob_tickets = parameter_blob_tickets.clone();
                                     let peer_cycle = peer_cycle.clone();
+                                    let errored_peers = errored_peers.clone();
 
-                                    let request_handle = tokio::spawn(async move {
-                                        loop {
-                                            let Some(peer_id) = peer_cycle.lock().await.next() else {
-                                                // This should never really happen, since the only chance for calling
-                                                // `next()` on a `Cycle` iterator and return `None` is when the iterator
-                                                // is empty, which was checked previously.
-                                                unreachable!();
-                                            };
-                                            if !busy_peers.lock().unwrap().insert(peer_id) {
-                                                continue;
-                                            }
-                                            debug!(parameter = param_name, peer = %peer_id, "Requesting parameter");
-                                            match request_model(router.clone(), peer_id, ModelRequestType::Parameter(param_name.clone())).await {
-                                                Ok(parameter_blob_ticket) => {
-                                                  parameter_blob_tickets_clone.lock().unwrap().push(parameter_blob_ticket);
-                                                  busy_peers.lock().unwrap().remove(&peer_id);
-                                                  // Continue to next parameter request
-                                                  break;
-                                                },
-                                                Err(e) => {
-                                                  warn!(parameter = param_name, peer = %peer_id, "Failed to get parameter: {e}");
-                                                  busy_peers.lock().unwrap().remove(&peer_id);
-                                                  // Continue to request this parameter to another peer
-                                                  continue;
-                                                },
-                                            }
-                                        }
-                                    });
+                                    let request_handle = tokio::spawn(
+                                        param_request_task(param_name, router, parameter_blob_tickets.clone(), peer_cycle, busy_peers, errored_peers, num_peers, param_requests_cancel_token.clone())
+                                    );
 
                                     // Check if we reached the max number of concurrent requests, and if that is the case,
                                     // await for all of them to complete and start downloading the blobs
                                     if request_handles.len() == max_concurrent_downloads - 1 {
                                         let mut max_concurrent_request_futures = std::mem::take(&mut request_handles);
                                         max_concurrent_request_futures.push(request_handle);
+                                        // join_all(max_concurrent_request_futures).await;
                                         join_all(max_concurrent_request_futures).await;
                                         let current_parameter_blob_tickets: Vec<BlobTicket> = {
                                             let mut parameter_blob_tickets_lock = parameter_blob_tickets.lock().unwrap();
@@ -509,7 +490,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     request_handles.push(request_handle);
                                 }
 
-                                // All parameters have been requested, wail all the remaining request futures to complete
+                                // All parameters have been requested, wait all the remaining request futures to complete
                                 // and download the blobs
                                 join_all(request_handles).await;
                                 let parameter_blob_tickets: Vec<BlobTicket> = {
@@ -558,6 +539,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                 p2p.start_download(ticket, 0).await?;
                             }
                         }
+                        _ = param_requests_cancel_token.cancelled() => bail!("Peers were unreachable for P2P parameter requests. Try joining again"),
                         else => break
                     }
                 }

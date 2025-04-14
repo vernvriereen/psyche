@@ -518,6 +518,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
         Ok(tokio::task::spawn(async move {
                 let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
 
+                trace!("Have commitments for batches {:?}", commitments.keys().collect::<Vec<_>>());
+                trace!("Have payloads for hashes {:?}", payloads.keys().collect::<Vec<_>>());
+
                 for batch_id in batch_ids {
                     let batch_commitments = match commitments.get(&batch_id) {
                         Some(x) => x,

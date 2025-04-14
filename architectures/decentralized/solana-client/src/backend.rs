@@ -1,9 +1,10 @@
-use crate::retry::{retry_function, RetryError};
+use crate::retry::RetryError;
 use anchor_client::{
     anchor_lang::system_program,
     solana_client::{
-        self, nonblocking::pubsub_client::PubsubClient, rpc_config::RpcAccountInfoConfig,
-        rpc_request::RpcError, rpc_response::Response as RpcResponse,
+        nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
+        rpc_config::{RpcAccountInfoConfig, RpcSendTransactionConfig, RpcTransactionConfig},
+        rpc_response::Response as RpcResponse,
     },
     solana_sdk::{
         commitment_config::CommitmentConfig,
@@ -11,46 +12,48 @@ use anchor_client::{
         signature::{Keypair, Signature, Signer},
         system_instruction,
     },
-    Client, ClientError, Cluster, Program,
+    Client, Cluster, Program,
 };
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use futures_util::StreamExt;
 use psyche_client::IntegrationTestLogMarker;
 use psyche_coordinator::{
-    model::{self, Model},
-    CommitteeProof, Coordinator, CoordinatorConfig, HealthChecks,
+    model::{HubRepo, Model},
+    CommitteeProof, Coordinator, CoordinatorConfig, CoordinatorProgress, HealthChecks,
 };
 use psyche_watcher::{Backend as WatcherBackend, OpportunisticData};
-use solana_account_decoder_client_types::{UiAccount, UiAccountData, UiAccountEncoding};
+use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
+use solana_transaction_status_client_types::UiTransactionEncoding;
 use std::{cmp::min, sync::Arc, time::Duration};
 use tokio::{
     sync::{broadcast, mpsc},
     time::timeout,
 };
-use tracing::{debug, error, info, trace, warn};
+use tracing::{error, info, trace, warn};
 
 const FORCE_RECONNECTION_TIME: u64 = 30;
 
 pub struct SolanaBackend {
     program_authorizer: Program<Arc<Keypair>>,
-    program_coordinator: Program<Arc<Keypair>>,
+    program_coordinator: Arc<Program<Arc<Keypair>>>,
     cluster: Cluster,
+    backup_clusters: Vec<Cluster>,
+    backup_clients: Vec<Arc<RpcClient>>,
 }
 
 pub struct SolanaBackendRunner {
     pub(crate) backend: SolanaBackend,
     instance: Pubkey,
     account: Pubkey,
-    updates: broadcast::Receiver<RpcResponse<UiAccount>>,
-    init: Option<Vec<u8>>,
+    updates: broadcast::Receiver<Coordinator<psyche_solana_coordinator::ClientId>>,
+    init: Option<Coordinator<psyche_solana_coordinator::ClientId>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct CreatedRun {
     pub instance: Pubkey,
     pub account: Pubkey,
-    pub tx_create_coordinator: Signature,
-    pub tx_create_auth: Option<Signature>,
+    pub create_signatures: Vec<Signature>,
 }
 
 async fn subscribe_to_account(
@@ -156,16 +159,22 @@ impl SolanaBackend {
     #[allow(dead_code)]
     pub fn new(
         cluster: Cluster,
+        backup_clusters: Vec<Cluster>,
         payer: Arc<Keypair>,
         committment: CommitmentConfig,
     ) -> Result<Self> {
         let client = Client::new_with_options(cluster.clone(), payer.clone(), committment);
         let program_authorizer = client.program(psyche_solana_authorizer::ID)?;
-        let program_coordinator = client.program(psyche_solana_coordinator::ID)?;
+        let program_coordinator = Arc::new(client.program(psyche_solana_coordinator::ID)?);
         Ok(Self {
             program_authorizer,
             program_coordinator,
             cluster,
+            backup_clients: backup_clusters
+                .iter()
+                .map(|x| Arc::new(RpcClient::new(x.url().to_string())))
+                .collect(),
+            backup_clusters,
         })
     }
 
@@ -175,37 +184,54 @@ impl SolanaBackend {
         coordinator_account: Pubkey,
     ) -> Result<SolanaBackendRunner> {
         let (tx_update, rx_update) = broadcast::channel(32);
-        let cluster = self.cluster.clone();
         let commitment = self.program_coordinator.rpc().commitment();
 
         let (tx_subscribe, mut rx_subscribe) = mpsc::unbounded_channel();
 
-        std::env::set_var("ws_rpc_1", cluster.ws_url());
+        let tx_subscribe_ = tx_subscribe.clone();
 
-        for i in 1..=3 {
-            let tx_subscribe_clone = tx_subscribe.clone();
-            let url = std::env::var(format!("ws_rpc_{}", i))
-                .ok()
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| cluster.ws_url().to_string());
-
+        let url = self.cluster.clone().ws_url().to_string();
             tokio::spawn(async move {
-                subscribe_to_account(url, commitment, &coordinator_account, tx_subscribe_clone, i)
+                subscribe_to_account(url, commitment, &coordinator_account, tx_subscribe_, 0)
                     .await
-            });
         }
+    );
 
+    for cluster in self.backup_clusters.clone(){
+        let mut subscription_number = 1;
+        let tx_subscribe_ = tx_subscribe.clone();
         tokio::spawn(async move {
-            let mut last_data: UiAccountData = UiAccountData::LegacyBinary("".to_string());
-            let mut last_slot = 0;
+            subscribe_to_account(cluster.ws_url().to_string().clone(), commitment, &coordinator_account, tx_subscribe_, subscription_number)
+                .await
+    }
+);
+subscription_number+=1;
+        
+    }
+        tokio::spawn(async move {
+            let mut last_nonce = 0;
             while let Some(update) = rx_subscribe.recv().await {
-                let data = &update.value.data;
-                if update.context.slot >= last_slot && &last_data != data {
-                    if tx_update.send(update.clone()).is_err() {
-                        break;
+                match update.value.data.decode() {
+                    Some(data) => {
+                        match psyche_solana_coordinator::coordinator_account_from_bytes(&data) {
+                            Ok(account) => {
+                                if account.nonce > last_nonce {
+                                    trace!(
+                                        nonce = account.nonce,
+                                        last_nonce = last_nonce,
+                                        "Coordinator account update"
+                                    );
+                                    if let Err(err) = tx_update.send(account.state.coordinator) {
+                                        error!("Error sending coordinator update: {err}");
+                                        break;
+                                    }
+                                    last_nonce = account.nonce;
+                                }
+                            }
+                            Err(err) => error!("Error deserializing coordinator account: {err}"),
+                        }
                     }
-                    last_data = data.clone();
-                    last_slot = update.context.slot;
+                    None => error!("Error decoding coordinator account"),
                 }
             }
             error!("No subscriptions available");
@@ -219,11 +245,15 @@ impl SolanaBackend {
             run_id, coordinator_instance
         );
 
-        let init = self
-            .program_coordinator
-            .rpc()
-            .get_account_data(&coordinator_account)
-            .await?;
+        let init = psyche_solana_coordinator::coordinator_account_from_bytes(
+            &self
+                .program_coordinator
+                .rpc()
+                .get_account_data(&coordinator_account)
+                .await?,
+        )?
+        .state
+        .coordinator;
 
         Ok(SolanaBackendRunner {
             backend: self,
@@ -238,6 +268,7 @@ impl SolanaBackend {
         &self,
         run_id: String,
         metadata: psyche_solana_coordinator::RunMetadata,
+        join_authority: Option<Pubkey>,
     ) -> Result<CreatedRun> {
         let space = psyche_solana_coordinator::CoordinatorAccount::space_with_discriminator();
         let rent = self
@@ -247,19 +278,13 @@ impl SolanaBackend {
             .await?;
 
         let payer = self.program_coordinator.payer();
-        let main_authority = self.program_coordinator.payer();
-        let join_authority = self.program_coordinator.payer();
+        let main_authority = payer;
+        let join_authority = join_authority.unwrap_or(payer);
 
         let coordinator_instance = psyche_solana_coordinator::find_coordinator_instance(&run_id);
 
         let coordinator_account_signer = Arc::new(Keypair::new());
         let coordinator_account = coordinator_account_signer.pubkey();
-
-        let authorization_global = psyche_solana_authorizer::find_authorization(
-            &join_authority,
-            &system_program::ID,
-            psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE,
-        );
 
         let create_coordinator_signature = self
             .program_coordinator
@@ -298,8 +323,30 @@ impl SolanaBackend {
             .send()
             .await?;
 
-        // fine if it fails, means it's already there!
-        let auth_create_signature = self
+        let mut create_signatures = vec![create_coordinator_signature];
+
+        if join_authority == payer {
+            let (authorization_create, authorization_activate) =
+                self.create_run_ensure_permissionless().await?;
+            create_signatures.push(authorization_create);
+            create_signatures.push(authorization_activate);
+        }
+
+        Ok(CreatedRun {
+            instance: coordinator_instance,
+            account: coordinator_account,
+            create_signatures,
+        })
+    }
+
+    async fn create_run_ensure_permissionless(&self) -> Result<(Signature, Signature)> {
+        let payer = self.program_coordinator.payer();
+        let authorization_from_payer_to_everyone = psyche_solana_authorizer::find_authorization(
+            &payer,
+            &system_program::ID,
+            psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE,
+        );
+        let authorization_create = self
             .program_authorizer
             .request()
             .instruction(
@@ -308,8 +355,8 @@ impl SolanaBackend {
                     .accounts(
                         psyche_solana_authorizer::accounts::AuthorizationCreateAccounts {
                             payer,
-                            grantor: join_authority,
-                            authorization: authorization_global,
+                            grantor: payer,
+                            authorization: authorization_from_payer_to_everyone,
                             system_program: system_program::ID,
                         },
                     )
@@ -324,13 +371,24 @@ impl SolanaBackend {
                     .unwrap()
                     .remove(0),
             )
+            .send_with_spinner_and_config(RpcSendTransactionConfig {
+                skip_preflight: true,
+                preflight_commitment: None,
+                encoding: None,
+                max_retries: None,
+                min_context_slot: None,
+            })
+            .await?;
+        let authorization_activate = self
+            .program_authorizer
+            .request()
             .instruction(
                 self.program_authorizer
                     .request()
                     .accounts(
                         psyche_solana_authorizer::accounts::AuthorizationGrantorUpdateAccounts {
-                            grantor: join_authority,
-                            authorization: authorization_global,
+                            grantor: payer,
+                            authorization: authorization_from_payer_to_everyone,
                         },
                     )
                     .args(
@@ -345,37 +403,15 @@ impl SolanaBackend {
                     .unwrap()
                     .remove(0),
             )
-            .send()
-            .await;
-
-        let auth_create_signature = match auth_create_signature {
-            Ok(signature) => {
-                println!("Authorization created successfully: {:?}", signature);
-                Some(signature)
-            }
-            Err(ClientError::SolanaClientError(solana_client::client_error::ClientError {
-                kind:
-                    solana_client::client_error::ClientErrorKind::RpcError(RpcError::RpcResponseError {
-                        code: -32002,
-                        message: _message,
-                        data,
-                    }),
-                ..
-            })) if format!("{data:?}").contains("already in use") => {
-                println!("Authorization account already exists, proceeding.");
-                None
-            }
-            Err(e) => {
-                bail!("Failed to create authorization: {}", e);
-            }
-        };
-
-        Ok(CreatedRun {
-            instance: coordinator_instance,
-            account: coordinator_account,
-            tx_create_coordinator: create_coordinator_signature,
-            tx_create_auth: auth_create_signature,
-        })
+            .send_with_spinner_and_config(RpcSendTransactionConfig {
+                skip_preflight: true,
+                preflight_commitment: None,
+                encoding: None,
+                max_retries: None,
+                min_context_slot: None,
+            })
+            .await?;
+        Ok((authorization_create, authorization_activate))
     }
 
     pub async fn close_run(
@@ -403,20 +439,55 @@ impl SolanaBackend {
         Ok(signature)
     }
 
+    #[allow(unused)]
     pub async fn join_run(
         &self,
         coordinator_instance: Pubkey,
         coordinator_account: Pubkey,
         id: psyche_solana_coordinator::ClientId,
+        authorizer: Option<Pubkey>,
     ) -> Result<Signature> {
         let coordinator_instance_state =
             self.get_coordinator_instance(&coordinator_instance).await?;
-        let authorization_global = psyche_solana_authorizer::find_authorization(
+        let authorization = psyche_solana_authorizer::find_authorization(
             &coordinator_instance_state.join_authority,
-            &system_program::ID,
+            &authorizer.unwrap_or(system_program::ID),
             psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE,
         );
         let signature = self
+            .program_coordinator
+            .request()
+            .accounts(psyche_solana_coordinator::accounts::JoinRunAccounts {
+                user: self.program_coordinator.payer(),
+                authorization,
+                coordinator_instance,
+                coordinator_account,
+            })
+            .args(psyche_solana_coordinator::instruction::JoinRun {
+                params: psyche_solana_coordinator::logic::JoinRunParams { client_id: id },
+            })
+            .send()
+            .await?;
+        Ok(signature)
+    }
+
+    pub async fn join_run_retryable(
+        &self,
+        coordinator_instance: Pubkey,
+        coordinator_account: Pubkey,
+        id: psyche_solana_coordinator::ClientId,
+        authorizer: Option<Pubkey>,
+    ) -> Result<Signature, RetryError<String>> {
+        let coordinator_instance_state = self
+            .get_coordinator_instance(&coordinator_instance)
+            .await
+            .map_err(|err| RetryError::Fatal(err.to_string()))?;
+        let authorization_global = psyche_solana_authorizer::find_authorization(
+            &coordinator_instance_state.join_authority,
+            &authorizer.unwrap_or(system_program::ID),
+            psyche_solana_coordinator::logic::JOIN_RUN_AUTHORIZATION_SCOPE,
+        );
+        let pending_tx = self
             .program_coordinator
             .request()
             .accounts(psyche_solana_coordinator::accounts::JoinRunAccounts {
@@ -428,16 +499,32 @@ impl SolanaBackend {
             .args(psyche_solana_coordinator::instruction::JoinRun {
                 params: psyche_solana_coordinator::logic::JoinRunParams { client_id: id },
             })
-            .send()
-            .await?;
-        Ok(signature)
+            .send();
+
+        // We timeout the transaction at 5s max, since internally send() polls Solana until the
+        // tx is confirmed; we'd rather cancel early and attempt again.
+        match timeout(Duration::from_secs(5), pending_tx).await {
+            Ok(Ok(s)) => Ok(s),
+            Err(_elapsed) => {
+                error!("[TIMEOUT] join_run_retryable");
+                Err(RetryError::non_retryable_error(
+                    "timeout join_run_retryable",
+                ))
+            }
+            Ok(Err(e)) => {
+                warn!("join_run_retryable error: {}", e);
+                Err(RetryError::from(e).into())
+            }
+        }
     }
-    pub async fn update_config_and_model(
+
+    pub async fn update(
         &self,
         coordinator_instance: Pubkey,
         coordinator_account: Pubkey,
-        config: Option<CoordinatorConfig<psyche_solana_coordinator::ClientId>>,
+        config: Option<CoordinatorConfig>,
         model: Option<Model>,
+        progress: Option<CoordinatorProgress>,
     ) -> Result<Signature> {
         let signature = self
             .program_coordinator
@@ -449,12 +536,11 @@ impl SolanaBackend {
                     coordinator_account,
                 },
             )
-            .args(
-                psyche_solana_coordinator::instruction::UpdateCoordinatorConfigModel {
-                    config,
-                    model,
-                },
-            )
+            .args(psyche_solana_coordinator::instruction::Update {
+                config,
+                model,
+                progress,
+            })
             .send()
             .await?;
 
@@ -484,46 +570,39 @@ impl SolanaBackend {
         Ok(signature)
     }
 
+    pub async fn set_future_epoch_rates(
+        &self,
+        coordinator_instance: Pubkey,
+        coordinator_account: Pubkey,
+        epoch_earning_rate: Option<u64>,
+        epoch_slashing_rate: Option<u64>,
+    ) -> Result<Signature> {
+        let signature = self
+            .program_coordinator
+            .request()
+            .accounts(
+                psyche_solana_coordinator::accounts::OwnerCoordinatorAccounts {
+                    authority: self.program_coordinator.payer(),
+                    coordinator_instance,
+                    coordinator_account,
+                },
+            )
+            .args(
+                psyche_solana_coordinator::instruction::SetFutureEpochRates {
+                    epoch_earning_rate,
+                    epoch_slashing_rate,
+                },
+            )
+            .send()
+            .await?;
+
+        Ok(signature)
+    }
+
     pub async fn tick(
         &self,
         coordinator_instance: Pubkey,
         coordinator_account: Pubkey,
-    ) -> Result<Signature> {
-        retry_function("tick", || {
-            tick_retryable(
-                &self.program_coordinator,
-                coordinator_instance,
-                coordinator_account,
-            )
-        })
-        .await
-        .map_err(|e: RetryError<String>| anyhow!("tick error: {}", e))
-    }
-
-    pub async fn witness(
-        &self,
-        coordinator_instance: Pubkey,
-        coordinator_account: Pubkey,
-        opportunistic_data: OpportunisticData,
-    ) -> Result<Signature> {
-        retry_function("witness", || {
-            witness_retryable(
-                &self.program_coordinator,
-                coordinator_instance,
-                coordinator_account,
-                opportunistic_data.clone(),
-            )
-        })
-        .await
-        .map_err(|e: RetryError<String>| anyhow!("witness error: {}", e))
-    }
-
-    pub async fn health_check(
-        &self,
-        coordinator_instance: Pubkey,
-        coordinator_account: Pubkey,
-        id: psyche_solana_coordinator::ClientId,
-        check: CommitteeProof,
     ) -> Result<Signature> {
         let signature = self
             .program_coordinator
@@ -535,16 +614,203 @@ impl SolanaBackend {
                     coordinator_account,
                 },
             )
-            .args(psyche_solana_coordinator::instruction::HealthCheck {
-                id,
-                committee: check.committee,
-                position: check.position,
-                index: check.index,
-            })
+            .args(psyche_solana_coordinator::instruction::Tick {})
             .send()
             .await?;
 
         Ok(signature)
+    }
+
+    pub fn send_tick(&self, coordinator_instance: Pubkey, coordinator_account: Pubkey) {
+        let program_coordinator = self.program_coordinator.clone();
+        let backup_clients = self.backup_clients.clone();
+        tokio::task::spawn(async move {
+            let payer = program_coordinator.payer();
+            let pending_tx_builder = program_coordinator
+                .request()
+                .accounts(
+                    psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                        user: payer,
+                        coordinator_instance,
+                        coordinator_account,
+                    },
+                )
+                .args(psyche_solana_coordinator::instruction::Tick {});
+            match pending_tx_builder.signed_transaction().await {
+                Ok(signed_tx) => {
+                    let pending_tx = pending_tx_builder.send();
+                    for client in backup_clients {
+                        let signed_tx = signed_tx.clone();
+                        tokio::spawn(async move { client.send_transaction(&signed_tx).await });
+                    }
+                    match pending_tx.await {
+                        Ok(signature) => info!(from = %payer, tx = %signature, "Tick transaction"),
+                        Err(err) => warn!(from = %payer, "Error sending tick transaction: {err}"),
+                    }
+                }
+                Err(err) => {
+                    warn!(from = %payer, "Error signing tick: {err}");
+                }
+            }
+        });
+    }
+
+    pub fn send_witness(
+        &self,
+        coordinator_instance: Pubkey,
+        coordinator_account: Pubkey,
+        opportunistic_data: OpportunisticData,
+    ) {
+        let program_coordinator = self.program_coordinator.clone();
+        let backup_clients = self.backup_clients.clone();
+        tokio::task::spawn(async move {
+            let payer = program_coordinator.payer();
+            let pending_tx_builder = match opportunistic_data {
+                OpportunisticData::WitnessStep(witness, metadata) => program_coordinator
+                    .request()
+                    .accounts(
+                        psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                            user: payer,
+                            coordinator_instance,
+                            coordinator_account,
+                        },
+                    )
+                    .args(psyche_solana_coordinator::instruction::Witness {
+                        proof: witness.proof,
+                        participant_bloom: witness.participant_bloom,
+                        broadcast_bloom: witness.broadcast_bloom,
+                        broadcast_merkle: witness.broadcast_merkle,
+                        metadata,
+                    }),
+                OpportunisticData::WarmupStep(witness) => program_coordinator
+                    .request()
+                    .accounts(
+                        psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                            user: payer,
+                            coordinator_instance,
+                            coordinator_account,
+                        },
+                    )
+                    .args(psyche_solana_coordinator::instruction::WarmupWitness {
+                        proof: witness.proof,
+                        participant_bloom: witness.participant_bloom,
+                        broadcast_bloom: witness.broadcast_bloom,
+                        broadcast_merkle: witness.broadcast_merkle,
+                    }),
+            };
+            match pending_tx_builder.signed_transaction().await {
+                Ok(signed_tx) => {
+                    let pending_tx = pending_tx_builder.send();
+                    for client in backup_clients {
+                        let signed_tx = signed_tx.clone();
+                        tokio::spawn(async move { client.send_transaction(&signed_tx).await });
+                    }
+                    match pending_tx.await {
+                        Ok(signature) => {
+                            info!(from = %payer, tx = %signature, "Witness transaction")
+                        }
+                        Err(err) => {
+                            warn!(from = %payer, "Error sending witness transaction: {err}")
+                        }
+                    }
+                }
+                Err(err) => {
+                    warn!(from = %payer, "Error signing witness: {err}");
+                }
+            }
+        });
+    }
+
+    pub fn send_health_check(
+        &self,
+        coordinator_instance: Pubkey,
+        coordinator_account: Pubkey,
+        id: psyche_solana_coordinator::ClientId,
+        check: CommitteeProof,
+    ) {
+        let program_coordinator = self.program_coordinator.clone();
+        let backup_clients = self.backup_clients.clone();
+        tokio::task::spawn(async move {
+            let payer = program_coordinator.payer();
+            let pending_tx_builder = program_coordinator
+                .request()
+                .accounts(
+                    psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                        user: payer,
+                        coordinator_instance,
+                        coordinator_account,
+                    },
+                )
+                .args(psyche_solana_coordinator::instruction::HealthCheck {
+                    id,
+                    committee: check.committee,
+                    position: check.position,
+                    index: check.index,
+                });
+            match pending_tx_builder.signed_transaction().await {
+                Ok(signed_tx) => {
+                    let pending_tx = pending_tx_builder.send();
+                    for client in backup_clients {
+                        let signed_tx = signed_tx.clone();
+                        tokio::spawn(async move { client.send_transaction(&signed_tx).await });
+                    }
+                    match pending_tx.await {
+                        Ok(signature) => {
+                            info!(from = %payer, tx = %signature, "Health check transaction")
+                        }
+                        Err(err) => {
+                            warn!(from = %payer, "Error sending health check transaction: {err}")
+                        }
+                    }
+                }
+                Err(err) => {
+                    warn!(from = %payer, "Error signing health check: {err}");
+                }
+            }
+        });
+    }
+
+    pub fn send_checkpoint(
+        &self,
+        coordinator_instance: Pubkey,
+        coordinator_account: Pubkey,
+        repo: HubRepo,
+    ) {
+        let program_coordinator = self.program_coordinator.clone();
+        let backup_clients = self.backup_clients.clone();
+        tokio::task::spawn(async move {
+            let payer = program_coordinator.payer();
+            let pending_tx_builder = program_coordinator
+                .request()
+                .accounts(
+                    psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
+                        user: payer,
+                        coordinator_instance,
+                        coordinator_account,
+                    },
+                )
+                .args(psyche_solana_coordinator::instruction::Checkpoint { repo });
+            match pending_tx_builder.signed_transaction().await {
+                Ok(signed_tx) => {
+                    let pending_tx = pending_tx_builder.send();
+                    for client in backup_clients {
+                        let signed_tx = signed_tx.clone();
+                        tokio::spawn(async move { client.send_transaction(&signed_tx).await });
+                    }
+                    match pending_tx.await {
+                        Ok(signature) => {
+                            info!(from = %payer, tx = %signature, "Checkpoint transaction")
+                        }
+                        Err(err) => {
+                            warn!(from = %payer, "Error sending checkpoint transaction: {err}")
+                        }
+                    }
+                }
+                Err(err) => {
+                    warn!(from = %payer, "Error signing checkpoint: {err}");
+                }
+            }
+        });
     }
 
     pub async fn get_coordinator_instance(
@@ -579,6 +845,28 @@ impl SolanaBackend {
     pub async fn get_balance(&self, account: &Pubkey) -> Result<u64> {
         Ok(self.program_coordinator.rpc().get_balance(account).await?)
     }
+
+    pub async fn get_logs(&self, tx: &Signature) -> Result<Vec<String>> {
+        let tx = self
+            .program_coordinator
+            .rpc()
+            .get_transaction_with_config(
+                tx,
+                RpcTransactionConfig {
+                    encoding: Some(UiTransactionEncoding::Json),
+                    commitment: Some(CommitmentConfig::confirmed()),
+                    max_supported_transaction_version: None,
+                },
+            )
+            .await?;
+
+        Ok(tx
+            .transaction
+            .meta
+            .ok_or(anyhow!("Transaction has no meta information"))?
+            .log_messages
+            .unwrap_or(Vec::new()))
+    }
 }
 
 #[async_trait::async_trait]
@@ -586,30 +874,19 @@ impl WatcherBackend<psyche_solana_coordinator::ClientId> for SolanaBackendRunner
     async fn wait_for_new_state(
         &mut self,
     ) -> Result<Coordinator<psyche_solana_coordinator::ClientId>> {
-        let data = match self.init.take() {
-            Some(init) => init,
-            None => match self.updates.recv().await {
-                Ok(update) => match update.value.data.decode() {
-                    Some(data) => data,
-                    None => bail!("Unable to decode account data"),
-                },
-                Err(err) => bail!("Account updates channel error: {err}"),
-            },
-        };
-
-        psyche_solana_coordinator::coordinator_account_from_bytes(&data)
-            .map_err(|_| anyhow!("Unable to decode coordinator account data"))
-            .map(|x| {
-                let update = x.state.coordinator;
-                debug!("Coordinator account update, run_state={}", update.run_state);
-                update
-            })
+        match self.init.take() {
+            Some(init) => Ok(init),
+            None => self
+                .updates
+                .recv()
+                .await
+                .map_err(|err| anyhow!("Error receiving new state: {err}")),
+        }
     }
 
     async fn send_witness(&mut self, opportunistic_data: OpportunisticData) -> Result<()> {
         self.backend
-            .witness(self.instance, self.account, opportunistic_data)
-            .await?;
+            .send_witness(self.instance, self.account, opportunistic_data);
         Ok(())
     }
 
@@ -619,200 +896,20 @@ impl WatcherBackend<psyche_solana_coordinator::ClientId> for SolanaBackendRunner
     ) -> Result<()> {
         for (id, proof) in checks {
             self.backend
-                .health_check(self.instance, self.account, id, proof)
-                .await?;
+                .send_health_check(self.instance, self.account, id, proof);
         }
         Ok(())
     }
 
-    async fn send_checkpoint(&mut self, _checkpoint: model::HubRepo) -> Result<()> {
-        unimplemented!();
+    async fn send_checkpoint(&mut self, checkpoint: HubRepo) -> Result<()> {
+        self.backend
+            .send_checkpoint(self.instance, self.account, checkpoint);
+        Ok(())
     }
 }
 
 impl SolanaBackendRunner {
-    pub fn updates(&self) -> broadcast::Receiver<RpcResponse<UiAccount>> {
+    pub fn updates(&self) -> broadcast::Receiver<Coordinator<psyche_solana_coordinator::ClientId>> {
         self.updates.resubscribe()
-    }
-}
-
-async fn tick_retryable(
-    coordinator: &Program<Arc<Keypair>>,
-    coordinator_instance: Pubkey,
-    coordinator_account: Pubkey,
-) -> Result<Signature, RetryError<String>> {
-    trace!("tick_retryable");
-    let pending_tx = coordinator
-        .request()
-        .accounts(
-            psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
-                user: coordinator.payer(),
-                coordinator_instance,
-                coordinator_account,
-            },
-        )
-        .args(psyche_solana_coordinator::instruction::Tick {})
-        .send();
-
-    // We timeout the transaction at 5s max, since internally send() polls Solana until the
-    // tx is confirmed; we'd rather cancel early and attempt again.
-    match timeout(Duration::from_secs(5), pending_tx).await {
-        Ok(Ok(s)) => Ok(s),
-        Err(_elapsed) => {
-            error!("[TIMEOUT] tick_retryable");
-            Err(RetryError::non_retryable_error("timeout tick_retryable"))
-        }
-        Ok(Err(e)) => {
-            warn!("tick_retryable error: {}", e);
-            Err(RetryError::from(e).into())
-        }
-    }
-}
-
-async fn witness_retryable(
-    coordinator: &Program<Arc<Keypair>>,
-    coordinator_instance: Pubkey,
-    coordinator_account: Pubkey,
-    opportunistic_data: OpportunisticData,
-) -> Result<Signature, RetryError<String>> {
-    let pending_tx = match opportunistic_data {
-        OpportunisticData::WitnessStep(witness, metadata) => coordinator
-            .request()
-            .accounts(
-                psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
-                    user: coordinator.payer(),
-                    coordinator_instance,
-                    coordinator_account,
-                },
-            )
-            .args(psyche_solana_coordinator::instruction::Witness {
-                proof: witness.proof,
-                participant_bloom: witness.participant_bloom,
-                broadcast_bloom: witness.broadcast_bloom,
-                broadcast_merkle: witness.broadcast_merkle,
-                metadata,
-            })
-            .send(),
-        OpportunisticData::WarmupStep(witness) => coordinator
-            .request()
-            .accounts(
-                psyche_solana_coordinator::accounts::PermissionlessCoordinatorAccounts {
-                    user: coordinator.payer(),
-                    coordinator_instance,
-                    coordinator_account,
-                },
-            )
-            .args(psyche_solana_coordinator::instruction::WarmupWitness {
-                proof: witness.proof,
-                participant_bloom: witness.participant_bloom,
-                broadcast_bloom: witness.broadcast_bloom,
-                broadcast_merkle: witness.broadcast_merkle,
-            })
-            .send(),
-    };
-
-    // We timeout the transaction at 5s max, since internally send() polls Solana until the
-    // tx is confirmed; we'd rather cancel early and attempt again.
-    match timeout(Duration::from_secs(5), pending_tx).await {
-        Ok(Ok(s)) => Ok(s),
-        Err(_elapsed) => {
-            error!("[TIMEOUT] witness_retryable");
-            Err(RetryError::non_retryable_error("timeout witness_retryable"))
-        }
-        Ok(Err(e)) => {
-            warn!("witness_retryable error: {}", e);
-            Err(RetryError::from(e).into())
-        }
-    }
-}
-
-#[cfg(feature = "solana-localnet-tests")]
-#[cfg(test)]
-mod test {
-
-    use super::*;
-
-    use anchor_client::solana_sdk::signature::{EncodableKey, Signer};
-    use bytemuck::Zeroable;
-    use model::LLM;
-    use psyche_coordinator::{
-        model::{
-            Checkpoint, ConstantLR, HubRepo, LLMArchitecture, LLMTrainingDataLocation,
-            LLMTrainingDataType, LearningRateSchedule, Optimizer,
-        },
-        CoordinatorConfig, RunState,
-    };
-    use psyche_core::{FixedVec, OptimizerDefinition};
-    use psyche_network::SecretKey;
-    use rand::Rng;
-
-    #[tokio::test]
-    pub async fn localnet_coordinator_run() {
-        // try to keep this and memnet_coordinator_run synced up
-
-        let key_pair = Arc::new(
-            Keypair::read_from_file(home::home_dir().unwrap().join(".config/solana/id.json"))
-                .unwrap(),
-        );
-        let backend = SolanaBackend::new(
-            Cluster::Localnet,
-            key_pair.clone(),
-            CommitmentConfig::processed(),
-        )
-        .unwrap();
-        let run_id = format!("{}", rand::thread_rng().gen_range(0..1000000));
-
-        let created = backend.create_run(run_id.clone()).await.unwrap();
-        let mut runner = backend
-            .start(run_id.clone(), created.account)
-            .await
-            .unwrap();
-
-        runner
-            .backend
-            .update_config_and_model(
-                created.instance,
-                created.account,
-                Some(CoordinatorConfig::<psyche_solana_coordinator::ClientId> {
-                    warmup_time: 1,
-                    cooldown_time: 1,
-                    max_round_train_time: 10,
-                    round_witness_time: 1,
-                    min_clients: 1,
-                    global_batch_size: 1,
-                    verification_percent: 0,
-                    witness_nodes: 1,
-                    rounds_per_epoch: 10,
-                    total_steps: 100,
-                    checkpointers: FixedVec::zeroed(),
-                }),
-                Some(Model::LLM(LLM {
-                    architecture: LLMArchitecture::HfLlama,
-                    checkpoint: Checkpoint::Dummy(HubRepo::dummy()),
-                    max_seq_len: 4096,
-                    data_type: LLMTrainingDataType::Pretraining,
-                    data_location: LLMTrainingDataLocation::Local(Zeroable::zeroed()),
-                    lr_schedule: LearningRateSchedule::Constant(ConstantLR::default()),
-                    optimizer: OptimizerDefinition::Distro {
-                        clip_grad_norm: None,
-                        compression_decay: 1.0,
-                        compression_topk: 1,
-                        compression_chunk: 1,
-                        quantize_1bit: false.into(),
-                    },
-                })),
-            )
-            .await
-            .unwrap();
-
-        let new_state = runner.wait_for_new_state().await.unwrap();
-        assert_eq!(new_state.run_state, RunState::Uninitialized);
-
-        let client_keypair = Arc::new(Keypair::new());
-        let client_p2p = SecretKey::generate(&mut rand::rngs::OsRng);
-        let client_id = psyche_solana_coordinator::ClientId::new(
-            client_keypair.pubkey(),
-            *client_p2p.public().as_bytes(),
-        );
     }
 }
