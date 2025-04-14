@@ -111,6 +111,7 @@ async fn subscribe_to_account(
             "Correctly subscribe to Solana url: {url}",
         );
 
+        // we will force a reconnection to the Solana websocket every 30 minutes
         let refresh_time: u64 = if first_connection {
             FORCE_RECONNECTION_TIME + (((id - 1) * 10) % FORCE_RECONNECTION_TIME)
         } else {
@@ -190,13 +191,21 @@ impl SolanaBackend {
 
         let tx_subscribe_ = tx_subscribe.clone();
 
+        let mut subscription_number = 1;
         let url = self.cluster.clone().ws_url().to_string();
         tokio::spawn(async move {
-            subscribe_to_account(url, commitment, &coordinator_account, tx_subscribe_, 0).await
+            subscribe_to_account(
+                url,
+                commitment,
+                &coordinator_account,
+                tx_subscribe_,
+                subscription_number,
+            )
+            .await
         });
 
-        let mut subscription_number = 1;
         for cluster in self.backup_clusters.clone() {
+            subscription_number += 1;
             let tx_subscribe_ = tx_subscribe.clone();
             tokio::spawn(async move {
                 subscribe_to_account(
@@ -208,7 +217,6 @@ impl SolanaBackend {
                 )
                 .await
             });
-            subscription_number += 1;
         }
         tokio::spawn(async move {
             let mut last_nonce = 0;
