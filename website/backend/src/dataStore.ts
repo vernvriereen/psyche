@@ -237,7 +237,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		const c = run.lastState.coordinator
 
 		const tokensPerSequence = c.model.LLM.max_seq_len
-		const batchesPerStep = c.config.global_batch_size
+		const batchesPerStep = c.config.global_batch_size_end
 
 		const tokensPerStep =
 			tokensPerSequence * batchesPerStep
