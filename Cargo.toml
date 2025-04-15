@@ -14,7 +14,7 @@ resolver = "2"
 name = "psyche-workspace"
 
 [workspace.package]
-version = "0.0.1"
+version = "0.1.0"
 
 [workspace.dependencies]
 psyche-coordinator = { path = "./shared/coordinator" }

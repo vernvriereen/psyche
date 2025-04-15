@@ -6663,7 +6663,7 @@ dependencies = [
 
 [[package]]
 name = "psyche-centralized-local-testnet"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -6724,7 +6724,7 @@ dependencies = [
 
 [[package]]
 name = "psyche-centralized-testing"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -6851,7 +6851,7 @@ dependencies = [
 
 [[package]]
 name = "psyche-decentralized-testing"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anchor-client",
  "bollard",
@@ -6871,7 +6871,7 @@ dependencies = [
 
 [[package]]
 name = "psyche-deserialize-zerocopy-wasm"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "psyche-solana-coordinator",
  "serde",
@@ -6968,7 +6968,7 @@ dependencies = [
 
 [[package]]
 name = "psyche-solana-client"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anchor-client",
  "anyhow",
@@ -7019,7 +7019,7 @@ dependencies = [
 
 [[package]]
 name = "psyche-solana-tooling"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
