@@ -1,7 +1,7 @@
 [package]
 name = "psyche-solana-authorizer"
-version = "0.1.0"
-description = "Nous Research - Psyche Solana Authorizer"
+version.workspace = true
+description = "Psyche Solana Authorizer"
 edition = "2021"
 
 [lib]

@@ -1,7 +1,7 @@
 [package]
 name = "psyche-solana-mining-pool"
 version = "0.1.1"
-description = "Nous Research - Psyche Solana Mining Pool"
+description = "Psyche Solana Mining Pool"
 edition = "2021"
 
 [lib]
