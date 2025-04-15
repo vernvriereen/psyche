@@ -13,7 +13,7 @@ use std::{collections::HashMap, path::PathBuf};
 use tch::Tensor;
 use thiserror::Error;
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{info, info_span, Instrument};
+use tracing::{error, info, info_span, Instrument};
 
 use super::{
     evals::{EvalRunner, RunningEvals},
@@ -161,15 +161,25 @@ impl CooldownStepMetadata {
                         return Ok::<(), CheckpointError>(());
                     };
 
-                    info!("Uploading to {}", hub_repo);
-                    let revision = upload_model_repo_async(
+                    info!(repo = hub_repo, "Uploading checkpoint to HuggingFace");
+                    let revision = match upload_model_repo_async(
                         hub_repo.clone(),
                         local,
                         hub_token.clone(),
                         Some(format!("step {step}")),
                         None,
                     )
-                    .await?;
+                    .await
+                    {
+                        Ok(revision) => {
+                            info!(repo = hub_repo, "Upload to HuggingFace complete");
+                            revision
+                        }
+                        Err(err) => {
+                            error!(repo = hub_repo, "Error uploading to HuggingFace: {err}");
+                            return Err(err.into());
+                        }
+                    };
 
                     tx_checkpoint
                         .send(HubRepo {
