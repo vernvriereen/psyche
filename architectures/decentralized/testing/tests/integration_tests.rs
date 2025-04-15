@@ -890,10 +890,10 @@ async fn test_total_packet_loss_in_client() {
     }
 }
 
-/// Test that verifies a second client can continue a run after the first client that started the run is killed
+/// Tests that if your only peer disconnects, the new client goes back to fetching the model from Hub and not P2P
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 #[serial]
-async fn test_kill_original_client_after_join() {
+async fn test_lost_only_peer_go_back_to_hub_checkpoint() {
     // Initialize DockerWatcher
     let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
     let mut watcher = DockerWatcher::new(docker.clone());
@@ -918,21 +918,9 @@ async fn test_kill_original_client_after_join() {
         .unwrap();
 
     let mut first_client_killed = false;
-    tokio::time::sleep(Duration::from_secs(30)).await;
+    let mut spawned_second_client = false;
 
-    // Join a second client
     let second_client_id = format!("{CLIENT_CONTAINER_PREFIX}-2");
-    println!("Joining a second client to the run");
-    spawn_new_client(docker.clone()).await.unwrap();
-    let _monitor_client_2 = watcher
-        .monitor_container(
-            &second_client_id,
-            vec![
-                IntegrationTestLogMarker::StateChange,
-                IntegrationTestLogMarker::Loss,
-            ],
-        )
-        .unwrap();
 
     loop {
         tokio::select! {
@@ -944,8 +932,24 @@ async fn test_kill_original_client_after_join() {
                             client_id, old_state, new_state
                         );
 
+                        if new_state == RunState::RoundTrain.to_string() && !spawned_second_client {
+                            println!("Joining a second client to the run");
+                            let second_client_id = spawn_new_client(docker.clone()).await.unwrap();
+                            let _monitor_client_2 = watcher
+                            .monitor_container(
+                                &second_client_id,
+                                vec![
+                                    IntegrationTestLogMarker::StateChange,
+                                    IntegrationTestLogMarker::LoadedModel,
+                                    IntegrationTestLogMarker::Loss,
+                                ],
+                            )
+                            .unwrap();
+                            spawned_second_client = true;
+                        }
+
                         // When cooldown is reached and second client is joined, kill the first client
-                        if new_state == RunState::Cooldown.to_string() && !first_client_killed {
+                        if new_state == RunState::Cooldown.to_string() && !first_client_killed && spawned_second_client{
                             println!("Cooldown reached, killing the first client");
 
                             watcher
@@ -964,11 +968,16 @@ async fn test_kill_original_client_after_join() {
                             if let Err(e) = watcher.monitor_client_health(&second_client_id).await {
                                 panic!("Second client has crashed after first client was killed. Test Failed. {}", e);
                             }
-                            println!("Second client is still alive after first client was killed. Test Successful");
+                            println!("Second client is still alive after first client was killed.");
+                        }
+                    }
+                    Some(Response::LoadedModel(checkpoint)) => {
+                        if spawned_second_client && first_client_killed {
+                            // Assert checkpoint is Hub
+                            assert!(checkpoint.starts_with("emozilla/"), "The model should be obtained from Hub since the other client disconnected");
+                            println!("Model succesfuly obtained from Hub");
                             return;
                         }
-
-                        // If we already killed the 1st client and we're back to WaitingForMembers
                     }
                     Some(Response::Loss(client, epoch, step, loss)) => {
                         if loss.is_none() {
