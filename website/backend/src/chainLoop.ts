@@ -62,7 +62,7 @@ export function startWatchChainLoop<D>(): <
 
 			if (catchupTxs.length) {
 				console.debug(
-					`[${name}] updated from slot ${lastUpdate} to latest slot.`
+					`[${name}] updated from slot ${lastUpdate?.highestSignature?.slot ?? 0} to latest slot.`
 				)
 			}
 
@@ -143,7 +143,7 @@ async function catchupOnTxsToAddress(
 	const allSignatures = []
 	while (true) {
 		console.log(
-			`[${name}] fetching sigs from slot ${lastIndexedSignature?.slot ?? '0'} to ${oldestSeenSignature?.slot ?? 'the latest block'}: total ${allSignatures.length}`
+			`[${name}] fetching sigs from slot ${lastIndexedSignature?.slot ?? 0} to ${oldestSeenSignature?.slot ?? 'the latest block'}: total ${allSignatures.length}`
 		)
 		const signatures = await provider.connection.getSignaturesForAddress(
 			address,
@@ -183,7 +183,7 @@ async function catchupOnTxsToAddress(
 	}
 
 	console.log(
-		`[${name}] fetching ${allSignatures.length} transactions catching up from slot ${lastIndexedSignature?.slot ?? '0'} to ${oldestSeenSignature?.slot ?? 'the latest block'}`
+		`[${name}] fetching ${allSignatures.length} transactions catching up from slot ${lastIndexedSignature?.slot ?? 0} to ${oldestSeenSignature?.slot ?? 'the latest block'}`
 	)
 
 	let completedCount = 0
