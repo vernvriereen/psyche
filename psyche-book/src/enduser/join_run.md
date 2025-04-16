@@ -28,8 +28,8 @@ A `.env` file should be created containing all the necessary configuration varia
 
 The variables that should be set are the following:
 
-- `RPC`: The RPC url of one of your private Solana provider
-- `WS_RPC`: The websocket url of the same private Solana provider
+- `RPC`: The RPC url of one of your private Solana provider.
+- `WS_RPC`: The websocket url of the same private Solana provider.
 - `RPC_2`: The RPC url of your other private Solana provider. If you don't have one, use a public alternative. For example, https://api.devnet.solana.com for Devnet.
 - `WS_RPC_2`: The websocket url corresponding to the other private Solana provider, or the public counterpart if you don't have one. For example, wss://api.devnet.solana.com for Devnet.
 - `RUN_ID`: The ID of the training run you will join.
@@ -38,12 +38,16 @@ The variables that should be set are the following:
 - `MICRO_BATCH_SIZE`: ?
 - `AUTHORIZER`: The Solana address that delegated authorization to the Solana public key you will use to join the run
 
-## Running docker image
+## Running the Psyche client docker image
+
+To download and run the psyche docker client run the following command, replacing `<path_to_env_file>` and
+`<path_to_solana_pubkey>` with your own.
 
 ```bash
 docker run -d \
-    --env-file ./.env \
+    --env-file <path_to_env_file> \
+    -e RAW_WALLET_PRIVATE_KEY="$(cat <path_to_solana_pubkey>)" \
     --gpus all \
     --network "host" \
-    -e RAW_WALLET_PRIVATE_KEY="$(cat ./plaintext/devnet_funded_accounts/keypair_1.json)" \ nousresearch/psyche-client:latest
+    nousresearch/psyche-client:latest
 ```
