@@ -1,6 +1,6 @@
 # Psyche Development
 
-As Psyche is a large & complex process, we'll walk you through some of the processes we use in development
+As the Psyche project a large & complex, we'll walk you through some of the processes we use in development.
 
 - [Setup & Useful Commands](./setup.md)
 - [Running Psyche On-Chain](./running-onchain.md)

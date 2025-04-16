@@ -1,4 +1,3 @@
-
 # Model sharing
 
 When an **epoch** starts, all clients must have an identical model to train with.
@@ -25,20 +24,19 @@ In the peer-to-peer (P2P) approach, a new client synchronizes by obtaining the l
 
 Here's an example of a P2P model sharing interaction:
 
-   ```mermaid
-   flowchart TB
-      C((Coordinator))
-      C1[Client 1]
-      C2[Client 2]
-      C3[Client 3]
-      C4[Joining Client]
-      HF[/Hugging Face\]
-      C --warmup---> C1
-      C --warmup---> C2
-      C --warmup---> C3
-      HF --Get model config--> C4
-      C4 -.Join.-> C
-      C1 -.Layer 1 weights.-> C4
-      C2 -.Layer 2 weights.-> C4
-      C3 -.Layer 3 weights.-> C4
-   ```
+```mermaid
+flowchart TB
+   C((Coordinator))
+   C1[Client 1]
+   C2[Client 2]
+   C3[Client 3]
+   C4[Joining Client]
+   C --warmup---> C1
+   C --warmup---> C2
+   C --warmup---> C3
+   C2 --Model config--> C4
+   C4 -.Join.-> C
+   C1 -.Layer 1 weights.-> C4
+   C2 -.Layer 2 weights.-> C4
+   C3 -.Layer 3 weights.-> C4
+```

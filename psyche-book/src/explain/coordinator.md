@@ -6,7 +6,7 @@ It handles the transition between each Phase of a Round, and provides a random s
 
 It's responsible for providing a point of synchronization for all clients within a run.
 
-## Ticks (States Transitions)
+## Ticks (State Transitions)
 
 The coordinator behaves like a state machines, moving from one state to another, with each state transition having specific requirements.
 
@@ -43,7 +43,7 @@ sequenceDiagram
     Note over Coordinator: Entering Training
 ```
 
-### Data Warmup (state: Warmup)
+### Model Loading (state: Warmup)
 
 This phase is designed to let all clients download the model & load it onto their GPUs.
 
@@ -135,6 +135,12 @@ sequenceDiagram
     end
 ```
 
+## Health checks
+
+Each client should repeatedly send health checks to the coordinator. Clients are assigned a score determined by the Coordinator using the `trainer_healthy_score_by_witnesses` method. This score increases as a client sends the required data to be added to the participants' bloom filters, allowing the Coordinator to confirm that the client is actively participating in the training.
+
+A client also sends a list of other clients it considers unhealthy to the server using the `HealthCheck` message. The Coordinator processes this information to determine whether those clients are healthy. Clients deemed inactive or non-participatory are marked for removal in the next round.
+
 ## Centralized Backend
 
 In this Backend, the Coordinator is owned and ticked forwards by a Server that communicates via clients over TCP.
@@ -158,22 +164,22 @@ When a new client joins the run it has to communicate the `run_id` that it wants
 
 When a tick condition is met, the Server ticks the Coordinator forwards, then broadcasts the Coordinator's new state to all connected clients.
 
-## Health checks
-
-In the `start` function, the client spawns a new task to repeatedly send health checks to the server. Nodes, also known as trainers in this state, are assigned a score determined by the Coordinator using the `trainer_healthy_score_by_witnesses` method. This score increases as a client sends the required data to be added to the participants' bloom filters, allowing the Coordinator to confirm that the client is actively participating in the training.
-
-A node also sends a list of other nodes it considers unhealthy to the server using the `HealthCheck` message. The Coordinator processes this information to determine whether those nodes are healthy. Nodes deemed inactive or non-participatory are marked for removal in the next round.
-
 ## Decentralized Backend
 
-TODO
+In this Backend, the Coordinator is an account associated with a Solana Program, and ticked forwards by a `tick` method that can be called by anyone.
 
+A training run can be created by calling the `init_coordinator` method in the Coordinator program, and subsequently information about the model to be trained can be set by calling the `update` method.
 
+For a new client to join the run, it must call the `join_run` method in the Coordinator program and pass the `run_id` for the run it intends to join. After the Solan Program processes the join message, the client is added to a pending clients list, and the Program runs the Coordinator's tick function to potentially add the client into the run.
 
+When a tick condition is met, anybody using Solana can tick the Coordinator forwards by calling the `tick` method (clients in a Run will do this automatically). This new state is then read via an RPC subscription on each Client, progressing through the regular state machine.
 
-
-
-
-
-
-
+```mermaid
+flowchart LR
+    T[Psyche Team] --deploy Solana Program--> P[Solana Program]
+    R[Run Creator] --init_coordinator with run_id--> A[Account for this training run]
+    R[Run Creator] --update with run info --> A
+    C[Client] --"join_run"--> A
+    C --tick-->A
+    G[A random Solana user] --tick-->A
+```

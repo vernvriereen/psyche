@@ -1,6 +1,6 @@
 # Running Psyche on-chain
 
-To build the Solana programs, install all required Solana tools (see [the setup](./setup.md) if you're not using Nix).
+To build the Solana programs, you'll need a handful of Solana tools installed. See [the setup](./setup.md) if you're not using Nix.
 
 To start, you'll need to create a Solana wallet to fund your transactions.
 
@@ -63,13 +63,13 @@ just start-training-devnet-light-client
 
 ## Regenerating program keypairs
 
-If you're developing things that change the structure of the program's accounts layout, things will break terribly unless you write nice migrations.
+If you're developing things that change the structure of the program's accounts layout, deploying an update to the coordinator program will likely cause breakage with existing runs that have coordinator accounts already instantiated.
 
-Additionally any frontend's indexers reading the content of the on-chain data will also break if you use a new IDL with an old in-memory layout.
+Any programs, including the Psyche website's indexer, will fail to read the content of the on-chain data if you use a new IDL with an old in-memory layout.
 
-So during development, you might need to deploy changes to devnet or localnet with a totally new coordinator and ProgramID.
+Therefore, changes to the data structures that end up on-chain will require a deployment of a new coordinator program under a new ProgramID to prevent breakage of existing runs.
 
-In order to deploy a new development contract by yourself, you'll need to generate a new ProgramID (and keypair).
+In order to do this by yourself, you'll need to generate a new ProgramID (and keypair).
 
 To deploy a program to devnet or localnet _with a new program keypair_,
 regenerate its devnet/localnet keypair file (checked into the repo!)
@@ -86,6 +86,6 @@ You can see the newly generated program ID by running
 solana-keygen pubkey architectures/decentralized/solana-coordinator/target/deploy/psyche_solana_coordinator-keypair.json
 ```
 
-Make sure to then update the `declare_id`'s content with the new keys before deploying the new development contracts.
+Make sure to then update the `declare_id`'s content with the new keys before deploying the new development contracts, either manually or with `anchor keys sync` in the appropriate project folder.
 
 if you want to push these changes to the repo, you'll need to use `git add -f`, since they're normally `.gitignore`d.

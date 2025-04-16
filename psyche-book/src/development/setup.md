@@ -2,24 +2,22 @@
 
 ## Installation and Setup
 
-### Install Nix
+### Any Linux, via Nix
 
 Psyche can use `nix` + flakes as a build system, to make your life easier.
 To install `nix`, simply run `curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install` or find it at your local package manager.
 
-#### MacOS / aarch64
+You can optionally use `direnv` to automatically enter a Nix environment when you `cd` into the Psyche folder.
+Either option will install every single dependency and development tool Psyche needs to run and be developed.
 
-These platforms aren't supported right now :(
-PRs welcome!
+#### Using `direnv`
 
-#### Direnv
+Install `direnv` from your system's package manager.
+After running `direnv allow` in the Psyche directory once, your terminal will automatically enter a development shell when you subsequently `cd` into the Psyche directory.
 
-0. Install `direnv`
-1. `direnv allow`
+#### Without `direnv`
 
-#### Non-direnv
-
-`nix develop` to enter a development shell.
+Enter the Psyche directory, then run `nix develop` to enter a development shell.
 
 ### Ubuntu
 
@@ -129,6 +127,11 @@ OPENSSL_LIB_DIR = <path_to_openssl>/lib/VC/x64/MT
 OPENSSL_INCLUDE_DIR = <path_to_openssl>/include
 ```
 
+### MacOS / aarch64
+
+These platforms aren't supported right now :(
+PRs welcome!
+
 ### Docker
 
 Create a Docker image with the necessary dependencies to run a Psyche client:
@@ -146,7 +149,7 @@ sudo apt-get install -y nvidia-container-toolkit
 
 ## Useful commands
 
-Psyche uses [`just`](https://github.com/casey/just) to run some common tasks!
+Psyche uses [`just`](https://github.com/casey/just) to run some common tasks.
 
 You can run `just` to see the whole list of commands!
 
