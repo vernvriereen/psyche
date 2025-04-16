@@ -20,8 +20,6 @@ Required to enable GPU access inside Docker containers. This toolkit allows Dock
 To ensure reliability, performance, and security, all users must configure at least one private Solana RPC provider, though having two is recommended.
 We recommend using a dedicated RPC service such as [Helius](https://www.helius.dev/), [QuickNode](https://www.quicknode.com/), [Triton](https://triton.one/), or self-hosting your own Solana RPC node.
 
-## Setting Solana keys authorization
-
 ## Setting environment file
 
 A `.env` file should be created containing all the necessary configuration variables for joining a training run. These variables will be used to interact with the Solana blockchain, specify the model you'll contribute compute to, and configure the Psyche client based on your hardware resources.
