@@ -11,6 +11,7 @@ import {
 } from './idlTypes.js'
 import { CoordinatorDataStore } from './dataStore.js'
 import { startWatchChainLoop } from './chainLoop.js'
+import { makeRetryPromise } from './rateLimit.js'
 
 interface RunUpdates {
 	created?: {
@@ -118,6 +119,8 @@ export async function startWatchCoordinatorChainLoop(
 	coordinator: Program<PsycheSolanaCoordinator>,
 	cancelled: { cancelled: boolean }
 ) {
+	const getCoordinatorStateWithRetries = makeRetryPromise(getRunCoordinatorState)
+
 	await startWatchChainLoop<PsycheCoordinatorInstructionsUnion>()(
 		'coordinator',
 		dataStore,
@@ -288,7 +291,7 @@ export async function startWatchCoordinatorChainLoop(
 							console.log(
 								`[coordinator] fetching state for run ${addr}, whose coordinator PDA lives at ${coordinatorAccountAddress}, we saw updated at slot ${latestRun.lastUpdated.timestamp.slot}`
 							)
-							return getRunCoordinatorState(
+							return getCoordinatorStateWithRetries(
 								coordinator.provider,
 								new PublicKey(coordinatorAccountAddress)
 							).then(
@@ -356,7 +359,7 @@ async function getRunCoordinatorState(
 	runPubkey: PublicKey
 ): Promise<[PsycheCoordinator, ChainTimestamp]> {
 	const accountInfo =
-		await provider.connection.getParsedAccountInfo(runPubkey)
+		await provider.connection.getParsedAccountInfo(runPubkey, 'confirmed')
 	if (!accountInfo.value?.data) {
 		throw new Error('No data for run at address: ' + runPubkey)
 	}
