@@ -2,7 +2,7 @@
 
 - [Intro to Psyche](./intro.md)
 
-- [Psyche in depth](./explain/psyche-in-depth.md)
+- [Psyche in depth](./explain/index.md)
   - [Coordinator](./explain/coordinator.md)
   - [Data provider](./explain/data-provider.md)
   - [Model sharing](./explain/model-sharing.md)
