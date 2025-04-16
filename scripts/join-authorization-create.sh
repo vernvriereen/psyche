@@ -39,25 +39,34 @@ echo "PSYCHE_AUTHORIZER_ID: $PSYCHE_AUTHORIZER_ID"
 echo "PSYCHE_AUTH_SCOPE: $PSYCHE_AUTH_SCOPE"
 
 # Create a new authorization and save the created PDA's address
-AUTHORIZATION_PDA=$(\
+echo "----"
+echo "Creating a new authorization..."
+AUTHORIZATION_CREATE_JSON=$(\
     solana-toolbox --rpc=$SOLANA_RPC instruction \
         $PSYCHE_AUTHORIZER_ID authorization_create \
-        payer:$GRANTOR_KEYPAIR_FILE \
+        payer:keypair \
         grantor:$GRANTOR_KEYPAIR_FILE \
         --args=params.grantee:$GRANTEE_PUBKEY \
         --args=params.scope:$PSYCHE_AUTH_SCOPE \
-        --execute \
-    | jq .resolved.addresses.authorization \
+        --execute
 )
-echo "AUTHORIZATION_PDA: $AUTHORIZATION_PDA"
+echo $AUTHORIZATION_CREATE_JSON | jq -r .outcome.explorer
+echo "----"
+
+# Extract the authorization PDA from the JSON response
+AUTHORIZATION_PUBKEY=$(echo $AUTHORIZATION_CREATE_JSON | jq -r .resolved.addresses.authorization)
+echo "AUTHORIZATION_PUBKEY: $AUTHORIZATION_PUBKEY"
 
 # Activate the new authorization we just created
 echo "----"
 echo "Activation of the newly created authorization..."
-solana-toolbox --rpc=$SOLANA_RPC instruction \
-    $PSYCHE_AUTHORIZER_ID authorization_grantor_update \
-    --args=params.active:true \
-    grantor:$GRANTOR_KEYPAIR_FILE \
-    authorization:$AUTHORIZATION_PDA \
-    --execute | jq -r .outcome.explorer
+AUTHORIZATION_ACTIVATE_JSON=$(\
+    solana-toolbox --rpc=$SOLANA_RPC instruction \
+        $PSYCHE_AUTHORIZER_ID authorization_grantor_update \
+        --args=params.active:true \
+        grantor:$GRANTOR_KEYPAIR_FILE \
+        authorization:$AUTHORIZATION_PUBKEY \
+        --execute
+)
+echo $AUTHORIZATION_ACTIVATE_JSON | jq -r .outcome.explorer
 echo "----"

@@ -88,16 +88,18 @@ GRANTOR_KEYPAIR=authority.json
 GRANTEE_PUBKEY=$(solana-keygen pubkey user.json)
 
 # Create a new authorization and save the created PDA's address:
-AUTHORIZATION_PDA=$(\
+AUTHORIZATION_CREATE_JSON=$(\
     solana-toolbox --rpc=devnet instruction \
         $PSYCHE_AUTHORIZER_ID authorization_create \
         payer:keypair \
         grantor:$GRANTOR_KEYPAIR \
         --args=params.grantee:$GRANTEE_PUBKEY \
         --args=params.scope:$PSYCHE_AUTH_SCOPE \
-        --execute \
-    | jq .resolved.addresses.authorization \
+        --execute
 )
+
+# Read the authorization PDA from the create instruction JSON
+AUTHORIZATION_PUBKEY=$(echo $AUTHORIZATION_CREATE_JSON | jq -r .resolved.addresses.authorization)
 
 # Activate the new authorization we just created
 # (or deactivate it by flipping the flag back to false)
@@ -105,7 +107,7 @@ solana-toolbox --rpc=devnet instruction \
     $PSYCHE_AUTHORIZER_ID authorization_grantor_update \
     --args=params.active:true \
     grantor:$GRANTOR_KEYPAIR \
-    authorization:$AUTHORIZATION_PDA \
+    authorization:$AUTHORIZATION_PUBKEY \
     --execute
 ```
 
@@ -126,14 +128,16 @@ GRANTEE_KEYPAIR=user.json
 GRANTEE_PUBKEY=$(solana-keygen pubkey user.json)
 
 # Find the authorization PDA that should have already been created for us
-AUTHORIZATION_PDA=$(\
+AUTHORIZATION_CREATE_JSON=$(\
     solana-toolbox --rpc=devnet instruction \
     $PSYCHE_AUTHORIZER_ID authorization_create \
     grantor:$GRANTOR_PUBKEY \
     --args=params.grantee:$GRANTEE_PUBKEY \
-    --args=params.scope:$PSYCHE_AUTH_SCOPE \
-    | jq .resolved.addresses.authorization \
+    --args=params.scope:$PSYCHE_AUTH_SCOPE
 )
+
+# Read the authorization PDA from the create instruction JSON
+AUTHORIZATION_PUBKEY=$(echo $AUTHORIZATION_CREATE_JSON | jq -r .resolved.addresses.authorization)
 
 # We can then create add a new delegate keypair
 solana-keygen new -o delegate.json --no-bip39-passphrase
@@ -143,7 +147,7 @@ DELEGATE_PUBKEY=$(solana-keygen pubkey delegate.json)
 solana-toolbox --rpc=devnet instruction \
     $PSYCHE_AUTHORIZER_ID authorization_grantee_update \
     payer:keypair \
-    authorization:$AUTHORIZATION_PDA \
+    authorization:$AUTHORIZATION_PUBKEY \
     grantee:$GRANTEE_KEYPAIR \
     --args=params.delegates_clear:false \
     --args=params.delegates_added:"[\"$DELEGATE_PUBKEY\"]" \

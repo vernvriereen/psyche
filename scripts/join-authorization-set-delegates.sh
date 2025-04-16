@@ -64,26 +64,31 @@ echo "DELEGATES_JSON_VALUES: $DELEGATES_JSON_VALUES"
 echo "PSYCHE_AUTHORIZER_ID: $PSYCHE_AUTHORIZER_ID"
 echo "PSYCHE_AUTH_SCOPE: $PSYCHE_AUTH_SCOPE"
 
-# Find the authorization PDA that should have already been created for us
-AUTHORIZATION_PDA=$(\
+# Find how the authorization was created and simulate it
+AUTHORIZATION_CREATE_JSON=$( \
     solana-toolbox --rpc=$SOLANA_RPC instruction \
     $PSYCHE_AUTHORIZER_ID authorization_create \
     grantor:$GRANTOR_PUBKEY \
     --args=params.grantee:$GRANTEE_PUBKEY \
-    --args=params.scope:$PSYCHE_AUTH_SCOPE \
-    | jq .resolved.addresses.authorization \
+    --args=params.scope:$PSYCHE_AUTH_SCOPE
 )
-echo "AUTHORIZATION_PDA: $AUTHORIZATION_PDA"
+
+# Extract the authorization PDA from the JSON response
+AUTHORIZATION_PUBKEY=$(echo $AUTHORIZATION_CREATE_JSON | jq -r .resolved.addresses.authorization)
+echo "AUTHORIZATION_PUBKEY: $AUTHORIZATION_PUBKEY"
 
 # Then we add the delegate keys to our list of delegates
 echo "----"
 echo "Setting delegates..."
-solana-toolbox --rpc=$SOLANA_RPC instruction \
-    $PSYCHE_AUTHORIZER_ID authorization_grantee_update \
-    payer:$GRANTEE_KEYPAIR_FILE \
-    grantee:$GRANTEE_KEYPAIR_FILE \
-    authorization:$AUTHORIZATION_PDA \
-    --args=params.delegates_clear:true \
-    --args=params.delegates_added:$DELEGATES_JSON_VALUES \
-    --execute | jq -r .outcome.explorer
+AUTHORIZATION_DELEGATES_JSON=$( \
+  solana-toolbox --rpc=$SOLANA_RPC instruction \
+      $PSYCHE_AUTHORIZER_ID authorization_grantee_update \
+      payer:keypair \
+      grantee:$GRANTEE_KEYPAIR_FILE \
+      authorization:$AUTHORIZATION_PUBKEY \
+      --args=params.delegates_clear:true \
+      --args=params.delegates_added:$DELEGATES_JSON_VALUES \
+      --execute
+)
+echo $AUTHORIZATION_DELEGATES_JSON | jq -r .outcome.explorer
 echo "----"

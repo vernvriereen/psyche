@@ -1,9 +1,11 @@
 # Psyche In Depth
 
-The system is composed of three main actors:
+The core system is composed of three main actors:
 
-- **[Coordinator](./coordinator.md)**: Serves as a source of truth for global state available to all clients in a given training run. Each run has one coordinator that oversees the entire process. The coordinator is implemented as a both a program running on the Solana Blockchain and as a regular TCP server.
+- **[Coordinator](./coordinator.md)**: Serves as a source of truth for global state available to all clients in a given training run. Each run has one coordinator that oversees the entire process. The coordinator is implemented as both a program running on the Solana Blockchain and as a regular TCP server.
+
 - **Client**: A user participating in a training run. Clients receive the model to be trained and a specific dataset for that run. They send information to the coordinator to progress the training run and use a peer-to-peer network to share their results at each training step with other clients.
+
 - **[Data Provider](./data-provider.md)**: Each run requires training data. This data could be served by the Psyche Data Provider server, over HTTP, or loaded from local copies of a dataset.
 
 ## Sample topologies
@@ -13,13 +15,16 @@ The system is composed of three main actors:
 title: Decentralized Run, training data provided over HTTP.
 ---
 flowchart TB
-subgraph Solana
-    C(("Coordinator"))
+subgraph "Solana Blockchain"
+    C(["Coordinator State"])
 end
-C <--Solana RPC & TXs--> C1(("Client")) & C2(("Client")) & C3(("Client"))
-C1 <-.p2p gossip.-> C2
-C3 <-.p2p gossip.-> C2 & C1
-DT["Training Data on webserver"] --> C1 & C2 & C3
+C <-- Solana RPC & TXs --> C1(("Client")) & C2(("Client")) & C3(("Client"))
+C1 <-. p2p gossip .-> C2
+C3 <-. p2p gossip .-> C2 & C1
+DT["`
+Hosted training data
+and model snapshots
+`"] --> C1 & C2 & C3
 ```
 
 ```mermaid
@@ -27,13 +32,16 @@ DT["Training Data on webserver"] --> C1 & C2 & C3
 title: Centralized Run, training data provided thru TCP data server
 ---
 flowchart TB
-subgraph Coordinator Server
-    CC(("Coordinator"))
+subgraph "Coordinator Server"
+    CC(["Coordinator State"])
 end
-CC <--TCP--> C11(("Client")) & C22(("Client")) & C33(("Client"))
-C11 <-.p2p gossip.-> C22
-C33 <-.p2p gossip.-> C22 & C11
-DTT["Data server"] --> C11 & C22 & C33
+CC <-- TPC --> C11(("Client")) & C22(("Client")) & C33(("Client"))
+C11 <-. p2p gossip .-> C22
+C33 <-. p2p gossip .-> C22 & C11
+DTT["`
+Hosted training data
+and model snapshots
+`"] --> C11 & C22 & C33
 ```
 
 ## What constitutes a training run?
@@ -50,9 +58,9 @@ During a training run, clients primarily perform three tasks:
 
 At the start of an **epoch**, all clients have a window of time to join the run by requesting to be added by coordinator, and then connecting to the other participating clients.
 
-Once a minimum threshold of clients has been met, the run will transition to the _Warmup_ phase and begin a countdown to allow connected clients to update their copy of the model, at which point it will enter the _Training_ phase.
+Once a minimum threshold of clients has been met, the run will transition to the _Warmup_ phase and begin a countdown to allow connected clients to update their copy of the model, after which it will enter the _Training_ phase.
 
-To obtain a copy of the model, the Coordinator will either direct clients to a checkpoint uploaded somewhere like HuggingFace, or direct clients to [download the model from other clients](./model-sharing.md) via the p2p network.
+To obtain a copy of the model, the Coordinator will either direct clients to a checkpoint uploaded somewhere like: HuggingFace or direct clients to [download the model from other clients](./model-sharing.md) via the p2p network.
 
 ## Training
 
@@ -78,24 +86,26 @@ Once the _Witness_ phase concludes, the coordinator returns to the _Training_ ph
 
 ## The witness/train loop visualized
 
-Here's a high-level overview of the process. Additional details exist, but this captures the overall flow:
+Here's a high-level overview of the process.
+
+Additional details exist, but this captures the overall flow of a single Round from an Epoch:
 
 ```mermaid
 sequenceDiagram
     participant Client1
     participant Client2
     participant Coordinator
-    participant DataServer
-    Client1->>DataServer: get_data
-    Client2->>DataServer: get_data
-    Coordinator->>Client2: witness
+    participant Data Hosting
+    Client1 ->> Data Hosting: get_data
+    Client2 ->> Data Hosting: get_data
+    Coordinator ->> Client2: witness
     Note over Client1: Train
     Note over Client2: Train
-    Client1->>Client2: Send results
-    Client2->>Client1: Send results
+    Client1 ->> Client2: Send results
+    Client2 ->> Client1: Send results
     Note over Client1: Download results
     Note over Client2: Download results
-    Client2->>Coordinator: Send witness
+    Client2 ->> Coordinator: Send witness
     Note over Coordinator: Quorum reached
     Note over Coordinator: Starting Witness phase
 ```

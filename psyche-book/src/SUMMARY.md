@@ -1,10 +1,10 @@
 # Summary
 
 - [Intro to Psyche](./intro.md)
-- [Psyche in depth](./psyche-in-depth.md)
-  - [Coordinator](./coordinator.md)
-  - [Data provider](./data-provider.md)
-  - [Model sharing](./model-sharing.md)
+- [Psyche in depth](./explain/psyche-in-depth.md)
+  - [Coordinator](./explain/coordinator.md)
+  - [Data provider](./explain/data-provider.md)
+  - [Model sharing](./explain/model-sharing.md)
 - [End-user usage](./enduser/index.md)
   - [Creating a run](./enduser/create-run.md)
   - [Run configuration](./enduser/run-config.md)
