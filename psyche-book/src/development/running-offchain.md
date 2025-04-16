@@ -23,7 +23,9 @@ Since we want to run many clients and the server we'll need several terminal win
 A sample invocation that fires up 3 clients to train on a 20m model might look like this:
 
 ```bash
-just local-testnet --num-clients 3 --config-path ./config/consilience-match-llama2-20m-fineweb-pretrain-dev/
+just local-testnet \
+    --num-clients 3 \
+    --config-path ./config/consilience-match-llama2-20m-fineweb-pretrain-dev/
 ```
 
 There's a _lot_ of options to configure the local testnet. Check em out below!

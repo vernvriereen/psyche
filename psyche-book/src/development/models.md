@@ -1,4 +1,4 @@
-# implementing models
+# Implementing models
 
 This codebase includes a set of sample programs that let you design, implement, and test model architectures without spinning up the whole Psyche p2p training architecture.
 

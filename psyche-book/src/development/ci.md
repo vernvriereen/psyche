@@ -2,9 +2,7 @@
 
 ## Overview
 
-We use [Garnix](https://garnix.io/) as our CI provider.
-
-It
+We use [Garnix](https://garnix.io/) as our CI provider. It:
 
 - Builds packages in our Nix flakes
 - Runs all Nix checks including formatting, lints, & Rust tests.
