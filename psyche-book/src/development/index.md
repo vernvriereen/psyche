@@ -1,4 +1,4 @@
-# development
+# Psyche Development
 
 As Psyche is a large & complex process, we'll walk you through some of the processes we use in development
 

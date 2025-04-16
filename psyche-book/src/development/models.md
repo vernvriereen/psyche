@@ -8,7 +8,9 @@ The `train` example, documented below, is useful to test how your model trains u
 
 ## Running
 
-`$ cargo run --example train -- ---help`
+```bash
+cargo run --example train -- ---help
+```
 
 You'll need a pre-tokenized dataset downloaded to your disk for training.
 
@@ -19,7 +21,13 @@ Psyche only needs the `.ds` files, and will load any/all `.ds` files in the spec
 
 If you've downloaded part or all of the above dataset into a folder `data/fineweb-10bt` inside the Psyche repo, you can start a simple training run on a 20m parameter Llama 2 model:
 
-`$ cargo run --example train -- --model emozilla/llama2-20m-init --data-path ./data/fineweb-10bt/ --total-batch 2 --micro-batch 1`
+```bash
+cargo run --example train -- \
+    --model emozilla/llama2-20m-init \
+    --data-path ./data/fineweb-10bt/ \
+    --total-batch 2 \
+    --micro-batch 1
+```
 
 ## Adding a new model type
 

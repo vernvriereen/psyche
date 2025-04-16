@@ -1,6 +1,8 @@
-## Setup
+# Setup & Useful Commands
 
-### Nix
+## Installation and Setup
+
+### Install Nix
 
 Psyche can use `nix` + flakes as a build system, to make your life easier.
 To install `nix`, simply run `curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install` or find it at your local package manager.
@@ -23,7 +25,7 @@ PRs welcome!
 
 The following instructions are needed for a server with a fresh Ubuntu installation
 
-1. Install drivers
+#### 1. Install drivers
 
 ```bash
 sudo apt update
@@ -31,7 +33,7 @@ sudo apt install -y ubuntu-drivers-common
 sudo ubuntu-drivers install
 ```
 
-2. Install CUDA libraries
+#### 2. Install CUDA libraries
 
 ```bash
 wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
@@ -43,7 +45,7 @@ sudo apt-get install libnccl-dev libnccl2
 sudo apt install nvidia-cuda-toolkit
 ```
 
-3. Download libtorch & extract
+#### 3. Download libtorch & extract
 
 ```bash
 wget https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.6.0%2Bcu124.zip
@@ -51,8 +53,9 @@ unzip libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip
 rm libtorch-cxx11-abi-shared-with-deps-2.6.0+cu124.zip
 ```
 
-4. In the `.bashrc` file, set the following libtorch environment variables. Here `<path_to_libtorch>` is the absolute path
-   to the extracted `libtorch` folder from the previous step
+#### 4. Libtorch environment variables
+
+In the `.bashrc` file, set the following libtorch environment variables. Here `<path_to_libtorch>` is the absolute path to the extracted `libtorch` folder from the previous step
 
 ```bash
 export LIBTORCH=<path_to_libtorch>
@@ -64,26 +67,26 @@ export CUDA_ROOT=/usr/local/cuda-12.4
 
 This can also be achieved by making a `.cargo/config.toml` file in the checkout path
 
-```
+```toml
 [env]
 LIBTORCH=<path_to_libtorch>
 LD_LIBRARY_PATH=<path_to_libtorch>/lib
 CUDA_ROOT = "/usr/local/cuda-12.4"
 ```
 
-5. Download & install Rust
+#### 5. Download & install Rust
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-6. (optional) Install `just`
+#### 6. (optional) Install `just`
 
 ```bash
 sudo snap install just --edge --classic
 ```
 
-7. (optional) Install Solana and Anchor
+#### 7. (optional) Install Solana and Anchor
 
 Install Solana
 
@@ -145,16 +148,20 @@ sudo apt-get install -y nvidia-container-toolkit
 
 Psyche uses [`just`](https://github.com/casey/just) to run some common tasks!
 
-You can run `$ just` to see the whole list of commands!
+You can run `just` to see the whole list of commands!
 
 ### Running checks
 
 > requires Nix!
 
-`$ just check`
+```bash
+just check
+```
 
 If it passes, CI will pass.
 
 ### Formatting
 
-`$ just fmt`
+```bash
+just fmt
+```

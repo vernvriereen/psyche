@@ -160,7 +160,7 @@ When a tick condition is met, the Server ticks the Coordinator forwards, then br
 
 ## Health checks
 
-In the `start` function, the client spawns a new task to repeatedly send health checks to the server. Nodes, also known as trainers in this state, are assigned a score determined by the Coordinator using the `trainer_healthy_score_by_witnesses` method. This score increases as a client sends the required data to be added to the participants' bloom filters, allowing the Coordinator to confirm that the client is actively participating in the training.  
+In the `start` function, the client spawns a new task to repeatedly send health checks to the server. Nodes, also known as trainers in this state, are assigned a score determined by the Coordinator using the `trainer_healthy_score_by_witnesses` method. This score increases as a client sends the required data to be added to the participants' bloom filters, allowing the Coordinator to confirm that the client is actively participating in the training.
 
 A node also sends a list of other nodes it considers unhealthy to the server using the `HealthCheck` message. The Coordinator processes this information to determine whether those nodes are healthy. Nodes deemed inactive or non-participatory are marked for removal in the next round.
 

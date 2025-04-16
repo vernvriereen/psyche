@@ -8,7 +8,7 @@ To start, you'll need to create a Solana wallet to fund your transactions.
 solana-keygen new
 ```
 
-## Localnet
+## Run on a local validator (localnet)
 
 In a new terminal, run a validator with:
 
@@ -36,7 +36,7 @@ just setup-solana-localnet-light-test-run
 just start-training-light-client
 ```
 
-## Devnet
+## Run on Solana's Devnet
 
 You'll need to fund your wallet to make transactions on Devnet.
 You can [request an airdrop](https://faucet.solana.com/) from the Solana foundation of up to 10 devnet sol every 8 hours. Simply run
@@ -61,30 +61,31 @@ just setup-solana-devnet-light-test-run
 just start-training-devnet-light-client
 ```
 
-## regenerating program keypairs
+## Regenerating program keypairs
 
-if you're developing things that change the structure of the programs,
-things will break terribly unless you write nice migrations,
-and the indexer will be upset too if you use new IDL with an old shape.
-so, you might need to deploy changes to devnet or localnet with a totally new coordinator.
+If you're developing things that change the structure of the program's accounts layout, things will break terribly unless you write nice migrations.
 
-additionally, if you want to test deploying the programs yourself, and you don't have the keys required to do so, you won't be able to deploy at these addresses (since you don't have permission, and the programs are already there!)
+Additionally any frontend's indexers reading the content of the on-chain data will also break if you use a new IDL with an old in-memory layout.
 
-these keypairs are only used to derive the program ID of a program.
+So during development, you might need to deploy changes to devnet or localnet with a totally new coordinator and ProgramID.
 
-to deploy a program to devnet or localnet _with a new program keypair_,
+In order to deploy a new development contract by yourself, you'll need to generate a new ProgramID (and keypair).
+
+To deploy a program to devnet or localnet _with a new program keypair_,
 regenerate its devnet/localnet keypair file (checked into the repo!)
 
-for the solana coordinator, that would be
+For the solana coordinator, that would be:
 
 ```bash
 solana-keygen new -o architectures/decentralized/solana-coordinator/target/deploy/psyche_solana_coordinator-keypair.json -f
 ```
 
-you can see the newly generated program ID by running
+You can see the newly generated program ID by running
 
 ```bash
 solana-keygen pubkey architectures/decentralized/solana-coordinator/target/deploy/psyche_solana_coordinator-keypair.json
 ```
+
+Make sure to then update the `declare_id`'s content with the new keys before deploying the new development contracts.
 
 if you want to push these changes to the repo, you'll need to use `git add -f`, since they're normally `.gitignore`d.

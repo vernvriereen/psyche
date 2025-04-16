@@ -13,7 +13,7 @@ When a client starts a round of training, it is assigned an ID or a range of IDs
 by the coordinator, representing all the "batches" of data that will be used for that
 round. Each batch contains a specific subsection of the overall training data.
 
-The size of a batch is always the same, and can be configured in your [run config](./enduser/run-config.md)
+The size of a batch is always the same, and can be configured in the [run config](../enduser/run-config.md)
 This order is deterministic, and is distributed across each client, so no piece of data will be trained on more than once.
 
 To understand how the data is partitioned for each client, refer to the
@@ -22,23 +22,17 @@ following diagram:
 ```mermaid
 flowchart TD
     C((Coordinator))
-    C1[Client]
-    C2[Client]
-    C --Batch IDs 1, 2, 3--> C1
-    C --Batch IDs 4, 5, 6--> C2
+    C1[Client A]
+    C2[Client B]
+    C -- Assigned Batch IDs 1, 2, 3 --> C1
+    C -- Assigned Batch IDs 4, 5, 6 --> C2
     subgraph Data Provider
-        B1["Batch 1
-            "]
-        B2["Batch 2
-            "]
-        B3["Batch 3
-            "]
-        B4["Batch 4
-        "]
-        B5["Batch 5
-        "]
-        B6["Batch 6
-        "]
+        B1["Batch 1"]
+        B2["Batch 2"]
+        B3["Batch 3"]
+        B4["Batch 4"]
+        B5["Batch 5"]
+        B6["Batch 6"]
         B4 ~~~ B1
         B5 ~~~ B2
         B6 ~~~ B3
@@ -53,7 +47,7 @@ flowchart TD
 
 ## Provider configuration
 
-Inside your [run config](./enduser/run-config.md), the key `[model.LLM.data_location]` specifies whether the data will be hosted on a TCP server, accessed via HTTP, or stored in a local folder.
+Inside the [run config](../enduser/run-config.md), the key `[model.LLM.data_location]` specifies whether the data will be hosted on a TCP server, accessed via HTTP, or stored in a local folder.
 We also support loading data from GCP as a subsection of the HTTP data provider.
 
 The required configuration depends on the data provider implementation being used:

@@ -1,4 +1,4 @@
-# running offchain
+# Running Psyche offchain
 
 When developing for Psyche, you might not want to spin up all the Solana infrastructure if you're working on a feature like the distributed networking or the training code.
 
@@ -28,18 +28,21 @@ just local-testnet --num-clients 3 --config-path ./config/consilience-match-llam
 
 There's a _lot_ of options to configure the local testnet. Check em out below!
 
-<details><summary>Command-line options</summary>
-{{#include ../../generated/cli/psyche-centralized-local-testnet.md}}
+<details>
+    <summary>Command-line options</summary>
+    {{#include ../../generated/cli/psyche-centralized-local-testnet.md}}
 </details>
 
 ## Server & Client
 
 Both of these applications can be spun up individually at your discretion instead of using the local testnet. We include all their command-line options for your reading pleasure:
 
-<details><summary>Client</summary>
-{{#include ../../generated/cli/psyche-centralized-client.md}}
+<details>
+    <summary>Client</summary>
+    {{#include ../../generated/cli/psyche-centralized-client.md}}
 </details>
 
-<details><summary>Server</summary>
-{{#include ../../generated/cli/psyche-centralized-server.md}}
+<details>
+    <summary>Server</summary>
+    {{#include ../../generated/cli/psyche-centralized-server.md}}
 </details>
