@@ -13,8 +13,7 @@ command = "mdbook-mermaid"
 [output.html]
 additional-js = ["mermaid.min.js", "mermaid-init.js"]
 additional-css = ["./theme/psyche.css"]
-
-[output.linkcheck]
-
 default-theme = "psyche-light"
 preferred-dark-theme = "psyche-dark"
+
+[output.linkcheck]
