@@ -161,6 +161,9 @@
             )
           ];
         };
+
+      mainnetFrontendRpc = "https://quentin-uzfsvh-fast-mainnet.helius-rpc.com";
+      devnetFrontendRpc = "https://bree-dtgg3j-fast-devnet.helius-rpc.com";
     in
     {
       # server for hosting the frontend/backend, for testing
@@ -168,16 +171,16 @@
         configName = "psyche-http-devnet";
         hostnames = [ "devnet-preview.psyche.network" ];
         backendSecret = ../secrets/devnet/backend.age;
-        miningPoolRpc = "https://api.devnet.solana.com";
+        miningPoolRpc = devnetFrontendRpc;
       };
       nixosConfigurations."psyche-http-mainnet" = persistentPsycheWebsite {
         configName = "psyche-http-mainnet";
         hostnames = [ "mainnet-preview.psyche.network" ];
         backendSecret = ../secrets/mainnet/backend.age;
-        miningPoolRpc = "https://api.mainnet-beta.solana.com/";
+        miningPoolRpc = mainnetFrontendRpc;
       };
 
-      # server for hosting
+      # server for hosting the mainnet docs & frontend/backend.
       nixosConfigurations."psyche-http" = inputs.nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
         modules = base-system ++ [
@@ -192,7 +195,7 @@
             let
               backendPath = "/api";
               psyche-website-frontend = pkgs.callPackage ../website/frontend {
-                miningPoolRpc = "https://api.mainnet-beta.solana.com/";
+                miningPoolRpc = mainnetFrontendRpc;
                 inherit backendPath;
               };
             in
