@@ -66,6 +66,10 @@ async fn subscribe_to_account(
     let mut first_connection = true;
     let mut retries: u64 = 0;
     loop {
+        // wait a time before we try a reconnection
+        let sleep_time = min(600, retries.saturating_mul(5));
+        tokio::time::sleep(Duration::from_secs(sleep_time)).await;
+        retries += 1;
         let Ok(sub_client) = PubsubClient::new(&url).await else {
             warn!(
                 integration_test_log_marker = %IntegrationTestLogMarker::SolanaSubscription,
@@ -73,11 +77,6 @@ async fn subscribe_to_account(
                 subscription_number = id,
                 "Solana subscription error, could not connect to url: {url}",
             );
-
-            // wait a time before we try a reconnection
-            let sleep_time = min(600, retries.saturating_mul(5));
-            tokio::time::sleep(Duration::from_secs(sleep_time)).await;
-            retries += 1;
             continue;
         };
 
@@ -100,7 +99,7 @@ async fn subscribe_to_account(
                     error = err.to_string(),
                     "Solana account subscribe error",
                 );
-                return;
+                continue;
             }
         };
 
@@ -129,6 +128,7 @@ async fn subscribe_to_account(
                         url = url,
                         subscription_number = id,
                         "Force Solana subscription reconnection");
+                    retries = 0;
                     break
                 }
                 update = notifications.next() => {
@@ -150,9 +150,6 @@ async fn subscribe_to_account(
                 }
             }
         }
-        let sleep_time = min(600, retries.saturating_mul(5));
-        tokio::time::sleep(Duration::from_secs(sleep_time)).await;
-        retries += 1;
     }
 }
 
