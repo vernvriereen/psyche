@@ -13,7 +13,7 @@ import {
 	psycheJsonReplacer,
 } from 'shared'
 import { Connection } from '@solana/web3.js'
-import { makeRateLimitedFetch } from './rateLimitedFetch.js'
+import { makeRateLimitedFetch } from './rateLimit.js'
 
 const requiredEnvVars = ['COORDINATOR_RPC', 'MINING_POOL_RPC'] as const
 
