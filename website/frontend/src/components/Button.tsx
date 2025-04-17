@@ -244,9 +244,7 @@ export function Button<T extends LinkProps | HTMLButtonProps>(
 					<>
 						{icon?.side === 'left' && (
 							<div className="icon">
-								<icon.svg
-									className={`${svgFillCurrentColor} left`}
-								/>
+								<icon.svg className={`${svgFillCurrentColor} left`} />
 							</div>
 						)}
 						<span className="contents">
@@ -256,9 +254,7 @@ export function Button<T extends LinkProps | HTMLButtonProps>(
 						</span>
 						{icon?.side === 'right' && (
 							<div className="icon">
-								<icon.svg
-									className={`${svgFillCurrentColor} right`}
-								/>
+								<icon.svg className={`${svgFillCurrentColor} right`} />
 							</div>
 						)}
 					</>

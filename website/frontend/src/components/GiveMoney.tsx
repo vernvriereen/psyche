@@ -99,10 +99,7 @@ export function GiveMoney({
 
 	const psychePoolPda = useMemo(
 		() =>
-			getMiningPoolPDA(
-				new PublicKey(miningPoolProgramId),
-				PSYCHE_POOL_INDEX
-			),
+			getMiningPoolPDA(new PublicKey(miningPoolProgramId), PSYCHE_POOL_INDEX),
 		[miningPoolProgramId]
 	)
 
@@ -229,9 +226,7 @@ export function GiveMoney({
 						icon={{ side: 'left', svg: Smiley }}
 						onClick={async () => {
 							if (!collateralInfo) {
-								console.warn(
-									'button should be disabled, no collateralInfo'
-								)
+								console.warn('button should be disabled, no collateralInfo')
 								return
 							}
 							setSending(true)
@@ -244,9 +239,7 @@ export function GiveMoney({
 									publicKey
 								)
 								const lenderAccount =
-									await program.account.lender.fetchNullable(
-										lenderPda
-									)
+									await program.account.lender.fetchNullable(lenderPda)
 
 								if (!lenderAccount) {
 									tx.add(
@@ -265,14 +258,11 @@ export function GiveMoney({
 								tx.add(
 									await program.methods
 										.lenderDeposit({
-											collateralAmount: new BN(
-												contributeAmount.toString()
-											),
+											collateralAmount: new BN(contributeAmount.toString()),
 										})
 										.accounts({
 											pool: psychePoolPda,
-											userCollateral:
-												collateralInfo.associatedTokenAddress,
+											userCollateral: collateralInfo.associatedTokenAddress,
 											user: publicKey,
 										})
 										.instruction()
@@ -295,12 +285,11 @@ export function GiveMoney({
 					</Button>
 				</SideAlign>
 				<span className={text['aux/xs/regular']}>
-					Any capital contributed to this pool is purely a donation
-					and for testing purposes only. Any digital tokens made
-					available by Nous or the Psyche Foundation on the Testnet,
-					any tokens configured using the Testnet, and any tokens
-					configured using any extrinsics available for the Testnet
-					have no economic or monetary value and cannot be exchanged
+					Any capital contributed to this pool is purely a donation and for
+					testing purposes only. Any digital tokens made available by Nous or
+					the Psyche Foundation on the Testnet, any tokens configured using the
+					Testnet, and any tokens configured using any extrinsics available for
+					the Testnet have no economic or monetary value and cannot be exchanged
 					for or converted into cash, cash equivalent, or value.
 				</span>
 			</Wrapper>

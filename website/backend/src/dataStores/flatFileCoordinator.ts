@@ -38,7 +38,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 	#runs: Map<string, RunHistory[]> = new Map()
 	#lastUpdateInfo: LastUpdateInfo = {
 		time: new Date(),
-		highestSignature: undefined
+		highestSignature: undefined,
 	}
 	#db: string
 	#programId: PublicKey
@@ -171,9 +171,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 
 		// could be a bigint, could be a BN, kind of annoying. TODO fix somewhere else.
 		const l =
-			typeof evals.len === 'object' &&
-			evals.len &&
-			'toNumber' in evals.len
+			typeof evals.len === 'object' && evals.len && 'toNumber' in evals.len
 				? evals.len.toNumber()
 				: Number(evals.len)
 		const fixedEvals = []
@@ -182,9 +180,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			l
 		) as WitnessEvalResult[]) {
 			const firstZero = name[0].findIndex((v) => v === 0)
-			const nameStr = Buffer.from(name[0].slice(0, firstZero)).toString(
-				'utf-8'
-			)
+			const nameStr = Buffer.from(name[0].slice(0, firstZero)).toString('utf-8')
 			fixedEvals.push({
 				name: nameStr,
 				value,

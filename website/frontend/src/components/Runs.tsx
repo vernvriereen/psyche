@@ -70,9 +70,7 @@ export function Runs({ runs }: { runs: RunSummary[] }) {
 			<RunBoxesContainer>
 				{runs
 					.filter(
-						(r) =>
-							runTypeFilter === 'all' ||
-							runTypeFilter === r.status.type
+						(r) => runTypeFilter === 'all' || runTypeFilter === r.status.type
 					)
 					.map((r) => (
 						<RunSummaryCard key={r.id} info={r} />

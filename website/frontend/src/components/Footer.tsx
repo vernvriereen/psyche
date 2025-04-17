@@ -68,9 +68,7 @@ export function Footer() {
 				<SymbolSeparatedItems>
 					<a href="https://twitter.com/psycheoperation">twitter</a>
 					<a href="https://discord.gg/psychenetwork">discord</a>
-					<a href="https://nousresearch.com/nous-psyche/">
-						blog post
-					</a>
+					<a href="https://nousresearch.com/nous-psyche/">blog post</a>
 					<Link to="/legal">legal</Link>
 					<a href="https://nousresearch.com">nous research</a>
 				</SymbolSeparatedItems>

@@ -119,7 +119,9 @@ export async function startWatchCoordinatorChainLoop(
 	coordinator: Program<PsycheSolanaCoordinator>,
 	cancelled: { cancelled: boolean }
 ) {
-	const getCoordinatorStateWithRetries = makeRetryPromise(getRunCoordinatorState)
+	const getCoordinatorStateWithRetries = makeRetryPromise(
+		getRunCoordinatorState
+	)
 
 	await startWatchChainLoop<PsycheCoordinatorInstructionsUnion>()(
 		'coordinator',
@@ -135,10 +137,7 @@ export async function startWatchCoordinatorChainLoop(
 					slot: BigInt(tx.slot),
 					// solana timestamps are in second, pad out to ms.
 					time: new Date(
-						+(
-							tx.blockTime?.toString().padEnd(13, '0') ??
-							Date.now()
-						)
+						+(tx.blockTime?.toString().padEnd(13, '0') ?? Date.now())
 					),
 				}
 
@@ -231,10 +230,7 @@ export async function startWatchCoordinatorChainLoop(
 							coordinatorAddr,
 							timestamp
 						)
-						run.witnessUpdates.push([
-							decoded.data.metadata,
-							timestamp,
-						])
+						run.witnessUpdates.push([decoded.data.metadata, timestamp])
 						break
 					}
 					case 'checkpoint': {
@@ -286,8 +282,7 @@ export async function startWatchCoordinatorChainLoop(
 
 						// this fetches the state for the last run in the list.
 						if (canFetchState) {
-							const { coordinatorAccountAddress } =
-								latestRun.lastUpdated
+							const { coordinatorAccountAddress } = latestRun.lastUpdated
 							console.log(
 								`[coordinator] fetching state for run ${addr}, whose coordinator PDA lives at ${coordinatorAccountAddress}, we saw updated at slot ${latestRun.lastUpdated.timestamp.slot}`
 							)
@@ -299,10 +294,7 @@ export async function startWatchCoordinatorChainLoop(
 									[
 										addr,
 										runsAtThisAddr.map((run, i) => {
-											if (
-												i ===
-												runsAtThisAddr.length - 1
-											) {
+											if (i === runsAtThisAddr.length - 1) {
 												return {
 													...run,
 													state: runState,
@@ -337,11 +329,7 @@ export async function startWatchCoordinatorChainLoop(
 							store.witnessRun(pubkey, witness, timestamp)
 						}
 						for (const [pause, timestamp] of run.pauseTimestamps) {
-							store.setRunPaused(
-								pubkey,
-								pause === 'paused',
-								timestamp
-							)
+							store.setRunPaused(pubkey, pause === 'paused', timestamp)
 						}
 						if (run.destroyedAt) {
 							store.destroyRun(pubkey, run.destroyedAt)
@@ -358,8 +346,10 @@ async function getRunCoordinatorState(
 	provider: Provider,
 	runPubkey: PublicKey
 ): Promise<[PsycheCoordinator, ChainTimestamp]> {
-	const accountInfo =
-		await provider.connection.getParsedAccountInfo(runPubkey, 'confirmed')
+	const accountInfo = await provider.connection.getParsedAccountInfo(
+		runPubkey,
+		'confirmed'
+	)
 	if (!accountInfo.value?.data) {
 		throw new Error('No data for run at address: ' + runPubkey)
 	}
@@ -379,8 +369,6 @@ async function getRunCoordinatorState(
 			},
 		]
 	} catch (err) {
-		throw new Error(
-			`Failed to deserialize run at address ${runPubkey}: ${err}`
-		)
+		throw new Error(`Failed to deserialize run at address ${runPubkey}: ${err}`)
 	}
 }

@@ -1,6 +1,5 @@
 import { css } from '@linaria/core'
 
-import souffletWoff from './assets/fonts/SouffletVert-Hybrid106R.woff'
 import souffletWoff2 from './assets/fonts/SouffletVert-Hybrid106R.woff2'
 
 import geistMonoWoff2 from './assets/fonts/GeistMono[wght].woff2'
@@ -11,9 +10,7 @@ export const global = css`
 	:global() {
 		@font-face {
 			font-family: 'Soufflet Vert Hybrid 106R';
-			src:
-				url('${souffletWoff2}') format('woff2'),
-				url('${souffletWoff}') format('woff');
+			src: url('${souffletWoff2}') format('woff2');
 			font-weight: normal;
 			font-style: normal;
 			font-display: swap;
@@ -172,8 +169,7 @@ function generateFontClasses(): FontClassNames {
 				config.weights.forEach((weightKey) => {
 					const weightClass = weight[weightKey as WeightKey]
 					const key = `${fontName}/${sizeKey}/${weightKey}`
-					classes[key] =
-						`${fontClass} ${sizeClass} ${weightClass}`.trim()
+					classes[key] = `${fontClass} ${sizeClass} ${weightClass}`.trim()
 				})
 			} else {
 				const key = `${fontName}/${sizeKey}`

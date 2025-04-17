@@ -156,10 +156,7 @@ function isBN(obj: any) {
 	return (
 		obj &&
 		typeof obj === 'object' &&
-		(('negative' in obj &&
-			'words' in obj &&
-			'length' in obj &&
-			'red' in obj) ||
+		(('negative' in obj && 'words' in obj && 'length' in obj && 'red' in obj) ||
 			'_bn' in obj)
 	)
 }

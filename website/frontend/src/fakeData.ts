@@ -19,7 +19,10 @@ export const fakeIndexerStatus: IndexerStatus = {
 				id: 'run-003',
 				status: {
 					type: 'completed',
-					at: { slot: 12345n, time: new Date(Date.now() - 1000 * 60 * 60 * 24)},
+					at: {
+						slot: 12345n,
+						time: new Date(Date.now() - 1000 * 60 * 60 * 24),
+					},
 				},
 			},
 		],
@@ -43,13 +46,16 @@ export const fakeRunSummaries: RunSummary[] = [
 		name: 'Vision Model Alpha',
 		description: 'Training a vision model to recognize everyday objects',
 		status: { type: 'active' },
-		startTime: {slot: 12345n, time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 14)}, // 2 weeks ago
+		startTime: {
+			slot: 12345n,
+			time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 14),
+		}, // 2 weeks ago
 		totalTokens: 100000n,
 		completedTokens: 65000n,
 		size: BigInt('1000000000'),
 		arch: 'HfLlama',
 		type: 'vision',
-		pauseHistory: []
+		pauseHistory: [],
 	},
 	{
 		id: 'run-002',
@@ -57,13 +63,16 @@ export const fakeRunSummaries: RunSummary[] = [
 		name: 'Text Assistant Beta',
 		description: 'Assistant-like model with reasoning capabilities',
 		status: { type: 'active' },
-		startTime: {slot: 12345n, time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3)}, // 3 days ago
+		startTime: {
+			slot: 12345n,
+			time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3),
+		}, // 3 days ago
 		totalTokens: 200000n,
 		completedTokens: 0n,
 		size: BigInt('2000000000'),
 		arch: 'HfLlama',
 		type: 'text',
-		pauseHistory: []
+		pauseHistory: [],
 	},
 	{
 		id: 'run-003',
@@ -72,15 +81,21 @@ export const fakeRunSummaries: RunSummary[] = [
 		description: 'Compact text model for edge devices',
 		status: {
 			type: 'completed',
-			at: {slot: 12345n, time: new Date(Date.now() - 1000 * 60 * 60 * 24)},
+			at: {
+				slot: 12345n,
+				time: new Date(Date.now() - 1000 * 60 * 60 * 24),
+			},
 		}, // 1 day ago
-		startTime: {slot: 12345n, time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10)}, // 10 days ago
+		startTime: {
+			slot: 12345n,
+			time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10),
+		}, // 10 days ago
 		totalTokens: 50000n,
 		completedTokens: 50000n,
 		size: BigInt('500000000'),
 		arch: 'HfLlama',
 		type: 'text',
-		pauseHistory: []
+		pauseHistory: [],
 	},
 ]
 

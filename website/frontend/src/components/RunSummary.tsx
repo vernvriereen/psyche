@@ -78,12 +78,15 @@ export function RunSummaryCard({
 		totalTokens,
 		status,
 		type,
-		pauseHistory
+		pauseHistory,
 	},
 }: {
 	info: RunSummary
 }) {
-	const pauses = useMemo(() =>pauseHistory.map(p => [p[0], p[1].time] as const), [pauseHistory])
+	const pauses = useMemo(
+		() => pauseHistory.map((p) => [p[0], p[1].time] as const),
+		[pauseHistory]
+	)
 	return (
 		<ShadowCard
 			to="/runs/$run"
@@ -105,9 +108,7 @@ export function RunSummaryCard({
 
 			<InfoChits>
 				{size !== 0n && (
-					<InfoChit label="params">
-						{formatNumber(Number(size), 2)}
-					</InfoChit>
+					<InfoChit label="params">{formatNumber(Number(size), 2)}</InfoChit>
 				)}
 				<InfoChit label="arch">{arch}</InfoChit>
 				<InfoChit label="type">{type}</InfoChit>
@@ -135,9 +136,7 @@ export function RunSummaryCard({
 				<Runtime
 					start={startTime.time}
 					pauses={pauses}
-					end={
-						status.type === 'completed' ? status.at.time : undefined
-					}
+					end={status.type === 'completed' ? status.at.time : undefined}
 				/>
 			</div>
 		</ShadowCard>

@@ -207,9 +207,7 @@ const LineGraphInner: React.FC<
 
 	const handleTooltip = useCallback(
 		(
-			event:
-				| React.TouchEvent<SVGRectElement>
-				| React.MouseEvent<SVGRectElement>
+			event: React.TouchEvent<SVGRectElement> | React.MouseEvent<SVGRectElement>
 		) => {
 			const { x } = localPoint(event) || { x: 0, y: 0 }
 			const xValue = xScale.invert(x - margin.left - padding.left)
@@ -220,9 +218,7 @@ const LineGraphInner: React.FC<
 
 			const point = line.points.reduce((closest, current) => {
 				const distance = Math.abs(current.x - xValue)
-				return distance < Math.abs(closest.x - xValue)
-					? current
-					: closest
+				return distance < Math.abs(closest.x - xValue) ? current : closest
 			})
 
 			const distance = Math.abs(point.x - xValue)
@@ -260,10 +256,7 @@ const LineGraphInner: React.FC<
 		return (
 			<GraphContainer>
 				{title && (
-					<Title
-						color={labelColor}
-						className={text['body/sm/semibold']}
-					>
+					<Title color={labelColor} className={text['body/sm/semibold']}>
 						{title}
 					</Title>
 				)}
@@ -358,11 +351,7 @@ const LineGraphInner: React.FC<
 						tickComponent={({ formattedValue, ...tickProps }) => {
 							return (
 								formattedValue && (
-									<text
-										{...tickProps}
-										dy={'0.5ch'}
-										fill={labelColor}
-									>
+									<text {...tickProps} dy={'0.5ch'} fill={labelColor}>
 										{formattedValue}
 									</text>
 								)
@@ -383,11 +372,7 @@ const LineGraphInner: React.FC<
 						tickComponent={({ formattedValue, ...tickProps }) => {
 							return (
 								formattedValue && (
-									<text
-										{...tickProps}
-										dy={'0.5ch'}
-										fill={labelColor}
-									>
+									<text {...tickProps} dy={'0.5ch'} fill={labelColor}>
 										{formattedValue}
 									</text>
 								)

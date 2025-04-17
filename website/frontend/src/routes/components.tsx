@@ -84,9 +84,7 @@ function RouteComponent() {
 				<LinkTitle text="buttons" />
 				{(['primary', 'secondary', 'theme', 'action'] as const)
 					.flatMap((x) =>
-						(['left', 'right', null] as const).map(
-							(y) => [x, y] as const
-						)
+						(['left', 'right', null] as const).map((y) => [x, y] as const)
 					)
 					.map(([style, icon]) => {
 						const buttonProps = {
@@ -122,11 +120,7 @@ function RouteComponent() {
 									</label>
 									<label>
 										pressed & disabled
-										<Button
-											{...buttonProps}
-											pressed
-											disabled
-										>
+										<Button {...buttonProps} pressed disabled>
 											label
 										</Button>
 									</label>
@@ -138,9 +132,7 @@ function RouteComponent() {
 			<Section>
 				<LinkTitle text="status chip" />
 				{(['bold', 'minimal'] as const)
-					.flatMap((x) =>
-						([true, false] as const).map((y) => [x, y] as const)
-					)
+					.flatMap((x) => ([true, false] as const).map((y) => [x, y] as const))
 					.map(([style, inverted]) => {
 						return (
 							<div>
@@ -148,24 +140,20 @@ function RouteComponent() {
 									{style} {inverted ? 'inverted' : ''}
 								</h3>
 								<Bingus dark={inverted}>
-									{(
-										[
-											'active',
-											'funding',
-											'completed',
-										] as const
-									).map((status) => (
-										<label>
-											{status}
-											<StatusChip
-												status={status}
-												style={style}
-												inverted={inverted}
-											>
+									{(['active', 'funding', 'completed'] as const).map(
+										(status) => (
+											<label>
 												{status}
-											</StatusChip>
-										</label>
-									))}
+												<StatusChip
+													status={status}
+													style={style}
+													inverted={inverted}
+												>
+													{status}
+												</StatusChip>
+											</label>
+										)
+									)}
 								</Bingus>
 							</div>
 						)
@@ -347,11 +335,7 @@ function RouteComponent() {
 				`}
 			>
 				<LinkTitle text="sort select" />
-				<Sort
-					selected={selected}
-					options={options}
-					onChange={setSelected}
-				/>
+				<Sort selected={selected} options={options} onChange={setSelected} />
 			</Section>
 		</div>
 	)

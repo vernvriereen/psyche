@@ -12,7 +12,7 @@ const colors: Record<RunStatus['type'], string> = {
 	active: success[400],
 	funding: lime[300],
 	completed: forest[500],
-	paused: gold[300]
+	paused: gold[300],
 }
 
 const StatusChipContainer = styled.div`
@@ -22,8 +22,7 @@ const StatusChipContainer = styled.div`
 	padding: 4px 8px;
 	gap: 8px;
 	text-transform: uppercase;
-	color: ${(props) =>
-		props.inverted ? 'var(--color-bg)' : 'var(--color-fg)'};
+	color: ${(props) => (props.inverted ? 'var(--color-bg)' : 'var(--color-fg)')};
 `
 
 const Dot = styled.span`

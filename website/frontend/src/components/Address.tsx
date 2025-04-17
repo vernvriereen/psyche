@@ -35,7 +35,7 @@ export function Address({ address }: { address: string }) {
 			<Collapsible>{address.slice(4, -4)}</Collapsible>
 			{address.slice(-4)}
 			<CopyToClipboard text={address} />
-			<a href={`https://solscan.io/account/${address}`} target='_blank'>
+			<a href={`https://solscan.io/account/${address}`} target="_blank">
 				<div className={linkIcon}>
 					<LinkIcon />
 				</div>

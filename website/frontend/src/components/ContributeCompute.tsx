@@ -103,9 +103,7 @@ function ContributeProgressBar({
 			/>
 			<ProgressBarUnfilled widthCh={widthCh}>
 				<span>
-					{Number.isNaN(ratio)
-						? '100%'
-						: `${Math.round(ratio * 100)}%`}
+					{Number.isNaN(ratio) ? '100%' : `${Math.round(ratio * 100)}%`}
 				</span>
 			</ProgressBarUnfilled>
 		</ProgressBarBg>
@@ -268,10 +266,7 @@ export function ContributeCompute({
 	}, [isDarkMode])
 	const { width = 0, height = 0 } = useWindowSize()
 
-	const canvasSize = useMemo(
-		() => 256,
-		[width, height]
-	)
+	const canvasSize = useMemo(() => 256, [width, height])
 
 	return (
 		<>
@@ -280,8 +275,7 @@ export function ContributeCompute({
 					<GiveMoney
 						onExit={() => setContributing(false)}
 						remainingMoney={
-							maxDepositCollateralAmount -
-							totalDepositedCollateralAmount
+							maxDepositCollateralAmount - totalDepositedCollateralAmount
 						}
 						collateralMintAddress={collateralMintAddress}
 						miningPoolProgramId={miningPoolProgramId}
@@ -290,9 +284,7 @@ export function ContributeCompute({
 				) : (
 					<>
 						<ProgressContainer>
-							<ContributeProgress
-								className={text['body/base/medium']}
-							>
+							<ContributeProgress className={text['body/base/medium']}>
 								POOL CAPACITY
 							</ContributeProgress>
 							<ContributeProgressBar
@@ -303,11 +295,7 @@ export function ContributeCompute({
 								widthCh={18}
 							/>
 						</ProgressContainer>
-						<OrbCanvas
-							ref={canvasRef}
-							width={canvasSize}
-							height={canvasSize}
-						/>
+						<OrbCanvas ref={canvasRef} width={canvasSize} height={canvasSize} />
 						<ContributePoolLine>
 							<span className={text['body/base/medium']}>
 								CAPITAL:{' '}
@@ -322,9 +310,7 @@ export function ContributeCompute({
 								onClick={connectWalletOrContribute}
 								icon={{ side: 'left', svg: Smiley }}
 							>
-								{buttonState === 'connecting'
-									? 'connecting...'
-									: 'donate'}
+								{buttonState === 'connecting' ? 'connecting...' : 'donate'}
 							</Button>
 						</ContributePoolLine>
 					</>
@@ -344,37 +330,21 @@ export function ContributeCompute({
 							const featured = i < 3
 							const fundingPercent =
 								Number(
-									(user.funding * 100_000n) /
-										totalDepositedCollateralAmount
+									(user.funding * 100_000n) / totalDepositedCollateralAmount
 								) / 1_000
 							return (
-								<tr
-									key={user.address}
-									className={featured ? 'featured' : ''}
-								>
+								<tr key={user.address} className={featured ? 'featured' : ''}>
 									<td>
 										{featured ? (
 											<MedusaHead className={iconClass} />
 										) : (
-											user.rank
-												.toString()
-												.padStart(2, '0')
+											user.rank.toString().padStart(2, '0')
 										)}
 									</td>
-									<AddressBox
-										className={
-											featured ? text['display/2xl'] : ''
-										}
-									>
-										<Address address={user.address}/>
+									<AddressBox className={featured ? text['display/2xl'] : ''}>
+										<Address address={user.address} />
 									</AddressBox>
-									<td
-										className={
-											featured
-												? text['body/xl/medium']
-												: ''
-										}
-									>
+									<td className={featured ? text['body/xl/medium'] : ''}>
 										{fundingPercent < 0.001
 											? '<0.001'
 											: +fundingPercent.toFixed(3)}

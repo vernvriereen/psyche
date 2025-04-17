@@ -10,7 +10,7 @@ import { PublicKey } from '@solana/web3.js'
 export class FlatFileMiningPoolDataStore implements MiningPoolDataStore {
 	#lastUpdateInfo: LastUpdateInfo = {
 		time: new Date(),
-		highestSignature: undefined
+		highestSignature: undefined,
 	}
 	#programId: PublicKey
 	#data: {
@@ -42,7 +42,9 @@ export class FlatFileMiningPoolDataStore implements MiningPoolDataStore {
 			if (this.#programId.equals(programId)) {
 				this.#lastUpdateInfo = lastUpdateInfo
 				this.#data = data
-				console.log(`loaded DB from disk. previous info state: time: ${this.#lastUpdateInfo.time}, ${JSON.stringify(this.#lastUpdateInfo.highestSignature)}`)
+				console.log(
+					`loaded DB from disk. previous info state: time: ${this.#lastUpdateInfo.time}, ${JSON.stringify(this.#lastUpdateInfo.highestSignature)}`
+				)
 			} else {
 				console.warn(
 					`Program ID for mining pool changed from ${programId} in saved state to ${this.#programId} in args. **Starting from a fresh database**.`
@@ -85,7 +87,7 @@ export class FlatFileMiningPoolDataStore implements MiningPoolDataStore {
 				{
 					lastUpdateInfo: this.#lastUpdateInfo,
 					data: this.#data,
-					programId: this.#programId
+					programId: this.#programId,
 				},
 				psycheJsonReplacer
 			)
@@ -97,8 +99,7 @@ export class FlatFileMiningPoolDataStore implements MiningPoolDataStore {
 			(a, b) => (a[1] > b[1] ? -1 : a[1] < b[1] ? 1 : 0)
 		)
 		return {
-			totalDepositedCollateralAmount:
-				this.#data.totalDepositedCollateralAmount,
+			totalDepositedCollateralAmount: this.#data.totalDepositedCollateralAmount,
 			maxDepositCollateralAmount: this.#data.maxDepositCollateralAmount,
 			users: usersSortedByAmount.map(([address, funding], i) => ({
 				address,
@@ -106,8 +107,7 @@ export class FlatFileMiningPoolDataStore implements MiningPoolDataStore {
 				rank: i + 1,
 			})),
 			collateralMintDecimals: this.#data.collateral?.decimals ?? 0,
-			collateralMintAddress:
-				this.#data.collateral?.mintAddress ?? 'UNKNOWN',
+			collateralMintAddress: this.#data.collateral?.mintAddress ?? 'UNKNOWN',
 		}
 	}
 	hasCollateralInfo(): boolean {

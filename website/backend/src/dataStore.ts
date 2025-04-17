@@ -31,11 +31,7 @@ export interface CoordinatorDataStore extends ChainDataStore {
 		newState: PsycheCoordinator,
 		timestamp: ChainTimestamp
 	): void
-	setRunPaused(
-		pubkey: string,
-		paused: boolean,
-		timestamp: ChainTimestamp
-	): void
+	setRunPaused(pubkey: string, paused: boolean, timestamp: ChainTimestamp): void
 	witnessRun(
 		pubkey: string,
 		witness: WitnessMetadata,

@@ -26,9 +26,7 @@ export function InfoChit({
 }: PropsWithChildren<{ label: string }>) {
 	return (
 		<Chit>
-			<ChitValue className={text['body/sm/regular']}>
-				{children}
-			</ChitValue>
+			<ChitValue className={text['body/sm/regular']}>{children}</ChitValue>
 			<span className={text['aux/xs/regular']}>{label}</span>
 		</Chit>
 	)

@@ -49,7 +49,7 @@ const CopyButton = styled.button`
 			fill: currentColor;
 		}
 	}
-		color: inherit;
+	color: inherit;
 	&.copied {
 		color: white;
 	}

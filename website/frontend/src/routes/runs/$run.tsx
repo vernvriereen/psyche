@@ -187,9 +187,7 @@ function RouteComponent() {
 				{backButton}
 				<RunBox>
 					<RunHeader>
-						<span className={text['display/4xl']}>
-							run not found
-						</span>
+						<span className={text['display/4xl']}>run not found</span>
 					</RunHeader>
 					<div
 						className={c(
@@ -253,10 +251,7 @@ function RouteComponent() {
 					<div>
 						<ProgressBar
 							big
-							ratio={
-								Number(info.completedTokens) /
-								Number(info.totalTokens)
-							}
+							ratio={Number(info.completedTokens) / Number(info.totalTokens)}
 							chunkHeight={36}
 							chunkWidth={24}
 						/>
@@ -269,14 +264,11 @@ function RouteComponent() {
 						</ProgressDescription>
 					</div>
 					<MaybeRadialGraphContainer>
-						{Object.entries(run.metrics.summary.evals).length >
-							3 && (
+						{Object.entries(run.metrics.summary.evals).length > 3 && (
 							<RadialContainer>
 								<RadialGraph
 									data={run.metrics.summary.evals}
-									formatValue={(v) =>
-										`${+(v * 100).toFixed(2)}%`
-									}
+									formatValue={(v) => `${+(v * 100).toFixed(2)}%`}
 								/>
 							</RadialContainer>
 						)}
@@ -327,9 +319,7 @@ function RouteComponent() {
 
 								<LineGraphContainer>
 									<ResponsiveLineGraph
-										renderValue={(x) =>
-											`${formatBytes(x, 0, 'bits')}`
-										}
+										renderValue={(x) => `${formatBytes(x, 0, 'bits')}`}
 										xLabel="step"
 										title="inter-node bandwidth"
 										line={{
@@ -340,24 +330,20 @@ function RouteComponent() {
 									/>
 								</LineGraphContainer>
 
-								{Object.entries(graphData.evals).map(
-									([label, points]) => (
-										<LineGraphContainer key={label}>
-											<ResponsiveLineGraph
-												renderValue={(x) =>
-													(+`${x.toFixed(2)}`).toString()
-												}
-												xLabel="step"
-												title={`Model Evaluation: ${label}`}
-												line={{
-													label,
-													points,
-													unit: '%',
-												}}
-											/>
-										</LineGraphContainer>
-									)
-								)}
+								{Object.entries(graphData.evals).map(([label, points]) => (
+									<LineGraphContainer key={label}>
+										<ResponsiveLineGraph
+											renderValue={(x) => (+`${x.toFixed(2)}`).toString()}
+											xLabel="step"
+											title={`Model Evaluation: ${label}`}
+											line={{
+												label,
+												points,
+												unit: '%',
+											}}
+										/>
+									</LineGraphContainer>
+								))}
 							</>
 						)}
 					</HistoryContainer>

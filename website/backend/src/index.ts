@@ -87,9 +87,9 @@ async function main() {
 			miningPoolProgramId: process.env.MINING_POOL_PROGRAM_ID!,
 			error: miningPoolError,
 		}
-		res.header('content-type', 'application/json').send(
-			JSON.stringify(data, psycheJsonReplacer)
-		)
+		res
+			.header('content-type', 'application/json')
+			.send(JSON.stringify(data, psycheJsonReplacer))
 	})
 
 	fastify.get('/runs', (_req, res) => {
@@ -98,9 +98,9 @@ async function main() {
 			error: coordinatorError,
 		}
 
-		res.header('content-type', 'application/json').send(
-			JSON.stringify(runs, psycheJsonReplacer)
-		)
+		res
+			.header('content-type', 'application/json')
+			.send(JSON.stringify(runs, psycheJsonReplacer))
 	})
 
 	fastify.get(
@@ -116,9 +116,9 @@ async function main() {
 				error: coordinatorError,
 				isOnlyRun: coordinator.dataStore.getRunSummaries().length === 1,
 			}
-			res.header('content-type', 'application/json').send(
-				JSON.stringify(data, psycheJsonReplacer)
-			)
+			res
+				.header('content-type', 'application/json')
+				.send(JSON.stringify(data, psycheJsonReplacer))
 		}
 	)
 
@@ -134,11 +134,9 @@ async function main() {
 				chain: {
 					chainSlotHeight: await coordinatorRpc.getSlot('confirmed'),
 					indexedSlot:
-						coordinator.dataStore.lastUpdate().highestSignature
-							?.slot ?? 0,
+						coordinator.dataStore.lastUpdate().highestSignature?.slot ?? 0,
 					programId:
-						process.env.COORDINATOR_PROGRAM_ID ??
-						coordinatorIdl.address,
+						process.env.COORDINATOR_PROGRAM_ID ?? coordinatorIdl.address,
 					networkGenesis: await coordinatorRpc.getGenesisHash(),
 				},
 			},
@@ -147,11 +145,9 @@ async function main() {
 				chain: {
 					chainSlotHeight: await miningPoolRpc.getSlot('confirmed'),
 					indexedSlot:
-						miningPool.dataStore.lastUpdate().highestSignature
-							?.slot ?? 0,
+						miningPool.dataStore.lastUpdate().highestSignature?.slot ?? 0,
 					programId:
-						process.env.MINING_POOL_PROGRAM_ID ??
-						miningPoolIdl.address,
+						process.env.MINING_POOL_PROGRAM_ID ?? miningPoolIdl.address,
 					networkGenesis: await miningPoolRpc.getGenesisHash(),
 				},
 			},

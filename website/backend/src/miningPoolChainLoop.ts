@@ -43,20 +43,20 @@ export async function startWatchMiningPoolChainLoop(
 				if (state.mainAccountUpdated) {
 					const account = await miningPool.account.pool.fetch(ourPool)
 					store.setFundingData(account)
-					if(!store.hasCollateralInfo()) {
-						const {decimals} = await getMint(miningPool.provider.connection, account.collateralMint)
+					if (!store.hasCollateralInfo()) {
+						const { decimals } = await getMint(
+							miningPool.provider.connection,
+							account.collateralMint
+						)
 						store.setCollateralInfo(account.collateralMint.toString(), decimals)
 					}
 				}
-				const updatedAddresses = [
-					...state.userAccountsUpdated.values(),
-				].map((s) => s.split(':') as [string, string])
-				for (const 
-					[user, lenderAccountAddress]
-				 of updatedAddresses) {
-					const account = await miningPool.account.lender.fetch(
-						lenderAccountAddress
-					)
+				const updatedAddresses = [...state.userAccountsUpdated.values()].map(
+					(s) => s.split(':') as [string, string]
+				)
+				for (const [user, lenderAccountAddress] of updatedAddresses) {
+					const account =
+						await miningPool.account.lender.fetch(lenderAccountAddress)
 					if (!account) {
 						console.warn(
 							`[mining pool] failed to fetch account for lender ${lenderAccountAddress} mentioned in tx data...`

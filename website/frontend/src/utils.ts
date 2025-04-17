@@ -105,19 +105,15 @@ export function metricToGraph<
 	const result: Record<string, any> = {}
 	for (const [key, value] of Object.entries(data)) {
 		if (Array.isArray(value)) {
-			const graphData = fairSample(value, maxItems).map(
-				({ step, value }) => ({
-					x: step,
-					y: value,
-				})
-			)
+			const graphData = fairSample(value, maxItems).map(({ step, value }) => ({
+				x: step,
+				y: value,
+			}))
 
 			result[key] = graphData
 		} else if (typeof value === 'object') {
 			const nestedResults = metricToGraph(
-				value as OverTime<
-					Record<string, number | Record<string, number>>
-				>,
+				value as OverTime<Record<string, number | Record<string, number>>>,
 				maxItems
 			)
 			result[key] = nestedResults

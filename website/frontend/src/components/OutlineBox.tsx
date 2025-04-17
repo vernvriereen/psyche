@@ -47,9 +47,7 @@ export function OutlineBox({
 	return (
 		<BoxContainer className={className}>
 			<BoxHeader>
-				<span className={c(boxHeaderChild, text['display/4xl'])}>
-					{title}
-				</span>
+				<span className={c(boxHeaderChild, text['display/4xl'])}>{title}</span>
 			</BoxHeader>
 			{children}
 		</BoxContainer>
