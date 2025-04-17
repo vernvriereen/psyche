@@ -226,14 +226,12 @@ impl HttpDataProvider {
             start + length - 1
         );
 
-        let response = tokio::time::timeout(
-            HTTP_REQUEST_TIMEOUT,
-            client
-                .get(url)
-                .header("Range", format!("bytes={}-{}", start, start + length - 1))
-                .send(),
-        )
-        .await??;
+        let response = client
+            .get(url)
+            .header("Range", format!("bytes={}-{}", start, start + length - 1))
+            .timeout(HTTP_REQUEST_TIMEOUT)
+            .send()
+            .await?;
 
         // Check if we got a 206 Partial Content response
         if !response.status().is_success()
