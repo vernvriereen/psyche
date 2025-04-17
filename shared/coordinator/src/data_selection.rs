@@ -106,3 +106,27 @@ pub fn get_batch_ids_for_node<V: fmt::Display + Eq + std::hash::Hash>(
         })
         .collect()
 }
+
+pub fn get_data_index_for_step<T: NodeIdentity>(
+    coordinator: &Coordinator<T>,
+    target_step: u32,
+) -> u64 {
+    if target_step <= 1 || target_step > coordinator.config.total_steps {
+        return 0;
+    }
+
+    let mut current_data_index: u64 = 0;
+    let max_seq_len = coordinator.get_sequence_length() as u64;
+
+    for _ in 1..target_step {
+        let tokens_processed_before_step = current_data_index * max_seq_len;
+
+        let batch_size_for_step = coordinator
+            .config
+            .get_batch_size(tokens_processed_before_step) as u64;
+
+        current_data_index += batch_size_for_step;
+    }
+
+    current_data_index
+}
