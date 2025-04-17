@@ -461,3 +461,319 @@ pub fn unsharded_cpu_variables(
     }
     Ok(ret.unwrap_or_default())
 }
+
+#[cfg(test)]
+#[cfg(feature = "parallelism")]
+mod tests {
+    use super::*;
+    use crate::set_suggested_env_vars;
+    use std::sync::{Arc, Barrier, Mutex};
+    use tch::{nn::VarStore, Device, Kind, Tensor};
+
+    fn run_parallel_test<F>(world_size: usize, test_fn: F)
+    where
+        F: Fn(Arc<CommunicatorId>, usize, Arc<Barrier>, Device) -> Result<()>
+            + Send
+            + Sync
+            + 'static,
+    {
+        set_suggested_env_vars();
+        tch::manual_seed(42);
+
+        if !tch::utils::has_cuda() || tch::Cuda::device_count() < world_size as i64 {
+            println!(
+                "Skipping parallel test: requires CUDA and {} GPUs.",
+                world_size
+            );
+            return;
+        }
+
+        let barrier = Arc::new(Barrier::new(world_size));
+        let comm_id = Arc::new(CommunicatorId::new());
+        let test_fn = Arc::new(test_fn);
+
+        let threads: Vec<_> = (0..world_size)
+            .map(|rank| {
+                let barrier = barrier.clone();
+                let comm_id = comm_id.clone();
+                let test_fn = test_fn.clone();
+                let device = Device::Cuda(rank);
+
+                std::thread::spawn(move || {
+                    test_fn(comm_id, rank, barrier, device).unwrap();
+                })
+            })
+            .collect();
+
+        for thread in threads {
+            thread.join().expect("Thread panicked");
+        }
+    }
+
+    #[test]
+    fn test_column_parallel_linear_backward() -> Result<()> {
+        const WORLD_SIZE: usize = 2;
+        const BATCH_SIZE: i64 = 4;
+        const SEQ_LEN: i64 = 8;
+        const IN_FEATURES: i64 = 16;
+        const OUT_FEATURES: i64 = 32; // must be divisible by WORLD_SIZE
+        const GATHER_OUTPUT: bool = true;
+
+        assert_eq!(
+            OUT_FEATURES % WORLD_SIZE as i64,
+            0,
+            "OUT_FEATURES must be divisible by WORLD_SIZE"
+        );
+
+        let input_grads = Arc::new(Mutex::new(Vec::new()));
+        let weight_grads_shapes = Arc::new(Mutex::new(Vec::new()));
+
+        {
+            let input_grads = input_grads.clone();
+            let weight_grads_shapes = weight_grads_shapes.clone();
+            run_parallel_test(
+                WORLD_SIZE,
+                move |comm_id, rank, barrier, device| -> Result<()> {
+                    let vs = VarStore::new(device);
+                    let comm = Arc::new(CNCCL::new(
+                        comm_id.clone(),
+                        rank as i64,
+                        WORLD_SIZE as i64,
+                        device,
+                    )?);
+
+                    let layer = ColumnParallelLinear::new(
+                        vs.root() / "col_parallel",
+                        IN_FEATURES,
+                        OUT_FEATURES,
+                        false, // no bias
+                        GATHER_OUTPUT,
+                        Some(comm.clone()),
+                    );
+
+                    let input =
+                        Tensor::randn(&[BATCH_SIZE, SEQ_LEN, IN_FEATURES], (Kind::Float, device))
+                            .set_requires_grad(true);
+
+                    let target_shape = if GATHER_OUTPUT {
+                        vec![BATCH_SIZE, SEQ_LEN, OUT_FEATURES]
+                    } else {
+                        vec![BATCH_SIZE, SEQ_LEN, OUT_FEATURES / WORLD_SIZE as i64]
+                    };
+                    let target = Tensor::randn(&target_shape, (Kind::Float, device));
+
+                    barrier.wait();
+                    let output = layer.forward(&input);
+                    barrier.wait();
+
+                    let loss = output.mse_loss(&target, tch::Reduction::Mean);
+
+                    barrier.wait();
+                    loss.backward();
+                    barrier.wait();
+
+                    input_grads
+                        .lock()
+                        .unwrap()
+                        .push(input.grad().shallow_clone());
+                    weight_grads_shapes
+                        .lock()
+                        .unwrap()
+                        .push(layer.linear.ws.grad().size());
+
+                    Ok(())
+                },
+            );
+        }
+
+        let input_grads = input_grads.lock().unwrap();
+        let weight_grads_shapes = weight_grads_shapes.lock().unwrap();
+
+        assert_eq!(input_grads.len(), WORLD_SIZE);
+        assert_eq!(weight_grads_shapes.len(), WORLD_SIZE);
+
+        for i in 1..WORLD_SIZE {
+            assert!(
+                input_grads[0].to(Device::Cpu).allclose(
+                    &input_grads[i].to(Device::Cpu),
+                    1e-5,
+                    1e-5,
+                    false
+                ),
+                "Input gradients differ between rank 0 and rank {}",
+                i
+            );
+        }
+
+        let expected_weight_grad_shape = vec![OUT_FEATURES / WORLD_SIZE as i64, IN_FEATURES];
+        for (rank, shape) in weight_grads_shapes.iter().enumerate() {
+            assert_eq!(
+                *shape, expected_weight_grad_shape,
+                "Weight gradient shape mismatch on rank {}",
+                rank
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_row_parallel_linear_backward() -> Result<()> {
+        const WORLD_SIZE: usize = 2;
+        const BATCH_SIZE: i64 = 4;
+        const SEQ_LEN: i64 = 8;
+        const IN_FEATURES: i64 = 16; // must be divisible by WORLD_SIZE
+        const OUT_FEATURES: i64 = 32;
+
+        assert_eq!(
+            IN_FEATURES % WORLD_SIZE as i64,
+            0,
+            "IN_FEATURES must be divisible by WORLD_SIZE for RowParallelLinear"
+        );
+
+        for (input_is_parallel, bias) in
+            [(false, false), (false, true), (true, false), (true, true)]
+        {
+            let original_input_grads = Arc::new(Mutex::new(Vec::new()));
+            let weight_grads_shapes = Arc::new(Mutex::new(Vec::new()));
+            let bias_grads = Arc::new(Mutex::new(Vec::new()));
+
+            {
+                let original_input_grads = original_input_grads.clone();
+                let weight_grads_shapes = weight_grads_shapes.clone();
+                let bias_grads = bias_grads.clone();
+
+                run_parallel_test(
+                    WORLD_SIZE,
+                    move |comm_id, rank, barrier, device| -> Result<()> {
+                        let vs = VarStore::new(device);
+                        let comm = Arc::new(CNCCL::new(
+                            comm_id.clone(),
+                            rank as i64,
+                            WORLD_SIZE as i64,
+                            device,
+                        )?);
+
+                        let layer = RowParallelLinear::new(
+                            vs.root() / "row_parallel",
+                            IN_FEATURES,
+                            OUT_FEATURES,
+                            bias,
+                            input_is_parallel,
+                            Some(comm.clone()),
+                        );
+
+                        let original_input = Tensor::randn(
+                            &[BATCH_SIZE, SEQ_LEN, IN_FEATURES],
+                            (Kind::Float, device),
+                        )
+                        .set_requires_grad(!input_is_parallel);
+
+                        let input_to_layer = if input_is_parallel {
+                            let shard_meta = Shard {
+                                dim: 2,
+                                rank,
+                                world_size: WORLD_SIZE,
+                            };
+                            tensor_shard(&original_input.set_requires_grad(true), &shard_meta)
+                                .contiguous()
+                        } else {
+                            original_input.shallow_clone()
+                        };
+
+                        let target = Tensor::randn(
+                            &[BATCH_SIZE, SEQ_LEN, OUT_FEATURES],
+                            (Kind::Float, device),
+                        );
+
+                        barrier.wait();
+                        let output = layer.forward(&input_to_layer);
+                        barrier.wait();
+
+                        assert_eq!(output.size(), target.size(), "Output shape mismatch");
+
+                        let loss = output.mse_loss(&target, tch::Reduction::Mean);
+
+                        barrier.wait();
+                        loss.backward();
+                        barrier.wait();
+
+                        if !input_is_parallel {
+                            original_input_grads
+                                .lock()
+                                .unwrap()
+                                .push(original_input.grad().shallow_clone());
+                        }
+                        weight_grads_shapes
+                            .lock()
+                            .unwrap()
+                            .push(layer.linear.ws.grad().size());
+
+                        if bias {
+                            bias_grads
+                                .lock()
+                                .unwrap()
+                                .push(layer.linear.bs.as_ref().unwrap().grad().shallow_clone());
+                        }
+
+                        Ok(())
+                    },
+                );
+            }
+
+            let original_input_grads = original_input_grads.lock().unwrap();
+            let weight_grads_shapes = weight_grads_shapes.lock().unwrap();
+            let bias_grads = bias_grads.lock().unwrap();
+
+            assert_eq!(weight_grads_shapes.len(), WORLD_SIZE);
+            if bias {
+                assert_eq!(bias_grads.len(), WORLD_SIZE);
+            }
+            if !input_is_parallel {
+                assert_eq!(original_input_grads.len(), WORLD_SIZE);
+            }
+
+            if !input_is_parallel {
+                for i in 1..WORLD_SIZE {
+                    assert!(
+                        original_input_grads[0].to(Device::Cpu).allclose(
+                            &original_input_grads[i].to(Device::Cpu),
+                            1e-5,
+                            1e-5,
+                            false
+                        ),
+                        "RowParallelLinear (input_is_parallel=false): Original input gradients differ between rank 0 and rank {}",
+                        i
+                    );
+                }
+            } else {
+            }
+
+            let expected_weight_grad_shape = vec![OUT_FEATURES, IN_FEATURES / WORLD_SIZE as i64];
+            for (rank, shape) in weight_grads_shapes.iter().enumerate() {
+                assert_eq!(
+                    *shape, expected_weight_grad_shape,
+                    "RowParallelLinear: Weight gradient shape mismatch on rank {}",
+                    rank
+                );
+            }
+
+            if bias {
+                for i in 1..WORLD_SIZE {
+                    assert!(
+                        bias_grads[0].to(Device::Cpu).allclose(
+                            &bias_grads[i].to(Device::Cpu),
+                            1e-5,
+                            1e-5,
+                            false
+                        ),
+                        "RowParallelLinear (bias=true): Bias gradients differ between rank 0 and rank {}",
+                        i
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
