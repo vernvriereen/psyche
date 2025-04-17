@@ -1,5 +1,5 @@
 import { styled } from '@linaria/react'
-import { forest, gold, lime, success } from '../colors.js'
+import { forest, gold, lime, slate, success } from '../colors.js'
 import { text } from '../fonts.js'
 import { c } from '../utils.js'
 import { css } from '@linaria/core'
@@ -12,7 +12,16 @@ const colors: Record<RunStatus['type'], string> = {
 	active: success[400],
 	funding: lime[300],
 	completed: forest[500],
-	paused: gold[300],
+	paused: slate[400],
+	waitingForMembers: gold[300],
+}
+
+const labels: Record<RunStatus['type'], string> = {
+	active: "active",
+	funding: "funding",
+	completed: "completed",
+	paused: "paused",
+	waitingForMembers: "waiting for compute",
 }
 
 const StatusChipContainer = styled.div`
@@ -61,7 +70,7 @@ export function StatusChip({
 			)}
 		>
 			<Dot color={colors[status]} />
-			{children}
+			{children ?? labels[status]}
 		</StatusChipContainer>
 	)
 }

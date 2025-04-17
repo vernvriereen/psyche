@@ -331,12 +331,15 @@ function makeRunSummary(run: RunHistory, index: number): RunSummary | null {
 						type: 'completed',
 						at: run.lastUpdated,
 					}
-				: {
-						type:
-							run.pauseTimestamps.at(-1)?.[0] === 'paused'
-								? 'paused'
-								: 'active',
-					},
+				: run.pauseTimestamps.at(-1)?.[0] === 'paused'
+					? {
+							type: 'paused',
+						}
+					: c.run_state === 'WaitingForMembers'
+						? { type: 'waitingForMembers' }
+						: {
+								type: 'active',
+							},
 		startTime: run.createdAt,
 		pauseHistory: run.pauseTimestamps,
 		totalTokens,

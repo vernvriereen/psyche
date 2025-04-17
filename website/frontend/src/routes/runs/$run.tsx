@@ -222,9 +222,7 @@ function RouteComponent() {
 			<RunBox>
 				<RunHeader>
 					<span className={text['display/4xl']}>{info.name}</span>
-					<StatusChip status={info.status.type} style="minimal">
-						{info.status.type}
-					</StatusChip>
+					<StatusChip status={info.status.type} style="minimal" />
 				</RunHeader>
 
 				<RunContents className={text['body/base/medium']}>

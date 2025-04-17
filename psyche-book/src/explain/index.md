@@ -54,7 +54,7 @@ During a training run, clients primarily perform three tasks:
 - **Witnessing**: Verify the liveness and correctness of other participants.
 - **Verifying**: Recompute and compare training results to identify and punish malicious participants.
 
-## Waiting for Clients & Warmup
+## Waiting for Members & Warmup
 
 At the start of an **epoch**, all clients have a window of time to join the run by requesting to be added by coordinator, and then connecting to the other participating clients.
 

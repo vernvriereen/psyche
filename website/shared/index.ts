@@ -8,7 +8,7 @@ import * as miningPoolTypes from './idl/mining-pool_idlType.js'
 type PsycheSolanaCoordinator = coordinatorTypes.PsycheSolanaCoordinator
 type PsycheSolanaMiningPool = miningPoolTypes.PsycheSolanaMiningPool
 
-type LLMArchitecture = string // TODO TODO TODO
+type LLMArchitecture = string // TODO: replace with the real enum
 // import type { LLMArchitecture } from 'psyche-deserialize-zerocopy-wasm'
 
 export {
@@ -38,7 +38,7 @@ export interface ContributionInfo {
 export type ModelType = 'vision' | 'text'
 
 export type RunStatus =
-	| { type: 'active' | 'funding' | 'paused' }
+	| { type: 'active' | 'funding' | 'waitingForMembers' | 'paused' }
 	| { type: 'completed'; at: ChainTimestamp }
 
 export interface RunSummary {

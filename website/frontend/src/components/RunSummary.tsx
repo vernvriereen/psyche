@@ -97,9 +97,7 @@ export function RunSummaryCard({
 			<RunHeader>
 				<RunTitleRow>
 					<RunTitle className={text['display/2xl']}>{name}</RunTitle>
-					<StatusChip status={status.type} style="minimal">
-						{status.type}
-					</StatusChip>
+					<StatusChip status={status.type} style="minimal" />
 				</RunTitleRow>
 				<RunDescription className={text['aux/xs/regular']}>
 					{description}
