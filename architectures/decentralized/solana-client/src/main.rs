@@ -17,7 +17,9 @@ use anyhow::{bail, Context, Result};
 use bytemuck::Zeroable;
 use clap::{Args, Parser, Subcommand};
 use psyche_client::{print_identity_keys, read_identity_secret_key, TrainArgs};
-use psyche_coordinator::{model::Model, CoordinatorConfig};
+use psyche_coordinator::{
+    get_data_index_for_step, model::Model, CoordinatorConfig, CoordinatorProgress,
+};
 use psyche_core::sha256;
 use psyche_network::SecretKey;
 use psyche_solana_coordinator::{find_coordinator_instance, RunMetadata};
@@ -144,6 +146,9 @@ enum Commands {
 
         #[clap(long, env)]
         config_path: PathBuf,
+
+        #[clap(long, env)]
+        restart_from_step: Option<u32>,
     },
     Tick {
         #[clap(flatten)]
@@ -351,6 +356,7 @@ async fn async_main() -> Result<()> {
             wallet,
             run_id,
             config_path,
+            restart_from_step,
         } => {
             let run_id = run_id.trim_matches('"').to_string(); // Trim quotes, if any
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
@@ -371,13 +377,21 @@ async fn async_main() -> Result<()> {
                 .get_coordinator_instance(&coordinator_instance)
                 .await?;
             let coordinator_account = coordinator_instance_state.coordinator_account;
+            let account = backend
+                .get_coordinator_account(&coordinator_account)
+                .await?;
+            let progress = restart_from_step.map(|step| CoordinatorProgress {
+                epoch: account.state.coordinator.progress.epoch,
+                step,
+                epoch_start_data_index: get_data_index_for_step(&account.state.coordinator, step),
+            });
             let set: anchor_client::solana_sdk::signature::Signature = backend
                 .update(
                     coordinator_instance,
                     coordinator_account,
                     Some(state.config),
                     Some(state.model),
-                    None,
+                    progress,
                 )
                 .await?;
             println!("Updated config of {} with transaction {}", run_id, set);
