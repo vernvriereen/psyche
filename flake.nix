@@ -23,6 +23,10 @@
     garnix-lib.url = "github:garnix-io/garnix-lib";
     solana-pkgs.url = "github:arilotter/solana-flake";
     agenix-shell.url = "github:aciceri/agenix-shell";
+    treefmt-nix = {
+      inputs.nixpkgs.follows = "nixpkgs";
+      url = "github:numtide/treefmt-nix";
+    };
   };
 
   outputs =
@@ -61,6 +65,8 @@
         };
       imports = [
         inputs.agenix-shell.flakeModules.default
+        inputs.treefmt-nix.flakeModule
+        ./nix/formatter.nix
         ./nix/packages.nix
         ./nix/devShell.nix
         ./nix/checks.nix

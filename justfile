@@ -16,9 +16,11 @@ build-all-flake-outputs:
 
 # format & lint-fix code
 fmt:
-	cargo clippy --fix --allow-staged --all-targets
-	cargo fmt
-	nixfmt .
+    echo "deprecated, use 'nix fmt' instead..."
+    sleep 5
+    cargo clippy --fix --allow-staged --all-targets
+    cargo fmt
+    nixfmt .
 
 # build the centralized client Docker image
 docker-build-centralized-client:

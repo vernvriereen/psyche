@@ -11,10 +11,6 @@
     in
     {
       checks = {
-        workspace-format = craneLib.cargoFmt {
-          inherit (pkgs.psycheLib) src;
-        };
-
         workspace-clippy = craneLib.cargoClippy (
           rustWorkspaceArgs
           // {
