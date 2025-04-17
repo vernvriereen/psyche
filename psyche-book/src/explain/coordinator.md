@@ -176,10 +176,10 @@ When a tick condition is met, anybody using Solana can tick the Coordinator forw
 
 ```mermaid
 flowchart LR
-    T[Psyche Team] --deploy Solana Program--> P[Solana Program]
-    R[Run Creator] --init_coordinator with run_id--> A[Account for this training run]
-    R[Run Creator] --update with run info --> A
-    C[Client] --"join_run"--> A
-    C --tick-->A
-    G[A random Solana user] --tick-->A
+    T["Psyche Team"] -- deploy Solana Program --> P["Solana Program"]
+    R["Run Creator"] -- init_coordinator with run_id --> A["Account for this training run"]
+    R["Run Creator"] -- update with run info --> A
+    C[Client] -- "join_run" --> A
+    C --tick--> A
+    G["A random Solana user"] -- tick --> A
 ```

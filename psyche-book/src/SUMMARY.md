@@ -10,6 +10,7 @@
 - [End-user usage](./enduser/index.md)
   - [Creating a run](./enduser/create-run.md)
   - [Run configuration](./enduser/run-config.md)
+  - [Authentication](./enduser/authentication.md)
 
 - [Development](./development/index.md)
   - [Setup & Useful Commands](./development/setup.md)
