@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 
 use anyhow::{anyhow, bail, Result};
 use futures::future::join_all;
@@ -16,6 +16,8 @@ use crate::{
     file_extensions::DATA_FILE_EXTENSIONS,
     traits::{LengthKnownDataProvider, TokenizedDataProvider},
 };
+
+const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_millis(5000);
 
 #[derive(Clone, Copy, Debug)]
 struct SequencePointer {
@@ -224,11 +226,14 @@ impl HttpDataProvider {
             start + length - 1
         );
 
-        let response = client
-            .get(url)
-            .header("Range", format!("bytes={}-{}", start, start + length - 1))
-            .send()
-            .await?;
+        let response = tokio::time::timeout(
+            HTTP_REQUEST_TIMEOUT,
+            client
+                .get(url)
+                .header("Range", format!("bytes={}-{}", start, start + length - 1))
+                .send(),
+        )
+        .await??;
 
         // Check if we got a 206 Partial Content response
         if !response.status().is_success()

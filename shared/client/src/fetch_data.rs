@@ -89,7 +89,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> DataFetcher<T, A> {
                                 Ok(batch) => break batch,
                                 Err(err) if retry_count < MAX_RETRIES => {
                                     retry_count += 1;
-                                    let delay_ms = BASE_DELAY_MS * 2u64.pow(retry_count - 1);
+                                    let delay_ms = BASE_DELAY_MS * (retry_count as u64 - 1);
                                     warn!(
                                         "Data fetch error (attempt {}/{}): \"{}\". Retrying in {}ms",
                                         retry_count, MAX_RETRIES, err, delay_ms
