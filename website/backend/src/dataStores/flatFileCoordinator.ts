@@ -346,7 +346,7 @@ function makeRunSummary(run: RunHistory, index: number): RunSummary | null {
 		totalTokens,
 		completedTokens,
 		size: run.lastState.metadata.num_parameters,
-		type: 'vision', // TODO
+		type: 'text', // TODO add type / tags? :)
 	}
 	return summary
 }
