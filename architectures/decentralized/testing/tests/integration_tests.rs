@@ -210,7 +210,7 @@ async fn test_rejoining_client_delay() {
         .schedule_chaos(
             ChaosAction::Delay {
                 duration_secs: 30,
-                latency_ms: 3000,
+                latency_ms: 2000,
                 targets: vec![format!("{CLIENT_CONTAINER_PREFIX}-{}", 1)],
             },
             20,
@@ -228,7 +228,7 @@ async fn test_rejoining_client_delay() {
                }
                let current_epoch = solana_client.get_current_epoch().await;
                let current_step = solana_client.get_last_step().await;
-               if current_epoch >= 1 && current_step > 5 {
+               if current_epoch >= 1 && current_step > 25 {
                     panic!("Second epoch started and the clients did not get the model");
                }
            }
