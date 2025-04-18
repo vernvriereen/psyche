@@ -162,14 +162,14 @@ impl ModelParallelRegion for Tensor {
 
 #[derive(Debug)]
 pub struct ColumnParallelLinear {
-    linear: nn::Linear,
+    pub(crate) linear: nn::Linear,
     comm: Option<Arc<Communicator>>,
     gather_output: bool,
 }
 
 #[derive(Debug)]
 pub struct RowParallelLinear {
-    linear: nn::Linear,
+    pub(crate) linear: nn::Linear,
     comm: Option<Arc<Communicator>>,
     input_is_parallel: bool,
 }
@@ -464,9 +464,9 @@ pub fn unsharded_cpu_variables(
 
 #[cfg(test)]
 #[cfg(feature = "parallelism")]
-mod tests {
+pub(crate) mod tests {
     use super::*;
-    use crate::set_suggested_env_vars;
+    use crate::{set_suggested_env_vars, set_torch_rng_seed};
     use std::sync::{Arc, Barrier, Mutex};
     use tch::{nn::VarStore, Device, Kind, Tensor};
 
@@ -477,9 +477,6 @@ mod tests {
             + Sync
             + 'static,
     {
-        set_suggested_env_vars();
-        tch::manual_seed(42);
-
         if !tch::utils::has_cuda() || tch::Cuda::device_count() < world_size as i64 {
             println!(
                 "Skipping parallel test: requires CUDA and {} GPUs.",
@@ -524,6 +521,9 @@ mod tests {
             0,
             "OUT_FEATURES must be divisible by WORLD_SIZE"
         );
+
+        set_suggested_env_vars();
+        set_torch_rng_seed();
 
         let input_grads = Arc::new(Mutex::new(Vec::new()));
         let weight_grads_shapes = Arc::new(Mutex::new(Vec::new()));
@@ -630,6 +630,9 @@ mod tests {
             0,
             "IN_FEATURES must be divisible by WORLD_SIZE for RowParallelLinear"
         );
+
+        set_suggested_env_vars();
+        set_torch_rng_seed();
 
         for (input_is_parallel, bias) in
             [(false, false), (false, true), (true, false), (true, true)]
