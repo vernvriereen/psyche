@@ -11,9 +11,11 @@ import {
 	IndexerStatus,
 	miningPoolIdl,
 	psycheJsonReplacer,
+	RunData,
 } from 'shared'
 import { Connection } from '@solana/web3.js'
 import { makeRateLimitedFetch } from './rateLimit.js'
+import { PassThrough } from 'node:stream'
 
 const requiredEnvVars = ['COORDINATOR_RPC', 'MINING_POOL_RPC'] as const
 
@@ -40,12 +42,41 @@ async function main() {
 			{
 				connection: coordinatorRpc,
 				addressOverride: process.env.COORDINATOR_PROGRAM_ID,
+				websocketRpcUrl: process.env.COORDINATOR_WS_RPC,
 			},
 			{
 				connection: miningPoolRpc,
 				addressOverride: process.env.MINING_POOL_PROGRAM_ID,
+				websocketRpcUrl: process.env.MINING_POOL_WS_RPC,
 			}
 		)
+
+	type RunId = string
+	const liveRunListeners: Map<
+		RunId,
+		Set<(runData: RunData) => void>
+	> = new Map()
+	coordinator.dataStore.eventEmitter.addListener('update', (runId) => {
+		const listeners = liveRunListeners.get(runId)
+		if (listeners) {
+			const runData = coordinator.dataStore.getRunDataById(runId)
+			if (!runData) {
+				console.warn(
+					`Tried to emit updates for run ${runId} but it has no data!`
+				)
+				return
+			}
+			for (const listener of listeners) {
+				try {
+					listener(runData)
+				} catch (err) {
+					console.error(
+						`Failed to send run data for run ${runId} to subscribed client...`
+					)
+				}
+			}
+		}
+	})
 
 	const fastify = Fastify({
 		logger: true,
@@ -106,6 +137,9 @@ async function main() {
 	fastify.get(
 		'/run/:runId',
 		(req: FastifyRequest<{ Params: { runId?: string } }>, res) => {
+			const isStreamingRequest = req.headers.accept?.includes(
+				'application/x-ndjson'
+			)
 			const { runId } = req.params
 
 			const matchingRun = runId
@@ -116,9 +150,50 @@ async function main() {
 				error: coordinatorError,
 				isOnlyRun: coordinator.dataStore.getRunSummaries().length === 1,
 			}
-			res
-				.header('content-type', 'application/json')
-				.send(JSON.stringify(data, psycheJsonReplacer))
+
+			// set header for streaming/non
+			res.header(
+				'content-type',
+				isStreamingRequest ? 'application/x-ndjson' : 'application/json'
+			)
+
+			if (!isStreamingRequest || !matchingRun) {
+				res.send(JSON.stringify(data, psycheJsonReplacer))
+				return
+			}
+
+			const id = matchingRun.info.id
+			let listeners = liveRunListeners.get(id)
+			if (!listeners) {
+				listeners = new Set()
+				liveRunListeners.set(id, listeners)
+			}
+
+			// start streaming newline-delimited json
+			const stream = new PassThrough()
+			res.send(stream)
+
+			function sendRunData(runData: RunData) {
+				console.log('sending run data ')
+				const data: ApiGetRun = {
+					run: runData,
+					error: coordinatorError,
+					isOnlyRun: coordinator.dataStore.getRunSummaries().length === 1,
+				}
+				stream.write(JSON.stringify(data, psycheJsonReplacer) + '\n')
+			}
+
+			// send the initial run data to populate the UI
+			sendRunData(matchingRun)
+
+			// this listener will be called every time we see a state change.
+			listeners.add(sendRunData)
+
+			// when the req closes, stop sending them updates
+			req.socket.on('close', () => {
+				listeners.delete(sendRunData)
+				stream.end()
+			})
 		}
 	)
 

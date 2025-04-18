@@ -11,20 +11,22 @@ const Container = styled.div`
 
 	& > div {
 		height: 100%;
-		background-size: ${(props) => props.chunkWidth + 4}px 16px;
+		background-size: ${(props) =>
+				props.chunkWidth + (props.chunkSpacing ?? 4)}px
+			16px;
 		.theme-dark & {
 			background-image: linear-gradient(
 				to right,
 				${(props) => (props.big ? lime[300] : forest[500])}
 					${(props) => props.chunkWidth}px,
-				transparent 4px
+				transparent ${(props) => props.chunkSpacing ?? 4}px
 			);
 		}
 		.theme-light & {
 			background-image: linear-gradient(
 				to right,
 				${forest[500]} ${(props) => props.chunkWidth}px,
-				transparent 4px
+				transparent ${(props) => props.chunkSpacing ?? 4}px
 			);
 		}
 	}
@@ -33,15 +35,22 @@ export function ProgressBar({
 	ratio,
 	chunkWidth,
 	chunkHeight,
+	chunkSpacing,
 	big = false,
 }: {
 	ratio: number
 	chunkWidth: number
 	chunkHeight: number
+	chunkSpacing?: number
 	big?: boolean
 }) {
 	return (
-		<Container chunkWidth={chunkWidth} chunkHeight={chunkHeight} big={big}>
+		<Container
+			chunkWidth={chunkWidth}
+			chunkHeight={chunkHeight}
+			big={big}
+			chunkSpacing={chunkSpacing}
+		>
 			<div style={{ width: `${ratio * 100}%` }}></div>
 		</Container>
 	)

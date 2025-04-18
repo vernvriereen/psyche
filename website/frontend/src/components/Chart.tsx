@@ -11,6 +11,7 @@ import { useDarkMode } from 'usehooks-ts'
 import { forest, lime, slate } from '../colors.js'
 import { styled } from '@linaria/react'
 import { text } from '../fonts.js'
+import { css } from '@linaria/core'
 
 interface DataPoint {
 	x: number
@@ -65,11 +66,13 @@ const GraphContainer = styled.div`
 const Title = styled.div`
 	color: ${(props) => props.color};
 	pointer-events: none;
-	text-transform: uppercase;
 	display: flex;
 	justify-content: space-between;
 `
 
+const uppercase = css`
+	text-transform: uppercase;
+`
 const WaitingForData = styled.div`
 	display: flex;
 	align-items: center;
@@ -291,7 +294,7 @@ const LineGraphInner: React.FC<
 		<GraphContainer>
 			{title && (
 				<Title color={labelColor} className={text['body/sm/semibold']}>
-					<span>
+					<span className={uppercase}>
 						[<FgColor>{title}</FgColor>
 					</span>
 					<span>
@@ -367,7 +370,9 @@ const LineGraphInner: React.FC<
 						hideAxisLine
 						hideTicks
 						tickFormat={(value) =>
-							`${value.valueOf() >= 0 ? '' : '-'}${(renderValue ?? ((x) => x.toFixed(1)))(value.valueOf()).slice(0, 7)}`
+							`${value.valueOf() >= 0 ? '' : '-'}${(
+								renderValue ?? ((x) => x.toFixed(1))
+							)(value.valueOf()).slice(0, 7)}`
 						}
 						tickComponent={({ formattedValue, ...tickProps }) => {
 							return (

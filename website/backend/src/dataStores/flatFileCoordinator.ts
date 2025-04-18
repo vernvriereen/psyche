@@ -11,10 +11,13 @@ import {
 	OverTime,
 	ChainTimestamp,
 	getRunPDA,
+	RunRoundClient,
 } from 'shared'
 import { CoordinatorDataStore, LastUpdateInfo } from '../dataStore.js'
 import { WitnessMetadata, WitnessEvalResult } from '../idlTypes.js'
 import { PublicKey } from '@solana/web3.js'
+import { isClientWitness } from '../witness.js'
+import EventEmitter from 'events'
 
 type Witness = Omit<WitnessMetadata, 'evals'> & {
 	evals: Array<{
@@ -43,10 +46,13 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 	#db: string
 	#programId: PublicKey
 
+	#runsMutatedSinceLastSync: Set<string> = new Set()
+	eventEmitter: EventEmitter<{ update: [runId: string] }> = new EventEmitter()
+
 	constructor(dir: string, programId: PublicKey) {
-		this.#db = path.join(dir, './coordinator-db.json')
+		this.#db = path.join(dir, `./coordinator-db-${programId}.json`)
 		this.#programId = programId
-		console.log('loading coordinator db from disk...')
+		console.log(`loading coordinator db from disk at path ${this.#db}...`)
 		try {
 			const { lastUpdateInfo, runs, programId } = JSON.parse(
 				readFileSync(this.#db, 'utf-8'),
@@ -58,7 +64,9 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 				console.log(`loaded DB from disk at slot ${this.#lastUpdateInfo}`)
 			} else {
 				console.warn(
-					`Program ID for coordinator changed from ${programId} in saved state to ${this.#programId} in args. **Starting from a fresh database**.`
+					`Program ID for coordinator changed from ${programId} in saved state to ${
+						this.#programId
+					} in args. **Starting from a fresh database**.`
 				)
 			}
 		} catch (err) {
@@ -84,6 +92,10 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 
 	async sync(lastUpdateInfo: LastUpdateInfo) {
 		this.#lastUpdateInfo = lastUpdateInfo
+		for (const runId of this.#runsMutatedSinceLastSync) {
+			this.eventEmitter.emit('update', runId)
+		}
+		this.#runsMutatedSinceLastSync.clear()
 		await writeFile(
 			this.#db,
 			JSON.stringify(
@@ -127,6 +139,8 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			witnessUpdates: [],
 			lastState: newState ?? null,
 		})
+
+		this.#runsMutatedSinceLastSync.add(runId)
 	}
 
 	updateRun(
@@ -137,6 +151,8 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		const lastRun = this.#getActiveRun(pubkey)
 		lastRun.lastUpdated = eventTime
 		lastRun.lastState = newState
+
+		this.#runsMutatedSinceLastSync.add(lastRun.runId)
 	}
 
 	setRunPaused(pubkey: string, paused: boolean, timestamp: ChainTimestamp) {
@@ -150,6 +166,8 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		}
 		lastRun.lastUpdated = timestamp
 		lastRun.pauseTimestamps.push([newPauseState, timestamp])
+
+		this.#runsMutatedSinceLastSync.add(lastRun.runId)
 	}
 
 	witnessRun(
@@ -190,6 +208,8 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			{ ...restWitness, evals: fixedEvals },
 			timestamp,
 		])
+
+		this.#runsMutatedSinceLastSync.add(lastRun.runId)
 	}
 
 	destroyRun(pubkey: string, timestamp: ChainTimestamp) {
@@ -206,6 +226,8 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		}
 		lastRun.lastUpdated = timestamp
 		lastRun.destroyedAt = timestamp
+
+		this.#runsMutatedSinceLastSync.add(lastRun.runId)
 	}
 
 	getRunSummaries(): RunSummary[] {
@@ -267,8 +289,48 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 					.filter((x): x is [string, number] => x[1] !== undefined)
 			),
 		}
+
+		let state: RunData['state']
+		if (run.lastState) {
+			const c = run.lastState
+
+			const clients = c.coordinator.epoch_state.clients
+			const currentRound =
+				c.coordinator.epoch_state.rounds[c.coordinator.epoch_state.rounds_head]
+			const witnessStates = clients.map((client, index) => {
+				const isWitness = isClientWitness(
+					index,
+					currentRound.random_seed,
+					clients.length,
+					c.coordinator.config.witness_nodes
+				)
+				return {
+					pubkey: client.id.signer.toString(),
+					witness: isWitness
+						? currentRound.witnesses.some(
+								(w) => Number(w.proof.index) === index
+							)
+							? 'done'
+							: 'waiting'
+						: false,
+				} satisfies RunRoundClient
+			})
+
+			state = {
+				phase: c.coordinator.run_state,
+				epoch: c.coordinator.progress.epoch,
+				round: currentRound.height,
+				roundsPerEpoch: c.coordinator.config.rounds_per_epoch,
+				numEpochs:
+					c.coordinator.config.total_steps /
+					c.coordinator.config.rounds_per_epoch,
+				clients: witnessStates,
+			}
+		}
+
 		return {
 			info,
+			state,
 			metrics: {
 				summary,
 				history,

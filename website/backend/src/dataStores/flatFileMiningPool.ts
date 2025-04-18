@@ -6,6 +6,7 @@ import { psycheJsonReviver, psycheJsonReplacer, ContributionInfo } from 'shared'
 import { LastUpdateInfo, MiningPoolDataStore } from '../dataStore.js'
 import { PsycheMiningPoolAccount } from '../idlTypes.js'
 import { PublicKey } from '@solana/web3.js'
+import EventEmitter from 'events'
 
 export class FlatFileMiningPoolDataStore implements MiningPoolDataStore {
 	#lastUpdateInfo: LastUpdateInfo = {
@@ -29,11 +30,14 @@ export class FlatFileMiningPoolDataStore implements MiningPoolDataStore {
 	}
 	#db: string
 
+	// not used yet
+	eventEmitter = new EventEmitter()
+
 	constructor(dir: string, programId: PublicKey) {
-		this.#db = path.join(dir, './mining-pool-db.json')
+		this.#db = path.join(dir, `./mining-pool-db-${programId}.json`)
 		this.#programId = programId
 
-		console.log('loading mining pool db from disk...')
+		console.log(`loading mining pool db from disk at path ${this.#db}...`)
 		try {
 			const { lastUpdateInfo, data, programId } = JSON.parse(
 				readFileSync(this.#db, 'utf-8'),

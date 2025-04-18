@@ -10,6 +10,7 @@ import {
 	PublicKey,
 } from '@solana/web3.js'
 import { ChainDataStore, IndexedSignature } from './dataStore.js'
+import ProgramEventListener from './programEventListener.js'
 
 export function startWatchChainLoop<D>(): <
 	T,
@@ -19,6 +20,7 @@ export function startWatchChainLoop<D>(): <
 	name: string,
 	dataStore: S,
 	program: Program<I>,
+	websocketRpcUrl: string,
 	cancelled: { cancelled: boolean },
 	process: {
 		onStartCatchup(firstStateEver: boolean): T
@@ -36,6 +38,7 @@ export function startWatchChainLoop<D>(): <
 		name,
 		dataStore,
 		program,
+		websocketRpcUrl,
 		cancelled,
 		process,
 		delayMsBetweenUpdates = 1000
@@ -44,8 +47,17 @@ export function startWatchChainLoop<D>(): <
 
 		const instructionCoder = new BorshInstructionCoder(program.rawIdl)
 
+		const wsListener = new ProgramEventListener(
+			websocketRpcUrl,
+			program.programId,
+			name
+		)
+
 		while (!cancelled.cancelled) {
-			await new Promise((r) => setTimeout(r, delayMsBetweenUpdates))
+			await Promise.race([
+				wsListener.nextUpdate(),
+				new Promise((r) => setTimeout(r, delayMsBetweenUpdates)),
+			])
 
 			const catchupTxs = await catchupOnTxsToAddress(
 				name,

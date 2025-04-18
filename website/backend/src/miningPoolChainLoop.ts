@@ -8,6 +8,7 @@ import { getMint } from '@solana/spl-token'
 export async function startWatchMiningPoolChainLoop(
 	dataStore: MiningPoolDataStore,
 	miningPool: Program<PsycheSolanaMiningPool>,
+	websocketRpcUrl: string,
 	cancelled: { cancelled: boolean }
 ) {
 	const ourPool = getMiningPoolPDA(miningPool.programId, 0n)
@@ -15,6 +16,7 @@ export async function startWatchMiningPoolChainLoop(
 		'mining pool',
 		dataStore,
 		miningPool,
+		websocketRpcUrl,
 		cancelled,
 		{
 			onStartCatchup(firstStateEver) {

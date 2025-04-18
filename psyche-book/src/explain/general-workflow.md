@@ -126,7 +126,7 @@ sequenceDiagram
     Note over Client1: Train
     Note over Client2: Train
     Note over Client2: Fill bloom filters
-    Client2->>Backend: try send optimistic witness
+    Client2->>Backend: try send opportunistic witness
     Backend->>Coordinator: Witness message
     Note over Coordinator: Enough witnesses for round
     Coordinator->>Coordinator: Update state to RoundWitness

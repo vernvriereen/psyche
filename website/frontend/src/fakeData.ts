@@ -1,4 +1,12 @@
-import { ContributionInfo, IndexerStatus, RunData, RunSummary } from 'shared'
+import { PublicKey } from '@solana/web3.js'
+import {
+	ContributionInfo,
+	IndexerStatus,
+	RunData,
+	RunRoundClient,
+	RunState,
+	RunSummary,
+} from 'shared'
 
 export const fakeIndexerStatus: IndexerStatus = {
 	initTime: Date.now() - 1000 * 60 * 60 * 24 * 7, // 1 week ago
@@ -121,33 +129,75 @@ function randomWalk(scale: number, start = 0, down = 0.9) {
 	return walk
 }
 
-export const fakeRunData: Record<string, RunData> = {
-	'run-001': {
-		info: fakeRunSummaries[0],
-		metrics: {
-			summary: {
-				loss: 0.32,
-				bandwidth: 128.5,
-				tokensPerSecond: 245.7,
-				evals: {
-					accuracy: 0.83,
-					precision: 0.79,
-					recall: 0.85,
+function randomClient(): RunRoundClient {
+	return {
+		pubkey: PublicKey.findProgramAddressSync(
+			[new Uint8Array(3)],
+			PublicKey.unique()
+		)[0].toString(),
+		witness:
+			Math.random() > 0.66 ? 'done' : Math.random() > 0.5 ? 'waiting' : false,
+	}
+}
+
+function randomPhase(): RunState {
+	const seed = Math.random() * 0.5
+	if (seed < 0.1) {
+		return 'WaitingForMembers'
+	} else if (seed < 0.2) {
+		return 'Warmup'
+	} else if (seed < 0.3) {
+		return 'Cooldown'
+	} else if (seed < 0.4) {
+		return 'RoundTrain'
+	} else if (seed < 0.5) {
+		return 'RoundWitness'
+	}
+	return 'Uninitialized'
+}
+export const makeFakeRunData: Record<string, () => RunData> = {
+	'run-001': () => {
+		const numEpochs = Math.round(Math.random() * 300)
+		const epoch = Math.round(Math.random() * numEpochs)
+		const roundsPerEpoch = Math.round(Math.random() * 1000)
+		const round = Math.round(Math.random() * roundsPerEpoch)
+		return {
+			info: fakeRunSummaries[0],
+			metrics: {
+				summary: {
+					loss: 0.32 + Math.random() * 0.3,
+					bandwidth: Math.random() * 128_000_000,
+					tokensPerSecond: Math.random() * 128_000,
+					evals: {
+						accuracy: 0.83,
+						precision: 0.79,
+						recall: 0.85,
+					},
+				},
+				history: {
+					loss: randomWalk(1),
+					bandwidth: randomWalk(1000000),
+					tokensPerSecond: randomWalk(100000),
+					evals: {
+						accuracy: randomWalk(1),
+						precision: randomWalk(1),
+						recall: randomWalk(1),
+					},
 				},
 			},
-			history: {
-				loss: randomWalk(1),
-				bandwidth: randomWalk(1_000_000),
-				tokensPerSecond: randomWalk(100_000),
-				evals: {
-					accuracy: randomWalk(1),
-					precision: randomWalk(1),
-					recall: randomWalk(1),
-				},
+			state: {
+				phase: randomPhase(),
+				round,
+				epoch,
+				roundsPerEpoch,
+				numEpochs,
+				clients: Array.from({ length: Math.ceil(Math.random() * 16) }, () =>
+					randomClient()
+				),
 			},
-		},
+		}
 	},
-	'run-002': {
+	'run-002': () => ({
 		info: fakeRunSummaries[1],
 		metrics: {
 			summary: {
@@ -163,8 +213,8 @@ export const fakeRunData: Record<string, RunData> = {
 				evals: {},
 			},
 		},
-	},
-	'run-003': {
+	}),
+	'run-003': () => ({
 		info: fakeRunSummaries[2],
 		metrics: {
 			summary: {
@@ -188,7 +238,7 @@ export const fakeRunData: Record<string, RunData> = {
 				},
 			},
 		},
-	},
+	}),
 }
 
 export const fakeContributionInfo: ContributionInfo = {

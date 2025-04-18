@@ -8,8 +8,12 @@ import * as miningPoolTypes from './idl/mining-pool_idlType.js'
 type PsycheSolanaCoordinator = coordinatorTypes.PsycheSolanaCoordinator
 type PsycheSolanaMiningPool = miningPoolTypes.PsycheSolanaMiningPool
 
-type LLMArchitecture = string // TODO: replace with the real enum
-// import type { LLMArchitecture } from 'psyche-deserialize-zerocopy-wasm'
+import type {
+	LLMArchitecture,
+	RunState,
+} from 'psyche-deserialize-zerocopy-wasm'
+
+export type * from 'psyche-deserialize-zerocopy-wasm'
 
 export {
 	coordinatorIdl,
@@ -75,8 +79,21 @@ export type OverTime<T extends object> = {
 		: Array<{ step: number; value: T[K] }>
 }
 
+export interface RunRoundClient {
+	pubkey: string
+	witness: false | 'waiting' | 'done'
+}
+
 export interface RunData {
 	info: RunSummary
+	state?: {
+		phase: RunState
+		round: number
+		epoch: number
+		numEpochs: number
+		roundsPerEpoch: number
+		clients: Array<RunRoundClient>
+	}
 	metrics: {
 		summary: Metrics
 		history: OverTime<Metrics>

@@ -17,11 +17,11 @@ const colors: Record<RunStatus['type'], string> = {
 }
 
 const labels: Record<RunStatus['type'], string> = {
-	active: "active",
-	funding: "funding",
-	completed: "completed",
-	paused: "paused",
-	waitingForMembers: "waiting for compute",
+	active: 'active',
+	funding: 'funding',
+	completed: 'completed',
+	paused: 'paused',
+	waitingForMembers: 'waiting for compute',
 }
 
 const StatusChipContainer = styled.div`

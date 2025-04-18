@@ -1,5 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { fetchRun } from '../../fetchRuns.js'
 import { Button } from '../../components/Button.js'
 import ArrowLeft from '../../assets/icons/arrow-left.svg?react'
 import { styled } from '@linaria/react'
@@ -15,10 +14,231 @@ import { ResponsiveLineGraph } from '../../components/Chart.js'
 import { useMemo } from 'react'
 import { css } from '@linaria/core'
 import { InfoChit } from '../../components/InfoChit.jsx'
+import { RunStateIndicator } from '../../components/RunStateIndicator.js'
+import { fetchRunStreaming } from '../../fetchRuns.js'
+import { useStreamingRunData } from '../../useStreamingData.js'
 export const Route = createFileRoute('/runs/$run')({
-	loader: async ({ params }) => fetchRun(params.run),
+	loader: async ({ params }) => fetchRunStreaming(params.run),
 	component: RouteComponent,
 })
+
+function RouteComponent() {
+	const { run, isOnlyRun } = useStreamingRunData()
+	const backButton = (
+		<Button
+			style="action"
+			icon={{
+				side: 'left',
+				svg: ArrowLeft,
+			}}
+			to={'/runs'}
+		>
+			back
+		</Button>
+	)
+	const graphData = useMemo(() => {
+		if (run) {
+			const graphs = metricToGraph(run.metrics.history, 1000)
+			for (const vals of Object.values(graphs.evals)) {
+				for (const val of vals) {
+					val.y *= 100
+				}
+			}
+			return graphs
+		}
+	}, [run])
+
+	const info = run?.info
+
+	const pauses = useMemo(
+		() => info?.pauseHistory.map((p) => [p[0], p[1].time] as const),
+		[info?.pauseHistory]
+	)
+
+	if (!info) {
+		return (
+			<RunContainer>
+				{backButton}
+				<RunBox>
+					<RunHeader>
+						<span className={text['display/4xl']}>run not found</span>
+					</RunHeader>
+					<div
+						className={c(
+							css`
+								padding: 48px;
+								text-align: center;
+							`,
+							text['body/base/regular']
+						)}
+					>
+						Sorry! Try another run ID.
+					</div>
+				</RunBox>
+			</RunContainer>
+		)
+	}
+
+	return (
+		<RunContainer>
+			{!isOnlyRun && (
+				<Button
+					style="action"
+					icon={{
+						side: 'left',
+						svg: ArrowLeft,
+					}}
+					to={'/runs'}
+				>
+					back
+				</Button>
+			)}
+			<RunBox>
+				<RunHeader>
+					<span className={text['display/4xl']}>{info.name}</span>
+					<StatusChip status={info.status.type} style="minimal" />
+				</RunHeader>
+
+				<RunContents className={text['body/base/medium']}>
+					<RunDescription>{info.description}</RunDescription>
+					<InfoChits>
+						<InfoChit label="params">
+							{formatNumber(Number(info.size), 2)}
+						</InfoChit>
+						<InfoChit label="arch">{info.arch}</InfoChit>
+						<InfoChit label="type">{info.type}</InfoChit>
+					</InfoChits>
+					<RuntimeLabel>
+						runtime
+						<Runtime
+							start={info.startTime.time}
+							pauses={pauses}
+							end={
+								info.status.type === 'completed'
+									? info.status.at.time
+									: undefined
+							}
+						/>
+					</RuntimeLabel>
+					<div>
+						<ProgressBar
+							big
+							ratio={Number(info.completedTokens) / Number(info.totalTokens)}
+							chunkHeight={36}
+							chunkWidth={24}
+						/>
+						<ProgressDescription>
+							<span>tokens</span>
+							<span>
+								{formatNumber(Number(info.completedTokens), 3)}/
+								{formatNumber(Number(info.totalTokens), 3)}
+							</span>
+						</ProgressDescription>
+					</div>
+
+					{run.state && (
+						<RunStateActiveContainer active={run.info.status.type === 'active'}>
+							<RunStateIndicator {...run.state} />
+						</RunStateActiveContainer>
+					)}
+
+					<MaybeRadialGraphContainer>
+						{Object.entries(run.metrics.summary.evals).length > 3 && (
+							<RadialContainer>
+								<RadialGraph
+									data={run.metrics.summary.evals}
+									formatValue={(v) => `${+(v * 100).toFixed(2)}%`}
+								/>
+							</RadialContainer>
+						)}
+						<StatBoxes>
+							{/* // TODO: calculate confidence and perplexity */}
+							<MiniCard
+								text="loss"
+								value={`${run.metrics.summary.loss.toFixed(2)}`}
+							/>
+							<MiniCard
+								text="bandwidth"
+								value={`${formatBytes(
+									run.metrics.summary.bandwidth,
+									2,
+									'bits'
+								)}ps`}
+							/>
+							<MiniCard
+								text="training rate"
+								value={`${formatNumber(
+									run.metrics.summary.tokensPerSecond,
+									1,
+									true
+								)}tok/s`}
+							/>
+						</StatBoxes>
+					</MaybeRadialGraphContainer>
+					<HistoryContainer>
+						{graphData && (
+							<>
+								{/* TODO: render confidence and perplexity */}
+								<LineGraphContainer>
+									<ResponsiveLineGraph
+										renderValue={(x) => `${+x.toFixed(2)}`}
+										xLabel="step"
+										title="loss"
+										line={{
+											label: 'loss',
+											points: graphData.loss,
+										}}
+									/>
+								</LineGraphContainer>
+
+								<LineGraphContainer>
+									<ResponsiveLineGraph
+										renderValue={(x) => formatNumber(x, 2)}
+										xLabel="step"
+										title="training speed"
+										line={{
+											label: 'training speed',
+											points: graphData.tokensPerSecond,
+											unit: ' tok/s',
+										}}
+									/>
+								</LineGraphContainer>
+
+								<LineGraphContainer>
+									<ResponsiveLineGraph
+										renderValue={(x) => `${formatBytes(x, 0, 'bits')}`}
+										xLabel="step"
+										title="inter-node bandwidth"
+										line={{
+											label: 'bandwidth',
+											points: graphData.bandwidth,
+											unit: '/s',
+										}}
+									/>
+								</LineGraphContainer>
+
+								{Object.entries(graphData.evals).map(([label, points]) => (
+									<LineGraphContainer key={label}>
+										<ResponsiveLineGraph
+											renderValue={(x) => (+`${x.toFixed(2)}`).toString()}
+											xLabel="step"
+											title={`Model Evaluation: ${label}`}
+											line={{
+												label,
+												points,
+												unit: '%',
+											}}
+										/>
+									</LineGraphContainer>
+								))}
+							</>
+						)}
+					</HistoryContainer>
+				</RunContents>
+			</RunBox>
+		</RunContainer>
+	)
+}
 
 const RunContainer = styled.div`
 	padding: 0 24px;
@@ -148,205 +368,6 @@ const InfoChits = styled.div`
 	gap: 16px;
 `
 
-function RouteComponent() {
-	const { run, isOnlyRun } = Route.useLoaderData()
-	const backButton = (
-		<Button
-			style="action"
-			icon={{
-				side: 'left',
-				svg: ArrowLeft,
-			}}
-			to={'/runs'}
-		>
-			back
-		</Button>
-	)
-	const graphData = useMemo(() => {
-		if (run) {
-			const graphs = metricToGraph(run.metrics.history, 1000)
-			for (const vals of Object.values(graphs.evals)) {
-				for (const val of vals) {
-					val.y *= 100
-				}
-			}
-			return graphs
-		}
-	}, [run])
-
-	const info = run?.info
-
-	const pauses = useMemo(
-		() => info?.pauseHistory.map((p) => [p[0], p[1].time] as const),
-		[info?.pauseHistory]
-	)
-
-	if (!info) {
-		return (
-			<RunContainer>
-				{backButton}
-				<RunBox>
-					<RunHeader>
-						<span className={text['display/4xl']}>run not found</span>
-					</RunHeader>
-					<div
-						className={c(
-							css`
-								padding: 48px;
-								text-align: center;
-							`,
-							text['body/base/regular']
-						)}
-					>
-						Sorry! Try another run ID.
-					</div>
-				</RunBox>
-			</RunContainer>
-		)
-	}
-
-	return (
-		<RunContainer>
-			{!isOnlyRun && (
-				<Button
-					style="action"
-					icon={{
-						side: 'left',
-						svg: ArrowLeft,
-					}}
-					to={'/runs'}
-				>
-					back
-				</Button>
-			)}
-			<RunBox>
-				<RunHeader>
-					<span className={text['display/4xl']}>{info.name}</span>
-					<StatusChip status={info.status.type} style="minimal" />
-				</RunHeader>
-
-				<RunContents className={text['body/base/medium']}>
-					<RunDescription>{info.description}</RunDescription>
-					<InfoChits>
-						<InfoChit label="params">
-							{formatNumber(Number(info.size), 2)}
-						</InfoChit>
-						<InfoChit label="arch">{info.arch}</InfoChit>
-						<InfoChit label="type">{info.type}</InfoChit>
-					</InfoChits>
-					<RuntimeLabel>
-						runtime
-						<Runtime
-							start={info.startTime.time}
-							pauses={pauses}
-							end={
-								info.status.type === 'completed'
-									? info.status.at.time
-									: undefined
-							}
-						/>
-					</RuntimeLabel>
-					<div>
-						<ProgressBar
-							big
-							ratio={Number(info.completedTokens) / Number(info.totalTokens)}
-							chunkHeight={36}
-							chunkWidth={24}
-						/>
-						<ProgressDescription>
-							<span>tokens</span>
-							<span>
-								{formatNumber(Number(info.completedTokens), 3)}/
-								{formatNumber(Number(info.totalTokens), 3)}
-							</span>
-						</ProgressDescription>
-					</div>
-					<MaybeRadialGraphContainer>
-						{Object.entries(run.metrics.summary.evals).length > 3 && (
-							<RadialContainer>
-								<RadialGraph
-									data={run.metrics.summary.evals}
-									formatValue={(v) => `${+(v * 100).toFixed(2)}%`}
-								/>
-							</RadialContainer>
-						)}
-						<StatBoxes>
-							{/* // TODO: calculate confidence and perplexity */}
-							<MiniCard
-								text="loss"
-								value={`${run.metrics.summary.loss.toFixed(2)}`}
-							/>
-							<MiniCard
-								text="bandwidth"
-								value={`${formatBytes(run.metrics.summary.bandwidth, 2, 'bits')}ps`}
-							/>
-							<MiniCard
-								text="training rate"
-								value={`${formatNumber(run.metrics.summary.tokensPerSecond, 1, true)}tok/s`}
-							/>
-						</StatBoxes>
-					</MaybeRadialGraphContainer>
-					<HistoryContainer>
-						{graphData && (
-							<>
-								{/* TODO: render confidence and perplexity */}
-								<LineGraphContainer>
-									<ResponsiveLineGraph
-										renderValue={(x) => `${+x.toFixed(2)}`}
-										xLabel="step"
-										title="loss"
-										line={{
-											label: 'loss',
-											points: graphData.loss,
-										}}
-									/>
-								</LineGraphContainer>
-
-								<LineGraphContainer>
-									<ResponsiveLineGraph
-										renderValue={(x) => formatNumber(x, 2)}
-										xLabel="step"
-										title="training speed"
-										line={{
-											label: 'training speed',
-											points: graphData.tokensPerSecond,
-											unit: ' tok/s',
-										}}
-									/>
-								</LineGraphContainer>
-
-								<LineGraphContainer>
-									<ResponsiveLineGraph
-										renderValue={(x) => `${formatBytes(x, 0, 'bits')}`}
-										xLabel="step"
-										title="inter-node bandwidth"
-										line={{
-											label: 'bandwidth',
-											points: graphData.bandwidth,
-											unit: '/s',
-										}}
-									/>
-								</LineGraphContainer>
-
-								{Object.entries(graphData.evals).map(([label, points]) => (
-									<LineGraphContainer key={label}>
-										<ResponsiveLineGraph
-											renderValue={(x) => (+`${x.toFixed(2)}`).toString()}
-											xLabel="step"
-											title={`Model Evaluation: ${label}`}
-											line={{
-												label,
-												points,
-												unit: '%',
-											}}
-										/>
-									</LineGraphContainer>
-								))}
-							</>
-						)}
-					</HistoryContainer>
-				</RunContents>
-			</RunBox>
-		</RunContainer>
-	)
-}
+const RunStateActiveContainer = styled.div`
+	opacity: ${(props) => (props.active ? 1 : 0.5)};
+`
