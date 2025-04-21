@@ -109,3 +109,6 @@ sequenceDiagram
     Note over Coordinator: Quorum reached
     Note over Coordinator: Starting Witness phase
 ```
+
+## Glossary
+For a list of common terms within the project along with definitions, please refer to the [glossary](./glossary.md)
