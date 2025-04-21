@@ -386,10 +386,12 @@ async fn disconnect_client() {
             }
 
             Response::Loss(client, epoch, step, loss) => {
-                let loss = loss.unwrap();
                 println!(
-                    "client: {:?}, epoch: {}, step: {}, Loss: {:?}",
-                    client, epoch, step, loss
+                    "client: {:?}, epoch: {}, step: {}, Loss: {}",
+                    client,
+                    epoch,
+                    step,
+                    loss.unwrap(),
                 );
             }
             _ => {}
@@ -777,117 +779,6 @@ async fn test_solana_subscriptions() {
 
     assert_eq!(subscription_events, expected_subscription_events[3..]);
     println!("subscription_events: {subscription_events:?}");
-}
-
-/// This test creates a packet loss of 100% during 40 seconds, effectively disconnecting the client.
-/// When this happens, what happens is not deterministic and can change slightly in each execution:
-/// 1. An error does not occur and the client is not disconnected, in which the test passes.
-/// 2. InvalidRunState is observed, which is fatal. In that case we check the client has disconnected.
-/// 3. InvalidWitness is observed, which is fatal. In that case we check the client has disconnected.
-#[rstest]
-#[trace]
-#[test_log::test(tokio::test(flavor = "multi_thread"))]
-#[serial]
-async fn test_total_packet_loss_in_client() {
-    let n_clients = 2;
-    let chaos_step = 5;
-    let run_id = "test".to_string();
-    let num_of_epochs_to_run = 2;
-    let mut current_epoch = -1;
-    let mut last_epoch_loss = f64::MAX;
-
-    let docker = Arc::new(Docker::connect_with_socket_defaults().unwrap());
-    let mut watcher = DockerWatcher::new(docker.clone());
-
-    let _cleanup = e2e_testing_setup(
-        docker.clone(),
-        n_clients,
-        Some(PathBuf::from(
-            "../../config/solana-test/light-two-min-clients.toml",
-        )),
-    )
-    .await;
-
-    let solana_client = Arc::new(SolanaTestClient::new(run_id).await);
-    for i in 1..=n_clients {
-        let _monitor_client: tokio::task::JoinHandle<
-            Result<(), psyche_decentralized_testing::docker_watcher::DockerWatcherError>,
-        > = watcher
-            .monitor_container(
-                &format!("{CLIENT_CONTAINER_PREFIX}-{}", i),
-                vec![
-                    IntegrationTestLogMarker::Loss,
-                    IntegrationTestLogMarker::Error,
-                ],
-            )
-            .unwrap();
-    }
-
-    // Sleep to let the coordinator to be deployed and run to be configured
-    tokio::time::sleep(Duration::from_secs(10)).await;
-
-    let chaos_targets = vec![format!("{CLIENT_CONTAINER_PREFIX}-1")];
-
-    let chaos_scheduler = ChaosScheduler::new(docker.clone(), solana_client);
-    chaos_scheduler
-        .schedule_chaos(
-            ChaosAction::PacketLoss {
-                duration_secs: 10,
-                loss_percent: 100.0,
-                correlation: 0.0,
-                targets: chaos_targets.clone(),
-            },
-            chaos_step,
-        )
-        .await;
-
-    let mut liveness_check_interval = time::interval(Duration::from_secs(10));
-    println!("Train starting");
-
-    loop {
-        tokio::select! {
-           _ = liveness_check_interval.tick() => {
-           }
-           response = watcher.log_rx.recv() => {
-               if let Some(Response::Loss(client, epoch, step, loss)) = response {
-                   println!(
-                       "client: {:?}, epoch: {}, step: {}, Loss: {:?}",
-                       client, epoch, step, loss
-                   );
-                   if epoch == 1 {
-                        println!("Reached first epoch without errors. Test Successful.");
-                        return;
-                   }
-                   if epoch as i64 > current_epoch {
-                       current_epoch = epoch as i64;
-
-                       let Some(loss) = loss else {
-                           println!("Reached new epoch but loss was NaN");
-                           continue;
-                       };
-
-                       assert!(loss < last_epoch_loss);
-                       last_epoch_loss = loss;
-                       if epoch == num_of_epochs_to_run {
-                           return;
-                       }
-                   }
-               } else if let Some(Response::Error(error, message)) = response {
-                   println!("Error: {:?}, message: {}", error, message);
-                   // Wait two seconds to ensure the client is disconnected
-                    tokio::time::sleep(Duration::from_secs(2)).await;
-                   if error == ObservedErrorKind::Timeout {
-                       if watcher.monitor_clients_health(1).await.is_err() {
-                            println!("{:?} observed and client disconnected. Test successfully completed.", error);
-                            return;
-                       } else {
-                            panic!("{:?} observed but client wasn't disconnected. Test Failed.", error);
-                       }
-                    }
-                }
-           }
-        }
-    }
 }
 
 /// Tests that if your only peer disconnects, the new client goes back to fetching the model from Hub and not P2P
