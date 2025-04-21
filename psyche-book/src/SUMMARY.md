@@ -11,6 +11,7 @@
   - [Creating a run](./enduser/create-run.md)
   - [Run configuration](./enduser/run-config.md)
   - [Authentication](./enduser/authentication.md)
+  - [Client FAQ](./enduser/client-faq.md)
 
 - [Development](./development/index.md)
   - [Setup & Useful Commands](./development/setup.md)
