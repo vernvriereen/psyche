@@ -8,7 +8,7 @@ services:
 
     nginx:
         image: nginx:latest
-        container_name: nginx_proxy
+        container_name: nginx-proxy-1
         ports:
             - "8901:8901"
         volumes:
@@ -20,7 +20,7 @@ services:
 
     nginx_2:
         image: nginx:latest
-        container_name: nginx_proxy_2
+        container_name: nginx-proxy-2
         ports:
             - "8902:8902"
         volumes:

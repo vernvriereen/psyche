@@ -17,6 +17,7 @@ use crate::docker_watcher::{DockerWatcher, DockerWatcherError};
 
 pub const CLIENT_CONTAINER_PREFIX: &str = "test-psyche-test-client";
 pub const VALIDATOR_CONTAINER_PREFIX: &str = "test-psyche-solana-test-validator";
+pub const NGINX_PROXY_PREFIX: &str = "nginx-proxy";
 
 pub struct DockerTestCleanup;
 impl Drop for DockerTestCleanup {
@@ -57,7 +58,7 @@ pub async fn e2e_testing_setup_subscription(
     let mut command = Command::new("just");
     let command = command
         .args([
-            "setup_test_infra_subscription",
+            "setup_test_infra_with_proxies_validator",
             &format!("{}", init_num_clients),
         ])
         .stdout(Stdio::inherit())
@@ -276,7 +277,9 @@ async fn get_client_containers(docker_client: Arc<Docker>) -> Vec<ContainerSumma
         if let Some(names) = &cont.names {
             if let Some(name) = names.first() {
                 let trimmed_name = name.trim_start_matches('/').to_string();
-                if trimmed_name.starts_with(CLIENT_CONTAINER_PREFIX) {
+                if trimmed_name.starts_with(CLIENT_CONTAINER_PREFIX)
+                    || trimmed_name.starts_with(NGINX_PROXY_PREFIX)
+                {
                     client_containers.push(cont);
                 }
             }
