@@ -57,7 +57,7 @@ impl Debug for Client {
     TS,
 )]
 pub struct ClientId {
-    #[ts(type = "Pubkey")]
+    #[ts(type = "number[]")]
     pub signer: Pubkey,
     pub p2p_identity: [u8; 32],
 }
