@@ -305,7 +305,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 					c.coordinator.config.witness_nodes
 				)
 				return {
-					pubkey: client.id.signer.toString(),
+					pubkey: new PublicKey(client.id.signer).toString(),
 					witness: isWitness
 						? currentRound.witnesses.some(
 								(w) => Number(w.proof.index) === index
