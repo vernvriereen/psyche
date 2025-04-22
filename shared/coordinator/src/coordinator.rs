@@ -10,7 +10,7 @@ use anchor_lang::{
 use bytemuck::{Pod, Zeroable};
 use psyche_core::{sha256, Bloom, FixedString, FixedVec, MerkleRoot, NodeIdentity, SmallBoolean};
 use serde::{Deserialize, Serialize};
-use std::hash::Hash;
+use std::{collections::HashSet, hash::Hash};
 use ts_rs::TS;
 
 pub const SOLANA_MAX_STRING_LEN: usize = 64;
@@ -567,6 +567,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             let index = proof.index as usize;
             let client = &mut self.epoch_state.clients[index];
             if client.state == ClientState::Healthy {
+                msg!("Client {} dropped", client.id);
                 client.state = ClientState::Dropped;
                 dropped += 1;
             }
@@ -854,22 +855,21 @@ impl<T: NodeIdentity> Coordinator<T> {
             && self.check_timeout(unix_timestamp, WAITING_FOR_MEMBERS_EXTRA_SECONDS)
         // This extra time allows for more clients to join even if the minimum number of clients is reached
         {
-            let pending_clients: Vec<_> = pending_clients.collect();
+            let pending_clients: HashSet<_> = pending_clients.collect();
 
             // Ensure every client in self.epoch_state.clients is present in pending_clients
             // If all clients are no longer present we need to use a Hub checkpoint since there
             // will be no peers for P2P sharing.
             let mut all_prev_clients_disconnected = true;
             for client in self.epoch_state.clients.iter() {
+                // Check that it's a valid id and not an empty position
                 if client.id.get_p2p_public_key().iter().all(|&byte| byte == 0) {
                     continue;
                 }
                 // If there's at least one client then we can use P2P
-                for pending in pending_clients.iter() {
-                    if **pending == client.id {
-                        all_prev_clients_disconnected = false;
-                        break;
-                    }
+                if pending_clients.contains(&client.id) {
+                    all_prev_clients_disconnected = false;
+                    break;
                 }
             }
 
@@ -1010,6 +1010,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             let Model::LLM(llm) = &mut self.model;
             match llm.checkpoint {
                 Checkpoint::Hub(hub_repo) | Checkpoint::Dummy(hub_repo) => {
+                    msg!("Setting checkpoint to P2P");
                     llm.checkpoint = Checkpoint::P2P(hub_repo)
                 }
                 _ => {}
@@ -1091,6 +1092,7 @@ impl<T: NodeIdentity> Coordinator<T> {
         // WARNING: O(n) on number of clients, need to refactor
         self.epoch_state.clients.retain(|x| {
             if x.state != ClientState::Healthy {
+                msg!("Client {} exited", x.id);
                 self.epoch_state.exited_clients.push(*x).unwrap();
                 self.epoch_state
                     .exited_clients
