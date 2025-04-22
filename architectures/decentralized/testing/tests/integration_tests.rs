@@ -803,7 +803,6 @@ async fn test_lost_only_peer_go_back_to_hub_checkpoint() {
             &format!("{CLIENT_CONTAINER_PREFIX}-1"),
             vec![
                 IntegrationTestLogMarker::StateChange,
-                IntegrationTestLogMarker::Loss,
             ],
         )
         .unwrap();
@@ -811,17 +810,27 @@ async fn test_lost_only_peer_go_back_to_hub_checkpoint() {
     let mut first_client_killed = false;
     let mut spawned_second_client = false;
 
-    let second_client_id = format!("{CLIENT_CONTAINER_PREFIX}-2");
-
+    let second_client_id: String = format!("{CLIENT_CONTAINER_PREFIX}-2");
+    let mut live_interval = time::interval(Duration::from_secs(10));
     loop {
         tokio::select! {
+            _ = live_interval.tick() => { // Second client should never crash
+                if !spawned_second_client {
+                    continue;
+                }
+                if let Err(e) = watcher.monitor_client_health(&second_client_id).await {
+                    panic!("Second client has crashed after first client was killed. Test Failed. {}", e);
+                }
+            }
             response = watcher.log_rx.recv() => {
                 match response {
-                    Some(Response::StateChange(_timestamp, client_id, old_state, new_state, _epoch, _step)) => {
-                        println!(
-                            "State change for client {}: {} => {}",
-                            client_id, old_state, new_state
-                        );
+                    Some(Response::StateChange(_timestamp, client_id, old_state, new_state, _epoch, step)) => {
+                        if new_state != RunState::RoundTrain.to_string() && new_state != RunState::RoundWitness.to_string() {
+                            println!(
+                                "step={} -- state change for client {}: {} => {}",
+                                step, client_id, old_state, new_state
+                            );
+                        }
 
                         if new_state == RunState::RoundTrain.to_string() && !spawned_second_client {
                             println!("Joining a second client to the run");
@@ -851,16 +860,6 @@ async fn test_lost_only_peer_go_back_to_hub_checkpoint() {
                             first_client_killed = true;
                             println!("First client killed, waiting to see if second client continues...");
                         }
-
-                        if first_client_killed && new_state == RunState::WaitingForMembers.to_string() {
-                            println!("Second client is in WaitingForMembers after first client was killed");
-                            println!("Waiting a few seconds to see if the client has crashed...");
-                            tokio::time::sleep(Duration::from_secs(15)).await;
-                            if let Err(e) = watcher.monitor_client_health(&second_client_id).await {
-                                panic!("Second client has crashed after first client was killed. Test Failed. {}", e);
-                            }
-                            println!("Second client is still alive after first client was killed.");
-                        }
                     }
                     Some(Response::LoadedModel(checkpoint)) => {
                         if spawned_second_client && first_client_killed {
@@ -869,16 +868,6 @@ async fn test_lost_only_peer_go_back_to_hub_checkpoint() {
                             println!("Model succesfuly obtained from Hub");
                             return;
                         }
-                    }
-                    Some(Response::Loss(client, epoch, step, loss)) => {
-                        if loss.is_none() {
-                            println!("Loss was NaN, skipping...");
-                            continue;
-                        }
-                        println!(
-                            "client: {:?}, epoch: {}, step: {}, Loss: {:?}",
-                            client, epoch, step, loss.unwrap()
-                        );
                     }
                     _ => {}
                 }
