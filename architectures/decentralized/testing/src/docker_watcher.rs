@@ -328,24 +328,13 @@ impl DockerWatcher {
     pub async fn monitor_clients_health(&self, num_clients: u8) -> Result<(), DockerWatcherError> {
         for i in 1..=num_clients {
             let container_name = format!("{CLIENT_CONTAINER_PREFIX}-{}", i);
-            let container = self
-                .client
-                .inspect_container(&container_name, None)
-                .await
-                .unwrap();
-            let state = container.state.unwrap();
-            match state.status {
-                Some(bollard::secret::ContainerStateStatusEnum::DEAD)
-                | Some(bollard::secret::ContainerStateStatusEnum::EXITED) => {
-                    return Err(DockerWatcherError::ClientCrashedError(container_name))
-                }
-                _ => continue,
-            }
+            self.monitor_client_health_by_id(container_name.as_str())
+                .await?;
         }
         Ok(())
     }
 
-    pub async fn monitor_client_health(
+    pub async fn monitor_client_health_by_id(
         &self,
         container_name: &str,
     ) -> Result<(), DockerWatcherError> {

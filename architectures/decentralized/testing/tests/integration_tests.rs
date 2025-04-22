@@ -790,20 +790,13 @@ async fn test_lost_only_peer_go_back_to_hub_checkpoint() {
     let mut watcher = DockerWatcher::new(docker.clone());
 
     // Initialize a Solana run with 1 client, minimum 1 client
-    let _cleanup = e2e_testing_setup(
-        docker.clone(),
-        1,
-        Some(PathBuf::from("../../config/solana-test/light-config.toml")),
-    )
-    .await;
+    let _cleanup = e2e_testing_setup(docker.clone(), 1, None).await;
 
     // Monitor the original client container
     let _monitor_client_1 = watcher
         .monitor_container(
             &format!("{CLIENT_CONTAINER_PREFIX}-1"),
-            vec![
-                IntegrationTestLogMarker::StateChange,
-            ],
+            vec![IntegrationTestLogMarker::StateChange],
         )
         .unwrap();
 
@@ -818,7 +811,7 @@ async fn test_lost_only_peer_go_back_to_hub_checkpoint() {
                 if !spawned_second_client {
                     continue;
                 }
-                if let Err(e) = watcher.monitor_client_health(&second_client_id).await {
+                if let Err(e) = watcher.monitor_client_health_by_id(&second_client_id).await {
                     panic!("Second client has crashed after first client was killed. Test Failed. {}", e);
                 }
             }
