@@ -33,7 +33,7 @@ The variables that should be set are the following:
 - `RUN_ID`: The ID of the training run you will join.
 - `NVIDIA_DRIVER_CAPABILITIES`: An environment variable used primarily by Docker containers that use the NVIDIA Container Toolkit. It is recommended to set it to 'all', `NVIDIA_DRIVER_CAPABILITIES=all`.
 - `DATA_PARALELLISM`: The number of accelerators the training data will be distributed into. Set it to the number of GPUs avaiables in your machine.
-- `MICRO_BATCH_SIZE`: ?
+- `MICRO_BATCH_SIZE`: Number of samples processed per GPU per step (affects memory usage, set it as high as VRAM allows)
 - `AUTHORIZER`: The Solana address that delegated authorization to the Solana public key you will use to join the run. You can read more about [authorization here](./authentication.md)
 
 ## Running the Psyche client docker image
