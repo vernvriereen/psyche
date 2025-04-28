@@ -7,9 +7,7 @@ The state machine phases a `Client` goes through during a training `Round` or `E
 An alternative GPU compute platform to NVIDIA's CUDA. Support for ROCm is planned for Psyche clients in the future.
 
 **Authorizer**
-
-**Agenix**
-Secret-management tool based on `Nix`, used by `Psyche`.
+TODO
 
 **Batch**
 A subset of the training data processed by clients in a single step within a `Round`. Identified by a `BatchId`.
@@ -84,7 +82,7 @@ A `RunState` indicating that the training run has completed its configured `tota
 CI (Continuous Integration) service based on `Nix`, used by `Psyche`.
 
 **Health Check**
-A process (`health_check()`) run by the `Coordinator` to verify client responsiveness and validity, potentially using `Committee Proofs`. Failing checks can lead to a client being marked `Dropped` or `Ejected`.
+A verification procedure (`health_check()`) initiated by designated `witness` clients. Its purpose is to monitor peer clients and confirm they are actively processing their assigned training batches. When a witness client detects a peer that appears unresponsive or failing (`unhealthy`), it notifies the central coordinator. The coordinator independently verifies the status of the reported peer by running its own health check. If this verification is verified then the peer is marked as `unhealthy` and is kicked.
 
 **Healthy**
 The desired `ClientState`, indicating the client is connected, responsive, and participating correctly in the training process. Only Healthy clients typically receive `Rewards`.
@@ -171,13 +169,13 @@ The `RunState` where the `Coordinator` waits for the minimum number of clients (
 The initial phase (`RunState` and `ActiveStep`) of a training run where clients download the model `Checkpoint` and initialize their training environment.
 
 **Witness**
-A `Client` selected to validate other client's work during the `RoundWitness` phase or via `Opportunistic Witnessing`.
+A `Client` selected to validate other client's work.
 
 **WitnessBloom**
 The specific `Bloom Filter` used on the `Coordinator` to track which client `Commitments` have been successfully witnessed.
 
-**witness_quorum**
-The minimum percentage or number of `Healthy` clients that must successfully act as `Witnesses` and agree on the validity of results for a `Round` to be considered successful.
+**Witness Quorum**
+The minimum number of clients that must successfully act as `Witnesses` and agree on the validity of results for a `Round` to be considered successful.
 
 **Withdrawn**
 A `ClientState` indicating that a client has exited the run.
