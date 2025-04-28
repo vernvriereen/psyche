@@ -6,6 +6,7 @@
   - [Coordinator](./explain/coordinator.md)
   - [Data provider](./explain/data-provider.md)
   - [Model sharing](./explain/model-sharing.md)
+  - [Rewards](./explain/rewards.md)
 
 - [End-user usage](./enduser/index.md)
   - [Creating a run](./enduser/create-run.md)

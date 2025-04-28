@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use crate::sha256::sha256v;
 
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
@@ -34,7 +36,6 @@ macro_rules! hash_intermediate {
     AnchorDeserialize,
     Serialize,
     Deserialize,
-    Debug,
     PartialEq,
     Eq,
     Clone,
@@ -51,8 +52,19 @@ impl HashWrapper {
     pub fn new(inner: [u8; 32]) -> Self {
         Self { inner }
     }
+
     pub fn fmt_short(&self) -> String {
         data_encoding::HEXLOWER.encode(&self.inner[..5])
+    }
+
+    pub fn fmt_full(&self) -> String {
+        data_encoding::HEXLOWER.encode(&self.inner)
+    }
+}
+
+impl Debug for HashWrapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HashWrapper({})", self.fmt_full())
     }
 }
 

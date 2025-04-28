@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut, Range, RangeFrom, RangeFull, RangeTo};
 use ts_rs::TS;
 
-#[derive(Debug, Clone, Copy, Zeroable, AnchorSerialize, AnchorDeserialize, TS)]
+#[derive(Clone, Copy, Zeroable, AnchorSerialize, AnchorDeserialize, TS)]
 pub struct FixedVec<T, const N: usize> {
     data: [T; N],
     len: u64,
@@ -164,6 +164,17 @@ impl<T: Default + Copy, const N: usize> FixedVec<T, N> {
             self.data[i] = T::default();
         }
         self.len = write as u64;
+    }
+}
+
+impl<T: std::fmt::Debug, const N: usize> std::fmt::Debug for FixedVec<T, N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FixedVec<{}> {}x(", N, self.len)?;
+        f.debug_list()
+            .entries(self.data[0..self.len as usize].iter())
+            .finish()?;
+        write!(f, ")")?;
+        Ok(())
     }
 }
 

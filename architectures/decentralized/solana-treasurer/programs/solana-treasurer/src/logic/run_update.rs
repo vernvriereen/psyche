@@ -53,7 +53,10 @@ pub fn run_update_processor(
     let run_signer_seeds: &[&[&[u8]]] =
         &[&[Run::SEEDS_PREFIX, &run.identity.to_bytes(), &[run.bump]]];
 
-    if params.config.is_some() || params.model.is_some() {
+    if params.config.is_some()
+        || params.model.is_some()
+        || params.progress.is_some()
+    {
         update(
             CpiContext::new(
                 context.accounts.coordinator_program.to_account_info(),
