@@ -2,7 +2,7 @@
 
 ## Joining a run
 
-Learn how to use your existing compute to [join a run](./join_run.md)
+Learn how to use your existing compute to [join a run](./join-run.md)
 
 ## Creating a run
 

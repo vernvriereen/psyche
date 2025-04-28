@@ -11,7 +11,7 @@
 
 - [End-user usage](./enduser/index.md)
 
-  - [Joining a run](./enduser/join_run.md)
+  - [Joining a run](./enduser/join-run.md)
   - [Creating a run](./enduser/create-run.md)
   - [Run configuration](./enduser/run-config.md)
   - [Authentication](./enduser/authentication.md)

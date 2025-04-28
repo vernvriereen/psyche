@@ -14,6 +14,6 @@ The source code for the treasurer smart contract can be found here: <https://git
 
 ## Mining Pool, Pooling funds
 
-Participating in a run can be expensive, a powerful GPU may be required to train a particular model. Users can pool resources together through a Mining Pool smart contract. The source code used can be found here: <https://github.com/NousResearch/psyche/tree/main/architectures/decentralized/solana-mining-pool>.
+Participating in a run can be expensive — a powerful GPU may be required to train a particular model. Users can pool resources together through a Mining Pool smart contract. The source code used can be found here: <https://github.com/NousResearch/psyche/tree/main/architectures/decentralized/solana-mining-pool>.
 
-Each user contributing to a mining pool will delegate their funds so those can be used by the Mining Pool authority and owner to purchase compute power. The Mining Pool authority can then re-distribute equitably through the mining pool any token that may have been received as a result of the training.
+Each user contributing to a Mining Pool will delegate their funds so those can be used by the Mining Pool authority and owner to purchase compute power. The Mining Pool authority can then re-distribute equitably through the Mining Pool any token that may have been received as a result of the training.

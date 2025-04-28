@@ -4,8 +4,6 @@
     <img src="./psyche.jpg">
 </p>
 
-Psyche is a set of systems that enable distributed training of transformer-based AI models over the internet. It seeks to enable collaboration between untrusted parties to train state-of-the-art ML models.
-
 Psyche is a system that enables distributed training of transformer-based AI models over the internet, aiming to foster collaboration between untrusted parties to create state-of-the-art machine learning models.
 It leverages a peer-to-peer distributed network for communication and data sharing.
 
