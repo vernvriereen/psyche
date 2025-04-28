@@ -107,104 +107,11 @@ export const fakeRunSummaries: RunSummary[] = [
 	},
 ]
 
-function randomWalk(scale: number, start = 0, down = 0.9) {
-	const numSteps = Math.floor(Math.random() * (2000 - 1000 + 1)) + 1000
-
-	const walk = [{ step: 0, value: start }]
-
-	let currentValue = start
-
-	for (let i = 1; i <= numSteps; i++) {
-		const movement = (Math.random() * 2 - down) * 0.005
-
-		currentValue += movement
-		currentValue = Math.max(Math.min(currentValue, 1), 0)
-
-		walk.push({
-			step: i,
-			value: currentValue * scale,
-		})
-	}
-
-	return walk
-}
-
-function randomClient(): RunRoundClient {
-	return {
-		pubkey: PublicKey.findProgramAddressSync(
-			[new Uint8Array(3)],
-			PublicKey.unique()
-		)[0].toString(),
-		witness:
-			Math.random() > 0.66 ? 'done' : Math.random() > 0.5 ? 'waiting' : false,
-	}
-}
-
-function randomPhase(): RunState {
-	const seed = Math.random() * 0.5
-	if (seed < 0.1) {
-		return 'WaitingForMembers'
-	} else if (seed < 0.2) {
-		return 'Warmup'
-	} else if (seed < 0.3) {
-		return 'Cooldown'
-	} else if (seed < 0.4) {
-		return 'RoundTrain'
-	} else if (seed < 0.5) {
-		return 'RoundWitness'
-	}
-	return 'Uninitialized'
-}
-export const makeFakeRunData: Record<string, () => RunData> = {
-	'run-001': () => {
-		const numEpochs = Math.round(Math.random() * 300)
-		const epoch = Math.round(Math.random() * numEpochs)
-		const roundsPerEpoch = Math.round(Math.random() * 1000)
-		const round = Math.round(Math.random() * roundsPerEpoch)
-		return {
-			info: fakeRunSummaries[0],
-			metrics: {
-				summary: {
-					loss: 0.32 + Math.random() * 0.3,
-					bandwidth: Math.random() * 128_000_000,
-					tokensPerSecond: Math.random() * 128_000,
-					evals: {
-						accuracy: 0.83,
-						precision: 0.79,
-						recall: 0.85,
-					},
-				},
-				history: {
-					loss: randomWalk(1),
-					bandwidth: randomWalk(1000000),
-					tokensPerSecond: randomWalk(100000),
-					evals: {
-						accuracy: randomWalk(1),
-						precision: randomWalk(1),
-						recall: randomWalk(1),
-					},
-				},
-			},
-			state: {
-				phase: randomPhase(),
-				phaseStartTime: new Date(Date.now() - Math.random() * 2_000),
-				round,
-				epoch,
-				clients: Array.from({ length: Math.ceil(Math.random() * 16) }, () =>
-					randomClient()
-				),
-				config: {
-					cooldownTime: 5_000,
-					maxRoundTrainTime: 5_000,
-					warmupTime: 3_000,
-					roundWitnessTime: 2_000,
-					minClients: 2,
-					roundsPerEpoch,
-					numEpochs,
-				},
-			},
-		}
-	},
+export const makeFakeRunData: Record<
+	string,
+	(seed?: number, step?: number) => RunData
+> = {
+	'run-001': makeFakeRunDataSeeded,
 	'run-002': () => ({
 		info: fakeRunSummaries[1],
 		metrics: {
@@ -236,13 +143,13 @@ export const makeFakeRunData: Record<string, () => RunData> = {
 				},
 			},
 			history: {
-				loss: randomWalk(1, 1, 1.1),
-				bandwidth: randomWalk(1_000_000),
-				tokensPerSecond: randomWalk(100_000),
+				loss: randomWalk(1, 1, 1, 1.1),
+				bandwidth: randomWalk(1, 1_000_000),
+				tokensPerSecond: randomWalk(1, 100_000),
 				evals: {
-					accuracy: randomWalk(1),
-					precision: randomWalk(1),
-					recall: randomWalk(1),
+					accuracy: randomWalk(1, 1),
+					precision: randomWalk(1, 1),
+					recall: randomWalk(1, 1),
 				},
 			},
 		},
@@ -282,4 +189,152 @@ export const fakeContributionInfo: ContributionInfo = {
 	],
 	collateralMintAddress: 'N/A',
 	miningPoolProgramId: 'N/A',
+}
+
+function makeFakeRunDataSeeded(seed = 1, step = 0) {
+	const seededRandom = createSeededRandom(seed)
+
+	const numEpochs = Math.round(seededRandom() * 300) + 10
+	const roundsPerEpoch = Math.round(seededRandom() * 100) + 50
+	const minClients = Math.round(seededRandom() * 10) + 2
+	const totalClients = Math.round(seededRandom() * 10) + minClients
+
+	const stepsPerEpoch = roundsPerEpoch + 2 // +2 for warmup and cooldown
+	const currentEpoch = Math.min(Math.floor(step / stepsPerEpoch), numEpochs - 1)
+	const epochStep = step % stepsPerEpoch
+
+	const clients = Array.from({ length: totalClients }, (_, i) => {
+		const basePubkey = PublicKey.findProgramAddressSync(
+			[new Uint8Array([i, seed])],
+			PublicKey.default
+		)[0].toString()
+		return {
+			pubkey: basePubkey,
+			witness: false,
+		} as RunRoundClient
+	})
+
+	let phase: RunState = 'Uninitialized'
+	let round = 0
+
+	if (epochStep === 0) {
+		phase = 'WaitingForMembers'
+
+		// calculate how many clients have joined based on the step
+		const joinedClients = Math.min(
+			Math.max(
+				1,
+				Math.floor((minClients * (step + 1)) / (stepsPerEpoch * 0.2))
+			),
+			minClients
+		)
+
+		// only use the first 'joinedClients' clients
+		clients.forEach((_, i) => {
+			if (i >= joinedClients) {
+				clients.splice(i)
+			}
+		})
+	} else if (epochStep === 1) {
+		phase = 'Warmup'
+		round = 0
+	} else if (epochStep === stepsPerEpoch - 1) {
+		phase = 'Cooldown'
+		round = roundsPerEpoch
+	} else {
+		// Training rounds - alternating between RoundTrain and RoundWitness
+		round = epochStep - 1 // Adjust for warmup
+		const isTraining = epochStep % 2 === 0
+		phase = isTraining ? 'RoundTrain' : 'RoundWitness'
+
+		clients.forEach((client, i) => {
+			const clientSeedRandom = createSeededRandom(seed + i + epochStep)
+			const isWitness = clientSeedRandom() > 0.5
+			if (isTraining) {
+				const state = clientSeedRandom()
+				client.witness = isWitness ? (state > 0.5 ? 'done' : 'waiting') : false
+			} else {
+				client.witness = isWitness ? 'done' : false
+			}
+		})
+	}
+
+	return {
+		info: fakeRunSummaries[0],
+		metrics: {
+			summary: {
+				loss: 0.32 + seededRandom() * 0.3,
+				bandwidth: seededRandom() * 128_000_000,
+				tokensPerSecond: seededRandom() * 128_000,
+				evals: {
+					accuracy: 0.83,
+					precision: 0.79,
+					recall: 0.85,
+				},
+			},
+			history: {
+				loss: randomWalk(seed, 1, undefined, undefined, step),
+				bandwidth: randomWalk(seed, 1000000, undefined, undefined, step),
+				tokensPerSecond: randomWalk(seed, 100000, undefined, undefined, step),
+				evals: {
+					accuracy: randomWalk(seed, 1, undefined, undefined, step),
+					precision: randomWalk(seed, 1, undefined, undefined, step),
+					recall: randomWalk(seed, 1, undefined, undefined, step),
+				},
+			},
+		},
+		state: {
+			phase,
+			phaseStartTime: new Date(Date.now() - seededRandom() * 2_000),
+			round,
+			epoch: currentEpoch,
+			clients,
+			config: {
+				cooldownTime: 5_000,
+				maxRoundTrainTime: 5_000,
+				warmupTime: 3_000,
+				roundWitnessTime: 2_000,
+				minClients,
+				roundsPerEpoch,
+				numEpochs,
+			},
+		},
+	}
+}
+
+function createSeededRandom(seed: number) {
+	return function () {
+		const x = Math.sin(seed++) * 10000
+		return x - Math.floor(x)
+	}
+}
+
+function randomWalk(
+	seed: number,
+	scale: number,
+	start = 0,
+	down = 0.9,
+	numStepsSet?: number
+) {
+	const seededRandom = createSeededRandom(seed)
+	const numSteps =
+		numStepsSet ?? Math.floor(seededRandom() * (2000 - 1000 + 1)) + 1000
+
+	const walk = [{ step: 0, value: start }]
+
+	let currentValue = start
+
+	for (let i = 1; i <= numSteps; i++) {
+		const movement = (seededRandom() * 2 - down) * 0.005
+
+		currentValue += movement
+		currentValue = Math.max(Math.min(currentValue, 1), 0)
+
+		walk.push({
+			step: i,
+			value: currentValue * scale,
+		})
+	}
+
+	return walk
 }

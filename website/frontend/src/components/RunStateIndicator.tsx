@@ -22,7 +22,7 @@ const Container = styled.div`
 
 const stateNames: Record<RunState, string> = {
 	Uninitialized: 'uninitialized',
-	WaitingForMembers: 'waiting',
+	WaitingForMembers: 'waiting for compute',
 	Warmup: 'warmup',
 	RoundTrain: 'train',
 	RoundWitness: 'witness',
@@ -40,17 +40,14 @@ const flexCol = css`
 	flex-direction: column;
 `
 
-const bottomBorderHold = css`
-padding-bottom: 1em	
-border-bottom: 1px solid black;
-`
-
 function calculateDoneRatio(
 	state: Exclude<RunData['state'], undefined>,
 	currentTime: Date
 ): number {
 	const elapsedPhaseTime =
-	(+currentTime - (state.phaseStartTime ? +state.phaseStartTime : Date.now())) / 1000
+		(+currentTime -
+			(state.phaseStartTime ? +state.phaseStartTime : Date.now())) /
+		1000
 	if (state.phase === 'WaitingForMembers') {
 		return Math.min(state.clients.length / state.config.minClients, 1)
 	} else if (state.phase === 'Warmup') {
@@ -92,34 +89,39 @@ export function RunStateIndicator(state: Exclude<RunData['state'], undefined>) {
 			className={thinBorderBox}
 		>
 			<Container>
-				<Section
-					active={phase === 'WaitingForMembers'}
-					name={stateNames['WaitingForMembers']}
-					doneRatio={doneRatio}
-				/>
-				<Section
-					active={phase === 'Warmup'}
-					name={stateNames['Warmup']}
-					doneRatio={doneRatio}
-				/>
-				<Container className={bottomBorderHold}>
+				{phase === 'WaitingForMembers' ? (
 					<Section
-						active={phase === 'RoundTrain'}
-						name={stateNames['RoundTrain']}
+						active={phase === 'WaitingForMembers'}
+						name={stateNames['WaitingForMembers']}
 						doneRatio={doneRatio}
 					/>
-					<Section
-						active={phase === 'RoundWitness'}
-						name={stateNames['RoundWitness']}
-						doneRatio={doneRatio}
-					/>
-				</Container>
+				) : (
+					<>
+						<Section
+							active={phase === 'Warmup'}
+							name={stateNames['Warmup']}
+							doneRatio={doneRatio}
+						/>
+						<Container>
+							<Section
+								active={phase === 'RoundTrain'}
+								name={stateNames['RoundTrain']}
+								doneRatio={doneRatio}
+							/>
+							<Section
+								active={phase === 'RoundWitness'}
+								name={stateNames['RoundWitness']}
+								doneRatio={doneRatio}
+							/>
+						</Container>
 
-				<Section
-					active={phase === 'Cooldown'}
-					name={stateNames['Cooldown']}
-					doneRatio={doneRatio}
-				/>
+						<Section
+							active={phase === 'Cooldown'}
+							name={stateNames['Cooldown']}
+							doneRatio={doneRatio}
+						/>
+					</>
+				)}
 			</Container>
 			<Container className={flexCol}>
 				{/* <Legend>

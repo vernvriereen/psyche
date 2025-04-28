@@ -71,17 +71,20 @@ export async function fetchRunStreaming(runId: string): Promise<{
 	stream: ReadableStream<ApiGetRun>
 }> {
 	if (import.meta.env.VITE_FAKE_DATA) {
+		const seed = Math.random() * 1_000_000_000
 		return {
-			initialData: { run: makeFakeRunData[runId](), isOnlyRun: false },
+			initialData: { run: makeFakeRunData[runId](seed, 0), isOnlyRun: false },
 			stream: new ReadableStream<ApiGetRun>({
 				async start(controller) {
+					let i = 0
 					while (true) {
 						controller.enqueue({
-							run: makeFakeRunData[runId](),
+							run: makeFakeRunData[runId](seed, i),
 							isOnlyRun: false,
 						})
 						const nextFakeDataDelay = 1000 + Math.random() * 1000
 						await new Promise((r) => setTimeout(r, nextFakeDataDelay))
+						i++
 					}
 				},
 			}),

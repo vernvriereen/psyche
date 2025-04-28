@@ -29,7 +29,8 @@ export function formatNumber(
 	}
 
 	if (num < 1000) {
-		return num.toString()
+		const fixed = num.toFixed(decimals)
+		return fixed.replace(/\.?0+$/, '') + (space ? ' ' : '')
 	}
 
 	let suffixIndex = suffixes.length - 1

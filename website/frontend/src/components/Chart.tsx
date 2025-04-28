@@ -255,19 +255,6 @@ const LineGraphInner: React.FC<
 	const verticalGridColor = slate[isDarkMode ? 600 : 500]
 	const labelColor = isDarkMode ? forest[300] : slate[1000]
 
-	if (line.points.length < 2) {
-		return (
-			<GraphContainer>
-				{title && (
-					<Title color={labelColor} className={text['body/sm/semibold']}>
-						{title}
-					</Title>
-				)}
-				<WaitingForData>waiting for data...</WaitingForData>
-			</GraphContainer>
-		)
-	}
-
 	const xDomain = xScale.domain() as [number, number]
 	const yDomain = yScale.domain() as [number, number]
 
@@ -283,6 +270,19 @@ const LineGraphInner: React.FC<
 		() => integerMarkers([yDomain[0], yDomain[1]], numYMarkers),
 		[yDomain, numYMarkers]
 	)
+
+	if (line.points.length < 2) {
+		return (
+			<GraphContainer>
+				{title && (
+					<Title color={labelColor} className={text['body/sm/semibold']}>
+						{title}
+					</Title>
+				)}
+				<WaitingForData>waiting for data...</WaitingForData>
+			</GraphContainer>
+		)
+	}
 
 	const centerLineThickness = 1
 	const plusSize = 6

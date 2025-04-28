@@ -136,7 +136,7 @@ function RouteComponent() {
 						</ProgressDescription>
 					</div>
 
-					{run.state && run.info.status.type !== "completed" && (
+					{run.state && run.info.status.type !== 'completed' && (
 						<RunStateActiveContainer active={run.info.status.type === 'active'}>
 							<RunStateIndicator {...run.state} />
 						</RunStateActiveContainer>
