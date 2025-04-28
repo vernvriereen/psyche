@@ -195,11 +195,11 @@ function makeFakeRunDataSeeded(seed = 1, step = 0) {
 	const seededRandom = createSeededRandom(seed)
 
 	const numEpochs = Math.round(seededRandom() * 300) + 10
-	const roundsPerEpoch = Math.round(seededRandom() * 100) + 50
+	const roundsPerEpoch = Math.round(seededRandom() * 10) + 10
 	const minClients = Math.round(seededRandom() * 10) + 2
 	const totalClients = Math.round(seededRandom() * 10) + minClients
 
-	const stepsPerEpoch = roundsPerEpoch + 2 // +2 for warmup and cooldown
+	const stepsPerEpoch = roundsPerEpoch + 2 + totalClients // +2 for warmup and cooldown, +n for num clients
 	const currentEpoch = Math.min(Math.floor(step / stepsPerEpoch), numEpochs - 1)
 	const epochStep = step % stepsPerEpoch
 
@@ -217,33 +217,23 @@ function makeFakeRunDataSeeded(seed = 1, step = 0) {
 	let phase: RunState = 'Uninitialized'
 	let round = 0
 
-	if (epochStep === 0) {
+	if (epochStep < totalClients) {
 		phase = 'WaitingForMembers'
 
-		// calculate how many clients have joined based on the step
-		const joinedClients = Math.min(
-			Math.max(
-				1,
-				Math.floor((minClients * (step + 1)) / (stepsPerEpoch * 0.2))
-			),
-			minClients
-		)
-
-		// only use the first 'joinedClients' clients
 		clients.forEach((_, i) => {
-			if (i >= joinedClients) {
+			if (i >= epochStep) {
 				clients.splice(i)
 			}
 		})
-	} else if (epochStep === 1) {
+	} else if (epochStep === totalClients) {
 		phase = 'Warmup'
 		round = 0
 	} else if (epochStep === stepsPerEpoch - 1) {
 		phase = 'Cooldown'
-		round = roundsPerEpoch
+		round = roundsPerEpoch - 1
 	} else {
 		// Training rounds - alternating between RoundTrain and RoundWitness
-		round = epochStep - 1 // Adjust for warmup
+		round = epochStep - (1 + totalClients)
 		const isTraining = epochStep % 2 === 0
 		phase = isTraining ? 'RoundTrain' : 'RoundWitness'
 

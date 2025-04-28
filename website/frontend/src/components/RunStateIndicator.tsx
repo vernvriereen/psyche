@@ -8,6 +8,7 @@ import { ProgressBar } from './ProgressBar.js'
 import { css } from '@linaria/core'
 import { useState } from 'react'
 import { useInterval } from 'usehooks-ts'
+import { Address } from './Address.js'
 
 const Container = styled.div`
 	display: flex;
@@ -76,7 +77,7 @@ export function RunStateIndicator(state: Exclude<RunData['state'], undefined>) {
 		phase,
 		round,
 		epoch,
-		config: { roundsPerEpoch, numEpochs },
+		config: { roundsPerEpoch, numEpochs, minClients },
 		clients,
 	} = state
 	const [now, setNow] = useState(new Date(Date.now()))
@@ -92,7 +93,7 @@ export function RunStateIndicator(state: Exclude<RunData['state'], undefined>) {
 				{phase === 'WaitingForMembers' ? (
 					<Section
 						active={phase === 'WaitingForMembers'}
-						name={stateNames['WaitingForMembers']}
+						name={`${stateNames['WaitingForMembers']} (${clients.length}/${minClients})`}
 						doneRatio={doneRatio}
 					/>
 				) : (
@@ -124,44 +125,38 @@ export function RunStateIndicator(state: Exclude<RunData['state'], undefined>) {
 				)}
 			</Container>
 			<Container className={flexCol}>
-				{/* <Legend>
-					<div>
-						<Dot size="1em" />
-						trainer
-					</div>
-					<div>
-						<Dot size="1em" className="waiting" />
-						unfinished witness
-					</div>
-					<div>
-						<Dot size="1em" className="done" />
-						finished witness
-					</div>
-				</Legend> */}
 				<ClientsBox>
 					{clients.map((c) => (
 						<RoundParticipant key={c.pubkey} client={c} />
 					))}
 				</ClientsBox>
 			</Container>
-			<div>
-				<ProgressBar
-					chunkHeight={8}
-					chunkWidth={4}
-					chunkSpacing={1}
-					ratio={
-						(round +
-							(phase === 'RoundWitness' ? 0.5 : phase === 'Cooldown' ? 1 : 0)) /
-						roundsPerEpoch
-					}
-				/>
-				<ProgressDescription>
-					<span>round</span>
-					<span>
-						{round + 1}/{roundsPerEpoch}
-					</span>
-				</ProgressDescription>
-			</div>
+			{(phase === 'RoundTrain' ||
+				phase === 'RoundWitness' ||
+				phase === 'Cooldown') && (
+				<div>
+					<ProgressBar
+						chunkHeight={8}
+						chunkWidth={4}
+						chunkSpacing={1}
+						ratio={
+							(round +
+								(phase === 'RoundWitness'
+									? 0.5
+									: phase === 'Cooldown'
+										? 1
+										: 0)) /
+							roundsPerEpoch
+						}
+					/>
+					<ProgressDescription>
+						<span>round</span>
+						<span>
+							{round + 1}/{roundsPerEpoch}
+						</span>
+					</ProgressDescription>
+				</div>
+			)}
 		</OutlineBox>
 	)
 }
@@ -207,8 +202,18 @@ const ClientBox = styled.div`
 	align-items: center;
 	margin: 0.5em;
 	padding: 0.5em;
+	max-width: 12ch;
 
 	justify-content: space-between;
+
+	.theme-light &,
+	.theme-light & a {
+		color: ${forest[500]};
+	}
+	.theme-dark &,
+	.theme-dark & a {
+		color: ${forest[300]};
+	}
 `
 const ClientsBox = styled.div`
 	display: flex;
@@ -240,11 +245,10 @@ function Section({
 }
 
 function RoundParticipant({ client }: { client: RunRoundClient }) {
-	console.log(client)
 	return (
-		<ClientBox>
+		<ClientBox className={text['aux/xs/regular']}>
 			<Dot className={client.witness} />
-			{client.pubkey.slice(0, 6)}
+			<Address address={client.pubkey} copy={false} />
 		</ClientBox>
 	)
 }

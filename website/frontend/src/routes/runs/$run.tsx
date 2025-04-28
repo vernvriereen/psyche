@@ -143,7 +143,7 @@ function RouteComponent() {
 					)}
 
 					<MaybeRadialGraphContainer>
-						{Object.entries(run.metrics.summary.evals).length > 3 && (
+						{Object.entries(run.metrics.summary.evals).length >= 3 && (
 							<RadialContainer>
 								<RadialGraph
 									data={run.metrics.summary.evals}

@@ -5,6 +5,7 @@ import { css } from '@linaria/core'
 
 const Container = styled.div`
 	display: flex;
+	width: 100%;
 `
 
 const Collapsible = styled.div`
@@ -28,13 +29,19 @@ const linkIcon = css`
 	}
 `
 
-export function Address({ address }: { address: string }) {
+export function Address({
+	address,
+	copy = true,
+}: {
+	address: string
+	copy?: boolean
+}) {
 	return (
 		<Container>
 			{address.slice(0, 4)}
 			<Collapsible>{address.slice(4, -4)}</Collapsible>
 			{address.slice(-4)}
-			<CopyToClipboard text={address} />
+			{copy && <CopyToClipboard text={address} />}
 			<a href={`https://solscan.io/account/${address}`} target="_blank">
 				<div className={linkIcon}>
 					<LinkIcon />
