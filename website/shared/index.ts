@@ -88,11 +88,22 @@ export interface RunData {
 	info: RunSummary
 	state?: {
 		phase: RunState
+		phaseStartTime?: Date
+		clients: Array<RunRoundClient>
+
 		round: number
 		epoch: number
-		numEpochs: number
-		roundsPerEpoch: number
-		clients: Array<RunRoundClient>
+		config: {
+			numEpochs: number
+			roundsPerEpoch: number
+			minClients: number
+
+			warmupTime: number
+			cooldownTime: number
+
+			maxRoundTrainTime: number
+			roundWitnessTime: number
+		}
 	}
 	metrics: {
 		summary: Metrics

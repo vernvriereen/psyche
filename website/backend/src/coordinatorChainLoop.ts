@@ -263,9 +263,6 @@ export async function startWatchCoordinatorChainLoop(
 				if (allRuns.length === 0) {
 					return
 				}
-				console.log(
-					`[coordinator] fetching state for ${allRuns.length} runs...`
-				)
 				const allRunsWithState: Array<
 					readonly [
 						string,
@@ -310,7 +307,6 @@ export async function startWatchCoordinatorChainLoop(
 						return [addr, runsAtThisAddr] as const
 					})
 				)
-				console.log(`[coordinator] done fetching state.`)
 				for (const [i, [pubkey, runs]] of allRunsWithState.entries()) {
 					console.log(
 						`[coordinator] applying update for run ${i + 1}/${allRunsWithState.length}`

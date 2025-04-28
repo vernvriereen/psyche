@@ -316,15 +316,25 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 				} satisfies RunRoundClient
 			})
 
+			const config = c.coordinator.config
 			state = {
 				phase: c.coordinator.run_state,
+				phaseStartTime: new Date(
+					+`${c.coordinator.run_state_start_unix_timestamp.toString()}000`
+				),
 				epoch: c.coordinator.progress.epoch,
 				round: currentRound.height,
-				roundsPerEpoch: c.coordinator.config.rounds_per_epoch,
-				numEpochs:
-					c.coordinator.config.total_steps /
-					c.coordinator.config.rounds_per_epoch,
+
 				clients: witnessStates,
+				config: {
+					minClients: config.init_min_clients,
+					roundsPerEpoch: config.rounds_per_epoch,
+					numEpochs: config.total_steps / config.rounds_per_epoch,
+					cooldownTime: Number(config.cooldown_time),
+					maxRoundTrainTime: Number(config.max_round_train_time),
+					roundWitnessTime: Number(config.round_witness_time),
+					warmupTime: Number(config.warmup_time),
+				},
 			}
 		}
 

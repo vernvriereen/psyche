@@ -187,13 +187,21 @@ export const makeFakeRunData: Record<string, () => RunData> = {
 			},
 			state: {
 				phase: randomPhase(),
+				phaseStartTime: new Date(Date.now() - Math.random() * 2_000),
 				round,
 				epoch,
-				roundsPerEpoch,
-				numEpochs,
 				clients: Array.from({ length: Math.ceil(Math.random() * 16) }, () =>
 					randomClient()
 				),
+				config: {
+					cooldownTime: 5_000,
+					maxRoundTrainTime: 5_000,
+					warmupTime: 3_000,
+					roundWitnessTime: 2_000,
+					minClients: 2,
+					roundsPerEpoch,
+					numEpochs,
+				},
 			},
 		}
 	},

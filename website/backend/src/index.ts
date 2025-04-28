@@ -174,7 +174,6 @@ async function main() {
 			res.send(stream)
 
 			function sendRunData(runData: RunData) {
-				console.log('sending run data ')
 				const data: ApiGetRun = {
 					run: runData,
 					error: coordinatorError,

@@ -122,7 +122,7 @@ function RouteComponent() {
 					</RuntimeLabel>
 					<div>
 						<ProgressBar
-							big
+							size="big"
 							ratio={Number(info.completedTokens) / Number(info.totalTokens)}
 							chunkHeight={36}
 							chunkWidth={24}
@@ -136,7 +136,7 @@ function RouteComponent() {
 						</ProgressDescription>
 					</div>
 
-					{run.state && (
+					{run.state && run.info.status.type !== "completed" && (
 						<RunStateActiveContainer active={run.info.status.type === 'active'}>
 							<RunStateIndicator {...run.state} />
 						</RunStateActiveContainer>

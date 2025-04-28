@@ -1,13 +1,15 @@
 import { styled } from '@linaria/react'
-import { forest, lime } from '../colors.js'
+import { forest, lime, slate } from '../colors.js'
 
 const Container = styled.div`
 	height: ${(props) => props.chunkHeight + 8}px;
-	padding: 2px;
+	padding: ${(props) => (props.size === 'small' ? 1 : 2)}px;
 	background-color: var(--color-bg);
-	border: 2px solid;
-	border-color: rgba(0, 0, 0, 0.5) rgba(255, 255, 255, 0.5)
-		rgba(255, 255, 255, 0.5) rgba(0, 0, 0, 0.5);
+	border: ${(props) => (props.size === 'small' ? 1 : 2)}px solid;
+	border-color: rgba(0, 0, 0, ${(props) => (props.disabled ? 0.2 : 0.5)})
+		rgba(255, 255, 255, ${(props) => (props.disabled ? 0.2 : 0.5)})
+		rgba(255, 255, 255, ${(props) => (props.disabled ? 0.2 : 0.5)})
+		rgba(0, 0, 0, ${(props) => (props.disabled ? 0.2 : 0.5)});
 
 	& > div {
 		height: 100%;
@@ -17,7 +19,12 @@ const Container = styled.div`
 		.theme-dark & {
 			background-image: linear-gradient(
 				to right,
-				${(props) => (props.big ? lime[300] : forest[500])}
+				${(props) =>
+						props.disabled
+							? slate[300]
+							: props.size === 'big'
+								? lime[300]
+								: forest[500]}
 					${(props) => props.chunkWidth}px,
 				transparent ${(props) => props.chunkSpacing ?? 4}px
 			);
@@ -25,7 +32,8 @@ const Container = styled.div`
 		.theme-light & {
 			background-image: linear-gradient(
 				to right,
-				${forest[500]} ${(props) => props.chunkWidth}px,
+				${(props) => (props.disabled ? slate[300] : forest[500])}
+					${(props) => props.chunkWidth}px,
 				transparent ${(props) => props.chunkSpacing ?? 4}px
 			);
 		}
@@ -36,20 +44,23 @@ export function ProgressBar({
 	chunkWidth,
 	chunkHeight,
 	chunkSpacing,
-	big = false,
+	size = 'normal',
+	disabled = false,
 }: {
 	ratio: number
 	chunkWidth: number
 	chunkHeight: number
 	chunkSpacing?: number
-	big?: boolean
+	size?: 'normal' | 'big' | 'small'
+	disabled?: boolean
 }) {
 	return (
 		<Container
 			chunkWidth={chunkWidth}
 			chunkHeight={chunkHeight}
-			big={big}
+			size={size}
 			chunkSpacing={chunkSpacing}
+			disabled={disabled}
 		>
 			<div style={{ width: `${ratio * 100}%` }}></div>
 		</Container>

@@ -84,10 +84,7 @@ export class ProgramEventListener {
 					this.nextTick.resolve()
 					let resolve!: () => void
 					const resolved = new Promise<void>((r) => {
-						resolve = () => {
-							console.log(`[${this.name}] [ws] saw tick!`)
-							r()
-						}
+						resolve = r
 					})
 					this.nextTick = {
 						resolve,

@@ -6,16 +6,23 @@ import { c } from '../utils.js'
 import { text } from '../fonts.js'
 import { ProgressBar } from './ProgressBar.js'
 import { css } from '@linaria/core'
+import { useState } from 'react'
+import { useInterval } from 'usehooks-ts'
 
 const Container = styled.div`
 	display: flex;
 	gap: 0.5em;
 	align-items: start;
+	justify-content: stretch;
+	* {
+		flex-grow: 1;
+		text-align: center;
+	}
 `
 
 const stateNames: Record<RunState, string> = {
 	Uninitialized: 'uninitialized',
-	WaitingForMembers: 'waiting for compute',
+	WaitingForMembers: 'waiting',
 	Warmup: 'warmup',
 	RoundTrain: 'train',
 	RoundWitness: 'witness',
@@ -38,14 +45,46 @@ padding-bottom: 1em
 border-bottom: 1px solid black;
 `
 
-export function RunStateIndicator({
-	phase,
-	round,
-	epoch,
-	roundsPerEpoch,
-	numEpochs,
-	clients,
-}: Exclude<RunData['state'], undefined>) {
+function calculateDoneRatio(
+	state: Exclude<RunData['state'], undefined>,
+	currentTime: Date
+): number {
+	const elapsedPhaseTime =
+	(+currentTime - (state.phaseStartTime ? +state.phaseStartTime : Date.now())) / 1000
+	if (state.phase === 'WaitingForMembers') {
+		return Math.min(state.clients.length / state.config.minClients, 1)
+	} else if (state.phase === 'Warmup') {
+		return Math.min(elapsedPhaseTime / state.config.warmupTime, 1)
+	} else if (state.phase === 'Cooldown') {
+		return Math.min(elapsedPhaseTime / state.config.cooldownTime, 1)
+	} else if (state.phase === 'Finished') {
+		return 1
+	} else if (state.phase === 'Paused' || state.phase === 'Uninitialized') {
+		return 0
+	} else if (state.phase === 'RoundTrain') {
+		const allWitnesses = state.clients.filter((c) => c.witness)
+		const doneWitnesses = allWitnesses.filter((c) => c.witness === 'done')
+		const witnessProgress = doneWitnesses.length / allWitnesses.length
+		const timeProgress = elapsedPhaseTime / state.config.maxRoundTrainTime
+		return Math.min(Math.max(witnessProgress, timeProgress), 1)
+	} else if (state.phase === 'RoundWitness') {
+		return Math.min(elapsedPhaseTime / state.config.roundWitnessTime, 1)
+	} else {
+		return 0
+	}
+}
+
+export function RunStateIndicator(state: Exclude<RunData['state'], undefined>) {
+	const {
+		phase,
+		round,
+		epoch,
+		config: { roundsPerEpoch, numEpochs },
+		clients,
+	} = state
+	const [now, setNow] = useState(new Date(Date.now()))
+	useInterval(() => setNow(new Date(Date.now())), 100)
+	const doneRatio = calculateDoneRatio(state, now)
 	return (
 		<OutlineBox
 			title={`epoch ${epoch}/${numEpochs}`}
@@ -56,23 +95,34 @@ export function RunStateIndicator({
 				<Section
 					active={phase === 'WaitingForMembers'}
 					name={stateNames['WaitingForMembers']}
+					doneRatio={doneRatio}
 				/>
-				<Section active={phase === 'Warmup'} name={stateNames['Warmup']} />
+				<Section
+					active={phase === 'Warmup'}
+					name={stateNames['Warmup']}
+					doneRatio={doneRatio}
+				/>
 				<Container className={bottomBorderHold}>
 					<Section
 						active={phase === 'RoundTrain'}
 						name={stateNames['RoundTrain']}
+						doneRatio={doneRatio}
 					/>
 					<Section
 						active={phase === 'RoundWitness'}
 						name={stateNames['RoundWitness']}
+						doneRatio={doneRatio}
 					/>
 				</Container>
 
-				<Section active={phase === 'Cooldown'} name={stateNames['Cooldown']} />
+				<Section
+					active={phase === 'Cooldown'}
+					name={stateNames['Cooldown']}
+					doneRatio={doneRatio}
+				/>
 			</Container>
 			<Container className={flexCol}>
-				<Legend>
+				{/* <Legend>
 					<div>
 						<Dot size="1em" />
 						trainer
@@ -85,7 +135,7 @@ export function RunStateIndicator({
 						<Dot size="1em" className="done" />
 						finished witness
 					</div>
-				</Legend>
+				</Legend> */}
 				<ClientsBox>
 					{clients.map((c) => (
 						<RoundParticipant key={c.pubkey} client={c} />
@@ -97,12 +147,16 @@ export function RunStateIndicator({
 					chunkHeight={8}
 					chunkWidth={4}
 					chunkSpacing={1}
-					ratio={round / roundsPerEpoch}
+					ratio={
+						(round +
+							(phase === 'RoundWitness' ? 0.5 : phase === 'Cooldown' ? 1 : 0)) /
+						roundsPerEpoch
+					}
 				/>
 				<ProgressDescription>
 					<span>round</span>
 					<span>
-						{round+1}/{roundsPerEpoch}
+						{round + 1}/{roundsPerEpoch}
 					</span>
 				</ProgressDescription>
 			</div>
@@ -122,7 +176,7 @@ const ProgressDescription = styled.div`
 const SectionBox = styled.div`
 	display: flex;
 	flex-direction: column;
-	align-items: center;
+	align-items: stretch;
 	padding: 0.5em;
 	border: 1px dashed;
 
@@ -159,8 +213,28 @@ const ClientsBox = styled.div`
 	flex-wrap: wrap;
 `
 
-function Section({ active, name }: { active: boolean; name: string }) {
-	return <SectionBox className={active ? 'active' : ''}>{name}</SectionBox>
+function Section({
+	active,
+	name,
+	doneRatio,
+}: {
+	active: boolean
+	name: string
+	doneRatio: number
+}) {
+	return (
+		<SectionBox className={active ? 'active' : ''}>
+			{name}
+			<ProgressBar
+				ratio={active ? doneRatio : 0}
+				chunkWidth={3}
+				chunkSpacing={1}
+				chunkHeight={1}
+				size="small"
+				disabled={!active}
+			/>
+		</SectionBox>
+	)
 }
 
 function RoundParticipant({ client }: { client: RunRoundClient }) {
@@ -189,11 +263,11 @@ const Dot = styled.span`
 		inset -1px -1px 0px rgba(0, 0, 0, 0.5),
 		inset 1px 1px 0px rgba(255, 255, 255, 0.5);
 `
-const Legend = styled.div`
-	display: flex;
-	gap: 1em;
-	div {
-		display: flex;
-		align-items: center;
-	}
-`
+// const Legend = styled.div`
+// 	display: flex;
+// 	gap: 1em;
+// 	div {
+// 		display: flex;
+// 		align-items: center;
+// 	}
+// `

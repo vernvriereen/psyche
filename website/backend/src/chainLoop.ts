@@ -83,7 +83,7 @@ export function startWatchChainLoop<D>(): <
 			for (const data of catchupTxs) {
 				const tx = data[1]
 				const index = catchupTxs.indexOf(data)
-				if (index % 1000 === 0) {
+				if (index % 1000 === 1) {
 					console.log(
 						`[${name}] processing changes from tx ${index} / ${catchupTxs.length} (${((index / catchupTxs.length) * 100).toFixed(2)}%)`
 					)

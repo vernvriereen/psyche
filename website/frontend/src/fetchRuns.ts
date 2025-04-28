@@ -55,6 +55,17 @@ export async function fetchContributions(): Promise<ApiGetContributionInfo> {
 		: psycheJsonFetch('contributionInfo')
 }
 
+interface DecodeState {
+	buffer: string
+	decoder: TextDecoder
+}
+
+function makeDecodeState(): DecodeState {
+	return {
+		buffer: '',
+		decoder: new TextDecoder('utf-8'),
+	}
+}
 export async function fetchRunStreaming(runId: string): Promise<{
 	initialData: ApiGetRun
 	stream: ReadableStream<ApiGetRun>
@@ -77,6 +88,121 @@ export async function fetchRunStreaming(runId: string): Promise<{
 		}
 	}
 
+	let { reader, decodeState } = await openRunStream(runId)
+
+	const initialData = await getOneRunFromStream(decodeState, reader)
+	if (!initialData) {
+		return {
+			initialData: {
+				isOnlyRun: false,
+				run: null,
+				error: new Error(
+					'Failed to get initial data from server, connection closed early.'
+				),
+			},
+			stream: new ReadableStream({
+				async start(controller) {
+					controller.close()
+				},
+			}),
+		}
+	}
+	decodeState = initialData.decodeState
+
+	// stream the rest of the results forever!
+	const stream = new ReadableStream<ApiGetRun>({
+		async start(controller) {
+			const MAX_RECONNECT_ATTEMPTS = 5
+			let reconnectAttempts = 0
+			let reconnectDelay = 1000
+
+			async function processStream() {
+				try {
+					while (true) {
+						const nextRun = await getOneRunFromStream(decodeState, reader)
+						if (nextRun) {
+							decodeState = nextRun.decodeState
+							controller.enqueue(nextRun.parsedRun)
+							continue
+						}
+
+						// we failed to fetch a run because the stream ended - let's reconnect
+						if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+							console.log(
+								`Stream ended, attempting to reconnect (${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})...`
+							)
+							reconnectAttempts++
+							await new Promise((resolve) =>
+								setTimeout(resolve, reconnectDelay)
+							)
+							reconnectDelay = Math.min(reconnectDelay * 2, 10000)
+
+							try {
+								const newStream = await openRunStream(runId)
+								reader = newStream.reader
+								decodeState = newStream.decodeState
+
+								// if we opened a new stream successfully, we're good to go. reset our reconnect attempts
+								reconnectAttempts = 0
+								reconnectDelay = 1000
+								continue // and start reading from the new connection
+							} catch (reconnectError) {
+								console.error('Failed to reconnect:', reconnectError)
+								throw reconnectError
+							}
+						} else {
+							console.log(
+								'Maximum reconnection attempts reached, closing stream.'
+							)
+							break
+						}
+					}
+				} catch (error) {
+					console.error('Stream processing error:', error)
+					controller.error(error)
+				} finally {
+					controller.close()
+				}
+			}
+
+			// Start processing the stream
+			await processStream()
+		},
+	})
+
+	return { initialData: initialData.parsedRun, stream }
+}
+
+async function getOneRunFromStream(
+	decodeState: DecodeState,
+	reader: ReadableStreamDefaultReader<Uint8Array<ArrayBufferLike>>
+) {
+	let parsedRun: ApiGetRun | null = null
+	while (!parsedRun) {
+		const { value, done } = await reader.read()
+
+		if (done) {
+			return null
+		}
+
+		decodeState.buffer += decodeState.decoder.decode(value, { stream: true })
+		const lines = decodeState.buffer.split('\n')
+
+		if (lines.length > 1) {
+			// we have at least one complete line, so one full JSON object
+			const firstLine = lines[0].trim()
+			if (firstLine) {
+				parsedRun = JSON.parse(firstLine, psycheJsonReviver) as ApiGetRun
+				decodeState.buffer = lines.slice(1).join('\n')
+			} else {
+				decodeState.buffer = lines.slice(1).join('\n')
+			}
+		}
+	}
+	return { parsedRun, decodeState }
+}
+
+async function openRunStream(runId: string) {
 	const response = await fetch(`${BACKEND_URL}/run/${runId}`, {
 		headers: {
 			Accept: 'application/x-ndjson',
@@ -92,89 +218,5 @@ export async function fetchRunStreaming(runId: string): Promise<{
 		)
 	}
 
-	// pull the run from the first chunk right away
-	const reader = response.body.getReader()
-	const decoder = new TextDecoder('utf-8')
-
-	let buffer = ''
-
-	// read until the first complete JSON object for initialData
-	let initialData: ApiGetRun | null = null
-	while (!initialData) {
-		const { value, done } = await reader.read()
-
-		if (done) {
-			return {
-				initialData: {
-					isOnlyRun: false,
-					run: null,
-					error: new Error(
-						'Failed to get initial data from server, connection closed early.'
-					),
-				},
-				stream: new ReadableStream({
-					async start(controller) {
-						controller.close()
-					},
-				}),
-			}
-		}
-
-		buffer += decoder.decode(value, { stream: true })
-		const lines = buffer.split('\n')
-
-		if (lines.length > 1) {
-			// We have at least one complete line
-			const firstLine = lines[0].trim()
-			if (firstLine) {
-				initialData = JSON.parse(firstLine, psycheJsonReviver) as ApiGetRun
-				// Keep remaining partial data in buffer
-				buffer = lines.slice(1).join('\n')
-			} else {
-				// Empty line, discard it
-				buffer = lines.slice(1).join('\n')
-			}
-		}
-	}
-
-	// Create a stream for subsequent updates
-	const stream = new ReadableStream<ApiGetRun>({
-		async start(controller) {
-			try {
-				while (true) {
-					const { value, done } = await reader.read()
-					if (done) break
-
-					buffer += decoder.decode(value, { stream: true })
-					const lines = buffer.split('\n')
-
-					// Process all complete lines except the last one (which might be incomplete)
-					for (let i = 0; i < lines.length - 1; i++) {
-						const line = lines[i].trim()
-						if (line) {
-							const data = JSON.parse(line, psycheJsonReviver) as ApiGetRun
-							controller.enqueue(data)
-						}
-					}
-
-					// Keep the last (potentially incomplete) line in the buffer
-					buffer = lines[lines.length - 1]
-				}
-
-				// Process any remaining data in the buffer
-				if (buffer.trim()) {
-					const data = JSON.parse(buffer.trim(), psycheJsonReviver) as ApiGetRun
-					controller.enqueue(data)
-				}
-			} catch (error) {
-				controller.error(error)
-			} finally {
-				controller.close()
-				// Flush the final decoder state
-				decoder.decode(new Uint8Array())
-			}
-		},
-	})
-
-	return { initialData, stream }
+	return { reader: response.body.getReader(), decodeState: makeDecodeState() }
 }
