@@ -260,6 +260,8 @@ function makeFakeRunDataSeeded(seed = 1, step = 0) {
 					accuracy: 0.83,
 					precision: 0.79,
 					recall: 0.85,
+					bananas: 0.85,
+					sphereEval: 0.85,
 				},
 			},
 			history: {

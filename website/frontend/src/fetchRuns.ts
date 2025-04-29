@@ -215,7 +215,11 @@ async function openRunStream(runId: string) {
 	if (!response.ok || !response.body) {
 		throw new Error('Failed to fetch run data')
 	}
-	if (response.headers.get('Content-Type') !== 'application/x-ndjson') {
+	if (
+		!(response.headers.get('Content-Type') ?? 'missing').includes(
+			'application/x-ndjson'
+		)
+	) {
 		throw new Error(
 			`Invalid content type on response: expected "application/x-ndjson", got "${response.headers.get('Content-Type')}"`
 		)

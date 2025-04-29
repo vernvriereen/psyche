@@ -130,7 +130,7 @@ const fontConfig = {
 		weights: ['regular', 'semibold', 'bold'] as const,
 	},
 	body: {
-		sizes: ['sm', 'base', 'lg', 'xl'] as const,
+		sizes: ['xs', 'sm', 'base', 'lg', 'xl'] as const,
 		weights: ['regular', 'medium', 'semibold'] as const,
 	},
 	aux: {

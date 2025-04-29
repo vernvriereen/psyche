@@ -8,14 +8,13 @@ import { ProgressBar } from './ProgressBar.js'
 import { css } from '@linaria/core'
 import { useState } from 'react'
 import { useInterval } from 'usehooks-ts'
-import { Address } from './Address.js'
 
 const Container = styled.div`
 	display: flex;
 	gap: 0.5em;
 	align-items: start;
 	justify-content: stretch;
-	* {
+	& > * {
 		flex-grow: 1;
 		text-align: center;
 	}
@@ -197,12 +196,12 @@ const SectionBox = styled.div`
 `
 
 const ClientBox = styled.div`
-	display: flex;
-	flex-direction: column;
-	align-items: center;
 	margin: 0.5em;
 	padding: 0.5em;
-	max-width: 12ch;
+	max-width: 13ch;
+	aspect-ratio: 1/1;
+
+	position: relative;
 
 	justify-content: space-between;
 
@@ -214,10 +213,58 @@ const ClientBox = styled.div`
 	.theme-dark & a {
 		color: ${forest[300]};
 	}
+
+	.invisible {
+		visibility: hidden;
+		margin: 1ch;
+	}
+	.bottom {
+		position: absolute;
+		bottom: 0;
+		right: 0;
+		width: 100%;
+	}
+
+	.right {
+		position: absolute;
+		right: 0;
+		bottom: 0;
+		height: 100%;
+		writing-mode: vertical-rl;
+		text-orientation: mixed;
+		transform: rotate(180deg);
+	}
+
+	.top {
+		position: absolute;
+		top: 0;
+		right: 0;
+		width: 100%;
+		transform: rotate(180deg);
+	}
+
+	.left {
+		position: absolute;
+		left: 0;
+		top: 0;
+		height: 100%;
+		writing-mode: vertical-lr;
+		text-orientation: mixed;
+	}
+
+	.link {
+		position: absolute;
+		top: 50%;
+		right: 50%;
+		width: 1em;
+		height: 1em;
+	}
 `
 const ClientsBox = styled.div`
 	display: flex;
 	flex-wrap: wrap;
+	justify-content: space-between;
+	width: 100%;
 `
 
 function Section({
@@ -245,20 +292,48 @@ function Section({
 }
 
 function RoundParticipant({ client }: { client: RunRoundClient }) {
+	const expectedPubkeyLength = 44
+	const segmentLength = Math.floor(expectedPubkeyLength / 4)
+	const horSegLength = segmentLength + 2
+	const vertSegLength = segmentLength - 2
 	return (
-		<ClientBox className={text['aux/xs/regular']}>
-			<Dot className={client.witness} />
-			<Address address={client.pubkey} copy={false} />
-		</ClientBox>
+		<a
+			href={`https://solscan.io/account/${client.pubkey}`}
+			target="_blank"
+			className="link"
+		>
+			<ClientBox className={text['body/xs/regular']}>
+				<Dot className={client.witness} />
+				<span className="invisible">
+					{client.pubkey.slice(0, horSegLength)}
+				</span>
+				<span className="bottom">{client.pubkey.slice(0, horSegLength)}</span>
+				<span className="right">
+					{client.pubkey.slice(horSegLength, horSegLength + vertSegLength)}
+				</span>
+				<span className="top">
+					{client.pubkey.slice(
+						horSegLength + vertSegLength,
+						horSegLength * 2 + vertSegLength
+					)}
+				</span>
+				<span className="left">
+					{client.pubkey.slice(horSegLength * 2 + vertSegLength)}
+				</span>
+			</ClientBox>
+		</a>
 	)
 }
 
 const Dot = styled.span`
-	margin: 0.5em;
-	height: ${(props) => props.size ?? '2em'};
-	width: ${(props) => props.size ?? '2em'};
+	height: 3em;
+	width: 3em;
 	border-radius: 100%;
 	display: inline-block;
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
 	&.waiting {
 		background-color: ${gold[400]};
 	}
@@ -269,11 +344,3 @@ const Dot = styled.span`
 		inset -1px -1px 0px rgba(0, 0, 0, 0.5),
 		inset 1px 1px 0px rgba(255, 255, 255, 0.5);
 `
-// const Legend = styled.div`
-// 	display: flex;
-// 	gap: 1em;
-// 	div {
-// 		display: flex;
-// 		align-items: center;
-// 	}
-// `
