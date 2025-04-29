@@ -7,7 +7,10 @@ The state machine phases a `Client` goes through during a training `Round` or `E
 An alternative GPU compute platform to NVIDIA's CUDA. Support for ROCm is planned for Psyche clients in the future.
 
 **Authorizer**
-TODO
+A Solana program that issues authorizations to specific users.
+
+**Authorization**
+A specific role (scope) assigned to a single user (grantee) by a specific authority (grantor). The grantee can then delegate authorization to other keys (the delegates) that can act on its behalf. In practice, this is useful for managing permissions to nodes in data center clusters easily.
 
 **Batch**
 A subset of the training data processed by clients in a single step within a `Round`. Identified by a `BatchId`.
