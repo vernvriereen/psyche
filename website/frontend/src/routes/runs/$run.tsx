@@ -79,6 +79,14 @@ function RouteComponent() {
 		)
 	}
 
+	const goodEvals = useMemo(() => {
+		return Object.fromEntries(
+			Object.entries(run.metrics.summary.evals).filter(
+				(arr): arr is [string, number] => arr[1] !== null
+			)
+		)
+	}, [run.metrics.summary.evals])
+
 	return (
 		<RunContainer>
 			{!isOnlyRun && (
@@ -143,36 +151,42 @@ function RouteComponent() {
 					)}
 
 					<MaybeRadialGraphContainer>
-						{Object.entries(run.metrics.summary.evals).length >= 3 && (
+						{Object.entries(goodEvals).length >= 3 && (
 							<RadialContainer>
 								<RadialGraph
-									data={run.metrics.summary.evals}
+									data={goodEvals}
 									formatValue={(v) => `${+(v * 100).toFixed(2)}%`}
 								/>
 							</RadialContainer>
 						)}
 						<StatBoxes>
 							{/* // TODO: calculate confidence and perplexity */}
-							<MiniCard
-								text="loss"
-								value={`${run.metrics.summary.loss.toFixed(2)}`}
-							/>
-							<MiniCard
-								text="bandwidth"
-								value={`${formatBytes(
-									run.metrics.summary.bandwidth,
-									2,
-									'bits'
-								)}ps`}
-							/>
-							<MiniCard
-								text="training rate"
-								value={`${formatNumber(
-									run.metrics.summary.tokensPerSecond,
-									1,
-									true
-								)}tok/s`}
-							/>
+							{run.metrics.summary.loss !== null && (
+								<MiniCard
+									text="loss"
+									value={`${run.metrics.summary.loss.toFixed(2)}`}
+								/>
+							)}
+							{run.metrics.summary.bandwidth !== null && (
+								<MiniCard
+									text="bandwidth"
+									value={`${formatBytes(
+										run.metrics.summary.bandwidth,
+										2,
+										'bits'
+									)}ps`}
+								/>
+							)}
+							{run.metrics.summary.tokensPerSecond !== null && (
+								<MiniCard
+									text="training rate"
+									value={`${formatNumber(
+										run.metrics.summary.tokensPerSecond,
+										1,
+										true
+									)}tok/s`}
+								/>
+							)}
 						</StatBoxes>
 					</MaybeRadialGraphContainer>
 					<HistoryContainer>

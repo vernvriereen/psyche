@@ -79,6 +79,10 @@ export type OverTime<T extends object> = {
 		: Array<{ step: number; value: T[K] }>
 }
 
+export type NullableRecursive<T extends object> = {
+	[K in keyof T]: T[K] extends object ? NullableRecursive<T[K]> : T[K] | null
+}
+
 export interface RunRoundClient {
 	pubkey: string
 	witness: false | 'waiting' | 'done'
@@ -106,7 +110,7 @@ export interface RunData {
 		}
 	}
 	metrics: {
-		summary: Metrics
+		summary: NullableRecursive<Metrics>
 		history: OverTime<Metrics>
 	}
 }
