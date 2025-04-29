@@ -1,5 +1,6 @@
 import { styled } from '@linaria/react'
 import { text } from '../fonts.js'
+import { forest } from '../colors.js'
 
 interface RadioSelectBarProps<T extends string> {
 	selected?: T
@@ -10,6 +11,12 @@ interface RadioSelectBarProps<T extends string> {
 const RadioSelectLabel = styled.label`
 	outline: 1px solid var(--color-fg);
 	border: 1px solid var(--color-fg);
+
+	.theme-dark & {
+		border-color: ${forest[300]};
+		outline-color: ${forest[300]};
+		color: ${forest[300]};
+	}
 	padding: 2px 4px;
 
 	text-transform: uppercase;
@@ -22,6 +29,11 @@ const RadioSelectLabel = styled.label`
 	&:has(input:checked) {
 		background: var(--color-fg);
 		color: var(--color-bg);
+
+		.theme-dark & {
+			background: ${forest[300]};
+			outline-color: ${forest[300]};
+		}
 	}
 `
 

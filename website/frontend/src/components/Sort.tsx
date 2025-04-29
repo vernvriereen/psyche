@@ -25,7 +25,7 @@ const containerStyle = css`
 	}
 
 	.theme-dark & {
-		border-color: ${slate[0]};
+		border-color: ${forest[300]};
 	}
 
 	& > option {
@@ -49,7 +49,7 @@ const indicatorsStyle = css`
 		background: ${forest[700]};
 	}
 	.theme-dark & {
-		background: ${slate[0]};
+		background: ${forest[300]};
 	}
 `
 
@@ -70,7 +70,7 @@ const singleValueStyle = css`
 		color: ${forest[700]} !important;
 	}
 	.theme-dark & {
-		color: ${slate[0]} !important;
+		color: ${forest[300]} !important;
 	}
 `
 
