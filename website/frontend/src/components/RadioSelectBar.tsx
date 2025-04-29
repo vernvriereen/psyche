@@ -9,12 +9,17 @@ interface RadioSelectBarProps<T extends string> {
 }
 
 const RadioSelectLabel = styled.label`
-	outline: 1px solid var(--color-fg);
-	border: 1px solid var(--color-fg);
-
+	border: 2px solid var(--color-fg);
+	border-left-width: 1px;
+	border-right-width: 1px;
+	&:last-of-type {
+		border-right-width: 2px;
+	}
+	&:first-of-type {
+		border-left-width: 2px;
+	}
 	.theme-dark & {
 		border-color: ${forest[300]};
-		outline-color: ${forest[300]};
 		color: ${forest[300]};
 	}
 	padding: 2px 4px;
@@ -32,7 +37,6 @@ const RadioSelectLabel = styled.label`
 
 		.theme-dark & {
 			background: ${forest[300]};
-			outline-color: ${forest[300]};
 		}
 	}
 `
