@@ -431,6 +431,11 @@ function calculateTokens(
 	warmupTokens: bigint
 ) {
 	const avgBatchSizeDuringWarmup = (batchSizeStart + batchSizeEnd) / 2n
+
+	// avoid div by 0
+	if (tokensPerSequence === 0n || avgBatchSizeDuringWarmup === 0n) {
+		return 0n
+	}
 	const stepsForWarmup =
 		warmupTokens / (tokensPerSequence * avgBatchSizeDuringWarmup)
 
