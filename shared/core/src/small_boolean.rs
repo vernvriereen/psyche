@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
@@ -5,7 +7,6 @@ use ts_rs::TS;
 
 #[repr(transparent)]
 #[derive(
-    Debug,
     Copy,
     Clone,
     Eq,
@@ -21,6 +22,16 @@ use ts_rs::TS;
     TS,
 )]
 pub struct SmallBoolean(pub u8);
+
+impl Debug for SmallBoolean {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_true() {
+            write!(f, "SmallBoolean(true)")
+        } else {
+            write!(f, "SmallBoolean(false)")
+        }
+    }
+}
 
 impl SmallBoolean {
     pub const TRUE: SmallBoolean = SmallBoolean(1);

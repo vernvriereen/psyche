@@ -25,6 +25,7 @@ use crate::ClientId;
 use crate::ProgramError;
 
 #[derive(
+    Debug,
     Clone,
     Copy,
     Zeroable,
@@ -46,6 +47,7 @@ pub struct RunMetadata {
 }
 
 #[derive(
+    Debug,
     Clone,
     Copy,
     Zeroable,

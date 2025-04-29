@@ -31,6 +31,8 @@ use tokio::{
 };
 use tracing::{error, info, trace, warn};
 
+const FORCE_RECONNECTION_TIME: u64 = 30;
+
 pub struct SolanaBackend {
     program_authorizer: Program<Arc<Keypair>>,
     program_coordinator: Arc<Program<Arc<Keypair>>>,
@@ -59,20 +61,22 @@ async fn subscribe_to_account(
     commitment: CommitmentConfig,
     coordinator_account: &Pubkey,
     tx: mpsc::UnboundedSender<RpcResponse<UiAccount>>,
+    id: u64,
 ) {
+    let mut first_connection = true;
     let mut retries: u64 = 0;
     loop {
+        // wait a time before we try a reconnection
+        let sleep_time = min(600, retries.saturating_mul(5));
+        tokio::time::sleep(Duration::from_secs(sleep_time)).await;
+        retries += 1;
         let Ok(sub_client) = PubsubClient::new(&url).await else {
             warn!(
                 integration_test_log_marker = %IntegrationTestLogMarker::SolanaSubscription,
                 url = url,
+                subscription_number = id,
                 "Solana subscription error, could not connect to url: {url}",
             );
-
-            // wait a time before we try a reconnection
-            let sleep_time = min(600, retries.saturating_mul(5));
-            tokio::time::sleep(Duration::from_secs(sleep_time)).await;
-            retries += 1;
             continue;
         };
 
@@ -89,30 +93,63 @@ async fn subscribe_to_account(
         {
             Ok((notifications, _)) => notifications,
             Err(err) => {
-                error!("{}", err);
-                return;
+                error!(
+                    url = url,
+                    subscription_number = id,
+                    error = err.to_string(),
+                    "Solana account subscribe error",
+                );
+                continue;
             }
         };
 
         info!(
             integration_test_log_marker = %IntegrationTestLogMarker::SolanaSubscription,
             url = url,
+            subscription_number = id,
             "Correctly subscribe to Solana url: {url}",
         );
-        while let Some(update) = notifications.next().await {
-            if tx.send(update).is_err() {
-                // Channel closed, receiver dropped
-                break;
+
+        // we will force a reconnection to the Solana websocket every 30 minutes
+        let refresh_time: u64 = if first_connection {
+            FORCE_RECONNECTION_TIME + (((id - 1) * 10) % FORCE_RECONNECTION_TIME)
+        } else {
+            FORCE_RECONNECTION_TIME
+        };
+        first_connection = false;
+        let refresh_timer = tokio::time::sleep(Duration::from_secs(refresh_time * 60));
+        tokio::pin!(refresh_timer);
+
+        loop {
+            tokio::select! {
+                _ = &mut refresh_timer => {
+                    info!(
+                        integration_test_log_marker = %IntegrationTestLogMarker::SolanaSubscription,
+                        url = url,
+                        subscription_number = id,
+                        "Force Solana subscription reconnection");
+                    retries = 0;
+                    break
+                }
+                update = notifications.next() => {
+                    match update {
+                        Some(data) => {
+                                if tx.send(data).is_err() {
+                                    break;
+                                }
+                        }
+                        None => {
+                            warn!(
+                                integration_test_log_marker = %IntegrationTestLogMarker::SolanaSubscription,
+                                url = url,
+                                subscription_number = id,
+                                "Solana subscription error, websocket closed");
+                            break
+                        }
+                    }
+                }
             }
         }
-        warn!(
-            integration_test_log_marker = %IntegrationTestLogMarker::SolanaSubscription,
-            url = url,
-            "Solana subscription error, could not connect to url: {url}",
-        );
-        let sleep_time = min(600, retries.saturating_mul(5));
-        tokio::time::sleep(Duration::from_secs(sleep_time)).await;
-        retries += 1;
     }
 }
 
@@ -145,24 +182,39 @@ impl SolanaBackend {
         coordinator_account: Pubkey,
     ) -> Result<SolanaBackendRunner> {
         let (tx_update, rx_update) = broadcast::channel(32);
-        let (tx_subscribe, mut rx_subscribe) = mpsc::unbounded_channel();
-
         let commitment = self.program_coordinator.rpc().commitment();
 
+        let (tx_subscribe, mut rx_subscribe) = mpsc::unbounded_channel();
+
         let tx_subscribe_ = tx_subscribe.clone();
-        let url = self.cluster.ws_url().to_string();
+
+        let mut subscription_number = 1;
+        let url = self.cluster.clone().ws_url().to_string();
         tokio::spawn(async move {
-            subscribe_to_account(url, commitment, &coordinator_account, tx_subscribe_).await
+            subscribe_to_account(
+                url,
+                commitment,
+                &coordinator_account,
+                tx_subscribe_,
+                subscription_number,
+            )
+            .await
         });
 
-        for cluster in &self.backup_clusters {
+        for cluster in self.backup_clusters.clone() {
+            subscription_number += 1;
             let tx_subscribe_ = tx_subscribe.clone();
-            let url = cluster.ws_url().to_string();
             tokio::spawn(async move {
-                subscribe_to_account(url, commitment, &coordinator_account, tx_subscribe_).await
+                subscribe_to_account(
+                    cluster.ws_url().to_string().clone(),
+                    commitment,
+                    &coordinator_account,
+                    tx_subscribe_,
+                    subscription_number,
+                )
+                .await
             });
         }
-
         tokio::spawn(async move {
             let mut last_nonce = 0;
             while let Some(update) = rx_subscribe.recv().await {

@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use anchor_lang::prelude::*;
 use bytemuck::Pod;
 use bytemuck::Zeroable;
@@ -7,7 +9,6 @@ use serde::Serialize;
 use ts_rs::TS;
 
 #[derive(
-    Debug,
     Clone,
     Copy,
     Default,
@@ -30,9 +31,19 @@ pub struct Client {
     pub active: u64,
 }
 
+impl Debug for Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Client")
+            .field("id", &self.id)
+            .field("earned", &self.earned)
+            .field("slashed", &self.slashed)
+            .field("active", &self.active)
+            .finish()
+    }
+}
+
 #[repr(C)]
 #[derive(
-    Debug,
     InitSpace,
     Copy,
     Clone,
@@ -49,6 +60,15 @@ pub struct ClientId {
     #[ts(type = "Pubkey")]
     pub signer: Pubkey,
     pub p2p_identity: [u8; 32],
+}
+
+impl Debug for ClientId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClientId")
+            .field("signer", &self.signer)
+            .field("p2p_identity", &Pubkey::new_from_array(self.p2p_identity))
+            .finish()
+    }
 }
 
 impl AsRef<[u8]> for ClientId {

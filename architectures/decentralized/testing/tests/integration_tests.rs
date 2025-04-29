@@ -14,7 +14,7 @@ use psyche_decentralized_testing::{
     },
     docker_watcher::{DockerWatcher, Response},
     utils::SolanaTestClient,
-    CLIENT_CONTAINER_PREFIX,
+    CLIENT_CONTAINER_PREFIX, NGINX_PROXY_PREFIX,
 };
 use rstest::*;
 use serial_test::serial;
@@ -685,18 +685,19 @@ async fn test_solana_subscriptions() {
 
                         // shutdown subscription 1
                         if step == 5 && new_state == RunState::RoundWitness.to_string(){
-                            println!("stop container nginx_proxy");
+                            println!("stop container {NGINX_PROXY_PREFIX}-1");
+
                             docker
-                                .stop_container("nginx_proxy", None)
+                                .stop_container(&format!("{NGINX_PROXY_PREFIX}-1"), None)
                                 .await
                                 .unwrap()
 
                         }
                         // resume subscription 1
                         if step == 15 && new_state == RunState::RoundWitness.to_string(){
-                            println!("unpause container nginx_proxy");
+                            println!("resume container {NGINX_PROXY_PREFIX}-1");
                             docker
-                                .start_container("nginx_proxy", None::<StartContainerOptions<String>>)
+                                .start_container(&format!("{NGINX_PROXY_PREFIX}-1"), None::<StartContainerOptions<String>>)
                                 .await
                                 .unwrap();
 
@@ -704,19 +705,19 @@ async fn test_solana_subscriptions() {
 
                         // shutdown subscription 2
                         if step == 25 && new_state == RunState::RoundWitness.to_string(){
-                            println!("stop container nginx_proxy_2");
+                            println!("stop container {NGINX_PROXY_PREFIX}-2");
                             docker
-                                .stop_container("nginx_proxy_2", None)
+                                .stop_container(&format!("{NGINX_PROXY_PREFIX}-2"), None)
                                 .await
                                 .unwrap()
 
                         }
                         // resume subscription 2
                         if step == 45 && new_state == RunState::RoundWitness.to_string(){
-                            println!("unpause container nginx_proxy_2");
+                            println!("resume container {NGINX_PROXY_PREFIX}-2");
 
                             docker
-                                .start_container("nginx_proxy_2", None::<StartContainerOptions<String>>)
+                                .start_container(&format!("{NGINX_PROXY_PREFIX}-2"), None::<StartContainerOptions<String>>)
                                 .await
                                 .unwrap();
                         }
@@ -737,38 +738,43 @@ async fn test_solana_subscriptions() {
 
         }
     }
+    // skip the first 3 events since init subscriptions can vary the order
+    subscription_events = subscription_events[3..].into();
     subscription_events.dedup();
     let expected_subscription_events = vec![
         // init subscriptions
         (
-            r#""ws://nginx_proxy_2:8902/ws/""#.into(),
+            format!(r#""ws://{NGINX_PROXY_PREFIX}-2:8902/ws/""#).into(),
             "Subscription Up".into(),
         ),
         (
-            r#""ws://nginx_proxy:8901/ws/""#.into(),
+            format!(r#""ws://{NGINX_PROXY_PREFIX}-1:8901/ws/""#).into(),
             "Subscription Up".into(),
         ),
-        // subscription 1 shutdown and reconnection
         (
-            r#""ws://nginx_proxy:8901/ws/""#.into(),
+            format!(r#""ws://{NGINX_PROXY_PREFIX}-1:8901/ws/""#).into(),
+            "Subscription Up".into(),
+        ),
+        // proxy 1 shutdown and reconnection
+        (
+            format!(r#""ws://{NGINX_PROXY_PREFIX}-1:8901/ws/""#).into(),
             "Subscription Down".into(),
         ),
         (
-            r#""ws://nginx_proxy:8901/ws/""#.into(),
+            format!(r#""ws://{NGINX_PROXY_PREFIX}-1:8901/ws/""#).into(),
             "Subscription Up".into(),
         ),
-        // subscription 2 shutdown and reconnection
+        // proxy 2 shutdown and reconnection
         (
-            r#""ws://nginx_proxy_2:8902/ws/""#.into(),
+            format!(r#""ws://{NGINX_PROXY_PREFIX}-2:8902/ws/""#).into(),
             "Subscription Down".into(),
         ),
         (
-            r#""ws://nginx_proxy_2:8902/ws/""#.into(),
+            format!(r#""ws://{NGINX_PROXY_PREFIX}-2:8902/ws/""#).into(),
             "Subscription Up".into(),
         ),
     ];
 
-    // skip the first two events since init subscriptions can vary the order
-    assert_eq!(subscription_events[2..], expected_subscription_events[2..]);
+    assert_eq!(subscription_events, expected_subscription_events[3..]);
     println!("subscription_events: {subscription_events:?}");
 }

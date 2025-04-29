@@ -201,12 +201,14 @@ enum Commands {
         #[clap(flatten)]
         args: TrainArgs,
 
-        #[clap(long, env)]
-        rpc_2: Option<String>,
-
-        #[clap(long, env)]
-        ws_rpc_2: Option<String>,
-
+        #[clap(long, env, default_value_t = String::from(""))]
+        rpc_2: String,
+        #[clap(long, env, default_value_t = String::from(""))]
+        ws_rpc_2: String,
+        #[clap(long, env, default_value_t = String::from(""))]
+        rpc_3: String,
+        #[clap(long, env, default_value_t = String::from(""))]
+        ws_rpc_3: String,
         #[clap(long, env)]
         authorizer: Option<Pubkey>,
     },
@@ -560,6 +562,8 @@ async fn async_main() -> Result<()> {
             args,
             rpc_2,
             ws_rpc_2,
+            rpc_3,
+            ws_rpc_3,
             authorizer,
         } => {
             psyche_client::prepare_environment();
@@ -601,12 +605,20 @@ async fn async_main() -> Result<()> {
                 (args.logs == LogOutput::TUI).then(|| Tabs::new(Default::default(), &TAB_NAMES)),
             )?;
 
-            let backup_clusters = match (rpc_2, ws_rpc_2) {
-                (Some(rpc_2), None) => vec![Cluster::Custom(rpc_2, cluster.ws_rpc.clone())],
-                (None, Some(ws_rpc_2)) => vec![Cluster::Custom(cluster.rpc.clone(), ws_rpc_2)],
-                (Some(rpc_2), Some(ws_rpc_2)) => vec![Cluster::Custom(rpc_2, ws_rpc_2)],
-                (None, None) => vec![],
-            };
+            let mut backup_clusters = Vec::new();
+            for (rpc, ws) in [(rpc_2, ws_rpc_2), (rpc_3, ws_rpc_3)] {
+                let rpc = if rpc.is_empty() {
+                    cluster.rpc.clone()
+                } else {
+                    rpc
+                };
+                let ws = if ws.is_empty() {
+                    cluster.ws_rpc.clone()
+                } else {
+                    ws
+                };
+                backup_clusters.push(Cluster::Custom(rpc, ws))
+            }
 
             let (mut app, allowlist, p2p, state_options) = AppBuilder::new(AppParams {
                 cancel,

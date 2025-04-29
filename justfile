@@ -131,7 +131,7 @@ setup_test_infra num_clients="1":
     cd docker/test && docker compose build
     cd docker/test && NUM_REPLICAS={{num_clients}} docker compose up -d --force-recreate
 
-setup_test_infra_subscription num_clients="1":
+setup_test_infra_with_proxies_validator num_clients="1":
     cd architectures/decentralized/solana-coordinator && anchor keys sync && anchor build --no-idl
     cd architectures/decentralized/solana-authorizer && anchor keys sync && anchor build --no-idl
     cd docker/test && docker compose build
@@ -144,7 +144,7 @@ setup_test_infra_three_clients:
     cd docker/test/three_clients_test && docker compose -f docker-compose.yml up -d --force-recreate
 
 stop_test_infra:
-    cd docker/test && docker compose stop
+    cd docker/test &&docker compose -f docker-compose.yml -f subscriptions_test/docker-compose.yml down
 
 # Setup clients assigning one available GPU to each of them.
 # There's no way to do this using the replicas from docker-compose file, so we have to do it manually.

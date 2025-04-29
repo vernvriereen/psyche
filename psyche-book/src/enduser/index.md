@@ -1,9 +1,13 @@
 # End-user configuration
 
-## Joining an existing run
-- Read the [client FAQ](./client-faq.md)
+## Joining a run
 
-## Creating your own run
+Learn how to use your existing compute to [join a run](./join-run.md)
+
+You may also want to read the [client FAQ](./client-faq.md)
+
+## Creating a run
+
 To train your own models on Psyche, you should familiarize yourself with:
 
 - The process for [Creating a run](./create-run.md)

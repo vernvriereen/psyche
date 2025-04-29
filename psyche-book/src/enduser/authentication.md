@@ -1,6 +1,6 @@
 # Authentication and Keys
 
-When clients participate to a decentralized training run, a set of solana Keypairs is used to authenticate each type of user.
+When clients participate in a decentralized training run, a set of Solana Keypairs is used to authenticate each type of user.
 
 ## Users Roles
 
