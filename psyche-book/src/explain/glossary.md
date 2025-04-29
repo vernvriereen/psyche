@@ -103,7 +103,7 @@ Apple's graphics and compute API. A future backend target for running the Psyche
 The minimum number of `Healthy` clients required for a training run to progress beyond the `WaitingForMembers` state.
 
 **Mining Pool**
-TODO
+A Solana program that implements a basic "mining" or lending pool mechanism where users (lenders) can deposit collateral into a pool to delegate funds to other participants with more compute power and eventually claim redeemable tokens proportionate to their share of the total deposited collateral.
 
 **NUM_STORED_ROUNDS**
 A constant defining how many past rounds' states are kept in the `Coordinator`'s history buffer (e.g., 4 rounds).
@@ -157,7 +157,7 @@ A configuration parameter defining the total number of training steps or batches
 The `ActiveStep` where the client actively computes gradients or other training operations on its assigned data `Batch`.
 
 **Treasurer**
-TODO
+A Solana program that runs on top of psyche's Coordinator managing the distribution of rewards to the clients and keeping track of the points earned by each client in the training process.
 
 **Uninitialized**
 The default starting `RunState` of the `Coordinator` before a training run is configured and started.
