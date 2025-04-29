@@ -12,7 +12,7 @@ use psyche_decentralized_testing::{
     docker_setup::{
         e2e_testing_setup, kill_all_clients, spawn_new_client, spawn_new_client_with_monitoring,
     },
-    docker_watcher::{DockerWatcher, ObservedErrorKind, Response},
+    docker_watcher::{DockerWatcher, Response},
     utils::SolanaTestClient,
     CLIENT_CONTAINER_PREFIX, NGINX_PROXY_PREFIX,
 };

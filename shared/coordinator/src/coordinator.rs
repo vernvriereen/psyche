@@ -862,10 +862,6 @@ impl<T: NodeIdentity> Coordinator<T> {
             // will be no peers for P2P sharing.
             let mut all_prev_clients_disconnected = true;
             for client in self.epoch_state.clients.iter() {
-                // Check that it's a valid id and not an empty position
-                if client.id.get_p2p_public_key().iter().all(|&byte| byte == 0) {
-                    continue;
-                }
                 // If there's at least one client then we can use P2P
                 if pending_clients.contains(&client.id) {
                     all_prev_clients_disconnected = false;
