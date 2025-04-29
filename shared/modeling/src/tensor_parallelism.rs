@@ -1,7 +1,8 @@
 use anyhow::{bail, Result};
 use std::{collections::HashMap, sync::Arc};
 use tch::{
-    nn::{self, Module, Shard, VarStore}, Device, IndexOp, Kind, Tensor
+    nn::{self, Module, Shard, VarStore},
+    Device, Kind, Tensor,
 };
 use torch_sys::IntList;
 
