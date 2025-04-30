@@ -90,14 +90,16 @@ def main(args):
     total_params = sum(p.numel() for p in model.parameters())
 
     print(f"Model has {total_params} parameters")
-    if not args.dry_run:
-        if not args.repo:
-            raise RuntimeError("No repo provided")
+    if args.repo:
         model.push_to_hub(args.repo, private=args.private)
         if args.tokenizer:
             AutoTokenizer.from_pretrained(args.tokenizer).push_to_hub(
                 args.repo, private=args.private
             )
+    if args.save:
+        model.save_pretrained(args.save)
+        if args.tokenizer:
+            AutoTokenizer.from_pretrained(args.tokenizer).save_pretrained(args.save)
 
 
 args = argparse.ArgumentParser()
@@ -107,9 +109,9 @@ args.add_argument(
     help="source config repo or path to JSON config",
 )
 args.add_argument("--repo", type=str, help="destination repo")
+args.add_argument("--save", type=str, help="save to local")
 args.add_argument("--private", action="store_true", help="push as a private repo")
 args.add_argument("--dtype", type=int, default=torch.bfloat16, help="torch dtype")
-args.add_argument("--dry-run", action="store_true", help="don't actually push")
 args.add_argument("--device", type=str, help="device to init on")
 args.add_argument("--tokenizer", type=str, help="tokenizer")
 
