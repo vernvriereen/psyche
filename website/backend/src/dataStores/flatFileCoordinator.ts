@@ -246,13 +246,11 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 					return sum
 				}
 				const lastWitness = run.witnessUpdates.at(-1)
-				if (!lastWitness || !run.lastState) {
+				if (!lastWitness) {
 					return sum
 				}
-				return (
-					BigInt(lastWitness[0].tokens_per_sec) *
-					BigInt(run.lastState.clients_state.clients.length)
-				)
+				return  BigInt(lastWitness[0].tokens_per_sec)
+				
 			}, 0n),
 		}
 	}
@@ -308,8 +306,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			bandwidth: lastWitnessUpdate?.[0].bandwidth_per_sec ?? 0,
 			loss: lastWitnessUpdate?.[0].loss ?? Infinity,
 			tokensPerSecond:
-				(lastWitnessUpdate?.[0].tokens_per_sec ?? 0) *
-				(run.lastState?.clients_state.clients.length ?? 1),
+				(lastWitnessUpdate?.[0].tokens_per_sec ?? 0),
 			evals: Object.fromEntries(
 				Object.entries(evals)
 					.map(([k, v]) => [k, v.at(-1)?.value] as const)

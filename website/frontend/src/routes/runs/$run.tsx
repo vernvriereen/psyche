@@ -211,9 +211,9 @@ function RouteComponent() {
 									<ResponsiveLineGraph
 										renderValue={(x) => formatNumber(x, 2)}
 										xLabel="step"
-										title="training speed per node"
+										title="training speed"
 										line={{
-											label: 'training speed per node',
+											label: 'training speed',
 											points: graphData.tokensPerSecond,
 											unit: ' tok/s',
 										}}
