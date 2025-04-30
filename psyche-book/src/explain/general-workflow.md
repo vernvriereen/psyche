@@ -1,4 +1,9 @@
-# Coordinator
+# General Workflow
+
+## Client
+A client is an active participant responsible for executing the training tasks within a run. It handles assigned data batches for training, generates commitments, and participates in the witness process when elected to validate the work of its peers. Each client maintains its own state synchronized with the Coordinator.
+
+## Coordinator
 
 The Coordinator stores metadata about the training run's state and a list of participants.
 
@@ -8,7 +13,7 @@ It's responsible for providing a point of synchronization for all clients within
 
 ## Ticks (State Transitions)
 
-The coordinator behaves like a state machines, moving from one state to another, with each state transition having specific requirements.
+The coordinator behaves like a state machine, moving from one state to another, with each state transition having specific requirements.
 
 When certain events occur or time-based conditions are met, the Coordinator can be "ticked" forwards to transition from one Phase to another Phase.
 
@@ -182,4 +187,63 @@ flowchart LR
     C[Client] -- "join_run" --> A
     C --tick--> A
     G["A random Solana user"] -- tick --> A
+```
+
+### Decentralized training flow
+
+```mermaid
+flowchart TD
+ subgraph sg_solana["Solana"]
+    direction TB
+        CoordinatorState["Coordinator Program State <br> (Run State, Epoch,<br>Round, Clients)"]
+  end
+ subgraph sg_distro["DisTrO Optimizer"]
+    direction TB
+        MomentumUpdate["Update Local Momentum <br> m<sub>t</sub> = βm<sub>t-1</sub> + g<sub>t</sub>"]
+        DCTExtract["Extract Fast Components <br> (q<sub>t</sub>) (DCT + TopK)"]
+        CompressedUpdate["Compressed Local q<sub>t</sub> <br> (Indices + Amplitudes)"]
+        MomentumResidual["Update Local<br>Momentum Residual<br> m<sub>t+1</sub> = m<sub>t</sub> - q<sub>t</sub>"]
+  end
+ subgraph sg_loop["Local Training"]
+    direction TB
+        LocalWeights["Model Weights (x<sub>t</sub>)"]
+        ApplyAggregatedUpdate["Apply Aggregated Update <br> x<sub>t</sub> = x<sub>t-1</sub> - η Q<sub>t-1</sub>"]
+        ReceiveDecode["Receive &amp;<br>Decode/Aggregate <br> Compressed q<sub>t-1</sub><br> from Peers"]
+        ForwardBackward["Forward/Backward Pass <br> (Use x<sub>t</sub>, <br>Compute Gradient g<sub>t</sub>)"]
+        FetchData["Fetch Assigned Data <br> (Batch<sub>t</sub>)"]
+        Gradient["Local Gradient (g<sub>t</sub>)"]
+        sg_distro
+        P2PNetworkInterface["P2P Network Interface"]
+  end
+ subgraph sg_client["Client"]
+    direction TB
+        ClientSM["Client State Machine <br> (Warmup, Train,<br>Witness, Cooldown)"]
+        sg_loop
+  end
+ subgraph sg_p2p["P2P Gossip & Blob Transfer"]
+    direction TB
+        ClientNode2("Client Node 2")
+        ClientNode3("Client Node 3")
+        ClientNodeN("Client Node N")
+  end
+    DataProvider["Data Provider <br> (Local File/HTTP/etc.)"]
+    ClientSM -- Manages --> sg_loop
+    ClientSM -- Receives State Updates --- CoordinatorState
+    ApplyAggregatedUpdate --> LocalWeights
+    ReceiveDecode -- "Aggregated Q<sub>t-1</sub>" --> ApplyAggregatedUpdate
+    LocalWeights -- Used By --> ForwardBackward
+    FetchData -- Provides Data --> ForwardBackward
+    ForwardBackward -- Produces Gradient --> Gradient
+    Gradient -- Updates --> MomentumUpdate
+    MomentumUpdate --> DCTExtract
+    DCTExtract -- Produces --> CompressedUpdate
+    DCTExtract -- Updates --> MomentumResidual
+    CompressedUpdate -- Broadcasts Local Compressed Update --> P2PNetworkInterface
+    P2PNetworkInterface -- Receives Compressed Updates --> ReceiveDecode
+    DataProvider -- Provides Data --> FetchData
+    P2PNetworkInterface <-- Send/Receive Updates -------> sg_p2p
+    ClientNode2 <-- Transfer Data Off-chain --> ClientNode3 & ClientNodeN
+    ClientNode3 <-- Transfer Data Off-chain --> ClientNodeN
+    CoordinatorState -- Assigns Data/Committee --> ClientSM
+    ClientSM -- "Submits Transactions (e.g., Join, Tick, Witness)" --> CoordinatorState
 ```

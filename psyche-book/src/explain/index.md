@@ -2,7 +2,7 @@
 
 The core system is composed of three main actors:
 
-- **[Coordinator](./coordinator.md)**: Serves as a source of truth for global state available to all clients in a given training run. Each run has one coordinator that oversees the entire process. The coordinator is implemented as both a program running on the Solana Blockchain and as a regular TCP server.
+- **Coordinator**: Serves as a source of truth for global state available to all clients in a given training run. Each run has one coordinator that oversees the entire process. The coordinator is implemented as both a program running on the Solana Blockchain and as a regular TCP server.
 
 - **Client**: A user participating in a training run. Clients receive the model to be trained and a specific dataset for that run. They send information to the coordinator to progress the training run and use a peer-to-peer network to share their results at each training step with other clients.
 
