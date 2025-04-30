@@ -1,7 +1,5 @@
-from transformers import LlamaConfig, LlamaForCausalLM, AutoTokenizer
+from transformers import LlamaConfig, LlamaForCausalLM, AutoTokenizer, DeepseekV3Config, DeepseekV3ForCausalLM
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer
-from configuration_deepseek import DeepseekV3Config
-from modeling_deepseek import DeepseekV3ForCausalLM
 from torch import nn
 import argparse
 import torch
