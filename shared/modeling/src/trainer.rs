@@ -498,15 +498,17 @@ impl Trainer {
                     }
 
                     let lr = lr_scheduler.get_lr(step);
+                    let prev_lr = match step {
+                        0 => lr_scheduler.get_lr(0),
+                        step => lr_scheduler.get_lr(step - 1),
+                    };
 
                     match &mut optimizer {
                         Optimizer::Torch { optimizer, .. } => optimizer.zero_grad().unwrap(),
                         Optimizer::Distro { optimizer, .. } => {
                             optimizer.zero_grad();
-                            match prev_self_distro_results {
-                                Some(prev_self_distro_results) => {
-                                    optimizer.error_correction(&prev_self_distro_results, lr)
-                                }
+                            match &prev_self_distro_results {
+                                Some(_) => optimizer.error_correction(prev_lr),
                                 None => {
                                     error!(
                                         "Got DisTrO train assignment, but null previous results"
@@ -605,6 +607,8 @@ impl Trainer {
                                 };
                                 if clipped {
                                     let ret = optimizer.generate(
+                                        &prev_self_distro_results.unwrap_or_default(),
+                                        prev_lr,
                                         lr,
                                         optim_stats_every_n_steps
                                             .map(|stats| step % stats == 0)
