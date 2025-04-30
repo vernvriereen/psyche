@@ -43,9 +43,14 @@ export interface CoordinatorDataStore extends ChainDataStore {
 	): void
 	destroyRun(pubkey: string, timestamp: ChainTimestamp): void
 
-	getRunSummaries(): RunSummary[]
+	getRunSummaries(): {
+		runs: RunSummary[]
+		totalTokens: bigint
+		totalTokensPerSecondActive: bigint
+	}
 	getRunData(publickey: PublicKey, index?: number): RunData | null
 	getRunDataById(runId: string, index?: number): RunData | null
+	getNumRuns(): number
 }
 
 export interface MiningPoolDataStore extends ChainDataStore {

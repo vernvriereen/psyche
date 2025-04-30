@@ -130,17 +130,18 @@ const RankTable = styled.table`
 		position: sticky;
 		top: 0;
 		.theme-light & {
-			background: ${forest[700]};
-			border-color: ${forest[700]};
+			background: ${slate[500]};
+			border-color: ${slate[500]};
+			color: ${slate[0]};
 		}
 		.theme-dark & {
 			background: ${forest[500]};
 			border-color: ${forest[500]};
+			color: ${forest[300]};
 		}
 		border: 1px solid;
 		border-top: 4px solid;
 		border-bottom: 4px solid;
-		color: ${slate[0]};
 	}
 
 	& tbody tr {

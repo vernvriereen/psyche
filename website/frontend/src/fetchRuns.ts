@@ -45,7 +45,11 @@ export async function fetchStatus(): Promise<IndexerStatus> {
 
 export async function fetchRuns(): Promise<ApiGetRuns> {
 	return import.meta.env.VITE_FAKE_DATA
-		? ({ runs: fakeRunSummaries } satisfies ApiGetRuns)
+		? ({
+				runs: fakeRunSummaries,
+				totalTokens: 1_000_000_000n,
+				totalTokensPerSecondActive: 23_135_234n,
+			} satisfies ApiGetRuns)
 		: psycheJsonFetch('runs')
 }
 

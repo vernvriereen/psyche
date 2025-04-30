@@ -20,5 +20,5 @@ export const Route = createFileRoute('/runs/')({
 
 function RouteComponent() {
 	const runs = Route.useLoaderData()
-	return <Runs runs={runs.runs} />
+	return <Runs {...runs} />
 }

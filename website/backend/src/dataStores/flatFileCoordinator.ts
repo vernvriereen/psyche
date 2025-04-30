@@ -230,10 +230,35 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		this.#runsMutatedSinceLastSync.add(lastRun.runId)
 	}
 
-	getRunSummaries(): RunSummary[] {
-		return [...this.#runs.values()].flatMap((runs) =>
-			runs.flatMap(makeRunSummary).filter((r) => !!r)
-		)
+	getRunSummaries(): {
+		runs: RunSummary[]
+		totalTokens: bigint
+		totalTokensPerSecondActive: bigint
+	} {
+		const rawRuns = [...this.#runs.values()].flat()
+		const runs = rawRuns.map(makeRunSummary).filter((r) => !!r)
+		return {
+			runs,
+			totalTokens: runs.reduce((sum, run) => sum + run.completedTokens, 0n),
+			totalTokensPerSecondActive: rawRuns.reduce((sum, run) => {
+				const ACTIVE_TIMEOUT_MS = 60 * 1000
+				if (Date.now() - run.lastUpdated.time.getTime() > ACTIVE_TIMEOUT_MS) {
+					return sum
+				}
+				const lastWitness = run.witnessUpdates.at(-1)
+				if (!lastWitness || !run.lastState) {
+					return sum
+				}
+				return (
+					BigInt(lastWitness[0].tokens_per_sec) *
+					BigInt(run.lastState.clients_state.clients.length)
+				)
+			}, 0n),
+		}
+	}
+
+	getNumRuns(): number {
+		return [...this.#runs.values()].reduce((sum, runs) => sum + runs.length, 0)
 	}
 
 	getRunData(
@@ -282,7 +307,9 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		const summary: Metrics = {
 			bandwidth: lastWitnessUpdate?.[0].bandwidth_per_sec ?? 0,
 			loss: lastWitnessUpdate?.[0].loss ?? Infinity,
-			tokensPerSecond: lastWitnessUpdate?.[0].tokens_per_sec ?? 0,
+			tokensPerSecond:
+				(lastWitnessUpdate?.[0].tokens_per_sec ?? 0) *
+				(run.lastState?.clients_state.clients.length ?? 1),
 			evals: Object.fromEntries(
 				Object.entries(evals)
 					.map(([k, v]) => [k, v.at(-1)?.value] as const)

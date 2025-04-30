@@ -2,8 +2,9 @@ import { styled } from '@linaria/react'
 import { useState } from 'react'
 import { RadioSelectBar } from './RadioSelectBar.js'
 import { RunSummaryCard } from './RunSummary.js'
-import { RunSummary } from 'shared'
+import { ApiGetRuns } from 'shared'
 import { Sort } from './Sort.js'
+import { text } from '../fonts.js'
 
 const RunsContainer = styled.div`
 	height: 100%;
@@ -20,7 +21,7 @@ const RunsHeader = styled.div`
 	flex-wrap: wrap;
 
 	gap: 24px;
-	padding-bottom: 24px;
+	padding-bottom: 1em;
 	align-items: center;
 	justify-content: space-between;
 `
@@ -35,6 +36,13 @@ const RunBoxesContainer = styled.div`
 	@container (max-width: 866px) {
 		grid-template-columns: 1fr;
 	}
+`
+
+const GlobalStats = styled.div`
+	padding: 1em 24px;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1em;
 `
 
 const runTypes = [
@@ -53,11 +61,25 @@ const runSort = [
 
 type RunType = (typeof runTypes)[number]['value']
 
-export function Runs({ runs }: { runs: RunSummary[] }) {
+export function Runs({
+	runs,
+	totalTokens,
+	totalTokensPerSecondActive,
+}: ApiGetRuns) {
 	const [runTypeFilter, setRunTypeFilter] = useState<RunType>('all')
 	const [sort, setSort] = useState<(typeof runSort)[number]>(runSort[0])
 	return (
 		<RunsContainer>
+			<GlobalStats>
+				<GlobalStat
+					label="tokens/sec"
+					value={totalTokensPerSecondActive.toLocaleString()}
+				/>
+				<GlobalStat
+					label="tokens trained"
+					value={totalTokens.toLocaleString()}
+				/>
+			</GlobalStats>
 			<RunsHeader>
 				<RadioSelectBar
 					selected={runTypeFilter}
@@ -77,5 +99,22 @@ export function Runs({ runs }: { runs: RunSummary[] }) {
 					))}
 			</RunBoxesContainer>
 		</RunsContainer>
+	)
+}
+
+const StatBox = styled.span`
+	border: 2px solid currentColor;
+	display: inline-flex;
+	gap: 1em;
+	align-items: center;
+	padding: 0.5em;
+`
+
+function GlobalStat({ label, value }: { value: string; label: string }) {
+	return (
+		<StatBox>
+			<span className={text['display/2xl']}>{value}</span>
+			<span className={text['body/sm/regular']}>{label}</span>
+		</StatBox>
 	)
 }

@@ -125,7 +125,7 @@ async function main() {
 
 	fastify.get('/runs', (_req, res) => {
 		const runs: ApiGetRuns = {
-			runs: coordinator.dataStore.getRunSummaries(),
+			...coordinator.dataStore.getRunSummaries(),
 			error: coordinatorError,
 		}
 
@@ -148,7 +148,7 @@ async function main() {
 			const data: ApiGetRun = {
 				run: matchingRun,
 				error: coordinatorError,
-				isOnlyRun: coordinator.dataStore.getRunSummaries().length === 1,
+				isOnlyRun: coordinator.dataStore.getNumRuns() === 1,
 			}
 
 			// set header for streaming/non
@@ -177,7 +177,7 @@ async function main() {
 				const data: ApiGetRun = {
 					run: runData,
 					error: coordinatorError,
-					isOnlyRun: coordinator.dataStore.getRunSummaries().length === 1,
+					isOnlyRun: coordinator.dataStore.getNumRuns() === 1,
 				}
 				stream.write(JSON.stringify(data, psycheJsonReplacer) + '\n')
 			}
@@ -204,7 +204,7 @@ async function main() {
 				status: coordinatorError ? coordinatorError.toString() : 'ok',
 				trackedRuns: coordinator.dataStore
 					.getRunSummaries()
-					.map((r) => ({ id: r.id, status: r.status })),
+					.runs.map((r) => ({ id: r.id, status: r.status })),
 				chain: {
 					chainSlotHeight: await coordinatorRpc.getSlot('confirmed'),
 					indexedSlot:
