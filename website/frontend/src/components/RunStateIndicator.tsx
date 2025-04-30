@@ -1,13 +1,12 @@
 import { styled } from '@linaria/react'
 import { RunData, RunRoundClient, RunState } from 'shared'
 import { forest, gold, slate } from '../colors.js'
-import { OutlineBox } from './OutlineBox.js'
-import { c } from '../utils.js'
 import { text } from '../fonts.js'
 import { ProgressBar } from './ProgressBar.js'
 import { css } from '@linaria/core'
 import { useState } from 'react'
 import { useInterval } from 'usehooks-ts'
+import { RunBox } from './RunBox.js'
 
 const Container = styled.div`
 	display: flex;
@@ -21,20 +20,15 @@ const Container = styled.div`
 `
 
 const stateNames: Record<RunState, string> = {
-	Uninitialized: 'uninitialized',
-	WaitingForMembers: 'waiting for compute',
-	Warmup: 'warmup',
-	RoundTrain: 'train',
-	RoundWitness: 'witness',
-	Cooldown: 'cooldown',
-	Finished: 'finished',
-	Paused: 'paused',
+	Uninitialized: 'UNINITIALIZED',
+	WaitingForMembers: 'WAITING FOR COMPUTE',
+	Warmup: 'WARMUP',
+	RoundTrain: 'TRAIN',
+	RoundWitness: 'WITNESS',
+	Cooldown: 'COOLDOWN',
+	Finished: 'FINISHED',
+	Paused: 'PAUSED',
 }
-const thinBorderBox = css`
-	border-width: 1px;
-	padding: 0.5em;
-	gap: 0.5em;
-`
 
 const flexCol = css`
 	flex-direction: column;
@@ -71,6 +65,15 @@ function calculateDoneRatio(
 	}
 }
 
+const title = css`
+	.theme-light & {
+		background: ${slate[300]};
+	}
+	.theme-dark & {
+		background: ${forest[600]};
+	}
+`
+
 export function RunStateIndicator(state: Exclude<RunData['state'], undefined>) {
 	const {
 		phase,
@@ -83,10 +86,13 @@ export function RunStateIndicator(state: Exclude<RunData['state'], undefined>) {
 	useInterval(() => setNow(new Date(Date.now())), 100)
 	const doneRatio = calculateDoneRatio(state, now)
 	return (
-		<OutlineBox
-			title={`epoch ${epoch}/${numEpochs}`}
-			titleClassName={c(text['aux/lg/medium'])}
-			className={thinBorderBox}
+		<RunBox
+			title={
+				<span className={text['aux/xl/medium']}>
+					epoch {epoch}/{numEpochs}
+				</span>
+			}
+			titleClass={title}
 		>
 			<Container>
 				{phase === 'WaitingForMembers' ? (
@@ -156,7 +162,7 @@ export function RunStateIndicator(state: Exclude<RunData['state'], undefined>) {
 					</ProgressDescription>
 				</div>
 			)}
-		</OutlineBox>
+		</RunBox>
 	)
 }
 const ProgressDescription = styled.div`
@@ -174,7 +180,7 @@ const SectionBox = styled.div`
 	flex-direction: column;
 	align-items: stretch;
 	padding: 0.5em;
-	border: 1px dashed;
+	border: 2px dashed;
 
 	.theme-light & {
 		border-color: ${slate[500]};
@@ -189,9 +195,13 @@ const SectionBox = styled.div`
 		border-style: solid;
 		background-color: ${forest[500]};
 		color: ${slate[0]};
-		box-shadow:
-			inset -1px -1px 0px rgba(0, 0, 0, 0.5),
-			inset 1px 1px 0px rgba(255, 255, 255, 0.5);
+		border-color: rgba(255, 255, 255, 0.5) rgba(0, 0, 0, 0.5) rgba(0, 0, 0, 0.5)
+			rgba(255, 255, 255, 0.5);
+	}
+
+	.title {
+		text-align: left;
+		padding-left: 0.25ch;
 	}
 `
 
@@ -207,11 +217,11 @@ const ClientBox = styled.div`
 
 	.theme-light &,
 	.theme-light & a {
-		color: ${forest[500]};
+		color: ${slate[600]};
 	}
 	.theme-dark &,
 	.theme-dark & a {
-		color: ${forest[300]};
+		color: ${forest[400]};
 	}
 
 	.invisible {
@@ -278,7 +288,7 @@ function Section({
 }) {
 	return (
 		<SectionBox className={active ? 'active' : ''}>
-			{name}
+			<div className="title">{name}</div>
 			<ProgressBar
 				ratio={active ? doneRatio : 0}
 				chunkWidth={3}
@@ -303,7 +313,7 @@ function RoundParticipant({ client }: { client: RunRoundClient }) {
 			className="link"
 		>
 			<ClientBox className={text['body/xs/regular']}>
-				<Dot className={client.witness} />
+				<Dot className={client.witness || 'training'} />
 				<span className="invisible">
 					{client.pubkey.slice(0, horSegLength)}
 				</span>
@@ -326,14 +336,17 @@ function RoundParticipant({ client }: { client: RunRoundClient }) {
 }
 
 const Dot = styled.span`
-	height: 3em;
-	width: 3em;
+	height: ${(props) => props.size ?? '3em'};
+	width: ${(props) => props.size ?? '3em'};
 	border-radius: 100%;
 	display: inline-block;
 	position: absolute;
 	left: 50%;
 	top: 50%;
 	transform: translate(-50%, -50%);
+	&.training {
+		background-color: ${slate[400]};
+	}
 	&.waiting {
 		background-color: ${gold[400]};
 	}

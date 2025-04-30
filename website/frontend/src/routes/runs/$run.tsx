@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Button } from '../../components/Button.js'
 import ArrowLeft from '../../assets/icons/arrow-left.svg?react'
 import { styled } from '@linaria/react'
-import { forest, slate } from '../../colors.js'
+import { forest } from '../../colors.js'
 import { text } from '../../fonts.js'
 import { StatusChip } from '../../components/StatusChip.js'
 import { Runtime } from '../../components/Runtime.js'
@@ -17,6 +17,7 @@ import { InfoChit } from '../../components/InfoChit.jsx'
 import { RunStateIndicator } from '../../components/RunStateIndicator.js'
 import { fetchRunStreaming } from '../../fetchRuns.js'
 import { useStreamingRunData } from '../../useStreamingData.js'
+import { RunBox } from '../../components/RunBox.js'
 export const Route = createFileRoute('/runs/$run')({
 	loader: async ({ params }) => fetchRunStreaming(params.run),
 	component: RouteComponent,
@@ -59,10 +60,9 @@ function RouteComponent() {
 		return (
 			<RunContainer>
 				{backButton}
-				<RunBox>
-					<RunHeader>
-						<span className={text['display/4xl']}>run not found</span>
-					</RunHeader>
+				<RunBox
+					title={<span className={text['display/4xl']}>run not found</span>}
+				>
 					<div
 						className={c(
 							css`
@@ -101,12 +101,14 @@ function RouteComponent() {
 					back
 				</Button>
 			)}
-			<RunBox>
-				<RunHeader>
-					<span className={text['display/4xl']}>{info.name}</span>
-					<StatusChip status={info.status.type} style="minimal" />
-				</RunHeader>
-
+			<RunBox
+				title={
+					<>
+						<span className={text['display/4xl']}>{info.name}</span>
+						<StatusChip status={info.status.type} style="minimal" />
+					</>
+				}
+			>
 				<RunContents className={text['body/base/medium']}>
 					<RunDescription>{info.description}</RunDescription>
 					<InfoChits>
@@ -261,42 +263,6 @@ const RunContainer = styled.div`
 
 	@container (width < 400px) {
 		padding: 0 8px;
-	}
-`
-
-const RunHeader = styled.div`
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	border-bottom: 2px solid;
-
-	.theme-light & {
-		color: ${forest[700]};
-		border-color: ${slate[500]};
-	}
-	.theme-dark & {
-		color: ${forest[300]};
-		border-color: ${forest[500]};
-	}
-`
-
-const RunBox = styled.div`
-	& > * {
-		padding: 8px 16px;
-	}
-
-	margin-top: 24px;
-	margin-bottom: 24px;
-	border: 2px solid;
-
-	display: flex;
-	flex-direction: column;
-
-	.theme-light & {
-		border-color: ${slate[500]};
-	}
-	.theme-dark & {
-		border-color: ${forest[500]};
 	}
 `
 
