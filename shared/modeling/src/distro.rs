@@ -449,7 +449,6 @@ fn decompress_idx(max_value: i64, idx: &Tensor) -> Tensor {
 
 struct State {
     delta: Tensor,
-    backup: Tensor,
 }
 
 #[derive(Debug)]
@@ -513,7 +512,6 @@ impl Distro {
         for (index, (variable, _)) in variables.iter().enumerate() {
             state.push(State {
                 delta: variable.zeros_like(),
-                backup: variable.zeros_like(),
             });
             index_to_name.insert(
                 index,
@@ -538,7 +536,13 @@ impl Distro {
         }
     }
 
-    pub fn generate(&mut self, lr: f64, stats: bool) -> Vec<DistroResult> {
+    pub fn generate(
+        &mut self,
+        prev_self_results: &[Vec<DistroResult>],
+        prev_lr: f64,
+        lr: f64,
+        stats: bool,
+    ) -> Vec<DistroResult> {
         let _no_grad = tch::no_grad_guard();
         let variables = &mut self.sgd.trainable_variables_with_sharding();
         let mut ret = Vec::with_capacity(variables.len());
@@ -556,8 +560,45 @@ impl Distro {
 
             let state = self.state.get_mut(index).unwrap();
 
-            // restore correction if doing overlapped
-            variable.copy_(&state.backup);
+            let _t = variable.g_add_(&state.delta.sign().multiply_scalar(prev_lr));
+
+            if !prev_self_results.is_empty() {
+                let device = variable.device();
+                let indicies = prev_self_results
+                    .iter()
+                    .map(|x| x[index].sparse_idx.to_device(device))
+                    .collect::<Vec<_>>();
+
+                let val_kind: Kind = variable.kind();
+                let values = prev_self_results
+                    .iter()
+                    .map(|x| {
+                        let sparse_val = x[index].sparse_val.to_device(device);
+                        if sparse_val.kind() == Kind::Bool {
+                            Self::unpack_tensor_sign_from_boolean(sparse_val, val_kind)
+                        } else {
+                            sparse_val
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                // Decode grad from all nodes
+                let decompressed = CompressDCT::batch_decompress(
+                    &indicies,
+                    &values,
+                    &prev_self_results[0][index].xshape,
+                    prev_self_results[0][index].totalk,
+                    val_kind,
+                    device,
+                );
+                let transmit_grad = self.transform.decode(&decompressed);
+
+                // Remove transmitted from delta
+                let _t = state.delta.g_sub_(&match shard {
+                    Some(shard) => tensor_shard(&transmit_grad, shard),
+                    None => transmit_grad,
+                });
+            }
 
             // weight decay
             if self.weight_decay != 0.0 {
@@ -698,54 +739,15 @@ impl Distro {
         self.zero_grad();
     }
 
-    pub fn error_correction(&mut self, prev_self_results: &[Vec<DistroResult>], lr: f64) {
+    pub fn error_correction(&mut self, prev_lr: f64) {
         let _no_grad = tch::no_grad_guard();
         let mut trainable_variables_with_sharding = self.sgd.trainable_variables_with_sharding();
-        for (index, (variable, shard)) in trainable_variables_with_sharding.iter_mut().enumerate() {
+        for (index, (variable, _shard)) in trainable_variables_with_sharding.iter_mut().enumerate()
+        {
             let state = self.state.get_mut(index).unwrap();
 
-            state.backup.copy_(variable);
-
             // Apply lookahead, the signed delta, multiplied by lr
-            let _t = variable.g_sub_(&state.delta.sign().multiply_scalar(lr));
-
-            let device = variable.device();
-            let indicies = prev_self_results
-                .iter()
-                .map(|x| x[index].sparse_idx.to_device(device))
-                .collect::<Vec<_>>();
-
-            let val_kind: Kind = variable.kind();
-            let values = prev_self_results
-                .iter()
-                .map(|x| {
-                    let sparse_val = x[index].sparse_val.to_device(device);
-                    if sparse_val.kind() == Kind::Bool {
-                        Self::unpack_tensor_sign_from_boolean(sparse_val, val_kind)
-                    } else {
-                        sparse_val
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            if !prev_self_results.is_empty() {
-                // Decode grad from all nodes
-                let decompressed = CompressDCT::batch_decompress(
-                    &indicies,
-                    &values,
-                    &prev_self_results[0][index].xshape,
-                    prev_self_results[0][index].totalk,
-                    val_kind,
-                    device,
-                );
-                let transmit_grad = self.transform.decode(&decompressed);
-
-                // Remove transmitted from delta
-                let _t = state.delta.g_sub_(&match shard {
-                    Some(shard) => tensor_shard(&transmit_grad, shard),
-                    None => transmit_grad,
-                });
-            }
+            let _t = variable.g_sub_(&state.delta.sign().multiply_scalar(prev_lr));
         }
     }
 
@@ -1236,7 +1238,7 @@ mod tp_tests {
         loss.backward();
         barrier.wait();
 
-        let current_step_results = optimizer.generate(lr, false);
+        let current_step_results = optimizer.generate(&vec![], 0.0, lr, false);
         barrier.wait();
 
         {
