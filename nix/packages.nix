@@ -24,6 +24,7 @@
         "psyche-centralized-server"
         "psyche-centralized-local-testnet"
         "expand-distro"
+        "preview-lr"
       ];
 
       rustPackages = builtins.listToAttrs (

@@ -56,7 +56,10 @@ let
 
     buildInputs =
       [ torch ]
-      ++ (with pkgs; [ openssl ])
+      ++ (with pkgs; [
+        openssl
+        fontconfig # for lr plot
+      ])
       ++ (with pkgs.cudaPackages; [
         cudatoolkit
         cuda_cudart
