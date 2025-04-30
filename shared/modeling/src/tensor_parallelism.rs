@@ -4,6 +4,7 @@ use tch::{
     nn::{self, Module, Shard, VarStore},
     Device, Kind, Tensor,
 };
+use torch_sys::IntList;
 
 #[cfg(feature = "parallelism")]
 use tch::{CStore, ReduceOpType, CNCCL};
@@ -157,6 +158,44 @@ impl ModelParallelRegion for Tensor {
     fn gather_from_model_parallel_region(&self, comm: &Option<Arc<Communicator>>) -> Tensor {
         assert!(comm.is_none());
         self.shallow_clone()
+    }
+}
+
+pub trait ParallelExpandHeads {
+    fn parallel_expand_heads(
+        &self,
+        comm: &Option<Arc<Communicator>>,
+        shape: impl IntList,
+    ) -> Tensor;
+}
+
+fn _expand_heads(tensor: &Tensor, shape: impl IntList) -> Tensor {
+    tensor.expand(shape, false)
+}
+
+impl ParallelExpandHeads for Tensor {
+    #[cfg(feature = "parallelism")]
+    fn parallel_expand_heads(
+        &self,
+        comm: &Option<Arc<Communicator>>,
+        shape: impl IntList,
+    ) -> Tensor {
+        match comm {
+            Some(comm) => comm
+                .parallel_expand_heads(&self, comm.size() as i64, comm.rank() as i64, shape)
+                .unwrap(),
+            None => _expand_heads(&self, shape),
+        }
+    }
+
+    #[cfg(not(feature = "parallelism"))]
+    fn parallel_expand_heads(
+        &self,
+        comm: &Option<Arc<Communicator>>,
+        shape: impl IntList,
+    ) -> Tensor {
+        assert!(comm.is_none());
+        _expand_heads(self, shape)
     }
 }
 

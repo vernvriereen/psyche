@@ -1,8 +1,8 @@
 use crate::{
     auto_config::UseSDPA, rotate_half, yarn_get_mscale, AttentionImplementation, AutoConfig,
     CausalLanguageModel, ColumnParallelLinear, Communicator, CommunicatorId, EosToks,
-    LanguageModelConfig, LanguageModelForward, ModelConfig, ModelLoadError, PretrainedSource,
-    RMSNorm, RoPECache, RoPEConfig, RoPEType, RowParallelLinear,
+    LanguageModelConfig, LanguageModelForward, ModelConfig, ModelLoadError, ParallelExpandHeads,
+    PretrainedSource, RMSNorm, RoPECache, RoPEConfig, RoPEType, RowParallelLinear,
 };
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -120,8 +120,13 @@ struct MLAAttention {
     softmax_scale: f64,
     device: Device,
     use_sdpa: bool,
+    num_heads: i64,
     num_local_heads: i64,
+
+    comm: Option<Arc<Communicator>>,
 }
+
+unsafe impl Send for MLAAttention {}
 
 impl MLAAttention {
     fn new(
@@ -215,7 +220,7 @@ impl MLAAttention {
             hidden_size,
             attention_bias,
             true,
-            comm,
+            comm.clone(),
         );
 
         let mut softmax_scale = 1.0 / (q_head_dim as f64).sqrt();
@@ -245,7 +250,9 @@ impl MLAAttention {
             softmax_scale,
             device: vs.device(),
             use_sdpa,
+            num_heads,
             num_local_heads,
+            comm,
         }
     }
 
@@ -305,7 +312,7 @@ impl MLAAttention {
             // matches the expansion
             //    query_states[:, :, :, : self.qk_nope_head_dim] = q_nope
             //    query_states[:, :, :, self.qk_nope_head_dim :] = q_pe
-            .expand([b, t, self.num_local_heads, self.qk_rope_head_dim], false)
+            .parallel_expand_heads(&self.comm, [b, t, self.num_heads, self.qk_rope_head_dim])
             .transpose(1, 2);
 
         let (q_pe, k_pe) = apply_rotary_pos_emb(&q_pe, &k_pe, index_pos, cache);
