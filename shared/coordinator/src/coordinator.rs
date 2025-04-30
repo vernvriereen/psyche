@@ -3,10 +3,7 @@ use crate::{
     Commitment, Committee, CommitteeProof, CommitteeSelection, WitnessProof,
 };
 
-use anchor_lang::{
-    prelude::{borsh, msg},
-    AnchorDeserialize, AnchorSerialize, InitSpace,
-};
+use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize, InitSpace};
 use bytemuck::{Pod, Zeroable};
 use psyche_core::{sha256, Bloom, FixedString, FixedVec, MerkleRoot, NodeIdentity, SmallBoolean};
 use serde::{Deserialize, Serialize};
@@ -567,7 +564,6 @@ impl<T: NodeIdentity> Coordinator<T> {
             let index = proof.index as usize;
             let client = &mut self.epoch_state.clients[index];
             if client.state == ClientState::Healthy {
-                msg!("Client {} dropped", client.id);
                 client.state = ClientState::Dropped;
                 dropped += 1;
             }
@@ -870,10 +866,8 @@ impl<T: NodeIdentity> Coordinator<T> {
             }
 
             if all_prev_clients_disconnected {
-                msg!("All clients disconnected in tick_waiting_for_members. Using Hub Checkpoint.");
                 let Model::LLM(llm) = &mut self.model;
                 if let Checkpoint::P2P(hub_repo) = llm.checkpoint {
-                    msg!("Setting checkpoint to Hub");
                     llm.checkpoint = Checkpoint::Hub(hub_repo);
                 }
             }
@@ -888,13 +882,11 @@ impl<T: NodeIdentity> Coordinator<T> {
             let Model::LLM(llm) = &mut self.model;
             if self.epoch_state.clients.is_empty() {
                 if let Checkpoint::P2P(hub_repo) = llm.checkpoint {
-                    msg!("Setting checkpoint to Hub");
                     llm.checkpoint = Checkpoint::Hub(hub_repo);
                 }
             } else if self.progress.epoch != 0 && !all_prev_clients_disconnected {
                 match llm.checkpoint {
                     Checkpoint::Hub(hub_repo) | Checkpoint::Dummy(hub_repo) => {
-                        msg!("Setting checkpoint to P2P");
                         llm.checkpoint = Checkpoint::P2P(hub_repo)
                     }
                     _ => {}
@@ -1006,7 +998,6 @@ impl<T: NodeIdentity> Coordinator<T> {
             let Model::LLM(llm) = &mut self.model;
             match llm.checkpoint {
                 Checkpoint::Hub(hub_repo) | Checkpoint::Dummy(hub_repo) => {
-                    msg!("Setting checkpoint to P2P");
                     llm.checkpoint = Checkpoint::P2P(hub_repo)
                 }
                 _ => {}
@@ -1088,7 +1079,6 @@ impl<T: NodeIdentity> Coordinator<T> {
         // WARNING: O(n) on number of clients, need to refactor
         self.epoch_state.clients.retain(|x| {
             if x.state != ClientState::Healthy {
-                msg!("Client {} exited", x.id);
                 self.epoch_state.exited_clients.push(*x).unwrap();
                 self.epoch_state
                     .exited_clients
