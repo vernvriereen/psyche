@@ -195,7 +195,7 @@ impl ParallelExpandHeads for Tensor {
         shape: impl IntList,
     ) -> Tensor {
         assert!(comm.is_none());
-        _expand_heads(&self, shape)
+        _expand_heads(self, shape)
     }
 }
 
