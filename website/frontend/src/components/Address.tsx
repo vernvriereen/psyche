@@ -2,6 +2,7 @@ import { styled } from '@linaria/react'
 import { CopyToClipboard } from './CopyToClipboard.js'
 import LinkIcon from '../assets/icons/link.svg?react'
 import { css } from '@linaria/core'
+import { solanaAccountUrl, SolanaCluster } from '../utils.js'
 
 const Container = styled.div`
 	display: flex;
@@ -31,8 +32,10 @@ const linkIcon = css`
 
 export function Address({
 	address,
+	cluster,
 	copy = true,
 }: {
+	cluster: SolanaCluster
 	address: string
 	copy?: boolean
 }) {
@@ -42,7 +45,7 @@ export function Address({
 			<Collapsible>{address.slice(4, -4)}</Collapsible>
 			{address.slice(-4)}
 			{copy && <CopyToClipboard text={address} />}
-			<a href={`https://solscan.io/account/${address}`} target="_blank">
+			<a href={solanaAccountUrl(address, cluster)} target="_blank">
 				<div className={linkIcon}>
 					<LinkIcon />
 				</div>

@@ -28,6 +28,17 @@ if (
 	)
 }
 
+if (!import.meta.env.VITE_COORDINATOR_CLUSTER) {
+	throw new Error(
+		`Invalid deployment config. env var VITE_COORDINATOR_CLUSTER was not set when building.`
+	)
+}
+if (!import.meta.env.VITE_MINING_POOL_CLUSTER) {
+	throw new Error(
+		`Invalid deployment config. env var VITE_MINING_POOL_CLUSTER was not set when building.`
+	)
+}
+
 function RootComponent() {
 	const { isDarkMode } = useDarkMode()
 

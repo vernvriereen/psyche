@@ -40,6 +40,32 @@ const Dot = styled.span`
 	background-color: ${({ color }) => color};
 	border-radius: 100%;
 	display: inline-block;
+	position: relative;
+
+	&::after {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		height: 100%;
+		width: 100%;
+		background-color: ${({ color }) => color};
+		border-radius: 100%;
+		opacity: 0.5;
+		animation: pulse 2s ease-in-out infinite;
+		display: ${({ active }) => (active ? 'block' : 'none')};
+	}
+
+	@keyframes pulse {
+		0% {
+			transform: scale(1);
+			opacity: 0.5;
+		}
+		100% {
+			transform: scale(2);
+			opacity: 0;
+		}
+	}
 `
 
 const Bold = css`
@@ -69,7 +95,7 @@ export function StatusChip({
 				style === 'bold' && (inverted ? BoldInverted : Bold)
 			)}
 		>
-			<Dot color={colors[status]} />
+			<Dot color={colors[status]} active={status === 'active'} />
 			{children ?? labels[status]}
 		</StatusChipContainer>
 	)

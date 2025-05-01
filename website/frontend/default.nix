@@ -1,6 +1,8 @@
 {
   pkgs,
   miningPoolRpc,
+  miningPoolCluster,
+  coordinatorCluster,
   backendPath,
   ...
 }:
@@ -21,6 +23,8 @@ mkWebsitePackage {
 
     export VITE_MINING_POOL_RPC=${miningPoolRpc} 
     export VITE_BACKEND_PATH=${backendPath}
+    export VITE_MINING_POOL_CLUSTER=${miningPoolCluster}
+    export VITE_COORDINATOR_CLUSTER=${coordinatorCluster}
   '';
 
   installPhase = ''

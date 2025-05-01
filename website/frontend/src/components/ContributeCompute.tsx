@@ -343,7 +343,10 @@ export function ContributeCompute({
 										)}
 									</td>
 									<AddressBox className={featured ? text['display/2xl'] : ''}>
-										<Address address={user.address} />
+										<Address
+											address={user.address}
+											cluster={import.meta.env.VITE_MINING_POOL_CLUSTER}
+										/>
 									</AddressBox>
 									<td className={featured ? text['body/xl/medium'] : ''}>
 										{fundingPercent < 0.001

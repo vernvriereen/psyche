@@ -1,7 +1,12 @@
 import { readFileSync } from 'fs'
 import { writeFile } from 'fs/promises'
 import path from 'path'
-import { PsycheCoordinator } from 'psyche-deserialize-zerocopy-wasm'
+import {
+	CoordinatorConfig,
+	Model,
+	PsycheCoordinator,
+	lr_at_step,
+} from 'psyche-deserialize-zerocopy-wasm'
 import {
 	psycheJsonReviver,
 	psycheJsonReplacer,
@@ -12,6 +17,7 @@ import {
 	ChainTimestamp,
 	getRunPDA,
 	RunRoundClient,
+	TxSummary,
 } from 'shared'
 import { CoordinatorDataStore, LastUpdateInfo } from '../dataStore.js'
 import { WitnessMetadata, WitnessEvalResult } from '../idlTypes.js'
@@ -33,8 +39,18 @@ interface RunHistory {
 	lastUpdated: ChainTimestamp
 
 	lastState: PsycheCoordinator | null
+
+	configChanges: Array<{
+		timestamp: ChainTimestamp
+		model: Model
+		config: CoordinatorConfig
+	}>
+
 	pauseTimestamps: Array<['paused' | 'unpaused', ChainTimestamp]>
 	witnessUpdates: Array<[Witness, ChainTimestamp]>
+	observedLrByStep: Array<[number, number]>
+
+	recentTxs: Array<TxSummary>
 }
 
 export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
@@ -138,6 +154,9 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			lastUpdated: eventTime,
 			witnessUpdates: [],
 			lastState: newState ?? null,
+			observedLrByStep: [],
+			configChanges: [],
+			recentTxs: [],
 		})
 
 		this.#runsMutatedSinceLastSync.add(runId)
@@ -146,11 +165,26 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 	updateRun(
 		pubkey: string,
 		newState: PsycheCoordinator,
-		eventTime: ChainTimestamp
+		eventTime: ChainTimestamp,
+		configChanged: boolean
 	) {
 		const lastRun = this.#getActiveRun(pubkey)
 		lastRun.lastUpdated = eventTime
 		lastRun.lastState = newState
+
+		const step = newState.coordinator.progress.step
+		if (step > (lastRun.observedLrByStep.at(-1)?.[0] ?? 0)) {
+			const lr = lr_at_step(newState.coordinator.model.LLM.lr_schedule, step)
+			lastRun.observedLrByStep.push([step, lr])
+		}
+
+		if (configChanged) {
+			lastRun.configChanges.push({
+				timestamp: eventTime,
+				config: newState.coordinator.config,
+				model: newState.coordinator.model,
+			})
+		}
 
 		this.#runsMutatedSinceLastSync.add(lastRun.runId)
 	}
@@ -230,6 +264,34 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		this.#runsMutatedSinceLastSync.add(lastRun.runId)
 	}
 
+	trackTx(
+		runPubkey: string,
+		userPubkey: string,
+		method: string,
+		data: string,
+		txHash: string,
+		timestamp: ChainTimestamp
+	) {
+		const lastRun = this.#runs.get(runPubkey)?.at(-1)
+		if (!lastRun) {
+			throw new Error(
+				`Tried to get run ${runPubkey}, but we have no runs recorded for that pubkey.`
+			)
+		}
+		lastRun.recentTxs.push({
+			pubkey: userPubkey,
+			data,
+			method,
+			timestamp,
+			txHash,
+		})
+		const MAX_RECENT_TXS = 5
+		if (lastRun.recentTxs.length > MAX_RECENT_TXS) {
+			lastRun.recentTxs = lastRun.recentTxs.slice(-MAX_RECENT_TXS)
+		}
+		this.#runsMutatedSinceLastSync.add(lastRun.runId)
+	}
+
 	getRunSummaries(): {
 		runs: RunSummary[]
 		totalTokens: bigint
@@ -249,8 +311,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 				if (!lastWitness) {
 					return sum
 				}
-				return  BigInt(lastWitness[0].tokens_per_sec)
-				
+				return BigInt(lastWitness[0].tokens_per_sec)
 			}, 0n),
 		}
 	}
@@ -298,6 +359,9 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			tokensPerSecond: run.witnessUpdates
 				.map(([h]) => ({ step: h.step, value: h.tokens_per_sec }))
 				.filter(goodNumber),
+			lr: run.observedLrByStep
+				.map(([step, value]) => ({ step, value }))
+				.filter(goodNumber),
 			evals,
 		}
 
@@ -305,8 +369,8 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		const summary: Metrics = {
 			bandwidth: lastWitnessUpdate?.[0].bandwidth_per_sec ?? 0,
 			loss: lastWitnessUpdate?.[0].loss ?? Infinity,
-			tokensPerSecond:
-				(lastWitnessUpdate?.[0].tokens_per_sec ?? 0),
+			tokensPerSecond: lastWitnessUpdate?.[0].tokens_per_sec ?? 0,
+			lr: run.observedLrByStep.at(-1)?.[1] ?? 0,
 			evals: Object.fromEntries(
 				Object.entries(evals)
 					.map(([k, v]) => [k, v.at(-1)?.value] as const)
@@ -358,6 +422,8 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 					maxRoundTrainTime: Number(config.max_round_train_time),
 					roundWitnessTime: Number(config.round_witness_time),
 					warmupTime: Number(config.warmup_time),
+
+					lrSchedule: c.coordinator.model.LLM.lr_schedule,
 				},
 			}
 		}
@@ -365,6 +431,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		return {
 			info,
 			state,
+			recentTxs: run.recentTxs,
 			metrics: {
 				summary,
 				history,

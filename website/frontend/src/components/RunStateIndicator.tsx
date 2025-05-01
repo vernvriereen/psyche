@@ -1,5 +1,5 @@
 import { styled } from '@linaria/react'
-import { RunData, RunRoundClient, RunState } from 'shared'
+import { RunData, RunRoundClient, RunState, TxSummary } from 'shared'
 import { forest, gold, slate } from '../colors.js'
 import { text } from '../fonts.js'
 import { ProgressBar } from './ProgressBar.js'
@@ -7,6 +7,7 @@ import { css } from '@linaria/core'
 import { useState } from 'react'
 import { useInterval } from 'usehooks-ts'
 import { RunBox } from './RunBox.js'
+import { solanaAccountUrl, solanaTxUrl } from '../utils.js'
 
 const Container = styled.div`
 	display: flex;
@@ -74,7 +75,43 @@ const title = css`
 	}
 `
 
-export function RunStateIndicator(state: Exclude<RunData['state'], undefined>) {
+const RecentTxs = styled.div`
+	line-height: 1em;
+	overflow: hidden;
+	border: 2px solid;
+	margin: 8px 16px;
+	padding: 1ch;
+	overflow-x: scroll;
+
+	.theme-light & {
+		background: ${slate[300]};
+		border-color: ${slate[500]};
+		a,
+		div {
+			color: ${slate[600]};
+		}
+	}
+
+	.theme-dark & {
+		border-color: ${forest[500]};
+		a,
+		div {
+			color: ${forest[500]};
+		}
+	}
+
+	div {
+		white-space: nowrap;
+	}
+`
+
+export function RunStateIndicator({
+	state,
+	recentTxs,
+}: {
+	state: Exclude<RunData['state'], undefined>
+	recentTxs: TxSummary[]
+}) {
 	const {
 		phase,
 		round,
@@ -94,6 +131,23 @@ export function RunStateIndicator(state: Exclude<RunData['state'], undefined>) {
 			}
 			titleClass={title}
 		>
+			<RecentTxs>
+				{recentTxs.toReversed().map((r) => (
+					<div>
+						<a
+							href={solanaTxUrl(
+								r.txHash,
+								import.meta.env.VITE_COORDINATOR_CLUSTER
+							)}
+							key={r.pubkey + r.timestamp.slot + r.data + r.method}
+						>
+							[{r.pubkey.slice(0, 5)} @ {r.timestamp.slot.toString()}]
+						</a>{' '}
+						{r.method}
+						{r.data !== '{}' ? `: ${r.data}` : ''}
+					</div>
+				))}
+			</RecentTxs>
 			<Container>
 				{phase === 'WaitingForMembers' ? (
 					<Section
@@ -308,7 +362,10 @@ function RoundParticipant({ client }: { client: RunRoundClient }) {
 	const vertSegLength = segmentLength - 2
 	return (
 		<a
-			href={`https://solscan.io/account/${client.pubkey}`}
+			href={solanaAccountUrl(
+				client.pubkey,
+				import.meta.env.VITE_COORDINATOR_CLUSTER
+			)}
 			target="_blank"
 			className="link"
 		>

@@ -114,23 +114,27 @@ export const makeFakeRunData: Record<
 	'run-001': makeFakeRunDataSeeded,
 	'run-002': () => ({
 		info: fakeRunSummaries[1],
+		recentTxs: [],
 		metrics: {
 			summary: {
 				loss: 0.0,
 				bandwidth: 0.0,
 				tokensPerSecond: 0.0,
 				evals: {},
+				lr: 0.004,
 			},
 			history: {
 				loss: [],
 				bandwidth: [],
 				tokensPerSecond: [],
 				evals: {},
+				lr: [],
 			},
 		},
 	}),
 	'run-003': () => ({
 		info: fakeRunSummaries[2],
+		recentTxs: [],
 		metrics: {
 			summary: {
 				loss: 0.18,
@@ -141,11 +145,13 @@ export const makeFakeRunData: Record<
 					precision: 0.89,
 					recall: 0.9,
 				},
+				lr: 0.0005,
 			},
 			history: {
 				loss: randomWalk(1, 1, 1, 1.1),
 				bandwidth: randomWalk(1, 1_000_000),
 				tokensPerSecond: randomWalk(1, 100_000),
+				lr: [],
 				evals: {
 					accuracy: randomWalk(1, 1),
 					precision: randomWalk(1, 1),
@@ -191,7 +197,7 @@ export const fakeContributionInfo: ContributionInfo = {
 	miningPoolProgramId: 'N/A',
 }
 
-function makeFakeRunDataSeeded(seed = 1, step = 0) {
+function makeFakeRunDataSeeded(seed = 1, step = 0): RunData {
 	const seededRandom = createSeededRandom(seed)
 
 	const numEpochs = Math.round(seededRandom() * 300) + 10
@@ -251,11 +257,22 @@ function makeFakeRunDataSeeded(seed = 1, step = 0) {
 
 	return {
 		info: fakeRunSummaries[0],
+		recentTxs: Array.from({ length: 5 }, () => ({
+			pubkey: PublicKey.default.toString(),
+			method: 'tick',
+			data: '{}',
+			txHash: PublicKey.default.toString(),
+			timestamp: {
+				slot: BigInt(step),
+				time: new Date(Date.now() - step * 3_000),
+			},
+		})),
 		metrics: {
 			summary: {
 				loss: 0.32 + seededRandom() * 0.3,
 				bandwidth: seededRandom() * 128_000_000,
 				tokensPerSecond: seededRandom() * 128_000,
+				lr: seededRandom() * 0.004,
 				evals: {
 					accuracy: 0.83,
 					precision: 0.79,
@@ -268,6 +285,7 @@ function makeFakeRunDataSeeded(seed = 1, step = 0) {
 				loss: randomWalk(seed, 1, undefined, undefined, step),
 				bandwidth: randomWalk(seed, 1000000, undefined, undefined, step),
 				tokensPerSecond: randomWalk(seed, 100000, undefined, undefined, step),
+				lr: randomWalk(seed, 0.001, undefined, undefined, step),
 				evals: {
 					accuracy: randomWalk(seed, 1, undefined, undefined, step),
 					precision: randomWalk(seed, 1, undefined, undefined, step),
@@ -289,6 +307,15 @@ function makeFakeRunDataSeeded(seed = 1, step = 0) {
 				minClients,
 				roundsPerEpoch,
 				numEpochs,
+				lrSchedule: {
+					Cosine: {
+						base_lr: 4.0e-4,
+						warmup_steps: 500,
+						warmup_init_lr: 0.0,
+						total_steps: 25000,
+						final_lr: 4.0e-5,
+					},
+				},
 			},
 		},
 	}

@@ -12,6 +12,8 @@ a simple react app.
 - `VITE_BACKEND_PORT`: Port of the backend's server. `3000` when running locally.
 - `VITE_BACKEND_PATH`: Path of the backend's server. empty when running locally.
 - `VITE_MINING_POOL_RPC`: URL (revealed publicly!) of the RPC for the mining pool contract to use on the frontend.
+- `VITE_MINING_POOL_CLUSTER`: which cluster the mining pool uses (used for links to explorers) - either 'devnet', 'mainnet', or a custom URL for RPC (for localnet) - just a server and port, no path.
+- `VITE_COORDINATOR_CLUSTER`: which cluster the coordinator uses (used for links to explorers) - either 'devnet', 'mainnet', or a custom URL for RPC (for localnet) - just a server and port, no path..
 
 ## backend
 

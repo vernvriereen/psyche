@@ -146,3 +146,23 @@ function fairSample<T>(array: T[], sampleSize: number) {
 
 	return result
 }
+
+export type SolanaCluster = 'mainnet' | 'devnet' | string
+
+function solanaFmCluster(network: SolanaCluster) {
+	if (network === 'mainnet') {
+		return 'mainnet-alpha'
+	}
+	if (network === 'devnet') {
+		return 'devnet-alpha'
+	}
+	return encodeURIComponent(`custom-${network}`)
+}
+
+export function solanaAccountUrl(account: string, network: SolanaCluster) {
+	return `https://solana.fm/address/${account}?cluster=${solanaFmCluster(network)}`
+}
+
+export function solanaTxUrl(tx: string, network: SolanaCluster) {
+	return `https://solana.fm/tx/${tx}?cluster=${solanaFmCluster(network)}`
+}

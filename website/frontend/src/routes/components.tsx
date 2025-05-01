@@ -140,20 +140,25 @@ function RouteComponent() {
 									{style} {inverted ? 'inverted' : ''}
 								</h3>
 								<Bingus dark={inverted}>
-									{(['active', 'funding', 'completed'] as const).map(
-										(status) => (
-											<label>
+									{(
+										[
+											'active',
+											'funding',
+											'completed',
+											'waitingForMembers',
+										] as const
+									).map((status) => (
+										<label>
+											{status}
+											<StatusChip
+												status={status}
+												style={style}
+												inverted={inverted}
+											>
 												{status}
-												<StatusChip
-													status={status}
-													style={style}
-													inverted={inverted}
-												>
-													{status}
-												</StatusChip>
-											</label>
-										)
-									)}
+											</StatusChip>
+										</label>
+									))}
 								</Bingus>
 							</div>
 						)

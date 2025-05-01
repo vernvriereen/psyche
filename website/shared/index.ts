@@ -9,6 +9,7 @@ type PsycheSolanaCoordinator = coordinatorTypes.PsycheSolanaCoordinator
 type PsycheSolanaMiningPool = miningPoolTypes.PsycheSolanaMiningPool
 
 import type {
+	LearningRateSchedule,
 	LLMArchitecture,
 	RunState,
 } from 'psyche-deserialize-zerocopy-wasm'
@@ -70,6 +71,7 @@ export type Metrics = {
 	loss: number
 	bandwidth: number
 	tokensPerSecond: number
+	lr: number
 	evals: Record<string, number>
 }
 
@@ -86,6 +88,14 @@ export type NullableRecursive<T extends object> = {
 export interface RunRoundClient {
 	pubkey: string
 	witness: false | 'waiting' | 'done'
+}
+
+export interface TxSummary {
+	timestamp: ChainTimestamp
+	txHash: string
+	pubkey: string
+	method: string
+	data: string
 }
 
 export interface RunData {
@@ -107,8 +117,11 @@ export interface RunData {
 
 			maxRoundTrainTime: number
 			roundWitnessTime: number
+
+			lrSchedule: LearningRateSchedule
 		}
 	}
+	recentTxs: Array<TxSummary>
 	metrics: {
 		summary: NullableRecursive<Metrics>
 		history: OverTime<Metrics>

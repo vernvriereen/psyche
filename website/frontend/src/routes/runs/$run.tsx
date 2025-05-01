@@ -148,7 +148,7 @@ function RouteComponent() {
 
 					{run.state && run.info.status.type !== 'completed' && (
 						<RunStateActiveContainer active={run.info.status.type === 'active'}>
-							<RunStateIndicator {...run.state} />
+							<RunStateIndicator state={run.state} recentTxs={run.recentTxs} />
 						</RunStateActiveContainer>
 					)}
 

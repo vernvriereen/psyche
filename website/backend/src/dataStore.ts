@@ -33,7 +33,8 @@ export interface CoordinatorDataStore extends ChainDataStore {
 	updateRun(
 		pubkey: string,
 		newState: PsycheCoordinator,
-		timestamp: ChainTimestamp
+		timestamp: ChainTimestamp,
+		configChanged: boolean
 	): void
 	setRunPaused(pubkey: string, paused: boolean, timestamp: ChainTimestamp): void
 	witnessRun(
@@ -43,6 +44,16 @@ export interface CoordinatorDataStore extends ChainDataStore {
 	): void
 	destroyRun(pubkey: string, timestamp: ChainTimestamp): void
 
+	// called on any tx change
+	trackTx(
+		runPubkey: string,
+		userPubkey: string,
+		method: string,
+		data: string,
+		txHash: string,
+		timestamp: ChainTimestamp
+	): void
+
 	getRunSummaries(): {
 		runs: RunSummary[]
 		totalTokens: bigint
@@ -50,6 +61,7 @@ export interface CoordinatorDataStore extends ChainDataStore {
 	}
 	getRunData(publickey: PublicKey, index?: number): RunData | null
 	getRunDataById(runId: string, index?: number): RunData | null
+
 	getNumRuns(): number
 }
 
