@@ -1,0 +1,13 @@
+[package]
+name = "preview-lr"
+edition = "2024"
+version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+clap-markdown.workspace = true
+plotters = "0.3.7"
+psyche-coordinator.workspace = true
+serde.workspace = true
+toml.workspace = true
