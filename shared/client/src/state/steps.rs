@@ -596,7 +596,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                         .distro_results
                         .iter()
                         .map(|x| x.try_into())
-                        .collect::<Result<Vec<DistroResult>, TchError>>();
+                        .collect::<Result<Vec<DistroResult>, TchError>>()
+                        .map(|x| (x, distro_result.trainer_nonce));
                     trace!(
                         hash = %hash,
                         batch_id = %batch_id,

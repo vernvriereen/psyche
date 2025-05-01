@@ -75,6 +75,7 @@ pub struct TrainOutput {
     pub trainer: Trainer,
     pub loss: f32,
     pub step: u32,
+    pub nonce: u32,
     pub distro_results: Option<DistroResults>,
     pub cancelled: bool,
 }
@@ -101,6 +102,7 @@ enum ParallelAssignment {
     Optimize {
         distro_results: Option<Vec<DistroResults>>,
         step: u32,
+        warmup_lr_between: Option<(u32, u32)>,
     },
     Forward {
         data: Tensor,
@@ -114,6 +116,7 @@ enum ParallelAssignment {
 enum ParallelResult {
     Train {
         loss: f32,
+        nonce: u32,
         cancelled: bool,
         distro_results: Option<DistroResults>,
     },
@@ -267,6 +270,7 @@ impl Trainer {
         Some((logits, loss.map(|x| x.detach())))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn train(
         self,
         step: u32,
@@ -298,6 +302,7 @@ impl Trainer {
         let mut final_loss = 0.0;
         let mut final_distro_results = None;
         let mut final_cancelled = false;
+        let mut final_nonce = 0;
         for (_, rx) in &self.models {
             match rx
                 .recv()
@@ -307,9 +312,11 @@ impl Trainer {
                     loss,
                     distro_results,
                     cancelled,
+                    nonce,
                 } => {
                     if final_distro_results.is_none() {
                         final_distro_results = distro_results;
+                        final_nonce = nonce;
                     }
                     final_cancelled = cancelled;
                     final_loss += loss;
@@ -330,12 +337,14 @@ impl Trainer {
             step,
             distro_results: final_distro_results,
             cancelled: final_cancelled,
+            nonce: final_nonce,
         })
     }
 
     pub fn optimize(
         self,
         step: u32,
+        warmup_lr_between: Option<(u32, u32)>,
         results: Option<Vec<DistroResults>>,
     ) -> Result<Self, ApplyDistroResultError> {
         self.barrier.reset();
@@ -343,6 +352,7 @@ impl Trainer {
             tx.send(ParallelAssignment::Optimize {
                 distro_results: results.clone(),
                 step,
+                warmup_lr_between,
             })
             .map_err(|_| ApplyDistroResultError::SendOptimize)?;
         }
@@ -454,6 +464,7 @@ impl Trainer {
         model.prepare_for_training();
 
         let mut grad_accum: Option<Fp32GradientAccumulator> = None;
+        let mut nonce = 0;
         loop {
             match assignment.recv() {
                 Ok(ParallelAssignment::Train {
@@ -511,10 +522,11 @@ impl Trainer {
                         step => Self::get_lr(&lr_scheduler, step - 1, warmup_lr_between),
                     };
 
-                    tracing::info!(lr = lr, prev_lr = prev_lr, step = step, "trainer begin");
+                    tracing::debug!(lr = lr, prev_lr = prev_lr, step = step, "train begin");
 
                     match &mut optimizer {
-                        Optimizer::Torch { optimizer, .. } => { optimizer.zero_grad().unwrap();
+                        Optimizer::Torch { optimizer, .. } => {
+                            optimizer.zero_grad().unwrap();
                             if zero_optim {
                                 tracing::warn!("Zeroing optimizing states not supported for AdamW");
                             }
@@ -654,11 +666,14 @@ impl Trainer {
                             },
                             distro_results,
                             cancelled,
+                            nonce,
                         })
                         .is_err()
                     {
                         return;
                     }
+
+                    nonce += 1;
 
                     // for (_, result) in rollback.iter() {
                     //     // TODO freeze the optimizer and prevent this from modifying its internal state, methinks, right? or maybe save it and restore it later?
@@ -673,8 +688,9 @@ impl Trainer {
                 Ok(ParallelAssignment::Optimize {
                     distro_results,
                     step,
+                    warmup_lr_between,
                 }) => {
-                    let lr = lr_scheduler.get_lr(step);
+                    let lr = Self::get_lr(&lr_scheduler, step, warmup_lr_between);
                     if optimize_step(
                         &mut model,
                         lr,

@@ -16,7 +16,7 @@ COPY ./docker/train_entrypoint.sh /usr/local
 RUN chmod 755 /usr/local/train_entrypoint.sh
 
 ENV RUST_BACKTRACE=1
-ENV RUST_LOG=warn,psyche=info
-ENV WRITE_RUST_LOG=info,psyche=debug
+ENV RUST_LOG=warn,psyche=info,iroh=error
+ENV WRITE_RUST_LOG=info,psyche=debug,iroh=error
 
 ENTRYPOINT ["/usr/local/train_entrypoint.sh"]

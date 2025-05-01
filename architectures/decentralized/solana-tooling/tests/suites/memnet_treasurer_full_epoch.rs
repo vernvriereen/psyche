@@ -222,6 +222,7 @@ pub async fn run() {
                     quantize_1bit: false,
                     weight_decay: None,
                 },
+                cold_start_warmup_steps: 0,
             })),
             progress: None,
             epoch_earning_rate: Some(earned_point_per_epoch),

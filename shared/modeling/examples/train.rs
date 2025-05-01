@@ -312,6 +312,7 @@ fn main() -> Result<()> {
                             .trainer
                             .optimize(
                                 step,
+                                None,
                                 prev_distro_results.map(|x| {
                                     if distro_quantization {
                                         x.into_iter()

@@ -120,6 +120,7 @@ pub async fn run() {
                 quantize_1bit: false,
                 weight_decay: None,
             },
+            cold_start_warmup_steps: 0,
         })),
         None, // no explicit progress
     )

@@ -24,6 +24,7 @@ pub struct SerializedDistroResult {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TransmittableDistroResult {
     pub step: u32,
+    pub trainer_nonce: u32,
     pub batch_id: BatchId,
     pub distro_results: Vec<SerializedDistroResult>,
 }
