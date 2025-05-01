@@ -21,6 +21,7 @@ use psyche_coordinator::{
     model::{HubRepo, Model},
     CommitteeProof, Coordinator, CoordinatorConfig, CoordinatorProgress, HealthChecks,
 };
+use psyche_solana_coordinator::RunMetadata;
 use psyche_watcher::{Backend as WatcherBackend, OpportunisticData};
 use solana_account_decoder_client_types::{UiAccount, UiAccountEncoding};
 use solana_transaction_status_client_types::UiTransactionEncoding;
@@ -529,6 +530,7 @@ impl SolanaBackend {
         &self,
         coordinator_instance: Pubkey,
         coordinator_account: Pubkey,
+        metadata: Option<RunMetadata>,
         config: Option<CoordinatorConfig>,
         model: Option<Model>,
         progress: Option<CoordinatorProgress>,
@@ -544,6 +546,7 @@ impl SolanaBackend {
                 },
             )
             .args(psyche_solana_coordinator::instruction::Update {
+                metadata,
                 config,
                 model,
                 progress,

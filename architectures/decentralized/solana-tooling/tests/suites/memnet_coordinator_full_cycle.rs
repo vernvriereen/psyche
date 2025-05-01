@@ -90,6 +90,7 @@ pub async fn run() {
         &main_authority,
         &coordinator_instance,
         &coordinator_account,
+        None,
         Some(CoordinatorConfig {
             warmup_time: 1,
             cooldown_time: 1,

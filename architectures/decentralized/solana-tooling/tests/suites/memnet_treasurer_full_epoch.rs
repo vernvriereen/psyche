@@ -190,6 +190,7 @@ pub async fn run() {
         &coordinator_instance,
         &coordinator_account,
         RunUpdateParams {
+            metadata: None,
             config: Some(CoordinatorConfig {
                 warmup_time: 1,
                 cooldown_time: 1,

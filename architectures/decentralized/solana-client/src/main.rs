@@ -97,6 +97,10 @@ enum Commands {
         run_id: String,
 
         #[clap(long)]
+        join_authority: Option<String>,
+
+        // metadata
+        #[clap(long)]
         name: Option<String>,
 
         #[clap(long)]
@@ -107,9 +111,7 @@ enum Commands {
 
         #[clap(long)]
         vocab_size: Option<u64>,
-
-        #[clap(long)]
-        join_authority: Option<String>,
+        // end metadata
     },
     CloseRun {
         #[clap(flatten)]
@@ -149,6 +151,20 @@ enum Commands {
 
         #[clap(long, env)]
         restart_from_step: Option<u32>,
+
+        // metadata
+        #[clap(long)]
+        name: Option<String>,
+
+        #[clap(long)]
+        description: Option<String>,
+
+        #[clap(long)]
+        num_parameters: Option<u64>,
+
+        #[clap(long)]
+        vocab_size: Option<u64>,
+        // end metadata
     },
     Tick {
         #[clap(flatten)]
@@ -359,6 +375,10 @@ async fn async_main() -> Result<()> {
             run_id,
             config_path,
             restart_from_step,
+            name,
+            description,
+            num_parameters,
+            vocab_size,
         } => {
             let run_id = run_id.trim_matches('"').to_string(); // Trim quotes, if any
             let key_pair: Arc<Keypair> = Arc::new(wallet.try_into()?);
@@ -387,10 +407,35 @@ async fn async_main() -> Result<()> {
                 step,
                 epoch_start_data_index: get_data_index_for_step(&account.state.coordinator, step),
             });
+            let metadata = {
+                let mut metadata = account.state.metadata;
+
+                if let Some(name) = name {
+                    metadata.name = name
+                        .as_str()
+                        .try_into()
+                        .context("run metadata: name failed to convert to FixedString")?;
+                }
+                if let Some(description) = description {
+                    metadata.description = description
+                        .as_str()
+                        .try_into()
+                        .context("run metadata: description failed to convert to FixedString")?;
+                }
+                if let Some(num_parameters) = num_parameters {
+                    metadata.num_parameters = num_parameters;
+                }
+                if let Some(vocab_size) = vocab_size {
+                    metadata.vocab_size = vocab_size;
+                }
+                // only include if it's different
+                (metadata == account.state.metadata).then_some(metadata)
+            };
             let set: anchor_client::solana_sdk::signature::Signature = backend
                 .update(
                     coordinator_instance,
                     coordinator_account,
+                    metadata,
                     Some(state.config),
                     Some(state.model),
                     progress,
