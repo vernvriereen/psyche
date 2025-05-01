@@ -300,6 +300,8 @@ fn main() -> Result<()> {
                                 id: BatchId((0, 0).into()), // batch id not needed
                                 data: BatchData::CPU(data.to_vec()),
                             },
+                            None,
+                            false,
                             vec![],
                             prev_distro_results.clone(),
                             cancel.clone(),

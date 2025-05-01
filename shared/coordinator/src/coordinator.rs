@@ -252,6 +252,7 @@ pub struct CoordinatorEpochState<T> {
     pub rounds_head: u32,
     pub first_round: SmallBoolean,
     pub checkpointed: SmallBoolean,
+    pub cold_start_epoch: SmallBoolean,
 }
 
 #[derive(
@@ -385,6 +386,7 @@ impl<T: NodeIdentity> Default for CoordinatorEpochState<T> {
             checkpointed: Default::default(),
             clients: Default::default(),
             exited_clients: Default::default(),
+            cold_start_epoch: false.into(),
         }
     }
 }
@@ -834,6 +836,15 @@ impl<T: NodeIdentity> Coordinator<T> {
         current_data_start_index * self.get_sequence_length() as u64
     }
 
+    pub fn get_cold_start_warmup_bounds(&self) -> Option<(u32, u32)> {
+        match self.epoch_state.cold_start_epoch.is_true() {
+            true => Some((self.progress.step, self.progress.step + match &self.model {
+                Model::LLM(llm) => llm.cold_start_warmup_steps
+            })),
+            false => None
+        }
+    }
+
     fn get_global_batch_size_for_tokens(&self, tokens_processed: u64) -> u16 {
         self.config.get_batch_size(tokens_processed)
     }
@@ -1006,8 +1017,10 @@ impl<T: NodeIdentity> Coordinator<T> {
             if self.pending_pause.is_true() {
                 self.change_state(unix_timestamp, RunState::Paused);
                 self.pending_pause = false.into();
+                self.epoch_state.cold_start_epoch = true.into();
             } else {
                 self.start_waiting_for_members(unix_timestamp);
+                self.epoch_state.cold_start_epoch = false.into();
             }
 
             Ok(TickResult::EpochEnd(true))

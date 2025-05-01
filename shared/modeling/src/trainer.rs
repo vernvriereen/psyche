@@ -91,6 +91,8 @@ enum ParallelAssignment {
     Train {
         batch: Batch,
         step: u32,
+        warmup_lr_between: Option<(u32, u32)>,
+        zero_optim: bool,
         #[allow(unused)]
         rollback: Vec<(u32, Vec<DistroResults>)>,
         cancel_training: CancellationToken,
@@ -269,6 +271,8 @@ impl Trainer {
         self,
         step: u32,
         data: Batch,
+        warmup_lr_between: Option<(u32, u32)>,
+        zero_optim: bool,
         rollback: Vec<(u32, Vec<DistroResults>)>,
         prev_self_distro_results: Option<Vec<DistroResults>>,
         cancel_training: CancellationToken,
@@ -283,6 +287,8 @@ impl Trainer {
             tx.send(ParallelAssignment::Train {
                 batch: data.clone(),
                 step,
+                warmup_lr_between,
+                zero_optim,
                 rollback: rollback.clone(),
                 prev_self_distro_results: prev_self_distro_results.clone(),
                 cancel_training: cancel_training.clone(),
@@ -453,6 +459,8 @@ impl Trainer {
                 Ok(ParallelAssignment::Train {
                     batch,
                     step,
+                    warmup_lr_between,
+                    zero_optim,
                     rollback: _,
                     prev_self_distro_results,
                     cancel_training,
@@ -497,16 +505,26 @@ impl Trainer {
                         grad_accum.zero_grad();
                     }
 
-                    let lr = lr_scheduler.get_lr(step);
+                    let lr = Self::get_lr(&lr_scheduler, step, warmup_lr_between);
                     let prev_lr = match step {
-                        0 => lr_scheduler.get_lr(0),
-                        step => lr_scheduler.get_lr(step - 1),
+                        0 => Self::get_lr(&lr_scheduler, 0, warmup_lr_between),
+                        step => Self::get_lr(&lr_scheduler, step - 1, warmup_lr_between),
                     };
 
+                    tracing::info!(lr = lr, prev_lr = prev_lr, step = step, "trainer begin");
+
                     match &mut optimizer {
-                        Optimizer::Torch { optimizer, .. } => optimizer.zero_grad().unwrap(),
+                        Optimizer::Torch { optimizer, .. } => { optimizer.zero_grad().unwrap();
+                            if zero_optim {
+                                tracing::warn!("Zeroing optimizing states not supported for AdamW");
+                            }
+                        }
                         Optimizer::Distro { optimizer, .. } => {
                             optimizer.zero_grad();
+                            if zero_optim {
+                                optimizer.zero_optim();
+                                tracing::info!("Zeroed optimizer states");
+                            }
                             match &prev_self_distro_results {
                                 Some(_) => optimizer.error_correction(prev_lr),
                                 None => {
@@ -731,6 +749,21 @@ impl Trainer {
             .as_ref()
             .and_then(|x| x.first().map(|y| y.world_size))
             .unwrap_or(1)
+    }
+
+    pub fn get_lr(
+        lr_scheduler: &LearningRateSchedule,
+        step: u32,
+        warmup_lr_between: Option<(u32, u32)>,
+    ) -> f64 {
+        let factor = match warmup_lr_between {
+            Some((start, end)) => match step >= start && step <= end {
+                true => (step - start) as f64 / (end - start) as f64,
+                false => 1.,
+            },
+            None => 1.,
+        };
+        lr_scheduler.get_lr(step) * factor
     }
 }
 

@@ -234,6 +234,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
             self_distro_results: vec![],
         };
 
+        let warmup_lr_between = state.get_cold_start_warmup_bounds();
+        let zero_optim = warmup_lr_between.is_some_and(|_| round.height == 0);
+
         info!(
             integration_test_log_marker = %IntegrationTestLogMarker::WitnessElected,
             step = state.progress.step,
@@ -244,8 +247,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
             committee = %committee_proof.committee,
             witness_position = witness_proof.position,
             witness = %witness_proof.witness,
-            "Got training assignment for step {} (round {}/epoch {}): index={} committee position={} committee={} witness position={} witness={}",
-            state.progress.step, round.height, state.progress.epoch, client_index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness
+            warmup_lr_between = ?warmup_lr_between,
+            "Got training assignment for step {} (round {}/epoch {}): index={} committee position={} committee={} witness position={} witness={} warmup_lr_between={:?}",
+            state.progress.step, round.height, state.progress.epoch, client_index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness, warmup_lr_between
         );
         let eval_runner = self.eval_runner.clone();
         let finished = Arc::new(AtomicBool::new(false));
@@ -350,6 +354,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                                         id: batch_id,
                                         data: BatchData::CPU(batch_data),
                                     },
+                                    warmup_lr_between,
+                                    zero_optim,
                                     Vec::new(),
                                     Some(prev_self_distro_results),
                                     cancel_training,

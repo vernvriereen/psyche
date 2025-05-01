@@ -755,6 +755,12 @@ impl Distro {
         self.sgd.zero_grad_with_set_to_none(false);
     }
 
+    pub fn zero_optim(&mut self) {
+        for state in &mut self.state {
+            let _ = state.delta.zero_();
+        }
+    }
+
     pub fn trainable_variables(&self) -> Vec<Tensor> {
         self.sgd.trainable_variables()
     }
