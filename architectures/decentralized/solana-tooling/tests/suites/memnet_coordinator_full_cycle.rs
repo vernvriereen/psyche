@@ -66,7 +66,6 @@ pub async fn run() {
             run_id: "This is a random run id!".to_string(),
             main_authority: main_authority.pubkey(),
             join_authority: join_authority.pubkey(),
-            metadata: Default::default(),
         },
     )
     .await

@@ -275,7 +275,6 @@ impl SolanaBackend {
     pub async fn create_run(
         &self,
         run_id: String,
-        metadata: psyche_solana_coordinator::RunMetadata,
         join_authority: Option<Pubkey>,
     ) -> Result<CreatedRun> {
         let space = psyche_solana_coordinator::CoordinatorAccount::space_with_discriminator();
@@ -320,7 +319,6 @@ impl SolanaBackend {
                             main_authority,
                             join_authority,
                             run_id,
-                            metadata,
                         },
                     })
                     .instructions()

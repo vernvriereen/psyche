@@ -86,7 +86,6 @@ pub async fn run() {
             main_authority: main_authority.pubkey(),
             join_authority: join_authority.pubkey(),
             collateral_amount_per_earned_point,
-            metadata: Default::default(),
         },
     )
     .await

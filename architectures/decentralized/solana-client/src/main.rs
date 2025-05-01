@@ -22,7 +22,7 @@ use psyche_coordinator::{
 };
 use psyche_core::sha256;
 use psyche_network::SecretKey;
-use psyche_solana_coordinator::{find_coordinator_instance, RunMetadata};
+use psyche_solana_coordinator::find_coordinator_instance;
 use psyche_tui::{maybe_start_render_loop, LogOutput};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -98,20 +98,6 @@ enum Commands {
 
         #[clap(long)]
         join_authority: Option<String>,
-
-        // metadata
-        #[clap(long)]
-        name: Option<String>,
-
-        #[clap(long)]
-        description: Option<String>,
-
-        #[clap(long)]
-        num_parameters: Option<u64>,
-
-        #[clap(long)]
-        vocab_size: Option<u64>,
-        // end metadata
     },
     CloseRun {
         #[clap(flatten)]
@@ -292,10 +278,6 @@ async fn async_main() -> Result<()> {
             cluster,
             wallet,
             run_id,
-            name,
-            description,
-            num_parameters,
-            vocab_size,
             join_authority,
         } => {
             let run_id = run_id.trim_matches('"').to_string(); // Trim quotes, if any
@@ -310,20 +292,6 @@ async fn async_main() -> Result<()> {
             let created = backend
                 .create_run(
                     run_id.clone(),
-                    RunMetadata {
-                        name: name
-                            .as_deref()
-                            .unwrap_or(run_id.as_str())
-                            .try_into()
-                            .unwrap(),
-                        description: description
-                            .unwrap_or(format!("run {run_id}"))
-                            .as_str()
-                            .try_into()
-                            .unwrap(),
-                        num_parameters: num_parameters.unwrap_or(0),
-                        vocab_size: vocab_size.unwrap_or(0),
-                    },
                     join_authority.map(|address| Pubkey::from_str(&address).unwrap()),
                 )
                 .await?;
