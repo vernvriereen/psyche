@@ -409,6 +409,11 @@ async fn async_main() -> Result<()> {
                 // only include if it's different
                 (metadata != account.state.metadata).then_some(metadata)
             };
+
+            if metadata.is_none() && config.is_none() && model.is_none() && progress.is_none() {
+                bail!("this invocation would not update anything, bailing.")
+            }
+
             let set: anchor_client::solana_sdk::signature::Signature = backend
                 .update(
                     coordinator_instance,
