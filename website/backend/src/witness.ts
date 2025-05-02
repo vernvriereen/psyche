@@ -54,23 +54,23 @@ function computeShuffledIndex(
 		const hashResult = sha256v([seed, roundBytes])
 
 		// convert first 8 bytes to uint64 (bigint since we don't have 64 in js)
-		const pivotBytes = hashResult.slice(0, 8)
-		let pivot = BigInt(0)
-		for (let i = 0; i < 8; i++) {
-			pivot += BigInt(pivotBytes[i]) << BigInt(i * 8)
-		}
-		pivot = pivot % indexCount
+		const pivot =
+			BigInt(
+				new DataView(hashResult.buffer.slice(0, 8)).getBigUint64(0, true)
+			) % indexCount
 
 		const flip = (pivot + indexCount - currentIndex) % indexCount
 		const position = currentIndex >= flip ? currentIndex : flip
 
-		const positionDiv256 = new Uint8Array(
-			new Int32Array([Number(position / BigInt(256))]).buffer
-		)
+		const positionDiv256Buffer = new ArrayBuffer(4)
+		const positionDiv256View = new DataView(positionDiv256Buffer)
+		positionDiv256View.setUint32(0, Number(position / 256n), true) // true for little-endian
+		const positionDiv256 = new Uint8Array(positionDiv256Buffer)
+
 		const source = sha256v([seed, roundBytes, positionDiv256.slice(0, 4)])
 
-		const byte = source[Number(position % BigInt(256)) / 8]
-		const bit = (byte >> Number(position % BigInt(8))) % 2
+		const byte = source[Number((position % 256n) / 8n)]
+		const bit = (byte >> Number(position % 8n)) % 2
 
 		currentIndex = bit === 1 ? flip : currentIndex
 	}

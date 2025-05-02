@@ -416,15 +416,14 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 					clients.length,
 					c.coordinator.config.witness_nodes
 				)
+				const witnessStatus = isWitness
+					? currentRound.witnesses.some((w) => Number(w.proof.index) === index)
+						? 'done'
+						: 'waiting'
+					: false
 				return {
 					pubkey: new PublicKey(client.id.signer).toString(),
-					witness: isWitness
-						? currentRound.witnesses.some(
-								(w) => Number(w.proof.index) === index
-							)
-							? 'done'
-							: 'waiting'
-						: false,
+					witness: witnessStatus,
 				} satisfies RunRoundClient
 			})
 
