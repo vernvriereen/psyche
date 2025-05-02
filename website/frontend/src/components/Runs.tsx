@@ -66,7 +66,7 @@ export function Runs({
 	totalTokens,
 	totalTokensPerSecondActive,
 }: ApiGetRuns) {
-	const [runTypeFilter, setRunTypeFilter] = useState<RunType>('all')
+	const [runTypeFilter, setRunTypeFilter] = useState<RunType>('active')
 	const [sort, setSort] = useState<(typeof runSort)[number]>(runSort[0])
 	return (
 		<RunsContainer>
