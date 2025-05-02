@@ -397,7 +397,7 @@ async fn async_main() -> Result<()> {
                     metadata.vocab_size = vocab_size;
                 }
                 // only include if it's different
-                (metadata == account.state.metadata).then_some(metadata)
+                (metadata != account.state.metadata).then_some(metadata)
             };
             let set: anchor_client::solana_sdk::signature::Signature = backend
                 .update(
