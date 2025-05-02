@@ -91,6 +91,17 @@ pub struct Client<I> {
     pub exited_height: u32,
 }
 
+impl std::fmt::Display for ClientState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ClientState::Healthy => write!(f, "Healthy"),
+            ClientState::Dropped => write!(f, "Dropped"),
+            ClientState::Withdrawn => write!(f, "Withdrawn"),
+            ClientState::Ejected => write!(f, "Ejected"),
+        }
+    }
+}
+
 impl<I: NodeIdentity> Hash for Client<I> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id.hash(state);

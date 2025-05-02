@@ -16,7 +16,7 @@ use anyhow::{anyhow, Result};
 use psyche_client::{
     CheckpointConfig, Client, ClientTUI, ClientTUIState, RunInitConfig, WandBInfo, NC,
 };
-use psyche_coordinator::{Coordinator, CoordinatorError, RunState};
+use psyche_coordinator::{ClientState, Coordinator, CoordinatorError, RunState};
 use psyche_network::{
     allowlist, psyche_relay_map, DiscoveryMode, NetworkTUIState, NetworkTui, RelayMode, SecretKey,
 };
@@ -232,6 +232,11 @@ impl App {
         let mut updates = backend_runner.updates();
         let mut client = Client::new(backend_runner, allowlist, p2p, state_options);
 
+        let id = psyche_solana_coordinator::ClientId {
+            signer,
+            p2p_identity: *p2p_identity.as_bytes(),
+        };
+
         loop {
             select! {
                 _ = self.cancel.cancelled() => {
@@ -290,10 +295,7 @@ impl App {
                                     .join_run_retryable(
                                         coordinator_instance,
                                         coordinator_account,
-                                        psyche_solana_coordinator::ClientId {
-                                            signer,
-                                            p2p_identity: *p2p_identity.as_bytes(),
-                                        },
+                                        id,
                                         self.authorizer,
                                     ))
                                     .await.map_err(|e: RetryError<String>| anyhow!("join_run error: {}", e))?;
@@ -306,7 +308,22 @@ impl App {
                                 self.joined_new_train_epoch = Some(joined);
                             }
                         }
-                        _ => { self.joined_new_train_epoch = None; }
+                        _ => {
+                            if self.joined_new_train_epoch.is_some() {
+                                let me = latest_update.epoch_state.clients.iter().find(|x| x.id == id);
+                                match me {
+                                    Some(me) => if me.state != ClientState::Healthy {
+                                        tracing::error!(id = %id, state = %me.state, "Coordinator says we're unhealthy, exiting");
+                                        return Err(anyhow!("{}", me.state));
+                                    }
+                                    None => {
+                                        tracing::error!(id = %id, "Coordinator did not select us for the round, exiting");
+                                        return Err(anyhow!("Not a participant"));
+                                    }
+                                }
+                            }
+                            self.joined_new_train_epoch = None;
+                        }
                     }
                 }
                 res = client.finished() => {
