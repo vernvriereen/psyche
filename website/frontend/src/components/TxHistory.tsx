@@ -56,15 +56,15 @@ export function TxHistory({
 		<TxsContainer className={text['body/sm/regular']}>
 			{txs.map((r) => (
 				<div>
-					[
+					[{r.timestamp.time.toLocaleTimeString()}]{' <'}
 					<a
 						href={solanaTxUrl(r.txHash, cluster)}
 						target="_blank"
 						key={r.pubkey + r.timestamp.slot + r.data + r.method}
 					>
-						{r.timestamp.time.toLocaleTimeString()}
+						{r.txHash.slice(0, 20)}
 					</a>
-					] {r.method}
+					{'>'} {r.method}
 					{r.data !== '{}' ? `: ${r.data}` : ''}
 				</div>
 			))}
