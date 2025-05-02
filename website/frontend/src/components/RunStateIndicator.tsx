@@ -89,6 +89,17 @@ const waitingForMembersBox = css`
 	grid-column: 1 / -1;
 `
 
+const LegendBox = styled.div`
+	span {
+		span {
+			margin-right: 4px;
+		}
+		display: inline-flex;
+		align-items: center;
+		padding-right: 1em;
+	}
+`
+
 export function RunStateIndicator({
 	state,
 	recentTxs,
@@ -162,6 +173,20 @@ export function RunStateIndicator({
 					</ProgressDescription>
 				</div>
 			)}
+			<LegendBox>
+				<span>
+					<Dot className="training" size="1em" />
+					TRAINER
+				</span>
+				<span>
+					<Dot className="waiting" size="1em" />
+					UNFINISHED WITNESS
+				</span>
+				<span>
+					<Dot className="done" size="1em" />
+					FINISHED WITNESS
+				</span>
+			</LegendBox>
 			<SectionsGrid>
 				{phase === 'WaitingForMembers' ? (
 					<>
@@ -247,78 +272,6 @@ const SectionBox = styled.div`
 	}
 `
 
-const ClientBox = styled.div`
-	padding: 0.5em;
-	max-width: 13ch;
-	aspect-ratio: 1/1;
-
-	position: relative;
-
-	justify-content: space-between;
-
-	.theme-light &,
-	.theme-light & a {
-		color: ${slate[600]};
-	}
-	.theme-dark &,
-	.theme-dark & a {
-		color: ${forest[400]};
-	}
-
-	.invisible {
-		visibility: hidden;
-		margin: 1ch;
-	}
-	.bottom {
-		position: absolute;
-		bottom: 0;
-		right: 0;
-		width: 100%;
-	}
-
-	.right {
-		position: absolute;
-		right: 0;
-		bottom: 0;
-		height: 100%;
-		writing-mode: vertical-rl;
-		text-orientation: mixed;
-		transform: rotate(180deg);
-	}
-
-	.top {
-		position: absolute;
-		top: 0;
-		right: 0;
-		width: 100%;
-		transform: rotate(180deg);
-	}
-
-	.left {
-		position: absolute;
-		left: 0;
-		top: 0;
-		height: 100%;
-		writing-mode: vertical-lr;
-		text-orientation: mixed;
-	}
-
-	.link {
-		position: absolute;
-		top: 50%;
-		right: 50%;
-		width: 1em;
-		height: 1em;
-	}
-`
-const ClientsBox = styled.div`
-	display: flex;
-	flex-wrap: wrap;
-	justify-content: space-between;
-	width: 100%;
-	min-height: 82px;
-`
-
 function Section({
 	active,
 	name,
@@ -389,10 +342,6 @@ const Dot = styled.span`
 	width: ${(props) => props.size ?? '3em'};
 	border-radius: 100%;
 	display: inline-block;
-	position: absolute;
-	left: 50%;
-	top: 50%;
-	transform: translate(-50%, -50%);
 	&.training {
 		background-color: ${slate[400]};
 	}
@@ -402,7 +351,86 @@ const Dot = styled.span`
 	&.done {
 		background-color: ${forest[500]};
 	}
-	box-shadow:
-		inset -1px -1px 0px rgba(0, 0, 0, 0.5),
-		inset 1px 1px 0px rgba(255, 255, 255, 0.5);
+`
+
+const ClientBox = styled.div`
+	padding: 0.5em;
+	max-width: 13ch;
+	aspect-ratio: 1/1;
+
+	position: relative;
+
+	justify-content: space-between;
+
+	.theme-light &,
+	.theme-light & a {
+		color: ${slate[600]};
+	}
+	.theme-dark &,
+	.theme-dark & a {
+		color: ${forest[400]};
+	}
+
+	.invisible {
+		visibility: hidden;
+		margin: 1ch;
+	}
+	.bottom {
+		position: absolute;
+		bottom: 0;
+		right: 0;
+		width: 100%;
+	}
+
+	.right {
+		position: absolute;
+		right: 0;
+		bottom: 0;
+		height: 100%;
+		writing-mode: vertical-rl;
+		text-orientation: mixed;
+		transform: rotate(180deg);
+	}
+
+	.top {
+		position: absolute;
+		top: 0;
+		right: 0;
+		width: 100%;
+		transform: rotate(180deg);
+	}
+
+	.left {
+		position: absolute;
+		left: 0;
+		top: 0;
+		height: 100%;
+		writing-mode: vertical-lr;
+		text-orientation: mixed;
+	}
+
+	.link {
+		position: absolute;
+		top: 50%;
+		right: 50%;
+		width: 1em;
+		height: 1em;
+	}
+
+	${Dot} {
+		box-shadow:
+			inset -1px -1px 0px rgba(0, 0, 0, 0.5),
+			inset 1px 1px 0px rgba(255, 255, 255, 0.5);
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		transform: translate(-50%, -50%);
+	}
+`
+const ClientsBox = styled.div`
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	width: 100%;
+	min-height: 82px;
 `
