@@ -5,6 +5,7 @@ import {
 	CoordinatorConfig,
 	Model,
 	PsycheCoordinator,
+	RunMetadata,
 	lr_at_step,
 } from 'psyche-deserialize-zerocopy-wasm'
 import {
@@ -44,6 +45,7 @@ interface RunHistory {
 		timestamp: ChainTimestamp
 		model: Model
 		config: CoordinatorConfig
+		metadata: RunMetadata
 	}>
 
 	pauseTimestamps: Array<['paused' | 'unpaused', ChainTimestamp]>
@@ -183,6 +185,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 				timestamp: eventTime,
 				config: newState.coordinator.config,
 				model: newState.coordinator.model,
+				metadata: newState.metadata,
 			})
 		}
 
@@ -311,7 +314,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 				if (!lastWitness) {
 					return sum
 				}
-				return BigInt(lastWitness[0].tokens_per_sec)
+				return BigInt(Math.round(lastWitness[0].tokens_per_sec))
 			}, 0n),
 		}
 	}

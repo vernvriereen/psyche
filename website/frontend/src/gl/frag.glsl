@@ -31,20 +31,20 @@ uniform sampler2D uSampler;
 precision highp float;
 
 void main() {
+
   vec3 nrm = normalize(fragNrm);
   vec3 viewDir = normalize(eye - fragWorldPos);
   vec3 col = noiseColor(noiseAmt);
 
   float diffuseAmt = max(0.3, dot(nrm, lightDir));
   vec3 diffuseCol = col * diffuseAmt * 0.9;
+  gl_FragColor = vec4(diffuseCol, 1.);
 
   vec3 halfVec = normalize(viewDir + lightDir);
   float specAmt = max(0., dot(nrm, halfVec));
   specAmt = pow(specAmt, 15.);
 
   vec3 rgbCol = diffuseCol + specAmt;
-  // vec3 rgbCol = col + specAmt;
 
-  // gl_FragColor = vec4(rgbCol, 1.);
   gl_FragColor = vec4(ditherColor, dither(rgbCol));
 }

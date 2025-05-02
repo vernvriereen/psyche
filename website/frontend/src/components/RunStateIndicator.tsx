@@ -7,7 +7,8 @@ import { css } from '@linaria/core'
 import { useState } from 'react'
 import { useInterval } from 'usehooks-ts'
 import { RunBox } from './RunBox.js'
-import { solanaAccountUrl, solanaTxUrl } from '../utils.js'
+import { c, solanaAccountUrl } from '../utils.js'
+import { TxHistory } from './TxHistory.js'
 
 const Container = styled.div`
 	display: flex;
@@ -75,34 +76,17 @@ const title = css`
 	}
 `
 
-const RecentTxs = styled.div`
-	line-height: 1em;
-	overflow: hidden;
-	border: 2px solid;
-	margin: 8px 16px;
-	padding: 1ch;
-	overflow-x: scroll;
-
-	.theme-light & {
-		background: ${slate[300]};
-		border-color: ${slate[500]};
-		a,
-		div {
-			color: ${slate[600]};
-		}
+const SectionsGrid = styled.div`
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	@container (width < 480px) {
+		grid-template-columns: repeat(2, 1fr);
 	}
+	gap: 8px;
+`
 
-	.theme-dark & {
-		border-color: ${forest[500]};
-		a,
-		div {
-			color: ${forest[500]};
-		}
-	}
-
-	div {
-		white-space: nowrap;
-	}
+const waitingForMembersBox = css`
+	grid-column: 1 / -1;
 `
 
 export function RunStateIndicator({
@@ -131,66 +115,12 @@ export function RunStateIndicator({
 			}
 			titleClass={title}
 		>
-			<RecentTxs>
-				{recentTxs.toReversed().map((r) => (
-					<div>
-						<a
-							href={solanaTxUrl(
-								r.txHash,
-								import.meta.env.VITE_COORDINATOR_CLUSTER
-							)}
-							key={r.pubkey + r.timestamp.slot + r.data + r.method}
-						>
-							[{r.pubkey.slice(0, 5)} @ {r.timestamp.slot.toString()}]
-						</a>{' '}
-						{r.method}
-						{r.data !== '{}' ? `: ${r.data}` : ''}
-					</div>
-				))}
-			</RecentTxs>
-			<Container>
-				{phase === 'WaitingForMembers' ? (
-					<Section
-						active={phase === 'WaitingForMembers'}
-						name={`${stateNames['WaitingForMembers']} (${clients.length}/${minClients})`}
-						doneRatio={doneRatio}
-					/>
-				) : (
-					<>
-						<Section
-							active={phase === 'Warmup'}
-							name={stateNames['Warmup']}
-							doneRatio={doneRatio}
-						/>
-						<Container>
-							<Section
-								active={phase === 'RoundTrain'}
-								name={stateNames['RoundTrain']}
-								doneRatio={doneRatio}
-							/>
-							<Section
-								active={phase === 'RoundWitness'}
-								name={stateNames['RoundWitness']}
-								doneRatio={doneRatio}
-							/>
-						</Container>
-
-						<Section
-							active={phase === 'Cooldown'}
-							name={stateNames['Cooldown']}
-							doneRatio={doneRatio}
-						/>
-					</>
-				)}
-			</Container>
-			<Container className={flexCol}>
-				<ClientsBox>
-					{clients.map((c) => (
-						<RoundParticipant key={c.pubkey} client={c} />
-					))}
-				</ClientsBox>
-			</Container>
-			{(phase === 'RoundTrain' ||
+			<TxHistory
+				txs={recentTxs.toReversed()}
+				cluster={import.meta.env.VITE_COORDINATOR_CLUSTER}
+			/>
+			{(phase === 'Warmup' ||
+				phase === 'RoundTrain' ||
 				phase === 'RoundWitness' ||
 				phase === 'Cooldown') && (
 				<div>
@@ -216,6 +146,64 @@ export function RunStateIndicator({
 					</ProgressDescription>
 				</div>
 			)}
+			{phase === 'WaitingForMembers' && (
+				<div>
+					<ProgressBar
+						chunkHeight={8}
+						chunkWidth={4}
+						chunkSpacing={1}
+						ratio={clients.length / minClients}
+					/>
+					<ProgressDescription>
+						<span>compute nodes</span>
+						<span>
+							{clients.length}/{minClients}
+						</span>
+					</ProgressDescription>
+				</div>
+			)}
+			<SectionsGrid>
+				{phase === 'WaitingForMembers' ? (
+					<>
+						<Section
+							active={phase === 'WaitingForMembers'}
+							name={`${stateNames['WaitingForMembers']}`}
+							className={waitingForMembersBox}
+						/>
+					</>
+				) : (
+					<>
+						<Section
+							active={phase === 'Warmup'}
+							name={stateNames['Warmup']}
+							doneRatio={doneRatio}
+						/>
+						<Section
+							active={phase === 'RoundTrain'}
+							name={stateNames['RoundTrain']}
+							doneRatio={doneRatio}
+						/>
+						<Section
+							active={phase === 'RoundWitness'}
+							name={stateNames['RoundWitness']}
+							doneRatio={doneRatio}
+						/>
+
+						<Section
+							active={phase === 'Cooldown'}
+							name={stateNames['Cooldown']}
+							doneRatio={doneRatio}
+						/>
+					</>
+				)}
+			</SectionsGrid>
+			<Container className={flexCol}>
+				<ClientsBox>
+					{clients.map((c) => (
+						<RoundParticipant key={c.pubkey} client={c} />
+					))}
+				</ClientsBox>
+			</Container>
 		</RunBox>
 	)
 }
@@ -260,7 +248,6 @@ const SectionBox = styled.div`
 `
 
 const ClientBox = styled.div`
-	margin: 0.5em;
 	padding: 0.5em;
 	max-width: 13ch;
 	aspect-ratio: 1/1;
@@ -329,28 +316,33 @@ const ClientsBox = styled.div`
 	flex-wrap: wrap;
 	justify-content: space-between;
 	width: 100%;
+	min-height: 82px;
 `
 
 function Section({
 	active,
 	name,
 	doneRatio,
+	className,
 }: {
 	active: boolean
 	name: string
-	doneRatio: number
+	doneRatio?: number
+	className?: string
 }) {
 	return (
-		<SectionBox className={active ? 'active' : ''}>
+		<SectionBox className={c(active ? 'active' : '', className)}>
 			<div className="title">{name}</div>
-			<ProgressBar
-				ratio={active ? doneRatio : 0}
-				chunkWidth={3}
-				chunkSpacing={1}
-				chunkHeight={1}
-				size="small"
-				disabled={!active}
-			/>
+			{!!doneRatio && (
+				<ProgressBar
+					ratio={active ? doneRatio : 0}
+					chunkWidth={3}
+					chunkSpacing={1}
+					chunkHeight={1}
+					size="small"
+					disabled={!active}
+				/>
+			)}
 		</SectionBox>
 	)
 }

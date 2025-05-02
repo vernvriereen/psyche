@@ -104,7 +104,7 @@ function RouteComponent() {
 			<RunBox
 				title={
 					<>
-						<span className={text['display/4xl']}>{info.name}</span>
+						<span className={text['display/4xl']}>{info.name || info.id}</span>
 						<StatusChip status={info.status.type} style="minimal" />
 					</>
 				}
@@ -147,7 +147,12 @@ function RouteComponent() {
 					</div>
 
 					{run.state && run.info.status.type !== 'completed' && (
-						<RunStateActiveContainer active={run.info.status.type === 'active'}>
+						<RunStateActiveContainer
+							active={
+								run.info.status.type === 'active' ||
+								run.info.status.type === 'waitingForMembers'
+							}
+						>
 							<RunStateIndicator state={run.state} recentTxs={run.recentTxs} />
 						</RunStateActiveContainer>
 					)}

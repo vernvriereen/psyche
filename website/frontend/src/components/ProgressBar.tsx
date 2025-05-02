@@ -62,7 +62,7 @@ export function ProgressBar({
 			chunkSpacing={chunkSpacing}
 			disabled={disabled}
 		>
-			<div style={{ width: `${ratio * 100}%` }}></div>
+			<div style={{ width: `${Math.min(ratio, 1) * 100}%` }}></div>
 		</Container>
 	)
 }
