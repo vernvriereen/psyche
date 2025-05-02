@@ -357,50 +357,13 @@ export function ContributeCompute({
 								</tr>
 							)
 						})}
-						{users.length === 0 && (
-							<>
-								<tr>
-									<td />
-									<td>&nbsp;</td>
-									<td />
-								</tr>
-								<tr>
-									<td />
-									<td>&nbsp;</td>
-									<td />
-								</tr>
-								<tr>
-									<td />
-									<td>&nbsp;</td>
-									<td />
-								</tr>
-								<tr>
-									<td />
-									<td>&nbsp;</td>
-									<td />
-								</tr>
-								<tr>
-									<td />
-									<td>&nbsp;</td>
-									<td />
-								</tr>
-								<tr>
-									<td />
-									<td>&nbsp;</td>
-									<td />
-								</tr>
-								<tr>
-									<td />
-									<td>&nbsp;</td>
-									<td />
-								</tr>
-								<tr>
-									<td />
-									<td>&nbsp;</td>
-									<td />
-								</tr>
-							</>
-						)}
+						{Array.from({ length: Math.max(0, 7 - users.length) }, (_, i) => (
+							<tr key={`fake-${i}`}>
+								<td />
+								<td>&nbsp;</td>
+								<td />
+							</tr>
+						))}
 					</tbody>
 				</RankTable>
 			</TableContainer>
