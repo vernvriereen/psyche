@@ -79,7 +79,9 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			if (this.#programId.equals(programId)) {
 				this.#lastUpdateInfo = lastUpdateInfo
 				this.#runs = runs
-				console.log(`loaded DB from disk at slot ${this.#lastUpdateInfo}`)
+				console.log(
+					`loaded DB from disk at slot ${this.#lastUpdateInfo.highestSignature?.slot ?? 0}`
+				)
 			} else {
 				console.warn(
 					`Program ID for coordinator changed from ${programId} in saved state to ${
