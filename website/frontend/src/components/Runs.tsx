@@ -105,7 +105,7 @@ export function Runs({
 const StatBox = styled.span`
 	border: 2px solid currentColor;
 	display: inline-flex;
-	gap: 1em;
+	gap: 0.5em;
 	align-items: center;
 	padding: 0.5em;
 `
