@@ -25,6 +25,27 @@ async function main() {
 			throw new Error(`env var ${v} is not set.`)
 		}
 	}
+
+	if (
+		process.env.COORDINATOR_MIN_SLOT !== undefined &&
+		`${Number.parseInt(process.env.COORDINATOR_MIN_SLOT, 10)}` !==
+			process.env.COORDINATOR_MIN_SLOT
+	) {
+		throw new Error(
+			`COORDINATOR_MIN_SLOT is not a valid integer! got ${process.env.COORDINATOR_MIN_SLOT}`
+		)
+	}
+
+	if (
+		process.env.MINING_POOL_MIN_SLOT !== undefined &&
+		`${Number.parseInt(process.env.MINING_POOL_MIN_SLOT, 10)}` !==
+			process.env.MINING_POOL_MIN_SLOT
+	) {
+		throw new Error(
+			`MINING_POOL_MIN_SLOT is not a valid integer! got ${process.env.MINING_POOL_MIN_SLOT}`
+		)
+	}
+
 	const coordinatorRpc = new Connection(process.env.COORDINATOR_RPC!, {
 		fetch: makeRateLimitedFetch(),
 	})
@@ -43,11 +64,13 @@ async function main() {
 				connection: coordinatorRpc,
 				addressOverride: process.env.COORDINATOR_PROGRAM_ID,
 				websocketRpcUrl: process.env.COORDINATOR_WS_RPC,
+				minSlot: Number.parseInt(process.env.COORDINATOR_MIN_SLOT ?? '0'),
 			},
 			{
 				connection: miningPoolRpc,
 				addressOverride: process.env.MINING_POOL_PROGRAM_ID,
 				websocketRpcUrl: process.env.MINING_POOL_WS_RPC,
+				minSlot: Number.parseInt(process.env.MINING_POOL_MIN_SLOT ?? '0'),
 			}
 		)
 

@@ -13,17 +13,16 @@ import { FlatFileCoordinatorDataStore } from './dataStores/flatFileCoordinator.j
 import { FlatFileMiningPoolDataStore } from './dataStores/flatFileMiningPool.js'
 import { startWatchMiningPoolChainLoop } from './miningPoolChainLoop.js'
 
+interface ServiceConfig {
+	connection: Connection
+	websocketRpcUrl?: string
+	addressOverride?: string
+	minSlot: number
+}
+
 export function startIndexingChainToDataStores(
-	coordinator: {
-		connection: Connection
-		websocketRpcUrl?: string
-		addressOverride?: string
-	},
-	miningPool: {
-		connection: Connection
-		websocketRpcUrl?: string
-		addressOverride?: string
-	}
+	coordinator: ServiceConfig,
+	miningPool: ServiceConfig
 ): {
 	cancel: () => void
 	coordinator: { stopped: Promise<void>; dataStore: CoordinatorDataStore }
@@ -62,6 +61,7 @@ export function startIndexingChainToDataStores(
 		coordinatorDataStore,
 		coordinatorProgram,
 		coordinatorWebsocketRpcUrl,
+		coordinator.minSlot,
 		cancelled
 	)
 		.catch(coordinatorRej)
@@ -92,6 +92,7 @@ export function startIndexingChainToDataStores(
 		miningPoolDataStore,
 		miningPoolProgram,
 		miningPoolWebsocketRpcUrl,
+		miningPool.minSlot,
 		cancelled
 	)
 		.catch(miningPoolRej)

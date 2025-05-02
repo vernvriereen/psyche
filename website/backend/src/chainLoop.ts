@@ -9,7 +9,7 @@ import {
 	PartiallyDecodedInstruction,
 	PublicKey,
 } from '@solana/web3.js'
-import { ChainDataStore, IndexedSignature } from './dataStore.js'
+import { ChainDataStore } from './dataStore.js'
 import ProgramEventListener from './programEventListener.js'
 
 export function startWatchChainLoop<D>(): <
@@ -21,6 +21,7 @@ export function startWatchChainLoop<D>(): <
 	dataStore: S,
 	program: Program<I>,
 	websocketRpcUrl: string,
+	minimumSlotToIndexFrom: number,
 	cancelled: { cancelled: boolean },
 	process: {
 		onStartCatchup(firstStateEver: boolean): T
@@ -39,6 +40,7 @@ export function startWatchChainLoop<D>(): <
 		dataStore,
 		program,
 		websocketRpcUrl,
+		minimumSlotToIndexFrom,
 		cancelled,
 		process,
 		delayMsBetweenUpdates = 1000
@@ -59,11 +61,15 @@ export function startWatchChainLoop<D>(): <
 				new Promise((r) => setTimeout(r, delayMsBetweenUpdates)),
 			])
 
+			const startSlot = Math.max(
+				minimumSlotToIndexFrom,
+				lastUpdate?.highestSignature?.slot ?? 0
+			)
 			const catchupTxs = await catchupOnTxsToAddress(
 				name,
 				program.provider,
 				program.programId,
-				lastUpdate?.highestSignature,
+				startSlot,
 				cancelled
 			)
 
@@ -74,7 +80,7 @@ export function startWatchChainLoop<D>(): <
 
 			if (catchupTxs.length) {
 				console.debug(
-					`[${name}] updated from slot ${lastUpdate?.highestSignature?.slot ?? 0} to latest slot.`
+					`[${name}] updated from slot ${startSlot} to latest slot.`
 				)
 			}
 
@@ -146,7 +152,7 @@ async function catchupOnTxsToAddress(
 	name: string,
 	provider: Provider,
 	address: PublicKey,
-	lastIndexedSignature: IndexedSignature | undefined,
+	lastIndexedSlot: number,
 	cancelled: { cancelled: boolean }
 ) {
 	// start with the newest possible signature, and go back to the oldest one.
@@ -155,7 +161,7 @@ async function catchupOnTxsToAddress(
 	const allSignatures = []
 	while (true) {
 		console.log(
-			`[${name}] fetching sigs from slot ${lastIndexedSignature?.slot ?? 0} to ${oldestSeenSignature?.slot ?? 'the latest block'}: total ${allSignatures.length}`
+			`[${name}] fetching sigs from slot ${lastIndexedSlot} to ${oldestSeenSignature?.slot ?? 'the latest block'}: total ${allSignatures.length}`
 		)
 		const signatures = await provider.connection.getSignaturesForAddress(
 			address,
@@ -170,7 +176,7 @@ async function catchupOnTxsToAddress(
 		}
 
 		const signaturesAfterLastProcessedSlot = signatures.filter(
-			(s) => s.slot > (lastIndexedSignature?.slot ?? -1)
+			(s) => s.slot > lastIndexedSlot
 		)
 
 		// pick the last signature as our next iter's highest sig to start from,
@@ -195,7 +201,7 @@ async function catchupOnTxsToAddress(
 	}
 
 	console.log(
-		`[${name}] fetching ${allSignatures.length} transactions catching up from slot ${lastIndexedSignature?.slot ?? 0} to ${oldestSeenSignature?.slot ?? 'the latest block'}`
+		`[${name}] fetching ${allSignatures.length} transactions catching up from slot ${lastIndexedSlot} to ${oldestSeenSignature?.slot ?? 'the latest block'}`
 	)
 
 	let completedCount = 0

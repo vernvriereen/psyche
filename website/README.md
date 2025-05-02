@@ -24,13 +24,20 @@ a chain indexer.
 
 ### env vars
 
+Required:
+
 - `PORT`: which port to run on.
-- `CORS_ALLOW_ORIGIN`: if empty, always allowed. if passed, only allows requests from that origin.
 - `GITCOMMIT`: used for the status page. set to the current git commit.
 - `COORDINATOR_RPC`: which chain RPC to hit for the coordinator's state.
-- `COORDINATOR_PROGRAM_ID`: the on-chain address of the coordinator program.
 - `MINING_POOL_RPC`: which chain RPC to hit for the mining pool's state.
-- `MINING_POOL_PROGRAM_ID`: the on-chain address of the mining pool program.
+
+Optional:
+
+- `CORS_ALLOW_ORIGIN`: if empty, always allowed. if passed, only allows requests from that origin.
+- `COORDINATOR_PROGRAM_ID`: the on-chain address of the coordinator program. if empty, pulled from the declare_id! macro
+- `MINING_POOL_PROGRAM_ID`: the on-chain address of the mining pool program. if empty, pulled from the declare_id! macro
+- `MINING_POOL_MIN_SLOT`: the lowest slot from which to index the mining pool
+- `COORDINATOR_MIN_SLOT`: the lowest slot from which to index the coordinator
 
 ## running locally
 
