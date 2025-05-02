@@ -23,7 +23,7 @@ pub struct CheckpointConfig {
 #[derive(Debug)]
 pub enum PayloadState<T: NodeIdentity> {
     Downloading((T, BatchId, BlobTicket)),
-    Deserializing(JoinHandle<Result<Vec<DistroResult>, DeserializeError>>),
+    Deserializing(JoinHandle<Result<(Vec<DistroResult>, u32), DeserializeError>>),
 }
 
 #[derive(Error, Debug)]

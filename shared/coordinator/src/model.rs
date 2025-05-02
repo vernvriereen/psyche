@@ -176,9 +176,10 @@ pub enum HttpTrainingDataLocation {
 )]
 #[repr(C)]
 pub struct LLM {
+    pub max_seq_len: u32,
+    pub cold_start_warmup_steps: u32,
     pub architecture: LLMArchitecture,
     pub checkpoint: Checkpoint,
-    pub max_seq_len: u32,
     pub data_type: LLMTrainingDataType,
     pub data_location: LLMTrainingDataLocation,
     pub lr_schedule: LearningRateSchedule,
@@ -195,6 +196,7 @@ impl LLM {
             lr_schedule: LearningRateSchedule::Constant(ConstantLR::default()),
             max_seq_len: 2048,
             optimizer: OptimizerDefinition::Dummy,
+            cold_start_warmup_steps: 0,
         }
     }
 }

@@ -22,6 +22,7 @@ max_seq_len = 512
 checkpoint = "Dummy"
 optimizer = "Dummy"
 data_location = "Dummy"
+cold_start_warmup_steps = 0
 
 
 [model.LLM.lr_schedule.Cosine]

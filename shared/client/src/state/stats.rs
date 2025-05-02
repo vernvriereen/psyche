@@ -1,5 +1,6 @@
 use psyche_coordinator::{model, Coordinator, WitnessEvalResult, WitnessMetadata};
 use psyche_core::{BoundedQueue, FixedVec, LearningRateSchedule, NodeIdentity};
+use psyche_modeling::Trainer;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokenizers::Tokenizer;
 use tracing::warn;
@@ -56,7 +57,14 @@ impl StatsLogger {
             round_log.insert("train/perplexity", perplexity(*loss));
             round_log.insert("train/confidence", self.confidence(*loss));
         }
-        round_log.insert("train/lr", self.lr_schedule.get_lr(state.progress.step));
+        round_log.insert(
+            "train/lr",
+            Trainer::get_lr(
+                &self.lr_schedule,
+                state.progress.step,
+                state.get_cold_start_warmup_bounds(),
+            ),
+        );
 
         round_log.insert("train/total_tokens", total_tokens(state));
         round_log.insert("train/tokens_per_sec", self.global_tokens_per_second(state));

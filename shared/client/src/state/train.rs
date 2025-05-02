@@ -234,6 +234,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
             self_distro_results: vec![],
         };
 
+        let warmup_lr_between = state.get_cold_start_warmup_bounds();
+        let zero_optim = warmup_lr_between.is_some_and(|_| round.height == 0);
+
         info!(
             integration_test_log_marker = %IntegrationTestLogMarker::WitnessElected,
             step = state.progress.step,
@@ -244,8 +247,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
             committee = %committee_proof.committee,
             witness_position = witness_proof.position,
             witness = %witness_proof.witness,
-            "Got training assignment for step {} (round {}/epoch {}): index={} committee position={} committee={} witness position={} witness={}",
-            state.progress.step, round.height, state.progress.epoch, client_index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness
+            warmup_lr_between = ?warmup_lr_between,
+            "Got training assignment for step {} (round {}/epoch {}): index={} committee position={} committee={} witness position={} witness={} warmup_lr_between={:?}",
+            state.progress.step, round.height, state.progress.epoch, client_index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness, warmup_lr_between
         );
         let eval_runner = self.eval_runner.clone();
         let finished = Arc::new(AtomicBool::new(false));
@@ -350,6 +354,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                                         id: batch_id,
                                         data: BatchData::CPU(batch_data),
                                     },
+                                    warmup_lr_between,
+                                    zero_optim,
                                     Vec::new(),
                                     Some(prev_self_distro_results),
                                     cancel_training,
@@ -368,6 +374,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                                 step,
                                 distro_results,
                                 cancelled,
+                                nonce,
                             } = completed_trainer.map_err(|_| TrainError::TrainCrashed)??;
 
                             available_trainers.push(trainer);
@@ -405,6 +412,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                                             .map(|x| SerializedDistroResult::try_from(&x))
                                             .collect::<std::result::Result<Vec<_>, _>>()
                                             .map_err(TrainError::SerializeDistroResult)?,
+                                        trainer_nonce: nonce,
                                     };
 
                                     if let Some(dir) = write_gradients_dir {
@@ -489,6 +497,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
         let apply_start = Instant::now();
         let step = state.progress.step;
         let witness_quorum = state.witness_quorum();
+        let cold_start_warmup_steps = match &state.model {
+            model::Model::LLM(llm) => llm.cold_start_warmup_steps,
+        };
+        let warmup_lr_between = state.get_cold_start_warmup_bounds();
 
         // coordinator has already advanced to the next round (unless we're in cooldown) but we haven't started ours yet.
         // so our current_round corresponds to the coordinator's previous_round
@@ -551,7 +563,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     trace!("Consensus commitment for batch {batch_id}: {consensus:?}");
 
                     let (commitment, result) = &batch_commitments[consensus].1;
-                    let maybe_results: Result<Vec<DistroResult>, DeserializeError> = match payloads.remove(&result.ticket.hash()) {
+                    let maybe_results: Result<(Vec<DistroResult>, u32), DeserializeError> = match payloads.remove(&result.ticket.hash()) {
                         Some(PayloadState::Deserializing(x)) => match x.is_finished() {
                             true => x.await.unwrap(),
                             false => {
@@ -576,8 +588,15 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     };
 
                     match maybe_results {
-                        Ok(results) => {
-                            distro_results.push(results);
+                        Ok((results, trainer_nonce)) => {
+                            if trainer_nonce < cold_start_warmup_steps && step > cold_start_warmup_steps  {
+                                // results are not actually applied for the first cold_start_warmup_steps of a trainer's lifetime
+                                // note, we are relying on honest communication of this value here -- will need to harden with verification.
+                                // the only exception is for the first steps of the first epoch
+                                info!("Skipping apply of batch {batch_id}, trainer warming up ({trainer_nonce}/{cold_start_warmup_steps})");
+                            } else {
+                                distro_results.push(results);
+                            }
                         }
                         Err(err) => warn!("DESYNC: Got the following error when deserializing results for commitment 0x{}: {}", hex::encode(commitment.data_hash), err),
                     }
@@ -590,7 +609,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                             let distro_results = Some(distro_results.clone());
 
                             tokio::task::spawn_blocking(move || {
-                                trainer.optimize(step, distro_results)
+                                trainer.optimize(step, warmup_lr_between, distro_results)
                             })
                         })
                         .collect::<Vec<_>>();

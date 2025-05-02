@@ -250,8 +250,10 @@ pub struct CoordinatorEpochState<T> {
     pub clients: FixedVec<Client<T>, { SOLANA_MAX_NUM_CLIENTS }>,
     pub exited_clients: FixedVec<Client<T>, { SOLANA_MAX_NUM_CLIENTS }>,
     pub rounds_head: u32,
+    pub start_step: u32,
     pub first_round: SmallBoolean,
     pub checkpointed: SmallBoolean,
+    pub cold_start_epoch: SmallBoolean,
 }
 
 #[derive(
@@ -282,7 +284,7 @@ pub struct Coordinator<T> {
     pub progress: CoordinatorProgress,
 
     #[serde(default)]
-    pub epoch_state: CoordinatorEpochState<T>,
+    pub epoch_state: CoordinatorEpochState<T>, // note, gets zeroed at the start of every epoch (not persistent through epochs)
 
     #[serde(default)]
     pub run_state_start_unix_timestamp: u64,
@@ -385,6 +387,8 @@ impl<T: NodeIdentity> Default for CoordinatorEpochState<T> {
             checkpointed: Default::default(),
             clients: Default::default(),
             exited_clients: Default::default(),
+            cold_start_epoch: false.into(),
+            start_step: Default::default(),
         }
     }
 }
@@ -834,6 +838,19 @@ impl<T: NodeIdentity> Coordinator<T> {
         current_data_start_index * self.get_sequence_length() as u64
     }
 
+    pub fn get_cold_start_warmup_bounds(&self) -> Option<(u32, u32)> {
+        match self.epoch_state.cold_start_epoch.is_true() {
+            true => Some((
+                self.epoch_state.start_step,
+                self.epoch_state.start_step
+                    + match &self.model {
+                        Model::LLM(llm) => llm.cold_start_warmup_steps,
+                    },
+            )),
+            false => None,
+        }
+    }
+
     fn get_global_batch_size_for_tokens(&self, tokens_processed: u64) -> u16 {
         self.config.get_batch_size(tokens_processed)
     }
@@ -893,8 +910,11 @@ impl<T: NodeIdentity> Coordinator<T> {
                 }
             }
 
+            let cold_start_epoch = self.epoch_state.cold_start_epoch;
             bytemuck::write_zeroes(&mut self.epoch_state);
             self.epoch_state.first_round = true.into();
+            self.epoch_state.cold_start_epoch = cold_start_epoch;
+            self.epoch_state.start_step = self.progress.step;
             self.epoch_state
                 .clients
                 .extend(
@@ -1006,8 +1026,10 @@ impl<T: NodeIdentity> Coordinator<T> {
             if self.pending_pause.is_true() {
                 self.change_state(unix_timestamp, RunState::Paused);
                 self.pending_pause = false.into();
+                self.epoch_state.cold_start_epoch = true.into();
             } else {
                 self.start_waiting_for_members(unix_timestamp);
+                self.epoch_state.cold_start_epoch = false.into();
             }
 
             Ok(TickResult::EpochEnd(true))
