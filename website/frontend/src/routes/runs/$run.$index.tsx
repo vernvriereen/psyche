@@ -56,6 +56,17 @@ function RouteComponent() {
 		[info?.pauseHistory]
 	)
 
+	const goodEvals = useMemo(() => {
+		if (!run) {
+			return {}
+		}
+		return Object.fromEntries(
+			Object.entries(run.metrics.summary.evals).filter(
+				(arr): arr is [string, number] => arr[1] !== null
+			)
+		)
+	}, [run?.metrics.summary.evals])
+
 	if (!info) {
 		return (
 			<RunContainer>
@@ -78,14 +89,6 @@ function RouteComponent() {
 			</RunContainer>
 		)
 	}
-
-	const goodEvals = useMemo(() => {
-		return Object.fromEntries(
-			Object.entries(run.metrics.summary.evals).filter(
-				(arr): arr is [string, number] => arr[1] !== null
-			)
-		)
-	}, [run.metrics.summary.evals])
 
 	return (
 		<RunContainer>
