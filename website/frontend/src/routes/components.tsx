@@ -170,6 +170,7 @@ function RouteComponent() {
 					info={{
 						id: 'run_001',
 						index: 0,
+						isOnlyRunAtThisIndex: true,
 						name: 'land-seer',
 						description: 'Processing landscape photographs',
 						size: 7_000_0000n,

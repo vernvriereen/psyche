@@ -17,7 +17,7 @@ import { Route as ComponentsImport } from './routes/components.tsx'
 import { Route as RunsRouteImport } from './routes/runs/route.tsx'
 import { Route as IndexImport } from './routes/index.tsx'
 import { Route as RunsIndexImport } from './routes/runs/index.tsx'
-import { Route as RunsRunImport } from './routes/runs/$run.tsx'
+import { Route as RunsRunIndexImport } from './routes/runs/$run.$index.tsx'
 
 // Create/Update Routes
 
@@ -57,9 +57,9 @@ const RunsIndexRoute = RunsIndexImport.update({
 	getParentRoute: () => RunsRouteRoute,
 } as any)
 
-const RunsRunRoute = RunsRunImport.update({
-	id: '/$run',
-	path: '/$run',
+const RunsRunIndexRoute = RunsRunIndexImport.update({
+	id: '/$run/$index',
+	path: '/$run/$index',
 	getParentRoute: () => RunsRouteRoute,
 } as any)
 
@@ -102,18 +102,18 @@ declare module '@tanstack/react-router' {
 			preLoaderRoute: typeof StatusImport
 			parentRoute: typeof rootRoute
 		}
-		'/runs/$run': {
-			id: '/runs/$run'
-			path: '/$run'
-			fullPath: '/runs/$run'
-			preLoaderRoute: typeof RunsRunImport
-			parentRoute: typeof RunsRouteImport
-		}
 		'/runs/': {
 			id: '/runs/'
 			path: '/'
 			fullPath: '/runs/'
 			preLoaderRoute: typeof RunsIndexImport
+			parentRoute: typeof RunsRouteImport
+		}
+		'/runs/$run/$index': {
+			id: '/runs/$run/$index'
+			path: '/$run/$index'
+			fullPath: '/runs/$run/$index'
+			preLoaderRoute: typeof RunsRunIndexImport
 			parentRoute: typeof RunsRouteImport
 		}
 	}
@@ -122,13 +122,13 @@ declare module '@tanstack/react-router' {
 // Create and export the route tree
 
 interface RunsRouteRouteChildren {
-	RunsRunRoute: typeof RunsRunRoute
 	RunsIndexRoute: typeof RunsIndexRoute
+	RunsRunIndexRoute: typeof RunsRunIndexRoute
 }
 
 const RunsRouteRouteChildren: RunsRouteRouteChildren = {
-	RunsRunRoute: RunsRunRoute,
 	RunsIndexRoute: RunsIndexRoute,
+	RunsRunIndexRoute: RunsRunIndexRoute,
 }
 
 const RunsRouteRouteWithChildren = RunsRouteRoute._addFileChildren(
@@ -141,8 +141,8 @@ export interface FileRoutesByFullPath {
 	'/components': typeof ComponentsRoute
 	'/legal': typeof LegalRoute
 	'/status': typeof StatusRoute
-	'/runs/$run': typeof RunsRunRoute
 	'/runs/': typeof RunsIndexRoute
+	'/runs/$run/$index': typeof RunsRunIndexRoute
 }
 
 export interface FileRoutesByTo {
@@ -150,8 +150,8 @@ export interface FileRoutesByTo {
 	'/components': typeof ComponentsRoute
 	'/legal': typeof LegalRoute
 	'/status': typeof StatusRoute
-	'/runs/$run': typeof RunsRunRoute
 	'/runs': typeof RunsIndexRoute
+	'/runs/$run/$index': typeof RunsRunIndexRoute
 }
 
 export interface FileRoutesById {
@@ -161,8 +161,8 @@ export interface FileRoutesById {
 	'/components': typeof ComponentsRoute
 	'/legal': typeof LegalRoute
 	'/status': typeof StatusRoute
-	'/runs/$run': typeof RunsRunRoute
 	'/runs/': typeof RunsIndexRoute
+	'/runs/$run/$index': typeof RunsRunIndexRoute
 }
 
 export interface FileRouteTypes {
@@ -173,10 +173,10 @@ export interface FileRouteTypes {
 		| '/components'
 		| '/legal'
 		| '/status'
-		| '/runs/$run'
 		| '/runs/'
+		| '/runs/$run/$index'
 	fileRoutesByTo: FileRoutesByTo
-	to: '/' | '/components' | '/legal' | '/status' | '/runs/$run' | '/runs'
+	to: '/' | '/components' | '/legal' | '/status' | '/runs' | '/runs/$run/$index'
 	id:
 		| '__root__'
 		| '/'
@@ -184,8 +184,8 @@ export interface FileRouteTypes {
 		| '/components'
 		| '/legal'
 		| '/status'
-		| '/runs/$run'
 		| '/runs/'
+		| '/runs/$run/$index'
 	fileRoutesById: FileRoutesById
 }
 
@@ -228,8 +228,8 @@ export const routeTree = rootRoute
     "/runs": {
       "filePath": "runs/route.tsx",
       "children": [
-        "/runs/$run",
-        "/runs/"
+        "/runs/",
+        "/runs/$run/$index"
       ]
     },
     "/components": {
@@ -241,12 +241,12 @@ export const routeTree = rootRoute
     "/status": {
       "filePath": "status.tsx"
     },
-    "/runs/$run": {
-      "filePath": "runs/$run.tsx",
-      "parent": "/runs"
-    },
     "/runs/": {
       "filePath": "runs/index.tsx",
+      "parent": "/runs"
+    },
+    "/runs/$run/$index": {
+      "filePath": "runs/$run.$index.tsx",
       "parent": "/runs"
     }
   }

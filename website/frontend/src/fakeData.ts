@@ -51,6 +51,7 @@ export const fakeRunSummaries: RunSummary[] = [
 	{
 		id: 'run-001',
 		index: 0,
+		isOnlyRunAtThisIndex: false,
 		name: 'Vision Model Alpha',
 		description: 'Training a vision model to recognize everyday objects',
 		status: { type: 'active' },
@@ -68,6 +69,7 @@ export const fakeRunSummaries: RunSummary[] = [
 	{
 		id: 'run-002',
 		index: 0,
+		isOnlyRunAtThisIndex: true,
 		name: 'Text Assistant Beta',
 		description: 'Assistant-like model with reasoning capabilities',
 		status: { type: 'active' },
@@ -85,6 +87,7 @@ export const fakeRunSummaries: RunSummary[] = [
 	{
 		id: 'run-003',
 		index: 0,
+		isOnlyRunAtThisIndex: true,
 		name: 'Small Language Model',
 		description: 'Compact text model for edge devices',
 		status: {
@@ -105,11 +108,29 @@ export const fakeRunSummaries: RunSummary[] = [
 		type: 'text',
 		pauseHistory: [],
 	},
+	{
+		id: 'run-001',
+		index: 1,
+		isOnlyRunAtThisIndex: false,
+		name: 'Vision Model Alpha',
+		description: 'Training a vision model to recognize everyday objects',
+		status: { type: 'active' },
+		startTime: {
+			slot: 12345n,
+			time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 14),
+		}, // 2 weeks ago
+		totalTokens: 100000n,
+		completedTokens: 65000n,
+		size: BigInt('1000000000'),
+		arch: 'HfLlama',
+		type: 'vision',
+		pauseHistory: [],
+	},
 ]
 
 export const makeFakeRunData: Record<
 	string,
-	(seed?: number, step?: number) => RunData
+	(seed?: number, step?: number, index?: number) => RunData
 > = {
 	'run-001': makeFakeRunDataSeeded,
 	'run-002': () => ({
@@ -197,7 +218,7 @@ export const fakeContributionInfo: ContributionInfo = {
 	miningPoolProgramId: 'N/A',
 }
 
-function makeFakeRunDataSeeded(seed = 1, step = 0): RunData {
+function makeFakeRunDataSeeded(seed = 1, step = 0, index = 0): RunData {
 	const seededRandom = createSeededRandom(seed)
 
 	const numEpochs = Math.round(seededRandom() * 300) + 10
@@ -256,7 +277,7 @@ function makeFakeRunDataSeeded(seed = 1, step = 0): RunData {
 	}
 
 	return {
-		info: fakeRunSummaries[0],
+		info: { ...fakeRunSummaries[0], index },
 		recentTxs: Array.from({ length: 5 }, () => ({
 			pubkey: PublicKey.default.toString(),
 			method: 'tick',

@@ -7,9 +7,10 @@ export const Route = createFileRoute('/runs/')({
 		fetchRuns().then((runs) => {
 			if (runs.runs.length === 1) {
 				throw redirect({
-					to: '/runs/$run',
+					to: '/runs/$run/$index',
 					params: {
 						run: runs.runs[0].id,
+						index: `${runs.runs[0].index}`,
 					},
 				})
 			}

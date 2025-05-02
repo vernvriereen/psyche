@@ -95,7 +95,7 @@ export function Runs({
 						(r) => runTypeFilter === 'all' || runTypeFilter === r.status.type
 					)
 					.map((r) => (
-						<RunSummaryCard key={r.id} info={r} />
+						<RunSummaryCard key={`id: ${r.id} index: ${r.index}`} info={r} />
 					))}
 			</RunBoxesContainer>
 		</RunsContainer>

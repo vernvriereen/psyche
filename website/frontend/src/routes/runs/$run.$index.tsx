@@ -12,14 +12,14 @@ import { c, formatBytes, formatNumber, metricToGraph } from '../../utils.js'
 import { ResponsiveLineGraph } from '../../components/Chart.js'
 import { useMemo } from 'react'
 import { css } from '@linaria/core'
-import { InfoChit } from '../../components/InfoChit.jsx'
+import { InfoChit } from '../../components/InfoChit.js'
 import { RunStateIndicator } from '../../components/RunStateIndicator.js'
 import { fetchRunStreaming } from '../../fetchRuns.js'
 import { useStreamingRunData } from '../../useStreamingData.js'
 import { RunBox } from '../../components/RunBox.js'
 import { Progress } from '../../components/ProgressWrapper.js'
-export const Route = createFileRoute('/runs/$run')({
-	loader: async ({ params }) => fetchRunStreaming(params.run),
+export const Route = createFileRoute('/runs/$run/$index')({
+	loader: async ({ params }) => fetchRunStreaming(params.run, params.index),
 	component: RouteComponent,
 })
 
@@ -104,7 +104,10 @@ function RouteComponent() {
 			<RunBox
 				title={
 					<>
-						<span className={text['display/4xl']}>{info.name || info.id}</span>
+						<span className={text['display/4xl']}>
+							{info.name || info.id}{' '}
+							{info.isOnlyRunAtThisIndex ? '' : `(v${info.index + 1})`}
+						</span>
 						<StatusChip status={info.status.type} style="minimal" />
 					</>
 				}

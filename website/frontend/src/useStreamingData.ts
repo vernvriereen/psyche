@@ -2,7 +2,7 @@ import { useLoaderData } from '@tanstack/react-router'
 import { useState, useEffect, useRef } from 'react'
 
 export function useStreamingRunData() {
-	const { initialData, stream } = useLoaderData({ from: '/runs/$run' })
+	const { initialData, stream } = useLoaderData({ from: '/runs/$run/$index' })
 	const [data, setData] = useState(initialData)
 
 	const previousReaderDone = useRef<Promise<void> | null>(null)

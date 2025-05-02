@@ -302,12 +302,24 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		totalTokens: bigint
 		totalTokensPerSecondActive: bigint
 	} {
-		const rawRuns = [...this.#runs.values()].flat()
-		const runs = rawRuns.map(makeRunSummary).filter((r) => !!r)
+		const rawRuns = [...this.#runs.values()].flatMap((runs) =>
+			runs.map(
+				(r, i) =>
+					[
+						makeRunSummary(
+							r,
+							i,
+							runs.filter((r) => !!r.lastState).length === 1
+						),
+						r,
+					] as const
+			)
+		)
+		const runs = rawRuns.map((r) => r[0]).filter((r) => !!r)
 		return {
 			runs,
 			totalTokens: runs.reduce((sum, run) => sum + run.completedTokens, 0n),
-			totalTokensPerSecondActive: rawRuns.reduce((sum, run) => {
+			totalTokensPerSecondActive: rawRuns.reduce((sum, [_, run]) => {
 				const ACTIVE_TIMEOUT_MS = 60 * 1000
 				if (Date.now() - run.lastUpdated.time.getTime() > ACTIVE_TIMEOUT_MS) {
 					return sum
@@ -340,7 +352,11 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			return null
 		}
 		const realIndex = runsAtThisAddress!.indexOf(run)
-		const info = makeRunSummary(run, realIndex)
+		const info = makeRunSummary(
+			run,
+			realIndex,
+			runsAtThisAddress!.filter((r) => !!r.lastState).length === 1
+		)
 		if (!info) {
 			return null
 		}
@@ -457,7 +473,11 @@ function goodNumber({ value }: { value: number }): boolean {
 	return Number.isFinite(value) && !Number.isNaN(value)
 }
 
-function makeRunSummary(run: RunHistory, index: number): RunSummary | null {
+function makeRunSummary(
+	run: RunHistory,
+	index: number,
+	isOnlyRunAtThisIndex: boolean
+): RunSummary | null {
 	if (!run.lastState) {
 		return null
 	}
@@ -490,6 +510,7 @@ function makeRunSummary(run: RunHistory, index: number): RunSummary | null {
 		arch: c.model.LLM.architecture,
 		id: c.run_id,
 		index: index,
+		isOnlyRunAtThisIndex,
 		name: run.lastState.metadata.name,
 		description: run.lastState.metadata.description,
 		status: run.destroyedAt

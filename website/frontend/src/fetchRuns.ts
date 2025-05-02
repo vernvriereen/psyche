@@ -70,28 +70,42 @@ function makeDecodeState(): DecodeState {
 		decoder: new TextDecoder('utf-8'),
 	}
 }
-export async function fetchRunStreaming(runId: string): Promise<{
+export async function fetchRunStreaming(
+	runId: string,
+	indexStr?: string
+): Promise<{
 	initialData: ApiGetRun
 	stream: ReadableStream<ApiGetRun>
 }> {
 	if (import.meta.env.VITE_FAKE_DATA) {
 		const seed = Math.random() * 1_000_000_000
-		return {
-			initialData: { run: makeFakeRunData[runId](seed, 0), isOnlyRun: false },
-			stream: new ReadableStream<ApiGetRun>({
-				async start(controller) {
-					let i = 0
-					while (true) {
-						controller.enqueue({
-							run: makeFakeRunData[runId](seed, i),
-							isOnlyRun: false,
-						})
-						const nextFakeDataDelay = 1000 + Math.random() * 1000
-						await new Promise((r) => setTimeout(r, nextFakeDataDelay))
-						i++
-					}
+		try {
+			const index = Number.parseInt(indexStr ?? '0')
+			if (`${index}` !== indexStr) {
+				throw new Error(`Invalid index ${indexStr}`)
+			}
+			return {
+				initialData: {
+					run: makeFakeRunData[runId](seed, 0, index),
+					isOnlyRun: false,
 				},
-			}),
+				stream: new ReadableStream<ApiGetRun>({
+					async start(controller) {
+						let i = 0
+						while (true) {
+							controller.enqueue({
+								run: makeFakeRunData[runId](seed, i, index),
+								isOnlyRun: false,
+							})
+							const nextFakeDataDelay = 1000 + Math.random() * 1000
+							await new Promise((r) => setTimeout(r, nextFakeDataDelay))
+							i++
+						}
+					},
+				}),
+			}
+		} catch (err) {
+			return runError()
 		}
 	}
 
@@ -99,20 +113,7 @@ export async function fetchRunStreaming(runId: string): Promise<{
 
 	const initialData = await getOneRunFromStream(decodeState, reader)
 	if (!initialData) {
-		return {
-			initialData: {
-				isOnlyRun: false,
-				run: null,
-				error: new Error(
-					'Failed to get initial data from server, connection closed early.'
-				),
-			},
-			stream: new ReadableStream({
-				async start(controller) {
-					controller.close()
-				},
-			}),
-		}
+		return runError()
 	}
 	decodeState = initialData.decodeState
 
@@ -178,6 +179,25 @@ export async function fetchRunStreaming(runId: string): Promise<{
 	})
 
 	return { initialData: initialData.parsedRun, stream }
+}
+
+function runError():
+	| { initialData: ApiGetRun; stream: ReadableStream<ApiGetRun> }
+	| PromiseLike<{ initialData: ApiGetRun; stream: ReadableStream<ApiGetRun> }> {
+	return {
+		initialData: {
+			isOnlyRun: false,
+			run: null,
+			error: new Error(
+				'Failed to get initial data from server, connection closed early.'
+			),
+		},
+		stream: new ReadableStream({
+			async start(controller) {
+				controller.close()
+			},
+		}),
+	}
 }
 
 async function getOneRunFromStream(

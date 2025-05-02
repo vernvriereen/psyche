@@ -52,6 +52,8 @@ export interface RunSummary {
 	// there can be an arbitrary number of runs with the same ID as long as you create/destroy them.
 	// this is how we track which iteration of a run this is.
 	index: number
+	isOnlyRunAtThisIndex: boolean
+
 	name: string
 	description: string
 	status: RunStatus

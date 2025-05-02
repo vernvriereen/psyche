@@ -65,6 +65,8 @@ export function RunSummaryCard({
 		status,
 		type,
 		pauseHistory,
+		index,
+		isOnlyRunAtThisIndex,
 	},
 }: {
 	info: RunSummary
@@ -75,14 +77,17 @@ export function RunSummaryCard({
 	)
 	return (
 		<ShadowCard
-			to="/runs/$run"
+			to="/runs/$run/$index"
 			params={{
 				run: id,
+				index: index,
 			}}
 		>
 			<RunHeader>
 				<RunTitleRow>
-					<RunTitle className={text['display/2xl']}>{name || id}</RunTitle>
+					<RunTitle className={text['display/2xl']}>
+						{name || id} {isOnlyRunAtThisIndex ? '' : `(v${index + 1})`}
+					</RunTitle>
 					<StatusChip status={status.type} style="minimal" />
 				</RunTitleRow>
 				<RunDescription className={text['aux/xs/regular']}>
