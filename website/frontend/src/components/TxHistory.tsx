@@ -7,7 +7,6 @@ import { text } from '../fonts.js'
 const TxsContainer = styled.div`
 	line-height: 1.3em;
 	overflow: hidden;
-	// border: 2px solid;
 	margin: 16px 16px;
 	padding: 0;
 	overflow-x: scroll;
@@ -55,7 +54,7 @@ export function TxHistory({
 	return (
 		<TxsContainer className={text['body/sm/regular']}>
 			{txs.map((r) => (
-				<div>
+				<div key={r.txHash}>
 					[{r.timestamp.time.toLocaleTimeString()}]{' <'}
 					<a
 						href={solanaTxUrl(r.txHash, cluster)}
