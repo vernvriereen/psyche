@@ -9,6 +9,7 @@ import { useInterval } from 'usehooks-ts'
 import { RunBox } from './RunBox.js'
 import { c, solanaAccountUrl } from '../utils.js'
 import { TxHistory } from './TxHistory.js'
+import { Progress } from './ProgressWrapper.js'
 
 const Container = styled.div`
 	display: flex;
@@ -134,44 +135,29 @@ export function RunStateIndicator({
 				phase === 'RoundTrain' ||
 				phase === 'RoundWitness' ||
 				phase === 'Cooldown') && (
-				<div>
-					<ProgressBar
-						chunkHeight={8}
-						chunkWidth={4}
-						chunkSpacing={1}
-						ratio={
-							(round +
-								(phase === 'RoundWitness'
-									? 0.5
-									: phase === 'Cooldown'
-										? 1
-										: 0)) /
-							roundsPerEpoch
-						}
-					/>
-					<ProgressDescription>
-						<span>round</span>
-						<span>
-							{round + 1}/{roundsPerEpoch}
-						</span>
-					</ProgressDescription>
-				</div>
+				<Progress
+					chunkHeight={8}
+					chunkWidth={4}
+					chunkSpacing={1}
+					ratio={
+						(round +
+							(phase === 'RoundWitness' ? 0.5 : phase === 'Cooldown' ? 1 : 0)) /
+						roundsPerEpoch
+					}
+					current={round + 1}
+					total={roundsPerEpoch}
+					label="round"
+				/>
 			)}
 			{phase === 'WaitingForMembers' && (
-				<div>
-					<ProgressBar
-						chunkHeight={8}
-						chunkWidth={4}
-						chunkSpacing={1}
-						ratio={clients.length / minClients}
-					/>
-					<ProgressDescription>
-						<span>compute nodes</span>
-						<span>
-							{clients.length}/{minClients}
-						</span>
-					</ProgressDescription>
-				</div>
+				<Progress
+					chunkHeight={8}
+					chunkWidth={4}
+					chunkSpacing={1}
+					current={clients.length}
+					total={minClients}
+					label="compute nodes"
+				/>
 			)}
 			<LegendBox>
 				<span>
@@ -224,24 +210,15 @@ export function RunStateIndicator({
 			</SectionsGrid>
 			<Container className={flexCol}>
 				<ClientsBox>
-					{clients.map((c) => (
-						<RoundParticipant key={c.pubkey} client={c} />
+					{clients.map((c, i) => (
+						<RoundParticipant key={c.pubkey} client={c} index={i} />
 					))}
 				</ClientsBox>
 			</Container>
 		</RunBox>
 	)
 }
-const ProgressDescription = styled.div`
-	display: flex;
-	flex-direction: row;
-	gap: 8px;
-	justify-content: space-between;
 
-	.theme-dark & {
-		color: ${forest[200]};
-	}
-`
 const SectionBox = styled.div`
 	display: flex;
 	flex-direction: column;
@@ -289,7 +266,7 @@ function Section({
 			{!!doneRatio && (
 				<ProgressBar
 					ratio={active ? doneRatio : 0}
-					chunkWidth={3}
+					chunkWidth={2}
 					chunkSpacing={1}
 					chunkHeight={1}
 					size="small"
@@ -300,11 +277,17 @@ function Section({
 	)
 }
 
-function RoundParticipant({ client }: { client: RunRoundClient }) {
+function RoundParticipant({
+	client,
+	index,
+}: {
+	client: RunRoundClient
+	index: number
+}) {
 	const expectedPubkeyLength = 44
 	const segmentLength = Math.floor(expectedPubkeyLength / 4)
-	const horSegLength = segmentLength + 2
-	const vertSegLength = segmentLength - 2
+	const horSegLength = segmentLength + 5
+	const vertSegLength = segmentLength - 5
 	return (
 		<a
 			href={solanaAccountUrl(
@@ -315,7 +298,14 @@ function RoundParticipant({ client }: { client: RunRoundClient }) {
 			className="link"
 		>
 			<ClientBox className={text['body/xs/regular']}>
-				<Dot className={client.witness || 'training'} />
+				<Dot
+					className={client.witness || 'training'}
+					flickerDelay={
+						(index * 12389123) % 32621
+					} /* introduce some pseudorandom offset */
+				>
+					<span className="center">8&times;H100</span>
+				</Dot>
 				<span className="invisible">
 					{client.pubkey.slice(0, horSegLength)}
 				</span>
@@ -338,9 +328,10 @@ function RoundParticipant({ client }: { client: RunRoundClient }) {
 }
 
 const Dot = styled.span`
+	position: relative;
 	height: ${(props) => props.size ?? '3em'};
-	width: ${(props) => props.size ?? '3em'};
-	border-radius: 100%;
+	width: ${(props) => props.size ?? '6em'};
+	border-radius: 0px;
 	display: inline-block;
 	&.training {
 		background-color: ${slate[400]};
@@ -349,14 +340,15 @@ const Dot = styled.span`
 		background-color: ${gold[400]};
 	}
 	&.done {
-		background-color: ${forest[500]};
+		background-color: ${forest[400]};
 	}
+
+	animation-delay: ${(props) => -(props.flickerDelay ?? 0)}ms;
 `
 
 const ClientBox = styled.div`
-	padding: 0.5em;
-	max-width: 13ch;
-	aspect-ratio: 1/1;
+	max-width: 16ch;
+	aspect-ratio: 1.5/1;
 
 	position: relative;
 
@@ -364,11 +356,11 @@ const ClientBox = styled.div`
 
 	.theme-light &,
 	.theme-light & a {
-		color: ${slate[600]};
+		color: ${slate[500]};
 	}
 	.theme-dark &,
 	.theme-dark & a {
-		color: ${forest[400]};
+		color: ${forest[500]};
 	}
 
 	.invisible {
@@ -418,6 +410,14 @@ const ClientBox = styled.div`
 	}
 
 	${Dot} {
+		.center {
+			position: absolute;
+			left: 0;
+			top: 50%;
+			transform: translateY(-50%);
+			right: 0;
+			color: ${forest[700]};
+		}
 		box-shadow:
 			inset -1px -1px 0px rgba(0, 0, 0, 0.5),
 			inset 1px 1px 0px rgba(255, 255, 255, 0.5);
@@ -425,6 +425,29 @@ const ClientBox = styled.div`
 		left: 50%;
 		top: 50%;
 		transform: translate(-50%, -50%);
+
+		animation-name: flicker;
+		animation-duration: 2s;
+		animation-timing-function: linear;
+		animation-iteration-count: infinite;
+
+		@keyframes flicker {
+			0% {
+				opacity: 1;
+			}
+			35% {
+				opacity: 1;
+			}
+			50% {
+				opacity: 0.45;
+			}
+			85% {
+				opacity: 1;
+			}
+			100% {
+				opacity: 1;
+			}
+		}
 	}
 `
 const ClientsBox = styled.div`
@@ -432,5 +455,6 @@ const ClientsBox = styled.div`
 	flex-wrap: wrap;
 	justify-content: space-between;
 	width: 100%;
+	gap: 1em;
 	min-height: 82px;
 `

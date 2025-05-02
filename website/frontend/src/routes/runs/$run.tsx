@@ -6,7 +6,6 @@ import { forest } from '../../colors.js'
 import { text } from '../../fonts.js'
 import { StatusChip } from '../../components/StatusChip.js'
 import { Runtime } from '../../components/Runtime.js'
-import { ProgressBar } from '../../components/ProgressBar.js'
 import { MiniCard } from '../../components/MiniCard.js'
 import { RadialGraph } from '../../components/RadialGraph.js'
 import { c, formatBytes, formatNumber, metricToGraph } from '../../utils.js'
@@ -18,6 +17,7 @@ import { RunStateIndicator } from '../../components/RunStateIndicator.js'
 import { fetchRunStreaming } from '../../fetchRuns.js'
 import { useStreamingRunData } from '../../useStreamingData.js'
 import { RunBox } from '../../components/RunBox.js'
+import { Progress } from '../../components/ProgressWrapper.js'
 export const Route = createFileRoute('/runs/$run')({
 	loader: async ({ params }) => fetchRunStreaming(params.run),
 	component: RouteComponent,
@@ -130,21 +130,14 @@ function RouteComponent() {
 							}
 						/>
 					</RuntimeLabel>
-					<div>
-						<ProgressBar
-							size="big"
-							ratio={Number(info.completedTokens) / Number(info.totalTokens)}
-							chunkHeight={36}
-							chunkWidth={24}
-						/>
-						<ProgressDescription>
-							<span>tokens</span>
-							<span>
-								{formatNumber(Number(info.completedTokens), 3)}/
-								{formatNumber(Number(info.totalTokens), 3)}
-							</span>
-						</ProgressDescription>
-					</div>
+					<Progress
+						size="big"
+						current={Number(info.completedTokens)}
+						total={Number(info.totalTokens)}
+						chunkHeight={36}
+						chunkWidth={24}
+						label="tokens"
+					/>
 
 					{run.state && run.info.status.type !== 'completed' && (
 						<RunStateActiveContainer
@@ -274,17 +267,6 @@ const RunContainer = styled.div`
 const RuntimeLabel = styled.span`
 	.theme-dark & {
 		color: ${forest[300]};
-	}
-`
-
-const ProgressDescription = styled.div`
-	display: flex;
-	flex-direction: row;
-	gap: 8px;
-	justify-content: space-between;
-
-	.theme-dark & {
-		color: ${forest[200]};
 	}
 `
 
