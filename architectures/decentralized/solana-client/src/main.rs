@@ -133,7 +133,7 @@ enum Commands {
         run_id: String,
 
         #[clap(long, env)]
-        config_path: PathBuf,
+        config_path: Option<PathBuf>,
 
         #[clap(long, env)]
         restart_from_step: Option<u32>,
@@ -357,11 +357,6 @@ async fn async_main() -> Result<()> {
                 CommitmentConfig::confirmed(),
             )
             .unwrap();
-            let state: State = toml::from_str(std::str::from_utf8(
-                &std::fs::read(&config_path)
-                    .with_context(|| format!("failed to read config toml file {config_path:?}"))?,
-            )?)
-            .with_context(|| format!("failed to parse config toml file {config_path:?}"))?;
             let coordinator_instance = find_coordinator_instance(&run_id);
             let coordinator_instance_state = backend
                 .get_coordinator_instance(&coordinator_instance)
@@ -375,6 +370,21 @@ async fn async_main() -> Result<()> {
                 step,
                 epoch_start_data_index: get_data_index_for_step(&account.state.coordinator, step),
             });
+
+            let (config, model) = match config_path {
+                Some(config_path) => {
+                    let state: State = toml::from_str(std::str::from_utf8(
+                        &std::fs::read(&config_path).with_context(|| {
+                            format!("failed to read config toml file {config_path:?}")
+                        })?,
+                    )?)
+                    .with_context(|| format!("failed to parse config toml file {config_path:?}"))?;
+
+                    (Some(state.config), Some(state.model))
+                }
+                None => (None, None),
+            };
+
             let metadata = {
                 let mut metadata = account.state.metadata;
 
@@ -404,8 +414,8 @@ async fn async_main() -> Result<()> {
                     coordinator_instance,
                     coordinator_account,
                     metadata,
-                    Some(state.config),
-                    Some(state.model),
+                    config,
+                    model,
                     progress,
                 )
                 .await?;
