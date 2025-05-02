@@ -106,12 +106,27 @@ export function metricToGraph<
 	const result: Record<string, any> = {}
 	for (const [key, value] of Object.entries(data)) {
 		if (Array.isArray(value)) {
-			const graphData = fairSample(value, maxItems).map(({ step, value }) => ({
-				x: step,
-				y: value,
-			}))
+			const groupedByStep = value.reduce<Record<string, number[]>>(
+				(acc, { step, value }) => {
+					if (!acc[step]) {
+						acc[step] = []
+					}
+					acc[step].push(value)
+					return acc
+				},
+				{}
+			)
 
-			result[key] = graphData
+			const averaged = Object.entries(groupedByStep).map(([step, values]) => {
+				const mean = values.reduce((sum, val) => sum + val, 0) / values.length
+				return {
+					x: parseInt(step, 10),
+					y: mean,
+				}
+			})
+			const sample = fairSample(averaged, maxItems)
+
+			result[key] = sample
 		} else if (typeof value === 'object') {
 			const nestedResults = metricToGraph(
 				value as OverTime<Record<string, number | Record<string, number>>>,
