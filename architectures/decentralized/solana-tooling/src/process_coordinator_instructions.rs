@@ -20,6 +20,7 @@ use psyche_solana_coordinator::logic::FreeCoordinatorParams;
 use psyche_solana_coordinator::logic::InitCoordinatorParams;
 use psyche_solana_coordinator::logic::JoinRunParams;
 use psyche_solana_coordinator::ClientId;
+use psyche_solana_coordinator::RunMetadata;
 use solana_sdk::instruction::Instruction;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
@@ -85,6 +86,7 @@ pub async fn process_update(
     authority: &Keypair,
     coordinator_instance: &Pubkey,
     coordinator_account: &Pubkey,
+    metadata: Option<RunMetadata>,
     config: Option<CoordinatorConfig>,
     model: Option<Model>,
     progress: Option<CoordinatorProgress>,
@@ -97,6 +99,7 @@ pub async fn process_update(
     let instruction = Instruction {
         accounts: accounts.to_account_metas(None),
         data: Update {
+            metadata,
             config,
             model,
             progress,

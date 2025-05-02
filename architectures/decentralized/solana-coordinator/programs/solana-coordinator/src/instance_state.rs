@@ -35,6 +35,7 @@ use crate::ProgramError;
     Deserialize,
     TS,
     Default,
+    PartialEq,
 )]
 #[repr(C)]
 pub struct RunMetadata {
@@ -45,6 +46,8 @@ pub struct RunMetadata {
     pub num_parameters: u64,
     pub vocab_size: u64,
 }
+
+impl RunMetadata {}
 
 #[derive(
     Debug,
@@ -255,6 +258,7 @@ impl CoordinatorInstanceState {
 
     pub fn update(
         &mut self,
+        metadata: Option<RunMetadata>,
         config: Option<CoordinatorConfig>,
         model: Option<Model>,
         progress: Option<CoordinatorProgress>,
@@ -263,6 +267,10 @@ impl CoordinatorInstanceState {
             return err!(ProgramError::UpdateConfigFinished);
         } else if !self.coordinator.halted() {
             return err!(ProgramError::UpdateConfigNotHalted);
+        }
+
+        if let Some(metadata) = metadata {
+            let _ = std::mem::replace(&mut self.metadata, metadata);
         }
 
         if let Some(config) = config {

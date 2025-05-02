@@ -138,13 +138,14 @@ pub mod psyche_solana_coordinator {
 
     pub fn update(
         ctx: Context<OwnerCoordinatorAccounts>,
+        metadata: Option<RunMetadata>,
         config: Option<CoordinatorConfig>,
         model: Option<Model>,
         progress: Option<CoordinatorProgress>,
     ) -> Result<()> {
         let mut account = ctx.accounts.coordinator_account.load_mut()?;
         account.increment_nonce();
-        account.state.update(config, model, progress)
+        account.state.update(metadata, config, model, progress)
     }
 
     pub fn set_future_epoch_rates(

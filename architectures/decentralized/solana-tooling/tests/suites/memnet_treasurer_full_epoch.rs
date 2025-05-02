@@ -86,7 +86,6 @@ pub async fn run() {
             main_authority: main_authority.pubkey(),
             join_authority: join_authority.pubkey(),
             collateral_amount_per_earned_point,
-            metadata: Default::default(),
         },
     )
     .await
@@ -190,6 +189,7 @@ pub async fn run() {
         &coordinator_instance,
         &coordinator_account,
         RunUpdateParams {
+            metadata: None,
             config: Some(CoordinatorConfig {
                 warmup_time: 1,
                 cooldown_time: 1,

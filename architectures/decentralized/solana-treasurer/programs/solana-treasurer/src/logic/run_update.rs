@@ -9,6 +9,7 @@ use psyche_solana_coordinator::cpi::update;
 use psyche_solana_coordinator::program::PsycheSolanaCoordinator;
 use psyche_solana_coordinator::CoordinatorAccount;
 use psyche_solana_coordinator::CoordinatorInstance;
+use psyche_solana_coordinator::RunMetadata;
 
 use crate::state::Run;
 
@@ -37,6 +38,7 @@ pub struct RunUpdateAccounts<'info> {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct RunUpdateParams {
+    pub metadata: Option<RunMetadata>,
     pub config: Option<CoordinatorConfig>,
     pub model: Option<Model>,
     pub progress: Option<CoordinatorProgress>,
@@ -73,6 +75,7 @@ pub fn run_update_processor(
                 },
             )
             .with_signer(run_signer_seeds),
+            params.metadata,
             params.config,
             params.model,
             params.progress,

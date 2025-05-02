@@ -66,7 +66,6 @@ pub async fn run() {
             run_id: "This is a random run id!".to_string(),
             main_authority: main_authority.pubkey(),
             join_authority: join_authority.pubkey(),
-            metadata: Default::default(),
         },
     )
     .await
@@ -90,6 +89,7 @@ pub async fn run() {
         &main_authority,
         &coordinator_instance,
         &coordinator_account,
+        None,
         Some(CoordinatorConfig {
             warmup_time: 1,
             cooldown_time: 1,

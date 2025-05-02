@@ -5,7 +5,6 @@ use crate::bytes_from_string;
 use crate::CoordinatorAccount;
 use crate::CoordinatorInstance;
 use crate::ProgramError;
-use crate::RunMetadata;
 
 #[derive(Accounts)]
 #[instruction(params: InitCoordinatorParams)]
@@ -41,7 +40,6 @@ pub struct InitCoordinatorParams {
     pub main_authority: Pubkey,
     pub join_authority: Pubkey,
     pub run_id: String,
-    pub metadata: RunMetadata,
 }
 
 pub fn init_coordinator_processor(
@@ -77,7 +75,6 @@ pub fn init_coordinator_processor(
     // Setup the run_id const
     account.state.coordinator.run_id =
         FixedString::from_str_truncated(&params.run_id);
-    account.state.metadata = params.metadata;
     // Done
     Ok(())
 }
