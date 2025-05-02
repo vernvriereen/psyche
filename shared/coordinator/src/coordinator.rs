@@ -12,7 +12,7 @@ use ts_rs::TS;
 
 pub const SOLANA_MAX_STRING_LEN: usize = 64;
 pub const SOLANA_MAX_URL_STRING_LEN: usize = 192;
-pub const SOLANA_MAX_NUM_CLIENTS: usize = 64;
+pub const SOLANA_MAX_NUM_CLIENTS: usize = 256;
 pub const SOLANA_MAX_NUM_WITNESSES: usize = 32;
 
 pub const BLOOM_FALSE_RATE: f64 = 0.01f64;
