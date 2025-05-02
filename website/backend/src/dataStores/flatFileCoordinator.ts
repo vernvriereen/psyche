@@ -428,6 +428,14 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 				} satisfies RunRoundClient
 			})
 
+			const checkpoint =
+				(typeof c.coordinator.model.LLM.checkpoint === 'object' &&
+					(('Hub' in c.coordinator.model.LLM.checkpoint &&
+						c.coordinator.model.LLM.checkpoint.Hub) ||
+						('P2P' in c.coordinator.model.LLM.checkpoint &&
+							c.coordinator.model.LLM.checkpoint.P2P))) ||
+				null
+
 			const config = c.coordinator.config
 			state = {
 				phase: c.coordinator.run_state,
@@ -438,6 +446,8 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 				round: currentRound.height,
 
 				clients: witnessStates,
+				checkpoint,
+
 				config: {
 					minClients: config.init_min_clients,
 					roundsPerEpoch: config.rounds_per_epoch,

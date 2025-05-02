@@ -121,6 +121,19 @@ function RouteComponent() {
 						<InfoChit label="arch">{info.arch}</InfoChit>
 						<InfoChit label="type">{info.type}</InfoChit>
 					</InfoChits>
+					{run.state?.checkpoint && (
+						<div className={text['body/sm/medium']}>
+							🤗 Latest Checkpoint:{' '}
+							<a
+								href={`https://huggingface.co/${run.state.checkpoint.repo_id}/${run.state.checkpoint.revision ? `tree/${run.state.checkpoint.revision}` : ''}`}
+							>
+								{run.state.checkpoint.repo_id}
+								{run.state.checkpoint.revision
+									? `/${run.state.checkpoint.revision}`
+									: ''}
+							</a>
+						</div>
+					)}
 					<RuntimeLabel>
 						runtime
 						<Runtime

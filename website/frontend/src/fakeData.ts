@@ -320,6 +320,10 @@ function makeFakeRunDataSeeded(seed = 1, step = 0, index = 0): RunData {
 			round,
 			epoch: currentEpoch,
 			clients,
+			checkpoint: {
+				repo_id: 'PsycheFoundation/Skibbler',
+				revision: null,
+			},
 			config: {
 				cooldownTime: 5_000,
 				maxRoundTrainTime: 5_000,

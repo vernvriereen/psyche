@@ -9,6 +9,7 @@ type PsycheSolanaCoordinator = coordinatorTypes.PsycheSolanaCoordinator
 type PsycheSolanaMiningPool = miningPoolTypes.PsycheSolanaMiningPool
 
 import type {
+	HubRepo,
 	LearningRateSchedule,
 	LLMArchitecture,
 	RunState,
@@ -106,6 +107,8 @@ export interface RunData {
 		phase: RunState
 		phaseStartTime?: Date
 		clients: Array<RunRoundClient>
+
+		checkpoint: HubRepo | null
 
 		round: number
 		epoch: number
