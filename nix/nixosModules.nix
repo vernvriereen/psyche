@@ -104,6 +104,8 @@
           configName,
           backendSecret,
           miningPoolRpc,
+          coordinatorCluster,
+          miningPoolCluster,
           hostnames ? [ ],
         }:
         inputs.nixpkgs.lib.nixosSystem {
@@ -113,14 +115,18 @@
             (psyche-website-backend backendSecret)
             (
               {
-                config,
                 pkgs,
                 ...
               }:
               let
                 backendPath = "/api";
                 psyche-website-frontend = pkgs.callPackage ../website/frontend {
-                  inherit miningPoolRpc backendPath;
+                  inherit
+                    miningPoolRpc
+                    backendPath
+                    coordinatorCluster
+                    miningPoolCluster
+                    ;
                 };
               in
               {
@@ -172,12 +178,16 @@
         hostnames = [ "devnet-preview.psyche.network" ];
         backendSecret = ../secrets/devnet/backend.age;
         miningPoolRpc = devnetFrontendRpc;
+        coordinatorCluster = "devnet";
+        miningPoolCluster = "devnet";
       };
       nixosConfigurations."psyche-http-mainnet" = persistentPsycheWebsite {
         configName = "psyche-http-mainnet";
         hostnames = [ "mainnet-preview.psyche.network" ];
         backendSecret = ../secrets/mainnet/backend.age;
         miningPoolRpc = mainnetFrontendRpc;
+        coordinatorCluster = "devnet";
+        miningPoolCluster = "mainnet";
       };
 
       # server for hosting the mainnet docs & frontend/backend.
@@ -188,7 +198,6 @@
           (psyche-website-backend ../secrets/mainnet/backend.age)
           (
             {
-              config,
               pkgs,
               ...
             }:
@@ -197,6 +206,8 @@
               psyche-website-frontend = pkgs.callPackage ../website/frontend {
                 miningPoolRpc = mainnetFrontendRpc;
                 inherit backendPath;
+                coordinatorCluster = "devnet";
+                miningPoolCluster = "mainnet";
               };
             in
             {
