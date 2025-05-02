@@ -320,7 +320,10 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 	}
 
 	getNumRuns(): number {
-		return [...this.#runs.values()].reduce((sum, runs) => sum + runs.length, 0)
+		return [...this.#runs.values()].reduce(
+			(sum, runs) => sum + runs.filter((r) => r.lastState).length,
+			0
+		)
 	}
 
 	getRunData(
