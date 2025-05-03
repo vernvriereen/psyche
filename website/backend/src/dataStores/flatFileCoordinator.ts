@@ -319,16 +319,19 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		return {
 			runs,
 			totalTokens: runs.reduce((sum, run) => sum + run.completedTokens, 0n),
-			totalTokensPerSecondActive: rawRuns.reduce((sum, [_, run]) => {
-				const ACTIVE_TIMEOUT_MS = 60 * 1000
-				if (Date.now() - run.lastUpdated.time.getTime() > ACTIVE_TIMEOUT_MS) {
+			totalTokensPerSecondActive: rawRuns.reduce((sum, [summary, run]) => {
+				const ACTIVE_TIMEOUT_MS = 10 * 60 * 1_000
+				if (
+					summary?.status.type !== 'active' ||
+					Date.now() - run.lastUpdated.time.getTime() > ACTIVE_TIMEOUT_MS
+				) {
 					return sum
 				}
 				const lastWitness = run.witnessUpdates.at(-1)
 				if (!lastWitness) {
 					return sum
 				}
-				return BigInt(Math.round(lastWitness[0].tokens_per_sec))
+				return sum + BigInt(Math.round(lastWitness[0].tokens_per_sec))
 			}, 0n),
 		}
 	}
