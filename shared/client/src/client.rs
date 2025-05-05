@@ -158,6 +158,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             );
 
                             let connected_p2p_nodes: BTreeSet<_> = p2p.neighbors().collect();
+                            if !new_state.halted()
                             {
                                 let run_participating_node_ids: Vec<NodeId> = new_state
                                     .epoch_state
