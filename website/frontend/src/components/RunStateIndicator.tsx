@@ -122,7 +122,9 @@ export function RunStateIndicator({
 	state,
 	recentTxs,
 	disconnected,
+	paused,
 }: {
+	paused: boolean
 	state: Exclude<RunData['state'], undefined>
 	recentTxs: TxSummary[]
 	disconnected: boolean
@@ -144,11 +146,13 @@ export function RunStateIndicator({
 					<span className={text['aux/xl/medium']}>
 						epoch {epoch}/{numEpochs}
 					</span>
-					<span>
-						<StatusChip status="active" style="minimal">
-							live
-						</StatusChip>
-					</span>
+					{!paused && (
+						<span>
+							<StatusChip status="active" style="minimal">
+								live
+							</StatusChip>
+						</span>
+					)}
 				</>
 			}
 			titleClass={title}
@@ -251,7 +255,12 @@ export function RunStateIndicator({
 					<Container className={flexCol}>
 						<ClientsBox>
 							{clients.map((c, i) => (
-								<RoundParticipant key={c.pubkey} client={c} index={i} />
+								<RoundParticipant
+									inRound={phase === 'RoundTrain' || phase === 'RoundWitness'}
+									key={c.pubkey}
+									client={c}
+									index={i}
+								/>
 							))}
 						</ClientsBox>
 					</Container>
@@ -322,7 +331,9 @@ function Section({
 function RoundParticipant({
 	client,
 	index,
+	inRound,
 }: {
+	inRound: boolean
 	client: RunRoundClient
 	index: number
 }) {
@@ -339,12 +350,10 @@ function RoundParticipant({
 			target="_blank"
 			className="link"
 		>
-			<ClientBox className={text['body/xs/regular']}>
+			<ClientBox className={text['body/xs/regular']} flicker={inRound}>
 				<Dot
-					className={client.witness || 'training'}
-					flickerDelay={
-						(index * 12389123) % 32621
-					} /* introduce some pseudorandom offset */
+					className={!inRound ? 'training' : client.witness || 'training'}
+					flickerDelay={(index * 12389123) % 32621}
 				>
 					<span className="center">8&times;H100</span>
 				</Dot>
@@ -469,7 +478,7 @@ const ClientBox = styled.div`
 		transform: translate(-50%, -50%);
 
 		animation-name: flicker;
-		animation-duration: 2s;
+		animation-duration: ${(props) => (props.flicker ? '2s' : 'none')};
 		animation-timing-function: linear;
 		animation-iteration-count: infinite;
 

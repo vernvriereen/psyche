@@ -181,6 +181,7 @@ function RouteComponent() {
 								}
 							>
 								<RunStateIndicator
+									paused={run.info.status.type === 'paused'}
 									state={run.state}
 									recentTxs={run.recentTxs}
 									disconnected={!!runData?.disconnected}

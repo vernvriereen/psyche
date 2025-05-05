@@ -54,7 +54,7 @@ export const fakeRunSummaries: RunSummary[] = [
 		isOnlyRunAtThisIndex: false,
 		name: 'Vision Model Alpha',
 		description: 'Training a vision model to recognize everyday objects',
-		status: { type: 'active' },
+		status: { type: 'paused' },
 		startTime: {
 			slot: 12345n,
 			time: new Date(Date.now() - 1000 * 60 * 60 * 24 * 14),
@@ -132,7 +132,29 @@ export const makeFakeRunData: Record<
 	string,
 	(seed?: number, step?: number, index?: number) => RunData
 > = {
-	'run-001': makeFakeRunDataSeeded,
+	'run-001': (seed, step, index) =>
+		index === 1
+			? makeFakeRunDataSeeded(seed, step, index)
+			: {
+					info: fakeRunSummaries[0],
+					recentTxs: [],
+					metrics: {
+						summary: {
+							loss: 0.0,
+							bandwidth: 0.0,
+							tokensPerSecond: 0.0,
+							evals: {},
+							lr: 0.004,
+						},
+						history: {
+							loss: [],
+							bandwidth: [],
+							tokensPerSecond: [],
+							evals: {},
+							lr: [],
+						},
+					},
+				},
 	'run-002': () => ({
 		info: fakeRunSummaries[1],
 		recentTxs: [],
@@ -277,14 +299,14 @@ function makeFakeRunDataSeeded(seed = 1, step = 0, index = 0): RunData {
 	}
 
 	return {
-		info: { ...fakeRunSummaries[0], index },
-		recentTxs: Array.from({ length: 5 }, () => ({
+		info: { ...fakeRunSummaries[3], index },
+		recentTxs: Array.from({ length: 5 }, (_, i) => ({
 			pubkey: PublicKey.default.toString(),
 			method: 'tick',
 			data: '{}',
-			txHash: PublicKey.default.toString(),
+			txHash: PublicKey.default.toString() + step + i,
 			timestamp: {
-				slot: BigInt(step),
+				slot: BigInt(step + i),
 				time: new Date(Date.now() - step * 3_000),
 			},
 		})),
