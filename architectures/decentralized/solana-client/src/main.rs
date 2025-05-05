@@ -18,7 +18,9 @@ use bytemuck::Zeroable;
 use clap::{Args, Parser, Subcommand};
 use psyche_client::{print_identity_keys, read_identity_secret_key, TrainArgs};
 use psyche_coordinator::{
-    get_data_index_for_step, model::Model, CoordinatorConfig, CoordinatorProgress,
+    get_data_index_for_step,
+    model::{Checkpoint, Model},
+    CoordinatorConfig, CoordinatorProgress,
 };
 use psyche_core::sha256;
 use psyche_network::SecretKey;
@@ -137,6 +139,9 @@ enum Commands {
 
         #[clap(long, env)]
         restart_from_step: Option<u32>,
+
+        #[clap(long, env)]
+        switch_to_hub: bool,
 
         // metadata
         #[clap(long)]
@@ -343,6 +348,7 @@ async fn async_main() -> Result<()> {
             run_id,
             config_path,
             restart_from_step,
+            switch_to_hub,
             name,
             description,
             num_parameters,
@@ -371,7 +377,7 @@ async fn async_main() -> Result<()> {
                 epoch_start_data_index: get_data_index_for_step(&account.state.coordinator, step),
             });
 
-            let (config, model) = match config_path {
+            let (config, mut model) = match config_path {
                 Some(config_path) => {
                     let state: State = toml::from_str(std::str::from_utf8(
                         &std::fs::read(&config_path).with_context(|| {
@@ -383,6 +389,19 @@ async fn async_main() -> Result<()> {
                     (Some(state.config), Some(state.model))
                 }
                 None => (None, None),
+            };
+
+            model = if switch_to_hub {
+                let Model::LLM(mut llm) = model.unwrap_or(account.state.coordinator.model);
+                match llm.checkpoint {
+                    Checkpoint::P2P(hub_repo) | Checkpoint::Dummy(hub_repo) => {
+                        llm.checkpoint = Checkpoint::Hub(hub_repo)
+                    }
+                    _ => {}
+                }
+                Some(Model::LLM(llm))
+            } else {
+                model
             };
 
             let metadata = {
