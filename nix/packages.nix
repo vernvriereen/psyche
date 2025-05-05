@@ -51,47 +51,7 @@
       packages =
         rustPackages
         // nixglhostRustPackages
-        // rec {
-          stream-docker-psyche-centralized-client = pkgs.dockerTools.streamLayeredImage {
-            name = "docker.io/nousresearch/psyche-centralized-client";
-            tag = "latest";
-            fromImage = cudaDockerImage;
-            config = {
-              contents = [ pkgs.bash ];
-              Env = [
-                "RUST_BACKTRACE=1"
-                "TUI=false"
-              ];
-              Entrypoint = [
-                "${rustPackages.psyche-centralized-client}/bin/psyche-centralized-client"
-                "train"
-                "--checkpoint-dir"
-                "./checkpoints"
-              ];
-            };
-          };
-
-          # stream-docker-psyche-solana-client = pkgs.dockerTools.streamLayeredImage {
-          #   name = "docker.io/nousresearch/psyche-solana-client";
-          #   tag = "latest";
-
-          #   contents = [
-          #     pkgs.bashInteractive
-          #     pkgs.coreutils
-          #     solana-cli
-          #     rustPackages.psyche-solana-client
-          #   ];
-
-          #   config = {
-          #     Entrypoint = [
-          #       "${pkgs.bashInteractive}/bin/bash"
-          #       # "/bin/sh"
-          #       # "-c"
-          #       # "sleep 10 && /usr/local/run_owner_entrypoint.sh"
-          #     ];
-          #   };
-          # };
-
+        // {
           psyche-book = pkgs.callPackage ../psyche-book { inherit rustPackages rustPackageNames; };
         };
     };
