@@ -47,6 +47,7 @@ function RootComponent() {
 			<WalletProvider wallets={[]} onError={(err) => console.error(err)}>
 				<WalletModalProvider>
 					<div
+						id="outlet"
 						className={`${fullHeight} ${sharedTheme} ${isDarkMode ? c(darkTheme, 'theme-dark') : c(lightTheme, 'theme-light')}`}
 					>
 						<Outlet />

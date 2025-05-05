@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Button } from '../../components/Button.js'
 import ArrowLeft from '../../assets/icons/arrow-left.svg?react'
+import Fullscreen from '../../assets/icons/fullscreen.svg?react'
 import { styled } from '@linaria/react'
 import { forest } from '../../colors.js'
 import { text } from '../../fonts.js'
@@ -10,7 +11,7 @@ import { MiniCard } from '../../components/MiniCard.js'
 import { RadialGraph } from '../../components/RadialGraph.js'
 import { c, formatBytes, formatNumber, metricToGraph } from '../../utils.js'
 import { ResponsiveLineGraph } from '../../components/Chart.js'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { css } from '@linaria/core'
 import { InfoChit } from '../../components/InfoChit.js'
 import { RunStateIndicator } from '../../components/RunStateIndicator.js'
@@ -18,12 +19,14 @@ import { fetchRunStreaming } from '../../fetchRuns.js'
 import { useStreamingRunData } from '../../useStreamingData.js'
 import { RunBox } from '../../components/RunBox.js'
 import { Progress } from '../../components/ProgressWrapper.js'
+import { FullPagePortal } from '../../components/FullPagePortal.js'
 export const Route = createFileRoute('/runs/$run/$index')({
 	loader: async ({ params }) => fetchRunStreaming(params.run, params.index),
 	component: RouteComponent,
 })
 
 function RouteComponent() {
+	const [fullscreen, setFullscreen] = useState(false)
 	const { run, isOnlyRun } = useStreamingRunData()
 	const backButton = (
 		<Button
@@ -91,185 +94,200 @@ function RouteComponent() {
 	}
 
 	return (
-		<RunContainer>
-			{!isOnlyRun && (
-				<Button
-					style="action"
-					icon={{
-						side: 'left',
-						svg: ArrowLeft,
-					}}
-					to={'/runs'}
+		<FullPagePortal open={fullscreen}>
+			<RunContainer>
+				{!isOnlyRun && (
+					<Button
+						style="action"
+						icon={{
+							side: 'left',
+							svg: ArrowLeft,
+						}}
+						to={'/runs'}
+					>
+						back
+					</Button>
+				)}
+				<RunBox
+					title={
+						<>
+							<span className={text['display/4xl']}>
+								{info.name || info.id}{' '}
+								{info.isOnlyRunAtThisIndex ? '' : `(v${info.index + 1})`}
+							</span>
+							<TitleRightInfo>
+								<StatusChip status={info.status.type} style="minimal" />
+								<Button
+									onClick={() => setFullscreen(!fullscreen)}
+									style="secondary"
+									icon={{
+										side: 'left',
+										svg: Fullscreen,
+									}}
+								/>
+							</TitleRightInfo>
+						</>
+					}
 				>
-					back
-				</Button>
-			)}
-			<RunBox
-				title={
-					<>
-						<span className={text['display/4xl']}>
-							{info.name || info.id}{' '}
-							{info.isOnlyRunAtThisIndex ? '' : `(v${info.index + 1})`}
-						</span>
-						<StatusChip status={info.status.type} style="minimal" />
-					</>
-				}
-			>
-				<RunContents className={text['body/base/medium']}>
-					<RunDescription>{info.description}</RunDescription>
-					<InfoChits>
-						<InfoChit label="params">
-							{formatNumber(Number(info.size), 2)}
-						</InfoChit>
-						<InfoChit label="arch">{info.arch}</InfoChit>
-						<InfoChit label="type">{info.type}</InfoChit>
-					</InfoChits>
-					{run.state?.checkpoint && (
-						<div className={text['body/sm/medium']}>
-							🤗 Latest Checkpoint:{' '}
-							<a
-								href={`https://huggingface.co/${run.state.checkpoint.repo_id}/${run.state.checkpoint.revision ? `tree/${run.state.checkpoint.revision}` : ''}`}
-							>
-								{run.state.checkpoint.repo_id}
-								{run.state.checkpoint.revision
-									? `/${run.state.checkpoint.revision}`
-									: ''}
-							</a>
-						</div>
-					)}
-					<RuntimeLabel>
-						runtime
-						<Runtime
-							start={info.startTime.time}
-							pauses={pauses}
-							end={
-								info.status.type === 'completed'
-									? info.status.at.time
-									: undefined
-							}
-						/>
-					</RuntimeLabel>
-					<Progress
-						size="big"
-						current={Number(info.completedTokens)}
-						total={Number(info.totalTokens)}
-						chunkHeight={36}
-						chunkWidth={24}
-						label="tokens"
-					/>
-
-					{run.state && run.info.status.type !== 'completed' && (
-						<RunStateActiveContainer
-							active={
-								run.info.status.type === 'active' ||
-								run.info.status.type === 'waitingForMembers'
-							}
-						>
-							<RunStateIndicator state={run.state} recentTxs={run.recentTxs} />
-						</RunStateActiveContainer>
-					)}
-
-					<MaybeRadialGraphContainer>
-						{Object.entries(goodEvals).length >= 3 && (
-							<RadialContainer>
-								<RadialGraph
-									data={goodEvals}
-									formatValue={(v) => `${+(v * 100).toFixed(2)}%`}
-								/>
-							</RadialContainer>
+					<RunContents className={text['body/base/medium']}>
+						<RunDescription>{info.description}</RunDescription>
+						<InfoChits>
+							<InfoChit label="params">
+								{formatNumber(Number(info.size), 2)}
+							</InfoChit>
+							<InfoChit label="arch">{info.arch}</InfoChit>
+							<InfoChit label="type">{info.type}</InfoChit>
+						</InfoChits>
+						{run.state?.checkpoint && (
+							<div className={text['body/sm/medium']}>
+								🤗 Latest Checkpoint:{' '}
+								<a
+									href={`https://huggingface.co/${run.state.checkpoint.repo_id}/${run.state.checkpoint.revision ? `tree/${run.state.checkpoint.revision}` : ''}`}
+								>
+									{run.state.checkpoint.repo_id}
+									{run.state.checkpoint.revision
+										? `/${run.state.checkpoint.revision}`
+										: ''}
+								</a>
+							</div>
 						)}
-						<StatBoxes>
-							{/* // TODO: calculate confidence and perplexity */}
-							{run.metrics.summary.loss !== null && (
-								<MiniCard
-									text="loss"
-									value={`${run.metrics.summary.loss.toFixed(2)}`}
-								/>
-							)}
-							{run.metrics.summary.bandwidth !== null && (
-								<MiniCard
-									text="bandwidth"
-									value={`${formatBytes(
-										run.metrics.summary.bandwidth,
-										2,
-										'bits'
-									)}ps`}
-								/>
-							)}
-							{run.metrics.summary.tokensPerSecond !== null && (
-								<MiniCard
-									text="training rate"
-									value={`${formatNumber(
-										run.metrics.summary.tokensPerSecond,
-										1,
-										true
-									)}tok/s`}
-								/>
-							)}
-						</StatBoxes>
-					</MaybeRadialGraphContainer>
-					<HistoryContainer>
-						{graphData && (
-							<>
-								{/* TODO: render confidence and perplexity */}
-								<LineGraphContainer>
-									<ResponsiveLineGraph
-										renderValue={(x) => `${+x.toFixed(2)}`}
-										xLabel="step"
-										title="loss"
-										line={{
-											label: 'loss',
-											points: graphData.loss,
-										}}
-									/>
-								</LineGraphContainer>
+						<RuntimeLabel>
+							runtime
+							<Runtime
+								start={info.startTime.time}
+								pauses={pauses}
+								end={
+									info.status.type === 'completed'
+										? info.status.at.time
+										: undefined
+								}
+							/>
+						</RuntimeLabel>
+						<Progress
+							size="big"
+							current={Number(info.completedTokens)}
+							total={Number(info.totalTokens)}
+							chunkHeight={36}
+							chunkWidth={24}
+							label="tokens"
+						/>
 
-								<LineGraphContainer>
-									<ResponsiveLineGraph
-										renderValue={(x) => formatNumber(x, 2)}
-										xLabel="step"
-										title="training speed"
-										line={{
-											label: 'training speed',
-											points: graphData.tokensPerSecond,
-											unit: ' tok/s',
-										}}
-									/>
-								</LineGraphContainer>
+						{run.state && run.info.status.type !== 'completed' && (
+							<RunStateActiveContainer
+								active={
+									run.info.status.type === 'active' ||
+									run.info.status.type === 'waitingForMembers'
+								}
+							>
+								<RunStateIndicator
+									state={run.state}
+									recentTxs={run.recentTxs}
+								/>
+							</RunStateActiveContainer>
+						)}
 
-								<LineGraphContainer>
-									<ResponsiveLineGraph
-										renderValue={(x) => `${formatBytes(x, 0, 'bits')}`}
-										xLabel="step"
-										title="inter-node bandwidth"
-										line={{
-											label: 'bandwidth',
-											points: graphData.bandwidth,
-											unit: '/s',
-										}}
+						<MaybeRadialGraphContainer>
+							{Object.entries(goodEvals).length >= 3 && (
+								<RadialContainer>
+									<RadialGraph
+										data={goodEvals}
+										formatValue={(v) => `${+(v * 100).toFixed(2)}%`}
 									/>
-								</LineGraphContainer>
-
-								{Object.entries(graphData.evals).map(([label, points]) => (
-									<LineGraphContainer key={label}>
+								</RadialContainer>
+							)}
+							<StatBoxes>
+								{/* // TODO: calculate confidence and perplexity */}
+								{run.metrics.summary.loss !== null && (
+									<MiniCard
+										text="loss"
+										value={`${run.metrics.summary.loss.toFixed(2)}`}
+									/>
+								)}
+								{run.metrics.summary.bandwidth !== null && (
+									<MiniCard
+										text="bandwidth"
+										value={`${formatBytes(
+											run.metrics.summary.bandwidth,
+											2,
+											'bits'
+										)}ps`}
+									/>
+								)}
+								{run.metrics.summary.tokensPerSecond !== null && (
+									<MiniCard
+										text="training rate"
+										value={`${formatNumber(
+											run.metrics.summary.tokensPerSecond,
+											1,
+											true
+										)}tok/s`}
+									/>
+								)}
+							</StatBoxes>
+						</MaybeRadialGraphContainer>
+						<HistoryContainer>
+							{graphData && (
+								<>
+									{/* TODO: render confidence and perplexity */}
+									<LineGraphContainer>
 										<ResponsiveLineGraph
-											renderValue={(x) => (+`${x.toFixed(2)}`).toString()}
+											renderValue={(x) => `${+x.toFixed(2)}`}
 											xLabel="step"
-											title={`Model Evaluation: ${label}`}
+											title="loss"
 											line={{
-												label,
-												points,
-												unit: '%',
+												label: 'loss',
+												points: graphData.loss,
 											}}
 										/>
 									</LineGraphContainer>
-								))}
-							</>
-						)}
-					</HistoryContainer>
-				</RunContents>
-			</RunBox>
-		</RunContainer>
+
+									<LineGraphContainer>
+										<ResponsiveLineGraph
+											renderValue={(x) => formatNumber(x, 2)}
+											xLabel="step"
+											title="training speed"
+											line={{
+												label: 'training speed',
+												points: graphData.tokensPerSecond,
+												unit: ' tok/s',
+											}}
+										/>
+									</LineGraphContainer>
+
+									<LineGraphContainer>
+										<ResponsiveLineGraph
+											renderValue={(x) => `${formatBytes(x, 0, 'bits')}`}
+											xLabel="step"
+											title="inter-node bandwidth"
+											line={{
+												label: 'bandwidth',
+												points: graphData.bandwidth,
+												unit: '/s',
+											}}
+										/>
+									</LineGraphContainer>
+
+									{Object.entries(graphData.evals).map(([label, points]) => (
+										<LineGraphContainer key={label}>
+											<ResponsiveLineGraph
+												renderValue={(x) => (+`${x.toFixed(2)}`).toString()}
+												xLabel="step"
+												title={`Model Evaluation: ${label}`}
+												line={{
+													label,
+													points,
+													unit: '%',
+												}}
+											/>
+										</LineGraphContainer>
+									))}
+								</>
+							)}
+						</HistoryContainer>
+					</RunContents>
+				</RunBox>
+			</RunContainer>
+		</FullPagePortal>
 	)
 }
 
@@ -286,6 +304,14 @@ const RunContainer = styled.div`
 const RuntimeLabel = styled.span`
 	.theme-dark & {
 		color: ${forest[300]};
+	}
+`
+
+const TitleRightInfo = styled.div`
+	display: flex;
+	gap: 24px;
+	button {
+		margin: 4px 0;
 	}
 `
 

@@ -247,11 +247,13 @@ export function Button<T extends LinkProps | HTMLButtonProps>(
 								<icon.svg className={`${svgFillCurrentColor} left`} />
 							</div>
 						)}
-						<span className="contents">
-							{typeof children === 'function'
-								? children({ isActive, isTransitioning })
-								: children}
-						</span>
+						{children && (
+							<span className="contents">
+								{typeof children === 'function'
+									? children({ isActive, isTransitioning })
+									: children}
+							</span>
+						)}
 						{icon?.side === 'right' && (
 							<div className="icon">
 								<icon.svg className={`${svgFillCurrentColor} right`} />
@@ -276,7 +278,7 @@ export function Button<T extends LinkProps | HTMLButtonProps>(
 						<icon.svg className={`${iconClass} left`} />
 					</div>
 				)}
-				<span className="contents">{children}</span>
+				{children && <span className="contents">{children}</span>}
 				{icon?.side === 'right' && (
 					<div className="icon">
 						<icon.svg className={`${iconClass} right`} />
