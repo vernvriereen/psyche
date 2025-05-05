@@ -131,90 +131,98 @@ export function RunStateIndicator({
 				txs={recentTxs.toReversed()}
 				cluster={import.meta.env.VITE_COORDINATOR_CLUSTER}
 			/>
-			{(phase === 'Warmup' ||
-				phase === 'RoundTrain' ||
-				phase === 'RoundWitness' ||
-				phase === 'Cooldown') && (
-				<Progress
-					chunkHeight={8}
-					chunkWidth={4}
-					chunkSpacing={1}
-					ratio={
-						(round +
-							(phase === 'RoundWitness' ? 0.5 : phase === 'Cooldown' ? 1 : 0)) /
-						roundsPerEpoch
-					}
-					current={round + 1}
-					total={roundsPerEpoch}
-					label="round"
-				/>
-			)}
-			{phase === 'WaitingForMembers' && (
-				<Progress
-					chunkHeight={8}
-					chunkWidth={4}
-					chunkSpacing={1}
-					current={clients.length}
-					total={minClients}
-					label="compute nodes"
-				/>
-			)}
-			<LegendBox>
-				<span>
-					<Dot className="training" size="1em" />
-					TRAINER
-				</span>
-				<span>
-					<Dot className="waiting" size="1em" />
-					UNFINISHED WITNESS
-				</span>
-				<span>
-					<Dot className="done" size="1em" />
-					FINISHED WITNESS
-				</span>
-			</LegendBox>
-			<SectionsGrid>
-				{phase === 'WaitingForMembers' ? (
-					<>
-						<Section
-							active={phase === 'WaitingForMembers'}
-							name={`${stateNames['WaitingForMembers']}`}
-							className={waitingForMembersBox}
+			{phase !== 'Paused' && phase !== 'Uninitialized' && (
+				<>
+					{(phase === 'Warmup' ||
+						phase === 'RoundTrain' ||
+						phase === 'RoundWitness' ||
+						phase === 'Cooldown') && (
+						<Progress
+							chunkHeight={8}
+							chunkWidth={4}
+							chunkSpacing={1}
+							ratio={
+								(round +
+									(phase === 'RoundWitness'
+										? 0.5
+										: phase === 'Cooldown'
+											? 1
+											: 0)) /
+								roundsPerEpoch
+							}
+							current={round + 1}
+							total={roundsPerEpoch}
+							label="round"
 						/>
-					</>
-				) : (
-					<>
-						<Section
-							active={phase === 'Warmup'}
-							name={stateNames['Warmup']}
-							doneRatio={doneRatio}
+					)}
+					{phase === 'WaitingForMembers' && (
+						<Progress
+							chunkHeight={8}
+							chunkWidth={4}
+							chunkSpacing={1}
+							current={clients.length}
+							total={minClients}
+							label="compute nodes"
 						/>
-						<Section
-							active={phase === 'RoundTrain'}
-							name={stateNames['RoundTrain']}
-							doneRatio={doneRatio}
-						/>
-						<Section
-							active={phase === 'RoundWitness'}
-							name={stateNames['RoundWitness']}
-							doneRatio={doneRatio}
-						/>
+					)}
+					<LegendBox>
+						<span>
+							<Dot className="training" size="1em" />
+							TRAINER
+						</span>
+						<span>
+							<Dot className="waiting" size="1em" />
+							UNFINISHED WITNESS
+						</span>
+						<span>
+							<Dot className="done" size="1em" />
+							FINISHED WITNESS
+						</span>
+					</LegendBox>
+					<SectionsGrid>
+						{phase === 'WaitingForMembers' ? (
+							<>
+								<Section
+									active={phase === 'WaitingForMembers'}
+									name={`${stateNames['WaitingForMembers']}`}
+									className={waitingForMembersBox}
+								/>
+							</>
+						) : (
+							<>
+								<Section
+									active={phase === 'Warmup'}
+									name={stateNames['Warmup']}
+									doneRatio={doneRatio}
+								/>
+								<Section
+									active={phase === 'RoundTrain'}
+									name={stateNames['RoundTrain']}
+									doneRatio={doneRatio}
+								/>
+								<Section
+									active={phase === 'RoundWitness'}
+									name={stateNames['RoundWitness']}
+									doneRatio={doneRatio}
+								/>
 
-						<Section
-							active={phase === 'Cooldown'}
-							name={stateNames['Cooldown']}
-							doneRatio={doneRatio}
-						/>
-					</>
-				)}
-			</SectionsGrid>
-			<Container className={flexCol}>
-				<ClientsBox>
-					{clients.map((c, i) => (
-						<RoundParticipant key={c.pubkey} client={c} index={i} />
-					))}
-				</ClientsBox>
-			</Container>
+								<Section
+									active={phase === 'Cooldown'}
+									name={stateNames['Cooldown']}
+									doneRatio={doneRatio}
+								/>
+							</>
+						)}
+					</SectionsGrid>
+					<Container className={flexCol}>
+						<ClientsBox>
+							{clients.map((c, i) => (
+								<RoundParticipant key={c.pubkey} client={c} index={i} />
+							))}
+						</ClientsBox>
+					</Container>
+				</>
+			)}
 		</RunBox>
 	)
 }
