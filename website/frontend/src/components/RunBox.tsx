@@ -31,6 +31,8 @@ const Box = styled.div`
 	display: flex;
 	flex-direction: column;
 
+	position: relative;
+
 	.theme-light & {
 		border-color: ${slate[500]};
 	}

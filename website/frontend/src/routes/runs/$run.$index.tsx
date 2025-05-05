@@ -26,8 +26,10 @@ export const Route = createFileRoute('/runs/$run/$index')({
 })
 
 function RouteComponent() {
-	const [fullscreen, setFullscreen] = useState(false)
-	const { run, isOnlyRun } = useStreamingRunData()
+	const runData = useStreamingRunData()
+	const run = runData?.run
+	const isOnlyRun = runData?.isOnlyRun
+
 	const backButton = (
 		<Button
 			style="action"
@@ -69,6 +71,8 @@ function RouteComponent() {
 			)
 		)
 	}, [run?.metrics.summary.evals])
+
+	const [fullscreen, setFullscreen] = useState(false)
 
 	if (!info) {
 		return (
@@ -145,9 +149,6 @@ function RouteComponent() {
 									href={`https://huggingface.co/${run.state.checkpoint.repo_id}/${run.state.checkpoint.revision ? `tree/${run.state.checkpoint.revision}` : ''}`}
 								>
 									{run.state.checkpoint.repo_id}
-									{run.state.checkpoint.revision
-										? `/${run.state.checkpoint.revision}`
-										: ''}
 								</a>
 							</div>
 						)}
@@ -182,6 +183,7 @@ function RouteComponent() {
 								<RunStateIndicator
 									state={run.state}
 									recentTxs={run.recentTxs}
+									disconnected={!!runData?.disconnected}
 								/>
 							</RunStateActiveContainer>
 						)}

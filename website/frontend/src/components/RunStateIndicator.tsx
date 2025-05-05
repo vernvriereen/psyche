@@ -10,6 +10,8 @@ import { RunBox } from './RunBox.js'
 import { c, solanaAccountUrl } from '../utils.js'
 import { TxHistory } from './TxHistory.js'
 import { Progress } from './ProgressWrapper.js'
+import { Button } from './Button.js'
+import { StatusChip } from './StatusChip.js'
 
 const Container = styled.div`
 	display: flex;
@@ -101,12 +103,29 @@ const LegendBox = styled.div`
 	}
 `
 
+const DisconnectedBox = styled.div`
+	position: absolute;
+	left: 0;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	height: 100%;
+	background: rgb(from var(--color-bg) r g b / 95%);
+	z-index: 2;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 1em;
+`
+
 export function RunStateIndicator({
 	state,
 	recentTxs,
+	disconnected,
 }: {
 	state: Exclude<RunData['state'], undefined>
 	recentTxs: TxSummary[]
+	disconnected: boolean
 }) {
 	const {
 		phase,
@@ -121,12 +140,27 @@ export function RunStateIndicator({
 	return (
 		<RunBox
 			title={
-				<span className={text['aux/xl/medium']}>
-					epoch {epoch}/{numEpochs}
-				</span>
+				<>
+					<span className={text['aux/xl/medium']}>
+						epoch {epoch}/{numEpochs}
+					</span>
+					<span>
+						<StatusChip status="active" style="minimal">
+							live
+						</StatusChip>
+					</span>
+				</>
 			}
 			titleClass={title}
 		>
+			{disconnected && (
+				<DisconnectedBox>
+					<span>Disconnected from server, live run data is paused.</span>
+					<Button style="secondary" onClick={() => window.location.reload()}>
+						Reconnect
+					</Button>
+				</DisconnectedBox>
+			)}
 			<TxHistory
 				txs={recentTxs.toReversed()}
 				cluster={import.meta.env.VITE_COORDINATOR_CLUSTER}

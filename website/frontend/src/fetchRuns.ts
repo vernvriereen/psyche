@@ -70,13 +70,11 @@ function makeDecodeState(): DecodeState {
 		decoder: new TextDecoder('utf-8'),
 	}
 }
+
 export async function fetchRunStreaming(
 	runId: string,
 	indexStr?: string
-): Promise<{
-	initialData: ApiGetRun
-	stream: ReadableStream<ApiGetRun>
-}> {
+): Promise<ReadableStream<ApiGetRun>> {
 	if (import.meta.env.VITE_FAKE_DATA) {
 		const seed = Math.random() * 1_000_000_000
 		try {
@@ -84,120 +82,91 @@ export async function fetchRunStreaming(
 			if (`${index}` !== indexStr) {
 				throw new Error(`Invalid index ${indexStr}`)
 			}
-			return {
-				initialData: {
-					run: makeFakeRunData[runId](seed, 0, index),
-					isOnlyRun: false,
+			return new ReadableStream<ApiGetRun>({
+				async start(controller) {
+					let i = 0
+					while (true) {
+						controller.enqueue({
+							run: makeFakeRunData[runId](seed, i, index),
+							isOnlyRun: false,
+						})
+						const nextFakeDataDelay = 1000 + Math.random() * 1000
+						await new Promise((r) => setTimeout(r, nextFakeDataDelay))
+						i++
+					}
 				},
-				stream: new ReadableStream<ApiGetRun>({
-					async start(controller) {
-						let i = 0
-						while (true) {
-							controller.enqueue({
-								run: makeFakeRunData[runId](seed, i, index),
-								isOnlyRun: false,
-							})
-							const nextFakeDataDelay = 1000 + Math.random() * 1000
-							await new Promise((r) => setTimeout(r, nextFakeDataDelay))
-							i++
-						}
-					},
-				}),
-			}
+			})
 		} catch (err) {
-			return runError()
+			return new ReadableStream({
+				async start(controller) {
+					controller.close()
+				},
+			})
 		}
 	}
 
-	let { reader, decodeState } = await openRunStream(runId)
+	console.log('opening run stream for', runId)
+	let { reader, decodeState } = await openRunStream(runId, indexStr)
 
-	const initialData = await getOneRunFromStream(decodeState, reader)
-	if (!initialData) {
-		return runError()
-	}
-	decodeState = initialData.decodeState
-
-	// stream the rest of the results forever!
-	const stream = new ReadableStream<ApiGetRun>({
+	return new ReadableStream<ApiGetRun>({
 		async start(controller) {
 			const MAX_RECONNECT_ATTEMPTS = 5
 			let reconnectAttempts = 0
 			let reconnectDelay = 1000
 
-			async function processStream() {
-				try {
-					while (true) {
-						const nextRun = await getOneRunFromStream(decodeState, reader)
-						if (nextRun) {
-							decodeState = nextRun.decodeState
-							controller.enqueue(nextRun.parsedRun)
-							continue
-						}
-
-						// we failed to fetch a run because the stream ended - let's reconnect
-						if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-							console.log(
-								`Stream ended, attempting to reconnect (${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})...`
-							)
-							reconnectAttempts++
-							await new Promise((resolve) =>
-								setTimeout(resolve, reconnectDelay)
-							)
-							reconnectDelay = Math.min(reconnectDelay * 2, 10000)
-
-							try {
-								const newStream = await openRunStream(runId)
-								reader = newStream.reader
-								decodeState = newStream.decodeState
-
-								// if we opened a new stream successfully, we're good to go. reset our reconnect attempts
-								reconnectAttempts = 0
-								reconnectDelay = 1000
-								continue // and start reading from the new connection
-							} catch (reconnectError) {
-								console.error('Failed to reconnect:', reconnectError)
-								throw reconnectError
-							}
-						} else {
-							console.log(
-								'Maximum reconnection attempts reached, closing stream.'
-							)
-							break
-						}
+			try {
+				while (true) {
+					const nextRun = await getOneRunFromStream(decodeState, reader)
+					if (nextRun) {
+						decodeState = nextRun.decodeState
+						controller.enqueue(nextRun.parsedRun)
+						continue
 					}
-				} catch (error) {
-					console.error('Stream processing error:', error)
-					controller.error(error)
-				} finally {
-					controller.close()
-				}
-			}
 
-			// Start processing the stream
-			await processStream()
+					console.log('closing reader')
+
+					await reader.cancel()
+
+					// we failed to fetch a run because the stream ended - let's reconnect
+					if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+						console.log(
+							`Stream ended, attempting to reconnect (${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})...`
+						)
+						reconnectAttempts++
+						await new Promise((resolve) => setTimeout(resolve, reconnectDelay))
+						reconnectDelay = Math.min(reconnectDelay * 2, 10000)
+
+						try {
+							const newStream = await openRunStream(runId)
+							reader = newStream.reader
+							decodeState = newStream.decodeState
+
+							// if we opened a new stream successfully, we're good to go. reset our reconnect attempts
+							reconnectAttempts = 0
+							reconnectDelay = 1000
+							continue // and start reading from the new connection
+						} catch (reconnectError) {
+							console.error('Failed to reconnect:', reconnectError)
+							throw reconnectError
+						}
+					} else {
+						console.log(
+							'Maximum reconnection attempts reached, closing stream.'
+						)
+						break
+					}
+				}
+			} catch (error) {
+				console.error('Stream processing error:', error)
+				controller.error(error)
+			} finally {
+				controller.close()
+			}
+		},
+		cancel(reason) {
+			reader.cancel(reason)
 		},
 	})
-
-	return { initialData: initialData.parsedRun, stream }
-}
-
-function runError():
-	| { initialData: ApiGetRun; stream: ReadableStream<ApiGetRun> }
-	| PromiseLike<{ initialData: ApiGetRun; stream: ReadableStream<ApiGetRun> }> {
-	return {
-		initialData: {
-			isOnlyRun: false,
-			run: null,
-			error: new Error(
-				'Failed to get initial data from server, connection closed early.'
-			),
-		},
-		stream: new ReadableStream({
-			async start(controller) {
-				controller.close()
-			},
-		}),
-	}
 }
 
 async function getOneRunFromStream(
@@ -229,8 +198,8 @@ async function getOneRunFromStream(
 	return { parsedRun, decodeState }
 }
 
-async function openRunStream(runId: string) {
-	const response = await fetch(`${BACKEND_URL}/run/${runId}`, {
+async function openRunStream(runId: string, indexStr: string) {
+	const response = await fetch(`${BACKEND_URL}/run/${runId}/${indexStr}`, {
 		headers: {
 			Accept: 'application/x-ndjson',
 		},

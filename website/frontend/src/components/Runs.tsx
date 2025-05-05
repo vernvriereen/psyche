@@ -52,6 +52,7 @@ const runTypes = [
 		label: 'Completed',
 		value: 'completed',
 	},
+	{ label: 'Paused', value: 'paused' },
 ] as const
 
 const runSort = [

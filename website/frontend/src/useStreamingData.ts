@@ -1,14 +1,17 @@
 import { useLoaderData } from '@tanstack/react-router'
 import { useState, useEffect, useRef } from 'react'
+import { ApiGetRun } from 'shared'
 
 export function useStreamingRunData() {
-	const { initialData, stream } = useLoaderData({ from: '/runs/$run/$index' })
-	const [data, setData] = useState(initialData)
+	const stream = useLoaderData({ from: '/runs/$run/$index' })
+	const [data, setData] = useState<
+		(ApiGetRun & { disconnected: boolean }) | null
+	>(null)
+
+	const lastData = useRef<ApiGetRun | null>(null)
 
 	const previousReaderDone = useRef<Promise<void> | null>(null)
 	useEffect(() => {
-		setData(initialData)
-
 		let signalDone!: () => void
 		const doneLoop = new Promise<void>((r) => {
 			signalDone = r
@@ -20,6 +23,9 @@ export function useStreamingRunData() {
 			await prevReaderDonePromise
 			const reader = stream.getReader()
 			try {
+				if (lastData.current) {
+					setData({ ...lastData.current, disconnected: false })
+				}
 				while (true) {
 					const res = await Promise.race([reader.read(), doneLoop])
 					if (!res) {
@@ -27,12 +33,16 @@ export function useStreamingRunData() {
 					}
 					const { value, done } = res
 					if (done) break
-					setData(value)
+					setData({ ...value, disconnected: false })
+					lastData.current = value
 				}
 			} catch (err) {
 				console.error('Error reading stream:', err)
 			} finally {
 				reader.releaseLock()
+				if (lastData.current) {
+					setData({ ...lastData.current, disconnected: true })
+				}
 			}
 		}
 
@@ -41,7 +51,7 @@ export function useStreamingRunData() {
 		return () => {
 			signalDone()
 		}
-	}, [initialData, stream])
+	}, [stream])
 
 	return data
 }

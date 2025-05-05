@@ -158,15 +158,23 @@ async function main() {
 	})
 
 	fastify.get(
-		'/run/:runId',
-		(req: FastifyRequest<{ Params: { runId?: string } }>, res) => {
+		'/run/:runId/:indexStr',
+		(
+			req: FastifyRequest<{ Params: { runId?: string; indexStr?: string } }>,
+			res
+		) => {
 			const isStreamingRequest = req.headers.accept?.includes(
 				'application/x-ndjson'
 			)
-			const { runId } = req.params
+			const { runId, indexStr } = req.params
+
+			const index = Number.parseInt(indexStr ?? '0')
+			if (`${index}` !== indexStr) {
+				throw new Error(`Invalid index ${indexStr}`)
+			}
 
 			const matchingRun = runId
-				? coordinator.dataStore.getRunDataById(runId)
+				? coordinator.dataStore.getRunDataById(runId, index)
 				: null
 			const data: ApiGetRun = {
 				run: matchingRun,
