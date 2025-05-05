@@ -172,24 +172,24 @@ function RouteComponent() {
 							chunkWidth={24}
 							label="tokens"
 						/>
+						<StatsAndLiveRunContainer>
+							{run.state && run.info.status.type !== 'completed' && (
+								<RunStateActiveContainer
+									className="liveContainer"
+									active={
+										run.info.status.type === 'active' ||
+										run.info.status.type === 'waitingForMembers'
+									}
+								>
+									<RunStateIndicator
+										paused={run.info.status.type === 'paused'}
+										state={run.state}
+										recentTxs={run.recentTxs}
+										disconnected={!!runData?.disconnected}
+									/>
+								</RunStateActiveContainer>
+							)}
 
-						{run.state && run.info.status.type !== 'completed' && (
-							<RunStateActiveContainer
-								active={
-									run.info.status.type === 'active' ||
-									run.info.status.type === 'waitingForMembers'
-								}
-							>
-								<RunStateIndicator
-									paused={run.info.status.type === 'paused'}
-									state={run.state}
-									recentTxs={run.recentTxs}
-									disconnected={!!runData?.disconnected}
-								/>
-							</RunStateActiveContainer>
-						)}
-
-						<MaybeRadialGraphContainer>
 							{Object.entries(goodEvals).length >= 3 && (
 								<RadialContainer>
 									<RadialGraph
@@ -227,7 +227,7 @@ function RouteComponent() {
 									/>
 								)}
 							</StatBoxes>
-						</MaybeRadialGraphContainer>
+						</StatsAndLiveRunContainer>
 						<HistoryContainer>
 							{graphData && (
 								<>
@@ -334,13 +334,28 @@ const RadialContainer = styled.div`
 	max-width: calc(100cqw - 64px);
 `
 
-const MaybeRadialGraphContainer = styled.div`
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	position: relative;
+const StatsAndLiveRunContainer = styled.div`
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	.liveContainer {
+		grid-column: 1/3;
+		place-self: center stretch;
+		min-width: 0;
+	}
+	gap: 0 48px;
+
+	place-items: center;
+	@container (min-width: 1280px) {
+		.liveContainer {
+			grid-column: 1;
+		}
+		grid-template-columns: minmax(auto, 900px) 1fr 1fr;
+	}
 	@container (max-width: 900px) {
-		flex-wrap: wrap;
+		.liveContainer {
+			grid-column: 1;
+		}
+		grid-template-columns: 1fr;
 	}
 `
 

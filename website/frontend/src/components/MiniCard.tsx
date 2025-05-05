@@ -35,7 +35,7 @@ const ShadowContainer = styled.a`
 		border-color: ${forest[400]};
 	}
 	max-width: 216px;
-	min-width: 128px;
+	min-width: 164px;
 
 	position: relative;
 
