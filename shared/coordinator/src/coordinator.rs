@@ -912,13 +912,6 @@ impl<T: NodeIdentity> Coordinator<T> {
                 if let Checkpoint::P2P(hub_repo) = llm.checkpoint {
                     llm.checkpoint = Checkpoint::Hub(hub_repo);
                 }
-            } else if self.progress.epoch != 0 && !all_prev_clients_disconnected {
-                match llm.checkpoint {
-                    Checkpoint::Hub(hub_repo) | Checkpoint::Dummy(hub_repo) => {
-                        llm.checkpoint = Checkpoint::P2P(hub_repo)
-                    }
-                    _ => {}
-                }
             }
 
             let cold_start_epoch = self.epoch_state.cold_start_epoch;
