@@ -1025,20 +1025,29 @@ impl<T: NodeIdentity> Coordinator<T> {
             let height = current_round.height;
             self.move_clients_to_exited(height);
 
-            // we've completed an epoch, switch to P2P from now on
             let Model::LLM(llm) = &mut self.model;
-            match llm.checkpoint {
-                Checkpoint::Hub(hub_repo) | Checkpoint::Dummy(hub_repo) => {
-                    llm.checkpoint = Checkpoint::P2P(hub_repo)
-                }
-                _ => {}
-            }
 
             if self.pending_pause.is_true() {
+                // we're pausing, so everyone needs to init from the hub
+                match llm.checkpoint {
+                    Checkpoint::P2P(hub_repo) | Checkpoint::Dummy(hub_repo) => {
+                        llm.checkpoint = Checkpoint::Hub(hub_repo)
+                    }
+                    _ => {}
+                }
+
                 self.change_state(unix_timestamp, RunState::Paused);
                 self.pending_pause = false.into();
                 self.epoch_state.cold_start_epoch = true.into();
             } else {
+                // we've completed an epoch, switch to P2P from now on
+                match llm.checkpoint {
+                    Checkpoint::Hub(hub_repo) | Checkpoint::Dummy(hub_repo) => {
+                        llm.checkpoint = Checkpoint::P2P(hub_repo)
+                    }
+                    _ => {}
+                }
+
                 self.start_waiting_for_members(unix_timestamp);
                 self.epoch_state.cold_start_epoch = false.into();
             }
