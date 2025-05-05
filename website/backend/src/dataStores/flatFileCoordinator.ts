@@ -364,30 +364,28 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			return null
 		}
 
-		const evals: Record<string, Array<{ step: number; value: number }>> = {}
+		const evals: Record<string, Array<[step: number, value: number]>> = {}
 		for (const [r] of run.witnessUpdates) {
 			for (const { name, value } of r.evals) {
 				if (!(name in evals)) {
 					evals[name] = []
 				}
-				evals[name].push({
-					step: r.step,
+				evals[name].push([r.step,
 					value,
-				})
+				] as const)
 			}
 		}
 		const history: OverTime<Metrics> = {
 			bandwidth: run.witnessUpdates
-				.map(([h]) => ({ step: h.step, value: h.bandwidth_per_sec }))
+				.map(([h]) => [h.step,h.bandwidth_per_sec] as const)
 				.filter(goodNumber),
 			loss: run.witnessUpdates
-				.map(([h]) => ({ step: h.step, value: h.loss }))
+				.map(([h]) => [h.step,h.loss] as const)
 				.filter(goodNumber),
 			tokensPerSecond: run.witnessUpdates
-				.map(([h]) => ({ step: h.step, value: h.tokens_per_sec }))
+				.map(([h]) => [h.step,h.tokens_per_sec] as const)
 				.filter(goodNumber),
 			lr: run.observedLrByStep
-				.map(([step, value]) => ({ step, value }))
 				.filter(goodNumber),
 			evals,
 		}
@@ -400,7 +398,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			lr: run.observedLrByStep.at(-1)?.[1] ?? 0,
 			evals: Object.fromEntries(
 				Object.entries(evals)
-					.map(([k, v]) => [k, v.at(-1)?.value] as const)
+					.map(([k, v]) => [k, v.at(-1)?.[1]] as const)
 					.filter((x): x is [string, number] => x[1] !== undefined)
 			),
 		}
@@ -481,7 +479,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 	}
 }
 
-function goodNumber({ value }: { value: number }): boolean {
+function goodNumber([_,value]: readonly [step: number, value: number ]): boolean {
 	return Number.isFinite(value) && !Number.isNaN(value)
 }
 

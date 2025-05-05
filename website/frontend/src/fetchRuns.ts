@@ -73,7 +73,7 @@ function makeDecodeState(): DecodeState {
 
 export async function fetchRunStreaming(
 	runId: string,
-	indexStr?: string
+	indexStr: string
 ): Promise<ReadableStream<ApiGetRun>> {
 	if (import.meta.env.VITE_FAKE_DATA) {
 		const seed = Math.random() * 1_000_000_000
@@ -137,7 +137,7 @@ export async function fetchRunStreaming(
 						reconnectDelay = Math.min(reconnectDelay * 2, 10000)
 
 						try {
-							const newStream = await openRunStream(runId)
+							const newStream = await openRunStream(runId, indexStr)
 							reader = newStream.reader
 							decodeState = newStream.decodeState
 

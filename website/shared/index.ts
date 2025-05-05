@@ -81,7 +81,7 @@ export type Metrics = {
 export type OverTime<T extends object> = {
 	[K in keyof T]: T[K] extends object
 		? OverTime<T[K]>
-		: Array<{ step: number; value: T[K] }>
+		: Array<readonly [number, T[K]]>
 }
 
 export type NullableRecursive<T extends object> = {
