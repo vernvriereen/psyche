@@ -55,6 +55,12 @@ interface RunHistory {
 	recentTxs: Array<TxSummary>
 }
 
+interface RunSummaries {
+	runs: RunSummary[]
+	totalTokens: bigint
+	totalTokensPerSecondActive: bigint
+}
+
 export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 	#runs: Map<string, RunHistory[]> = new Map()
 	#lastUpdateInfo: LastUpdateInfo = {
@@ -66,6 +72,10 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 
 	#runsMutatedSinceLastSync: Set<string> = new Set()
 	eventEmitter: EventEmitter<{ update: [runId: string] }> = new EventEmitter()
+
+	// try to mitigate the compute cost of requests by caching runs we've looked up
+	#summaryCache: RunSummaries | null = null
+	#runCache: Map<string, RunData> = new Map()
 
 	constructor(dir: string, programId: PublicKey) {
 		this.#db = path.join(dir, `./coordinator-db-${programId}.json`)
@@ -112,9 +122,20 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 
 	async sync(lastUpdateInfo: LastUpdateInfo) {
 		this.#lastUpdateInfo = lastUpdateInfo
+
 		for (const runId of this.#runsMutatedSinceLastSync) {
+			// clear cache for this run
+			this.#runCache.delete(runId)
+
+			// notify any listeners
 			this.eventEmitter.emit('update', runId)
 		}
+
+		// clear summary cache if anything changed
+		if (this.#runsMutatedSinceLastSync.size > 0) {
+			this.#summaryCache = null
+		}
+
 		this.#runsMutatedSinceLastSync.clear()
 		await writeFile(
 			this.#db,
@@ -297,11 +318,10 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		this.#runsMutatedSinceLastSync.add(lastRun.runId)
 	}
 
-	getRunSummaries(): {
-		runs: RunSummary[]
-		totalTokens: bigint
-		totalTokensPerSecondActive: bigint
-	} {
+	getRunSummaries(): RunSummaries {
+		if (this.#summaryCache) {
+			return this.#summaryCache
+		}
 		const rawRuns = [...this.#runs.values()].flatMap((runs) =>
 			runs.map(
 				(r, i) =>
@@ -316,11 +336,11 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			)
 		)
 		const runs = rawRuns.map((r) => r[0]).filter((r) => !!r)
-		return {
+		const summaries = {
 			runs,
 			totalTokens: runs.reduce((sum, run) => sum + run.completedTokens, 0n),
 			totalTokensPerSecondActive: rawRuns.reduce((sum, [summary, run]) => {
-				const ACTIVE_TIMEOUT_MS = 10 * 60 * 1_000
+				const ACTIVE_TIMEOUT_MS = 10 * 60 * 1000
 				if (
 					summary?.status.type !== 'active' ||
 					Date.now() - run.lastUpdated.time.getTime() > ACTIVE_TIMEOUT_MS
@@ -334,6 +354,8 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 				return sum + BigInt(Math.round(lastWitness[0].tokens_per_sec))
 			}, 0n),
 		}
+		this.#summaryCache = summaries
+		return summaries
 	}
 
 	getNumRuns(): number {
@@ -347,6 +369,13 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		coordinatorInstancePdaAddress: PublicKey,
 		index?: number
 	): RunData | null {
+		const cachedRun = this.#runCache.get(
+			runCacheKey(coordinatorInstancePdaAddress, index)
+		)
+		if (cachedRun) {
+			return cachedRun
+		}
+
 		const runsAtThisAddress = this.#runs.get(
 			coordinatorInstancePdaAddress.toString()
 		)
@@ -364,29 +393,56 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			return null
 		}
 
-		const evals: Record<string, Array<[step: number, value: number]>> = {}
-		for (const [r] of run.witnessUpdates) {
+		const numSamples = 1000
+
+		const linearWitnessHistory = chopOffDivergentHistory(
+			run.witnessUpdates.map((w) => [w[0].step, w[0]] as const)
+		)
+
+		const evals: Record<
+			string,
+			Array<readonly [step: number, value: number]>
+		> = {}
+		for (const [step, r] of linearWitnessHistory) {
 			for (const { name, value } of r.evals) {
 				if (!(name in evals)) {
 					evals[name] = []
 				}
-				evals[name].push([r.step,
-					value,
-				] as const)
+				evals[name].push([step, value] as const)
 			}
 		}
+		for (const evalName in evals) {
+			evals[evalName] = fairSample(
+				averageSameStepValues(evals[evalName]),
+				numSamples
+			)
+		}
 		const history: OverTime<Metrics> = {
-			bandwidth: run.witnessUpdates
-				.map(([h]) => [h.step,h.bandwidth_per_sec] as const)
-				.filter(goodNumber),
-			loss: run.witnessUpdates
-				.map(([h]) => [h.step,h.loss] as const)
-				.filter(goodNumber),
-			tokensPerSecond: run.witnessUpdates
-				.map(([h]) => [h.step,h.tokens_per_sec] as const)
-				.filter(goodNumber),
-			lr: run.observedLrByStep
-				.filter(goodNumber),
+			bandwidth: fairSample(
+				averageSameStepValues(
+					linearWitnessHistory
+						.map(([step, h]) => [step, h.bandwidth_per_sec] as const)
+						.filter(goodNumber)
+				),
+				numSamples
+			),
+			loss: fairSample(
+				averageSameStepValues(
+					linearWitnessHistory
+						.map(([step, h]) => [step, h.loss] as const)
+						.filter(goodNumber)
+				),
+				numSamples
+			),
+			tokensPerSecond: fairSample(
+				averageSameStepValues(
+					linearWitnessHistory
+						.map(([step, h]) => [step, h.tokens_per_sec] as const)
+						.filter(goodNumber)
+				),
+				numSamples
+			),
+			lr: run.observedLrByStep.filter(goodNumber),
 			evals,
 		}
 
@@ -462,7 +518,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			}
 		}
 
-		return {
+		const runData = {
 			info,
 			state,
 			recentTxs: run.recentTxs,
@@ -471,6 +527,11 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 				history,
 			},
 		}
+		this.#runCache.set(
+			runCacheKey(coordinatorInstancePdaAddress, index),
+			runData
+		)
+		return runData
 	}
 
 	getRunDataById(runId: string, index?: number): RunData | null {
@@ -479,7 +540,17 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 	}
 }
 
-function goodNumber([_,value]: readonly [step: number, value: number ]): boolean {
+function runCacheKey(
+	coordinatorInstancePdaAddress: PublicKey,
+	index: number | undefined
+): string {
+	return `${coordinatorInstancePdaAddress}-${index}`
+}
+
+function goodNumber([_, value]: readonly [
+	step: number,
+	value: number,
+]): boolean {
 	return Number.isFinite(value) && !Number.isNaN(value)
 }
 
@@ -583,4 +654,75 @@ function calculateTokens(
 	const rectangleTokens = postWarmupSteps * tokensPerSequence * batchSizeEnd
 
 	return trapezoidTokens + rectangleTokens
+}
+
+function averageSameStepValues(
+	values: Array<readonly [number, number]>
+): Array<readonly [number, number]> {
+	const groupedByStep = values.reduce<Record<number, number[]>>(
+		(acc, [step, value]) => {
+			if (!acc[step]) {
+				acc[step] = []
+			}
+			acc[step].push(value)
+			return acc
+		},
+		{}
+	)
+
+	return Object.entries(groupedByStep).map(([step, values]) => {
+		const mean = values.reduce((sum, val) => sum + val, 0) / values.length
+		return [parseInt(step, 10), mean] as const
+	})
+}
+
+// sample n items, always including the first and last items.
+function fairSample<T>(array: T[], sampleSize: number) {
+	const length = array.length
+
+	if (length === 0) return []
+
+	if (sampleSize >= length || sampleSize <= 2) {
+		return [...array]
+	}
+
+	const result = [array[0]]
+
+	const step = (length - 1) / (sampleSize - 1)
+
+	for (let i = 1; i < sampleSize - 1; i++) {
+		const index = Math.round(i * step)
+		result.push(array[index])
+	}
+
+	result.push(array[length - 1])
+
+	return result
+}
+
+/**
+ * Given an array of
+ * `const values: Array<[x: number, y: number]>`
+ * Detects if x ever goes backwards, and then chops off that branch,
+ * so with a bunch of divergent branches linearly flattened,
+ * we only keep one linear branch.
+ */
+function chopOffDivergentHistory<T>(
+	values: Array<readonly [x: number, y: T]>
+): Array<readonly [x: number, y: T]> {
+	const result: Array<readonly [x: number, y: T]> = []
+	let maxX = -1
+	for (const [step, value] of values) {
+		if (step < maxX) {
+			// find the divergent point - the last entry that has x < step
+			const divergentIndex = result.findLastIndex(([x]) => x < step)
+
+			// slice off all results after the divergent point
+			result.length = divergentIndex + 1
+		}
+
+		result.push([step, value])
+		maxX = step
+	}
+	return result
 }

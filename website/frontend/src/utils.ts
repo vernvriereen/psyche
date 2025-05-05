@@ -99,67 +99,19 @@ type MappedObject<T extends object, V> = {
 }
 export function metricToGraph<
 	T extends Record<string, number | Record<string, number>>,
->(
-	data: OverTime<T>,
-	maxItems: number
-): MappedObject<T, Array<{ x: number; y: number }>> {
+>(data: OverTime<T>): MappedObject<T, Array<{ x: number; y: number }>> {
 	const result: Record<string, any> = {}
 	for (const [key, value] of Object.entries(data)) {
 		if (Array.isArray(value)) {
-			const groupedByStep = value.reduce<Record<string, number[]>>(
-				(acc, { step, value }) => {
-					if (!acc[step]) {
-						acc[step] = []
-					}
-					acc[step].push(value)
-					return acc
-				},
-				{}
-			)
-
-			const averaged = Object.entries(groupedByStep).map(([step, values]) => {
-				const mean = values.reduce((sum, val) => sum + val, 0) / values.length
-				return {
-					x: parseInt(step, 10),
-					y: mean,
-				}
-			})
-			const sample = fairSample(averaged, maxItems)
-
-			result[key] = sample
+			result[key] = value.map(([x, y]) => ({ x, y }))
 		} else if (typeof value === 'object') {
 			const nestedResults = metricToGraph(
-				value as OverTime<Record<string, number | Record<string, number>>>,
-				maxItems
+				value as OverTime<Record<string, number | Record<string, number>>>
 			)
 			result[key] = nestedResults
 		}
 	}
 	return result as MappedObject<T, Array<{ x: number; y: number }>>
-}
-
-// sample n items, always including the first and last items.
-function fairSample<T>(array: T[], sampleSize: number) {
-	const length = array.length
-
-	if (length === 0) return []
-
-	if (sampleSize >= length || sampleSize <= 2) {
-		return [...array]
-	}
-
-	const result = [array[0]]
-
-	const step = (length - 1) / (sampleSize - 1)
-
-	for (let i = 1; i < sampleSize - 1; i++) {
-		const index = Math.round(i * step)
-		result.push(array[index])
-	}
-
-	result.push(array[length - 1])
-
-	return result
 }
 
 export type SolanaCluster = 'mainnet' | 'devnet' | string

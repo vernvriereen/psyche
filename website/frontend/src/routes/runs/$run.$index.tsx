@@ -44,7 +44,7 @@ function RouteComponent() {
 	)
 	const graphData = useMemo(() => {
 		if (run) {
-			const graphs = metricToGraph(run.metrics.history, 1000)
+			const graphs = metricToGraph(run.metrics.history)
 			for (const vals of Object.values(graphs.evals)) {
 				for (const val of vals) {
 					val.y *= 100

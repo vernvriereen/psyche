@@ -176,6 +176,7 @@ async function main() {
 			const matchingRun = runId
 				? coordinator.dataStore.getRunDataById(runId, index)
 				: null
+
 			const data: ApiGetRun = {
 				run: matchingRun,
 				error: coordinatorError,

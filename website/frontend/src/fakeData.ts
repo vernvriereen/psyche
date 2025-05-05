@@ -359,12 +359,12 @@ function randomWalk(
 	start = 0,
 	down = 0.9,
 	numStepsSet?: number
-): Array<readonly [number ,number]> {
+): Array<readonly [number, number]> {
 	const seededRandom = createSeededRandom(seed)
 	const numSteps =
 		numStepsSet ?? Math.floor(seededRandom() * (2000 - 1000 + 1)) + 1000
 
-	const walk = [[0 as number,start] as const]
+	const walk = [[0 as number, start] as const]
 
 	let currentValue = start
 
@@ -374,9 +374,7 @@ function randomWalk(
 		currentValue += movement
 		currentValue = Math.max(Math.min(currentValue, 1), 0)
 
-		walk.push([i,
-			 currentValue * scale,
-		] as const)
+		walk.push([i, currentValue * scale] as const)
 	}
 
 	return walk
