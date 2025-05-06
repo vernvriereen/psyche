@@ -202,9 +202,20 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
 
                     // if we get here we've sent our own finished message.
                     // now we just need to wait until we've received everyone else's finished
-                    if self.current_round.clients_finished.len()
-                        != self.coordinator_state.epoch_state.clients.len()
-                    {
+                    let unfinished_clients: Vec<_> = self
+                        .coordinator_state
+                        .epoch_state
+                        .clients
+                        .iter()
+                        .filter_map(|client| {
+                            if self.current_round.clients_finished.contains_key(&client.id) {
+                                None
+                            } else {
+                                Some(client.id)
+                            }
+                        })
+                        .collect();
+                    if !unfinished_clients.is_empty() {
                         return Ok(());
                     }
 
@@ -248,10 +259,25 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                 return Ok(());
             }
 
-            let waiting_for_finished = self.coordinator_state.epoch_state.clients.len()
-                - self.current_round.clients_finished.len();
-            if waiting_for_finished != 0 {
-                trace!("Still waiting on {waiting_for_finished} warmup finish broadcasts");
+            let unfinished_clients: Vec<_> = self
+                .coordinator_state
+                .epoch_state
+                .clients
+                .iter()
+                .filter_map(|client| {
+                    if self.current_round.clients_finished.contains_key(&client.id) {
+                        None
+                    } else {
+                        Some(client.id)
+                    }
+                })
+                .collect();
+            if !unfinished_clients.is_empty() {
+                trace!(
+                    unfinished_clients = ?unfinished_clients,
+                    "Still waiting on {} warmup finish broadcasts",
+                    unfinished_clients.len()
+                );
                 return Ok(());
             }
 
