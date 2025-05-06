@@ -694,13 +694,17 @@ impl<T: NodeIdentity> Coordinator<T> {
         }
     }
 
-    pub fn witness_quorum(&self) -> u16 {
-        match self.config.witness_nodes {
+    pub fn witness_quorum(&self, num_witnesses: u16) -> u16 {
+        let witness_nodes = match self.config.witness_nodes {
+            0 => num_witnesses,
+            witness_nodes => witness_nodes
+        };
+        match witness_nodes {
             0 => unreachable!(),
             1 => 1,
             2 => 2,
             3 => 2,
-            witness_nodes => (witness_nodes as f64 * WITNESS_QUORUM_RAIO) as u16,
+            witness_nodes => ((witness_nodes as f64 * WITNESS_QUORUM_RAIO) as u16).max(1),
         }
     }
 
@@ -711,7 +715,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             .witnesses;
 
         let score = Self::trainer_healthy_score_by_witnesses(id, prev_round_witnesses);
-        Ok(score >= self.witness_quorum())
+        Ok(score >= self.witness_quorum(prev_round_witnesses.len() as u16))
     }
 
     /// Computes the health score of a client based on witness confirmations.
@@ -999,7 +1003,7 @@ impl<T: NodeIdentity> Coordinator<T> {
             // clients or registered witnesses for the current round, we change to Cooldown
             if height == self.config.rounds_per_epoch - 1
                 || self.epoch_state.clients.len() < self.config.min_clients as usize
-                || num_witnesses < self.witness_quorum()
+                || num_witnesses < self.witness_quorum(num_witnesses)
                 || self.pending_pause.is_true()
             {
                 self.start_cooldown(unix_timestamp);

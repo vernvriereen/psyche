@@ -497,7 +497,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
 
         let apply_start = Instant::now();
         let step = state.progress.step;
-        let witness_quorum = state.witness_quorum();
+        let witness_quorum = state.witness_quorum(
+            state
+                .previous_round()
+                .ok_or(ApplyError::NoActiveRound)?
+                .witnesses
+                .len() as u16,
+        );
         let cold_start_warmup_steps = match &state.model {
             model::Model::LLM(llm) => llm.cold_start_warmup_steps,
         };
