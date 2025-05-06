@@ -8,7 +8,7 @@ use anchor_client::{
     solana_sdk::{
         commitment_config::CommitmentConfig,
         pubkey::Pubkey,
-        signature::{Keypair, Signature, Signer},
+        signature::{Keypair, Signer},
     },
     Cluster,
 };
@@ -48,7 +48,6 @@ pub struct App {
     cancel: CancellationToken,
     update_tui_interval: Interval,
     tx_tui_state: Option<Sender<TabsData>>,
-    joined_new_train_epoch: Option<Signature>,
     authorizer: Option<Pubkey>,
 }
 
@@ -123,7 +122,6 @@ impl AppBuilder {
             cancel: p.cancel,
             tx_tui_state: p.tx_tui_state,
             update_tui_interval: interval(Duration::from_millis(150)),
-            joined_new_train_epoch: None,
             authorizer: p.authorizer,
         };
         let identity = psyche_solana_coordinator::ClientId::new(
@@ -194,6 +192,9 @@ impl App {
             .state
             .coordinator;
 
+        let mut joined_run_this_epoch = None;
+        let mut ever_joined_run = false;
+
         // if we're already in "WaitingForMembers" we won't get an update saying that
         // (subscription is on change), so check if it's in that state right at boot
         // and join the run if so
@@ -217,7 +218,8 @@ impl App {
                 tx = %joined,
                 "Joined run",
             );
-            self.joined_new_train_epoch = Some(joined);
+            joined_run_this_epoch = Some(joined);
+            ever_joined_run = true;
         } else {
             info!("Waiting for the current epoch to end before joining");
         }
@@ -290,7 +292,7 @@ impl App {
                     latest_update = update?;
                     match latest_update.run_state {
                         RunState::WaitingForMembers => {
-                            if self.joined_new_train_epoch.is_none() {
+                            if joined_run_this_epoch.is_none() {
                                 let joined = retry_function("join_run", || backend
                                     .join_run_retryable(
                                         coordinator_instance,
@@ -305,24 +307,36 @@ impl App {
                                     tx = %joined,
                                     "Joined run",
                                 );
-                                self.joined_new_train_epoch = Some(joined);
+                                joined_run_this_epoch = Some(joined);
+                                ever_joined_run = true;
                             }
                         }
                         _ => {
-                            if self.joined_new_train_epoch.is_some() {
-                                let me = latest_update.epoch_state.clients.iter().find(|x| x.id == id);
-                                match me {
-                                    Some(me) => if me.state != ClientState::Healthy {
-                                        tracing::error!(id = %id, state = %me.state, "Coordinator says we're unhealthy, exiting");
-                                        return Err(anyhow!("{}", me.state));
+                            if ever_joined_run {
+                                let err = if latest_update.halted() {
+                                    Err(anyhow!("{}", latest_update.run_state))
+                                } else {
+                                    let me = latest_update.epoch_state.clients.iter().find(|x| x.id == id);
+                                    match me {
+                                        Some(me) => if me.state != ClientState::Healthy {
+                                            tracing::error!(id = %id, state = %me.state, "Coordinator says we're unhealthy, exiting");
+                                            Err(anyhow!("{}", me.state))
+                                        } else {
+                                            Ok(())
+                                        }
+                                        None => {
+                                            tracing::error!(id = %id, "Coordinator did not select us for the round, exiting");
+                                            Err(anyhow!("Not a participant"))
+                                        }
                                     }
-                                    None => {
-                                        tracing::error!(id = %id, "Coordinator did not select us for the round, exiting");
-                                        return Err(anyhow!("Not a participant"));
-                                    }
+                                };
+                                if let Err(err) = err {
+                                    client.shutdown();
+                                    let _ = client.finished().await;
+                                    return Err(err);
                                 }
                             }
-                            self.joined_new_train_epoch = None;
+                            joined_run_this_epoch = None;
                         }
                     }
                 }
