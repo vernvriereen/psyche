@@ -246,7 +246,7 @@ function makeFakeRunDataSeeded(seed = 1, step = 0, index = 0): RunData {
 	const numEpochs = Math.round(seededRandom() * 300) + 10
 	const roundsPerEpoch = Math.round(seededRandom() * 10) + 10
 	const minClients = Math.round(seededRandom() * 10) + 2
-	const totalClients = Math.round(seededRandom() * 10) + minClients
+	const totalClients = minClients
 
 	const stepsPerEpoch = roundsPerEpoch + 2 + totalClients // +2 for warmup and cooldown, +n for num clients
 	const currentEpoch = Math.min(Math.floor(step / stepsPerEpoch), numEpochs - 1)

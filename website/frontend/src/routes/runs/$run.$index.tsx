@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Button } from '../../components/Button.js'
 import ArrowLeft from '../../assets/icons/arrow-left.svg?react'
 import Fullscreen from '../../assets/icons/fullscreen.svg?react'
+import HuggingfaceIcon from '../../assets/icons/huggingface.svg?react'
 import { styled } from '@linaria/react'
 import { forest } from '../../colors.js'
 import { text } from '../../fonts.js'
@@ -122,6 +123,7 @@ function RouteComponent() {
 							<TitleRightInfo>
 								<StatusChip status={info.status.type} style="minimal" />
 								<Button
+									className="fullscreenButton"
 									onClick={() => setFullscreen(!fullscreen)}
 									style="secondary"
 									icon={{
@@ -142,16 +144,6 @@ function RouteComponent() {
 							<InfoChit label="arch">{info.arch}</InfoChit>
 							<InfoChit label="type">{info.type}</InfoChit>
 						</InfoChits>
-						{run.state?.checkpoint && (
-							<div className={text['body/sm/medium']}>
-								🤗 Latest Checkpoint:{' '}
-								<a
-									href={`https://huggingface.co/${run.state.checkpoint.repo_id}/${run.state.checkpoint.revision ? `tree/${run.state.checkpoint.revision}` : ''}`}
-								>
-									{run.state.checkpoint.repo_id}
-								</a>
-							</div>
-						)}
 						<RuntimeLabel>
 							runtime
 							<Runtime
@@ -168,10 +160,25 @@ function RouteComponent() {
 							size="big"
 							current={Number(info.completedTokens)}
 							total={Number(info.totalTokens)}
-							chunkHeight={36}
-							chunkWidth={24}
+							chunkHeight={24}
+							chunkWidth={21}
 							label="tokens"
 						/>
+						{run.state?.checkpoint && (
+							<Button
+								style="secondary"
+								center
+								icon={{
+									side: 'left',
+									svg: HuggingfaceIcon,
+									autoColor: false,
+								}}
+								href={`https://huggingface.co/${run.state.checkpoint.repo_id}/${run.state.checkpoint.revision ? `tree/${run.state.checkpoint.revision}` : ''}`}
+								target="_blank"
+							>
+								View latest checkpoint: {run.state.checkpoint.repo_id}
+							</Button>
+						)}
 						<StatsAndLiveRunContainer>
 							{run.state && run.info.status.type !== 'completed' && (
 								<RunStateActiveContainer
@@ -316,6 +323,11 @@ const TitleRightInfo = styled.div`
 	button {
 		margin: 4px 0;
 	}
+	@media (width <= 768px) {
+		.fullscreenButton {
+			display: none;
+		}
+	}
 `
 
 const StatBoxes = styled.div`
@@ -367,7 +379,11 @@ const RunContents = styled.div`
 	display: flex;
 	flex-direction: column;
 	gap: 24px;
-	padding: 24px;
+	padding: 24px 0;
+	overflow: hidden;
+	& > *:not(${StatsAndLiveRunContainer}) {
+		margin: 0 24px;
+	}
 
 	@container (width < 400px) {
 		padding: 24px 8px;
@@ -394,8 +410,7 @@ const RunDescription = styled.span`
 
 const InfoChits = styled.div`
 	display: flex;
-	justify-content: space-around;
-	gap: 16px;
+	gap: 24px;
 `
 
 const RunStateActiveContainer = styled.div`

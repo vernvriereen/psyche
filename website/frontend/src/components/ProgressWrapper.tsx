@@ -2,11 +2,11 @@ import { styled } from '@linaria/react'
 import { text } from '../fonts.js'
 import { formatNumber } from '../utils.js'
 import { ProgressBar } from './ProgressBar.js'
+import { forest } from '../colors.js'
 
 const ProgressContainer = styled.div`
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
 `
 
 const ProgressDescription = styled.div`
@@ -14,6 +14,10 @@ const ProgressDescription = styled.div`
 	flex-direction: row;
 	gap: 8px;
 	justify-content: space-between;
+	color: ${forest[700]};
+	.theme-dark & {
+		color: ${forest[200]};
+	}
 `
 export function Progress({
 	chunkWidth,
@@ -45,7 +49,7 @@ export function Progress({
 				chunkSpacing={chunkSpacing}
 				size={size}
 			/>
-			<ProgressDescription className={text['aux/xs/regular']}>
+			<ProgressDescription className={text['aux/sm/medium']}>
 				<span>{label}</span>
 				<span>
 					{format(current)}/{format(total)}

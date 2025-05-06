@@ -6,7 +6,6 @@ import { ProgressBar } from './ProgressBar.js'
 import { css } from '@linaria/core'
 import { useState } from 'react'
 import { useInterval } from 'usehooks-ts'
-import { RunBox } from './RunBox.js'
 import { c, solanaAccountUrl } from '../utils.js'
 import { TxHistory } from './TxHistory.js'
 import { Progress } from './ProgressWrapper.js'
@@ -70,15 +69,6 @@ function calculateDoneRatio(
 	}
 }
 
-const title = css`
-	.theme-light & {
-		background: ${slate[300]};
-	}
-	.theme-dark & {
-		background: ${forest[600]};
-	}
-`
-
 const SectionsGrid = styled.div`
 	display: grid;
 	grid-template-columns: repeat(4, 1fr);
@@ -118,6 +108,38 @@ const DisconnectedBox = styled.div`
 	gap: 1em;
 `
 
+const Title = styled.div`
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 4px 24px;
+	.theme-light & {
+		background: ${slate[300]};
+	}
+	.theme-dark & {
+		background: ${forest[600]};
+	}
+`
+
+const OuterContainer = styled.div`
+	display: flex;
+	flex-direction: column;
+	gap: 24px;
+	position: relative;
+	& > *:not(.toEdge) {
+		margin: 0 24px;
+	}
+
+	border-bottom: 2px solid;
+	padding-bottom: 24px;
+	.theme-dark & {
+		border-color: ${forest[600]};
+	}
+	.theme-light & {
+		border-color: ${slate[500]};
+	}
+`
+
 export function RunStateIndicator({
 	state,
 	recentTxs,
@@ -140,25 +162,21 @@ export function RunStateIndicator({
 	useInterval(() => setNow(new Date(Date.now())), 100)
 	const doneRatio = calculateDoneRatio(state, now)
 	return (
-		<RunBox
-			title={
-				<>
-					<span className={text['aux/xl/medium']}>
-						epoch {epoch}/{numEpochs}
+		<OuterContainer>
+			<Title className="toEdge">
+				<span className={text['aux/xl/medium']}>
+					epoch {epoch}/{numEpochs}
+				</span>
+				{!paused && (
+					<span>
+						<StatusChip status="active" style="minimal">
+							live
+						</StatusChip>
 					</span>
-					{!paused && (
-						<span>
-							<StatusChip status="active" style="minimal">
-								live
-							</StatusChip>
-						</span>
-					)}
-				</>
-			}
-			titleClass={title}
-		>
+				)}
+			</Title>
 			{disconnected && (
-				<DisconnectedBox>
+				<DisconnectedBox className="toEdge">
 					<span>Disconnected from server, live run data is paused.</span>
 					<Button style="secondary" onClick={() => window.location.reload()}>
 						Reconnect
@@ -266,7 +284,7 @@ export function RunStateIndicator({
 					</Container>
 				</>
 			)}
-		</RunBox>
+		</OuterContainer>
 	)
 }
 
@@ -275,7 +293,7 @@ const SectionBox = styled.div`
 	flex-direction: column;
 	align-items: stretch;
 	padding: 0.5em;
-	border: 2px dashed;
+	border: 2px dotted;
 
 	.theme-light & {
 		border-color: ${slate[500]};

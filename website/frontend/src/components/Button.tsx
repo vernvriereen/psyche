@@ -1,10 +1,14 @@
-import { ButtonHTMLAttributes, FunctionComponent } from 'react'
+import {
+	ButtonHTMLAttributes,
+	FunctionComponent,
+	AnchorHTMLAttributes,
+} from 'react'
 import { text } from '../fonts.js'
 import { css, LinariaClassName } from '@linaria/core'
 import { forest, gold, slate } from '../colors.js'
 import { Link, LinkProps } from '@tanstack/react-router'
 import { iconClass } from '../icon.js'
-import { svgFillCurrentColor } from '../utils.js'
+import { c } from '../utils.js'
 
 const buttonStyle = css`
 	text-decoration: none;
@@ -17,6 +21,18 @@ const buttonStyle = css`
 	border: none;
 	cursor: pointer;
 	text-transform: uppercase;
+
+	&.center {
+		justify-content: center;
+	}
+	& .contents {
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+	&:not(:has(.contents)) {
+		padding: 3px 0;
+	}
 
 	box-shadow:
 		inset -1px -1px 0px rgba(0, 0, 0, 0.5),
@@ -47,7 +63,6 @@ const buttonStyle = css`
 	}
 
 	& .contents {
-		flex-grow: 1;
 		padding: 0 4px;
 	}
 	&:has(.left) .contents {
@@ -209,8 +224,10 @@ interface ButtonProps {
 	icon?: {
 		svg: FunctionComponent<React.SVGProps<SVGSVGElement>>
 		side: 'left' | 'right'
+		autoColor?: boolean
 	}
 	pressed?: boolean
+	center?: boolean
 }
 
 const styles: Record<ButtonProps['style'], LinariaClassName> = {
@@ -221,14 +238,21 @@ const styles: Record<ButtonProps['style'], LinariaClassName> = {
 }
 
 type HTMLButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'style'>
+type HTMLAnchorProps = Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'style'>
 
-export function Button<T extends LinkProps | HTMLButtonProps>(
+// TODO refactor to remove duplication
+export function Button<T extends LinkProps | HTMLButtonProps | HTMLAnchorProps>(
 	props: T & ButtonProps
 ) {
-	const { style, pressed } = props
-	const className = `${text['button/sm']} ${buttonStyle} ${styles[style]} ${
-		pressed ? 'fakePressed' : ''
-	} ${'className' in props ? props.className : ''}`
+	const { style, pressed, center } = props
+	const className = c(
+		text['button/sm'],
+		buttonStyle,
+		styles[style],
+		pressed && 'fakePressed',
+		'className' in props && props.className,
+		center && 'center'
+	)
 
 	if ('to' in props) {
 		const {
@@ -236,6 +260,7 @@ export function Button<T extends LinkProps | HTMLButtonProps>(
 			children,
 			icon,
 			pressed: __,
+			center: ___,
 			...buttonProps
 		} = props as LinkProps & ButtonProps
 		return (
@@ -244,7 +269,9 @@ export function Button<T extends LinkProps | HTMLButtonProps>(
 					<>
 						{icon?.side === 'left' && (
 							<div className="icon">
-								<icon.svg className={`${svgFillCurrentColor} left`} />
+								<icon.svg
+									className={`${icon.autoColor === false ? '' : iconClass} left`}
+								/>
 							</div>
 						)}
 						{children && (
@@ -256,12 +283,42 @@ export function Button<T extends LinkProps | HTMLButtonProps>(
 						)}
 						{icon?.side === 'right' && (
 							<div className="icon">
-								<icon.svg className={`${svgFillCurrentColor} right`} />
+								<icon.svg
+									className={`${icon.autoColor === false ? '' : iconClass} right`}
+								/>
 							</div>
 						)}
 					</>
 				)}
 			</Link>
+		)
+	} else if ('href' in props) {
+		const {
+			style: _,
+			children,
+			icon,
+			pressed: __,
+			center: ___,
+			...buttonProps
+		} = props as HTMLAnchorProps & ButtonProps
+		return (
+			<a {...buttonProps} className={className}>
+				{icon?.side === 'left' && (
+					<div className="icon">
+						<icon.svg
+							className={`${icon.autoColor === false ? '' : iconClass} left`}
+						/>
+					</div>
+				)}
+				{children && <span className="contents">{children}</span>}
+				{icon?.side === 'right' && (
+					<div className="icon">
+						<icon.svg
+							className={`${icon.autoColor === false ? '' : iconClass} right`}
+						/>
+					</div>
+				)}
+			</a>
 		)
 	} else {
 		const {
@@ -269,19 +326,24 @@ export function Button<T extends LinkProps | HTMLButtonProps>(
 			children,
 			icon,
 			pressed: __,
+			center: ___,
 			...buttonProps
 		} = props as HTMLButtonProps & ButtonProps
 		return (
 			<button {...buttonProps} className={className}>
 				{icon?.side === 'left' && (
 					<div className="icon">
-						<icon.svg className={`${iconClass} left`} />
+						<icon.svg
+							className={`${icon.autoColor === false ? '' : iconClass} left`}
+						/>
 					</div>
 				)}
 				{children && <span className="contents">{children}</span>}
 				{icon?.side === 'right' && (
 					<div className="icon">
-						<icon.svg className={`${iconClass} right`} />
+						<icon.svg
+							className={`${icon.autoColor === false ? '' : iconClass} right`}
+						/>
 					</div>
 				)}
 			</button>

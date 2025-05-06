@@ -6,24 +6,25 @@ import { forest, slate } from '../colors.js'
 const RunHeader = styled.div`
 	display: flex;
 	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
 	justify-content: space-between;
 	border-bottom: 2px solid;
+	padding: 8px 16px;
 
 	.theme-light & {
 		color: ${forest[700]};
 		border-color: ${slate[500]};
+		background: ${slate[300]};
 	}
 	.theme-dark & {
 		color: ${forest[300]};
 		border-color: ${forest[500]};
+		background: ${forest[600]};
 	}
 `
 
 const Box = styled.div`
-	& > * {
-		padding: 8px 16px;
-	}
-
 	margin-top: 24px;
 	margin-bottom: 24px;
 	border: 2px solid;
