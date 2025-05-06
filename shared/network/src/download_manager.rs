@@ -4,7 +4,7 @@ use crate::{
     Networkable,
 };
 
-use anyhow::{bail, Error, Result};
+use anyhow::{bail, Result};
 use bytes::Bytes;
 use futures_util::future::select_all;
 use iroh::PublicKey;
@@ -36,7 +36,7 @@ struct Download {
 struct ReadingFinishedDownload {
     blob_ticket: BlobTicket,
     tag: u32,
-    download: Result<oneshot::Receiver<Bytes>>,
+    download: oneshot::Receiver<Bytes>,
 }
 
 impl Debug for ReadingFinishedDownload {
@@ -72,7 +72,6 @@ pub struct DownloadUpdate {
     pub downloaded_size: u64,
     pub total_size: u64,
     pub all_done: bool,
-    pub error: Option<String>,
 }
 
 pub struct DownloadComplete<D: Networkable> {
@@ -203,12 +202,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
         });
     }
 
-    pub fn read(
-        &mut self,
-        blob_ticket: BlobTicket,
-        tag: u32,
-        download: Result<oneshot::Receiver<Bytes>>,
-    ) {
+    pub fn read(&mut self, blob_ticket: BlobTicket, tag: u32, download: oneshot::Receiver<Bytes>) {
         let reading = self.reading.clone();
         let sender = self.tx_new_item.clone();
         tokio::spawn(async move {
@@ -256,17 +250,7 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
 
         let read_futures = reading.iter_mut().enumerate().map(|(i, read)| {
             Box::pin(async move {
-                FutureResult::Read(
-                    i,
-                    match &mut read.download {
-                        Ok(download) => download.await.map_err(|e| e.into()),
-                        Err(err) => Err(Error::msg(format!(
-                            "Error downloading {}: {}",
-                            read.blob_ticket.hash(),
-                            err
-                        ))),
-                    },
-                )
+                FutureResult::Read(i, (&mut read.download).await.map_err(|e| e.into()))
             }) as Pin<Box<dyn Future<Output = FutureResult> + Send>>
         });
 
@@ -305,7 +289,6 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                         downloaded_size: size.value(),
                         total_size: size.value(),
                         all_done: false,
-                        error: None,
                     }),
                     DownloadProgress::Connected => None,
                     DownloadProgress::Found { size, .. } => {
@@ -317,7 +300,6 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                             downloaded_size: 0,
                             total_size: size,
                             all_done: false,
-                            error: None,
                         })
                     }
                     DownloadProgress::FoundHashSeq { .. } => None,
@@ -331,7 +313,6 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                             downloaded_size: offset,
                             total_size: download.total_size,
                             all_done: false,
-                            error: None,
                         })
                     }
                     DownloadProgress::Done { .. } => None,
@@ -342,19 +323,17 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                         downloaded_size: download.total_size,
                         total_size: download.total_size,
                         all_done: true,
-                        error: None,
                     }),
                     DownloadProgress::Abort(err) => {
-                        warn!("Download aborted: {:?}", err);
-                        Some(DownloadUpdate {
+                        warn!(
+                            "Download aborted for ticket {}: {:?}",
+                            download.blob_ticket, err
+                        );
+                        return Ok(Some(DownloadManagerEvent::Failed(DownloadFailed {
                             blob_ticket: download.blob_ticket.clone(),
+                            error: err.into(),
                             tag: download.tag,
-                            downloaded_size_delta: 0,
-                            downloaded_size: 0,
-                            total_size: 0,
-                            all_done: true,
-                            error: Some(format!("{err}")),
-                        })
+                        })));
                     }
                 };
                 Ok(update.map(DownloadManagerEvent::Update))

@@ -1,5 +1,5 @@
 use allowlist::Allowlist;
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{anyhow, Context, Result};
 use bytes::Bytes;
 use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
 use futures_util::StreamExt;
@@ -463,8 +463,7 @@ where
                         Ok(Some(NetworkEvent::DownloadComplete(result)))
                     }
                     Some(DownloadManagerEvent::Update(update)) => {
-                        self.on_download_update(update)?;
-                        Ok(None)
+                        Ok(self.on_download_update(update))
                     },
                     Some(DownloadManagerEvent::Failed(result)) => {
                         Ok(Some(NetworkEvent::DownloadFailed(result)))
@@ -486,7 +485,10 @@ where
         }
     }
 
-    fn on_download_update(&mut self, update: DownloadUpdate) -> Result<()> {
+    fn on_download_update(
+        &mut self,
+        update: DownloadUpdate,
+    ) -> Option<NetworkEvent<BroadcastMessage, Download>> {
         self.state.bandwidth_tracker.add_event(
             update.blob_ticket.node_addr().node_id,
             update.downloaded_size_delta,
@@ -497,37 +499,31 @@ where
         if update.all_done {
             self.state.download_progesses.remove(&hash);
 
-            let download = match update.error {
-                Some(err) => Err(Error::msg(err.to_string())),
-                None => {
-                    let blobs = self.blobs.client().clone();
-                    let (send, recv) = oneshot::channel();
-                    trace!(name: "blob_download_read_start", hash = hash.fmt_short());
-                    tokio::spawn(async move {
-                        let blob_bytes = match blobs.read_to_bytes(hash).await {
-                            Ok(b) => b,
-                            Err(e) => {
-                                error!("Failed to read bytes: {e}");
-                                return;
-                            }
-                        };
-                        let size = blob_bytes.len();
-                        let res = send.send(blob_bytes);
-                        debug!(name: "blob_download_finish", hash = hash.fmt_short(), "downloaded blob {}, {} bytes", hash.fmt_short(), size);
-                        if res.is_err() {
-                            error!("Failed to send read bytes result.");
-                        }
-                    });
-                    Ok(recv)
+            let blobs = self.blobs.client().clone();
+            let (send, recv) = oneshot::channel();
+            trace!(name: "blob_download_read_start", hash = hash.fmt_short());
+            tokio::spawn(async move {
+                let blob_bytes = match blobs.read_to_bytes(hash).await {
+                    Ok(b) => b,
+                    Err(e) => {
+                        error!("Failed to read bytes: {e}");
+                        return;
+                    }
+                };
+                let size = blob_bytes.len();
+                let res = send.send(blob_bytes);
+                debug!(name: "blob_download_finish", hash = hash.fmt_short(), "downloaded blob {}, {} bytes", hash.fmt_short(), size);
+                if res.is_err() {
+                    error!("Failed to send read bytes result.");
                 }
-            };
+            });
 
             self.download_manager
-                .read(update.blob_ticket, update.tag, download);
+                .read(update.blob_ticket, update.tag, recv);
         } else {
             self.state.download_progesses.insert(hash, update);
         }
-        Ok(())
+        None
     }
 
     pub async fn get_all_peers(&self) -> Vec<(NodeAddr, ConnectionType)> {
