@@ -338,40 +338,6 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
             return Ok(());
         };
 
-        let mut round = self
-            .coordinator_state
-            .current_round()
-            .filter(|x| x.height == round_state.height);
-        if round.is_none() {
-            round = self
-                .coordinator_state
-                .previous_round()
-                .filter(|x| x.height == round_state.height);
-        }
-        if round.is_none() {
-            round = self
-                .coordinator_state
-                .previous_previous_round()
-                .filter(|x| x.height == round_state.height);
-        }
-        let round = match round {
-            Some(round) => round,
-            None => {
-                warn!(
-                    step = broadcast.step,
-                    "Could not find corresponding Round in Coordinator for our RoundState",
-                );
-                return Ok(());
-            }
-        };
-
-        let round_clients = self
-            .coordinator_state
-            .get_historical_clients(round.clients_len)
-            .into_iter()
-            .copied()
-            .collect::<Vec<_>>();
-
         let is_warmup_broadcast = match &broadcast.data {
             BroadcastType::TrainingResult(_) => false,
             BroadcastType::Finished(finished) => finished.warmup,
@@ -384,9 +350,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     if !committee_info.verify_committee_for_client(
                         &from_client_id,
                         &broadcast.proof,
-                        &round_clients,
+                        &self.coordinator_state.epoch_state.clients,
                     ) {
-                        warn!("Committee verification failed for commitment 0x{} (step={}) received from {}", hex::encode(broadcast.commitment.data_hash),
+                        debug!("Committee verification failed for commitment 0x{} (step={}) received from {}", hex::encode(broadcast.commitment.data_hash),
                             broadcast.step,
                             from_client_id);
                         return Ok(());
@@ -396,8 +362,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     return Ok(());
                 }
             };
-        } else if !round_clients.iter().any(|x| x.id == from_client_id) {
-            warn!(
+        } else if !self
+            .coordinator_state
+            .epoch_state
+            .clients
+            .iter()
+            .any(|x| x.id == from_client_id)
+        {
+            debug!(
                 "Client verification failed for commitment 0x{} (step={}) received from {}",
                 hex::encode(broadcast.commitment.data_hash),
                 broadcast.step,
@@ -407,7 +379,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
         }
 
         if !is_warmup_broadcast && broadcast.proof.committee != Committee::Trainer {
-            warn!(
+            debug!(
                 "Broadcast not implemented for committee member {}",
                 broadcast.proof.committee
             );
@@ -420,7 +392,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> StepStateMachine<T, 
                     .data_assignments
                     .contains_key(&training_result.batch_id)
                 {
-                    warn!(
+                    debug!(
                         "Training result for step {} batch id {} is not in our data assignments",
                         broadcast.step, training_result.batch_id
                     );
