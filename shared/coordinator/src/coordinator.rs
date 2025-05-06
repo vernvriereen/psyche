@@ -649,6 +649,7 @@ impl<T: NodeIdentity> Coordinator<T> {
                 self.pending_pause = true.into();
             } else {
                 self.change_state(unix_timestamp, RunState::Paused);
+                self.epoch_state.cold_start_epoch = true.into();
             }
             Ok(())
         } else {
