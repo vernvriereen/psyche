@@ -604,7 +604,8 @@ function makeRunSummary(
 						type: 'completed',
 						at: run.lastUpdated,
 					}
-				: run.lastState.coordinator.run_state === 'Paused' ? {
+				: run.lastState.coordinator.run_state === 'Paused'
+					? {
 							type: 'paused',
 						}
 					: c.run_state === 'WaitingForMembers'

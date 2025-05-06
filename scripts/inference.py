@@ -56,7 +56,9 @@ Upon my target three fair-shining suns.
 
 def main(args):
     model = AutoModelForCausalLM.from_pretrained(
-        args.model, device_map=args.device, torch_dtype=torch.bfloat16,
+        args.model,
+        device_map=args.device,
+        torch_dtype=torch.bfloat16,
         trust_remote_code=args.trust_remote_code,
     )
     tokenizer = AutoTokenizer.from_pretrained(args.model)

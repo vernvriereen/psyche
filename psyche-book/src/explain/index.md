@@ -111,4 +111,5 @@ sequenceDiagram
 ```
 
 ## Glossary
+
 For a list of common terms within the project along with definitions, please refer to the [glossary](./glossary.md)

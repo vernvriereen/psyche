@@ -70,8 +70,8 @@ jobs:
         continue-on-error: true
         with:
           issue-number: ${{ steps.get-pr.outputs.pr_number }}
-          comment-author: "github-actions[bot]"
-          body-includes: "Deployment Status"
+          comment-author: 'github-actions[bot]'
+          body-includes: 'Deployment Status'
 
       - name: Create or Update Comment
         uses: peter-evans/create-or-update-comment@v3

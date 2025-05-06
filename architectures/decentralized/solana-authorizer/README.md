@@ -50,7 +50,6 @@ The smart contract then exposes a set of instruction to manipulate those `Author
 - `authorization_grantee_update`, allow the grantee to add/remove delegates
 - `authorization_close` allow the grantor to remove the PDA
 
-
 ## Example usages
 
 Note: We'll use the `jq` library in this example which is an open-source JSON cli tool <https://jqlang.org/>

@@ -11,30 +11,30 @@ if [[ "$NVIDIA_DRIVER_CAPABILITIES" == "" ]]; then
 fi
 
 if [[ "$RPC" == "" ]]; then
-   echo -e "\n[!] The RPC env variable was not set."
-   exit 1
+    echo -e "\n[!] The RPC env variable was not set."
+    exit 1
 fi
 
 if [[ "$WS_RPC" == "" ]]; then
-   echo -e "\n[!] The WS_RPC env variable was not set."
-   exit 1
+    echo -e "\n[!] The WS_RPC env variable was not set."
+    exit 1
 fi
 
 if [[ "$RUN_ID" == "" ]]; then
-   echo -e "\n[!] The RUN_ID env variable was not set."
-   exit 1
+    echo -e "\n[!] The RUN_ID env variable was not set."
+    exit 1
 fi
 
 PSYCHE_CLIENT_PID=0
 
 # Signal handler function
 handle_signal() {
-  echo "Received signal, stopping application..."
-  if [[ $PSYCHE_CLIENT_PID -ne 0 ]]; then
-    kill -TERM "$PSYCHE_CLIENT_PID" 2>/dev/null || true  # Send SIGTERM to the psyche client
-    wait "$PSYCHE_CLIENT_PID"  # Wait for the client to terminate
-  fi
-  exit 0  # Exit script gracefully
+    echo "Received signal, stopping application..."
+    if [[ $PSYCHE_CLIENT_PID -ne 0 ]]; then
+        kill -TERM "$PSYCHE_CLIENT_PID" 2>/dev/null || true  # Send SIGTERM to the psyche client
+        wait "$PSYCHE_CLIENT_PID"  # Wait for the client to terminate
+    fi
+    exit 0  # Exit script gracefully
 }
 
 # Trap SIGTERM and SIGINT to handle container shutdown

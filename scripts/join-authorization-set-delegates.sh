@@ -24,28 +24,28 @@ GRANTEE_KEYPAIR_FILE="$1"
 shift
 
 if [[ ! -f "$GRANTEE_KEYPAIR_FILE" ]]; then
-  echo "Error: Grantee keypair file '$GRANTEE_KEYPAIR_FILE' not found."
-  _usage
+    echo "Error: Grantee keypair file '$GRANTEE_KEYPAIR_FILE' not found."
+    _usage
 fi
 GRANTEE_PUBKEY=$(solana-keygen pubkey $GRANTEE_KEYPAIR_FILE)
 
 DELEGATES_KEYPAIR_FILES=()
 while [[ "$#" -gt 0 ]]; do
-  DELEGATES_KEYPAIR_FILES+=("$1")
-  shift
+    DELEGATES_KEYPAIR_FILES+=("$1")
+    shift
 done
 
 # Generate our list of public keys to be added as delegates
 DELEGATES_PUBKEYS=()
 for delegated_keypair_file in "${DELEGATES_KEYPAIR_FILES[@]}"; do
-  DELEGATES_PUBKEYS+=($(solana-keygen pubkey $delegated_keypair_file))
+    DELEGATES_PUBKEYS+=($(solana-keygen pubkey $delegated_keypair_file))
 done
 DELEGATES_JSON_VALUES="["
 for ((i = 0; i < ${#DELEGATES_PUBKEYS[@]}; i++)); do
-  DELEGATES_JSON_VALUES+="\"${DELEGATES_PUBKEYS[$i]}\""
-  if [[ $i -lt $((${#DELEGATES_PUBKEYS[@]} - 1)) ]]; then
-    DELEGATES_JSON_VALUES+=","
-  fi
+    DELEGATES_JSON_VALUES+="\"${DELEGATES_PUBKEYS[$i]}\""
+    if [[ $i -lt $((${#DELEGATES_PUBKEYS[@]} - 1)) ]]; then
+        DELEGATES_JSON_VALUES+=","
+    fi
 done
 DELEGATES_JSON_VALUES+="]"
 
@@ -66,11 +66,11 @@ echo "PSYCHE_AUTH_SCOPE: $PSYCHE_AUTH_SCOPE"
 
 # Find how the authorization was created and simulate it
 AUTHORIZATION_CREATE_JSON=$( \
-    solana-toolbox --rpc=$SOLANA_RPC instruction \
-    $PSYCHE_AUTHORIZER_ID authorization_create \
-    grantor:$GRANTOR_PUBKEY \
-    --args=params.grantee:$GRANTEE_PUBKEY \
-    --args=params.scope:$PSYCHE_AUTH_SCOPE
+        solana-toolbox --rpc=$SOLANA_RPC instruction \
+        $PSYCHE_AUTHORIZER_ID authorization_create \
+        grantor:$GRANTOR_PUBKEY \
+        --args=params.grantee:$GRANTEE_PUBKEY \
+        --args=params.scope:$PSYCHE_AUTH_SCOPE
 )
 
 # Extract the authorization PDA from the JSON response
@@ -81,14 +81,14 @@ echo "AUTHORIZATION_PUBKEY: $AUTHORIZATION_PUBKEY"
 echo "----"
 echo "Setting delegates..."
 AUTHORIZATION_DELEGATES_JSON=$( \
-  solana-toolbox --rpc=$SOLANA_RPC instruction \
-      $PSYCHE_AUTHORIZER_ID authorization_grantee_update \
-      payer:keypair \
-      grantee:$GRANTEE_KEYPAIR_FILE \
-      authorization:$AUTHORIZATION_PUBKEY \
-      --args=params.delegates_clear:true \
-      --args=params.delegates_added:$DELEGATES_JSON_VALUES \
-      --execute
+        solana-toolbox --rpc=$SOLANA_RPC instruction \
+        $PSYCHE_AUTHORIZER_ID authorization_grantee_update \
+        payer:keypair \
+        grantee:$GRANTEE_KEYPAIR_FILE \
+        authorization:$AUTHORIZATION_PUBKEY \
+        --args=params.delegates_clear:true \
+        --args=params.delegates_added:$DELEGATES_JSON_VALUES \
+        --execute
 )
 echo $AUTHORIZATION_DELEGATES_JSON | jq -r .outcome.explorer
 echo "----"

@@ -19,8 +19,8 @@ GRANTOR_KEYPAIR_FILE="$1"
 shift
 
 if [[ ! -f "$GRANTOR_KEYPAIR_FILE" ]]; then
-  echo "Error: Grantor keypair file '$GRANTOR_KEYPAIR_FILE' not found."
-  _usage
+    echo "Error: Grantor keypair file '$GRANTOR_KEYPAIR_FILE' not found."
+    _usage
 fi
 GRANTOR_PUBKEY=$(solana-keygen pubkey $GRANTOR_KEYPAIR_FILE)
 
@@ -42,7 +42,7 @@ echo "PSYCHE_AUTH_SCOPE: $PSYCHE_AUTH_SCOPE"
 echo "----"
 echo "Creating a new authorization..."
 AUTHORIZATION_CREATE_JSON=$(\
-    solana-toolbox --rpc=$SOLANA_RPC instruction \
+        solana-toolbox --rpc=$SOLANA_RPC instruction \
         $PSYCHE_AUTHORIZER_ID authorization_create \
         payer:keypair \
         grantor:$GRANTOR_KEYPAIR_FILE \
@@ -61,7 +61,7 @@ echo "AUTHORIZATION_PUBKEY: $AUTHORIZATION_PUBKEY"
 echo "----"
 echo "Activation of the newly created authorization..."
 AUTHORIZATION_ACTIVATE_JSON=$(\
-    solana-toolbox --rpc=$SOLANA_RPC instruction \
+        solana-toolbox --rpc=$SOLANA_RPC instruction \
         $PSYCHE_AUTHORIZER_ID authorization_grantor_update \
         --args=params.active:true \
         grantor:$GRANTOR_KEYPAIR_FILE \

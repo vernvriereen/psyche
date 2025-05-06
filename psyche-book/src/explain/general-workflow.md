@@ -1,6 +1,7 @@
 # General Workflow
 
 ## Client
+
 A client is an active participant responsible for executing the training tasks within a run. It handles assigned data batches for training, generates commitments, and participates in the witness process when elected to validate the work of its peers. Each client maintains its own state synchronized with the Coordinator.
 
 ## Coordinator

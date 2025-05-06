@@ -22,27 +22,27 @@ echo -e "[+] -----------------------------------------------------------"
 
 echo -e "\n[+] starting authorizor deploy"
 pushd architectures/decentralized/solana-authorizer
-    echo -e "\n[+] syncing keys..."
-    anchor keys sync --provider.cluster ${RPC} --provider.wallet $WALLET_FILE
+echo -e "\n[+] syncing keys..."
+anchor keys sync --provider.cluster ${RPC} --provider.wallet $WALLET_FILE
 
-    echo -e "\n[+] building..."
-    anchor build --no-idl
+echo -e "\n[+] building..."
+anchor build --no-idl
 
-    echo -e "\n[+] deploying..."
-    anchor deploy --provider.cluster ${RPC} --provider.wallet $WALLET_FILE -- --max-len 500000
+echo -e "\n[+] deploying..."
+anchor deploy --provider.cluster ${RPC} --provider.wallet $WALLET_FILE -- --max-len 500000
 popd
 echo -e "\n[+] Authorizer program deployed successfully!"
 
 echo -e "\n[+] starting coordinator deploy"
 pushd architectures/decentralized/solana-coordinator
-    echo -e "\n[+] syncing keys..."
-    anchor keys sync --provider.cluster ${RPC} --provider.wallet $WALLET_FILE
+echo -e "\n[+] syncing keys..."
+anchor keys sync --provider.cluster ${RPC} --provider.wallet $WALLET_FILE
 
-    echo -e "\n[+] building..."
-    anchor build --no-idl
+echo -e "\n[+] building..."
+anchor build --no-idl
 
-    echo -e "\n[+] deploying..."
-    anchor deploy --provider.cluster ${RPC} --provider.wallet $WALLET_FILE -- --max-len 500000
+echo -e "\n[+] deploying..."
+anchor deploy --provider.cluster ${RPC} --provider.wallet $WALLET_FILE -- --max-len 500000
 popd
 echo -e "\n[+] Coordinator program deployed successfully!"
 
@@ -51,25 +51,25 @@ sleep 10
 echo -e "\n[+] Creating training run..."
 cargo run --release --bin psyche-solana-client -- \
     create-run \
-       --wallet-private-key-path ${WALLET_FILE} \
-       --rpc ${RPC} \
-       --ws-rpc ${WS_RPC} \
-       --run-id ${RUN_ID} "$@"
+    --wallet-private-key-path ${WALLET_FILE} \
+    --rpc ${RPC} \
+    --ws-rpc ${WS_RPC} \
+    --run-id ${RUN_ID} "$@"
 
 echo -e "\n[+] Training run created successfully"
 
 cargo run --release --bin psyche-solana-client -- \
     update-config \
-        --wallet-private-key-path ${WALLET_FILE} \
-        --rpc ${RPC} \
-        --ws-rpc ${WS_RPC} \
-        --run-id ${RUN_ID} \
-        --config-path ${CONFIG_FILE}
+    --wallet-private-key-path ${WALLET_FILE} \
+    --rpc ${RPC} \
+    --ws-rpc ${WS_RPC} \
+    --run-id ${RUN_ID} \
+    --config-path ${CONFIG_FILE}
 
 cargo run --release --bin psyche-solana-client -- \
     set-paused \
-        --wallet-private-key-path ${WALLET_FILE} \
-        --rpc ${RPC} \
-        --ws-rpc ${WS_RPC} \
-        --run-id ${RUN_ID} \
-        --resume
+    --wallet-private-key-path ${WALLET_FILE} \
+    --rpc ${RPC} \
+    --ws-rpc ${WS_RPC} \
+    --run-id ${RUN_ID} \
+    --resume

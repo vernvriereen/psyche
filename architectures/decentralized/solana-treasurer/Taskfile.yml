@@ -1,4 +1,4 @@
-version: "3"
+version: '3'
 
 tasks:
   # General check for mindless complete verification

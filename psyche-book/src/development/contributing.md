@@ -29,17 +29,20 @@
 
 Thank you for your contributions to Psyche :heart:
 
-
 ## PR guidelines
+
 We prefer PRs to be made and merged using rebase, not merge commits.
-It's not a deal-breaker, but rebase makes us happy <3
+It's not a deal-breaker, but rebase makes us happy \<3
+
 ### Clean Linear History
+
 Rebasing creates a linear commit history without merges going back and forth, making it much easier to identify the place a change was made.
 Fixups in merge commits that introduce bugs are no longer associated with the original code, wheras with with rebase you'd find the bug as part of its original commit.
 
 Merge commits add extra noise to the history without adding meaningful content about what changed.
 
 ### Better Bisect Experience
+
 A linear history makes `git bisect` more effective for finding bugs, as each commit represents a coherent, working state of the codebase.
 
 ### Preserving Meaningful Commits
