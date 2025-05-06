@@ -6,8 +6,8 @@ use crate::{
 
 use futures::{future::try_join_all, stream::FuturesUnordered, StreamExt};
 use psyche_coordinator::{
-    assign_data_for_state, get_batch_ids_for_round, model, Commitment, CommitteeSelection,
-    Coordinator, CoordinatorError, HealthChecks, BLOOM_FALSE_RATE,
+    assign_data_for_state, get_batch_ids_for_node, get_batch_ids_for_round, model, Commitment,
+    CommitteeSelection, Coordinator, CoordinatorError, HealthChecks, BLOOM_FALSE_RATE,
 };
 use psyche_core::{BatchId, Bloom, NodeIdentity, OptimizerDefinition};
 use psyche_modeling::{
@@ -248,6 +248,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
             witness_position = witness_proof.position,
             witness = %witness_proof.witness,
             warmup_lr_between = ?warmup_lr_between,
+            assigned_batches = ?get_batch_ids_for_node(&data_assignments, &self.identity),
             "Got training assignment for step {} (round {}/epoch {}): index={} committee position={} committee={} witness position={} witness={} warmup_lr_between={:?}",
             state.progress.step, round.height, state.progress.epoch, client_index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness, warmup_lr_between
         );
@@ -527,6 +528,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                 .get_num_trainer_nodes(),
         );
 
+        let data_assignments = previous_round.data_assignments.clone();
+
         Ok(tokio::task::spawn(async move {
                 let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
 
@@ -537,10 +540,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     let batch_commitments = match commitments.get(&batch_id) {
                         Some(x) => x,
                         None => {
+                            let expected_trainer = data_assignments.get(&batch_id);
                             warn!(
                                 integration_test_log_marker = %IntegrationTestLogMarker::UntrainedBatches,
                                 batch_id = %batch_id,
-                                "No commitments for batch {batch_id}",
+                                expected_trainer = ?expected_trainer,
+                                "No commitments for batch {batch_id}, assigned to node {expected_trainer:?}",
                             );
                             continue;
                         }
