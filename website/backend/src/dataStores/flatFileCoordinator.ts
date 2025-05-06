@@ -220,8 +220,8 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		const newPauseState = paused ? 'paused' : 'unpaused'
 		const lastPauseChange = lastRun.pauseTimestamps.at(-1)
 		if (lastPauseChange?.[0] === newPauseState) {
-			throw new Error(
-				`Tried to set run ${pubkey} to pause state ${newPauseState} at slot ${timestamp.slot}, but it's already in that state from pause change at slot ${lastPauseChange[1].slot}.`
+			console.warn(
+				`[coordinator] WARNING: Setting run ${pubkey} to pause state ${newPauseState} at slot ${timestamp.slot}, but it's already in that state from pause change at slot ${lastPauseChange[1].slot}.`
 			)
 		}
 		lastRun.lastUpdated = timestamp
@@ -604,8 +604,7 @@ function makeRunSummary(
 						type: 'completed',
 						at: run.lastUpdated,
 					}
-				: run.pauseTimestamps.at(-1)?.[0] === 'paused'
-					? {
+				: run.lastState.coordinator.run_state === 'Paused' ? {
 							type: 'paused',
 						}
 					: c.run_state === 'WaitingForMembers'
