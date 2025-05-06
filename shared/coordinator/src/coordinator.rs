@@ -258,6 +258,12 @@ pub struct CoordinatorConfig {
 #[serde(bound = "T: NodeIdentity")]
 pub struct CoordinatorEpochState<T> {
     pub rounds: [Round; NUM_STORED_ROUNDS],
+    /// **WARNING**: Using this can be a footgun:
+    /// If you need to access the clients list for a particular round,
+    /// e.g. when applying a message that could be from the previous round,
+    /// This list might not be the list of clients at *that* round.
+    /// Consider carefully if `get_client_at_historical_index` or
+    /// `get_historical_clients` is what you actually want.
     pub clients: FixedVec<Client<T>, { SOLANA_MAX_NUM_CLIENTS }>,
     pub exited_clients: FixedVec<Client<T>, { SOLANA_MAX_NUM_CLIENTS }>,
     pub rounds_head: u32,
