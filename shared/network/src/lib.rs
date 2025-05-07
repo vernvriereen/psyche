@@ -452,7 +452,7 @@ where
         // these are factored out to separate fns so rustfmt works on their contents :)
         select! {
             Some(event) = self.gossip_rx.next() => {
-                match parse_gossip_event(event.map_err(|ee| ee.into())) {
+                match parse_gossip_event(event.map_err(|ee| ee.into()), &self.gossip_rx) {
                     Some(result) => Ok(Some(NetworkEvent::MessageReceived(result))),
                     None => Ok(None),
                 }
@@ -579,6 +579,7 @@ pub async fn request_model(
 
 fn parse_gossip_event<BroadcastMessage: Networkable>(
     event: Result<iroh_gossip::net::Event>,
+    gossip: &GossipReceiver,
 ) -> Option<(PublicKey, BroadcastMessage)> {
     match event {
         Ok(iroh_gossip::net::Event::Gossip(GossipEvent::Received(msg))) => {
@@ -594,14 +595,24 @@ fn parse_gossip_event<BroadcastMessage: Networkable>(
                     return Some(result);
                 }
                 Err(err) => {
-                    warn!("Got a gossip message, but could not verify / decode it! {err}");
+                    warn!("Got a gossip message delivered from {}, but could not verify / decode it! {err}", msg.delivered_from);
                 }
             }
         }
-        Ok(iroh_gossip::net::Event::Gossip(_)) => {
-            // join, leave, etc.
+        Ok(iroh_gossip::net::Event::Gossip(GossipEvent::Joined(peers))) => {
+            debug!(name: "gossip_init", peers = ?peers, "gossip initialized with peers {peers:?}");
         }
-        Ok(iroh_gossip::net::Event::Lagged) => error!("Gossip lagged. We missed some events."),
+        Ok(iroh_gossip::net::Event::Gossip(GossipEvent::NeighborUp(node_id))) => {
+            let peers: Vec<_> = gossip.neighbors().collect();
+            debug!(name: "gossip_new_peer", node_id=%node_id, all_gossip_peers = ?peers, "gossip connected to new peer {node_id}, we now have {} peers", peers.len());
+        }
+        Ok(iroh_gossip::net::Event::Gossip(GossipEvent::NeighborDown(node_id))) => {
+            let peers: Vec<_> = gossip.neighbors().collect();
+            debug!(name: "gossip_lost_peer", node_id=%node_id, all_gossip_peers = ?peers, "gossip disconnected from peer {node_id}, we now have {} peers", peers.len());
+        }
+        Ok(iroh_gossip::net::Event::Lagged) => {
+            error!(name: "gossip_lagged","Gossip lagged. We missed some events.")
+        }
         Err(err) => {
             warn!("Error on gossip event RX: {err}");
         }
