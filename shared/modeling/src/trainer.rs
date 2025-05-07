@@ -494,6 +494,8 @@ impl Trainer {
                     //     };
                     // }
 
+                    debug!(batch_id=%batch.id, "model thread training on batch {}", batch.id);
+
                     let batch_size = batch.data.size();
 
                     let mut grad_accum_steps = batch_size / micro_batch_size;

@@ -3,8 +3,15 @@ use anyhow::{anyhow, Context, Result};
 use bytes::Bytes;
 use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
 use futures_util::StreamExt;
-use iroh::{endpoint::RemoteInfo, NodeAddr};
-use iroh_blobs::{downloader::ConcurrencyLimits, net_protocol::Blobs, store::mem::Store};
+use iroh::endpoint::RemoteInfo;
+use iroh_blobs::{
+    downloader::ConcurrencyLimits,
+    net_protocol::{Blobs, DownloadMode},
+    rpc::client::blobs::DownloadOptions,
+    store::mem::Store,
+    util::SetTagOption,
+    BlobFormat,
+};
 use iroh_gossip::{
     net::{Gossip, GossipEvent, GossipReceiver, GossipSender},
     proto::{HyparviewConfig, PlumtreeConfig},
@@ -39,7 +46,7 @@ use tracing::{debug, error, info, trace, warn};
 use util::{fmt_relay_mode, gossip_topic};
 
 pub use ed25519::Signature;
-pub use iroh::{endpoint::ConnectionType, NodeId, RelayMode};
+pub use iroh::{endpoint::ConnectionType, NodeAddr, NodeId, RelayMode};
 pub use iroh_blobs::{ticket::BlobTicket, Hash};
 
 pub mod allowlist;
@@ -335,12 +342,29 @@ where
         Ok(self.gossip_tx.broadcast(encoded_message).await?)
     }
 
-    pub async fn start_download(&mut self, ticket: BlobTicket, tag: u32) -> Result<()> {
+    pub async fn start_download(
+        &mut self,
+        ticket: BlobTicket,
+        tag: u32,
+        additional_peers_to_try: &[NodeAddr],
+    ) -> Result<()> {
+        let provider_node_id = ticket.node_addr().clone();
         let mut progress = self
             .blobs
             .client()
-            .download(ticket.hash(), ticket.node_addr().clone())
+            .download_with_opts(
+                ticket.hash(),
+                DownloadOptions {
+                    format: BlobFormat::Raw,
+                    nodes: std::iter::once(provider_node_id)
+                        .chain(additional_peers_to_try.iter().cloned())
+                        .collect(),
+                    tag: SetTagOption::Auto,
+                    mode: DownloadMode::Queued,
+                },
+            )
             .await?;
+
         let hash = ticket.hash();
         self.state.currently_sharing_blobs.insert(hash);
         self.state.blob_tags.insert((tag, hash));

@@ -888,6 +888,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunManager<T, A> {
         Self(InitStage::NotYetInitialized(Some(config)))
     }
 
+    pub fn coordinator_state(&self) -> Option<&Coordinator<T>> {
+        match &self.0 {
+            InitStage::NotYetInitialized(..) => None,
+            InitStage::Initializing(init_state) => Some(&init_state.1),
+            InitStage::Running(step_state_machine) => Some(&step_state_machine.coordinator_state),
+        }
+    }
+
     pub async fn try_send_opportunistic_witness(
         &mut self,
     ) -> Result<(), OpportunisticWitnessError> {
