@@ -229,8 +229,8 @@ async function main() {
 		}
 	)
 
-	fastify.get('/status', async () => {
-		return {
+	fastify.get('/status', async (_, res) => {
+		const data = {
 			commit: process.env.GITCOMMIT ?? '???',
 			initTime,
 			coordinator: {
@@ -259,6 +259,9 @@ async function main() {
 				},
 			},
 		} satisfies IndexerStatus
+		res
+			.header('content-type', 'application/json')
+			.send(JSON.stringify(data, psycheJsonReplacer))
 	})
 
 	await fastify.listen({ port: 3000 })
