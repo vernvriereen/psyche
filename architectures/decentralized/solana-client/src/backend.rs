@@ -32,7 +32,6 @@ use tokio::{
 };
 use tracing::{debug, error, info, trace, warn};
 
-const FORCE_RECONNECTION_TIME: u64 = 30;
 const SEND_RETRIES: usize = 3;
 
 pub struct SolanaBackend {
@@ -64,7 +63,6 @@ async fn subscribe_to_account(
     tx: mpsc::UnboundedSender<RpcResponse<UiAccount>>,
     id: u64,
 ) {
-    let mut first_connection = true;
     let mut retries: u64 = 0;
     loop {
         // wait a time before we try a reconnection
@@ -111,27 +109,10 @@ async fn subscribe_to_account(
             "Correctly subscribe to Solana url: {url}",
         );
 
-        // we will force a reconnection to the Solana websocket every 30 minutes
-        let refresh_time: u64 = if first_connection {
-            FORCE_RECONNECTION_TIME + (((id - 1) * 10) % FORCE_RECONNECTION_TIME)
-        } else {
-            FORCE_RECONNECTION_TIME
-        };
-        first_connection = false;
-        let refresh_timer = tokio::time::sleep(Duration::from_secs(refresh_time * 60));
-        tokio::pin!(refresh_timer);
+        retries = 0;
 
         loop {
             tokio::select! {
-                _ = &mut refresh_timer => {
-                    info!(
-                        integration_test_log_marker = %IntegrationTestLogMarker::SolanaSubscription,
-                        url = url,
-                        subscription_number = id,
-                        "Force Solana subscription reconnection");
-                    retries = 0;
-                    break
-                }
                 update = notifications.next() => {
                     match update {
                         Some(data) => {
