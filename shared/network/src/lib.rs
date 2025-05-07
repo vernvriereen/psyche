@@ -490,6 +490,7 @@ where
                         Ok(self.on_download_update(update))
                     },
                     Some(DownloadManagerEvent::Failed(result)) => {
+                        self.state.download_progesses.remove(&result.blob_ticket.hash());
                         Ok(Some(NetworkEvent::DownloadFailed(result)))
                     }
                     None => Ok(None),
