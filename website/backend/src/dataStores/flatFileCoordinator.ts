@@ -25,6 +25,7 @@ import { WitnessMetadata, WitnessEvalResult } from '../idlTypes.js'
 import { PublicKey } from '@solana/web3.js'
 import { isClientWitness } from '../witness.js'
 import EventEmitter from 'events'
+import { UniqueRunKey, runKey } from '../coordinator.js'
 
 type Witness = Omit<WitnessMetadata, 'evals'> & {
 	evals: Array<{
@@ -70,12 +71,13 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 	#db: string
 	#programId: PublicKey
 
-	#runsMutatedSinceLastSync: Set<string> = new Set()
-	eventEmitter: EventEmitter<{ update: [runId: string] }> = new EventEmitter()
+	#runsMutatedSinceLastSync: Set<UniqueRunKey> = new Set()
+	eventEmitter: EventEmitter<{ update: [runKey: UniqueRunKey] }> =
+		new EventEmitter()
 
 	// try to mitigate the compute cost of requests by caching runs we've looked up
 	#summaryCache: RunSummaries | null = null
-	#runCache: Map<string, RunData> = new Map()
+	#runCache: Map<UniqueRunKey, RunData> = new Map()
 
 	constructor(dir: string, programId: PublicKey) {
 		this.#db = path.join(dir, `./coordinator-db-${programId}.json`)
@@ -104,9 +106,10 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		}
 	}
 
-	#getActiveRun(pubkey: string) {
-		const lastRun = this.#runs.get(pubkey)?.at(-1)
-		if (!lastRun) {
+	#getActiveRun(pubkey: string): [RunHistory, number] {
+		const runs = this.#runs.get(pubkey)
+		const lastRun = runs?.at(-1)
+		if (!runs || !lastRun) {
 			throw new Error(
 				`Tried to get active run ${pubkey}, but we have no runs recorded for that pubkey.`
 			)
@@ -117,18 +120,18 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 				`Tried to get active run ${pubkey}, but we saw it shut down at slot ${lastRun.destroyedAt.slot}, and we haven't seen a create since.`
 			)
 		}
-		return lastRun
+		return [lastRun, runs.length - 1]
 	}
 
 	async sync(lastUpdateInfo: LastUpdateInfo) {
 		this.#lastUpdateInfo = lastUpdateInfo
 
-		for (const runId of this.#runsMutatedSinceLastSync) {
+		for (const runKey of this.#runsMutatedSinceLastSync) {
 			// clear cache for this run
-			this.#runCache.delete(runId)
+			this.#runCache.delete(runKey)
 
 			// notify any listeners
-			this.eventEmitter.emit('update', runId)
+			this.eventEmitter.emit('update', runKey)
 		}
 
 		// clear summary cache if anything changed
@@ -184,7 +187,9 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			recentTxs: [],
 		})
 
-		this.#runsMutatedSinceLastSync.add(runId)
+		this.#runsMutatedSinceLastSync.add(
+			runKey(runId, runsAtThisAddress.length - 1)
+		)
 	}
 
 	updateRun(
@@ -193,7 +198,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		eventTime: ChainTimestamp,
 		configChanged: boolean
 	) {
-		const lastRun = this.#getActiveRun(pubkey)
+		const [lastRun, index] = this.#getActiveRun(pubkey)
 		lastRun.lastUpdated = eventTime
 		lastRun.lastState = newState
 
@@ -212,11 +217,11 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			})
 		}
 
-		this.#runsMutatedSinceLastSync.add(lastRun.runId)
+		this.#runsMutatedSinceLastSync.add(runKey(lastRun.runId, index))
 	}
 
 	setRunPaused(pubkey: string, paused: boolean, timestamp: ChainTimestamp) {
-		const lastRun = this.#getActiveRun(pubkey)
+		const [lastRun, index] = this.#getActiveRun(pubkey)
 		const newPauseState = paused ? 'paused' : 'unpaused'
 		const lastPauseChange = lastRun.pauseTimestamps.at(-1)
 		if (lastPauseChange?.[0] === newPauseState) {
@@ -227,7 +232,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		lastRun.lastUpdated = timestamp
 		lastRun.pauseTimestamps.push([newPauseState, timestamp])
 
-		this.#runsMutatedSinceLastSync.add(lastRun.runId)
+		this.#runsMutatedSinceLastSync.add(runKey(lastRun.runId, index))
 	}
 
 	witnessRun(
@@ -235,8 +240,9 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		witness: WitnessMetadata,
 		timestamp: ChainTimestamp
 	) {
-		const lastRun = this.#runs.get(pubkey)?.at(-1)
-		if (!lastRun) {
+		const runs = this.#runs.get(pubkey)
+		const lastRun = runs?.at(-1)
+		if (!runs || !lastRun) {
 			throw new Error(
 				`Tried to get run ${pubkey}, but we have no runs recorded for that pubkey.`
 			)
@@ -269,12 +275,13 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			timestamp,
 		])
 
-		this.#runsMutatedSinceLastSync.add(lastRun.runId)
+		this.#runsMutatedSinceLastSync.add(runKey(lastRun.runId, runs.length - 1))
 	}
 
 	destroyRun(pubkey: string, timestamp: ChainTimestamp) {
-		const lastRun = this.#runs.get(pubkey)?.at(-1)
-		if (!lastRun) {
+		const runs = this.#runs.get(pubkey)
+		const lastRun = runs?.at(-1)
+		if (!runs || !lastRun) {
 			throw new Error(
 				`Tried to get run ${pubkey}, but we have no runs recorded for that pubkey.`
 			)
@@ -287,7 +294,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		lastRun.lastUpdated = timestamp
 		lastRun.destroyedAt = timestamp
 
-		this.#runsMutatedSinceLastSync.add(lastRun.runId)
+		this.#runsMutatedSinceLastSync.add(runKey(lastRun.runId, runs.length - 1))
 	}
 
 	trackTx(
@@ -298,8 +305,9 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		txHash: string,
 		timestamp: ChainTimestamp
 	) {
-		const lastRun = this.#runs.get(runPubkey)?.at(-1)
-		if (!lastRun) {
+		const runs = this.#runs.get(runPubkey)
+		const lastRun = runs?.at(-1)
+		if (!runs || !lastRun) {
 			throw new Error(
 				`Tried to get run ${runPubkey}, but we have no runs recorded for that pubkey.`
 			)
@@ -315,7 +323,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		if (lastRun.recentTxs.length > MAX_RECENT_TXS) {
 			lastRun.recentTxs = lastRun.recentTxs.slice(-MAX_RECENT_TXS)
 		}
-		this.#runsMutatedSinceLastSync.add(lastRun.runId)
+		this.#runsMutatedSinceLastSync.add(runKey(lastRun.runId, runs.length - 1))
 	}
 
 	getRunSummaries(): RunSummaries {
@@ -365,20 +373,14 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 		)
 	}
 
-	getRunData(
-		coordinatorInstancePdaAddress: PublicKey,
-		index?: number
-	): RunData | null {
-		const cachedRun = this.#runCache.get(
-			runCacheKey(coordinatorInstancePdaAddress, index)
-		)
+	getRunDataById(runId: string, index: number): RunData | null {
+		const cachedRun = this.#runCache.get(runKey(runId, index))
 		if (cachedRun) {
 			return cachedRun
 		}
 
-		const runsAtThisAddress = this.#runs.get(
-			coordinatorInstancePdaAddress.toString()
-		)
+		const addr = getRunPDA(this.#programId, runId)
+		const runsAtThisAddress = this.#runs.get(addr.toString())
 		const run = runsAtThisAddress?.at(index ?? -1)
 		if (!run) {
 			return null
@@ -527,24 +529,9 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 				history,
 			},
 		}
-		this.#runCache.set(
-			runCacheKey(coordinatorInstancePdaAddress, index),
-			runData
-		)
+		this.#runCache.set(runKey(runId, index), runData)
 		return runData
 	}
-
-	getRunDataById(runId: string, index?: number): RunData | null {
-		const addr = getRunPDA(this.#programId, runId)
-		return this.getRunData(addr, index)
-	}
-}
-
-function runCacheKey(
-	coordinatorInstancePdaAddress: PublicKey,
-	index: number | undefined
-): string {
-	return `${coordinatorInstancePdaAddress}-${index}`
 }
 
 function goodNumber([_, value]: readonly [

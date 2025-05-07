@@ -1,8 +1,8 @@
 import { PsycheCoordinator } from 'psyche-deserialize-zerocopy-wasm'
 import { RunSummary, RunData, ContributionInfo, ChainTimestamp } from 'shared'
 import { PsycheMiningPoolAccount, WitnessMetadata } from './idlTypes.js'
-import { PublicKey } from '@solana/web3.js'
 import EventEmitter from 'node:events'
+import { UniqueRunKey } from './coordinator.js'
 
 export interface IndexedSignature {
 	signature: string
@@ -21,7 +21,7 @@ export interface ChainDataStore {
 }
 
 export interface CoordinatorDataStore extends ChainDataStore {
-	eventEmitter: EventEmitter<{ update: [runId: string] }>
+	eventEmitter: EventEmitter<{ update: [UniqueRunKey] }>
 
 	createRun(
 		pubkey: string,
@@ -59,8 +59,7 @@ export interface CoordinatorDataStore extends ChainDataStore {
 		totalTokens: bigint
 		totalTokensPerSecondActive: bigint
 	}
-	getRunData(publickey: PublicKey, index?: number): RunData | null
-	getRunDataById(runId: string, index?: number): RunData | null
+	getRunDataById(runId: string, index: number): RunData | null
 
 	getNumRuns(): number
 }

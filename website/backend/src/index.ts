@@ -16,6 +16,7 @@ import {
 import { Connection } from '@solana/web3.js'
 import { makeRateLimitedFetch } from './rateLimit.js'
 import { PassThrough } from 'node:stream'
+import { getRunFromKey, runKey, UniqueRunKey } from './coordinator.js'
 
 const requiredEnvVars = ['COORDINATOR_RPC', 'MINING_POOL_RPC'] as const
 
@@ -74,15 +75,15 @@ async function main() {
 			}
 		)
 
-	type RunId = string
 	const liveRunListeners: Map<
-		RunId,
+		UniqueRunKey,
 		Set<(runData: RunData) => void>
 	> = new Map()
-	coordinator.dataStore.eventEmitter.addListener('update', (runId) => {
-		const listeners = liveRunListeners.get(runId)
+	coordinator.dataStore.eventEmitter.addListener('update', (key) => {
+		const listeners = liveRunListeners.get(key)
 		if (listeners) {
-			const runData = coordinator.dataStore.getRunDataById(runId)
+			const [runId, index] = getRunFromKey(key)
+			const runData = coordinator.dataStore.getRunDataById(runId, index)
 			if (!runData) {
 				console.warn(
 					`Tried to emit updates for run ${runId} but it has no data!`
@@ -194,11 +195,11 @@ async function main() {
 				return
 			}
 
-			const id = matchingRun.info.id
-			let listeners = liveRunListeners.get(id)
+			const key = runKey(matchingRun.info.id, matchingRun.info.index)
+			let listeners = liveRunListeners.get(key)
 			if (!listeners) {
 				listeners = new Set()
-				liveRunListeners.set(id, listeners)
+				liveRunListeners.set(key, listeners)
 			}
 
 			// start streaming newline-delimited json
