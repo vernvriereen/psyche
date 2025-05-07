@@ -160,7 +160,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             let connected_p2p_nodes: BTreeSet<_> = p2p.neighbors().collect();
                             if !new_state.halted()
                             {
-                                let run_participating_node_ids = participating_node_ids(&new_state);
+                                let run_participating_node_ids = participating_node_ids(new_state);
                                 allowlist.set(run_participating_node_ids.iter().copied());
 
                                 let my_node_id = p2p.node_id();
@@ -397,7 +397,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                     debug!("Retrying download for blob {} (attempt {})",
                                         hex::encode(hash), info.retries);
 
-                                    let other_possible_nodes = run.coordinator_state().map(all_node_addrs_shuffled).unwrap_or(vec![]);
+                                    let other_possible_nodes = run.coordinator_state().map(all_node_addrs_shuffled).unwrap_or_default();
                                     p2p.start_download(ticket, tag, &other_possible_nodes).await?;
                                 }
                             }
@@ -408,7 +408,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         }
 
                         Some((download_ticket, tag)) = rx_request_download.recv() => {
-                            let other_possible_nodes = run.coordinator_state().map(all_node_addrs_shuffled).unwrap_or(vec![]);
+                            let other_possible_nodes = run.coordinator_state().map(all_node_addrs_shuffled).unwrap_or_default();
                             p2p.start_download(download_ticket, tag, &other_possible_nodes).await?;
                         }
                         Some(opportunistic_data) = rx_witness.recv() => {

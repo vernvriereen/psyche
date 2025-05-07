@@ -697,7 +697,7 @@ impl<T: NodeIdentity> Coordinator<T> {
     pub fn witness_quorum(&self, num_witnesses: u16) -> u16 {
         let witness_nodes = match self.config.witness_nodes {
             0 => num_witnesses,
-            witness_nodes => witness_nodes
+            witness_nodes => witness_nodes,
         };
         match witness_nodes {
             0 => unreachable!(),

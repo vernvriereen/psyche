@@ -156,11 +156,7 @@ impl SolanaBackend {
                     .program(psyche_solana_coordinator::ID)
             })
             .collect();
-        program_coordinators.extend(
-            backup_program_coordinators?
-                .into_iter()
-                .map(|x| Arc::new(x)),
-        );
+        program_coordinators.extend(backup_program_coordinators?.into_iter().map(Arc::new));
 
         Ok(Self {
             program_authorizer,

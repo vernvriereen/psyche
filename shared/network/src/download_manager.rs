@@ -273,68 +273,65 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
     ) -> Option<DownloadManagerEvent<D>> {
         let download = &mut downloads[index];
         let event = match result {
-            Ok(progress) => {
-                let update = match progress {
-                    DownloadProgress::InitialState(_) => None,
-                    DownloadProgress::FoundLocal { size, .. } => {
-                        Some(DownloadManagerEvent::Update(DownloadUpdate {
-                            blob_ticket: download.blob_ticket.clone(),
-                            tag: download.tag,
-                            downloaded_size_delta: 0,
-                            downloaded_size: size.value(),
-                            total_size: size.value(),
-                            all_done: false,
-                        }))
-                    }
-                    DownloadProgress::Connected => None,
-                    DownloadProgress::Found { size, .. } => {
-                        download.total_size = size;
-                        Some(DownloadManagerEvent::Update(DownloadUpdate {
-                            blob_ticket: download.blob_ticket.clone(),
-                            tag: download.tag,
-                            downloaded_size_delta: 0,
-                            downloaded_size: 0,
-                            total_size: size,
-                            all_done: false,
-                        }))
-                    }
-                    DownloadProgress::FoundHashSeq { .. } => None,
-                    DownloadProgress::Progress { offset, .. } => {
-                        let delta = offset.saturating_sub(download.last_offset);
-                        download.last_offset = offset;
-                        Some(DownloadManagerEvent::Update(DownloadUpdate {
-                            blob_ticket: download.blob_ticket.clone(),
-                            tag: download.tag,
-                            downloaded_size_delta: delta,
-                            downloaded_size: offset,
-                            total_size: download.total_size,
-                            all_done: false,
-                        }))
-                    }
-                    DownloadProgress::Done { .. } => None,
-                    DownloadProgress::AllDone(_) => {
-                        Some(DownloadManagerEvent::Update(DownloadUpdate {
-                            blob_ticket: download.blob_ticket.clone(),
-                            tag: download.tag,
-                            downloaded_size_delta: 0,
-                            downloaded_size: download.total_size,
-                            total_size: download.total_size,
-                            all_done: true,
-                        }))
-                    }
-                    DownloadProgress::Abort(err) => {
-                        Some(DownloadManagerEvent::Failed(DownloadFailed {
-                            blob_ticket: download.blob_ticket.clone(),
-                            error: err.into(),
-                            tag: download.tag,
-                        }))
-                    }
-                };
-                update
-            }
+            Ok(progress) => match progress {
+                DownloadProgress::InitialState(_) => None,
+                DownloadProgress::FoundLocal { size, .. } => {
+                    Some(DownloadManagerEvent::Update(DownloadUpdate {
+                        blob_ticket: download.blob_ticket.clone(),
+                        tag: download.tag,
+                        downloaded_size_delta: 0,
+                        downloaded_size: size.value(),
+                        total_size: size.value(),
+                        all_done: false,
+                    }))
+                }
+                DownloadProgress::Connected => None,
+                DownloadProgress::Found { size, .. } => {
+                    download.total_size = size;
+                    Some(DownloadManagerEvent::Update(DownloadUpdate {
+                        blob_ticket: download.blob_ticket.clone(),
+                        tag: download.tag,
+                        downloaded_size_delta: 0,
+                        downloaded_size: 0,
+                        total_size: size,
+                        all_done: false,
+                    }))
+                }
+                DownloadProgress::FoundHashSeq { .. } => None,
+                DownloadProgress::Progress { offset, .. } => {
+                    let delta = offset.saturating_sub(download.last_offset);
+                    download.last_offset = offset;
+                    Some(DownloadManagerEvent::Update(DownloadUpdate {
+                        blob_ticket: download.blob_ticket.clone(),
+                        tag: download.tag,
+                        downloaded_size_delta: delta,
+                        downloaded_size: offset,
+                        total_size: download.total_size,
+                        all_done: false,
+                    }))
+                }
+                DownloadProgress::Done { .. } => None,
+                DownloadProgress::AllDone(_) => {
+                    Some(DownloadManagerEvent::Update(DownloadUpdate {
+                        blob_ticket: download.blob_ticket.clone(),
+                        tag: download.tag,
+                        downloaded_size_delta: 0,
+                        downloaded_size: download.total_size,
+                        total_size: download.total_size,
+                        all_done: true,
+                    }))
+                }
+                DownloadProgress::Abort(err) => {
+                    Some(DownloadManagerEvent::Failed(DownloadFailed {
+                        blob_ticket: download.blob_ticket.clone(),
+                        error: err.into(),
+                        tag: download.tag,
+                    }))
+                }
+            },
             Err(e) => Some(DownloadManagerEvent::Failed(DownloadFailed {
                 blob_ticket: download.blob_ticket.clone(),
-                error: e.into(),
+                error: e,
                 tag: download.tag,
             })),
         };
