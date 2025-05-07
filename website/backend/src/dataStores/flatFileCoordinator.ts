@@ -319,7 +319,7 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			timestamp,
 			txHash,
 		})
-		const MAX_RECENT_TXS = 5
+		const MAX_RECENT_TXS = 25
 		if (lastRun.recentTxs.length > MAX_RECENT_TXS) {
 			lastRun.recentTxs = lastRun.recentTxs.slice(-MAX_RECENT_TXS)
 		}

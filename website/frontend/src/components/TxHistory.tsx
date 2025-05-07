@@ -6,10 +6,10 @@ import { text } from '../fonts.js'
 
 const TxsContainer = styled.div`
 	line-height: 1.3em;
-	overflow: hidden;
 	margin: 16px 16px;
 	padding: 0;
-	overflow-x: scroll;
+	overflow: scroll;
+	height: 5lh;
 	position: relative;
 
 	.theme-light & {
