@@ -16,6 +16,10 @@ export const sharedTheme = css`
 			box-sizing: border-box;
 		}
 
+		html {
+			overflow-x: hidden;
+		}
+
 		body {
 			margin: 0;
 			min-height: 100vh;

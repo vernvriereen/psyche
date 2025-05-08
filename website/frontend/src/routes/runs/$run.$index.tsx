@@ -17,17 +17,20 @@ import { css } from '@linaria/core'
 import { InfoChit } from '../../components/InfoChit.js'
 import { RunStateIndicator } from '../../components/RunStateIndicator.js'
 import { fetchRunStreaming } from '../../fetchRuns.js'
-import { useStreamingRunData } from '../../useStreamingData.js'
+import { useStreamingLoaderData } from '../../useStreamingData.js'
 import { RunBox } from '../../components/RunBox.js'
 import { Progress } from '../../components/ProgressWrapper.js'
 import { FullPagePortal } from '../../components/FullPagePortal.js'
+import { ApiGetRun } from 'shared'
 export const Route = createFileRoute('/runs/$run/$index')({
 	loader: async ({ params }) => fetchRunStreaming(params.run, params.index),
 	component: RouteComponent,
 })
 
 function RouteComponent() {
-	const runData = useStreamingRunData()
+	const runData = useStreamingLoaderData<ApiGetRun>({
+		from: '/runs/$run/$index',
+	})
 	const run = runData?.run
 	const isOnlyRun = runData?.isOnlyRun
 

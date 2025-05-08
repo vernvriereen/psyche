@@ -65,7 +65,7 @@ export interface CoordinatorDataStore extends ChainDataStore {
 }
 
 export interface MiningPoolDataStore extends ChainDataStore {
-	eventEmitter: EventEmitter
+	eventEmitter: EventEmitter<{ update: [] }>
 	setFundingData(data: PsycheMiningPoolAccount): void
 	setUserAmount(address: string, amount: bigint): void
 	setCollateralInfo(mintAddress: string, decimals: number): void

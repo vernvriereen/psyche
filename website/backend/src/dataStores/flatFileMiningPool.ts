@@ -30,8 +30,7 @@ export class FlatFileMiningPoolDataStore implements MiningPoolDataStore {
 	}
 	#db: string
 
-	// not used yet
-	eventEmitter = new EventEmitter()
+	eventEmitter: EventEmitter<{ update: [] }> = new EventEmitter()
 
 	constructor(dir: string, programId: PublicKey) {
 		this.#db = path.join(dir, `./mining-pool-db-${programId}.json`)
@@ -96,6 +95,7 @@ export class FlatFileMiningPoolDataStore implements MiningPoolDataStore {
 				psycheJsonReplacer
 			)
 		)
+		this.eventEmitter.emit('update')
 	}
 
 	getContributionInfo(): Omit<ContributionInfo, 'miningPoolProgramId'> {

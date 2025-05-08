@@ -79,6 +79,7 @@ async function main() {
 		UniqueRunKey,
 		Set<(runData: RunData) => void>
 	> = new Map()
+
 	coordinator.dataStore.eventEmitter.addListener('update', (key) => {
 		const listeners = liveRunListeners.get(key)
 		if (listeners) {
@@ -98,6 +99,19 @@ async function main() {
 						`Failed to send run data for run ${runId} to subscribed client...`
 					)
 				}
+			}
+		}
+	})
+
+	const liveMiningPoolListeners: Set<() => void> = new Set()
+	miningPool.dataStore.eventEmitter.addListener('update', () => {
+		for (const listener of liveMiningPoolListeners) {
+			try {
+				listener()
+			} catch (err) {
+				console.error(
+					`Failed to send data for mining pool to subscribed client...`
+				)
 			}
 		}
 	})
@@ -136,15 +150,52 @@ async function main() {
 
 	const initTime = Date.now()
 
-	fastify.get('/contributionInfo', (_req, res) => {
+	fastify.get('/contributionInfo', (req, res) => {
+		const isStreamingRequest = req.headers.accept?.includes(
+			'application/x-ndjson'
+		)
+
 		const data: ApiGetContributionInfo = {
 			...miningPool.dataStore.getContributionInfo(),
 			miningPoolProgramId: process.env.MINING_POOL_PROGRAM_ID!,
 			error: miningPoolError,
 		}
-		res
-			.header('content-type', 'application/json')
-			.send(JSON.stringify(data, psycheJsonReplacer))
+
+		// set header for streaming/non
+		res.header(
+			'content-type',
+			isStreamingRequest ? 'application/x-ndjson' : 'application/json'
+		)
+
+		if (!isStreamingRequest) {
+			res.send(JSON.stringify(data, psycheJsonReplacer))
+			return
+		}
+
+		// start streaming newline-delimited json
+		const stream = new PassThrough()
+		res.send(stream)
+
+		function sendContributionData() {
+			const data: ApiGetContributionInfo = {
+				...miningPool.dataStore.getContributionInfo(),
+				miningPoolProgramId: process.env.MINING_POOL_PROGRAM_ID!,
+				error: miningPoolError,
+			}
+			stream.write(JSON.stringify(data, psycheJsonReplacer) + '\n')
+		}
+
+		// send the initial run data to populate the UI
+		sendContributionData()
+
+		// this listener will be called every time we see a state change.
+		liveMiningPoolListeners.add(sendContributionData)
+
+		// when the req closes, stop sending them updates
+		req.socket.on('close', () => {
+			liveMiningPoolListeners.delete(sendContributionData)
+			stream.end()
+		})
 	})
 
 	fastify.get('/runs', (_req, res) => {

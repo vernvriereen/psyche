@@ -1,14 +1,13 @@
 import { useLoaderData } from '@tanstack/react-router'
 import { useState, useEffect, useRef } from 'react'
-import { ApiGetRun } from 'shared'
 
-export function useStreamingRunData() {
-	const stream = useLoaderData({ from: '/runs/$run/$index' })
-	const [data, setData] = useState<
-		(ApiGetRun & { disconnected: boolean }) | null
-	>(null)
+export function useStreamingLoaderData<T extends object>(
+	...loaderData: Parameters<typeof useLoaderData>
+) {
+	const stream = useLoaderData(...loaderData)
+	const [data, setData] = useState<(T & { disconnected: boolean }) | null>(null)
 
-	const lastData = useRef<ApiGetRun | null>(null)
+	const lastData = useRef<T | null>(null)
 
 	const previousReaderDone = useRef<Promise<void> | null>(null)
 	useEffect(() => {
@@ -33,6 +32,7 @@ export function useStreamingRunData() {
 					}
 					const { value, done } = res
 					if (done) break
+					console.log(`got new streaming data for ${loaderData[0].from}`)
 					setData({ ...value, disconnected: false })
 					lastData.current = value
 				}

@@ -53,12 +53,6 @@ export async function fetchRuns(): Promise<ApiGetRuns> {
 		: psycheJsonFetch('runs')
 }
 
-export async function fetchContributions(): Promise<ApiGetContributionInfo> {
-	return import.meta.env.VITE_FAKE_DATA
-		? (fakeContributionInfo satisfies ApiGetContributionInfo)
-		: psycheJsonFetch('contributionInfo')
-}
-
 interface DecodeState {
 	buffer: string
 	decoder: TextDecoder
@@ -105,10 +99,36 @@ export async function fetchRunStreaming(
 		}
 	}
 
-	console.log('opening run stream for', runId)
-	let { reader, decodeState } = await openRunStream(runId, indexStr)
+	console.log('opening run stream for', runId, indexStr)
 
-	return new ReadableStream<ApiGetRun>({
+	return makeStreamingNdJsonDecode(`run/${runId}/${indexStr}`)
+}
+
+export async function fetchContributionsStreaming(): Promise<
+	ReadableStream<ApiGetContributionInfo>
+> {
+	if (import.meta.env.VITE_FAKE_DATA) {
+		return new ReadableStream<ApiGetContributionInfo>({
+			async start(controller) {
+				let i = 0
+				while (true) {
+					controller.enqueue(fakeContributionInfo)
+					const nextFakeDataDelay = 1000 + Math.random() * 1000
+					await new Promise((r) => setTimeout(r, nextFakeDataDelay))
+					i++
+				}
+			},
+		})
+	}
+
+	console.log('opening contributions stream')
+
+	return makeStreamingNdJsonDecode(`contributionInfo`)
+}
+
+async function makeStreamingNdJsonDecode<T>(backendPath: string) {
+	let { reader, decodeState } = await openStreamToBackendPath(backendPath)
+	return new ReadableStream<T>({
 		async start(controller) {
 			const MAX_RECONNECT_ATTEMPTS = 5
 			let reconnectAttempts = 0
@@ -116,7 +136,10 @@ export async function fetchRunStreaming(
 
 			try {
 				while (true) {
-					const nextRun = await getOneRunFromStream(decodeState, reader)
+					const nextRun = await getOneJsonPayloadFromStream<T>(
+						decodeState,
+						reader
+					)
 					if (nextRun) {
 						decodeState = nextRun.decodeState
 						controller.enqueue(nextRun.parsedRun)
@@ -127,7 +150,7 @@ export async function fetchRunStreaming(
 
 					await reader.cancel()
 
-					// we failed to fetch a run because the stream ended - let's reconnect
+					// we failed to fetch the next json data because the stream ended - let's reconnect
 					if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
 						console.log(
 							`Stream ended, attempting to reconnect (${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})...`
@@ -137,7 +160,7 @@ export async function fetchRunStreaming(
 						reconnectDelay = Math.min(reconnectDelay * 2, 10000)
 
 						try {
-							const newStream = await openRunStream(runId, indexStr)
+							const newStream = await openStreamToBackendPath(backendPath)
 							reader = newStream.reader
 							decodeState = newStream.decodeState
 
@@ -169,11 +192,11 @@ export async function fetchRunStreaming(
 	})
 }
 
-async function getOneRunFromStream(
+async function getOneJsonPayloadFromStream<T>(
 	decodeState: DecodeState,
 	reader: ReadableStreamDefaultReader<Uint8Array<ArrayBufferLike>>
 ) {
-	let parsedRun: ApiGetRun | null = null
+	let parsedRun: T | null = null
 	while (!parsedRun) {
 		const { value, done } = await reader.read()
 
@@ -188,7 +211,7 @@ async function getOneRunFromStream(
 			// we have at least one complete line, so one full JSON object
 			const firstLine = lines[0].trim()
 			if (firstLine) {
-				parsedRun = JSON.parse(firstLine, psycheJsonReviver) as ApiGetRun
+				parsedRun = JSON.parse(firstLine, psycheJsonReviver) as T
 				decodeState.buffer = lines.slice(1).join('\n')
 			} else {
 				decodeState.buffer = lines.slice(1).join('\n')
@@ -198,8 +221,8 @@ async function getOneRunFromStream(
 	return { parsedRun, decodeState }
 }
 
-async function openRunStream(runId: string, indexStr: string) {
-	const response = await fetch(`${BACKEND_URL}/run/${runId}/${indexStr}`, {
+async function openStreamToBackendPath(path: string) {
+	const response = await fetch(`${BACKEND_URL}/${path}`, {
 		headers: {
 			Accept: 'application/x-ndjson',
 		},
