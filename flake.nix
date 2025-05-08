@@ -20,12 +20,19 @@
         rust-overlay.follows = "rust-overlay";
       };
     };
-    garnix-lib.url = "github:garnix-io/garnix-lib";
+    garnix-lib = {
+      url = "github:garnix-io/garnix-lib";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     solana-pkgs.url = "github:arilotter/solana-flake";
     agenix-shell.url = "github:aciceri/agenix-shell";
     treefmt-nix = {
-      inputs.nixpkgs.follows = "nixpkgs";
       url = "github:numtide/treefmt-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    git-hooks-nix = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
@@ -66,6 +73,7 @@
       imports = [
         inputs.agenix-shell.flakeModules.default
         inputs.treefmt-nix.flakeModule
+        inputs.git-hooks-nix.flakeModule
         ./nix/formatter.nix
         ./nix/packages.nix
         ./nix/devShell.nix
