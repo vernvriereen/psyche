@@ -4335,8 +4335,7 @@ checksum = "469fb0b9cefa57e3ef31275ee7cacb78f2fdca44e4765491884a2b119d4eb130"
 [[package]]
 name = "iroh"
 version = "0.34.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37432887a6836e7a832fccb121b5f0ee6cd953c506f99b0278bdbedf8dee0e88"
+source = "git+https://github.com/NousResearch/iroh?rev=e0b8c597b301d8f5913e8c0ac57ec4d6d76595b3#e0b8c597b301d8f5913e8c0ac57ec4d6d76595b3"
 dependencies = [
  "aead",
  "anyhow",
@@ -4355,7 +4354,7 @@ dependencies = [
  "http 1.3.1",
  "igd-next",
  "instant",
- "iroh-base",
+ "iroh-base 0.34.1 (git+https://github.com/NousResearch/iroh?rev=e0b8c597b301d8f5913e8c0ac57ec4d6d76595b3)",
  "iroh-metrics",
  "iroh-quinn",
  "iroh-quinn-proto",
@@ -4409,6 +4408,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "iroh-base"
+version = "0.34.1"
+source = "git+https://github.com/NousResearch/iroh?rev=e0b8c597b301d8f5913e8c0ac57ec4d6d76595b3#e0b8c597b301d8f5913e8c0ac57ec4d6d76595b3"
+dependencies = [
+ "curve25519-dalek 4.1.3",
+ "data-encoding",
+ "derive_more",
+ "ed25519-dalek 2.1.1",
+ "rand_core 0.6.4",
+ "serde",
+ "thiserror 2.0.12",
+ "url",
+]
+
+[[package]]
 name = "iroh-blake3"
 version = "1.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4440,7 +4454,7 @@ dependencies = [
  "hashlink",
  "hex",
  "iroh",
- "iroh-base",
+ "iroh-base 0.34.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "iroh-blake3",
  "iroh-io",
  "iroh-metrics",
@@ -4587,8 +4601,7 @@ dependencies = [
 [[package]]
 name = "iroh-relay"
 version = "0.34.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40d2d7b50d999922791c6c14c25e13f55711e182618cb387bafa0896ffe0b930"
+source = "git+https://github.com/NousResearch/iroh?rev=e0b8c597b301d8f5913e8c0ac57ec4d6d76595b3#e0b8c597b301d8f5913e8c0ac57ec4d6d76595b3"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4600,7 +4613,7 @@ dependencies = [
  "http-body-util",
  "hyper 1.6.0",
  "hyper-util",
- "iroh-base",
+ "iroh-base 0.34.1 (git+https://github.com/NousResearch/iroh?rev=e0b8c597b301d8f5913e8c0ac57ec4d6d76595b3)",
  "iroh-metrics",
  "iroh-quinn",
  "iroh-quinn-proto",
