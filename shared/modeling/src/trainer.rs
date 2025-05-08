@@ -530,7 +530,7 @@ impl Trainer {
                         step => Self::get_lr(&lr_scheduler, step - 1, warmup_lr_between),
                     };
 
-                    tracing::debug!(lr = lr, prev_lr = prev_lr, step = step, "train begin");
+                    tracing::debug!(lr=lr, prev_lr=prev_lr, step=step, micro_batches=grad_accum_steps, "Train begin");
 
                     match &mut optimizer {
                         Optimizer::Torch { optimizer, .. } => {
@@ -560,7 +560,7 @@ impl Trainer {
 
                     let mut loss = None;
                     let mut cancelled = false;
-                    for micro_batch in micro_batches {
+                    for (index, micro_batch) in micro_batches.into_iter().enumerate() {
                         if cancel_training.is_cancelled() {
                             cancelled = true;
                             barrier.cancel();
@@ -593,6 +593,7 @@ impl Trainer {
                         if let Some(grad_accum) = &mut grad_accum {
                             grad_accum.accumulate_gradients();
                         }
+                        debug!(micro_batch=index, "Finished micro batch forward/backward");
                     }
                     if let Some(grad_accum) = &mut grad_accum {
                         grad_accum.apply_accumulation();
