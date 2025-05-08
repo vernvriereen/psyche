@@ -238,6 +238,9 @@ impl Trainer {
         if barrier.wait().is_err() {
             return Ok(None);
         }
+        if device.is_cuda() {
+            device.cuda_synchronize();
+        }
         loss.backward();
         if barrier.wait().is_err() {
             return Ok(None);
@@ -264,6 +267,9 @@ impl Trainer {
             device.cuda_synchronize();
         }
         let (logits, loss) = model.forward(&inputs, labels.as_ref(), num_logits_to_keeep);
+        if device.is_cuda() {
+            device.cuda_synchronize();
+        }
         if barrier.wait().is_err() {
             return None;
         }

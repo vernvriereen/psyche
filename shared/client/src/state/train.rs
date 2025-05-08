@@ -378,6 +378,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                                 nonce,
                             } = completed_trainer.map_err(|_| TrainError::TrainCrashed)??;
 
+                            debug!(step=step, loss=loss, batch_id=%batch_id, "Got training output, DisTrO results generated");
+
                             available_trainers.push(trainer);
 
                             if !sent_results {
