@@ -10,7 +10,6 @@ debug/
 target/
 **/*.rs.bk
 *.pdb
-.cargo/
 
 ### Python ###
 __pycache__
