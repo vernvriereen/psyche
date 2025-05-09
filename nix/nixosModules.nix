@@ -151,7 +151,7 @@
                     enable = true;
                     virtualHosts =
                       {
-                        "http://${configName}.*.psyche.NousResearch.garnix.me".extraConfig = cfg;
+                        "http://${configName}.*.psyche.*.garnix.me".extraConfig = cfg;
                       }
                       // (builtins.listToAttrs (
                         map (hostname: {
@@ -249,23 +249,28 @@
 
               services.caddy = {
                 enable = true;
-                virtualHosts = {
-                  "https://docs.psyche.network".extraConfig = ''
-                    root * ${self.packages.${pkgs.system}.psyche-book}
-                    file_server
-                  '';
+                virtualHosts =
+                  let
+                    psyche-website = ''
+                      handle {
+                        root * ${psyche-website-frontend}
+                        ${serveStaticSpa}
+                      }
 
-                  "https://mainnet.psyche.network".extraConfig = ''
-                    handle {
-                      root * ${psyche-website-frontend}
-                      ${serveStaticSpa}
-                    }
+                      handle_path ${backendPath}/* {
+                        reverse_proxy :${backend-port}
+                      }
+                    '';
+                  in
+                  {
+                    "https://docs.psyche.network".extraConfig = ''
+                      root * ${self.packages.${pkgs.system}.psyche-book}
+                      file_server
+                    '';
 
-                    handle_path ${backendPath}/* {
-                      reverse_proxy :${backend-port}
-                    }
-                  '';
-                };
+                    "https://mainnet.psyche.network".extraConfig = psyche-website;
+                    "https://psyche-http.main.psyche.*.garnix.me/".extraConfig = psyche-website;
+                  };
               };
             }
           )
@@ -289,7 +294,7 @@
                 {
                   enable = true;
                   virtualHosts = {
-                    "http://psyche-http-docs.test-deploy-docs.psyche.NousResearch.garnix.me".extraConfig = conf;
+                    "http://psyche-http-docs.test-deploy-docs.psyche.*.garnix.me".extraConfig = conf;
                     "http://docs-preview.psyche.network".extraConfig = conf;
                   };
                 };
