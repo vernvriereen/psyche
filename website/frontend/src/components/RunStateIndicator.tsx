@@ -118,6 +118,7 @@ const Title = styled.div`
 	}
 	.theme-dark & {
 		background: ${forest[600]};
+		color: ${forest[300]};
 	}
 `
 
@@ -149,7 +150,7 @@ export function runHasState(run: RunData): run is RunWithState {
 }
 
 export function RunStateIndicator({
-	state: {state, info},
+	state: { state, info },
 	recentTxs,
 	disconnected,
 	paused,
@@ -171,8 +172,13 @@ export function RunStateIndicator({
 	return (
 		<OuterContainer>
 			<Title className="toEdge">
-				<span className={text['aux/xl/medium']}>
-					training progress {((Number(info.completedTokens) / Number(info.totalTokens)) * 100).toFixed(2)}%
+				<span className={text['aux/xl/medium']} title="the number of tokens">
+					training progress{' '}
+					{(
+						(Number(info.completedTokens) / Number(info.totalTokens)) *
+						100
+					).toFixed(2)}
+					%
 				</span>
 				{!paused && (
 					<span>
