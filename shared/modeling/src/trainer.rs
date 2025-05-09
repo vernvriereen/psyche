@@ -593,7 +593,7 @@ impl Trainer {
                         if let Some(grad_accum) = &mut grad_accum {
                             grad_accum.accumulate_gradients();
                         }
-                        debug!(micro_batch=index, "Finished micro batch forward/backward");
+                        trace!(micro_batch=index, "Finished micro batch forward/backward");
                     }
                     if let Some(grad_accum) = &mut grad_accum {
                         grad_accum.apply_accumulation();
