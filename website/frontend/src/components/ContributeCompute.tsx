@@ -4,7 +4,7 @@ import { Button } from './Button.js'
 import { styled } from '@linaria/react'
 import { ContributionInfo } from 'shared'
 import MedusaHead from '../assets/icons/medusa-head.svg?react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { GiveMoney } from './GiveMoney.js'
 import Smiley from '../assets/icons/smiley.svg?react'
 import { useWalletMultiButton } from '@solana/wallet-adapter-base-ui'
@@ -12,9 +12,9 @@ import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { WalletReadyState } from '@solana/wallet-adapter-base'
 import { createSphereAnimation } from '../gl/regl.js'
-import { useDarkMode, useWindowSize } from 'usehooks-ts'
+import { useDarkMode } from 'usehooks-ts'
 import { iconClass } from '../icon.js'
-import { formatUSDollars } from '../utils.js'
+import { c, formatUSDollars } from '../utils.js'
 import { Address } from './Address.js'
 const TopBox = styled.div`
 	padding: 0 16px;
@@ -103,9 +103,7 @@ function ContributeProgressBar({
 			/>
 			<ProgressBarUnfilled widthCh={widthCh}>
 				<span>
-					{Number.isNaN(ratio)
-						? '100%'
-						: `${Math.round(ratio * 100)}%`}
+					{Number.isNaN(ratio) ? '100%' : `${(ratio * 100).toFixed(4)}%`}
 				</span>
 			</ProgressBarUnfilled>
 		</ProgressBarBg>
@@ -132,17 +130,18 @@ const RankTable = styled.table`
 		position: sticky;
 		top: 0;
 		.theme-light & {
-			background: ${forest[700]};
-			border-color: ${forest[700]};
+			background: ${slate[500]};
+			border-color: ${slate[500]};
+			color: ${slate[0]};
 		}
 		.theme-dark & {
-			background: ${forest[500]};
-			border-color: ${forest[500]};
+			background: ${forest[600]};
+			border-color: ${forest[600]};
+			color: ${forest[300]};
 		}
 		border: 1px solid;
 		border-top: 4px solid;
 		border-bottom: 4px solid;
-		color: ${slate[0]};
 	}
 
 	& tbody tr {
@@ -155,6 +154,9 @@ const RankTable = styled.table`
 			&.featured {
 				color: ${forest[500]};
 				border-color: ${forest[400]};
+				.icon {
+					color: ${forest[400]};
+				}
 			}
 		}
 		.theme-dark & {
@@ -164,11 +166,26 @@ const RankTable = styled.table`
 			&.featured {
 				color: ${lime[400]};
 				border-color: ${forest[400]};
+				.icon {
+					color: ${lime[400]};
+				}
 			}
 		}
 
-		&.featured .icon {
-			color: ${forest[400]};
+		&.featured td:first-child {
+			text-align: center;
+		}
+		&.isme {
+			.theme-dark & {
+				background: ${lime[400]};
+				color: ${slate[1000]};
+				&.featured .icon {
+					color: ${slate[1000]};
+				}
+			}
+			.theme-light & {
+				background: ${forest[200]};
+			}
 		}
 	}
 
@@ -216,15 +233,17 @@ const AddressBox = styled.td`
 	overflow: hidden;
 	white-space: nowrap;
 `
+const Loading = styled.div`
+	text-align: center;
+	padding: 2lh;
+`
 
 export function ContributeCompute({
-	totalDepositedCollateralAmount,
-	maxDepositCollateralAmount,
-	users,
-	collateralMintAddress,
-	miningPoolProgramId,
-	collateralMintDecimals,
-}: ContributionInfo) {
+	contributionInfo,
+}: {
+	contributionInfo: ContributionInfo | null
+}) {
+	const [walletConnectTriggered, setWalletConnectTriggered] = useState(false)
 	const [contributing, setContributing] = useState(false)
 	const { wallets, select } = useWallet()
 
@@ -244,11 +263,17 @@ export function ContributeCompute({
 			select(installed[0].adapter.name)
 		}
 	}, [wallets])
+	useEffect(() => {
+		if (buttonState === 'has-wallet' && walletConnectTriggered && onConnect) {
+			onConnect()
+		}
+	}, [buttonState, onConnect])
 
 	const connectWalletOrContribute = useCallback(() => {
 		setContributing(true)
 		if (buttonState === 'no-wallet') {
 			setModalVisible(true)
+			setWalletConnectTriggered(true)
 		} else if (buttonState === 'has-wallet') {
 			if (onConnect) {
 				onConnect()
@@ -256,22 +281,35 @@ export function ContributeCompute({
 		}
 	}, [buttonState, onConnect])
 
-	const canvasRef = useRef(null)
+	const { publicKey } = useWallet()
+
+	const [canvas, setCanvas] = useState<null | HTMLCanvasElement>(null)
+	const canvasRef = useCallback((node: HTMLCanvasElement) => {
+		setCanvas(node)
+	}, [])
 	const { isDarkMode } = useDarkMode()
 
 	useEffect(() => {
-		if (!canvasRef.current) {
+		if (!canvas || (contributing && buttonState === 'connected')) {
 			return
 		}
 		const color = isDarkMode ? forest[300] : forest[500]
-		return createSphereAnimation(canvasRef.current, color)
-	}, [isDarkMode])
-	const { width = 0, height = 0 } = useWindowSize()
+		return createSphereAnimation(canvas, color)
+	}, [canvas, isDarkMode, contributing, buttonState])
 
-	const canvasSize = useMemo(
-		() => 256,
-		[width, height]
-	)
+	const canvasSize = 256
+
+	if (!contributionInfo) {
+		return <Loading className={text['body/base/regular']}>Loading...</Loading>
+	}
+	const {
+		totalDepositedCollateralAmount,
+		maxDepositCollateralAmount,
+		users,
+		collateralMintAddress,
+		miningPoolProgramId,
+		collateralMintDecimals,
+	} = contributionInfo
 
 	return (
 		<>
@@ -280,8 +318,7 @@ export function ContributeCompute({
 					<GiveMoney
 						onExit={() => setContributing(false)}
 						remainingMoney={
-							maxDepositCollateralAmount -
-							totalDepositedCollateralAmount
+							maxDepositCollateralAmount - totalDepositedCollateralAmount
 						}
 						collateralMintAddress={collateralMintAddress}
 						miningPoolProgramId={miningPoolProgramId}
@@ -290,9 +327,7 @@ export function ContributeCompute({
 				) : (
 					<>
 						<ProgressContainer>
-							<ContributeProgress
-								className={text['body/base/medium']}
-							>
+							<ContributeProgress className={text['body/base/medium']}>
 								POOL CAPACITY
 							</ContributeProgress>
 							<ContributeProgressBar
@@ -303,11 +338,7 @@ export function ContributeCompute({
 								widthCh={18}
 							/>
 						</ProgressContainer>
-						<OrbCanvas
-							ref={canvasRef}
-							width={canvasSize}
-							height={canvasSize}
-						/>
+						<OrbCanvas ref={canvasRef} width={canvasSize} height={canvasSize} />
 						<ContributePoolLine>
 							<span className={text['body/base/medium']}>
 								CAPITAL:{' '}
@@ -324,7 +355,9 @@ export function ContributeCompute({
 							>
 								{buttonState === 'connecting'
 									? 'connecting...'
-									: 'donate'}
+									: buttonState !== 'connected'
+										? 'connect wallet'
+										: 'donate'}
 							</Button>
 						</ContributePoolLine>
 					</>
@@ -344,37 +377,30 @@ export function ContributeCompute({
 							const featured = i < 3
 							const fundingPercent =
 								Number(
-									(user.funding * 100_000n) /
-										totalDepositedCollateralAmount
+									(user.funding * 100_000n) / totalDepositedCollateralAmount
 								) / 1_000
 							return (
 								<tr
 									key={user.address}
-									className={featured ? 'featured' : ''}
+									className={c(
+										featured && 'featured',
+										publicKey?.toString() === user.address && 'isme'
+									)}
 								>
 									<td>
 										{featured ? (
 											<MedusaHead className={iconClass} />
 										) : (
-											user.rank
-												.toString()
-												.padStart(2, '0')
+											user.rank.toString().padStart(2, '0')
 										)}
 									</td>
-									<AddressBox
-										className={
-											featured ? text['display/2xl'] : ''
-										}
-									>
-										<Address address={user.address}/>
+									<AddressBox className={featured ? text['display/2xl'] : ''}>
+										<Address
+											address={user.address}
+											cluster={import.meta.env.VITE_MINING_POOL_CLUSTER}
+										/>
 									</AddressBox>
-									<td
-										className={
-											featured
-												? text['body/xl/medium']
-												: ''
-										}
-									>
+									<td className={featured ? text['body/xl/medium'] : ''}>
 										{fundingPercent < 0.001
 											? '<0.001'
 											: +fundingPercent.toFixed(3)}
@@ -383,50 +409,13 @@ export function ContributeCompute({
 								</tr>
 							)
 						})}
-						{users.length === 0 && (
-							<>
-								<tr>
-									<td />
-									<td>&nbsp;</td>
-									<td />
-								</tr>
-								<tr>
-									<td />
-									<td>&nbsp;</td>
-									<td />
-								</tr>
-								<tr>
-									<td />
-									<td>&nbsp;</td>
-									<td />
-								</tr>
-								<tr>
-									<td />
-									<td>&nbsp;</td>
-									<td />
-								</tr>
-								<tr>
-									<td />
-									<td>&nbsp;</td>
-									<td />
-								</tr>
-								<tr>
-									<td />
-									<td>&nbsp;</td>
-									<td />
-								</tr>
-								<tr>
-									<td />
-									<td>&nbsp;</td>
-									<td />
-								</tr>
-								<tr>
-									<td />
-									<td>&nbsp;</td>
-									<td />
-								</tr>
-							</>
-						)}
+						{Array.from({ length: Math.max(0, 7 - users.length) }, (_, i) => (
+							<tr key={`fake-${i}`}>
+								<td />
+								<td>&nbsp;</td>
+								<td />
+							</tr>
+						))}
 					</tbody>
 				</RankTable>
 			</TableContainer>

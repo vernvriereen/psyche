@@ -41,7 +41,7 @@ function RadialGraphInner({
 	data,
 	width,
 	height,
-	formatValue
+	formatValue,
 }: {
 	data: Record<string, number>
 	width: number
@@ -82,8 +82,7 @@ function RadialGraphInner({
 				const rawAngle = delta * (180 / Math.PI)
 				const inverted = rawAngle >= 90 && rawAngle < 270
 				const flat =
-					(rawAngle > -95 && rawAngle < -85) ||
-					(rawAngle > 85 && rawAngle < 95)
+					(rawAngle > -95 && rawAngle < -85) || (rawAngle > 85 && rawAngle < 95)
 				const angle = flat ? 0 : rawAngle + (inverted ? 180 : 0)
 
 				const textOffset = outerRadius + textPadding
@@ -96,23 +95,18 @@ function RadialGraphInner({
 					? [
 							[
 								basePosition[0],
-								basePosition[1] -
-									(inverted ? -1 : 1) * labelFontSize,
+								basePosition[1] - (inverted ? -1 : 1) * labelFontSize,
 							],
 							basePosition,
 						]
 					: [
 							[
-								basePosition[0] +
-									Math.cos(delta - 90) * labelFontOffset,
-								basePosition[1] +
-									Math.sin(delta - 90) * labelFontOffset,
+								basePosition[0] + Math.cos(delta - 90) * labelFontOffset,
+								basePosition[1] + Math.sin(delta - 90) * labelFontOffset,
 							],
 							[
-								basePosition[0] +
-									Math.cos(delta + 90) * labelFontOffset,
-								basePosition[1] +
-									Math.sin(delta + 90) * labelFontOffset,
+								basePosition[0] + Math.cos(delta + 90) * labelFontOffset,
+								basePosition[1] + Math.sin(delta + 90) * labelFontOffset,
 							],
 						]
 				if (inverted) {
@@ -159,8 +153,7 @@ function RadialGraphInner({
 							innerRadius={
 								innerRadius +
 								(outerRadius - innerRadius) *
-									(0.5 +
-										0.5 * gridTicks[gridTicks.length - 1])
+									(0.5 + 0.5 * gridTicks[gridTicks.length - 1])
 							}
 							stroke={tickMiniColor}
 							strokeWidth={0.69}
@@ -196,9 +189,7 @@ function RadialGraphInner({
 						/>
 					</Group>
 					<LineRadial
-						angle={([index, _]: [number, number]) =>
-							indexAngleScale(index)
-						}
+						angle={([index, _]: [number, number]) => indexAngleScale(index)}
 						radius={(d: [number, number]) => valueScale(d[1])}
 						curve={curveCatmullRomClosed}
 					>
@@ -215,11 +206,7 @@ function RadialGraphInner({
 					{labels.map(({ k, v, angle, position, inverted, flat }) => {
 						const textProps: TextProps = {
 							angle,
-							textAnchor: flat
-								? 'middle'
-								: inverted
-									? 'end'
-									: 'start',
+							textAnchor: flat ? 'middle' : inverted ? 'end' : 'start',
 							verticalAnchor: 'middle',
 							fill: labelColor,
 							fontSize: labelFontSize,
@@ -228,18 +215,10 @@ function RadialGraphInner({
 
 						return (
 							<Fragment key={`${k}-label`}>
-								<Text
-									x={position[0][0]}
-									y={position[0][1]}
-									{...textProps}
-								>
+								<Text x={position[0][0]} y={position[0][1]} {...textProps}>
 									{k}
 								</Text>
-								<Text
-									x={position[1][0]}
-									y={position[1][1]}
-									{...textProps}
-								>
+								<Text x={position[1][0]} y={position[1][1]} {...textProps}>
 									{formatValue ? formatValue(v) : +v.toFixed(2)}
 								</Text>
 							</Fragment>

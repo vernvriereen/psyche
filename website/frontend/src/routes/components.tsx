@@ -84,9 +84,7 @@ function RouteComponent() {
 				<LinkTitle text="buttons" />
 				{(['primary', 'secondary', 'theme', 'action'] as const)
 					.flatMap((x) =>
-						(['left', 'right', null] as const).map(
-							(y) => [x, y] as const
-						)
+						(['left', 'right', null] as const).map((y) => [x, y] as const)
 					)
 					.map(([style, icon]) => {
 						const buttonProps = {
@@ -122,11 +120,7 @@ function RouteComponent() {
 									</label>
 									<label>
 										pressed & disabled
-										<Button
-											{...buttonProps}
-											pressed
-											disabled
-										>
+										<Button {...buttonProps} pressed disabled>
 											label
 										</Button>
 									</label>
@@ -138,9 +132,7 @@ function RouteComponent() {
 			<Section>
 				<LinkTitle text="status chip" />
 				{(['bold', 'minimal'] as const)
-					.flatMap((x) =>
-						([true, false] as const).map((y) => [x, y] as const)
-					)
+					.flatMap((x) => ([true, false] as const).map((y) => [x, y] as const))
 					.map(([style, inverted]) => {
 						return (
 							<div>
@@ -153,6 +145,7 @@ function RouteComponent() {
 											'active',
 											'funding',
 											'completed',
+											'waitingForMembers',
 										] as const
 									).map((status) => (
 										<label>
@@ -177,6 +170,7 @@ function RouteComponent() {
 					info={{
 						id: 'run_001',
 						index: 0,
+						isOnlyRunAtThisIndex: true,
 						name: 'land-seer',
 						description: 'Processing landscape photographs',
 						size: 7_000_0000n,
@@ -347,11 +341,7 @@ function RouteComponent() {
 				`}
 			>
 				<LinkTitle text="sort select" />
-				<Sort
-					selected={selected}
-					options={options}
-					onChange={setSelected}
-				/>
+				<Sort selected={selected} options={options} onChange={setSelected} />
 			</Section>
 		</div>
 	)

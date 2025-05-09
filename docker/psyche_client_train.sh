@@ -17,18 +17,18 @@ if [[ ! -f "$WALLET_FILE" ]]; then
 fi
 
 if [[ "$RPC" == "" ]]; then
-   echo -e "\n[!] The RPC env variable was not set."
-   exit 1
+    echo -e "\n[!] The RPC env variable was not set."
+    exit 1
 fi
 
 if [[ "$WS_RPC" == "" ]]; then
-   echo -e "\n[!] The WS_RPC env variable was not set."
-   exit 1
+    echo -e "\n[!] The WS_RPC env variable was not set."
+    exit 1
 fi
 
 if [[ "$RUN_ID" == "" ]]; then
-   echo -e "\n[!] The RUN_ID env variable was not set."
-   exit 1
+    echo -e "\n[!] The RUN_ID env variable was not set."
+    exit 1
 fi
 
 echo "
@@ -56,8 +56,8 @@ docker run --rm -v "$WALLET_FILE":/keys/id.json \
     -e NVIDIA_DRIVER_CAPABILITIES=all \
     --name psyche-client \
     psyche-client train \
-        --wallet-private-key-path "/keys/id.json" \
-        --rpc ${RPC} \
-        --ws-rpc ${WS_RPC} \
-        --run-id ${RUN_ID} \
-        --logs "console"
+    --wallet-private-key-path "/keys/id.json" \
+    --rpc ${RPC} \
+    --ws-rpc ${WS_RPC} \
+    --run-id ${RUN_ID} \
+    --logs "console"

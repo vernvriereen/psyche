@@ -1,5 +1,5 @@
 import { styled } from '@linaria/react'
-import { forest, gold, lime, success } from '../colors.js'
+import { forest, gold, lime, slate, success } from '../colors.js'
 import { text } from '../fonts.js'
 import { c } from '../utils.js'
 import { css } from '@linaria/core'
@@ -12,18 +12,25 @@ const colors: Record<RunStatus['type'], string> = {
 	active: success[400],
 	funding: lime[300],
 	completed: forest[500],
-	paused: gold[300]
+	paused: slate[400],
+	waitingForMembers: gold[300],
+}
+
+const labels: Record<RunStatus['type'], string> = {
+	active: 'active',
+	funding: 'funding',
+	completed: 'completed',
+	paused: 'paused',
+	waitingForMembers: 'waiting for compute',
 }
 
 const StatusChipContainer = styled.div`
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	padding: 4px 8px;
 	gap: 8px;
 	text-transform: uppercase;
-	color: ${(props) =>
-		props.inverted ? 'var(--color-bg)' : 'var(--color-fg)'};
+	color: ${(props) => (props.inverted ? 'var(--color-bg)' : 'var(--color-fg)')};
 `
 
 const Dot = styled.span`
@@ -32,6 +39,32 @@ const Dot = styled.span`
 	background-color: ${({ color }) => color};
 	border-radius: 100%;
 	display: inline-block;
+	position: relative;
+
+	&::after {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		height: 100%;
+		width: 100%;
+		background-color: ${({ color }) => color};
+		border-radius: 100%;
+		opacity: 0.5;
+		animation: pulse 2s ease-in-out infinite;
+		display: ${({ active }) => (active ? 'block' : 'none')};
+	}
+
+	@keyframes pulse {
+		0% {
+			transform: scale(1);
+			opacity: 0.5;
+		}
+		100% {
+			transform: scale(2);
+			opacity: 0;
+		}
+	}
 `
 
 const Bold = css`
@@ -61,8 +94,8 @@ export function StatusChip({
 				style === 'bold' && (inverted ? BoldInverted : Bold)
 			)}
 		>
-			<Dot color={colors[status]} />
-			{children}
+			<Dot color={colors[status]} active={status === 'active'} />
+			{children ?? labels[status]}
 		</StatusChipContainer>
 	)
 }

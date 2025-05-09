@@ -25,4 +25,3 @@ To achieve this the smart contract provides the following capabilities:
 - `run_update`, Configure the underlying `Run`'s Psyche coordinator
 - `participant_create`, Must be called before a user can claim reward tokens
 - `participant_claim`, Once a user earned points on the `Run`'s coordinator, the user can withdraw the reward tokens proportional share of the `Run`'s treasury
-

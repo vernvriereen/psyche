@@ -11,6 +11,7 @@ solana-keygen new
 ## Run on a local validator (localnet)
 
 In a new terminal, run the following command to:
+
 - setup a `solana-test-validator`
 - Deploy all the required programs
 - Create a local run with name `<RUN_ID>`. If no run name is provided, the name `test` will be used by default.

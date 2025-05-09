@@ -13,15 +13,16 @@ import { FlatFileCoordinatorDataStore } from './dataStores/flatFileCoordinator.j
 import { FlatFileMiningPoolDataStore } from './dataStores/flatFileMiningPool.js'
 import { startWatchMiningPoolChainLoop } from './miningPoolChainLoop.js'
 
+interface ServiceConfig {
+	connection: Connection
+	websocketRpcUrl?: string
+	addressOverride?: string
+	minSlot: number
+}
+
 export function startIndexingChainToDataStores(
-	coordinator: {
-		connection: Connection
-		addressOverride?: string
-	},
-	miningPool: {
-		connection: Connection
-		addressOverride?: string
-	}
+	coordinator: ServiceConfig,
+	miningPool: ServiceConfig
 ): {
 	cancel: () => void
 	coordinator: { stopped: Promise<void>; dataStore: CoordinatorDataStore }
@@ -52,9 +53,15 @@ export function startIndexingChainToDataStores(
 		stateDirectory,
 		coordinatorProgram.programId
 	)
+	const coordinatorWebsocketRpcUrl =
+		coordinator.websocketRpcUrl ??
+		coordinator.connection.rpcEndpoint.replace('http', 'ws')
+
 	startWatchCoordinatorChainLoop(
 		coordinatorDataStore,
 		coordinatorProgram,
+		coordinatorWebsocketRpcUrl,
+		coordinator.minSlot,
 		cancelled
 	)
 		.catch(coordinatorRej)
@@ -72,24 +79,32 @@ export function startIndexingChainToDataStores(
 			: (miningPoolIdl as any),
 		miningPool
 	)
+
 	const miningPoolDataStore = new FlatFileMiningPoolDataStore(
 		stateDirectory,
 		miningPoolProgram.programId
 	)
-
-	console.log('Initializing watch chain loop for coordinator & mining pool:')
-	console.log(`Coordinator ProgramID: ${coordinatorProgram.programId}`)
-	console.log(`Coordinator RPC: ${coordinator.connection.rpcEndpoint}`)
-	console.log(`MiningPool ProgramID: ${miningPoolProgram.programId}`)
-	console.log(`MiningPool RPC: ${miningPool.connection.rpcEndpoint}`)
+	const miningPoolWebsocketRpcUrl =
+		miningPool.websocketRpcUrl ??
+		miningPool.connection.rpcEndpoint.replace('http', 'ws')
 
 	startWatchMiningPoolChainLoop(
 		miningPoolDataStore,
 		miningPoolProgram,
+		miningPoolWebsocketRpcUrl,
+		miningPool.minSlot,
 		cancelled
 	)
 		.catch(miningPoolRej)
 		.then(miningPoolRes)
+
+	console.log('Initializing watch chain loop for coordinator & mining pool:')
+	console.log(`Coordinator ProgramID: ${coordinatorProgram.programId}`)
+	console.log(`Coordinator RPC: ${coordinator.connection.rpcEndpoint}`)
+	console.log(`Coordinator websocket RPC: ${coordinatorWebsocketRpcUrl}`)
+	console.log(`MiningPool ProgramID: ${miningPoolProgram.programId}`)
+	console.log(`MiningPool RPC: ${miningPool.connection.rpcEndpoint}`)
+	console.log(`MiningPool websocket RPC: ${miningPoolWebsocketRpcUrl}`)
 
 	return {
 		coordinator: {

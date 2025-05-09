@@ -104,6 +104,8 @@
           configName,
           backendSecret,
           miningPoolRpc,
+          coordinatorCluster,
+          miningPoolCluster,
           hostnames ? [ ],
         }:
         inputs.nixpkgs.lib.nixosSystem {
@@ -113,14 +115,18 @@
             (psyche-website-backend backendSecret)
             (
               {
-                config,
                 pkgs,
                 ...
               }:
               let
                 backendPath = "/api";
                 psyche-website-frontend = pkgs.callPackage ../website/frontend {
-                  inherit miningPoolRpc backendPath;
+                  inherit
+                    miningPoolRpc
+                    backendPath
+                    coordinatorCluster
+                    miningPoolCluster
+                    ;
                 };
               in
               {
@@ -133,8 +139,7 @@
                     cfg = ''
                       handle {
                         root * ${psyche-website-frontend}
-                        try_files {path} /index.html
-                        file_server
+                        ${serveStaticSpa}
                       }
 
                       handle_path ${backendPath}/* {
@@ -164,6 +169,37 @@
 
       mainnetFrontendRpc = "https://quentin-uzfsvh-fast-mainnet.helius-rpc.com";
       devnetFrontendRpc = "https://bree-dtgg3j-fast-devnet.helius-rpc.com";
+
+      serveStaticSpa = ''
+        # we want index.html to have no cache, since it's tiny
+        # but all other files to be cached.
+        # since there's multiple paths that serve index.html,
+        # we only cache files that "exist", and skip caching
+        # on files that don't (and index.html)
+
+        @index_html path /index.html
+        header @index_html Cache-Control "no-cache, no-store, must-revalidate"
+        header @index_html Pragma "no-cache" 
+        header @index_html Expires "0"
+
+
+        @existing_non_index {
+            file {path}
+            not path /index.html
+        }
+        file_server @existing_non_index
+
+        @spa_routes {
+          not file {path}
+        }
+
+        header @spa_routes Cache-Control "no-cache, no-store, must-revalidate"
+        header @spa_routes Pragma "no-cache" 
+        header @spa_routes Expires "0"
+        rewrite @spa_routes /index.html
+
+        file_server
+      '';
     in
     {
       # server for hosting the frontend/backend, for testing
@@ -172,12 +208,16 @@
         hostnames = [ "devnet-preview.psyche.network" ];
         backendSecret = ../secrets/devnet/backend.age;
         miningPoolRpc = devnetFrontendRpc;
+        coordinatorCluster = "devnet";
+        miningPoolCluster = "devnet";
       };
       nixosConfigurations."psyche-http-mainnet" = persistentPsycheWebsite {
         configName = "psyche-http-mainnet";
         hostnames = [ "mainnet-preview.psyche.network" ];
         backendSecret = ../secrets/mainnet/backend.age;
         miningPoolRpc = mainnetFrontendRpc;
+        coordinatorCluster = "devnet";
+        miningPoolCluster = "mainnet";
       };
 
       # server for hosting the mainnet docs & frontend/backend.
@@ -188,7 +228,6 @@
           (psyche-website-backend ../secrets/mainnet/backend.age)
           (
             {
-              config,
               pkgs,
               ...
             }:
@@ -197,6 +236,8 @@
               psyche-website-frontend = pkgs.callPackage ../website/frontend {
                 miningPoolRpc = mainnetFrontendRpc;
                 inherit backendPath;
+                coordinatorCluster = "devnet";
+                miningPoolCluster = "mainnet";
               };
             in
             {
@@ -217,8 +258,7 @@
                   "https://mainnet.psyche.network".extraConfig = ''
                     handle {
                       root * ${psyche-website-frontend}
-                      try_files {path} /index.html
-                      file_server
+                      ${serveStaticSpa}
                     }
 
                     handle_path ${backendPath}/* {

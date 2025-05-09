@@ -349,17 +349,14 @@ type DecodeDefinedFields<
 	Defined,
 > = F extends IdlDefinedFieldsNamed
 	? {
-			[F2 in F[number] as F2['name']]: DecodeDefinedField<
-				F2['type'],
-				Defined
-			>
+			[F2 in F[number] as F2['name']]: DecodeDefinedField<F2['type'], Defined>
 		}
 	: F extends IdlDefinedFieldsTuple
 		? {
-				[F3 in keyof F as Exclude<
-					F3,
-					keyof unknown[]
-				>]: DecodeDefinedField<F[F3], Defined>
+				[F3 in keyof F as Exclude<F3, keyof unknown[]>]: DecodeDefinedField<
+					F[F3],
+					Defined
+				>
 			}
 		: Record<string, never>
 
@@ -464,10 +461,7 @@ type InstructionDataUnion<I extends Idl> = {
 							{ name: K }
 						>['args'][number]['name']]: DecodeType<
 							Extract<
-								Extract<
-									AllInstructions<I>,
-									{ name: K }
-								>['args'][number],
+								Extract<AllInstructions<I>, { name: K }>['args'][number],
 								{ name: Key }
 							>['type'],
 							IdlTypes<I>
@@ -515,14 +509,18 @@ export type PsycheCoordinatorInstructionsUnion = ToSnakeCaseObject<
 
 type Extends<T, U> = T extends U ? T : never
 
-export type WitnessMetadata = Extends<PsycheCoordinatorInstructionsUnion, {name: "witness"}>["data"]["metadata"]
-export type WitnessEvalResult = IdlTypes<PsycheSolanaCoordinator>["witnessEvalResult"]
-
-
+export type WitnessMetadata = Extends<
+	PsycheCoordinatorInstructionsUnion,
+	{ name: 'witness' }
+>['data']['metadata']
+export type WitnessEvalResult =
+	IdlTypes<PsycheSolanaCoordinator>['witnessEvalResult']
 
 export type PsycheMiningPoolInstructionsUnion = ToSnakeCaseObject<
 	InstructionDataUnion<PsycheSolanaMiningPool>
 >
 
-export type PsycheMiningPoolAccount = IdlAccounts<PsycheSolanaMiningPool>["pool"]
-export type PsycheMiningPoolLenderAccount = IdlAccounts<PsycheSolanaMiningPool>["lender"]
+export type PsycheMiningPoolAccount =
+	IdlAccounts<PsycheSolanaMiningPool>['pool']
+export type PsycheMiningPoolLenderAccount =
+	IdlAccounts<PsycheSolanaMiningPool>['lender']

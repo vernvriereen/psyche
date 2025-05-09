@@ -19,6 +19,7 @@
   - [Client FAQ](./enduser/client-faq.md)
 
 - [Development](./development/index.md)
+
   - [Setup & Useful Commands](./development/setup.md)
   - [Running on-chain](./development/running-onchain.md)
   - [Running off-chain](./development/running-offchain.md)

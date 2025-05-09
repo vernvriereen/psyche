@@ -32,12 +32,12 @@ max_round_train_time = 30
 round_witness_time = 1
 
 # number of clients that need to be active for an epoch to continue on.
-# if the number of clients goes below this number, we initiate a Cooldown and then back to WaitingForClients.
+# if the number of clients goes below this number, we initiate a Cooldown and then back to WaitingForMembers.
 # this should be adjusted alongside max_round_train_time, because one client will train a lot slower
 # than 100.
 min_clients = 1
 
-# minumum number of clients required before we transition from WaitingForClients to Warmup.
+# minumum number of clients required before we transition from WaitingForMembers to Warmup.
 # must be equal to or greater than min_clients
 init_min_clients = 1
 

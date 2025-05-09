@@ -12,8 +12,6 @@ let
 
   craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
 
-  solanaRustToolchain = inputs.solana-pkgs.packages.${system}.solana-rust;
-
   testResourcesFilter =
     path: _type:
     (builtins.match ".*tests/resources/.*$" path != null)

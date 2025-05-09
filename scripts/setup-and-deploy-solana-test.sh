@@ -17,7 +17,7 @@ cleanup() {
 }
 
 trap cleanup INT EXIT
-solana-test-validator -r 1>/dev/null &
+solana-test-validator --limit-ledger-size 10000000 -r 1>/dev/null &
 echo -e "\n[+] Started test validator!"
 
 sleep 3

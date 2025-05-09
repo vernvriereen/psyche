@@ -14,18 +14,18 @@ num_clients=$1
 source ./config/client/.env
 
 if [[ "$RPC" == "" ]]; then
-   echo -e "\n[!] The RPC env variable was not set."
-   exit 1
+    echo -e "\n[!] The RPC env variable was not set."
+    exit 1
 fi
 
 if [[ "$WS_RPC" == "" ]]; then
-   echo -e "\n[!] The WS_RPC env variable was not set."
-   exit 1
+    echo -e "\n[!] The WS_RPC env variable was not set."
+    exit 1
 fi
 
 if [[ "$RUN_ID" == "" ]]; then
-   echo -e "\n[!] The RUN_ID env variable was not set."
-   exit 1
+    echo -e "\n[!] The RUN_ID env variable was not set."
+    exit 1
 fi
 
 if [[ ! -d "$funded_accounts_folder" ]]; then
@@ -71,11 +71,11 @@ for i in $(seq 1 "$num_clients"); do
         -e NVIDIA_DRIVER_CAPABILITIES=all \
         --add-host=host.docker.internal:host-gateway \
         psyche-client train \
-            --wallet-private-key-path "/keys/id.json" \
-            --rpc ${RPC} \
-            --ws-rpc ${WS_RPC} \
-            --run-id ${RUN_ID} \
-            --logs "json"
+        --wallet-private-key-path "/keys/id.json" \
+        --rpc ${RPC} \
+        --ws-rpc ${WS_RPC} \
+        --run-id ${RUN_ID} \
+        --logs "json"
 
     echo "Started psyche-client-${i} on GPU $gpu_id"
 done

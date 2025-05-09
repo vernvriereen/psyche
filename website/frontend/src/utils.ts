@@ -29,7 +29,8 @@ export function formatNumber(
 	}
 
 	if (num < 1000) {
-		return num.toString()
+		const fixed = num.toFixed(decimals)
+		return fixed.replace(/\.?0+$/, '') + (space ? ' ' : '')
 	}
 
 	let suffixIndex = suffixes.length - 1
@@ -98,27 +99,14 @@ type MappedObject<T extends object, V> = {
 }
 export function metricToGraph<
 	T extends Record<string, number | Record<string, number>>,
->(
-	data: OverTime<T>,
-	maxItems: number
-): MappedObject<T, Array<{ x: number; y: number }>> {
+>(data: OverTime<T>): MappedObject<T, Array<{ x: number; y: number }>> {
 	const result: Record<string, any> = {}
 	for (const [key, value] of Object.entries(data)) {
 		if (Array.isArray(value)) {
-			const graphData = fairSample(value, maxItems).map(
-				({ step, value }) => ({
-					x: step,
-					y: value,
-				})
-			)
-
-			result[key] = graphData
+			result[key] = value.map(([x, y]) => ({ x, y }))
 		} else if (typeof value === 'object') {
 			const nestedResults = metricToGraph(
-				value as OverTime<
-					Record<string, number | Record<string, number>>
-				>,
-				maxItems
+				value as OverTime<Record<string, number | Record<string, number>>>
 			)
 			result[key] = nestedResults
 		}
@@ -126,26 +114,22 @@ export function metricToGraph<
 	return result as MappedObject<T, Array<{ x: number; y: number }>>
 }
 
-// sample n items, always including the first and last items.
-function fairSample<T>(array: T[], sampleSize: number) {
-	const length = array.length
+export type SolanaCluster = 'mainnet' | 'devnet' | string
 
-	if (length === 0) return []
-
-	if (sampleSize >= length || sampleSize <= 2) {
-		return [...array]
+function solanaFmCluster(network: SolanaCluster) {
+	if (network === 'mainnet') {
+		return 'mainnet-alpha'
 	}
-
-	const result = [array[0]]
-
-	const step = (length - 1) / (sampleSize - 1)
-
-	for (let i = 1; i < sampleSize - 1; i++) {
-		const index = Math.round(i * step)
-		result.push(array[index])
+	if (network === 'devnet') {
+		return 'devnet-alpha'
 	}
+	return encodeURIComponent(`custom-${network}`)
+}
 
-	result.push(array[length - 1])
+export function solanaAccountUrl(account: string, network: SolanaCluster) {
+	return `https://solana.fm/address/${account}?cluster=${solanaFmCluster(network)}`
+}
 
-	return result
+export function solanaTxUrl(tx: string, network: SolanaCluster) {
+	return `https://solana.fm/tx/${tx}?cluster=${solanaFmCluster(network)}`
 }

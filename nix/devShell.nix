@@ -52,11 +52,18 @@
           pnpm
           wasm-pack
         ];
+
+        # fmt as precommit hook
+        pre-commit.settings.hooks.treefmt.enable = true;
+
         shellHook = ''
           source ${lib.getExe config.agenix-shell.installationScript}
+          ${config.pre-commit.installationScript}
           # put nixglhost paths in LD_LIBRARY_PATH so you can use gpu stuff on non-NixOS
           # the docs for nix-gl-host say this is a dangerous footgun but.. yolo
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(${pkgs.nix-gl-host}/bin/nixglhost -p)
+
+          echo "Welcome to the Psyche development shell.";
         '';
       };
     };

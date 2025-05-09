@@ -24,17 +24,17 @@ builds:
   # and duplicating work in garnix causes big big compute overspend.
   - exclude: []
     include:
-      - "packages.x86_64-linux.psyche-solana-client"
-      - "packages.x86_64-linux.psyche-centralized-client"
-      - "packages.x86_64-linux.psyche-centralized-server"
-      - "packages.x86_64-linux.psyche-centralized-local-testnet"
-      - "packages.x86_64-linux.expand-distro"
+      - 'packages.x86_64-linux.psyche-solana-client'
+      - 'packages.x86_64-linux.psyche-centralized-client'
+      - 'packages.x86_64-linux.psyche-centralized-server'
+      - 'packages.x86_64-linux.psyche-centralized-local-testnet'
+      - 'packages.x86_64-linux.expand-distro'
       - devShell.x86_64-linux
       - nixosConfigurations.*
-      - "checks.*.*"
+      - 'checks.*.*'
 
   # on main, might as well build everything, though
   - exclude: []
     include:
-      - "packages.x86_64-linux.*"
+      - 'packages.x86_64-linux.*'
     branch: main

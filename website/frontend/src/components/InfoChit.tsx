@@ -8,15 +8,24 @@ const Chit = styled.div`
 	flex-direction: column;
 	align-items: center;
 	justify-content: space-between;
+	padding: 4px 8px;
+	box-shadow:
+		inset -1px -1px 0px rgba(0, 0, 0, 0.5),
+		inset 1px 1px 0px rgba(255, 255, 255, 0.5);
 `
 
 const ChitValue = styled.span`
-	background: var(--color-bg);
 	padding: 2px 4px;
 
 	.theme-dark & {
-		background: ${forest[600]};
 		color: ${slate[0]};
+	}
+`
+
+const ChitLabel = styled.span`
+	color: ${slate[600]};
+	.theme-dark & {
+		color: ${forest[300]};
 	}
 `
 
@@ -26,10 +35,8 @@ export function InfoChit({
 }: PropsWithChildren<{ label: string }>) {
 	return (
 		<Chit>
-			<ChitValue className={text['body/sm/regular']}>
-				{children}
-			</ChitValue>
-			<span className={text['aux/xs/regular']}>{label}</span>
+			<ChitValue className={text['body/sm/regular']}>{children}</ChitValue>
+			<ChitLabel className={text['aux/xs/regular']}>{label}</ChitLabel>
 		</Chit>
 	)
 }
