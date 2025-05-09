@@ -111,9 +111,7 @@ export interface RunData {
 		checkpoint: HubRepo | null
 
 		round: number
-		epoch: number
 		config: {
-			numEpochs: number
 			roundsPerEpoch: number
 			minClients: number
 

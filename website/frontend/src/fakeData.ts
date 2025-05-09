@@ -243,13 +243,11 @@ export const fakeContributionInfo: ContributionInfo = {
 function makeFakeRunDataSeeded(seed = 1, step = 0, index = 0): RunData {
 	const seededRandom = createSeededRandom(seed)
 
-	const numEpochs = Math.round(seededRandom() * 300) + 10
 	const roundsPerEpoch = Math.round(seededRandom() * 10) + 10
 	const minClients = Math.round(seededRandom() * 10) + 2
 	const totalClients = minClients
 
 	const stepsPerEpoch = roundsPerEpoch + 2 + totalClients // +2 for warmup and cooldown, +n for num clients
-	const currentEpoch = Math.min(Math.floor(step / stepsPerEpoch), numEpochs - 1)
 	const epochStep = step % stepsPerEpoch
 
 	const clients = Array.from({ length: totalClients }, (_, i) => {
@@ -340,7 +338,6 @@ function makeFakeRunDataSeeded(seed = 1, step = 0, index = 0): RunData {
 			phase,
 			phaseStartTime: new Date(Date.now() - seededRandom() * 2_000),
 			round,
-			epoch: currentEpoch,
 			clients,
 			checkpoint: {
 				repo_id: 'PsycheFoundation/Skibbler',
@@ -353,7 +350,6 @@ function makeFakeRunDataSeeded(seed = 1, step = 0, index = 0): RunData {
 				roundWitnessTime: 2_000,
 				minClients,
 				roundsPerEpoch,
-				numEpochs,
 				lrSchedule: {
 					Cosine: {
 						base_lr: 4.0e-4,
