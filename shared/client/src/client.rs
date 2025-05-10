@@ -240,12 +240,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                                 run.apply_distro_result(hash, distro_result, None).await;
                                             },
                                             TransmittableDownload::ModelParameter(parameter) => {
+                                                info!("Download complete: parameter {}", parameter.name()?);
                                                 sharable_model.add_parameter(parameter).await?;
                                                 if sharable_model.is_download_complete() {
                                                     sharable_model.send_init_parameters()?;
                                                 }
                                             },
                                             TransmittableDownload::ModelConfig(config) => {
+                                                info!("Download complete: model config");
                                                 sharable_model.add_config(config)?;
                                                 sharable_model.send_config()?;
                                             },
