@@ -227,23 +227,14 @@ impl Trainer {
             return Ok(None);
         }
         let device = inputs.device();
-        if device.is_cuda() {
-            device.cuda_synchronize();
-        }
         let (_, loss) = model.forward(&inputs, Some(&targets), None);
         let mut loss = loss.ok_or(Error::msg("No loss"))?;
         if let Some(loss_scale) = loss_scale {
             loss /= loss_scale;
         }
-        if barrier.wait().is_err() {
-            return Ok(None);
-        }
+        loss.backward();
         if device.is_cuda() {
             device.cuda_synchronize();
-        }
-        loss.backward();
-        if barrier.wait().is_err() {
-            return Ok(None);
         }
         Ok(Some(loss.detach()))
     }
@@ -256,22 +247,16 @@ impl Trainer {
         num_logits_to_keeep: Option<i64>,
     ) -> Option<(Tensor, Option<Tensor>)> {
         let _guard = tch::no_grad_guard();
+        if barrier.wait().is_err() {
+            return None;
+        }
         let device = model.device();
         let inputs = data.to(device);
         let labels = labels.map(|x| x.to(device));
-        if barrier.wait().is_err() {
-            return None;
-        }
         let device = inputs.device();
-        if device.is_cuda() {
-            device.cuda_synchronize();
-        }
         let (logits, loss) = model.forward(&inputs, labels.as_ref(), num_logits_to_keeep);
         if device.is_cuda() {
             device.cuda_synchronize();
-        }
-        if barrier.wait().is_err() {
-            return None;
         }
         Some((logits, loss.map(|x| x.detach())))
     }
