@@ -289,7 +289,7 @@ async function main() {
 				errors: coordinator.errors,
 				trackedRuns: coordinator.dataStore
 					.getRunSummaries()
-					.runs.map((r) => ({ id: r.id, status: r.status })),
+					.runs.map((r) => ({ id: r.id, index: r.index, status: r.status })),
 				chain: {
 					chainSlotHeight: await coordinatorRpc.getSlot('confirmed'),
 					indexedSlot:

@@ -21,10 +21,11 @@ export const fakeIndexerStatus: IndexerStatus = {
 				'0xdeadbeefcafebabe0123456789abcdef0123456789abcdef0123456789abcdef',
 		},
 		trackedRuns: [
-			{ id: 'run-001', status: { type: 'active' } },
-			{ id: 'run-002', status: { type: 'funding' } },
+			{ id: 'run-001', index: 0, status: { type: 'active' } },
+			{ id: 'run-002', index: 0, status: { type: 'funding' } },
 			{
 				id: 'run-003',
+				index: 0,
 				status: {
 					type: 'completed',
 					at: {
