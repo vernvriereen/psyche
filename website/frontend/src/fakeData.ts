@@ -34,6 +34,7 @@ export const fakeIndexerStatus: IndexerStatus = {
 				},
 			},
 		],
+		errors: [],
 	},
 	miningPool: {
 		status: 'ok',
@@ -44,6 +45,7 @@ export const fakeIndexerStatus: IndexerStatus = {
 			networkGenesis:
 				'0xdeadbeefcafebabe0123456789abcdef0123456789abcdef0123456789abcdef',
 		},
+		errors: [],
 	},
 }
 

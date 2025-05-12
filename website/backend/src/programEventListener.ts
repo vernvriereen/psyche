@@ -161,7 +161,10 @@ export class ProgramEventListener {
 
 	private cleanup() {
 		if (this.websocket) {
-			if (this.websocket.readyState === WebSocket.OPEN) {
+			if (
+				this.websocket.readyState === WebSocket.OPEN ||
+				this.websocket.readyState === WebSocket.CONNECTING
+			) {
 				this.websocket.close()
 			}
 			this.websocket = null

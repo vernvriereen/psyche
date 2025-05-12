@@ -287,12 +287,14 @@ export interface IndexerStatus {
 
 export interface CoordinatorStatus {
 	status: 'ok' | string
+	errors: Array<{ time: Date; error: unknown }>
 	chain: ChainStatus
 	trackedRuns: Array<{ id: string; status: RunStatus }>
 }
 
 export interface MiningPoolStatus {
 	status: 'ok' | string
+	errors: Array<{ time: Date; error: unknown }>
 	chain: ChainStatus
 }
 
