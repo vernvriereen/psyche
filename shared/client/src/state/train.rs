@@ -123,7 +123,7 @@ impl TrainingStep {
 
         let finished = self.finished.clone();
 
-        let trainers = self
+        let trainers: FinishedTrainers = self
             .applying_and_training
             .await
             .map_err(|_| TrainError::TrainCrashed)??;
@@ -236,12 +236,13 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
 
         let warmup_lr_between = state.get_cold_start_warmup_bounds();
         let zero_optim = warmup_lr_between.is_some_and(|_| round.height == 0);
+        let epoch = state.progress.epoch;
 
         info!(
             integration_test_log_marker = %IntegrationTestLogMarker::WitnessElected,
             step = state.progress.step,
             round = round.height,
-            epoch = state.progress.epoch,
+            epoch = epoch,
             index = client_index,
             comittee_position = committee_proof.position,
             committee = %committee_proof.committee,
@@ -250,7 +251,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
             warmup_lr_between = ?warmup_lr_between,
             assigned_batches = ?get_batch_ids_for_node(&data_assignments, &self.identity),
             "Got training assignment for step {} (round {}/epoch {}): index={} committee position={} committee={} witness position={} witness={} warmup_lr_between={:?}",
-            state.progress.step, round.height, state.progress.epoch, client_index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness, warmup_lr_between
+            state.progress.step, round.height, epoch, client_index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness, warmup_lr_between
         );
         let eval_runner = self.eval_runner.clone();
         let finished = Arc::new(AtomicBool::new(false));
@@ -510,6 +511,7 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
             model::Model::LLM(llm) => llm.cold_start_warmup_steps,
         };
         let warmup_lr_between = state.get_cold_start_warmup_bounds();
+        let epoch = state.progress.epoch;
 
         // coordinator has already advanced to the next round (unless we're in cooldown) but we haven't started ours yet.
         // so our current_round corresponds to the coordinator's previous_round
@@ -602,10 +604,10 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
 
                     match maybe_results {
                         Ok((results, trainer_nonce)) => {
-                            if trainer_nonce < cold_start_warmup_steps && step > cold_start_warmup_steps && warmup_lr_between.is_none()  {
+                            if trainer_nonce < cold_start_warmup_steps && epoch != 0 && warmup_lr_between.is_none()  {
                                 // results are not actually applied for the first cold_start_warmup_steps of a trainer's lifetime
                                 // note, we are relying on honest communication of this value here -- will need to harden with verification.
-                                // the only exception is for the first steps of the first epoch (step <= cold_start_warmup_steps)
+                                // the only exception is for the first steps of the first epoch 
                                 // or when doing a cold start (warmup_lr_between.is_some())
                                 info!("Skipping apply of batch {batch_id}, trainer warming up ({trainer_nonce}/{cold_start_warmup_steps})");
                             } else {
