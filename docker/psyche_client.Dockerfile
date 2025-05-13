@@ -12,6 +12,7 @@ ENV LD_LIBRARY_PATH=/usr/home/libtorch/lib
 
 # Copy the psyche client binary from base
 COPY --from=base /usr/src/psyche/target/release/psyche-solana-client /usr/local/bin/psyche-solana-client
+COPY --from=base /usr/src/psyche/target/release/psyche-centralized-client /usr/local/bin/psyche-centralized-client
 COPY --from=base /usr/src/psyche/target/release/examples/inference /usr/local/bin/inference
 COPY --from=base /usr/src/psyche/target/release/examples/train /usr/local/bin/train
 COPY ./docker/train_entrypoint.sh /usr/local
