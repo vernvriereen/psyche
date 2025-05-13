@@ -270,7 +270,8 @@
                     '';
 
                     "https://mainnet.psyche.network".extraConfig = psyche-website;
-                    "https://psyche-http.main.psyche.*.garnix.me/".extraConfig = psyche-website;
+                    "https://psyche-http.main.psyche.nousresearch.garnix.me/".extraConfig = psyche-website;
+                    "https://psyche-http.main.psyche.psychefoundation.garnix.me/".extraConfig = psyche-website;
                   };
               };
             }
