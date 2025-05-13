@@ -1020,6 +1020,16 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> RunManager<T, A> {
         }
         Ok(())
     }
+
+    pub fn doing_checkpoint(&self) -> bool {
+        match &self.0 {
+            InitStage::Running(step_state_machine) => match &step_state_machine.active_step {
+                ActiveStep::Cooldown(cooldown_step) => cooldown_step.doing_checkpoint(),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
 }
 
 impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> From<&RunManager<T, A>>

@@ -123,11 +123,16 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                 let mut sharing_downloadable_interval = interval(REBROADCAST_SHAREABLE);
                 let mut retry_check_interval = interval(DOWNLOAD_RETRY_CHECK_INTERVAL);
                 let mut opprotunistic_witness_interval = interval(OPPROTUNISTIC_WITNESS_INTERVAL);
+                let mut wait_for_checkpoint = false;
                 debug!("Starting client loop");
 
                 loop {
                     select! {
                         _ = cancel.cancelled() => {
+                            info!("Got request to cancel main client loop");
+                            if run.doing_checkpoint() {
+                                wait_for_checkpoint = true;
+                            }
                             break;
                         }
 
@@ -570,6 +575,17 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         else => break
                     }
                 }
+
+                info!("Main client loop ended");
+
+                if wait_for_checkpoint {
+                    info!("Waiting for checkpoint to finish");
+                    if let Some(checkpoint) = rx_checkpoint.recv().await {
+                        watcher.backend_mut().send_checkpoint(checkpoint).await?;
+                    }
+                    info!("Checkpoint finished, exiting main client loop");
+                }
+
                 Ok(())
             }
         });
