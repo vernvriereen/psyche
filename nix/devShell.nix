@@ -19,6 +19,13 @@
         ;
     in
     {
+
+      # fmt as precommit hook
+      pre-commit = {
+        check.enable = false;
+        settings.hooks.treefmt.enable = true;
+      };
+
       devShells.default = pkgs.mkShell {
         inputsFrom = [
           buildWholeWorkspace
@@ -52,9 +59,6 @@
           pnpm
           wasm-pack
         ];
-
-        # fmt as precommit hook
-        pre-commit.settings.hooks.treefmt.enable = true;
 
         shellHook = ''
           source ${lib.getExe config.agenix-shell.installationScript}
