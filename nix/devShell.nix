@@ -10,6 +10,8 @@
       config,
       pkgs,
       lib,
+      inputs',
+      self',
       ...
     }:
     let
@@ -29,7 +31,7 @@
       devShells.default = pkgs.mkShell {
         inputsFrom = [
           buildWholeWorkspace
-          self.packages.${system}.psyche-book
+          self'.packages.psyche-book
         ];
         inherit env;
         buildInputs = with pkgs; [
@@ -49,7 +51,7 @@
           pkgs.nix-gl-host
 
           # solana
-          inputs.solana-pkgs.packages.${system}.default
+          inputs'.solana-pkgs.packages.default
 
           # nixfmt
           nixfmt-rfc-style
