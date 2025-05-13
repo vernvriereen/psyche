@@ -41,11 +41,11 @@ pub struct RunCreateAccounts<'info> {
 
     /// CHECK: This is only used and checked in the CPI to the coordinator program
     #[account(mut)]
-    pub coordinator_instance: SystemAccount<'info>,
+    pub coordinator_instance: UncheckedAccount<'info>,
 
     /// CHECK: This is only used and checked in the CPI to the coordinator program
     #[account(mut)]
-    pub coordinator_account: SystemAccount<'info>,
+    pub coordinator_account: UncheckedAccount<'info>,
 
     #[account()]
     pub coordinator_program: Program<'info, PsycheSolanaCoordinator>,
