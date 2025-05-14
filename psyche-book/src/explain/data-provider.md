@@ -71,4 +71,5 @@ The required configuration depends on the data provider implementation being use
      - A shuffle seed, if data shuffling is desired.
 
 3. **Local Provider**:
+
    - Simply point to the folder where the data should be loaded from.

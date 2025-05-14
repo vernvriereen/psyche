@@ -10,6 +10,8 @@
       config,
       pkgs,
       lib,
+      inputs',
+      self',
       ...
     }:
     let
@@ -19,10 +21,17 @@
         ;
     in
     {
+
+      # fmt as precommit hook
+      pre-commit = {
+        check.enable = false;
+        settings.hooks.treefmt.enable = true;
+      };
+
       devShells.default = pkgs.mkShell {
         inputsFrom = [
           buildWholeWorkspace
-          self.packages.${system}.psyche-book
+          self'.packages.psyche-book
         ];
         inherit env;
         buildInputs = with pkgs; [
@@ -42,7 +51,7 @@
           pkgs.nix-gl-host
 
           # solana
-          inputs.solana-pkgs.packages.${system}.default
+          inputs'.solana-pkgs.packages.default
 
           # nixfmt
           nixfmt-rfc-style
@@ -52,11 +61,15 @@
           pnpm
           wasm-pack
         ];
+
         shellHook = ''
           source ${lib.getExe config.agenix-shell.installationScript}
+          ${config.pre-commit.installationScript}
           # put nixglhost paths in LD_LIBRARY_PATH so you can use gpu stuff on non-NixOS
           # the docs for nix-gl-host say this is a dangerous footgun but.. yolo
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(${pkgs.nix-gl-host}/bin/nixglhost -p)
+
+          echo "Welcome to the Psyche development shell.";
         '';
       };
     };

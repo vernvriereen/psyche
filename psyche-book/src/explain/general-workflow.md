@@ -1,6 +1,7 @@
 # General Workflow
 
 ## Client
+
 A client is an active participant responsible for executing the training tasks within a run. It handles assigned data batches for training, generates commitments, and participates in the witness process when elected to validate the work of its peers. Each client maintains its own state synchronized with the Coordinator.
 
 ## Coordinator
@@ -126,7 +127,7 @@ sequenceDiagram
     Note over Client1: Train
     Note over Client2: Train
     Note over Client2: Fill bloom filters
-    Client2->>Backend: try send optimistic witness
+    Client2->>Backend: try send opportunistic witness
     Backend->>Coordinator: Witness message
     Note over Coordinator: Enough witnesses for round
     Coordinator->>Coordinator: Update state to RoundWitness

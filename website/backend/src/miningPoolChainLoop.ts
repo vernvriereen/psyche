@@ -8,14 +8,20 @@ import { getMint } from '@solana/spl-token'
 export async function startWatchMiningPoolChainLoop(
 	dataStore: MiningPoolDataStore,
 	miningPool: Program<PsycheSolanaMiningPool>,
-	cancelled: { cancelled: boolean }
+	websocketRpcUrl: string,
+	minSlot: number,
+	cancelled: { cancelled: boolean },
+	onError: (error: unknown) => void
 ) {
 	const ourPool = getMiningPoolPDA(miningPool.programId, 0n)
 	await startWatchChainLoop<PsycheMiningPoolInstructionsUnion>()(
 		'mining pool',
 		dataStore,
 		miningPool,
+		websocketRpcUrl,
+		minSlot,
 		cancelled,
+		onError,
 		{
 			onStartCatchup(firstStateEver) {
 				return {
@@ -41,21 +47,26 @@ export async function startWatchMiningPoolChainLoop(
 			},
 			async onDoneCatchup(store, state) {
 				if (state.mainAccountUpdated) {
-					const account = await miningPool.account.pool.fetch(ourPool)
+					const account = await miningPool.account.pool.fetch(
+						ourPool,
+						'processed'
+					)
 					store.setFundingData(account)
-					if(!store.hasCollateralInfo()) {
-						const {decimals} = await getMint(miningPool.provider.connection, account.collateralMint)
+					if (!store.hasCollateralInfo()) {
+						const { decimals } = await getMint(
+							miningPool.provider.connection,
+							account.collateralMint
+						)
 						store.setCollateralInfo(account.collateralMint.toString(), decimals)
 					}
 				}
-				const updatedAddresses = [
-					...state.userAccountsUpdated.values(),
-				].map((s) => s.split(':') as [string, string])
-				for (const 
-					[user, lenderAccountAddress]
-				 of updatedAddresses) {
+				const updatedAddresses = [...state.userAccountsUpdated.values()].map(
+					(s) => s.split(':') as [string, string]
+				)
+				for (const [user, lenderAccountAddress] of updatedAddresses) {
 					const account = await miningPool.account.lender.fetch(
-						lenderAccountAddress
+						lenderAccountAddress,
+						'processed'
 					)
 					if (!account) {
 						console.warn(
@@ -63,6 +74,9 @@ export async function startWatchMiningPoolChainLoop(
 						)
 						continue
 					}
+					console.log(
+						`[mining pool] new user amount for ${user} is ${account.depositedCollateralAmount.toString()}`
+					)
 					store.setUserAmount(
 						user,
 						BigInt(account.depositedCollateralAmount.toString())

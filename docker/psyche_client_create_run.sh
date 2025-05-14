@@ -22,18 +22,18 @@ if [[ ! -f "$WALLET_FILE" ]]; then
 fi
 
 if [[ "$RPC" == "" ]]; then
-   echo -e "\n[!] The RPC env variable was not set."
-   exit 1
+    echo -e "\n[!] The RPC env variable was not set."
+    exit 1
 fi
 
 if [[ "$WS_RPC" == "" ]]; then
-   echo -e "\n[!] The WS_RPC env variable was not set."
-   exit 1
+    echo -e "\n[!] The WS_RPC env variable was not set."
+    exit 1
 fi
 
 if [[ "$RUN_ID" == "" ]]; then
-   echo -e "\n[!] The RUN_ID env variable was not set."
-   exit 1
+    echo -e "\n[!] The RUN_ID env variable was not set."
+    exit 1
 fi
 
 if [[ "$CONFIG_PATH" == "" ]]; then
@@ -52,26 +52,26 @@ docker run --rm -v "$WALLET_FILE":/keys/id.json \
     --add-host=host.docker.internal:host-gateway \
     --entrypoint /usr/local/bin/psyche-solana-client \
     psyche-client \
-        create-run \
-        --wallet-private-key-path "/keys/id.json" \
-        --rpc ${RPC} \
-        --ws-rpc ${WS_RPC} \
-        --run-id ${RUN_ID}
+    create-run \
+    --wallet-private-key-path "/keys/id.json" \
+    --rpc ${RPC} \
+    --ws-rpc ${WS_RPC} \
+    --run-id ${RUN_ID}
 
 echo -e "\n[+] Training run created successfully!"
 echo -e "\n[+] Uploading model config..."
 
 docker run --rm -v "$WALLET_FILE":/keys/id.json \
-           -v "$CONFIG_PATH":/model_config/config.toml \
-           --add-host=host.docker.internal:host-gateway \
+    -v "$CONFIG_PATH":/model_config/config.toml \
+    --add-host=host.docker.internal:host-gateway \
     --entrypoint /usr/local/bin/psyche-solana-client \
     psyche-client \
-        update-config \
-        --wallet-private-key-path "/keys/id.json" \
-        --rpc ${RPC} \
-        --ws-rpc ${WS_RPC} \
-        --run-id ${RUN_ID} \
-        --config-path "/model_config/config.toml"
+    update-config \
+    --wallet-private-key-path "/keys/id.json" \
+    --rpc ${RPC} \
+    --ws-rpc ${WS_RPC} \
+    --run-id ${RUN_ID} \
+    --config-path "/model_config/config.toml"
 
 echo -e "\n[+] Model config uploaded successfully"
 
@@ -79,11 +79,11 @@ docker run --rm -v "$WALLET_FILE":/keys/id.json \
     --add-host=host.docker.internal:host-gateway \
     --entrypoint /usr/local/bin/psyche-solana-client \
     psyche-client \
-        set-paused \
-        --wallet-private-key-path "/keys/id.json" \
-        --rpc ${RPC} \
-        --ws-rpc ${WS_RPC} \
-        --run-id ${RUN_ID} \
-        --resume
+    set-paused \
+    --wallet-private-key-path "/keys/id.json" \
+    --rpc ${RPC} \
+    --ws-rpc ${WS_RPC} \
+    --run-id ${RUN_ID} \
+    --resume
 
 echo -e "\n[+] Training run with run ID '${RUN_ID}' was set up succesfully!"

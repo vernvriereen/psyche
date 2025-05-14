@@ -55,14 +55,11 @@ export function Runtime({
 
 	// then we substract the time we spent paused from that
 	const elapsed =
-		(timeOfCurrentPause
-			? timeOfCurrentPause - start.valueOf()
-			: rawElapsed) - pauseDuration
+		(timeOfCurrentPause ? timeOfCurrentPause - start.valueOf() : rawElapsed) -
+		pauseDuration
 
 	const days = Math.floor(elapsed / (1000 * 60 * 60 * 24))
-	const hours = Math.floor(
-		(elapsed % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)
-	)
+	const hours = Math.floor((elapsed % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
 	const minutes = Math.floor((elapsed % (1000 * 60 * 60)) / (1000 * 60))
 	const seconds = Math.floor((elapsed % (1000 * 60)) / 1000)
 	return (

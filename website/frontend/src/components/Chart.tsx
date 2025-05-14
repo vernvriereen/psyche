@@ -11,6 +11,7 @@ import { useDarkMode } from 'usehooks-ts'
 import { forest, lime, slate } from '../colors.js'
 import { styled } from '@linaria/react'
 import { text } from '../fonts.js'
+import { css } from '@linaria/core'
 
 interface DataPoint {
 	x: number
@@ -63,22 +64,40 @@ const GraphContainer = styled.div`
 `
 
 const Title = styled.div`
-	color: ${(props) => props.color};
+	color: var(--color-fg);
 	pointer-events: none;
-	text-transform: uppercase;
 	display: flex;
 	justify-content: space-between;
+	padding: 0 4px;
+	border-left: 1.5px solid ${(props) => props.color};
+	border-right: 1.5px solid ${(props) => props.color};
+	background:
+		linear-gradient(
+				to right,
+				${(props) => props.color} 5px,
+				transparent 5px,
+				transparent calc(100% - 5px),
+				${(props) => props.color} calc(100% - 5px)
+			)
+			bottom/100% 1.5px no-repeat,
+		linear-gradient(
+				to right,
+				${(props) => props.color} 5px,
+				transparent 5px,
+				transparent calc(100% - 5px),
+				${(props) => props.color} calc(100% - 5px)
+			)
+			top/100% 1.5px no-repeat;
 `
 
+const uppercase = css`
+	text-transform: uppercase;
+`
 const WaitingForData = styled.div`
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	height: 100%;
-`
-
-const FgColor = styled.span`
-	color: var(--color-fg);
 `
 
 function findNiceDivisor(max: number, targetDivisions: number): number {
@@ -207,9 +226,7 @@ const LineGraphInner: React.FC<
 
 	const handleTooltip = useCallback(
 		(
-			event:
-				| React.TouchEvent<SVGRectElement>
-				| React.MouseEvent<SVGRectElement>
+			event: React.TouchEvent<SVGRectElement> | React.MouseEvent<SVGRectElement>
 		) => {
 			const { x } = localPoint(event) || { x: 0, y: 0 }
 			const xValue = xScale.invert(x - margin.left - padding.left)
@@ -220,9 +237,7 @@ const LineGraphInner: React.FC<
 
 			const point = line.points.reduce((closest, current) => {
 				const distance = Math.abs(current.x - xValue)
-				return distance < Math.abs(closest.x - xValue)
-					? current
-					: closest
+				return distance < Math.abs(closest.x - xValue) ? current : closest
 			})
 
 			const distance = Math.abs(point.x - xValue)
@@ -256,22 +271,6 @@ const LineGraphInner: React.FC<
 	const verticalGridColor = slate[isDarkMode ? 600 : 500]
 	const labelColor = isDarkMode ? forest[300] : slate[1000]
 
-	if (line.points.length < 2) {
-		return (
-			<GraphContainer>
-				{title && (
-					<Title
-						color={labelColor}
-						className={text['body/sm/semibold']}
-					>
-						{title}
-					</Title>
-				)}
-				<WaitingForData>waiting for data...</WaitingForData>
-			</GraphContainer>
-		)
-	}
-
 	const xDomain = xScale.domain() as [number, number]
 	const yDomain = yScale.domain() as [number, number]
 
@@ -288,6 +287,19 @@ const LineGraphInner: React.FC<
 		[yDomain, numYMarkers]
 	)
 
+	if (line.points.length < 2) {
+		return (
+			<GraphContainer>
+				{title && (
+					<Title color={labelColor} className={text['body/sm/semibold']}>
+						{title}
+					</Title>
+				)}
+				<WaitingForData>waiting for data...</WaitingForData>
+			</GraphContainer>
+		)
+	}
+
 	const centerLineThickness = 1
 	const plusSize = 6
 	const plusThickness = 1
@@ -298,15 +310,10 @@ const LineGraphInner: React.FC<
 		<GraphContainer>
 			{title && (
 				<Title color={labelColor} className={text['body/sm/semibold']}>
+					<span className={uppercase}>{title}</span>
 					<span>
-						[<FgColor>{title}</FgColor>
-					</span>
-					<span>
-						<FgColor>
-							{(renderValue ?? ((x) => x.toFixed(1)))(lastYValue)}
-							{line.unit}
-						</FgColor>
-						]
+						{(renderValue ?? ((x) => x.toFixed(1)))(lastYValue)}
+						{line.unit}
 					</span>
 				</Title>
 			)}
@@ -358,11 +365,7 @@ const LineGraphInner: React.FC<
 						tickComponent={({ formattedValue, ...tickProps }) => {
 							return (
 								formattedValue && (
-									<text
-										{...tickProps}
-										dy={'0.5ch'}
-										fill={labelColor}
-									>
+									<text {...tickProps} dy={'0.5ch'} fill={labelColor}>
 										{formattedValue}
 									</text>
 								)
@@ -378,16 +381,14 @@ const LineGraphInner: React.FC<
 						hideAxisLine
 						hideTicks
 						tickFormat={(value) =>
-							`${value.valueOf() >= 0 ? '' : '-'}${(renderValue ?? ((x) => x.toFixed(1)))(value.valueOf()).slice(0, 7)}`
+							`${value.valueOf() >= 0 ? '' : '-'}${(
+								renderValue ?? ((x) => x.toFixed(1))
+							)(value.valueOf()).slice(0, 7)}`
 						}
 						tickComponent={({ formattedValue, ...tickProps }) => {
 							return (
 								formattedValue && (
-									<text
-										{...tickProps}
-										dy={'0.5ch'}
-										fill={labelColor}
-									>
+									<text {...tickProps} dy={'0.5ch'} fill={labelColor}>
 										{formattedValue}
 									</text>
 								)

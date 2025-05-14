@@ -27,9 +27,7 @@ export function SymbolSeparatedItems({ children }: PropsWithChildren) {
 		<Links>
 			{Children.toArray(children).map((link, i) => (
 				<React.Fragment key={i}>
-					{i !== 0 && (
-						<Symbol06 className={c(lineHeightSymbol, iconClass)} />
-					)}
+					{i !== 0 && <Symbol06 className={c(lineHeightSymbol, iconClass)} />}
 					{link}
 				</React.Fragment>
 			))}

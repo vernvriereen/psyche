@@ -34,8 +34,8 @@ const ShadowContainer = styled.a`
 		outline-color: ${forest[400]};
 		border-color: ${forest[400]};
 	}
-	max-width: 192px;
-	min-width: 128px;
+	max-width: 216px;
+	min-width: 164px;
 
 	position: relative;
 

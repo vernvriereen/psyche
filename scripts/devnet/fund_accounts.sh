@@ -46,41 +46,41 @@ RECIPIENTS_FILE="$3"
 
 # Ensure the sender keypair file exists
 if [[ ! -f "$SENDER_KEYPAIR" ]]; then
-  echo "Error: Sender keypair file '$SENDER_KEYPAIR' not found."
-  usage
+    echo "Error: Sender keypair file '$SENDER_KEYPAIR' not found."
+    usage
 fi
 
 # Ensure NUM_ACCOUNTS is a positive integer
 if ! [[ "$NUM_ACCOUNTS" =~ ^[1-9][0-9]*$ ]]; then
-  echo "Error: NUM_ACCOUNTS must be a positive integer."
-  usage
+    echo "Error: NUM_ACCOUNTS must be a positive integer."
+    usage
 fi
 
 # If recipients file is not provided, generate new keypairs
 if [[ -z "$RECIPIENTS_FILE" ]]; then
-  echo "Recipients file not provided. The script will generate $NUM_ACCOUNTS new keypairs"
-  _continue?
+    echo "Recipients file not provided. The script will generate $NUM_ACCOUNTS new keypairs"
+    _continue?
 
-  KEY_DIR="devnet_funded_accounts"
-  mkdir -p "$KEY_DIR"
-  RECIPIENTS_FILE="$KEY_DIR/pubkeys.txt"
-  > "$RECIPIENTS_FILE" # Clear the file if it exists
+    KEY_DIR="devnet_funded_accounts"
+    mkdir -p "$KEY_DIR"
+    RECIPIENTS_FILE="$KEY_DIR/pubkeys.txt"
+    > "$RECIPIENTS_FILE" # Clear the file if it exists
 
-  for ((i=1; i<=NUM_ACCOUNTS; i++)); do
-    KEYPAIR_FILE="$KEY_DIR/keypair_$i.json"
-    solana-keygen new --no-passphrase --outfile "$KEYPAIR_FILE" --silent
-    PUBKEY=$(solana-keygen pubkey "$KEYPAIR_FILE")
-    echo "$PUBKEY" >> "$RECIPIENTS_FILE"
-    echo "Generated keypair $i: $PUBKEY"
-  done
+    for ((i=1; i<=NUM_ACCOUNTS; i++)); do
+        KEYPAIR_FILE="$KEY_DIR/keypair_$i.json"
+        solana-keygen new --no-passphrase --outfile "$KEYPAIR_FILE" --silent
+        PUBKEY=$(solana-keygen pubkey "$KEYPAIR_FILE")
+        echo "$PUBKEY" >> "$RECIPIENTS_FILE"
+        echo "Generated keypair $i: $PUBKEY"
+    done
 
-  echo "Generated keypairs saved to $KEY_DIR/ and pubkeys listed in $RECIPIENTS_FILE."
+    echo "Generated keypairs saved to $KEY_DIR/ and pubkeys listed in $RECIPIENTS_FILE."
 fi
 
 # Ensure recipients file exists
 if [[ ! -f "$RECIPIENTS_FILE" ]]; then
-  echo "Error: Recipients file '$RECIPIENTS_FILE' not found."
-  exit 1
+    echo "Error: Recipients file '$RECIPIENTS_FILE' not found."
+    exit 1
 fi
 
 accounts_in_file=$(grep -cve '^$' "$RECIPIENTS_FILE")
@@ -97,23 +97,23 @@ _continue?
 # Fund each recipient with the specified amount of SOL
 echo "Funding recipients..."
 while IFS= read -r RECIPIENT; do
-  if [[ -z "$RECIPIENT" ]]; then # Skip empty lines
-    continue
-  fi
+    if [[ -z "$RECIPIENT" ]]; then # Skip empty lines
+        continue
+    fi
 
-  echo "Sending $AMOUNT SOL to $RECIPIENT..."
+    echo "Sending $AMOUNT SOL to $RECIPIENT..."
 
-  solana transfer "$RECIPIENT" "$AMOUNT" --from "$SENDER_KEYPAIR" \
-    --fee-payer "$SENDER_KEYPAIR" --allow-unfunded-recipient
+    solana transfer "$RECIPIENT" "$AMOUNT" --from "$SENDER_KEYPAIR" \
+        --fee-payer "$SENDER_KEYPAIR" --allow-unfunded-recipient
 
-  # Check if the transfer was successful
-  if [[ $? -eq 0 ]]; then
-    echo "Success: Sent $AMOUNT SOL to $RECIPIENT"
-  else
-    echo "Error: Failed to send $AMOUNT SOL to $RECIPIENT"
-  fi
+    # Check if the transfer was successful
+    if [[ $? -eq 0 ]]; then
+        echo "Success: Sent $AMOUNT SOL to $RECIPIENT"
+    else
+        echo "Error: Failed to send $AMOUNT SOL to $RECIPIENT"
+    fi
 
-  echo "----------------------------------------"
+    echo "----------------------------------------"
 done < "$RECIPIENTS_FILE"
 
 echo "Funding complete."

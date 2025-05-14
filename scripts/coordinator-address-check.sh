@@ -9,13 +9,13 @@ cd ../solana-authorizer
 authorizer_address=$(grep -r --include='*.rs' 'declare_id!(' . | sed -n 's/.*declare_id!(\([^)]*\)).*/\1/p')
 
 if [ -z "$coordinator_address" ]; then
-  echo "Error: No declare_id! macro found for coordinator."
-  exit 1
+    echo "Error: No declare_id! macro found for coordinator."
+    exit 1
 fi
 
 if [ -z "$authorizer_address" ]; then
-  echo "Error: No declare_id! macro found for authorizer."
-  exit 1
+    echo "Error: No declare_id! macro found for authorizer."
+    exit 1
 fi
 
 echo -e "\nCoordinator address: ${coordinator_address}\n"

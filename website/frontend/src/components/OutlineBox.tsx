@@ -40,14 +40,18 @@ export function OutlineBox({
 	children,
 	title,
 	className,
+	titleClassName,
 }: PropsWithChildren<{
 	className?: string
+	titleClassName?: string
 	title: ReactNode
 }>) {
 	return (
 		<BoxContainer className={className}>
 			<BoxHeader>
-				<span className={c(boxHeaderChild, text['display/4xl'])}>
+				<span
+					className={c(boxHeaderChild, titleClassName ?? text['display/4xl'])}
+				>
 					{title}
 				</span>
 			</BoxHeader>

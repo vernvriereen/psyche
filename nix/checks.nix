@@ -5,16 +5,17 @@
 }:
 {
   perSystem =
-    { system, pkgs, ... }:
+    {
+      system,
+      pkgs,
+      self',
+      ...
+    }:
     let
       inherit (pkgs.psycheLib) craneLib rustWorkspaceArgs cargoArtifacts;
     in
     {
       checks = {
-        workspace-format = craneLib.cargoFmt {
-          inherit (pkgs.psycheLib) src;
-        };
-
         workspace-clippy = craneLib.cargoClippy (
           rustWorkspaceArgs
           // {
@@ -43,14 +44,10 @@
 
           for f in $dir/*; do
               if [ -f $f/data.toml ]; then
-                ${
-                  self.packages.${system}.psyche-centralized-server
-                }/bin/psyche-centralized-server validate-config --state $f/state.toml --data-config $f/data.toml || exit 1
+                ${self'.packages.psyche-centralized-server}/bin/psyche-centralized-server validate-config --state $f/state.toml --data-config $f/data.toml || exit 1
                 echo "config $f/data.toml and $f/state.toml ok!"
               else
-                ${
-                  self.packages.${system}.psyche-centralized-server
-                }/bin/psyche-centralized-server validate-config --state $f/state.toml|| exit 1
+                ${self'.packages.psyche-centralized-server}/bin/psyche-centralized-server validate-config --state $f/state.toml|| exit 1
                 echo "config $f/state.toml ok!"
               fi
           done;

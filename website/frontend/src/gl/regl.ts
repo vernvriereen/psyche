@@ -70,8 +70,7 @@ function makeMouse(canvas: HTMLCanvasElement, abortSignal: AbortSignal) {
 			const rect = canvas.getBoundingClientRect()
 			const touch = e.changedTouches[0]
 			mouse.x = (2.0 * (touch.clientX - rect.left)) / rect.width - 1.0
-			mouse.y =
-				2.0 * (1.0 - (touch.clientY - rect.top) / rect.height) - 1.0
+			mouse.y = 2.0 * (1.0 - (touch.clientY - rect.top) / rect.height) - 1.0
 
 			mouse.in =
 				touch.clientX >= rect.left &&
@@ -140,8 +139,7 @@ export function createSphereAnimation(
 
 	const camera = regl<CameraUniforms, {}, Props, CustomContext>({
 		context: {
-			proj: () =>
-				mat4.perspectiveNO(mat4.create(), Math.PI / 2, 1, 0.01, 10),
+			proj: () => mat4.perspectiveNO(mat4.create(), Math.PI / 2, 1, 0.01, 10),
 			model: () => mat4.create(),
 			view: (_, { eye, target }: Props) =>
 				mat4.lookAt(

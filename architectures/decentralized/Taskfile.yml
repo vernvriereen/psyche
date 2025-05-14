@@ -1,4 +1,4 @@
-version: "3"
+version: '3'
 
 tasks:
   # General check for mindless complete verification
@@ -34,58 +34,58 @@ tasks:
 
   # Authorizer
   authorizer_fmt:
-    dir: "{{ .TASKFILE_DIR }}/solana-authorizer"
+    dir: '{{ .TASKFILE_DIR }}/solana-authorizer'
     cmds:
       - task fmt
   authorizer_lint:
-    dir: "{{ .TASKFILE_DIR }}/solana-authorizer"
+    dir: '{{ .TASKFILE_DIR }}/solana-authorizer'
     cmds:
       - task lint
 
   # Coordinator
   coordinator_fmt:
-    dir: "{{ .TASKFILE_DIR }}/solana-coordinator"
+    dir: '{{ .TASKFILE_DIR }}/solana-coordinator'
     cmds:
       - task fmt
   coordinator_lint:
-    dir: "{{ .TASKFILE_DIR }}/solana-coordinator"
+    dir: '{{ .TASKFILE_DIR }}/solana-coordinator'
     cmds:
       - task lint
 
   # Treasurer
   treasurer_fmt:
-    dir: "{{ .TASKFILE_DIR }}/solana-treasurer"
+    dir: '{{ .TASKFILE_DIR }}/solana-treasurer'
     cmds:
       - task fmt
   treasurer_lint:
-    dir: "{{ .TASKFILE_DIR }}/solana-treasurer"
+    dir: '{{ .TASKFILE_DIR }}/solana-treasurer'
     cmds:
       - task lint
 
   # Tooling
   tooling_fmt:
-    dir: "{{ .TASKFILE_DIR }}/solana-tooling"
+    dir: '{{ .TASKFILE_DIR }}/solana-tooling'
     cmds:
       - task fmt
   tooling_lint:
-    dir: "{{ .TASKFILE_DIR }}/solana-tooling"
+    dir: '{{ .TASKFILE_DIR }}/solana-tooling'
     cmds:
       - task lint
   tooling_test:
-    dir: "{{ .TASKFILE_DIR }}/solana-tooling"
+    dir: '{{ .TASKFILE_DIR }}/solana-tooling'
     cmds:
       - task test
 
   # Mining-Pool
   mining_pool_fmt:
-    dir: "{{ .TASKFILE_DIR }}/solana-mining-pool"
+    dir: '{{ .TASKFILE_DIR }}/solana-mining-pool'
     cmds:
       - task fmt
   mining_pool_lint:
-    dir: "{{ .TASKFILE_DIR }}/solana-mining-pool"
+    dir: '{{ .TASKFILE_DIR }}/solana-mining-pool'
     cmds:
       - task lint
   mining_pool_test:
-    dir: "{{ .TASKFILE_DIR }}/solana-mining-pool"
+    dir: '{{ .TASKFILE_DIR }}/solana-mining-pool'
     cmds:
       - task test

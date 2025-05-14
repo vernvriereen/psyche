@@ -86,7 +86,11 @@ export function GiveMoney({
 		associatedTokenAddress: PublicKey
 	} | null>(null)
 	const [txErr, setTxErr] = useState<any | null>(null)
-	const [sending, setSending] = useState(false)
+	const [sending, setSending] = useState<
+		| { type: false }
+		| { type: 'sending'; amount: BigInt }
+		| { type: 'sent'; amount: BigInt }
+	>({ type: false })
 	const wallet = useAnchorWallet()
 	const program = useMemo(
 		() =>
@@ -99,10 +103,7 @@ export function GiveMoney({
 
 	const psychePoolPda = useMemo(
 		() =>
-			getMiningPoolPDA(
-				new PublicKey(miningPoolProgramId),
-				PSYCHE_POOL_INDEX
-			),
+			getMiningPoolPDA(new PublicKey(miningPoolProgramId), PSYCHE_POOL_INDEX),
 		[miningPoolProgramId]
 	)
 
@@ -183,32 +184,49 @@ export function GiveMoney({
 				</Button>
 			</div>
 			<Wrapper>
-				<CurrencyInput
-					className={c(currencyInput, text['display/5xl'])}
-					onValueChange={(values) => {
-						if (values.value !== 'NaN') {
-							setMoney(values.value)
-						}
-					}}
-					currency="USD"
-					locale="en-US"
-				/>
-				<Balance
-					className={c(
-						text['body/sm/medium'],
-						contributeAmount > walletBalance ? 'poor' : ''
-					)}
-				>
-					{'wallet balance '}
-					{formatUSDollars(
-						Number(maxAmount) / Number(fundingUnitsPerDollar)
-					)}{' '}
-					{'USDC'}
-				</Balance>
-				{txErr && (
-					<Balance className={c(text['body/sm/medium'], 'poor')}>
-						{txErr.toString()}
-					</Balance>
+				{sending.type === 'sent' ? (
+					<>
+						<div className={c(currencyInput, text['display/5xl'])}>
+							thank you!
+						</div>
+						<Balance className={text['body/sm/medium']}>
+							you have provided $
+							{(Number(sending.amount) / fundingUnitsPerDollar).toFixed(2)} to
+							the pool
+						</Balance>
+					</>
+				) : (
+					<>
+						<CurrencyInput
+							autoFocus
+							disabled={sending.type !== false}
+							className={c(currencyInput, text['display/5xl'])}
+							onValueChange={(values) => {
+								if (values.value !== 'NaN') {
+									setMoney(values.value)
+								}
+							}}
+							currency="USD"
+							locale="en-US"
+						/>
+						<Balance
+							className={c(
+								text['body/sm/medium'],
+								contributeAmount > walletBalance ? 'poor' : ''
+							)}
+						>
+							{'wallet balance '}
+							{formatUSDollars(
+								Number(maxAmount) / Number(fundingUnitsPerDollar)
+							)}{' '}
+							{'USDC'}
+						</Balance>
+						{txErr && (
+							<Balance className={c(text['body/sm/medium'], 'poor')}>
+								{txErr.toString()}
+							</Balance>
+						)}
+					</>
 				)}
 
 				<SideAlign>
@@ -222,19 +240,17 @@ export function GiveMoney({
 						disabled={
 							contributeAmount > maxAmount ||
 							contributeAmount === 0n ||
-							sending ||
+							sending.type !== false ||
 							!collateralInfo
 						}
 						style="primary"
 						icon={{ side: 'left', svg: Smiley }}
 						onClick={async () => {
 							if (!collateralInfo) {
-								console.warn(
-									'button should be disabled, no collateralInfo'
-								)
+								console.warn('button should be disabled, no collateralInfo')
 								return
 							}
-							setSending(true)
+							setSending({ type: 'sending', amount: contributeAmount })
 							try {
 								const tx = new Transaction()
 
@@ -244,9 +260,7 @@ export function GiveMoney({
 									publicKey
 								)
 								const lenderAccount =
-									await program.account.lender.fetchNullable(
-										lenderPda
-									)
+									await program.account.lender.fetchNullable(lenderPda)
 
 								if (!lenderAccount) {
 									tx.add(
@@ -265,42 +279,40 @@ export function GiveMoney({
 								tx.add(
 									await program.methods
 										.lenderDeposit({
-											collateralAmount: new BN(
-												contributeAmount.toString()
-											),
+											collateralAmount: new BN(contributeAmount.toString()),
 										})
 										.accounts({
 											pool: psychePoolPda,
-											userCollateral:
-												collateralInfo.associatedTokenAddress,
+											userCollateral: collateralInfo.associatedTokenAddress,
 											user: publicKey,
 										})
 										.instruction()
 								)
 
 								await sendTransaction(tx, connection)
+								setSending({ type: 'sent', amount: contributeAmount })
 							} catch (err) {
 								console.error(err)
 								setTxErr(err)
-							} finally {
-								setSending(false)
+								setSending({ type: false })
 							}
 						}}
 					>
 						{!collateralInfo
 							? 'loading...'
-							: sending
-								? 'sending contribution...'
-								: 'contribute compute'}
+							: sending.type === false
+								? 'contribute compute'
+								: sending.type === 'sending'
+									? 'sending contribution...'
+									: 'contribution sent!'}
 					</Button>
 				</SideAlign>
 				<span className={text['aux/xs/regular']}>
-					Any capital contributed to this pool is purely a donation
-					and for testing purposes only. Any digital tokens made
-					available by Nous or the Psyche Foundation on the Testnet,
-					any tokens configured using the Testnet, and any tokens
-					configured using any extrinsics available for the Testnet
-					have no economic or monetary value and cannot be exchanged
+					Any capital contributed to this pool is purely a donation and for
+					testing purposes only. Any digital tokens made available by Nous or
+					the Psyche Foundation on the Testnet, any tokens configured using the
+					Testnet, and any tokens configured using any extrinsics available for
+					the Testnet have no economic or monetary value and cannot be exchanged
 					for or converted into cash, cash equivalent, or value.
 				</span>
 			</Wrapper>

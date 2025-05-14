@@ -2,13 +2,13 @@ import { styled } from '@linaria/react'
 import { StatusChip } from './StatusChip.js'
 import { text } from '../fonts.js'
 import { InfoChit } from './InfoChit.js'
-import { ProgressBar } from './ProgressBar.js'
 import { Runtime } from './Runtime.js'
 import { formatNumber } from '../utils.js'
 import { RunSummary } from 'shared'
 import { ShadowCard } from './ShadowCard.jsx'
 import { forest, slate } from '../colors.js'
 import { useMemo } from 'react'
+import { Progress } from './ProgressWrapper.js'
 
 const RunTitleRow = styled.div`
 	display: flex;
@@ -52,20 +52,6 @@ const InfoChits = styled.div`
 	display: flex;
 	gap: 16px;
 `
-
-const Progress = styled.div`
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
-`
-
-const ProgressDescription = styled.div`
-	display: flex;
-	flex-direction: row;
-	gap: 8px;
-	justify-content: space-between;
-`
-
 export function RunSummaryCard({
 	info: {
 		id,
@@ -78,25 +64,31 @@ export function RunSummaryCard({
 		totalTokens,
 		status,
 		type,
-		pauseHistory
+		pauseHistory,
+		index,
+		isOnlyRunAtThisIndex,
 	},
 }: {
 	info: RunSummary
 }) {
-	const pauses = useMemo(() =>pauseHistory.map(p => [p[0], p[1].time] as const), [pauseHistory])
+	const pauses = useMemo(
+		() => pauseHistory.map((p) => [p[0], p[1].time] as const),
+		[pauseHistory]
+	)
 	return (
 		<ShadowCard
-			to="/runs/$run"
+			to="/runs/$run/$index"
 			params={{
 				run: id,
+				index: index,
 			}}
 		>
 			<RunHeader>
 				<RunTitleRow>
-					<RunTitle className={text['display/2xl']}>{name}</RunTitle>
-					<StatusChip status={status.type} style="minimal">
-						{status.type}
-					</StatusChip>
+					<RunTitle className={text['display/2xl']}>
+						{name || id} {isOnlyRunAtThisIndex ? '' : `(v${index + 1})`}
+					</RunTitle>
+					<StatusChip status={status.type} style="minimal" />
 				</RunTitleRow>
 				<RunDescription className={text['aux/xs/regular']}>
 					{description}
@@ -105,9 +97,7 @@ export function RunSummaryCard({
 
 			<InfoChits>
 				{size !== 0n && (
-					<InfoChit label="params">
-						{formatNumber(Number(size), 2)}
-					</InfoChit>
+					<InfoChit label="params">{formatNumber(Number(size), 2)}</InfoChit>
 				)}
 				<InfoChit label="arch">{arch}</InfoChit>
 				<InfoChit label="type">{type}</InfoChit>
@@ -116,28 +106,19 @@ export function RunSummaryCard({
 				</InfoChit>
 			</InfoChits>
 
-			<Progress>
-				<ProgressBar
-					ratio={Number(completedTokens) / Number(totalTokens)}
-					chunkHeight={16}
-					chunkWidth={12}
-				/>
-				<ProgressDescription className={text['aux/xs/regular']}>
-					<span>tokens</span>
-					<span>
-						{formatNumber(Number(completedTokens), 3)}/
-						{formatNumber(Number(totalTokens), 3)}
-					</span>
-				</ProgressDescription>
-			</Progress>
+			<Progress
+				label="tokens"
+				chunkHeight={12}
+				chunkWidth={16}
+				current={Number(completedTokens)}
+				total={Number(totalTokens)}
+			/>
 			<div className={text['aux/xs/regular']}>
 				runtime{' '}
 				<Runtime
 					start={startTime.time}
 					pauses={pauses}
-					end={
-						status.type === 'completed' ? status.at.time : undefined
-					}
+					end={status.type === 'completed' ? status.at.time : undefined}
 				/>
 			</div>
 		</ShadowCard>

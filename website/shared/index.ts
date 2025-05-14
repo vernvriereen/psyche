@@ -8,8 +8,14 @@ import * as miningPoolTypes from './idl/mining-pool_idlType.js'
 type PsycheSolanaCoordinator = coordinatorTypes.PsycheSolanaCoordinator
 type PsycheSolanaMiningPool = miningPoolTypes.PsycheSolanaMiningPool
 
-type LLMArchitecture = string // TODO TODO TODO
-// import type { LLMArchitecture } from 'psyche-deserialize-zerocopy-wasm'
+import type {
+	HubRepo,
+	LearningRateSchedule,
+	LLMArchitecture,
+	RunState,
+} from 'psyche-deserialize-zerocopy-wasm'
+
+export type * from 'psyche-deserialize-zerocopy-wasm'
 
 export {
 	coordinatorIdl,
@@ -38,7 +44,7 @@ export interface ContributionInfo {
 export type ModelType = 'vision' | 'text'
 
 export type RunStatus =
-	| { type: 'active' | 'funding' | 'paused' }
+	| { type: 'active' | 'funding' | 'waitingForMembers' | 'paused' }
 	| { type: 'completed'; at: ChainTimestamp }
 
 export interface RunSummary {
@@ -47,6 +53,8 @@ export interface RunSummary {
 	// there can be an arbitrary number of runs with the same ID as long as you create/destroy them.
 	// this is how we track which iteration of a run this is.
 	index: number
+	isOnlyRunAtThisIndex: boolean
+
 	name: string
 	description: string
 	status: RunStatus
@@ -66,19 +74,59 @@ export type Metrics = {
 	loss: number
 	bandwidth: number
 	tokensPerSecond: number
+	lr: number
 	evals: Record<string, number>
 }
 
 export type OverTime<T extends object> = {
 	[K in keyof T]: T[K] extends object
 		? OverTime<T[K]>
-		: Array<{ step: number; value: T[K] }>
+		: Array<readonly [number, T[K]]>
+}
+
+export type NullableRecursive<T extends object> = {
+	[K in keyof T]: T[K] extends object ? NullableRecursive<T[K]> : T[K] | null
+}
+
+export interface RunRoundClient {
+	pubkey: string
+	witness: false | 'waiting' | 'done'
+}
+
+export interface TxSummary {
+	timestamp: ChainTimestamp
+	txHash: string
+	pubkey: string
+	method: string
+	data: string
 }
 
 export interface RunData {
 	info: RunSummary
+	state?: {
+		phase: RunState
+		phaseStartTime?: Date
+		clients: Array<RunRoundClient>
+
+		checkpoint: HubRepo | null
+
+		round: number
+		config: {
+			roundsPerEpoch: number
+			minClients: number
+
+			warmupTime: number
+			cooldownTime: number
+
+			maxRoundTrainTime: number
+			roundWitnessTime: number
+
+			lrSchedule: LearningRateSchedule
+		}
+	}
+	recentTxs: Array<TxSummary>
 	metrics: {
-		summary: Metrics
+		summary: NullableRecursive<Metrics>
 		history: OverTime<Metrics>
 	}
 }
@@ -156,10 +204,7 @@ function isBN(obj: any) {
 	return (
 		obj &&
 		typeof obj === 'object' &&
-		(('negative' in obj &&
-			'words' in obj &&
-			'length' in obj &&
-			'red' in obj) ||
+		(('negative' in obj && 'words' in obj && 'length' in obj && 'red' in obj) ||
 			'_bn' in obj)
 	)
 }
@@ -242,12 +287,14 @@ export interface IndexerStatus {
 
 export interface CoordinatorStatus {
 	status: 'ok' | string
+	errors: Array<{ time: Date; error: unknown }>
 	chain: ChainStatus
-	trackedRuns: Array<{ id: string; status: RunStatus }>
+	trackedRuns: Array<{ id: string; index: number; status: RunStatus }>
 }
 
 export interface MiningPoolStatus {
 	status: 'ok' | string
+	errors: Array<{ time: Date; error: unknown }>
 	chain: ChainStatus
 }
 
@@ -256,7 +303,11 @@ export type MaybeError<T extends object> = T & {
 }
 
 export type ApiGetRun = MaybeError<{ run: RunData | null; isOnlyRun: boolean }>
-export type ApiGetRuns = MaybeError<{ runs: RunSummary[] }>
+export type ApiGetRuns = MaybeError<{
+	runs: RunSummary[]
+	totalTokens: bigint
+	totalTokensPerSecondActive: bigint
+}>
 export type ApiGetContributionInfo = MaybeError<ContributionInfo>
 
 export function u64ToLeBytes(value: bigint) {

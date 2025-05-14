@@ -41,7 +41,8 @@ function RouteComponent() {
 						1,
 						Math.max(
 							0,
-							(c.indexedSlot - (c.chainSlotHeight - numRecentSlots)) / numRecentSlots
+							(c.indexedSlot - (c.chainSlotHeight - numRecentSlots)) /
+								numRecentSlots
 						)
 					)
 					return (
@@ -59,19 +60,13 @@ function RouteComponent() {
 								`}
 							>
 								<div>
-									{(
-										ratioRecentSlots *
-										100
-									).toFixed(1)}
-									% of last {numRecentSlots} slots indexed
+									{(ratioRecentSlots * 100).toFixed(1)}% of last{' '}
+									{numRecentSlots} slots indexed
 								</div>
 								<div>
 									slot {c.indexedSlot} / {c.chainSlotHeight}
 								</div>
-								<div>
-									{c.chainSlotHeight - c.indexedSlot} slots
-									behind
-								</div>
+								<div>{c.chainSlotHeight - c.indexedSlot} slots behind</div>
 							</div>
 							<ProgressBar
 								ratio={ratioRecentSlots}
@@ -95,12 +90,8 @@ function RouteComponent() {
 				>
 					tracked runs:
 					{coordinator.trackedRuns.map((run) => (
-						<StatusChip
-							status={run.status.type}
-							style={'bold'}
-							inverted
-						>
-							{run.id}
+						<StatusChip status={run.status.type} style={'bold'} inverted>
+							{run.id} (v{run.index + 1})
 						</StatusChip>
 					))}
 				</div>

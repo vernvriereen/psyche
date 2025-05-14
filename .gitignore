@@ -41,6 +41,7 @@ slurm*
 *.key
 node_modules/
 bindings
+.pre-commit-config.yaml
 
 ### Data folders ###
 /data

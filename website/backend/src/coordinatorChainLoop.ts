@@ -1,6 +1,11 @@
 import { Program, Provider } from '@coral-xyz/anchor'
-import { PublicKey } from '@solana/web3.js'
-import { ChainTimestamp, getRunPDA, PsycheSolanaCoordinator } from 'shared'
+import { ParsedTransactionWithMeta, PublicKey } from '@solana/web3.js'
+import {
+	ChainTimestamp,
+	getRunPDA,
+	PsycheSolanaCoordinator,
+	TxSummary,
+} from 'shared'
 import {
 	load_coordinator_from_bytes,
 	PsycheCoordinator,
@@ -25,6 +30,29 @@ interface RunUpdates {
 		coordinatorAccountAddress: string
 		timestamp: ChainTimestamp
 	}
+	txs: TxSummary[]
+	configChanged: boolean
+}
+
+function timestampFromTx(tx: ParsedTransactionWithMeta): ChainTimestamp {
+	return {
+		slot: BigInt(tx.slot),
+		// solana timestamps are in second, pad out to ms.
+		time: new Date(+(tx.blockTime?.toString().padEnd(13, '0') ?? Date.now())),
+	}
+}
+
+function txSummary(
+	tx: ParsedTransactionWithMeta,
+	decoded: { name: string; data: any }
+): TxSummary {
+	return {
+		method: decoded.name,
+		data: JSON.stringify(decoded.data),
+		pubkey: tx.transaction.message.accountKeys[0].pubkey.toString(),
+		timestamp: timestampFromTx(tx),
+		txHash: tx.transaction.signatures[0],
+	}
 }
 
 // When any change is made to a run, we'll insert the run info into its existing entry here, if it's not "destroyed"
@@ -37,20 +65,29 @@ interface RunUpdates {
 class UpdateManager {
 	#runUpdates: Map<string, [RunUpdates, ...RunUpdates[]]> = new Map()
 
-	createNewRun(
-		pdaAddress: string,
-		runId: string,
-		coordinatorAccountAddress: string,
-		timestamp: ChainTimestamp
-	) {
-		const runsAtThisAddress = this.#runUpdates.get(pdaAddress)
+	createNewRun({
+		runPdaAddr,
+		runId,
+		coordinatorAddr,
+		decoded,
+		tx,
+	}: {
+		runPdaAddr: string
+		runId: string
+		coordinatorAddr: string
+		decoded: { name: string; data: any }
+		tx: ParsedTransactionWithMeta
+	}) {
+		const runsAtThisAddress = this.#runUpdates.get(runPdaAddr)
 		const existingRun = runsAtThisAddress?.at(-1)
 
 		if (existingRun && !existingRun.destroyedAt) {
 			throw new Error(
-				`Can't create a new run; run at ${pdaAddress} was *not* destroyed, but we're trying to create a new one!`
+				`Can't create a new run; run at ${runPdaAddr} was *not* destroyed, but we're trying to create a new one!`
 			)
 		}
+
+		const timestamp = timestampFromTx(tx)
 
 		// either there's nothing in the list, or the last run was destroyed
 		// so we make a new one, track it, and return it
@@ -59,51 +96,68 @@ class UpdateManager {
 				runId,
 				timestamp,
 			},
-			lastUpdated: { timestamp, coordinatorAccountAddress },
+			lastUpdated: { timestamp, coordinatorAccountAddress: coordinatorAddr },
 			pauseTimestamps: [],
 			witnessUpdates: [],
+			configChanged: false,
+			txs: [txSummary(tx, decoded)],
 		}
 		if (runsAtThisAddress) {
 			runsAtThisAddress.push(newRun)
 		} else {
-			this.#runUpdates.set(pdaAddress, [newRun])
+			this.#runUpdates.set(runPdaAddr, [newRun])
 		}
 		return newRun
 	}
 
-	getAndTouchCurrentRun(
-		pdaAddress: string,
-		coordinatorAccountAddress: string,
-		timestamp: ChainTimestamp
-	) {
+	getAndTouchCurrentRun({
+		runPdaAddr,
+		coordinatorAddr,
+		decoded,
+		tx,
+	}: {
+		runPdaAddr: string
+		coordinatorAddr: string
+		decoded: { name: string; data: any }
+		tx: ParsedTransactionWithMeta
+	}) {
+		const timestamp = timestampFromTx(tx)
+
 		// ensure the runs array is set
-		if (!this.#runUpdates.has(pdaAddress)) {
-			this.#runUpdates.set(pdaAddress, [
+		if (!this.#runUpdates.has(runPdaAddr)) {
+			this.#runUpdates.set(runPdaAddr, [
 				{
 					pauseTimestamps: [],
 					witnessUpdates: [],
-					lastUpdated: { timestamp, coordinatorAccountAddress },
+					lastUpdated: {
+						timestamp,
+						coordinatorAccountAddress: coordinatorAddr,
+					},
+					configChanged: false,
+					txs: [],
 				},
 			])
 		}
 
-		const runsAtThisAddress = this.#runUpdates.get(pdaAddress)!
+		const runsAtThisAddress = this.#runUpdates.get(runPdaAddr)!
 		const existingRun = runsAtThisAddress.at(-1)!
 
 		if (existingRun.destroyedAt) {
 			throw new Error(
-				`Run at ${pdaAddress} was destroyed and a new one hasn't been created`
+				`Run at ${runPdaAddr} was destroyed and a new one hasn't been created`
 			)
 		}
-		if (
-			existingRun.lastUpdated.coordinatorAccountAddress !==
-			coordinatorAccountAddress
-		) {
+		if (existingRun.lastUpdated.coordinatorAccountAddress !== coordinatorAddr) {
 			throw new Error(
-				`actual run addr is wrongggggg. got ${coordinatorAccountAddress}, expected ${existingRun.lastUpdated.coordinatorAccountAddress}`
+				`actual run addr is wrongggggg. got ${coordinatorAddr}, expected ${existingRun.lastUpdated.coordinatorAccountAddress}`
 			)
 		}
-		existingRun.lastUpdated = { timestamp, coordinatorAccountAddress }
+		existingRun.lastUpdated = {
+			timestamp,
+			coordinatorAccountAddress: coordinatorAddr,
+		}
+		existingRun.txs.push(txSummary(tx, decoded))
+
 		return existingRun
 	}
 
@@ -117,145 +171,181 @@ const COORDINATOR_LOOP_DELAY_MS = 5000
 export async function startWatchCoordinatorChainLoop(
 	dataStore: CoordinatorDataStore,
 	coordinator: Program<PsycheSolanaCoordinator>,
-	cancelled: { cancelled: boolean }
+	websocketRpcUrl: string,
+	minSlot: number,
+	cancelled: { cancelled: boolean },
+	onError: (error: unknown) => void
 ) {
-	const getCoordinatorStateWithRetries = makeRetryPromise(getRunCoordinatorState)
+	const getCoordinatorStateWithRetries = makeRetryPromise(
+		getRunCoordinatorState
+	)
 
 	await startWatchChainLoop<PsycheCoordinatorInstructionsUnion>()(
 		'coordinator',
 		dataStore,
 		coordinator,
+		websocketRpcUrl,
+		minSlot,
 		cancelled,
+		onError,
 		{
 			onStartCatchup() {
 				return new UpdateManager()
 			},
 			onInstruction(tx, i, decoded, runUpdates) {
-				const timestamp: ChainTimestamp = {
-					slot: BigInt(tx.slot),
-					// solana timestamps are in second, pad out to ms.
-					time: new Date(
-						+(
-							tx.blockTime?.toString().padEnd(13, '0') ??
-							Date.now()
-						)
-					),
-				}
-
 				// `i.accounts` is an array of all the accounts used in this TX.
 				// we're using it to grab the address of the specific run we're updating.
 				// this is different per instruction, but fixed order based on the IDL/contract code,
 				// so it's safe to hardcode the index here.
 				switch (decoded.name) {
 					case 'init_coordinator': {
-						const runAddr = i.accounts[1].toString()
+						const runPdaAddr = i.accounts[1].toString()
 						const coordinatorAddr = i.accounts[2].toString()
 						const expectedRunAddr = getRunPDA(
 							coordinator.programId,
 							decoded.data.params.run_id
 						)
-						if (runAddr !== expectedRunAddr.toString()) {
+						if (runPdaAddr !== expectedRunAddr.toString()) {
 							throw new Error(
-								`Expected run addr ${expectedRunAddr.toString()}, but saw run addr ${runAddr}`
+								`Expected run addr ${expectedRunAddr.toString()}, but saw run addr ${runPdaAddr}`
 							)
 						}
-						runUpdates.createNewRun(
-							runAddr,
-							decoded.data.params.run_id,
+						runUpdates.createNewRun({
+							runPdaAddr,
+							runId: decoded.data.params.run_id,
 							coordinatorAddr,
-							timestamp
-						)
+							tx,
+							decoded,
+						})
 						break
 					}
 
 					case 'update': {
-						const runAddr = i.accounts[1].toString()
+						const runPdaAddr = i.accounts[1].toString()
 						const coordinatorAddr = i.accounts[2].toString()
-						runUpdates.getAndTouchCurrentRun(
-							runAddr,
+						const r = runUpdates.getAndTouchCurrentRun({
+							runPdaAddr,
 							coordinatorAddr,
-							timestamp
-						)
+							decoded,
+							tx,
+						})
+						// instead of pulling the config from solana, where the deserialization is.. weird about enums
+						// we just mark it changed, and pull it nicely later with wasm
+						r.configChanged = true
 						break
 					}
 					case 'tick': {
-						const runAddr = i.accounts[1].toString()
+						const runPdaAddr = i.accounts[1].toString()
 						const coordinatorAddr = i.accounts[2].toString()
-						runUpdates.getAndTouchCurrentRun(
-							runAddr,
+						runUpdates.getAndTouchCurrentRun({
+							runPdaAddr,
 							coordinatorAddr,
-							timestamp
-						)
+							decoded,
+							tx,
+						})
 						break
 					}
 					case 'join_run': {
-						const runAddr = i.accounts[2].toString()
+						const runPdaAddr = i.accounts[2].toString()
 						const coordinatorAddr = i.accounts[3].toString()
-						runUpdates.getAndTouchCurrentRun(
-							runAddr,
+						runUpdates.getAndTouchCurrentRun({
+							runPdaAddr,
 							coordinatorAddr,
-							timestamp
-						)
+							decoded,
+							tx,
+						})
 						break
 					}
 					case 'set_paused': {
-						const runAddr = i.accounts[1].toString()
+						const runPdaAddr = i.accounts[1].toString()
 						const coordinatorAddr = i.accounts[2].toString()
-						const run = runUpdates.getAndTouchCurrentRun(
-							runAddr,
+						const run = runUpdates.getAndTouchCurrentRun({
+							runPdaAddr,
 							coordinatorAddr,
-							timestamp
-						)
+							decoded,
+							tx,
+						})
 						run.pauseTimestamps.push([
 							decoded.data.paused ? 'paused' : 'unpaused',
-							timestamp,
+							run.lastUpdated.timestamp,
 						])
 						break
 					}
 					case 'free_coordinator': {
-						const runAddr = i.accounts[2].toString()
+						const runPdaAddr = i.accounts[2].toString()
 						const coordinatorAddr = i.accounts[3].toString()
-						const run = runUpdates.getAndTouchCurrentRun(
-							runAddr,
+						const run = runUpdates.getAndTouchCurrentRun({
+							runPdaAddr,
 							coordinatorAddr,
-							timestamp
-						)
-						run.destroyedAt = timestamp
+							decoded,
+							tx,
+						})
+						run.destroyedAt = run.lastUpdated.timestamp
 						break
 					}
 					case 'witness': {
-						const runAddr = i.accounts[1].toString()
+						const runPdaAddr = i.accounts[1].toString()
 						const coordinatorAddr = i.accounts[2].toString()
-						const run = runUpdates.getAndTouchCurrentRun(
-							runAddr,
+						const run = runUpdates.getAndTouchCurrentRun({
+							runPdaAddr,
 							coordinatorAddr,
-							timestamp
-						)
+							decoded,
+							tx,
+						})
 						run.witnessUpdates.push([
 							decoded.data.metadata,
-							timestamp,
+							run.lastUpdated.timestamp,
 						])
 						break
 					}
 					case 'checkpoint': {
-						// todo checkpoint
+						const runPdaAddr = i.accounts[1].toString()
+						const coordinatorAddr = i.accounts[2].toString()
+						runUpdates.getAndTouchCurrentRun({
+							runPdaAddr,
+							coordinatorAddr,
+							decoded,
+							tx,
+						})
 						break
 					}
 					case 'health_check': {
-						// todo health check?
+						const runPdaAddr = i.accounts[1].toString()
+						const coordinatorAddr = i.accounts[2].toString()
+						runUpdates.getAndTouchCurrentRun({
+							runPdaAddr,
+							coordinatorAddr,
+							decoded,
+							tx,
+						})
 						break
 					}
 					case 'set_future_epoch_rates': {
-						// set rates??
+						const runPdaAddr = i.accounts[1].toString()
+						const coordinatorAddr = i.accounts[2].toString()
+						runUpdates.getAndTouchCurrentRun({
+							runPdaAddr,
+							coordinatorAddr,
+							decoded,
+							tx,
+						})
 						break
 					}
 					case 'warmup_witness': {
-						// anything here?
+						const runPdaAddr = i.accounts[1].toString()
+						const coordinatorAddr = i.accounts[2].toString()
+						runUpdates.getAndTouchCurrentRun({
+							runPdaAddr,
+							coordinatorAddr,
+							decoded,
+							tx,
+						})
 						break
 					}
 					default: {
+						const _missed_tx: never = decoded
 						throw new Error(
-							`Skipping decoded instruction at slot ${tx.slot} ${JSON.stringify(decoded)}`
+							`Unexpected instruction ${JSON.stringify(_missed_tx)} at slot ${tx.slot} ${JSON.stringify(decoded)}`
 						)
 					}
 				}
@@ -265,9 +355,6 @@ export async function startWatchCoordinatorChainLoop(
 				if (allRuns.length === 0) {
 					return
 				}
-				console.log(
-					`[coordinator] fetching state for ${allRuns.length} runs...`
-				)
 				const allRunsWithState: Array<
 					readonly [
 						string,
@@ -286,8 +373,7 @@ export async function startWatchCoordinatorChainLoop(
 
 						// this fetches the state for the last run in the list.
 						if (canFetchState) {
-							const { coordinatorAccountAddress } =
-								latestRun.lastUpdated
+							const { coordinatorAccountAddress } = latestRun.lastUpdated
 							console.log(
 								`[coordinator] fetching state for run ${addr}, whose coordinator PDA lives at ${coordinatorAccountAddress}, we saw updated at slot ${latestRun.lastUpdated.timestamp.slot}`
 							)
@@ -299,10 +385,7 @@ export async function startWatchCoordinatorChainLoop(
 									[
 										addr,
 										runsAtThisAddr.map((run, i) => {
-											if (
-												i ===
-												runsAtThisAddr.length - 1
-											) {
+											if (i === runsAtThisAddr.length - 1) {
 												return {
 													...run,
 													state: runState,
@@ -316,7 +399,6 @@ export async function startWatchCoordinatorChainLoop(
 						return [addr, runsAtThisAddr] as const
 					})
 				)
-				console.log(`[coordinator] done fetching state.`)
 				for (const [i, [pubkey, runs]] of allRunsWithState.entries()) {
 					console.log(
 						`[coordinator] applying update for run ${i + 1}/${allRunsWithState.length}`
@@ -331,17 +413,28 @@ export async function startWatchCoordinatorChainLoop(
 							)
 						}
 						if (run.state) {
-							store.updateRun(pubkey, run.state[0], run.state[1])
+							store.updateRun(
+								pubkey,
+								run.state[0],
+								run.state[1],
+								run.configChanged
+							)
+						}
+						for (const tx of run.txs) {
+							store.trackTx(
+								pubkey,
+								tx.pubkey,
+								tx.method,
+								tx.data,
+								tx.txHash,
+								tx.timestamp
+							)
 						}
 						for (const [witness, timestamp] of run.witnessUpdates) {
 							store.witnessRun(pubkey, witness, timestamp)
 						}
 						for (const [pause, timestamp] of run.pauseTimestamps) {
-							store.setRunPaused(
-								pubkey,
-								pause === 'paused',
-								timestamp
-							)
+							store.setRunPaused(pubkey, pause === 'paused', timestamp)
 						}
 						if (run.destroyedAt) {
 							store.destroyRun(pubkey, run.destroyedAt)
@@ -358,8 +451,10 @@ async function getRunCoordinatorState(
 	provider: Provider,
 	runPubkey: PublicKey
 ): Promise<[PsycheCoordinator, ChainTimestamp]> {
-	const accountInfo =
-		await provider.connection.getParsedAccountInfo(runPubkey, 'confirmed')
+	const accountInfo = await provider.connection.getParsedAccountInfo(
+		runPubkey,
+		'confirmed'
+	)
 	if (!accountInfo.value?.data) {
 		throw new Error('No data for run at address: ' + runPubkey)
 	}
@@ -379,8 +474,6 @@ async function getRunCoordinatorState(
 			},
 		]
 	} catch (err) {
-		throw new Error(
-			`Failed to deserialize run at address ${runPubkey}: ${err}`
-		)
+		throw new Error(`Failed to deserialize run at address ${runPubkey}: ${err}`)
 	}
 }

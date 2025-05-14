@@ -1,5 +1,4 @@
 import { ErrorComponentProps } from '@tanstack/react-router'
-import { Header } from './Header.js'
 import { styled } from '@linaria/react'
 import { text } from '../fonts.js'
 import { Footer } from './Footer.js'
@@ -26,8 +25,6 @@ const ErrorContainer = styled.pre`
 export function SiteBroken({ error }: ErrorComponentProps) {
 	return (
 		<Outer>
-			<Header />
-
 			<Container>
 				<div className={text['display/6xl']}>something went wrong</div>
 				<div className={text['aux/base/bold']}>

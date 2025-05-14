@@ -104,6 +104,8 @@
           configName,
           backendSecret,
           miningPoolRpc,
+          coordinatorCluster,
+          miningPoolCluster,
           hostnames ? [ ],
         }:
         inputs.nixpkgs.lib.nixosSystem {
@@ -113,14 +115,18 @@
             (psyche-website-backend backendSecret)
             (
               {
-                config,
                 pkgs,
                 ...
               }:
               let
                 backendPath = "/api";
                 psyche-website-frontend = pkgs.callPackage ../website/frontend {
-                  inherit miningPoolRpc backendPath;
+                  inherit
+                    miningPoolRpc
+                    backendPath
+                    coordinatorCluster
+                    miningPoolCluster
+                    ;
                 };
               in
               {
@@ -133,8 +139,7 @@
                     cfg = ''
                       handle {
                         root * ${psyche-website-frontend}
-                        try_files {path} /index.html
-                        file_server
+                        ${serveStaticSpa}
                       }
 
                       handle_path ${backendPath}/* {
@@ -146,7 +151,8 @@
                     enable = true;
                     virtualHosts =
                       {
-                        "http://${configName}.*.psyche.NousResearch.garnix.me".extraConfig = cfg;
+                        "http://${configName}.*.psyche.nousresearch.garnix.me".extraConfig = cfg;
+                        "http://${configName}.*.psyche.psychefoundation.garnix.me".extraConfig = cfg;
                       }
                       // (builtins.listToAttrs (
                         map (hostname: {
@@ -164,6 +170,37 @@
 
       mainnetFrontendRpc = "https://quentin-uzfsvh-fast-mainnet.helius-rpc.com";
       devnetFrontendRpc = "https://bree-dtgg3j-fast-devnet.helius-rpc.com";
+
+      serveStaticSpa = ''
+        # we want index.html to have no cache, since it's tiny
+        # but all other files to be cached.
+        # since there's multiple paths that serve index.html,
+        # we only cache files that "exist", and skip caching
+        # on files that don't (and index.html)
+
+        @index_html path /index.html
+        header @index_html Cache-Control "no-cache, no-store, must-revalidate"
+        header @index_html Pragma "no-cache" 
+        header @index_html Expires "0"
+
+
+        @existing_non_index {
+            file {path}
+            not path /index.html
+        }
+        file_server @existing_non_index
+
+        @spa_routes {
+          not file {path}
+        }
+
+        header @spa_routes Cache-Control "no-cache, no-store, must-revalidate"
+        header @spa_routes Pragma "no-cache" 
+        header @spa_routes Expires "0"
+        rewrite @spa_routes /index.html
+
+        file_server
+      '';
     in
     {
       # server for hosting the frontend/backend, for testing
@@ -172,12 +209,16 @@
         hostnames = [ "devnet-preview.psyche.network" ];
         backendSecret = ../secrets/devnet/backend.age;
         miningPoolRpc = devnetFrontendRpc;
+        coordinatorCluster = "devnet";
+        miningPoolCluster = "devnet";
       };
       nixosConfigurations."psyche-http-mainnet" = persistentPsycheWebsite {
         configName = "psyche-http-mainnet";
         hostnames = [ "mainnet-preview.psyche.network" ];
         backendSecret = ../secrets/mainnet/backend.age;
         miningPoolRpc = mainnetFrontendRpc;
+        coordinatorCluster = "devnet";
+        miningPoolCluster = "mainnet";
       };
 
       # server for hosting the mainnet docs & frontend/backend.
@@ -188,7 +229,6 @@
           (psyche-website-backend ../secrets/mainnet/backend.age)
           (
             {
-              config,
               pkgs,
               ...
             }:
@@ -197,6 +237,8 @@
               psyche-website-frontend = pkgs.callPackage ../website/frontend {
                 miningPoolRpc = mainnetFrontendRpc;
                 inherit backendPath;
+                coordinatorCluster = "devnet";
+                miningPoolCluster = "mainnet";
               };
             in
             {
@@ -208,24 +250,29 @@
 
               services.caddy = {
                 enable = true;
-                virtualHosts = {
-                  "https://docs.psyche.network".extraConfig = ''
-                    root * ${self.packages.${pkgs.system}.psyche-book}
-                    file_server
-                  '';
+                virtualHosts =
+                  let
+                    psyche-website = ''
+                      handle {
+                        root * ${psyche-website-frontend}
+                        ${serveStaticSpa}
+                      }
 
-                  "https://mainnet.psyche.network".extraConfig = ''
-                    handle {
-                      root * ${psyche-website-frontend}
-                      try_files {path} /index.html
+                      handle_path ${backendPath}/* {
+                        reverse_proxy :${backend-port}
+                      }
+                    '';
+                  in
+                  {
+                    "https://docs.psyche.network".extraConfig = ''
+                      root * ${self.packages.${pkgs.system}.psyche-book}
                       file_server
-                    }
+                    '';
 
-                    handle_path ${backendPath}/* {
-                      reverse_proxy :${backend-port}
-                    }
-                  '';
-                };
+                    "https://mainnet.psyche.network".extraConfig = psyche-website;
+                    "https://psyche-http.main.psyche.nousresearch.garnix.me/".extraConfig = psyche-website;
+                    "https://psyche-http.main.psyche.psychefoundation.garnix.me/".extraConfig = psyche-website;
+                  };
               };
             }
           )
@@ -249,7 +296,8 @@
                 {
                   enable = true;
                   virtualHosts = {
-                    "http://psyche-http-docs.test-deploy-docs.psyche.NousResearch.garnix.me".extraConfig = conf;
+                    "http://psyche-http-docs.test-deploy-docs.psyche.nousresearch.garnix.me".extraConfig = conf;
+                    "http://psyche-http-docs.test-deploy-docs.psyche.psychefoundation.garnix.me".extraConfig = conf;
                     "http://docs-preview.psyche.network".extraConfig = conf;
                   };
                 };
@@ -257,5 +305,61 @@
           )
         ];
       };
+    };
+
+  perSystem =
+    {
+      pkgs,
+      system,
+      ...
+    }:
+    {
+      checks =
+        let
+          nixosConfigurations = self.nixosConfigurations;
+          configNames = builtins.attrNames nixosConfigurations;
+
+          # Helper function to create a check for a specific configuration
+          validateCaddyfile =
+            configName:
+            let
+              config = nixosConfigurations.${configName};
+              caddyConfig = config.config.services.caddy.configFile;
+            in
+            {
+              name = "validate-${configName}-caddyfile";
+              value =
+                pkgs.runCommand "validate-${configName}-caddyfile"
+                  {
+                    nativeBuildInputs = with pkgs; [
+                      bubblewrap
+                      caddy
+                    ];
+                  }
+                  ''
+                    # the file must be named Caddyfile to have it validated.
+                    cp ${caddyConfig} ./Caddyfile
+
+                    # use bubblewrap to remap /var that caddy wants to write logs to
+                    bwrap \
+                      --ro-bind /nix /nix \
+                      --dir /var \
+                      --bind . /tmp/work \
+                      --chdir /tmp/work \
+                      caddy validate --config ./Caddyfile
+
+                    # create an empty file to mark success
+                    touch $out
+                  '';
+            };
+        in
+        # check caddyfiles in each nixos configuration
+        builtins.listToAttrs (
+          builtins.map validateCaddyfile (
+            builtins.filter (
+              name: nixosConfigurations.${name}.config.services.caddy.enable or false
+            ) configNames
+          )
+        );
     };
 }

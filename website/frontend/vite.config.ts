@@ -8,6 +8,10 @@ import glsl from 'vite-plugin-glsl'
 
 // https://vite.dev/config/
 export default defineConfig({
+	server: {
+		host: true,
+		allowedHosts: true,
+	},
 	plugins: [
 		nodePolyfills({
 			globals: {

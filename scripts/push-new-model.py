@@ -1,10 +1,17 @@
-from transformers import LlamaConfig, LlamaForCausalLM, AutoTokenizer, DeepseekV3Config, DeepseekV3ForCausalLM
+from transformers import (
+    LlamaConfig,
+    LlamaForCausalLM,
+    AutoTokenizer,
+    DeepseekV3Config,
+    DeepseekV3ForCausalLM,
+)
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 from torch import nn
 import argparse
 import torch
 import math
 import json
+
 
 def _init_normal(module, std: float, cutoff_factor: float = 3.0):
     with torch.no_grad():

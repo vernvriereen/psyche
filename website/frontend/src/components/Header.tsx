@@ -25,10 +25,7 @@ const NavContainer = styled.div`
 
 const NavMain = styled.div`
 	display: grid;
-	grid-template-columns: minmax(256px, 1fr) minmax(312px, 1fr) minmax(
-			64px,
-			1fr
-		);
+	grid-template-columns: minmax(256px, 1fr) minmax(312px, 1fr) minmax(64px, 1fr);
 
 	& > .blurb {
 		justify-self: center;
@@ -134,15 +131,32 @@ export function Header() {
 					<Chip className={text['aux/xs/semibold']}>TESTNET</Chip>
 				</VerticalStack>
 				<VerticalStack className={c(text['body/sm/medium'], 'blurb')}>
-					<div>
-						Cooperative training over&#8209;the&#8209;internet
-					</div>
+					<div>Cooperative training over&#8209;the&#8209;internet</div>
 					<SymbolSeparatedItems>
-						<a href="https://github.com/PsycheFoundation/psyche" title="psyche's source code">
+						<a
+							href="https://github.com/PsycheFoundation/psyche"
+							title="psyche's source code"
+						>
 							github
 						</a>
-						<a href="https://forum.psyche.network/" title="discuss psyche's code & propose new models">forum</a>
-						<a href="https://docs.psyche.network/" title="read about how psyche works">docs</a>
+						<a
+							href="https://forum.psyche.network/"
+							title="discuss psyche's code & propose new models"
+						>
+							forum
+						</a>
+						<a
+							href="https://nousresearch.com/nous-psyche/"
+							title="read the psyche annoucement"
+						>
+							about psyche
+						</a>
+						<a
+							href="https://docs.psyche.network/"
+							title="read about how psyche works"
+						>
+							docs
+						</a>
 					</SymbolSeparatedItems>
 				</VerticalStack>
 				<VerticalStack className="buttons">

@@ -10,8 +10,8 @@ await esbuild
 		target: 'node22',
 		outfile: 'dist/index.cjs',
 		define: {
-			"process.env.GITCOMMIT": `"${process.env.GITCOMMIT}"`,
-		}
+			'process.env.GITCOMMIT': `"${process.env.GITCOMMIT}"`,
+		},
 	})
 	.catch(() => process.exit(1))
 

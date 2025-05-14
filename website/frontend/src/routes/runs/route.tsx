@@ -3,11 +3,13 @@ import { Header } from '../../components/Header.js'
 import { styled } from '@linaria/react'
 import { OutlineBox } from '../../components/OutlineBox.js'
 import { ContributeCompute } from '../../components/ContributeCompute.js'
-import { fetchContributions } from '../../fetchRuns.js'
+import { fetchContributionsStreaming } from '../../fetchRuns.js'
 import { Footer } from '../../components/Footer.js'
+import { useStreamingLoaderData } from '../../useStreamingData.js'
+import { ApiGetContributionInfo } from 'shared'
 
 export const Route = createFileRoute('/runs')({
-	loader: fetchContributions,
+	loader: fetchContributionsStreaming,
 	component: RouteComponent,
 })
 
@@ -46,14 +48,16 @@ const MainContents = styled.div`
 	}
 `
 function RouteComponent() {
-	const contributions = Route.useLoaderData()
+	const contributionInfo = useStreamingLoaderData<ApiGetContributionInfo>({
+		from: '/runs',
+	})
 	return (
 		<Main>
 			<Header />
 			<MainContainer>
 				<MainContents>
 					<OutlineBox title="mining pool">
-						<ContributeCompute {...contributions} />
+						<ContributeCompute contributionInfo={contributionInfo} />
 					</OutlineBox>
 					<OutlineBox title="training">
 						<Outlet />
