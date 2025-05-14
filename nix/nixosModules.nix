@@ -269,7 +269,7 @@
                       file_server
                     '';
 
-                    "https://mainnet.psyche.network".extraConfig = psyche-website;
+                    "https://psyche.network".extraConfig = psyche-website;
                     "http://psyche-http.main.psyche.nousresearch.garnix.me".extraConfig = psyche-website;
                     "http://psyche-http.main.psyche.psychefoundation.garnix.me".extraConfig = psyche-website;
                   };
