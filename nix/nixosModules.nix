@@ -151,7 +151,8 @@
                     enable = true;
                     virtualHosts =
                       {
-                        "http://${configName}.*.psyche.*.garnix.me".extraConfig = cfg;
+                        "http://${configName}.*.psyche.nousresearch.garnix.me".extraConfig = cfg;
+                        "http://${configName}.*.psyche.psychefoundation.garnix.me".extraConfig = cfg;
                       }
                       // (builtins.listToAttrs (
                         map (hostname: {
@@ -269,7 +270,8 @@
                     '';
 
                     "https://mainnet.psyche.network".extraConfig = psyche-website;
-                    "https://psyche-http.main.psyche.*.garnix.me/".extraConfig = psyche-website;
+                    "https://psyche-http.main.psyche.nousresearch.garnix.me/".extraConfig = psyche-website;
+                    "https://psyche-http.main.psyche.psychefoundation.garnix.me/".extraConfig = psyche-website;
                   };
               };
             }
@@ -294,7 +296,8 @@
                 {
                   enable = true;
                   virtualHosts = {
-                    "http://psyche-http-docs.test-deploy-docs.psyche.*.garnix.me".extraConfig = conf;
+                    "http://psyche-http-docs.test-deploy-docs.psyche.nousresearch.garnix.me".extraConfig = conf;
+                    "http://psyche-http-docs.test-deploy-docs.psyche.psychefoundation.garnix.me".extraConfig = conf;
                     "http://docs-preview.psyche.network".extraConfig = conf;
                   };
                 };
@@ -302,5 +305,61 @@
           )
         ];
       };
+    };
+
+  perSystem =
+    {
+      pkgs,
+      system,
+      ...
+    }:
+    {
+      checks =
+        let
+          nixosConfigurations = self.nixosConfigurations;
+          configNames = builtins.attrNames nixosConfigurations;
+
+          # Helper function to create a check for a specific configuration
+          validateCaddyfile =
+            configName:
+            let
+              config = nixosConfigurations.${configName};
+              caddyConfig = config.config.services.caddy.configFile;
+            in
+            {
+              name = "validate-${configName}-caddyfile";
+              value =
+                pkgs.runCommand "validate-${configName}-caddyfile"
+                  {
+                    nativeBuildInputs = with pkgs; [
+                      bubblewrap
+                      caddy
+                    ];
+                  }
+                  ''
+                    # the file must be named Caddyfile to have it validated.
+                    cp ${caddyConfig} ./Caddyfile
+
+                    # use bubblewrap to remap /var that caddy wants to write logs to
+                    bwrap \
+                      --ro-bind /nix /nix \
+                      --dir /var \
+                      --bind . /tmp/work \
+                      --chdir /tmp/work \
+                      caddy validate --config ./Caddyfile
+
+                    # create an empty file to mark success
+                    touch $out
+                  '';
+            };
+        in
+        # check caddyfiles in each nixos configuration
+        builtins.listToAttrs (
+          builtins.map validateCaddyfile (
+            builtins.filter (
+              name: nixosConfigurations.${name}.config.services.caddy.enable or false
+            ) configNames
+          )
+        );
     };
 }
