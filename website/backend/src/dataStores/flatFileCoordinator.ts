@@ -448,11 +448,10 @@ export class FlatFileCoordinatorDataStore implements CoordinatorDataStore {
 			evals,
 		}
 
-		const lastWitnessUpdate = run.witnessUpdates.at(-1)
 		const summary: Metrics = {
-			bandwidth: lastWitnessUpdate?.[0].bandwidth_per_sec ?? 0,
-			loss: lastWitnessUpdate?.[0].loss ?? Infinity,
-			tokensPerSecond: lastWitnessUpdate?.[0].tokens_per_sec ?? 0,
+			bandwidth: history.bandwidth.at(-1)?.[1] ?? 0,
+			loss: history.loss.at(-1)?.[1] ?? Infinity,
+			tokensPerSecond: history.tokensPerSecond.at(-1)?.[1] ?? 0,
 			lr: run.observedLrByStep.at(-1)?.[1] ?? 0,
 			evals: Object.fromEntries(
 				Object.entries(evals)
