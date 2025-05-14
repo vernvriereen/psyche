@@ -583,21 +583,21 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                             true => x.await.unwrap(),
                             false => {
                                 return Err(ApplyError::DidNotFinishDeserializingCommitment(
-                                    *commitment,
+                                    Box::new(*commitment),
                                     batch_id,
                                 ));
                             }
                         },
-                        Some(PayloadState::Downloading((_, __, ticket))) => {
+                        Some(PayloadState::Downloading((_, _, ticket))) => {
                             return Err(ApplyError::DidNotBeginDownloadingCommitment(
-                                *commitment,
+                                Box::new(*commitment),
                                 batch_id,
                                 ticket.hash()
                             ));
                         }
                         None => {
                             return Err(ApplyError::UnknownCommitment(
-                                *commitment,
+                                Box::new(*commitment),
                                 batch_id,
                             ))
                         }
@@ -703,13 +703,13 @@ pub enum ApplyError {
     BadResult(#[from] ApplyDistroResultError),
 
     #[error("DESYNC: Did not finish deserializing payload for consensus commitment 0x{commitment} for batch {1}", commitment=hex::encode(.0.data_hash))]
-    DidNotFinishDeserializingCommitment(Commitment, BatchId),
+    DidNotFinishDeserializingCommitment(Box<Commitment>, BatchId),
 
     #[error("DESYNC: Did not begin downloading payload for consensus commitment 0x{commitment} for batch {1} with blob hash {2}", commitment=hex::encode(.0.data_hash))]
-    DidNotBeginDownloadingCommitment(Commitment, BatchId, Hash),
+    DidNotBeginDownloadingCommitment(Box<Commitment>, BatchId, Hash),
 
     #[error("DESYNC: Unknown consensus commitment 0x{commitment} for batch {1}", commitment=hex::encode(.0.data_hash))]
-    UnknownCommitment(Commitment, BatchId),
+    UnknownCommitment(Box<Commitment>, BatchId),
 }
 
 #[derive(Debug, Error)]
