@@ -15,7 +15,7 @@ use psyche_modeling::{
     TrainerThreadCommunicationError,
 };
 use psyche_network::{
-    distro_results_to_bytes, AuthenticatableIdentity, SerializeDistroResultError,
+    distro_results_to_bytes, AuthenticatableIdentity, Hash, SerializeDistroResultError,
     SerializedDistroResult, TransmittableDistroResult,
 };
 use std::{
@@ -588,10 +588,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                                 ));
                             }
                         },
-                        Some(PayloadState::Downloading(_)) => {
+                        Some(PayloadState::Downloading((_, __, ticket))) => {
                             return Err(ApplyError::DidNotBeginDownloadingCommitment(
                                 *commitment,
                                 batch_id,
+                                ticket.hash()
                             ));
                         }
                         None => {
@@ -704,8 +705,8 @@ pub enum ApplyError {
     #[error("DESYNC: Did not finish deserializing payload for consensus commitment 0x{commitment} for batch {1}", commitment=hex::encode(.0.data_hash))]
     DidNotFinishDeserializingCommitment(Commitment, BatchId),
 
-    #[error("DESYNC: Did not begin downloading payload for consensus commitment 0x{commitment} for batch {1}", commitment=hex::encode(.0.data_hash))]
-    DidNotBeginDownloadingCommitment(Commitment, BatchId),
+    #[error("DESYNC: Did not begin downloading payload for consensus commitment 0x{commitment} for batch {1} with blob hash {2}", commitment=hex::encode(.0.data_hash))]
+    DidNotBeginDownloadingCommitment(Commitment, BatchId, Hash),
 
     #[error("DESYNC: Unknown consensus commitment 0x{commitment} for batch {1}", commitment=hex::encode(.0.data_hash))]
     UnknownCommitment(Commitment, BatchId),

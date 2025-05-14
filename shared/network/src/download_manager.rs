@@ -234,8 +234,8 @@ impl<D: Networkable + Send + 'static> DownloadManager<D> {
                     i,
                     download.download.recv().await.unwrap_or_else(|| {
                         Err(anyhow!(
-                            "download channel closed when trying to download blob with ticket {}.",
-                            download.blob_ticket
+                            "download channel closed when trying to download blob with hash {}.",
+                            download.blob_ticket.hash()
                         ))
                     }),
                 )
