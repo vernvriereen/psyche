@@ -121,7 +121,7 @@ cargo install --git https://github.com/coral-xyz/anchor --rev a7a23eea308440a9fa
 This may require
 
 ```bash
-sudo apt install pkg-config libudev-dev libssl-dev
+sudo apt install pkg-config libudev-dev libssl-dev libfontconfig-dev
 ```
 
 ### Windows

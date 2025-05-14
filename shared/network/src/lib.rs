@@ -1,10 +1,17 @@
 use allowlist::Allowlist;
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{anyhow, Context, Result};
 use bytes::Bytes;
 use download_manager::{DownloadManager, DownloadManagerEvent, DownloadUpdate};
 use futures_util::StreamExt;
-use iroh::{endpoint::RemoteInfo, NodeAddr};
-use iroh_blobs::{downloader::ConcurrencyLimits, net_protocol::Blobs, store::mem::Store};
+use iroh::endpoint::RemoteInfo;
+use iroh_blobs::{
+    downloader::ConcurrencyLimits,
+    net_protocol::{Blobs, DownloadMode},
+    rpc::client::blobs::DownloadOptions,
+    store::mem::Store,
+    util::SetTagOption,
+    BlobFormat,
+};
 use iroh_gossip::{
     net::{Gossip, GossipEvent, GossipReceiver, GossipSender},
     proto::{HyparviewConfig, PlumtreeConfig},
@@ -39,7 +46,7 @@ use tracing::{debug, error, info, trace, warn};
 use util::{fmt_relay_mode, gossip_topic};
 
 pub use ed25519::Signature;
-pub use iroh::{endpoint::ConnectionType, NodeId, RelayMode};
+pub use iroh::{endpoint::ConnectionType, NodeAddr, NodeId, RelayMode};
 pub use iroh_blobs::{ticket::BlobTicket, Hash};
 
 pub mod allowlist;
@@ -335,12 +342,29 @@ where
         Ok(self.gossip_tx.broadcast(encoded_message).await?)
     }
 
-    pub async fn start_download(&mut self, ticket: BlobTicket, tag: u32) -> Result<()> {
+    pub async fn start_download(
+        &mut self,
+        ticket: BlobTicket,
+        tag: u32,
+        additional_peers_to_try: &[NodeAddr],
+    ) -> Result<()> {
+        let provider_node_id = ticket.node_addr().clone();
         let mut progress = self
             .blobs
             .client()
-            .download(ticket.hash(), ticket.node_addr().clone())
+            .download_with_opts(
+                ticket.hash(),
+                DownloadOptions {
+                    format: BlobFormat::Raw,
+                    nodes: std::iter::once(provider_node_id)
+                        .chain(additional_peers_to_try.iter().cloned())
+                        .collect(),
+                    tag: SetTagOption::Auto,
+                    mode: DownloadMode::Queued,
+                },
+            )
             .await?;
+
         let hash = ticket.hash();
         self.state.currently_sharing_blobs.insert(hash);
         self.state.blob_tags.insert((tag, hash));
@@ -452,7 +476,7 @@ where
         // these are factored out to separate fns so rustfmt works on their contents :)
         select! {
             Some(event) = self.gossip_rx.next() => {
-                match parse_gossip_event(event.map_err(|ee| ee.into())) {
+                match parse_gossip_event(event.map_err(|ee| ee.into()), &self.gossip_rx) {
                     Some(result) => Ok(Some(NetworkEvent::MessageReceived(result))),
                     None => Ok(None),
                 }
@@ -463,10 +487,10 @@ where
                         Ok(Some(NetworkEvent::DownloadComplete(result)))
                     }
                     Some(DownloadManagerEvent::Update(update)) => {
-                        self.on_download_update(update)?;
-                        Ok(None)
+                        Ok(self.on_download_update(update))
                     },
                     Some(DownloadManagerEvent::Failed(result)) => {
+                        self.state.download_progesses.remove(&result.blob_ticket.hash());
                         Ok(Some(NetworkEvent::DownloadFailed(result)))
                     }
                     None => Ok(None),
@@ -486,7 +510,10 @@ where
         }
     }
 
-    fn on_download_update(&mut self, update: DownloadUpdate) -> Result<()> {
+    fn on_download_update(
+        &mut self,
+        update: DownloadUpdate,
+    ) -> Option<NetworkEvent<BroadcastMessage, Download>> {
         self.state.bandwidth_tracker.add_event(
             update.blob_ticket.node_addr().node_id,
             update.downloaded_size_delta,
@@ -497,37 +524,31 @@ where
         if update.all_done {
             self.state.download_progesses.remove(&hash);
 
-            let download = match update.error {
-                Some(err) => Err(Error::msg(err.to_string())),
-                None => {
-                    let blobs = self.blobs.client().clone();
-                    let (send, recv) = oneshot::channel();
-                    trace!(name: "blob_download_read_start", hash = hash.fmt_short());
-                    tokio::spawn(async move {
-                        let blob_bytes = match blobs.read_to_bytes(hash).await {
-                            Ok(b) => b,
-                            Err(e) => {
-                                error!("Failed to read bytes: {e}");
-                                return;
-                            }
-                        };
-                        let size = blob_bytes.len();
-                        let res = send.send(blob_bytes);
-                        debug!(name: "blob_download_finish", hash = hash.fmt_short(), "downloaded blob {}, {} bytes", hash.fmt_short(), size);
-                        if res.is_err() {
-                            error!("Failed to send read bytes result.");
-                        }
-                    });
-                    Ok(recv)
+            let blobs = self.blobs.client().clone();
+            let (send, recv) = oneshot::channel();
+            trace!(name: "blob_download_read_start", hash = hash.fmt_short());
+            tokio::spawn(async move {
+                let blob_bytes = match blobs.read_to_bytes(hash).await {
+                    Ok(b) => b,
+                    Err(e) => {
+                        error!("Failed to read bytes: {e}");
+                        return;
+                    }
+                };
+                let size = blob_bytes.len();
+                let res = send.send(blob_bytes);
+                debug!(name: "blob_download_finish", hash = hash.fmt_short(), "downloaded blob {}, {} bytes", hash.fmt_short(), size);
+                if res.is_err() {
+                    error!("Failed to send read bytes result.");
                 }
-            };
+            });
 
             self.download_manager
-                .read(update.blob_ticket, update.tag, download);
+                .read(update.blob_ticket, update.tag, recv);
         } else {
             self.state.download_progesses.insert(hash, update);
         }
-        Ok(())
+        None
     }
 
     pub async fn get_all_peers(&self) -> Vec<(NodeAddr, ConnectionType)> {
@@ -583,6 +604,7 @@ pub async fn request_model(
 
 fn parse_gossip_event<BroadcastMessage: Networkable>(
     event: Result<iroh_gossip::net::Event>,
+    gossip: &GossipReceiver,
 ) -> Option<(PublicKey, BroadcastMessage)> {
     match event {
         Ok(iroh_gossip::net::Event::Gossip(GossipEvent::Received(msg))) => {
@@ -598,14 +620,24 @@ fn parse_gossip_event<BroadcastMessage: Networkable>(
                     return Some(result);
                 }
                 Err(err) => {
-                    warn!("Got a gossip message, but could not verify / decode it! {err}");
+                    warn!("Got a gossip message delivered from {}, but could not verify / decode it! {err}", msg.delivered_from);
                 }
             }
         }
-        Ok(iroh_gossip::net::Event::Gossip(_)) => {
-            // join, leave, etc.
+        Ok(iroh_gossip::net::Event::Gossip(GossipEvent::Joined(peers))) => {
+            debug!(name: "gossip_init", peers = ?peers, "gossip initialized with peers {peers:?}");
         }
-        Ok(iroh_gossip::net::Event::Lagged) => error!("Gossip lagged. We missed some events."),
+        Ok(iroh_gossip::net::Event::Gossip(GossipEvent::NeighborUp(node_id))) => {
+            let peers: Vec<_> = gossip.neighbors().collect();
+            debug!(name: "gossip_new_peer", node_id=%node_id, all_gossip_peers = ?peers, "gossip connected to new peer {node_id}, we now have {} peers", peers.len());
+        }
+        Ok(iroh_gossip::net::Event::Gossip(GossipEvent::NeighborDown(node_id))) => {
+            let peers: Vec<_> = gossip.neighbors().collect();
+            debug!(name: "gossip_lost_peer", node_id=%node_id, all_gossip_peers = ?peers, "gossip disconnected from peer {node_id}, we now have {} peers", peers.len());
+        }
+        Ok(iroh_gossip::net::Event::Lagged) => {
+            error!(name: "gossip_lagged","Gossip lagged. We missed some events.")
+        }
         Err(err) => {
             warn!("Error on gossip event RX: {err}");
         }

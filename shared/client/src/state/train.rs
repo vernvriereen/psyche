@@ -6,8 +6,8 @@ use crate::{
 
 use futures::{future::try_join_all, stream::FuturesUnordered, StreamExt};
 use psyche_coordinator::{
-    assign_data_for_state, get_batch_ids_for_round, model, Commitment, CommitteeSelection,
-    Coordinator, CoordinatorError, HealthChecks, BLOOM_FALSE_RATE,
+    assign_data_for_state, get_batch_ids_for_node, get_batch_ids_for_round, model, Commitment,
+    CommitteeSelection, Coordinator, CoordinatorError, HealthChecks, BLOOM_FALSE_RATE,
 };
 use psyche_core::{BatchId, Bloom, NodeIdentity, OptimizerDefinition};
 use psyche_modeling::{
@@ -15,7 +15,7 @@ use psyche_modeling::{
     TrainerThreadCommunicationError,
 };
 use psyche_network::{
-    distro_results_to_bytes, AuthenticatableIdentity, SerializeDistroResultError,
+    distro_results_to_bytes, AuthenticatableIdentity, Hash, SerializeDistroResultError,
     SerializedDistroResult, TransmittableDistroResult,
 };
 use std::{
@@ -123,7 +123,7 @@ impl TrainingStep {
 
         let finished = self.finished.clone();
 
-        let trainers = self
+        let trainers: FinishedTrainers = self
             .applying_and_training
             .await
             .map_err(|_| TrainError::TrainCrashed)??;
@@ -236,20 +236,22 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
 
         let warmup_lr_between = state.get_cold_start_warmup_bounds();
         let zero_optim = warmup_lr_between.is_some_and(|_| round.height == 0);
+        let epoch = state.progress.epoch;
 
         info!(
             integration_test_log_marker = %IntegrationTestLogMarker::WitnessElected,
             step = state.progress.step,
             round = round.height,
-            epoch = state.progress.epoch,
+            epoch = epoch,
             index = client_index,
             comittee_position = committee_proof.position,
             committee = %committee_proof.committee,
             witness_position = witness_proof.position,
             witness = %witness_proof.witness,
             warmup_lr_between = ?warmup_lr_between,
+            assigned_batches = ?get_batch_ids_for_node(&data_assignments, &self.identity),
             "Got training assignment for step {} (round {}/epoch {}): index={} committee position={} committee={} witness position={} witness={} warmup_lr_between={:?}",
-            state.progress.step, round.height, state.progress.epoch, client_index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness, warmup_lr_between
+            state.progress.step, round.height, epoch, client_index, committee_proof.position, committee_proof.committee, witness_proof.position, witness_proof.witness, warmup_lr_between
         );
         let eval_runner = self.eval_runner.clone();
         let finished = Arc::new(AtomicBool::new(false));
@@ -377,6 +379,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                                 nonce,
                             } = completed_trainer.map_err(|_| TrainError::TrainCrashed)??;
 
+                            debug!(step=step, loss=loss, batch_id=%batch_id, "Got training output, DisTrO results generated");
+
                             available_trainers.push(trainer);
 
                             if !sent_results {
@@ -496,11 +500,18 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
 
         let apply_start = Instant::now();
         let step = state.progress.step;
-        let witness_quorum = state.witness_quorum();
+        let witness_quorum = state.witness_quorum(
+            state
+                .previous_round()
+                .ok_or(ApplyError::NoActiveRound)?
+                .witnesses
+                .len() as u16,
+        );
         let cold_start_warmup_steps = match &state.model {
             model::Model::LLM(llm) => llm.cold_start_warmup_steps,
         };
         let warmup_lr_between = state.get_cold_start_warmup_bounds();
+        let epoch = state.progress.epoch;
 
         // coordinator has already advanced to the next round (unless we're in cooldown) but we haven't started ours yet.
         // so our current_round corresponds to the coordinator's previous_round
@@ -527,6 +538,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                 .get_num_trainer_nodes(),
         );
 
+        let data_assignments = previous_round.data_assignments.clone();
+
         Ok(tokio::task::spawn(async move {
                 let mut distro_results: Vec<Vec<DistroResult>> = Vec::new();
 
@@ -537,10 +550,12 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                     let batch_commitments = match commitments.get(&batch_id) {
                         Some(x) => x,
                         None => {
+                            let expected_trainer = data_assignments.get(&batch_id);
                             warn!(
                                 integration_test_log_marker = %IntegrationTestLogMarker::UntrainedBatches,
                                 batch_id = %batch_id,
-                                "No commitments for batch {batch_id}",
+                                expected_trainer = ?expected_trainer,
+                                "No commitments for batch {batch_id}, assigned to node {expected_trainer:?}",
                             );
                             continue;
                         }
@@ -568,20 +583,21 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
                             true => x.await.unwrap(),
                             false => {
                                 return Err(ApplyError::DidNotFinishDeserializingCommitment(
-                                    *commitment,
+                                    Box::new(*commitment),
                                     batch_id,
                                 ));
                             }
                         },
-                        Some(PayloadState::Downloading(_)) => {
+                        Some(PayloadState::Downloading((_, _, ticket))) => {
                             return Err(ApplyError::DidNotBeginDownloadingCommitment(
-                                *commitment,
+                                Box::new(*commitment),
                                 batch_id,
+                                ticket.hash()
                             ));
                         }
                         None => {
                             return Err(ApplyError::UnknownCommitment(
-                                *commitment,
+                                Box::new(*commitment),
                                 batch_id,
                             ))
                         }
@@ -589,10 +605,11 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static> TrainingStepMetadata
 
                     match maybe_results {
                         Ok((results, trainer_nonce)) => {
-                            if trainer_nonce < cold_start_warmup_steps && step > cold_start_warmup_steps  {
+                            if trainer_nonce < cold_start_warmup_steps && epoch != 0 && warmup_lr_between.is_none()  {
                                 // results are not actually applied for the first cold_start_warmup_steps of a trainer's lifetime
                                 // note, we are relying on honest communication of this value here -- will need to harden with verification.
-                                // the only exception is for the first steps of the first epoch
+                                // the only exception is for the first steps of the first epoch 
+                                // or when doing a cold start (warmup_lr_between.is_some())
                                 info!("Skipping apply of batch {batch_id}, trainer warming up ({trainer_nonce}/{cold_start_warmup_steps})");
                             } else {
                                 distro_results.push(results);
@@ -686,13 +703,13 @@ pub enum ApplyError {
     BadResult(#[from] ApplyDistroResultError),
 
     #[error("DESYNC: Did not finish deserializing payload for consensus commitment 0x{commitment} for batch {1}", commitment=hex::encode(.0.data_hash))]
-    DidNotFinishDeserializingCommitment(Commitment, BatchId),
+    DidNotFinishDeserializingCommitment(Box<Commitment>, BatchId),
 
-    #[error("DESYNC: Did not begin downloading payload for consensus commitment 0x{commitment} for batch {1}", commitment=hex::encode(.0.data_hash))]
-    DidNotBeginDownloadingCommitment(Commitment, BatchId),
+    #[error("DESYNC: Did not begin downloading payload for consensus commitment 0x{commitment} for batch {1} with blob hash {2}", commitment=hex::encode(.0.data_hash))]
+    DidNotBeginDownloadingCommitment(Box<Commitment>, BatchId, Hash),
 
     #[error("DESYNC: Unknown consensus commitment 0x{commitment} for batch {1}", commitment=hex::encode(.0.data_hash))]
-    UnknownCommitment(Commitment, BatchId),
+    UnknownCommitment(Box<Commitment>, BatchId),
 }
 
 #[derive(Debug, Error)]

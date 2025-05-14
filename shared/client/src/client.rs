@@ -5,12 +5,12 @@ use crate::{
 };
 use anyhow::{bail, Error, Result};
 use futures::future::join_all;
-use psyche_coordinator::{Commitment, RunState};
+use psyche_coordinator::{Commitment, Coordinator, RunState};
 use psyche_core::NodeIdentity;
 use psyche_network::{
     allowlist, param_request_task, raw_p2p_verify, AuthenticatableIdentity, BlobTicket,
     DownloadComplete, ModelRequestType, NetworkConnection, NetworkEvent, NetworkTUIState,
-    Networkable, NodeId, SharableModel, TransmittableDownload,
+    Networkable, NodeAddr, NodeId, SharableModel, TransmittableDownload,
 };
 use psyche_watcher::{Backend, BackendWatcher};
 use tokenizers::Tokenizer;
@@ -123,11 +123,16 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                 let mut sharing_downloadable_interval = interval(REBROADCAST_SHAREABLE);
                 let mut retry_check_interval = interval(DOWNLOAD_RETRY_CHECK_INTERVAL);
                 let mut opprotunistic_witness_interval = interval(OPPROTUNISTIC_WITNESS_INTERVAL);
+                let mut wait_for_checkpoint = false;
                 debug!("Starting client loop");
 
                 loop {
                     select! {
                         _ = cancel.cancelled() => {
+                            info!("Got request to cancel main client loop");
+                            if run.doing_checkpoint() {
+                                wait_for_checkpoint = true;
+                            }
                             break;
                         }
 
@@ -158,12 +163,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                             );
 
                             let connected_p2p_nodes: BTreeSet<_> = p2p.neighbors().collect();
+                            if !new_state.halted()
                             {
-                                let run_participating_node_ids: Vec<NodeId> = new_state
-                                    .epoch_state
-                                    .clients
-                                    .iter()
-                                    .map(|c| NodeId::from_bytes(c.id.get_p2p_public_key()).unwrap()).collect();
+                                let run_participating_node_ids = participating_node_ids(new_state);
                                 allowlist.set(run_participating_node_ids.iter().copied());
 
                                 let my_node_id = p2p.node_id();
@@ -243,12 +245,14 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                                                 run.apply_distro_result(hash, distro_result, None).await;
                                             },
                                             TransmittableDownload::ModelParameter(parameter) => {
+                                                info!("Download complete: parameter {}", parameter.name()?);
                                                 sharable_model.add_parameter(parameter).await?;
                                                 if sharable_model.is_download_complete() {
                                                     sharable_model.send_init_parameters()?;
                                                 }
                                             },
                                             TransmittableDownload::ModelConfig(config) => {
+                                                info!("Download complete: model config");
                                                 sharable_model.add_config(config)?;
                                                 sharable_model.send_config()?;
                                             },
@@ -399,7 +403,9 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                                     debug!("Retrying download for blob {} (attempt {})",
                                         hex::encode(hash), info.retries);
-                                    p2p.start_download(ticket, tag).await?;
+
+                                    let other_possible_nodes = run.coordinator_state().map(all_node_addrs_shuffled).unwrap_or_default();
+                                    p2p.start_download(ticket, tag, &other_possible_nodes).await?;
                                 }
                             }
                         }
@@ -409,7 +415,8 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
                         }
 
                         Some((download_ticket, tag)) = rx_request_download.recv() => {
-                            p2p.start_download(download_ticket, tag).await?;
+                            let other_possible_nodes = run.coordinator_state().map(all_node_addrs_shuffled).unwrap_or_default();
+                            p2p.start_download(download_ticket, tag, &other_possible_nodes).await?;
                         }
                         Some(opportunistic_data) = rx_witness.recv() => {
                             watcher.backend_mut().send_witness(opportunistic_data).await?;
@@ -554,20 +561,31 @@ impl<T: NodeIdentity, A: AuthenticatableIdentity + 'static, B: Backend<T> + 'sta
 
                             for ticket in parameter_blob_tickets {
                                 // tag 0 means when we enter a train step, it'll get wiped.
-                                p2p.start_download(ticket, 0).await?;
+                                p2p.start_download(ticket, 0, &[]).await?;
                             }
 
                         }
                         Some(param_blob_tickets) = rx_params_download.recv() => {
                             for ticket in param_blob_tickets {
                                 // tag 0 means when we enter a train step, it'll get wiped.
-                                p2p.start_download(ticket, 0).await?;
+                                p2p.start_download(ticket, 0, &[]).await?;
                             }
                         }
                         _ = param_requests_cancel_token.cancelled() => bail!("Peers were unreachable for P2P parameter requests. Try joining again"),
                         else => break
                     }
                 }
+
+                info!("Main client loop ended");
+
+                if wait_for_checkpoint {
+                    info!("Waiting for checkpoint to finish");
+                    if let Some(checkpoint) = rx_checkpoint.recv().await {
+                        watcher.backend_mut().send_checkpoint(checkpoint).await?;
+                    }
+                    info!("Checkpoint finished, exiting main client loop");
+                }
+
                 Ok(())
             }
         });
@@ -636,4 +654,22 @@ where
             },
         )))
         .collect())
+}
+
+fn participating_node_ids<T: NodeIdentity>(state: &Coordinator<T>) -> Vec<NodeId> {
+    state
+        .epoch_state
+        .clients
+        .iter()
+        .map(|c| NodeId::from_bytes(c.id.get_p2p_public_key()).unwrap())
+        .collect()
+}
+
+fn all_node_addrs_shuffled<T: NodeIdentity>(state: &Coordinator<T>) -> Vec<NodeAddr> {
+    let mut addrs = participating_node_ids(state)
+        .into_iter()
+        .map(|node_id| node_id.into())
+        .collect::<Vec<_>>();
+    addrs.shuffle(&mut thread_rng());
+    addrs
 }
