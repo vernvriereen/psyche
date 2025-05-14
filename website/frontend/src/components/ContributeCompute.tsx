@@ -341,7 +341,7 @@ export function ContributeCompute({
 						<OrbCanvas ref={canvasRef} width={canvasSize} height={canvasSize} />
 						<ContributePoolLine>
 							<span className={text['body/base/medium']}>
-								CAPITAL:{' '}
+								MINING POOL:{' '}
 								{formatUSDollars(
 									Number(totalDepositedCollateralAmount) /
 										10 ** collateralMintDecimals
